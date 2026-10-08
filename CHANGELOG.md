@@ -64,3 +64,5 @@
 - **SEC-02 口令比较与 schema 清理**：`verifyPassword` 同长缓冲 + `timingSafeEqual`，消除长度旁路；删除 `auth_config` 残留建表。新增 `gateway/test/password.test.ts`。
 - **SEC-03 备份凭据脱敏 + 拉取端 host key**：`backup.sh` 备份 `env` 将口令置 `__REDACTED__`（真值只留 Pi `/etc/workbench/env`）；`pc-pull.py` 改 `RejectPolicy` + known_hosts。ARCHITECTURE §4/§5 同步。
 - **评估遗留**：① 公网登录口令强度不足，换 16+ 位随机（SEC-04）；② 部署后实机复验；③ P0「连续 3 晚」备份日历 streak 待 timer 走完。
+
+- **文档职责切分（2026-10-09）**：TASK-INDEX 扩为唯一任务事实源（P4-01…P6-04 逐条含依赖/工作量/实机验收/风险）；ROADMAP 精简为里程碑目标、顺序、总量与里程碑级风险，不再重复任务表。AGENTS 文档维护表已对齐。

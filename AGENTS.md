@@ -7,8 +7,8 @@
 | 实机测量/版本变化 | `docs/RESEARCH.md`（追加日期 + 数据，旧数据保留） |
 | 落地/事故/决策记录 | `CHANGELOG.md`（按时间正序追加） |
 | 接口/schema/端口/目录/白名单变化 | `docs/ARCHITECTURE.md`（同 PR 内同步） |
-| 里程碑/工作量/风险变化 | `docs/ROADMAP.md` |
-| 开工/完成/阻塞任何任务 | `docs/TASK-INDEX.md`（唯一事实源，状态实时） |
+| 里程碑目标/排期/里程碑级风险 | `docs/ROADMAP.md`（不写任务明细） |
+| 任务开工/完成/阻塞/依赖/工作量/验收 | `docs/TASK-INDEX.md`（唯一任务事实源） |
 | 守则本身变化 | 本文件 `AGENTS.md` |
 | 对外说明变化 | `README.md` |
 
