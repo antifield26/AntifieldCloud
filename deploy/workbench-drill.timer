@@ -1,0 +1,9 @@
+[Unit]
+Description=Run workbench restore drill weekly Monday 04:30
+
+[Timer]
+OnCalendar=Mon *-*-* 04:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

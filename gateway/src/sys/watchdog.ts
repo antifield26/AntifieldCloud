@@ -14,12 +14,14 @@ export interface WatchOpts {
   tempAlertC: number;
   memMinMb: number;
   backupMaxH: number;
+  drillMaxD: number;
 }
 
 export const optsFromEnv = (): WatchOpts => ({
   tempAlertC: Number(process.env.WB_TEMP_ALERT_C ?? 75),
   memMinMb: Number(process.env.WB_MEM_MIN_MB ?? 1024),
   backupMaxH: Number(process.env.WB_BACKUP_MAX_H ?? 26),
+  drillMaxD: Number(process.env.WB_DRILL_MAX_D ?? 14),
 });
 
 function sh(cmd: string, args: string[], timeoutMs: number): Promise<string> {
@@ -56,6 +58,7 @@ export function evaluate(
   nowMs: number,
   opts: WatchOpts,
   units: { cloudflared: boolean; opencode: boolean; serve: boolean },
+  drill?: { started_at: string; status: string } | undefined,
 ): Check[] {
   const out: Check[] = [];
   out.push(
@@ -97,6 +100,16 @@ export function evaluate(
       ? { name: 'opencode', status: 'ok', detail: 'service active + api ok' }
       : { name: 'opencode', status: 'alert', detail: `service=${units.opencode} api=${units.serve}` },
   );
+  if (drill === undefined) {
+    out.push({ name: 'drill', status: 'alert', detail: 'no drill run' });
+  } else {
+    const ageD = (nowMs - Date.parse(drill.started_at)) / 86400000;
+    out.push(
+      drill.status !== 'ok' || ageD > opts.drillMaxD
+        ? { name: 'drill', status: 'alert', detail: `${drill.status} ${ageD.toFixed(1)}d ago` }
+        : { name: 'drill', status: 'ok', detail: `${ageD.toFixed(1)}d ago` },
+    );
+  }
   return out;
 }
 
@@ -125,7 +138,10 @@ export async function runWatchdog(db: DatabaseSync, sample: Sample | null): Prom
     .prepare('SELECT ts,status FROM backups ORDER BY ts DESC LIMIT 1')
     .get() as { ts: string; status: string } | undefined;
   const [cf, oc, sv] = await Promise.all([isActive('cloudflared.service'), isActive('opencode.service'), serveHealthy()]);
-  const checks = evaluate(sample, lastBackup, Date.now(), opts, { cloudflared: cf, opencode: oc, serve: sv });
+  const drill = db
+    .prepare("SELECT started_at,status FROM job_runs WHERE job_id='drill' ORDER BY started_at DESC LIMIT 1")
+    .get() as { started_at: string; status: string } | undefined;
+  const checks = evaluate(sample, lastBackup, Date.now(), opts, { cloudflared: cf, opencode: oc, serve: sv }, drill);
   recordAlerts(db, checks);
   return checks;
 }

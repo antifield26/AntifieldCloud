@@ -1,0 +1,8 @@
+[Unit]
+Description=Workbench weekly restore drill
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=workbench
+ExecStart=/opt/workbench/drill-weekly.sh

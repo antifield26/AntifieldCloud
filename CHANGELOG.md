@@ -72,3 +72,5 @@
 - **P3-01 落地**：API 请求审计（\pi_audit\）：只记元数据，query 丢弃、id 段收敛，60s 批量落盘 + 30 天裁剪；未登录 401 记 \ctor=anon\。线上实测归因与脱敏全对。本地 42/42。
 
 - **P3-02 落地**：会话 7d 绝对上限（NULL 老行强制重登）+ 滑动续期（剩<24h 延至 min(+30d,创建+7d)，\WB_SESSION_SLIDING=0\ 可关）+ hook 内 touch；shell job 执行与 service restart 前端二次确认；登录≈workbench 单用户语义进 ARCH。线上新会话 200，旧 NULL 行清零。本地 43/43。
+
+- **P3-03 落地**：恢复演练自动化——周一定时器 + estore-drill.sh\ 结果进 \job_runs(job_id=drill)\；watchdog 加 drill 项（14 天内 ok）；演练目录 trap 自清；sqlite 时间一律 ISO UTC（修本地时区解析漂移）。线上 drill ok、watchdog 六项全绿。本地 44/44。

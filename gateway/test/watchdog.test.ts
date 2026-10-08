@@ -8,7 +8,7 @@ import { openDb } from '../src/db.js';
 import { evaluate, recordAlerts, type WatchOpts } from '../src/sys/watchdog.js';
 import type { Sample } from '../src/sys/metrics.js';
 
-const OPTS: WatchOpts = { tempAlertC: 75, memMinMb: 1024, backupMaxH: 26 };
+const OPTS: WatchOpts = { tempAlertC: 75, memMinMb: 1024, backupMaxH: 26, drillMaxD: 14 };
 const UNITS = { cloudflared: true, opencode: true, serve: true };
 const S: Sample = { ts: 1, cpu: 1, memUsedKb: 7 * 1024 * 1024, memTotalKb: 8 * 1024 * 1024, tempC: 50, diskWrittenKb: 1 };
 const NOW = Date.parse('2026-10-08T06:00:00Z');
@@ -16,8 +16,17 @@ const FRESH = { ts: '2026-10-08T05:00:00Z', status: 'ok' };
 
 void describe('watchdog', () => {
   void it('全绿', () => {
-    const cs = evaluate(S, FRESH, NOW, OPTS, UNITS);
+    const cs = evaluate(S, FRESH, NOW, OPTS, UNITS, { started_at: '2026-10-07T05:00:00Z', status: 'ok' });
     assert.ok(cs.every((c) => c.status === 'ok'));
+  });
+
+  void it('演练过期/失败/缺失告警', () => {
+    const stale = evaluate(S, FRESH, NOW, OPTS, UNITS, { started_at: '2026-09-01T00:00:00Z', status: 'ok' });
+    assert.equal(stale.find((c) => c.name === 'drill')?.status, 'alert');
+    const failed = evaluate(S, FRESH, NOW, OPTS, UNITS, { started_at: '2026-10-08T00:00:00Z', status: 'failed' });
+    assert.equal(failed.find((c) => c.name === 'drill')?.status, 'alert');
+    const none = evaluate(S, FRESH, NOW, OPTS, UNITS, undefined);
+    assert.equal(none.find((c) => c.name === 'drill')?.status, 'alert');
   });
 
   void it('超温/低内存/断线/备份过期各告警', () => {
@@ -38,8 +47,9 @@ void describe('watchdog', () => {
   void it('record 落 job_runs，绿不记', () => {
     const p = join(tmpdir(), `wb-wd-${Date.now()}.db`);
     const d = openDb(p);
-    assert.equal(recordAlerts(d, evaluate(S, FRESH, NOW, OPTS, UNITS)), 0);
-    const n = recordAlerts(d, evaluate({ ...S, tempC: 99 }, FRESH, NOW, OPTS, UNITS));
+    const fresh = { started_at: '2026-10-07T05:00:00Z', status: 'ok' };
+    assert.equal(recordAlerts(d, evaluate(S, FRESH, NOW, OPTS, UNITS, fresh)), 0);
+    const n = recordAlerts(d, evaluate({ ...S, tempC: 99 }, FRESH, NOW, OPTS, UNITS, fresh));
     assert.equal(n, 1);
     const row = d.prepare("SELECT job_id,status,log FROM job_runs WHERE job_id='watchdog'").get() as {
       job_id: string; status: string; log: string;
