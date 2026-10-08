@@ -27,9 +27,9 @@
 | P1-06 | SPA 五页（控制台/AI/效率/流水线/门户） | P1 | done | 新包公网 200；AI 经网关建会/下发/轮询出真实回复；探针已清 | `web/` |
 | AUTH-01 | 内置密码认证（替代 CF Access） | P1 | done | 未登录 401；密封口令登录置 HttpOnly cookie；登出后 401（线上待用户首登改密，已被 AUTH-02 取代） | `gateway/src/auth/*` |
 | AUTH-02 | 口令改存 `.env: AUTH_LOGIN_PASSWORD` | P1 | done | 未登录/错口令 401，对口令 200；密封文件与 DB 哈希残留已清 | `gateway/src/auth/*`、`deploy/env.example` |
-| P2-01 | 适配器插件化 + LSP 按需 | P2 | pending | 多模型路由；LSP RSS 预算内 | `gateway/src/opencode/*` |
+| P2-01 | 适配器插件化 + LSP 按需 | P2 | dropped | 用户决策不做（v2 自带管理，直调已够用） | `gateway/src/opencode/*` |
 | P2-02 | 指标保留 + 导出 | P2 | done | 30天滚动（flush 裁剪+单测）；CSV 线上导出真实行；未登录 401 | `wb.db`、`GET /api/sys/metrics/export` |
-| P2-03 | 备份多目标 + 加密 | P2 | pending | S3/USB 二选一 ok；加密恢复 ok | `deploy/backup.sh` |
+| P2-03 | 备份多目标 + 加密 | P2 | dropped | 用户决策不做（Pi→PC + 7 天滚动已够用） | `deploy/backup.sh` |
 | P2-04 | 审计硬化（内置认证下） | P2 | done | 登录 fail/ok 入 `auth_audit`；会话列表/吊销可用；越权行 `actor=ses:…` 归因 | `gateway/src/routes/auth.ts` |
 
 ## 流转规则

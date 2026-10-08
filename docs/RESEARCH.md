@@ -110,9 +110,9 @@
 | R2 | SD 单盘 58% 已用，日写 1–3G，无寿命读数，掉盘即全丢 | 高 | P0：写入减负（WAL+NORMAL、5–10min 批量落盘、log2ram、journald volatile、/tmp tmpfs 已有）；连续 3 晚备份 + 1 次恢复演练为 P0 出口 |
 | R3 | 无外部备份目标，同卡备份等于无备份 | 高 | 目标已定：PC 目录 `D:\PiBackUp`（2026-10-08 用户确认）；退役快照已回传 `D:\PiBackUp\retire-20261008`；每晚流水线待 P0-08 落地；**目标就绪前不动存储配置**；备份含校验（sha256）+ 失败告警 |
 | R4 | `antifield` 拥有 NOPASSWD ALL，网关越权风险 | 高 | 新建 `workbench` 低权限用户；sudoers 仅白名单动词；白名单外 403 + 审计表；AGENTS.md 红线 |
-| R5 | cloudflared 边缘抖动（`7844 timeout`） | 中 | 网关 `/health` 探针 + tunnel 重连告警；CF Access 全链路实测纳入 P0 出口 |
+| R5 | cloudflared 边缘抖动（`7844 timeout`） | 中 | 网关 `/health` 探针 + 看门狗 tunnel 检查 + 重连（`restart cloudflared` 白名单内） |
 | R6 | v1/v2 双版本漂移，适配器被击穿 | 中 | 适配器为唯一边界，pin 版本 + OpenAPI 快照 + 契约测试；任何直调 OpenCode 视为 bug |
-| R7 | 桌面/minecraft/FRP（`frpc-minecraft` 出站隧道）等存量服务与新网关端口冲突 | 中 | `ss -tlnp` 基线已锁：22/80/3000/3100/3080/25565/25575/25599/111/20241；新网关固定 `127.0.0.1:3090`（暂定），nginx 只做本机反代，cloudflared 单 ingress 指向网关 |
+| R7 | 桌面/minecraft/FRP（`frpc-minecraft` 出站隧道）等存量服务与新网关端口冲突 | 中 | 端口终态：网关 `127.0.0.1:3000`、opencode `127.0.0.1:4096`；`ss` 无 `0.0.0.0:3000` 已验；nginx 只做本机默认页 |
 | R8 | 出网经 wlan，受限网络下 npm/GitHub 超时 | 低 | 已验证出网正常；P0 构建产物 pin lockfile，失败重试 + 镜像源预案 |
 
 ## 附：实测命令索引（复现用，不含凭据）
@@ -171,3 +171,14 @@
 - **移除 dsh 及残留（2026-10-08 用户指令）**：`systemctl --user stop+disable dsh.service`（`inactive (dead)` + `disabled`），`127.0.0.1:3080` 已释放；`npm uninstall -g @deepseek-ai/dsh`（`removed 488 packages`，`npm ls -g` 仅剩 `npm+pnpm`）；用户单元文件、`~/.dsh`、`~/projects/dsh-plugin-pinas`（37M）移入退役库 `dsh/`；opencode v1 四处残留（`config 63M`、`cache 5.2M`、`share 2.5M` 含 `opencode.db`、`state 16K`）移入退役库 `opencode-v1/`，原路径确认清空；`/tmp` 内测试残留已删。`3100` 与 `3080` 均无监听，`pidsh` DNS 由用户手动清理。遗留非运行残留（`~/build/Pinas` 源码、`~/.npm/_npx` 缓存、`~/bin/fix-dsh-profile-links.sh`）保持不动。
 - **P0-04 落地（2026-10-08）**：控制台只读五端点经 Pi 实测——`overview` 温度 49.1 vs `vcgencmd` 48.8（Δ0.3°C），内存/负载/diskstats/journal(8M) 一致；`logs?unit=ssh.service` 返回真实条目（workbench 已入 `systemd-journal` 组）；`apt` 首版把 `正在列表...` 计入 count=2，已修过滤（`/` 判定）复验 count=1；`metrics_ts` 批量落盘行增（ flush 间隔经 `systemctl set-environment` 临时 15s 验证后恢复默认 5min），`journal_mode=wal` + `synchronous=1(NORMAL)` 为网关连接实测值（注：synchronous 系 per-connection，空连接查出 FULL 属正常）；`node:sqlite` 内建驱动可用，无额外依赖。部署插曲：`sys.ts` 误写 `./metrics.js` 致网关 crash-loop，本地 typecheck 未拦（`tsc -p` 报了错但被 `tail` 吞掉退出码——教训：以 `npm run typecheck` 为准，不看 tail），已修复。
 - **P0-03 落地（2026-10-08）**：v2 安装首跑因 registry 瞬断失败，重试成功，`opencode v2.0.24`（binary 191M，`~/.opencode/bin`，symlink 至 `/usr/local/bin/opencode`；安装脚本尾部 PATH 探测在 nologin 用户下会卡住，已 kill，无影响）；`opencode.service` enabled+running（workbench，`127.0.0.1:4096`，basic-auth 生效：无凭据 401，有凭据 200）。关键发现：**v2 API 全面换前缀**，v1 路径（`/global/health`、`/event`、`/doc`）全部返回 SPA HTML；真实路由：健康 `GET /api/info`（`{version:"2.0.24"}`）、事件 `GET /api/event`（SSE 首帧 `server.connected`，包络 `{id,type,data{sessionID?}}`，终端类型 `session.execution.finished/session.idle/session.error`）、会话 `GET/POST /api/session`（包络 `{data}`）、下发 `POST /api/session/{id}/prompt {text}`、中断 `POST /api/session/{id}/interrupt`；OpenAPI 快照存档 `docs/opencode-openapi.json`（117 路由）。实测下发 `ping` 全链路跑通（provider 为空时默认 `exo-free`，上游 503 重试中——真实 AI 任务需用户配 Key，P0 出口前置）。serve 空载 RSS 293M，符合预算。适配器已按 v2 重写（v1 回退删除，随 binary 同退役），网关 `/api/ai/*` 经 Pi 实测往返 ok，探针会话已删。
+
+## 10. 现状勘误（终态声明，§1–§8 中被后续决策推翻的行以此处为准）
+
+| 旧结论位置 | 现状 |
+|---|---|
+| §1 v1 安装/Node 双轨、`opencode 1.18.29` | v1 已卸载，v2.0.24 在 `/opt/opencode/bin` 全局可用；Node 26 单轨 |
+| §3 cloudflared ingress（pidsh→3100）、CF Access 待测 | pidsh ingress 与 DNS 已下线；CF Access 弃用，改内置密码登录 |
+| §4 pi_nas/dsh 运行态、`pi_nas:3000` 收敛计划 | 两者皆已退役；网关直占 `127.0.0.1:3000` |
+| §5 外部 NAS 缺失 | 已定 PC `D:\PiBackUp`，定时拉取运行中 |
+| §6 内存预算（dsh 140M 等） | dsh 已删；serve v2 空载 ~300M；网关 ~75M |
+| R3/R5/R7 缓解措施中的 Access/3090 引用 | 见本表与 ARCH §5（sudoers 精确条目为特权边界） |

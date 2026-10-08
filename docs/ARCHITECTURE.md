@@ -22,7 +22,7 @@
 ```
 
 - 公网唯一入口：Cloudflare Tunnel + Access；Pi **零入站端口**（sshd 仅对直连链路管理，不经公网）。
-- 网关是唯一对外 HTTP 服务（cloudflared `cloud.antifield.work` ingress 原指向 `:3000` 保持不变，现由网关接管；`pidsh.antifield.work` 在 P0-06 同样指向网关 `:3000`，待用户清 DNS 后下线）；`opencode serve` 只绑 `127.0.0.1:4096`，由网关代理，绝不直连浏览器（公网 `:4096` 实测 000）。**CF Access 策略需在 dashboard 侧启用（P0-06 实测当时未生效），启用前网关无自身认证。**
+- 网关是唯一对外 HTTP 服务（cloudflared `cloud.antifield.work → http://localhost:3000`；旧 `pidsh` ingress 与 DNS 已下线）；`opencode serve` 只绑 `127.0.0.1:4096`，由网关代理，绝不直连浏览器（公网 `:4096` 实测不通）。公网认证由网关内置密码登录承担（见认证链）。
 - ~~`pi_nas :3000` 收敛计划~~ → 已执行（2026-10-08）：`antifield-cloud.service` 已 stop+disable，`3000/3100` 已释放，数据保留于 `~/pinas`；本项目网关直接复用 `3000`（门户初期即网关自身能力，无需反代 pi_nas）。
 - 时序指标（CPU/内存/温度/写入）在网关**内存聚合 5–10 min 批量落盘**，SQLite `WAL + synchronous=NORMAL`。
 
