@@ -53,7 +53,7 @@
 
 | 编号 | 标题 | 状态 | 依赖 | 工作量 | 验收标准（实机） | 风险/备注 | 关联 |
 |---|---|---|---|---|---|---|---|
-| P4-01 | AI 会话体验：SSE 真流式 + 多会话 | pending | SEC-04, P1-06 | 4h | ① 网关 SSE 透传到前端（替代纯轮询）；② 会话列表可切换/新建/删除；③ 下发任务实时出字（text.delta）；④ 中断 abort 后 UI 状态正确；⑤ 展示 token/耗时（若 API 提供，否则显示耗时）；⑥ 公网实机走通 | 适配器仍是唯一 OpenCode 边界；SSE 断线重连不丢会话上下文提示 | `web/src/pages/Ai.tsx`、`gateway/src/routes/ai.ts`、`gateway/src/opencode/adapter.ts` |
+| P4-01 | AI 会话体验：SSE 真流式 + 多会话 | done | SEC-04, P1-06 | 4h | ① 网关 SSE 透传到前端（替代纯轮询）；② 会话列表可切换/新建/删除；③ 下发任务实时出字（text.delta）；④ 中断 abort 后 UI 状态正确；⑤ 展示 token/耗时（若 API 提供，否则显示耗时）；⑥ 公网实机走通 | 适配器仍是唯一 OpenCode 边界；SSE 断线重连不丢会话上下文提示 | `web/src/pages/Ai.tsx`、`gateway/src/routes/ai.ts`、`gateway/src/opencode/adapter.ts` |
 | P4-02 | 效率面板升级（笔记/待办/书签/文件） | pending | P1-01 | 3h | ① 笔记 Markdown 预览（安全渲染，禁 script）；② 待办到期提醒经 jobs/watchdog 落记录；③ 书签标签 + 按标签筛；④ 文件上传列表显示大小/时间，文本可预览；⑤ 记一条笔记或待办 ≤3 次点击 | XSS：Markdown 渲染须消毒；文件预览不做 HTML 内嵌执行 | `web/src/pages/Efficiency.tsx`、`gateway/src/routes/efficiency.ts` |
 | P4-03 | 全局搜索 | pending | P4-02 | 2h | `GET /api/search?q=` 检索 todos/notes/bookmarks/files_meta；前端顶栏入口；关键字命中列表可跳转；P95 响应 ≤200ms（本机千条级） | FTS5 或 LIKE 二选一，先 LIKE 足够则不引入 FTS 迁移 | `gateway/src/routes/efficiency.ts` 或新 `routes/search.ts`、`web/src/App.tsx` |
 | P4-04 | 导入导出 | pending | P4-02 | 2h | ① 导出 JSON（四类）+ CSV（todos/notes）；② 导入 JSON 可合并或替换（参数指定）；③ 实机：导出→删测试行→导入还原；④ 导出走已鉴权 API，文件名含日期 | 大 body 限长；导入校验字段类型 | `gateway/src/routes/efficiency.ts`、`web/src/pages/Efficiency.tsx` |

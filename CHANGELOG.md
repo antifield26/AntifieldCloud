@@ -74,3 +74,5 @@
 - **P3-02 落地**：会话 7d 绝对上限（NULL 老行强制重登）+ 滑动续期（剩<24h 延至 min(+30d,创建+7d)，\WB_SESSION_SLIDING=0\ 可关）+ hook 内 touch；shell job 执行与 service restart 前端二次确认；登录≈workbench 单用户语义进 ARCH。线上新会话 200，旧 NULL 行清零。本地 43/43。
 
 - **P3-03 落地**：恢复演练自动化——周一定时器 + estore-drill.sh\ 结果进 \job_runs(job_id=drill)\；watchdog 加 drill 项（14 天内 ok）；演练目录 trap 自清；sqlite 时间一律 ISO UTC（修本地时区解析漂移）。线上 drill ok、watchdog 六项全绿。本地 44/44。
+
+- **P4-01 落地**：SSE 真流式——网关 \GET /api/ai/sessions/:id/events\ 透传（hijack+按会话过滤+25s 心跳+断开取消），前端 EventSource 实时出字/耗时/中断，会话可建/切/删；终端事件集复用适配器。线上实测 delta 真流、中断/删除 ok、探针已清；新包公网生效。本地 45/45。

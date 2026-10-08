@@ -30,8 +30,11 @@ export interface IOpenCodeAdapter {
   health(): Promise<OpenCodeVersion>;
   listSessions(): Promise<SessionSummary[]>;
   createSession(title?: string, model?: string, agent?: string): Promise<SessionSummary>;
+  deleteSession(sessionId: string): Promise<boolean>;
   /** 下发 prompt 不等待（回执即返），进度经 messages() 轮询。 */
   promptOnly(sessionId: string, text: string): Promise<unknown>;
+  /** 订阅会话事件流，返回取消函数。不断流（10min 空闲超时除外）。 */
+  subscribe(sessionId: string, onEvent: (ev: { type?: string; data?: { sessionID?: string } }) => void): Promise<() => void>;
   /** 下发 prompt + 订阅 /api/event，按 sessionID 过滤后回调；执行结束/出错时 resolve/reject。 */
   sendMessage(sessionId: string, input: SendParts, onEvent: (ev: unknown) => void): Promise<void>;
   messages(sessionId: string): Promise<unknown>;
@@ -74,6 +77,18 @@ export function createAdapter(opts: AdapterOpts): IOpenCodeAdapter {
     return res;
   };
 
+  type Ev = { type?: string; data?: { sessionID?: string } };
+
+  const parseFrame = (frame: string): Ev | null => {
+    const line = frame.split('\n').find((l) => l.startsWith('data:'));
+    if (line === undefined || line.includes(': heartbeat')) return null;
+    try {
+      return JSON.parse(line.slice(5).trim()) as Ev;
+    } catch {
+      return null;
+    }
+  };
+
   const unwrapList = (json: unknown): SessionSummary[] => {
     const data = (json as { data: Array<Record<string, unknown>> }).data ?? [];
     return data.map((s) => ({
@@ -81,6 +96,54 @@ export function createAdapter(opts: AdapterOpts): IOpenCodeAdapter {
       title: String(s.title ?? ''),
       updatedAt: String((s.time as Record<string, unknown> | undefined)?.updated ?? ''),
     }));
+  };
+
+  const openStream = async (
+    sessionId: string,
+    onEvent: (ev: Ev) => void,
+    idleMs = 10 * 60 * 1000,
+  ): Promise<() => void> => {
+    const streamRes = await fetchFn(`${baseUrl}/api/event`, {
+      headers: { authorization: auth, accept: 'text/event-stream' },
+    });
+    if (streamRes.body === null || streamRes.status !== 200) {
+      throw new Error(`opencode SSE connect failed: ${streamRes.status}`);
+    }
+    const reader = streamRes.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let alive = true;
+    const timer = setTimeout(() => {
+      alive = false;
+      void reader.cancel().catch(() => undefined);
+    }, idleMs);
+    if (timer.unref !== undefined) timer.unref();
+    const pump = async (): Promise<void> => {
+      try {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done || !alive) break;
+          buf += decoder.decode(value, { stream: true });
+          let idx = buf.indexOf('\n\n');
+          while (idx >= 0) {
+            const ev = parseFrame(buf.slice(0, idx));
+            buf = buf.slice(idx + 2);
+            if (ev !== null && (ev.data?.sessionID === undefined || ev.data.sessionID === sessionId)) {
+              onEvent(ev);
+            }
+            idx = buf.indexOf('\n\n');
+          }
+        }
+      } catch {
+        // 断流由调用方感知（超时或取消）
+      }
+    };
+    void pump();
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      void reader.cancel().catch(() => undefined);
+    };
   };
 
   return {
@@ -120,63 +183,46 @@ export function createAdapter(opts: AdapterOpts): IOpenCodeAdapter {
       return res.json();
     },
 
+    async deleteSession(sessionId: string): Promise<boolean> {
+      const res = await req('DELETE', `/api/session/${sessionId}`);
+      return res.ok;
+    },
+
+    async subscribe(
+      sessionId: string,
+      onEvent: (ev: { type?: string; data?: { sessionID?: string } }) => void,
+    ): Promise<() => void> {
+      return openStream(sessionId, onEvent);
+    },
+
     async sendMessage(sessionId: string, input: SendParts, onEvent: (ev: unknown) => void): Promise<void> {
-      const streamRes = await fetchFn(`${baseUrl}/api/event`, {
-        headers: { authorization: auth, accept: 'text/event-stream' },
-      });
-      if (streamRes.body === null || streamRes.status !== 200) {
-        throw new Error(`opencode SSE connect failed: ${streamRes.status}`);
-      }
       const text = input.parts.map((p) => p.text).join('\n');
-      const promptRes = await req('POST', `/api/session/${sessionId}/prompt`, { text });
-      await promptRes.arrayBuffer().catch(() => undefined);
       await new Promise<void>((resolve, reject) => {
-        const reader = streamRes.body!.getReader();
-        const decoder = new TextDecoder();
-        let buf = '';
+        let cancel: () => void = () => undefined;
         const timer = setTimeout(() => {
-          void reader.cancel().catch(() => undefined);
+          cancel();
           reject(new Error('opencode sendMessage timeout (10m)'));
         }, 10 * 60 * 1000);
         const finish = (fn: () => void): void => {
           clearTimeout(timer);
-          void reader.cancel().catch(() => undefined);
+          cancel();
           fn();
         };
-        const handleFrame = (frame: string): void => {
-          const line = frame.split('\n').find((l) => l.startsWith('data:'));
-          if (line === undefined || line.includes(': heartbeat')) return;
-          let ev: { type?: string; data?: { sessionID?: string } };
-          try {
-            ev = JSON.parse(line.slice(5).trim()) as typeof ev;
-          } catch {
-            return;
-          }
-          if (ev.data?.sessionID !== undefined && ev.data.sessionID !== sessionId) return;
+        openStream(sessionId, (ev) => {
           onEvent(ev);
           if (ev.type !== undefined && TERMINAL_TYPES.has(ev.type)) {
             finish(() => (ev.type === 'session.error' ? reject(new Error('opencode session.error')) : resolve()));
           }
-        };
-        const pump = async (): Promise<void> => {
-          try {
-            for (;;) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              buf += decoder.decode(value, { stream: true });
-              let idx = buf.indexOf('\n\n');
-              while (idx >= 0) {
-                handleFrame(buf.slice(0, idx));
-                buf = buf.slice(idx + 2);
-                idx = buf.indexOf('\n\n');
-              }
-            }
-            finish(() => resolve());
-          } catch (err) {
-            finish(() => reject(err instanceof Error ? err : new Error(String(err))));
-          }
-        };
-        void pump();
+        }).then(
+          (c) => {
+            cancel = c;
+            req('POST', `/api/session/${sessionId}/prompt`, { text }).then(
+              (r) => void r.arrayBuffer().catch(() => undefined),
+              (err: unknown) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))),
+            );
+          },
+          (err: unknown) => finish(() => reject(err instanceof Error ? err : new Error(String(err)))),
+        );
       });
     },
 

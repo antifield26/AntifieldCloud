@@ -47,6 +47,11 @@ function startMock(): Promise<{ url: string; close: () => Promise<void>; seen: {
       res.end(JSON.stringify({ data: { sessionID: 'ses_new' } }));
       return;
     }
+    if (req.url === '/api/session/ses_new' && req.method === 'DELETE') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: true }));
+      return;
+    }
     if (req.url === '/api/session/ses_new/message' && req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ data: [{ id: 'msg_1', type: 'user' }] }));
@@ -101,10 +106,31 @@ void describe('adapter contract (v2)', () => {
     try {
       const a = createAdapter({ baseUrl: mock.url, username: 'opencode', password: 'pw' });
       assert.equal(await a.abortSession('ses_new'), true);
+      assert.equal(await a.deleteSession('ses_new'), true);
       const receipt = (await a.promptOnly('ses_new', 'hi')) as { data: { id: string } };
       assert.equal(receipt.data.id, 'msg_1');
       const msgs = (await a.messages('ses_new')) as { data: Array<{ id: string }> };
       assert.equal(msgs.data[0].id, 'msg_1');
+    } finally {
+      await mock.close();
+    }
+  });
+
+  void it('subscribe 只收本会话 + cancel', async () => {
+    const mock = await startMock();
+    try {
+      const a = createAdapter({ baseUrl: mock.url, username: 'opencode', password: 'pw' });
+      const got: unknown[] = [];
+      const cancel = await a.subscribe('ses_new', (ev) => got.push(ev));
+      await new Promise((r) => setTimeout(r, 200));
+      cancel();
+      assert.ok(got.length >= 1);
+      assert.ok(
+        got.every((e) => {
+          const d = (e as { data?: { sessionID?: string } }).data;
+          return d?.sessionID === undefined || d.sessionID === 'ses_new';
+        }),
+      );
     } finally {
       await mock.close();
     }
