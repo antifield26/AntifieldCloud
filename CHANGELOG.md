@@ -68,3 +68,5 @@
 - **文档职责切分（2026-10-09）**：TASK-INDEX 扩为唯一任务事实源（P4-01…P6-04 逐条含依赖/工作量/实机验收/风险）；ROADMAP 精简为里程碑目标、顺序、总量与里程碑级风险，不再重复任务表。AGENTS 文档维护表已对齐。
 
 - **SEC-04 落地**：Pi \/etc/workbench/env\ 换 20 位随机强口令并重启，旧会话已清；复验未登录 \/api/ai/sessions\ 401、登录后 \/api/ai/health\ 2.0.24、旧口令 401；手动 \ackup.sh\ 快照 ok（env 双口令均为 \__REDACTED__\）；PC \pull.py\（known_hosts pin）\PULL_OK\。公开文档不记录口令值。
+
+- **P3-01 落地**：API 请求审计（\pi_audit\）：只记元数据，query 丢弃、id 段收敛，60s 批量落盘 + 30 天裁剪；未登录 401 记 \ctor=anon\。线上实测归因与脱敏全对。本地 42/42。
