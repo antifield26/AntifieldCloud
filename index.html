@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>AntifieldCloud · 工作台</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- 登录 -->
+  <div id="login-view" class="login-view" hidden>
+    <div class="login-card">
+      <div class="login-mark">π</div>
+      <h1>AntifieldCloud</h1>
+      <p class="login-sub">Pi 5 个人工作台 · 本地优先</p>
+      <label class="field">
+        <span>访问口令</span>
+        <input id="login-pw" type="password" autocomplete="current-password" placeholder="••••••••" />
+      </label>
+      <p id="login-err" class="form-err" hidden>口令错误</p>
+      <button id="login-btn" class="btn btn-primary btn-block">进入工作台</button>
+      <p class="login-hint">演示原型 · 任意口令可进</p>
+    </div>
+  </div>
+
+  <!-- 主应用 -->
+  <div id="app-view" class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="brand-mark">π</span>
+        <div>
+          <div class="brand-name">AntifieldCloud</div>
+          <div class="brand-sub">RPI5 · workbench</div>
+        </div>
+      </div>
+
+      <nav class="nav" id="main-nav">
+        <button class="nav-item active" data-view="console">
+          <span class="nav-ico">◎</span><span>控制台</span><kbd>1</kbd>
+        </button>
+        <button class="nav-item" data-view="ai">
+          <span class="nav-ico">✦</span><span>AI 会话</span><kbd>2</kbd>
+        </button>
+        <button class="nav-item" data-view="eff">
+          <span class="nav-ico">▤</span><span>效率</span><kbd>3</kbd>
+        </button>
+        <button class="nav-item" data-view="jobs">
+          <span class="nav-ico">↻</span><span>流水线</span><kbd>4</kbd>
+        </button>
+        <button class="nav-item" data-view="portal">
+          <span class="nav-ico">⬡</span><span>门户</span><kbd>5</kbd>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <button class="ghost-btn" id="btn-cmdk" title="命令面板">
+          <span>搜索与命令</span><kbd>⌘K</kbd>
+        </button>
+        <div class="user-row">
+          <div class="avatar">wb</div>
+          <div class="user-meta">
+            <div class="user-name">workbench</div>
+            <div class="user-role">单用户会话</div>
+          </div>
+          <button class="icon-btn" id="btn-user-menu" title="账户">⋯</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-toggle" id="btn-menu" aria-label="菜单">☰</button>
+        <div class="crumb">
+          <span class="crumb-root">工作台</span>
+          <span class="crumb-sep">/</span>
+          <span id="crumb-page">控制台</span>
+        </div>
+        <div class="top-actions">
+          <button class="chip" id="btn-cmdk-top">⌘K 搜索</button>
+          <button class="chip" id="btn-pw">改密</button>
+          <button class="chip chip-danger" id="btn-logout">退出</button>
+        </div>
+      </header>
+
+      <div class="vitals" id="vitals" aria-label="生命体征">
+        <div class="vital"><span class="v-label">温度</span><span class="v-val" id="v-temp">48.2°C</span><span class="v-dot ok"></span></div>
+        <div class="vital"><span class="v-label">CPU</span><span class="v-val" id="v-cpu">12%</span><span class="v-spark" id="spark-cpu"></span></div>
+        <div class="vital"><span class="v-label">内存</span><span class="v-val" id="v-mem">3.1 / 7.8G</span></div>
+        <div class="vital"><span class="v-label">SD 日写</span><span class="v-val" id="v-sd">1.4G</span></div>
+        <div class="vital vital-wide"><span class="v-label">看门狗</span><span class="v-val ok-text">7 项全绿</span></div>
+      </div>
+
+      <main class="content">
+        <!-- ========== 控制台 ========== -->
+        <section class="view active" id="view-console">
+          <div class="view-head">
+            <div>
+              <h1>控制台</h1>
+              <p class="muted">主机状态 · 曲线 · 日志 · 服务白名单</p>
+            </div>
+            <div class="seg" id="range-seg">
+              <button class="seg-btn active" data-range="24h">24h</button>
+              <button class="seg-btn" data-range="7d">7d</button>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <article class="stat-card">
+              <div class="stat-label">芯片温度</div>
+              <div class="stat-value">48.2<span class="unit">°C</span></div>
+              <div class="stat-trend up">+0.4 · 近 1h</div>
+              <svg class="sparkline" viewBox="0 0 120 36" preserveAspectRatio="none"><path d="M0,28 L20,24 L40,26 L60,18 L80,20 L100,14 L120,16" /></svg>
+            </article>
+            <article class="stat-card">
+              <div class="stat-label">CPU</div>
+              <div class="stat-value">12<span class="unit">%</span></div>
+              <div class="stat-trend">空载偏好</div>
+              <svg class="sparkline blue" viewBox="0 0 120 36" preserveAspectRatio="none"><path d="M0,20 L20,18 L40,22 L60,10 L80,16 L100,14 L120,18" /></svg>
+            </article>
+            <article class="stat-card">
+              <div class="stat-label">内存</div>
+              <div class="stat-value">3.1<span class="unit">/ 7.8G</span></div>
+              <div class="stat-trend warn-text">MC 占 2.3G</div>
+              <svg class="sparkline green" viewBox="0 0 120 36" preserveAspectRatio="none"><path d="M0,22 L20,20 L40,20 L60,18 L80,17 L100,16 L120,15" /></svg>
+            </article>
+            <article class="stat-card">
+              <div class="stat-label">SD 累计写</div>
+              <div class="stat-value">18.4<span class="unit">G</span></div>
+              <div class="stat-trend">约 61 天余量</div>
+              <svg class="sparkline purple" viewBox="0 0 120 36" preserveAspectRatio="none"><path d="M0,32 L20,30 L40,28 L60,24 L80,20 L100,16 L120,12" /></svg>
+            </article>
+          </div>
+
+          <div class="panel-grid">
+            <article class="panel span-2">
+              <header class="panel-head">
+                <h2>趋势</h2>
+                <span class="pill">无数据段断线，不连假线</span>
+              </header>
+              <div class="chart-grid">
+                <div class="chart-box">
+                  <div class="chart-title">温度 °C</div>
+                  <svg class="chart" id="chart-temp" viewBox="0 0 560 120"></svg>
+                </div>
+                <div class="chart-box">
+                  <div class="chart-title">CPU %</div>
+                  <svg class="chart" id="chart-cpu" viewBox="0 0 560 120"></svg>
+                </div>
+                <div class="chart-box">
+                  <div class="chart-title">内存 GB</div>
+                  <svg class="chart" id="chart-mem" viewBox="0 0 560 120"></svg>
+                </div>
+                <div class="chart-box">
+                  <div class="chart-title">SD 写 GB</div>
+                  <svg class="chart" id="chart-sd" viewBox="0 0 560 120"></svg>
+                </div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <header class="panel-head"><h2>告警 / 看门狗</h2></header>
+              <ul class="check-list" id="check-list">
+                <li class="check ok"><span class="check-name">tunnel</span><span>cloudflared active</span></li>
+                <li class="check ok"><span class="check-name">temp</span><span>48.2°C</span></li>
+                <li class="check ok"><span class="check-name">mem</span><span>avail 4.7GB</span></li>
+                <li class="check ok"><span class="check-name">backup</span><span>2.1h ago</span></li>
+                <li class="check ok"><span class="check-name">opencode</span><span>service + api ok</span></li>
+                <li class="check ok"><span class="check-name">drill</span><span>3.2d ago</span></li>
+                <li class="check ok"><span class="check-name">disk</span><span>free 24.1G</span></li>
+              </ul>
+            </article>
+
+            <article class="panel">
+              <header class="panel-head">
+                <h2>服务白名单</h2>
+                <span class="pill warn">重启需确认</span>
+              </header>
+              <ul class="svc-list">
+                <li>
+                  <div><div class="svc-name">workbench-gateway.service</div><div class="muted mono">ActiveState=active</div></div>
+                  <button class="btn btn-sm btn-ghost danger-hover" data-restart="workbench-gateway.service">重启</button>
+                </li>
+                <li>
+                  <div><div class="svc-name">opencode.service</div><div class="muted mono">ActiveState=active</div></div>
+                  <button class="btn btn-sm btn-ghost danger-hover" data-restart="opencode.service">重启</button>
+                </li>
+                <li>
+                  <div><div class="svc-name">cloudflared.service</div><div class="muted mono">ActiveState=active</div></div>
+                  <button class="btn btn-sm btn-ghost danger-hover" data-restart="cloudflared.service">重启</button>
+                </li>
+                <li>
+                  <div><div class="svc-name">nginx.service</div><div class="muted mono">仅 status</div></div>
+                  <span class="pill">只读</span>
+                </li>
+              </ul>
+            </article>
+
+            <article class="panel span-2">
+              <header class="panel-head">
+                <h2>日志</h2>
+                <div class="panel-tools">
+                  <select class="input-sm" id="log-unit">
+                    <option>opencode.service</option>
+                    <option>workbench-gateway.service</option>
+                    <option>cloudflared.service</option>
+                  </select>
+                  <select class="input-sm" id="log-since">
+                    <option value="-10min">近 10 分钟</option>
+                    <option value="-1h" selected>近 1 小时</option>
+                    <option value="-24h">近 24 小时</option>
+                  </select>
+                  <button class="btn btn-sm btn-ghost" id="btn-copy-logs">复制</button>
+                </div>
+              </header>
+              <div class="log-view" id="log-view">
+                <div class="log-row"><span class="pri p6">p6</span><span class="ts">12:04:11</span><span>listening on http://127.0.0.1:4096</span></div>
+                <div class="log-row"><span class="pri p6">p6</span><span class="ts">12:04:12</span><span>server ready · basic-auth enabled</span></div>
+                <div class="log-row"><span class="pri p4">p4</span><span class="ts">12:18:02</span><span>edge closed · retrying in 2s</span></div>
+                <div class="log-row"><span class="pri p6">p6</span><span class="ts">12:18:05</span><span>tunnel connected · connIndex=0</span></div>
+                <div class="log-row"><span class="pri p3">p3</span><span class="ts">12:22:40</span><span>password <mark><redacted></mark> attempt failed</span></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <header class="panel-head"><h2>磁盘健康</h2></header>
+              <dl class="kv">
+                <div><dt>根分区剩余</dt><dd>24.1 / 58G</dd></div>
+                <div><dt>24h 写入</dt><dd>1.4 G/天</dd></div>
+                <div><dt>粗估可用</dt><dd>61 天</dd></div>
+                <div><dt>/var/log</dt><dd>3%</dd></div>
+              </dl>
+              <div class="top-dirs">
+                <div class="muted">大目录 TOP</div>
+                <code>23G  /home</code>
+                <code>5.2G /usr</code>
+                <code>3.5G /var</code>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ========== AI ========== -->
+        <section class="view" id="view-ai">
+          <div class="ai-layout">
+            <aside class="ai-side">
+              <button class="btn btn-primary btn-block" id="btn-new-session">＋ 新建会话</button>
+              <div class="session-list" id="session-list">
+                <button class="session-item active" data-sid="ses_a1">
+                  <span class="s-title">整理 RESEARCH 勘误</span>
+                  <span class="s-meta">2 分钟前</span>
+                </button>
+                <button class="session-item" data-sid="ses_b2">
+                  <span class="s-title">备份脚本加固</span>
+                  <span class="s-meta">昨天</span>
+                </button>
+                <button class="session-item" data-sid="ses_c3">
+                  <span class="s-title">周报草稿</span>
+                  <span class="s-meta">3 天前</span>
+                </button>
+              </div>
+            </aside>
+            <div class="ai-main">
+              <header class="ai-head">
+                <div>
+                  <h1 id="ai-title">整理 RESEARCH 勘误</h1>
+                  <p class="muted mono" id="ai-sid">ses_a1… · text.delta 流式</p>
+                </div>
+                <div class="ai-actions">
+                  <span class="pill ok" id="ai-status">空闲</span>
+                  <button class="btn btn-sm btn-ghost" id="btn-abort" hidden>中断</button>
+                  <button class="btn btn-sm btn-ghost danger-hover" id="btn-del-session">删除会话</button>
+                </div>
+              </header>
+              <div class="transcript" id="transcript">
+                <div class="msg user">
+                  <div class="msg-who">你</div>
+                  <div class="msg-body">对照 ARCH 把 RESEARCH §10 勘误补齐，列出仍过时的行。</div>
+                </div>
+                <div class="msg bot">
+                  <div class="msg-who">OpenCode</div>
+                  <div class="msg-body">
+                    <p>已对照 <code>ARCHITECTURE.md</code> 与 <code>RESEARCH.md</code>：</p>
+                    <ul>
+                      <li>§1 v1 安装段仍写双轨 → 应以 v2.0.24 为准</li>
+                      <li>§3 CF Access 待测 → 已改内置登录</li>
+                      <li>R3 备份目标句仍写 NAS → 应为 PC SFTP</li>
+                    </ul>
+                    <p class="msg-meta">耗时 12s · execution.succeeded</p>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <textarea id="ai-input" rows="2" placeholder="下发任务…  Enter 发送 · Shift+Enter 换行"></textarea>
+                <div class="composer-actions">
+                  <span class="muted" id="ai-elapsed"></span>
+                  <button class="btn btn-primary" id="btn-send">发送</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== 效率 ========== -->
+        <section class="view" id="view-eff">
+          <div class="view-head">
+            <div>
+              <h1>效率</h1>
+              <p class="muted">待办 · 笔记 · 书签 · 文件 — 记一条 ≤3 次点击</p>
+            </div>
+            <div class="row-actions">
+              <button class="btn btn-sm btn-ghost" id="btn-export">导出 JSON</button>
+              <button class="btn btn-sm btn-ghost" id="btn-import">导入</button>
+            </div>
+          </div>
+
+          <div class="eff-grid">
+            <article class="panel">
+              <header class="panel-head"><h2>待办</h2><span class="pill" id="todo-count">3</span></header>
+              <form class="inline-form" id="todo-form">
+                <input class="input" id="todo-title" placeholder="记一条待办…" />
+                <input class="input input-date" id="todo-due" type="date" />
+                <button class="btn btn-primary btn-sm" type="submit">添加</button>
+              </form>
+              <ul class="todo-list" id="todo-list">
+                <li class="todo overdue">
+                  <label class="check-box"><input type="checkbox" /><span></span></label>
+                  <div class="todo-body">
+                    <div class="todo-title">复验 SEC-04 强口令实机</div>
+                    <div class="todo-meta danger-text">已过期 · 10-08</div>
+                  </div>
+                  <button class="icon-btn" title="删除">×</button>
+                </li>
+                <li class="todo">
+                  <label class="check-box"><input type="checkbox" /><span></span></label>
+                  <div class="todo-body">
+                    <div class="todo-title">P6 UI 原型评审</div>
+                    <div class="todo-meta">今天</div>
+                  </div>
+                  <button class="icon-btn" title="删除">×</button>
+                </li>
+                <li class="todo done">
+                  <label class="check-box"><input type="checkbox" checked /><span></span></label>
+                  <div class="todo-body">
+                    <div class="todo-title">文档事实源对齐</div>
+                    <div class="todo-meta">已完成</div>
+                  </div>
+                  <button class="icon-btn" title="删除">×</button>
+                </li>
+              </ul>
+            </article>
+
+            <article class="panel">
+              <header class="panel-head"><h2>笔记</h2></header>
+              <form class="stack-form" id="note-form">
+                <input class="input" id="note-title" placeholder="标题" />
+                <textarea class="input" id="note-body" rows="3" placeholder="Markdown 正文…"></textarea>
+                <button class="btn btn-primary btn-sm" type="submit">保存笔记</button>
+              </form>
+              <div class="note-list" id="note-list">
+                <details class="note-item" open>
+                  <summary>P6 交互原则</summary>
+                  <div class="md">
+                    <p><strong>先看见状态，再动手</strong>。危险操作必须二次确认。</p>
+                    <ul><li>命令面板优先</li><li>反馈用 Toast</li></ul>
+                  </div>
+                </details>
+                <details class="note-item">
+                  <summary>SD 写入基线</summary>
+                  <div class="md"><p>约 <code>1.2–2.8 GB/天</code>，减负后观察。</p></div>
+                </details>
+              </div>
+            </article>
+
+            <article class="panel">
+              <header class="panel-head">
+                <h2>书签</h2>
+                <input class="input-sm" id="tag-filter" placeholder="标签筛选" />
+              </header>
+              <ul class="link-list">
+                <li>
+                  <a href="#" onclick="return false">OpenCode v2 OpenAPI</a>
+                  <div class="tags"><span>#ai</span><span>#api</span></div>
+                </li>
+                <li>
+                  <a href="#" onclick="return false">Pi diskstats 解读</a>
+                  <div class="tags"><span>#ops</span></div>
+                </li>
+                <li>
+                  <a href="#" onclick="return false">scrypt 参数建议</a>
+                  <div class="tags"><span>#sec</span></div>
+                </li>
+              </ul>
+            </article>
+
+            <article class="panel span-3">
+              <header class="panel-head">
+                <h2>文件</h2>
+                <label class="btn btn-sm btn-ghost file-btn">上传<input type="file" hidden id="file-input" /></label>
+              </header>
+              <div class="file-table">
+                <div class="file-row head"><span>名称</span><span>大小</span><span>时间</span><span></span></div>
+                <div class="file-row">
+                  <span class="mono">P0-EXIT-PROBE.md</span><span>2.1K</span><span class="muted">10-08 13:35</span>
+                  <span class="row-actions"><button class="btn btn-xs btn-ghost">预览</button><button class="btn btn-xs btn-ghost">下载</button></span>
+                </div>
+                <div class="file-row">
+                  <span class="mono">metrics-24h.csv</span><span>48K</span><span class="muted">10-09 02:30</span>
+                  <span class="row-actions"><button class="btn btn-xs btn-ghost">预览</button><button class="btn btn-xs btn-ghost">下载</button></span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <!-- ========== 流水线 ========== -->
+        <section class="view" id="view-jobs">
+          <div class="view-head">
+            <div>
+              <h1>流水线</h1>
+              <p class="muted">shell / http / opencode · 执行前确认 · 记入 job_runs</p>
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-new-job">新建任务</button>
+          </div>
+
+          <div class="jobs-layout">
+            <div class="panel">
+              <header class="panel-head"><h2>任务</h2></header>
+              <ul class="job-list" id="job-list">
+                <li class="job-item active">
+                  <div>
+                    <div class="job-name">每晚备份校验</div>
+                    <div class="job-meta"><span class="tag">shell</span><span class="mono">30 2 * * *</span></div>
+                  </div>
+                  <span class="status ok">done</span>
+                  <div class="row-actions">
+                    <button class="btn btn-xs btn-ghost" data-run-job="1">执行</button>
+                    <button class="btn btn-xs btn-ghost">记录</button>
+                  </div>
+                </li>
+                <li class="job-item">
+                  <div>
+                    <div class="job-name">AI 周报摘要</div>
+                    <div class="job-meta"><span class="tag">opencode</span><span class="mono">0 9 * * 1</span></div>
+                  </div>
+                  <span class="status">—</span>
+                  <div class="row-actions">
+                    <button class="btn btn-xs btn-ghost" data-run-job="2">执行</button>
+                    <button class="btn btn-xs btn-ghost">记录</button>
+                  </div>
+                </li>
+                <li class="job-item">
+                  <div>
+                    <div class="job-name">健康探活</div>
+                    <div class="job-meta"><span class="tag">http</span><span class="mono">*/5 * * * *</span></div>
+                  </div>
+                  <span class="status ok">done</span>
+                  <div class="row-actions">
+                    <button class="btn btn-xs btn-ghost" data-run-job="3">执行</button>
+                    <button class="btn btn-xs btn-ghost">记录</button>
+                  </div>
+                </li>
+              </ul>
+            </div>
+            <div class="panel">
+              <header class="panel-head">
+                <h2>执行记录</h2>
+                <span class="pill" id="runs-for">每晚备份校验</span>
+              </header>
+              <div class="run-list">
+                <article class="run-item">
+                  <header><span class="status ok">done</span><time>今天 02:30</time></header>
+                  <pre>SNAPSHOT_OK 20261010_023001 bytes=6710886
+sha256 all match</pre>
+                </article>
+                <article class="run-item">
+                  <header><span class="status ok">done</span><time>昨天 02:30</time></header>
+                  <pre>SNAPSHOT_OK 20261009_023001 bytes=6684672</pre>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========== 门户 ========== -->
+        <section class="view" id="view-portal">
+          <div class="view-head">
+            <div>
+              <h1>门户</h1>
+              <p class="muted">配置驱动服务卡片 · 仅 localhost 上游</p>
+            </div>
+          </div>
+          <div class="portal-grid">
+            <a class="portal-card" href="#" onclick="return false">
+              <div class="portal-ico">📁</div>
+              <div>
+                <div class="portal-title">工作台文件服务</div>
+                <div class="portal-href mono">/api/files</div>
+                <div class="muted">pi_nas 已退役，由本工作台替代</div>
+              </div>
+              <span class="portal-go">打开 →</span>
+            </a>
+            <div class="portal-card dim">
+              <div class="portal-ico">＋</div>
+              <div>
+                <div class="portal-title">添加服务卡片</div>
+                <div class="muted">编辑 <code>config/portal.json</code>，免重启生效</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- 命令面板 -->
+  <div class="overlay" id="cmdk" hidden>
+    <div class="cmdk" role="dialog" aria-label="命令面板">
+      <input id="cmdk-input" class="cmdk-input" placeholder="搜索待办、会话、命令… 跳转 / 执行" autocomplete="off" />
+      <ul class="cmdk-list" id="cmdk-list"></ul>
+      <footer class="cmdk-foot">
+        <span><kbd>↑↓</kbd> 选择</span><span><kbd>Enter</kbd> 执行</span><span><kbd>Esc</kbd> 关闭</span>
+      </footer>
+    </div>
+  </div>
+
+  <!-- 确认框 -->
+  <div class="overlay" id="modal" hidden>
+    <div class="modal" role="dialog">
+      <h3 id="modal-title">确认操作</h3>
+      <p id="modal-body">此操作不可撤销。</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modal-cancel">取消</button>
+        <button class="btn btn-danger" id="modal-ok">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 改密 -->
+  <div class="overlay" id="pw-modal" hidden>
+    <div class="modal" role="dialog">
+      <h3>修改口令</h3>
+      <label class="field"><span>旧口令</span><input type="password" id="pw-old" /></label>
+      <label class="field"><span>新口令（≥8 位）</span><input type="password" id="pw-new" /></label>
+      <p class="form-err" id="pw-err" hidden>改密失败</p>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="pw-cancel">取消</button>
+        <button class="btn btn-primary" id="pw-ok">确认修改</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-root" id="toast-root"></div>
+  <script src="app.js"></script>
+</body>
+</html>
