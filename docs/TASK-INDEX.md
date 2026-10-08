@@ -74,19 +74,6 @@
 
 **P5 出口**：趋势可看、SD 风险有数、排障可不进 SSH、异常能推到手机。
 
-## P6 — 自动化与门户（可选，默认暂缓）
-
-> 启用条件：P4/P5 实际使用痛点命中下列任务。未启用前保持 `pending`，不排期。
-
-| 编号 | 标题 | 状态 | 依赖 | 工作量 | 验收标准（实机） | 风险/备注 | 关联 |
-|---|---|---|---|---|---|---|---|
-| P6-01 | 任务模板库 | pending | P1-02 | 2h | 预置模板 ≥3（备份校验、周报摘要、AI 整理）；一键创建 job；模板进 `config/` 可版本管理 | 模板 payload 仍走 `validateJob` | `config/`、`gateway/src/routes/jobs.ts` |
-| P6-02 | 门户反代卡片 | pending | P1-03, SEC-04 | 2h | `portal.json` 支持 `pathPrefix` 反代到 localhost 服务；卡片经网关鉴权后可打开；**零新入站端口** | SSRF/开放代理：仅允许配置里声明的 localhost 上游 | `config/portal.json`、`gateway/src/routes/portal.ts` |
-| P6-03 | 周报生成 | pending | P5-01, P5-05 | 2h | 汇总 metrics + `job_runs` + 审计摘要；定时写入笔记或推告警通道；实机触发一周报可读 | 摘要脱敏；篇幅可控 | `gateway/src/jobs/`、`gateway/src/routes/efficiency.ts` |
-| P6-04 | 插件化仪表盘 | pending | P4-05, P5-01 | 2h | 卡片布局可配置（顺序/显隐）并持久化；重载不丢 | 仅当 P4/P5 用出真需求再做 | `web/src/pages/*` |
-
-**P6 出口**（若做）：重复运维动作模板化，常用入口在门户/仪表盘一屏可达。
-
 ## 流转规则
 
 - `pending → in-progress`：开工前改本表；`→ done`：验收（含实机）全过 + 文档同步后改；`→ blocked`：写明阻塞项与绕行；`→ dropped`：写明用户决策原因。
