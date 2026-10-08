@@ -1,5 +1,6 @@
 node_modules/
 dist/
+ui-proto/
 *.db*
 *.log
 .env
