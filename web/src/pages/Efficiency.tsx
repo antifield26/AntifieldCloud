@@ -1,10 +1,12 @@
-import { createSignal, For } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { api } from '../api';
+import { MarkdownView } from '../md';
 
 interface Todo {
   id: string;
   title: string;
   done: number;
+  due_at: string | null;
 }
 interface Note {
   id: string;
@@ -15,12 +17,16 @@ interface Bookmark {
   id: string;
   title: string;
   url: string;
+  tags: string[];
 }
 interface FileMeta {
   id: string;
   name: string;
   size: number;
+  updated_at: string;
 }
+
+const overdue = (t: Todo): boolean => !t.done && !!t.due_at && t.due_at < new Date().toISOString().slice(0, 10);
 
 export default function Efficiency() {
   const [todos, setTodos] = createSignal<Todo[]>([]);
@@ -28,14 +34,21 @@ export default function Efficiency() {
   const [marks, setMarks] = createSignal<Bookmark[]>([]);
   const [files, setFiles] = createSignal<FileMeta[]>([]);
   const [title, setTitle] = createSignal('');
+  const [due, setDue] = createSignal('');
+  const [noteTitle, setNoteTitle] = createSignal('');
+  const [noteBody, setNoteBody] = createSignal('');
+  const [previewNote, setPreviewNote] = createSignal<string | null>(null);
+  const [tagFilter, setTagFilter] = createSignal('');
+  const [preview, setPreview] = createSignal<{ name: string; text: string } | null>(null);
   const [err, setErr] = createSignal('');
 
   const load = async (): Promise<void> => {
     try {
+      const q = tagFilter() ? `?tag=${encodeURIComponent(tagFilter())}` : '';
       const [t, n, b, f] = await Promise.all([
         api<Todo[]>('/api/todos'),
         api<Note[]>('/api/notes'),
-        api<Bookmark[]>('/api/bookmarks'),
+        api<Bookmark[]>(`/api/bookmarks${q}`),
         api<FileMeta[]>('/api/files'),
       ]);
       setTodos(t);
@@ -50,12 +63,20 @@ export default function Efficiency() {
 
   const addTodo = async (): Promise<void> => {
     if (!title().trim()) return;
-    await api('/api/todos', { method: 'POST', body: JSON.stringify({ title: title() }) });
+    await api('/api/todos', { method: 'POST', body: JSON.stringify({ title: title(), due_at: due() || undefined }) });
     setTitle('');
+    setDue('');
     await load();
   };
   const toggle = async (t: Todo): Promise<void> => {
     await api(`/api/todos/${t.id}`, { method: 'PATCH', body: JSON.stringify({ done: !t.done }) });
+    await load();
+  };
+  const addNote = async (): Promise<void> => {
+    if (!noteTitle().trim()) return;
+    await api('/api/notes', { method: 'POST', body: JSON.stringify({ title: noteTitle(), body: noteBody() }) });
+    setNoteTitle('');
+    setNoteBody('');
     await load();
   };
   const del = async (kind: string, id: string): Promise<void> => {
@@ -71,6 +92,14 @@ export default function Efficiency() {
     });
     await load();
   };
+  const showPreview = async (id: string): Promise<void> => {
+    try {
+      const j = await api<{ name: string; text: string }>(`/api/files/${id}/preview`);
+      setPreview({ name: j.name, text: j.text });
+    } catch (e) {
+      setErr(`预览失败：${String(e)}`);
+    }
+  };
 
   return (
     <div class="p-4 space-y-4">
@@ -78,7 +107,8 @@ export default function Efficiency() {
       <div class="bg-white shadow rounded p-3">
         <h2 class="font-bold mb-2">待办</h2>
         <div class="flex gap-2 mb-2">
-          <input class="flex-1 border rounded px-2 py-1" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addTodo(); }} />
+          <input class="flex-1 border rounded px-2 py-1" placeholder="标题" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addTodo(); }} />
+          <input type="date" class="border rounded px-2 py-1" value={due()} onInput={(e) => setDue(e.currentTarget.value)} />
           <button class="bg-blue-500 text-white px-3 py-1 rounded" onClick={() => void addTodo()}>添加</button>
         </div>
         <ul class="space-y-1">
@@ -86,7 +116,10 @@ export default function Efficiency() {
             {(t) => (
               <li class="flex gap-2 items-center text-sm">
                 <input type="checkbox" checked={!!t.done} onChange={() => void toggle(t)} />
-                <span class={t.done ? 'line-through text-gray-400 flex-1' : 'flex-1'}>{t.title}</span>
+                <span class={`${t.done ? 'line-through text-gray-400' : ''} flex-1`}>
+                  {t.title}
+                  {t.due_at && <span class={`ml-2 ${overdue(t) ? 'text-red-600 font-bold' : 'text-gray-400'}`}>⏰{t.due_at.slice(0, 10)}</span>}
+                </span>
                 <button class="text-red-500" onClick={() => void del('todos', t.id)}>删</button>
               </li>
             )}
@@ -94,16 +127,58 @@ export default function Efficiency() {
         </ul>
       </div>
       <div class="bg-white shadow rounded p-3">
-        <h2 class="font-bold mb-2">笔记（{notes().length}）/ 书签（{marks().length}）/ 文件（{files().length}）</h2>
+        <h2 class="font-bold mb-2">笔记</h2>
+        <div class="flex gap-2 mb-2">
+          <input class="border rounded px-2 py-1" placeholder="标题" value={noteTitle()} onInput={(e) => setNoteTitle(e.currentTarget.value)} />
+          <input class="flex-1 border rounded px-2 py-1" placeholder="内容（Markdown）" value={noteBody()} onInput={(e) => setNoteBody(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') void addNote(); }} />
+          <button class="bg-blue-500 text-white px-3 py-1 rounded" onClick={() => void addNote()}>添加</button>
+        </div>
         <ul class="text-sm space-y-1">
-          <For each={notes()}>{(n) => <li>📝 {n.title} <button class="text-red-500" onClick={() => void del('notes', n.id)}>删</button></li>}</For>
-          <For each={marks()}>{(b) => <li>🔖 <a class="text-blue-600" href={b.url} target="_blank">{b.title}</a> <button class="text-red-500" onClick={() => void del('bookmarks', b.id)}>删</button></li>}</For>
-          <For each={files()}>
-            {(f) => (
-              <li>📎 <a class="text-blue-600" href={`/api/files/${f.id}`}>{f.name}</a> ({Math.round(f.size / 1024)}K) <button class="text-red-500" onClick={() => void del('files', f.id)}>删</button></li>
+          <For each={notes()}>
+            {(n) => (
+              <li>
+                📝 <button class="text-blue-600" onClick={() => setPreviewNote(previewNote() === n.id ? null : n.id)}>{n.title}</button>
+                <button class="text-red-500 ml-2" onClick={() => void del('notes', n.id)}>删</button>
+                <Show when={previewNote() === n.id}>
+                  <div class="ml-4 mt-1 p-2 bg-gray-50 rounded prose-sm"><MarkdownView text={n.body} /></div>
+                </Show>
+              </li>
             )}
           </For>
         </ul>
+      </div>
+      <div class="bg-white shadow rounded p-3">
+        <h2 class="font-bold mb-2">书签</h2>
+        <input class="border rounded px-2 py-1 text-sm mb-2" placeholder="按标签筛，如 work" value={tagFilter()} onInput={(e) => { setTagFilter(e.currentTarget.value); void load(); }} />
+        <ul class="text-sm space-y-1">
+          <For each={marks()}>
+            {(b) => (
+              <li>
+                🔖 <a class="text-blue-600" href={b.url} target="_blank" rel="noreferrer">{b.title}</a>
+                <span class="text-gray-400 ml-1">{(b.tags ?? []).map((t) => `#${t}`).join(' ')}</span>
+                <button class="text-red-500 ml-2" onClick={() => void del('bookmarks', b.id)}>删</button>
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+      <div class="bg-white shadow rounded p-3">
+        <h2 class="font-bold mb-2">文件</h2>
+        <ul class="text-sm space-y-1">
+          <For each={files()}>
+            {(f) => (
+              <li>
+                📎 <a class="text-blue-600" href={`/api/files/${f.id}`}>{f.name}</a>
+                <span class="text-gray-400"> ({Math.round(f.size / 1024)}K · {String(f.updated_at).slice(0, 16).replace('T', ' ')})</span>
+                <button class="text-blue-600 ml-2" onClick={() => void showPreview(f.id)}>预览</button>
+                <button class="text-red-500 ml-1" onClick={() => void del('files', f.id)}>删</button>
+              </li>
+            )}
+          </For>
+        </ul>
+        <Show when={preview()}>
+          <pre class="mt-2 p-2 bg-gray-900 text-green-200 text-xs rounded overflow-auto max-h-64 whitespace-pre-wrap">{preview()?.text}</pre>
+        </Show>
         <input type="file" class="mt-2 text-sm" onChange={(e) => void upload(e.currentTarget.files?.[0])} />
       </div>
     </div>

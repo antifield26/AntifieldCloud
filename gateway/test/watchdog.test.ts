@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import { openDb } from '../src/db.js';
-import { evaluate, recordAlerts, type WatchOpts } from '../src/sys/watchdog.js';
+import { evaluate, recordAlerts, todoCheck, type WatchOpts } from '../src/sys/watchdog.js';
 import type { Sample } from '../src/sys/metrics.js';
 
 const OPTS: WatchOpts = { tempAlertC: 75, memMinMb: 1024, backupMaxH: 26, drillMaxD: 14 };
@@ -27,6 +27,13 @@ void describe('watchdog', () => {
     assert.equal(failed.find((c) => c.name === 'drill')?.status, 'alert');
     const none = evaluate(S, FRESH, NOW, OPTS, UNITS, undefined);
     assert.equal(none.find((c) => c.name === 'drill')?.status, 'alert');
+  });
+
+  void it('待办到期进告警', () => {
+    assert.equal(todoCheck([]).status, 'ok');
+    const a = todoCheck(['买牛奶', '交电费']);
+    assert.equal(a.status, 'alert');
+    assert.ok(a.detail.includes('买牛奶'));
   });
 
   void it('超温/低内存/断线/备份过期各告警', () => {

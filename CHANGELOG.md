@@ -76,3 +76,5 @@
 - **P3-03 落地**：恢复演练自动化——周一定时器 + estore-drill.sh\ 结果进 \job_runs(job_id=drill)\；watchdog 加 drill 项（14 天内 ok）；演练目录 trap 自清；sqlite 时间一律 ISO UTC（修本地时区解析漂移）。线上 drill ok、watchdog 六项全绿。本地 44/44。
 
 - **P4-01 落地**：SSE 真流式——网关 \GET /api/ai/sessions/:id/events\ 透传（hijack+按会话过滤+25s 心跳+断开取消），前端 EventSource 实时出字/耗时/中断，会话可建/切/删；终端事件集复用适配器。线上实测 delta 真流、中断/删除 ok、探针已清；新包公网生效。本地 45/45。
+
+- **P4-02 落地**：笔记安全 Markdown 预览（先转义后白名单标签，XSS 用例已验）、待办到期日+watchdog 过期提醒（线上 overdue 命中）、书签标签筛、文件大小/时间+文本预览（二进制 415）。本地 47/47。

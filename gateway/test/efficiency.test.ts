@@ -64,9 +64,16 @@ void describe('efficiency', () => {
   void it('bookmarks 校验 url', async () => {
     const bad = await req('POST', '/api/bookmarks', { title: 'x', url: 'ftp://a' });
     assert.equal(bad.status, 400);
-    const created = await req('POST', '/api/bookmarks', { title: 'x', url: 'https://example.com' });
+    const created = await req('POST', '/api/bookmarks', { title: 'x', url: 'https://example.com', tags: ['work', ' rss '] });
     assert.equal(created.status, 201);
+    assert.deepEqual((created.json as { tags: string[] }).tags, ['work', 'rss']);
     const id = (created.json as { id: string }).id;
+    const filtered = (await req('GET', '/api/bookmarks?tag=work')).json as Array<{ id: string }>;
+    assert.ok(filtered.some((b) => b.id === id));
+    const missed = (await req('GET', '/api/bookmarks?tag=play')).json as unknown[];
+    assert.equal(missed.length, 0);
+    const patched = await req('PATCH', `/api/bookmarks/${id}`, { tags: ['play'] });
+    assert.equal(patched.status, 200);
     assert.equal((await req('DELETE', `/api/bookmarks/${id}`)).status, 200);
   });
 
@@ -89,6 +96,22 @@ void describe('efficiency', () => {
     const up = await req('POST', '/api/files?name=../../evil', undefined, Buffer.from('x'));
     assert.equal(up.status, 201);
     assert.equal((up.json as { name: string }).name, 'evil');
+  });
+
+  void it('files 文本预览与二进制拒绝', async () => {
+    const up = await req('POST', '/api/files?name=note.md', undefined, Buffer.from('# hi\ntext'));
+    const id = (up.json as { id: string }).id;
+    const pv = await app.inject({ method: 'GET', url: `/api/files/${id}/preview`, headers: { cookie: COOKIE } });
+    assert.equal(pv.statusCode, 200);
+    assert.ok((pv.json() as { text: string }).text.includes('# hi'));
+    const bin = await req('POST', '/api/files?name=a.bin', undefined, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00]));
+    const bid = (bin.json as { id: string }).id;
+    assert.equal(
+      (await app.inject({ method: 'GET', url: `/api/files/${bid}/preview`, headers: { cookie: COOKIE } })).statusCode,
+      415,
+    );
+    assert.equal((await req('DELETE', `/api/files/${id}`)).status, 200);
+    assert.equal((await req('DELETE', `/api/files/${bid}`)).status, 200);
   });
 });
 

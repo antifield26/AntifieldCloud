@@ -113,6 +113,11 @@ export function evaluate(
   return out;
 }
 
+export function todoCheck(overdue: string[]): Check {
+  if (overdue.length === 0) return { name: 'todos', status: 'ok', detail: 'none overdue' };
+  return { name: 'todos', status: 'alert', detail: `overdue(${overdue.length}): ${overdue.slice(0, 5).join('; ').slice(0, 200)}` };
+}
+
 export function ensureWatchdogJob(db: DatabaseSync): void {
   db.prepare(
     "INSERT OR IGNORE INTO jobs(id,name,cron,kind,payload,enabled,last_run,last_status) VALUES ('watchdog','watchdog','','monitor','{}',0,null,null)",
@@ -141,7 +146,11 @@ export async function runWatchdog(db: DatabaseSync, sample: Sample | null): Prom
   const drill = db
     .prepare("SELECT started_at,status FROM job_runs WHERE job_id='drill' ORDER BY started_at DESC LIMIT 1")
     .get() as { started_at: string; status: string } | undefined;
+  const overdue = db
+    .prepare("SELECT title FROM todos WHERE done=0 AND due_at IS NOT NULL AND due_at != '' AND due_at < datetime('now') LIMIT 10")
+    .all() as Array<{ title: string }>;
   const checks = evaluate(sample, lastBackup, Date.now(), opts, { cloudflared: cf, opencode: oc, serve: sv }, drill);
+  checks.push(todoCheck(overdue.map((r) => r.title)));
   recordAlerts(db, checks);
   return checks;
 }

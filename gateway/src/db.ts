@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS todos(id TEXT PRIMARY KEY, title TEXT NOT NULL, done INT DEFAULT 0, due_at TEXT, created_at TEXT, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS notes(id TEXT PRIMARY KEY, title TEXT, body TEXT, updated_at TEXT);
-CREATE TABLE IF NOT EXISTS bookmarks(id TEXT PRIMARY KEY, title TEXT, url TEXT NOT NULL, created_at TEXT);
+CREATE TABLE IF NOT EXISTS bookmarks(id TEXT PRIMARY KEY, title TEXT, url TEXT NOT NULL, created_at TEXT, tags TEXT DEFAULT '');
 CREATE TABLE IF NOT EXISTS files_meta(id TEXT PRIMARY KEY, name TEXT, path TEXT, size INT, updated_at TEXT);
 CREATE TABLE IF NOT EXISTS metrics_ts(ts INT, cpu REAL, mem_used INT, mem_total INT, temp_c REAL, disk_written_kb INT);
 CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics_ts(ts);
@@ -21,6 +21,11 @@ CREATE INDEX IF NOT EXISTS idx_api_audit_ts ON api_audit(ts);`;
 let db: DatabaseSync | null = null;
 let currentPath = '';
 
+const MIGRATIONS: string[] = [
+  'ALTER TABLE sessions ADD COLUMN created_at INT',
+  'ALTER TABLE bookmarks ADD COLUMN tags TEXT DEFAULT \'\'',
+];
+
 export function openDb(path: string): DatabaseSync {
   if (db !== null && currentPath === path) return db;
   if (db !== null) {
@@ -34,6 +39,13 @@ export function openDb(path: string): DatabaseSync {
   const d = new DatabaseSync(path);
   d.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
   d.exec(SCHEMA);
+  for (const m of MIGRATIONS) {
+    try {
+      d.exec(m);
+    } catch {
+      // 列已存在
+    }
+  }
   db = d;
   currentPath = path;
   return d;

@@ -39,6 +39,16 @@ function safeName(name: string): string {
   return b;
 }
 
+function normTags(v: unknown): string {
+  if (v === undefined || v === null) return '';
+  const arr = Array.isArray(v) ? v : String(v).split(',');
+  const out = arr
+    .map((t) => String(t).trim().slice(0, 32))
+    .filter((t) => t !== '' && /^[\w\u4e00-\u9fa5-]+$/.test(t))
+    .slice(0, 10);
+  return [...new Set(out)].join(',');
+}
+
 async function readRaw(stream: AsyncIterable<Uint8Array>): Promise<Buffer> {
   const chunks: Uint8Array[] = [];
   for await (const c of stream) chunks.push(c);
@@ -114,15 +124,29 @@ export function registerEfficiencyRoutes(app: FastifyInstance, db: DatabaseSync)
   });
 
   // ---- bookmarks ----
-  app.get('/api/bookmarks', async () => db.prepare('SELECT * FROM bookmarks ORDER BY created_at DESC').all());
-  app.post<{ Body: { title?: unknown; url?: unknown } }>('/api/bookmarks', async (req, reply) => {
+  app.get<{ Querystring: { tag?: string } }>('/api/bookmarks', async (req) => {
+    const all = db.prepare('SELECT * FROM bookmarks ORDER BY created_at DESC').all() as Array<Record<string, unknown>>;
+    const tag = typeof req.query.tag === 'string' && req.query.tag !== '' ? req.query.tag : null;
+    const rows = tag === null ? all : all.filter((r) => String(r.tags ?? '').split(',').includes(tag));
+    return rows.map((r) => ({ ...r, tags: String(r.tags ?? '').split(',').filter(Boolean) }));
+  });
+  app.post<{ Body: { title?: unknown; url?: unknown; tags?: unknown } }>('/api/bookmarks', async (req, reply) => {
     const title = needStr(req.body?.title, 'title', 200);
     const url = needStr(req.body?.url, 'url', 2000);
     if (!/^https?:\/\//.test(url)) return reply.code(400).send({ error: 'url must be http(s)' });
+    const tags = normTags(req.body?.tags);
     const id = randomUUID();
     const t = now();
-    db.prepare('INSERT INTO bookmarks(id,title,url,created_at) VALUES (?,?,?,?)').run(id, title, url, t);
-    return reply.code(201).send({ id, title, url, created_at: t });
+    db.prepare('INSERT INTO bookmarks(id,title,url,created_at,tags) VALUES (?,?,?,?,?)').run(id, title, url, t, tags);
+    return reply.code(201).send({ id, title, url, created_at: t, tags: tags.split(',').filter(Boolean) });
+  });
+  app.patch<{ Params: { id: string }; Body: { title?: unknown; tags?: unknown } }>('/api/bookmarks/:id', async (req, reply) => {
+    const cur = db.prepare('SELECT * FROM bookmarks WHERE id=?').get(req.params.id) as Record<string, unknown> | undefined;
+    if (cur === undefined) return reply.code(404).send({ error: 'not found' });
+    const title = req.body?.title === undefined ? String(cur.title) : needStr(req.body.title, 'title', 200);
+    const tags = req.body?.tags === undefined ? String(cur.tags ?? '') : normTags(req.body.tags);
+    db.prepare('UPDATE bookmarks SET title=?,tags=? WHERE id=?').run(title, tags, req.params.id);
+    return { id: req.params.id, title, tags: tags.split(',').filter(Boolean) };
   });
   app.delete<{ Params: { id: string } }>('/api/bookmarks/:id', async (req, reply) => {
     const r = db.prepare('DELETE FROM bookmarks WHERE id=?').run(req.params.id) as unknown as { changes: number };
@@ -153,6 +177,22 @@ export function registerEfficiencyRoutes(app: FastifyInstance, db: DatabaseSync)
     const data = await readFile(join(FILES_DIR, basename(row.path))).catch(() => null);
     if (data === null) return reply.code(410).send({ error: 'blob missing' });
     return reply.header('content-disposition', `attachment; filename="${row.name}"`).send(data);
+  });
+  const TEXT_EXT = new Set(['txt', 'md', 'json', 'log', 'csv', 'ts', 'js', 'tsx', 'py', 'sh', 'yaml', 'yml', 'toml', 'ini', 'conf']);
+  app.get<{ Params: { id: string } }>('/api/files/:id/preview', async (req, reply) => {
+    const row = db.prepare('SELECT * FROM files_meta WHERE id=?').get(req.params.id) as
+      | { path: string; name: string; size: number }
+      | undefined;
+    if (row === undefined) return reply.code(404).send({ error: 'not found' });
+    const ext = row.name.split('.').pop()?.toLowerCase() ?? '';
+    const data = await readFile(join(FILES_DIR, basename(row.path))).catch(() => null);
+    if (data === null) return reply.code(410).send({ error: 'blob missing' });
+    const head = data.subarray(0, 512);
+    if (!TEXT_EXT.has(ext) && head.includes(0)) {
+      return reply.code(415).send({ error: 'not previewable' });
+    }
+    const text = data.subarray(0, 8192).toString('utf8');
+    return { name: row.name, size: row.size, truncated: data.length > 8192, text };
   });
   app.delete<{ Params: { id: string } }>('/api/files/:id', async (req, reply) => {
     const row = db.prepare('SELECT * FROM files_meta WHERE id=?').get(req.params.id) as { path: string } | undefined;
