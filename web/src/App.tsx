@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import Console from './pages/Console';
 import Ai from './pages/Ai';
 import Efficiency from './pages/Efficiency';
@@ -18,6 +18,8 @@ const tabs = [
 export default function App() {
   const [tab, setTab] = createSignal<string>(location.hash.replace('#', '') || 'console');
   const [authed, setAuthed] = createSignal<boolean | null>(null);
+  const [q, setQ] = createSignal('');
+  const [hits, setHits] = createSignal<Array<{ kind: string; id: string; title: string; snippet: string; jump: string }>>([]);
   const check = async (): Promise<void> => {
     try {
       const s = await api<{ authenticated: boolean }>('/api/auth/status');
@@ -30,6 +32,22 @@ export default function App() {
   const pick = (id: string): void => {
     setTab(id);
     location.hash = id;
+  };
+  let timer = 0;
+  const search = (v: string): void => {
+    setQ(v);
+    window.clearTimeout(timer);
+    if (v.trim().length < 1) {
+      setHits([]);
+      return;
+    }
+    timer = window.setTimeout(() => {
+      void api<{ hits: Array<{ kind: string; id: string; title: string; snippet: string; jump: string }> }>(
+        `/api/search?q=${encodeURIComponent(v.trim())}`,
+      )
+        .then((j) => setHits(j.hits))
+        .catch(() => setHits([]));
+    }, 300);
   };
   return (
     <Show when={authed() !== null} fallback={<div class="p-8">加载中…</div>}>
@@ -48,6 +66,35 @@ export default function App() {
                 {t.title}
               </button>
             ))}
+            <div class="relative ml-auto">
+              <input
+                class="bg-gray-800 rounded px-2 py-1 text-sm w-48"
+                placeholder="搜索…"
+                value={q()}
+                onInput={(e) => search(e.currentTarget.value)}
+              />
+              <Show when={hits().length > 0}>
+                <ul class="absolute right-0 mt-1 w-72 bg-white text-black shadow-lg rounded text-sm max-h-80 overflow-y-auto">
+                  <For each={hits()}>
+                    {(h) => (
+                      <li>
+                        <button
+                          class="w-full text-left px-2 py-1 hover:bg-gray-100"
+                          onClick={() => {
+                            setHits([]);
+                            setQ('');
+                            pick(h.jump.replace('#', ''));
+                          }}
+                        >
+                          <span class="text-gray-400">[{h.kind}]</span> {h.title}
+                          <div class="text-gray-500 truncate">{h.snippet}</div>
+                        </button>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </div>
           </header>
           <main>
             {tab() === 'console' && <Console />}

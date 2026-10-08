@@ -9,6 +9,7 @@ import { AuditBuffer, normalizePath } from './sys/apiaudit.js';
 import { registerSysRoutes } from './routes/sys.js';
 import { registerServiceRoutes } from './routes/services.js';
 import { registerEfficiencyRoutes } from './routes/efficiency.js';
+import { registerSearchRoutes } from './routes/search.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerPortalRoutes } from './routes/portal.js';
 import { startScheduler } from './jobs/scheduler.js';
@@ -72,6 +73,7 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
   registerSysRoutes(app, db, sampler);
   registerServiceRoutes(app, db);
   registerEfficiencyRoutes(app, db);
+  registerSearchRoutes(app, db);
   registerJobRoutes(app, db);
   registerPortalRoutes(app);
   if (hasSpa) {
