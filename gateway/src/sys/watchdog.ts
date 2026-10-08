@@ -165,18 +165,24 @@ export function redactUrl(url: string): string {
   }
 }
 
-/** 告警外送：空 URL 直接跳过；3 次重试，终败记 job_runs，日志仅 host。 */
-export async function sendAlert(alerts: Check[], log: string): Promise<boolean> {
+/** 告警外送：空 URL 直接跳过；3 次重试，终败记 job_runs，日志仅 host。
+ *  ntfy 友好格式：纯文本正文 + Title/Priority/Tags 头，手机直接可读。 */
+export async function sendAlert(
+  alerts: Check[],
+  log: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
   const url = (process.env.ALERT_WEBHOOK_URL ?? '').trim();
   if (url === '') return false;
   const host = redactUrl(url);
+  const text = alerts.map((a) => `【${a.name}】${a.detail}`).join('\n').slice(0, 3000);
   let lastErr = '';
   for (let i = 0; i < 3; i++) {
     try {
-      const res = await fetch(url, {
+      const res = await fetchImpl(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ source: 'workbench-watchdog', at: new Date().toISOString(), alerts }),
+        headers: { 'content-type': 'text/plain; charset=utf-8', Title: '工作台告警', Priority: 'high', Tags: 'warning' },
+        body: text,
         signal: AbortSignal.timeout(15000),
       });
       if (res.ok) return true;

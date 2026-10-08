@@ -98,3 +98,5 @@
 - **P5-04 落地**：可选服务监控槽——minecraft/mc-server 只读状态+RSS 进 overview（实测 2263M/83M），白名单与 sudoers 零改动。本地 52/52。
 
 - **P5-05 机制就绪、待 URL（blocked）**：watchdog 告警外送（空 URL 跳过；3 次退避重试；终败记行；日志仅 host）+ env.example 模板；线上已部署（未配 URL，行为无变化）。解堵条件：用户给 ntfy topic 或自建 webhook让我配。本地 54/54。
+
+- **P5-05 格式修正**：告警改纯文本 + Title/Priority/Tags 头（手机直接可读）；测试 mock server 改桩 fetch（真 socket + undici keep-alive 会卡住测试进程不退出，教训）。已部署，发了一条[测试] ping 待用户确认可读性。
