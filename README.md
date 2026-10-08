@@ -19,7 +19,8 @@ curl -s http://127.0.0.1:3000/health
 
 ## 文档索引
 
-- `docs/RESEARCH.md` — 实机调研报告（6 项实测 + 风险）
+- `docs/RESEARCH.md` — 实机调研报告 + 现状勘误
+- `CHANGELOG.md` — 变更记录（时间正序）
 - `docs/ARCHITECTURE.md` — 组件/接口/适配器/schema/安全/目录
 - `docs/ROADMAP.md` — P0/P1/P2 里程碑
 - `docs/TASK-INDEX.md` — 唯一任务事实源
