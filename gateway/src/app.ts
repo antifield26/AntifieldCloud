@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes, isOpen, cookieId } from './routes/auth.js';
-import { validSession } from './auth/password.js';
+import { validSession, touchSession } from './auth/password.js';
 import { AuditBuffer, normalizePath } from './sys/apiaudit.js';
 import { registerSysRoutes } from './routes/sys.js';
 import { registerServiceRoutes } from './routes/services.js';
@@ -48,6 +48,8 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
     if (!isOpen(req.url) && !validSession(db, cookieId(req.headers.cookie))) {
       return reply.code(401).send({ error: 'login required' });
     }
+    const sid = cookieId(req.headers.cookie);
+    if (sid) touchSession(db, sid);
     return undefined;
   });
   // 审计记在 onResponse（onRequest 拒掉的 401 也会走到这里，actor=anon，不重复）。

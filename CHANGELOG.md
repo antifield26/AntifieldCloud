@@ -70,3 +70,5 @@
 - **SEC-04 落地**：Pi \/etc/workbench/env\ 换 20 位随机强口令并重启，旧会话已清；复验未登录 \/api/ai/sessions\ 401、登录后 \/api/ai/health\ 2.0.24、旧口令 401；手动 \ackup.sh\ 快照 ok（env 双口令均为 \__REDACTED__\）；PC \pull.py\（known_hosts pin）\PULL_OK\。公开文档不记录口令值。
 
 - **P3-01 落地**：API 请求审计（\pi_audit\）：只记元数据，query 丢弃、id 段收敛，60s 批量落盘 + 30 天裁剪；未登录 401 记 \ctor=anon\。线上实测归因与脱敏全对。本地 42/42。
+
+- **P3-02 落地**：会话 7d 绝对上限（NULL 老行强制重登）+ 滑动续期（剩<24h 延至 min(+30d,创建+7d)，\WB_SESSION_SLIDING=0\ 可关）+ hook 内 touch；shell job 执行与 service restart 前端二次确认；登录≈workbench 单用户语义进 ARCH。线上新会话 200，旧 NULL 行清零。本地 43/43。

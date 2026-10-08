@@ -84,7 +84,7 @@ CREATE TABLE auth_audit(id INTEGER PK AUTOINCREMENT, ts TEXT, result TEXT, note 
 
 ## 5. 安全模型
 
-- 认证链：`浏览器 → 内置密码登录（口令唯一来源 `.env` / `/etc/workbench/env: AUTH_LOGIN_PASSWORD`，会话 cookie HttpOnly/Lax/30d）→ cloudflared → 网关`（2026-10-08 用户决策弃用 CF Access；tunnel 保留做传输，Pi 仍零入站）。改密 = 改 env + restart（无在线改密端点）。
+- 认证链：`浏览器 → 内置密码登录（口令唯一来源 `.env` / `/etc/workbench/env: AUTH_LOGIN_PASSWORD`，会话 cookie HttpOnly/Lax/30d）→ cloudflared → 网关`（2026-10-08 用户决策弃用 CF Access；tunnel 保留做传输，Pi 仍零入站）。改密 = 改 env + restart（无在线改密端点）。登录≈workbench 单用户语义：不做多用户/RBAC；会话绝对上限 7d（`WB_SESSION_SLIDING=0` 可关滑动续期）。
 - 覆盖面：全局 `onRequest` 钩子必须在**全部业务路由注册之前**挂载（Fastify 钩子只作用于其后注册的路由）；`/api/ai/*`、`/api/sys/*`、`/api/todos|notes|bookmarks|files`、`/api/jobs*`、`/api/portal/*` 一律要求会话。开放面仅 `/api/auth/status`、`/api/auth/login`、`/health` 与 SPA 静态资源。回归测试：`gateway/test/auth-coverage.test.ts`。
 - 用户隔离：新增 `workbench` 系统用户（`nologin` + `StrictModes`），运行网关 + `opencode serve`；`antifield` 的 NOPASSWD ALL 保持不动但**网关永不使用该身份**。
 - 权限语义：登录会话 ≈ `workbench` 身份（可经流水线 shell 任务执行命令、经白名单 sudo restart 服务）。单用户工作台可接受；若引入多用户/分享，须先拆权限。

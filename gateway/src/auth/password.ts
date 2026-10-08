@@ -5,6 +5,10 @@ import type { DatabaseSync } from 'node:sqlite';
 
 export const SESSION_COOKIE = 'wb_session';
 export const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
+/** 会话绝对上限：自创建起 7d，滑动续期也不可超越。 */
+export const SESSION_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
+
+export const slidingOn = (): boolean => (process.env.WB_SESSION_SLIDING ?? '1') !== '0';
 
 export function expectedPassword(): string {
   return process.env.AUTH_LOGIN_PASSWORD ?? '';
@@ -49,8 +53,27 @@ export function auditLogin(db: DatabaseSync, result: 'ok' | 'fail' | 'locked'): 
 
 export function validSession(db: DatabaseSync, id: string | undefined): boolean {
   if (!id) return false;
-  const row = db.prepare('SELECT expires_at FROM sessions WHERE id=?').get(id) as { expires_at: number } | undefined;
-  return row !== undefined && Number(row.expires_at) > Date.now();
+  const row = db.prepare('SELECT expires_at,created_at FROM sessions WHERE id=?').get(id) as
+    | { expires_at: number; created_at: number | null }
+    | undefined;
+  if (row === undefined) return false;
+  if (row.created_at === null || row.created_at === undefined) return false;
+  const now = Date.now();
+  if (Number(row.created_at) + SESSION_MAX_AGE_MS <= now) return false;
+  return Number(row.expires_at) > now;
+}
+
+/** 滑动续期：剩 <24h 时延到 min(now+30d, created+7d)；每天最多写一次。 */
+export function touchSession(db: DatabaseSync, id: string): void {
+  if (!slidingOn()) return;
+  const row = db.prepare('SELECT expires_at,created_at FROM sessions WHERE id=?').get(id) as
+    | { expires_at: number; created_at: number }
+    | undefined;
+  if (row === undefined) return;
+  const now = Date.now();
+  if (Number(row.expires_at) - now >= 24 * 3600 * 1000) return;
+  const cap = Number(row.created_at) + SESSION_MAX_AGE_MS;
+  db.prepare('UPDATE sessions SET expires_at=? WHERE id=?').run(Math.min(now + SESSION_TTL_MS, cap), id);
 }
 
 export function destroySession(db: DatabaseSync, id: string): void {

@@ -44,6 +44,7 @@ export default function Jobs() {
     }
   };
   const run = async (id: string): Promise<void> => {
+    if (!confirm(`执行任务 ${id}？shell 任务将在网关主机上运行`)) return;
     setJid(id);
     await api(`/api/jobs/${id}/run`, { method: 'POST' });
     await show(id);
