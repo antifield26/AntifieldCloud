@@ -67,6 +67,53 @@ export default function Console() {
     }
   };
 
+  const [logUnit, setLogUnit] = createSignal('opencode.service');
+  const [logSince, setLogSince] = createSignal('-1h');
+  const [logLimit, setLogLimit] = createSignal(100);
+  const [logEntries, setLogEntries] = createSignal<Array<{ ts: string; unit?: string; pri?: string; msg: string }>>([]);
+  const [copied, setCopied] = createSignal(false);
+
+  const loadLogs = async (): Promise<void> => {
+    try {
+      const j = await api<{ entries: Array<{ ts: string; unit?: string; pri?: string; msg: string }> }>(
+        `/api/sys/logs?unit=${encodeURIComponent(logUnit())}&since=${encodeURIComponent(logSince())}&limit=${logLimit()}`,
+      );
+      setLogEntries(j.entries);
+      setErr('');
+    } catch (e) {
+      setErr(String(e));
+    }
+  };
+
+  const priColor = (p?: string): string =>
+    p === '0' || p === '1' || p === '2' || p === '3'
+      ? 'bg-red-600 text-white'
+      : p === '4'
+        ? 'bg-orange-400 text-white'
+        : p === '5' || p === '6'
+          ? 'bg-gray-500 text-white'
+          : 'bg-gray-200';
+
+  const hlRedacted = (msg: string): string =>
+    msg
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/&lt;redacted&gt;/g, '<mark>&lt;redacted&gt;</mark>');
+
+  const copyAll = async (): Promise<void> => {
+    const text = logEntries()
+      .map((e) => `${e.ts} [${e.unit ?? '?'}] p${e.pri ?? '?'} ${e.msg}`)
+      .join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setErr('复制失败（浏览器未授权剪贴板）');
+    }
+  };
+
   return (
     <div class="p-4 space-y-4">
       <Show when={err()}>
@@ -124,6 +171,41 @@ export default function Console() {
             {(c) => (
               <li class={c.status === 'alert' ? 'text-red-700' : 'text-green-700'}>
                 {c.name}: {c.status} — {c.detail}
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
+      <div class="bg-white shadow rounded p-3">
+        <div class="flex gap-2 items-center mb-2 flex-wrap">
+          <h2 class="font-bold">日志</h2>
+          <select class="border rounded px-2 py-1 text-sm" value={logUnit()} onChange={(e) => setLogUnit(e.currentTarget.value)}>
+            <For each={['opencode.service', 'workbench-gateway.service', 'cloudflared.service', 'ssh.service', 'nginx.service']}>
+              {(u) => <option value={u}>{u}</option>}
+            </For>
+          </select>
+          <select class="border rounded px-2 py-1 text-sm" value={logSince()} onChange={(e) => setLogSince(e.currentTarget.value)}>
+            <option value="-10min">近10分钟</option>
+            <option value="-1h">近1小时</option>
+            <option value="-24h">近24小时</option>
+          </select>
+          <select class="border rounded px-2 py-1 text-sm" value={logLimit()} onChange={(e) => setLogLimit(Number(e.currentTarget.value))}>
+            {[50, 100, 300, 500].map((n) => (
+              <option value={n}>{n} 条</option>
+            ))}
+          </select>
+          <button class="bg-blue-500 text-white px-3 py-1 rounded text-sm" onClick={() => void loadLogs()}>查询</button>
+          <button class="bg-gray-600 text-white px-3 py-1 rounded text-sm" onClick={() => void copyAll()}>
+            {copied() ? '已复制' : '一键复制'}
+          </button>
+        </div>
+        <ul class="space-y-1 text-xs font-mono max-h-96 overflow-y-auto">
+          <For each={logEntries()}>
+            {(e) => (
+              <li class="flex gap-2 items-start border-b py-0.5">
+                <span class={`px-1 rounded shrink-0 ${priColor(e.pri)}`}>p{e.pri ?? '?'}</span>
+                <span class="text-gray-400 shrink-0">{e.ts.slice(0, 19)}</span>
+                <span innerHTML={hlRedacted(e.msg)} class="break-all" />
               </li>
             )}
           </For>
