@@ -107,7 +107,7 @@
 | ID | 风险 | 等级 | 缓解（Owner：Agent，验收见 TASK-INDEX） |
 |---|---|---|---|
 | R1 | Java PaperMC 常驻 2.4G，挤占 AI/网关内存，8G 预算失守 | 高 | P0：`MemoryMax` + 温度/内存告警；P1：将 `minecraft.service` 纳入白名单受控启停（默认不动，先监控）；备选停桌面栈释放 0.5G（需用户确认） |
-| R2 | SD 单盘 58% 已用，日写 1–3G，无寿命读数，掉盘即全丢 | 高 | P0：写入减负（WAL+NORMAL、5–10min 批量落盘、log2ram、journald volatile、/tmp tmpfs 已有）；连续 3 晚备份 + 1 次恢复演练为 P0 出口 |
+| R2 | SD 单盘 58% 已用，日写 1–3G，无寿命读数，掉盘即全丢 | 高 | P0：写入减负（WAL+NORMAL、5–10min 批量落盘、log2ram、journald volatile、/tmp tmpfs 已有）；连续3次备份成功 + 1 次恢复演练为 P0 出口 |
 | R3 | 无外部备份目标，同卡备份等于无备份 | 高 | 目标已定：PC 目录 `D:\PiBackUp`（2026-10-08 用户确认）；退役快照已回传 `D:\PiBackUp\retire-20261008`；每晚流水线待 P0-08 落地；**目标就绪前不动存储配置**；备份含校验（sha256）+ 失败告警 |
 | R4 | `antifield` 拥有 NOPASSWD ALL，网关越权风险 | 高 | 新建 `workbench` 低权限用户；sudoers 仅白名单动词；白名单外 403 + 审计表；AGENTS.md 红线 |
 | R5 | cloudflared 边缘抖动（`7844 timeout`） | 中 | 网关 `/health` 探针 + 看门狗 tunnel 检查 + 重连（`restart cloudflared` 白名单内） |

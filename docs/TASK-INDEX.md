@@ -42,18 +42,18 @@
 | 编号 | 标题 | 状态 | 依赖 | 工作量 | 验收标准（实机） | 风险/备注 | 关联 |
 |---|---|---|---|---|---|---|---|
 | SEC-04 | 强口令 + 部署 SEC-01..03 复验 | done | SEC-01..03 | 1.5h | ① Pi `/etc/workbench/env` 换 16+ 位随机口令并 `restart workbench-gateway`；② 公网未登录 `GET /api/ai/sessions` → 401；③ 登录后 `/api/ai/health` 200/502；④ 手动 `backup.sh` 后备份 `env` 为 `__REDACTED__`；⑤ pc-pull 在 known_hosts 已 pin 时 `PULL_OK` | 换密后旧会话仍活，可 `DELETE FROM sessions`；口令不进仓库/日志 | `/etc/workbench/env`、公网 curl |
-| P0-STREAK | 连续 3 晚备份日历 streak | pending | SEC-04 | 0.5h | `D:\PiBackUp\manifest.log` 连续 3 个自然日 `OK`；`backups` 对应 3 行 `status=ok`；README 出口改完成态 | timer/PC 任务失败须当天修并记 CHANGELOG | `manifest.log`、`deploy/workbench-backup.timer` |
-| P3-01 | 网关请求审计（脱敏） | in-progress | SEC-04 | 2h | 新表 `api_audit(ts,actor,method,path,status,ms)`；登录后 API 写入且**不含** body/query 敏感值；30 天滚动裁剪有单测；未登录 401 不写或写 `actor=anon` 仅 fail | 写放大 → 批量/采样；path 脱敏（id 收敛） | `gateway/src/db.ts`、`gateway/src/app.ts`、`gateway/test/` |
+| P0-STREAK | 连续3次备份成功（去日历化） | done | SEC-04 | 0.5h | 3 轮手动快照 ok + PC 拉取 sha 全对 + 演练 ok；定时延续按新窗口运行 | 窗口外 23:00-08:00 不跑任务 | \manifest.log\、deploy/workbench-backup.timer |
+| P3-01 | 网关请求审计（脱敏） | done | SEC-04 | 2h | 新表 `api_audit(ts,actor,method,path,status,ms)`；登录后 API 写入且**不含** body/query 敏感值；30 天滚动裁剪有单测；未登录 401 不写或写 `actor=anon` 仅 fail | 写放大 → 批量/采样；path 脱敏（id 收敛） | `gateway/src/db.ts`、`gateway/src/app.ts`、`gateway/test/` |
 | P3-02 | 会话与敏感操作加固 | done | SEC-04, P2-04 | 2h | 会话绝对超时 7d（创建时间起算）+ 可关滑动续期；shell job 执行 / service restart 前端二次确认；上述操作记 `auth_audit` 或 `api_audit` | **勿做成多用户/RBAC**；登录≈workbench 语义写进 ARCH | `gateway/src/auth/password.ts`、`web/src/pages/*` |
-| P3-03 | 备份演练自动化 | in-progress | P0-STREAK | 1h | `restore-drill.sh` 可周跑（job 或 timer）；watchdog 检查 14 天内存在 `DRILL_OK` 记录；演练目录用后即删 | 演练目录勿留敏感；失败进告警 | `scripts/restore-drill.sh`、`gateway/src/sys/watchdog.ts` |
+| P3-03 | 备份演练自动化 | done | P0-STREAK | 1h | `restore-drill.sh` 可周跑（job 或 timer）；watchdog 检查 14 天内存在 `DRILL_OK` 记录；演练目录用后即删 | 演练目录勿留敏感；失败进告警 | `scripts/restore-drill.sh`、`gateway/src/sys/watchdog.ts` |
 
-**P3 出口**：公网业务 API 未登录不可达；强口令生效；请求/敏感操作可追溯；3 晚 streak + 演练可被机器检出。
+**P3 出口**：公网业务 API 未登录不可达；强口令生效；请求/敏感操作可追溯；连续3次备份 + 演练可被机器检出。
 
 ## P4 — 通用工作台（效率 + AI 使用面）
 
 | 编号 | 标题 | 状态 | 依赖 | 工作量 | 验收标准（实机） | 风险/备注 | 关联 |
 |---|---|---|---|---|---|---|---|
-| P4-01 | AI 会话体验：SSE 真流式 + 多会话 | done | SEC-04, P1-06 | 4h | ① 网关 SSE 透传到前端（替代纯轮询）；② 会话列表可切换/新建/删除；③ 下发任务实时出字（text.delta）；④ 中断 abort 后 UI 状态正确；⑤ 展示 token/耗时（若 API 提供，否则显示耗时）；⑥ 公网实机走通 | 适配器仍是唯一 OpenCode 边界；SSE 断线重连不丢会话上下文提示 | `web/src/pages/Ai.tsx`、`gateway/src/routes/ai.ts`、`gateway/src/opencode/adapter.ts` |
+| P4-01 | AI 会话体验：SSE 真流式 + 多会话 | pending | SEC-04, P1-06 | 4h | ① 网关 SSE 透传到前端（替代纯轮询）；② 会话列表可切换/新建/删除；③ 下发任务实时出字（text.delta）；④ 中断 abort 后 UI 状态正确；⑤ 展示 token/耗时（若 API 提供，否则显示耗时）；⑥ 公网实机走通 | 适配器仍是唯一 OpenCode 边界；SSE 断线重连不丢会话上下文提示 | `web/src/pages/Ai.tsx`、`gateway/src/routes/ai.ts`、`gateway/src/opencode/adapter.ts` |
 | P4-02 | 效率面板升级（笔记/待办/书签/文件） | pending | P1-01 | 3h | ① 笔记 Markdown 预览（安全渲染，禁 script）；② 待办到期提醒经 jobs/watchdog 落记录；③ 书签标签 + 按标签筛；④ 文件上传列表显示大小/时间，文本可预览；⑤ 记一条笔记或待办 ≤3 次点击 | XSS：Markdown 渲染须消毒；文件预览不做 HTML 内嵌执行 | `web/src/pages/Efficiency.tsx`、`gateway/src/routes/efficiency.ts` |
 | P4-03 | 全局搜索 | pending | P4-02 | 2h | `GET /api/search?q=` 检索 todos/notes/bookmarks/files_meta；前端顶栏入口；关键字命中列表可跳转；P95 响应 ≤200ms（本机千条级） | FTS5 或 LIKE 二选一，先 LIKE 足够则不引入 FTS 迁移 | `gateway/src/routes/efficiency.ts` 或新 `routes/search.ts`、`web/src/App.tsx` |
 | P4-04 | 导入导出 | pending | P4-02 | 2h | ① 导出 JSON（四类）+ CSV（todos/notes）；② 导入 JSON 可合并或替换（参数指定）；③ 实机：导出→删测试行→导入还原；④ 导出走已鉴权 API，文件名含日期 | 大 body 限长；导入校验字段类型 | `gateway/src/routes/efficiency.ts`、`web/src/pages/Efficiency.tsx` |

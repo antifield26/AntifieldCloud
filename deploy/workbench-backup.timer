@@ -1,8 +1,8 @@
 [Unit]
-Description=Run workbench snapshot daily 02:30
+Description=Run workbench snapshot daily 22:00 (outside 23:00-08:00 quiet window)
 
 [Timer]
-OnCalendar=*-*-* 02:30:00
+OnCalendar=*-*-* 22:00:00
 Persistent=true
 
 [Install]

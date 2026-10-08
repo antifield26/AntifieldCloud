@@ -1,8 +1,8 @@
 [Unit]
-Description=Run workbench restore drill weekly Monday 04:30
+Description=Run workbench restore drill weekly Monday 22:45 (outside 23:00-08:00 quiet window)
 
 [Timer]
-OnCalendar=Mon *-*-* 04:30:00
+OnCalendar=Mon *-*-* 22:45:00
 Persistent=true
 
 [Install]
