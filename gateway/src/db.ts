@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, name TEXT, cron TEXT, kind 
 CREATE TABLE IF NOT EXISTS job_runs(id TEXT PRIMARY KEY, job_id TEXT, started_at TEXT, finished_at TEXT, status TEXT, log TEXT);
 CREATE TABLE IF NOT EXISTS service_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, actor TEXT, unit TEXT, action TEXT, allowed INT, reason TEXT);
 CREATE TABLE IF NOT EXISTS backups(id TEXT PRIMARY KEY, ts TEXT, target TEXT, bytes INT, sha256 TEXT, status TEXT, log TEXT);
-CREATE TABLE IF NOT EXISTS auth_config(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, expires_at INT);
 CREATE TABLE IF NOT EXISTS auth_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, result TEXT, note TEXT);
 `;

@@ -36,7 +36,7 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
         .send(`<html><head><title>AntifieldCloud</title></head><body><h1>AntifieldCloud P0</h1><p>Gateway OK. SPA in P1.</p><p><a href="/health">/health</a></p></body></html>`);
     });
   }
-  registerAiRoutes(app);
+  // 认证钩子只作用于其后注册的路由；AI/系统等业务路由必须挂在钩子之后。
   const db = openDb(dbPath);
   await app.register(fastifyCookie);
   registerAuthRoutes(app, db);
@@ -46,6 +46,7 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
     }
     return undefined;
   });
+  registerAiRoutes(app);
   const sampler = new Sampler(db);
   if (opts?.startSampler !== false) sampler.start();
   registerSysRoutes(app, db, sampler);

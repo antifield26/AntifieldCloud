@@ -7,11 +7,17 @@ mkdir -p "$OUT"
 sqlite3 /var/lib/workbench/wb.db ".backup '$OUT/wb.db'"
 sqlite3 /home/workbench/.local/share/opencode/opencode.db ".backup '$OUT/opencode.db'" || echo "opencode.db backup rc=$?"
 tar -czf "$OUT/config.tar.gz" -C /opt/workbench config
-cp -a /etc/workbench/env "$OUT/env" 2>/dev/null || echo "env copy rc=$?"
-chmod 600 "$OUT/env" 2>/dev/null || true
+# 备份 env 时脱敏口令真值（真值只留在 Pi /etc/workbench/env；恢复需人工重写口令）。
+if [[ -f /etc/workbench/env ]]; then
+  sed -E 's/^((AUTH_LOGIN_PASSWORD|OPENCODE_SERVER_PASSWORD)=).*/\1__REDACTED__/' /etc/workbench/env > "$OUT/env"
+  chmod 600 "$OUT/env"
+else
+  echo "env copy rc=missing"
+fi
 # PC 拉取用户 antifield 经 SFTP 取快照：仅对 env 副本授予单文件读 ACL（其余文件默认 644）
 setfacl -m u:antifield:r -- "$OUT/env" 2>/dev/null || echo "setfacl rc=$?"
-(cd "$OUT" && sha256sum wb.db opencode.db config.tar.gz env > sha256sums.txt)
+(cd "$OUT" && sha256sum wb.db opencode.db config.tar.gz > sha256sums.txt
+  [[ -f env ]] && sha256sum env >> sha256sums.txt)
 BYTES=$(du -sb "$OUT" | cut -f1)
 SUM=$(cut -d' ' -f1 "$OUT/sha256sums.txt" | sha256sum | cut -d' ' -f1)
 sqlite3 /var/lib/workbench/wb.db "INSERT INTO backups(id,ts,target,bytes,sha256,status,log) VALUES ('$TS','$(date -u +%FT%TZ)','pi-local-snapshot',$BYTES,'$SUM','ok','snapshot ready for PC pull');"

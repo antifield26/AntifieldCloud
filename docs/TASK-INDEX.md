@@ -31,6 +31,17 @@
 | P2-02 | 指标保留 + 导出 | P2 | done | 30天滚动（flush 裁剪+单测）；CSV 线上导出真实行；未登录 401 | `wb.db`、`GET /api/sys/metrics/export` |
 | P2-03 | 备份多目标 + 加密 | P2 | dropped | 用户决策不做（Pi→PC + 7 天滚动已够用） | `deploy/backup.sh` |
 | P2-04 | 审计硬化（内置认证下） | P2 | done | 登录 fail/ok 入 `auth_audit`；会话列表/吊销可用；越权行 `actor=ses:…` 归因 | `gateway/src/routes/auth.ts` |
+| SEC-01 | 修复认证覆盖面（AI 路由绕过） | 安全修复 | done | 无 cookie 访问全部业务 `/api/*`（含 `/api/ai/*`）→ 401；登录后 AI 健康可 200/502；回归 `auth-coverage.test.ts` | `gateway/src/app.ts`、`gateway/test/auth-coverage.test.ts` |
+| SEC-02 | 口令常数时间比较 + 弃 `auth_config` 残留 | 安全修复 | done | 等长/不等长口令均走 `timingSafeEqual`；schema 不再建 `auth_config` | `gateway/src/auth/password.ts`、`gateway/src/db.ts` |
+| SEC-03 | 备份 env 脱敏 + pc-pull 拒未知主机密钥 | 安全修复 | done | 备份 `env` 口令为 `__REDACTED__`；`RejectPolicy` + known_hosts | `deploy/backup.sh`、`scripts/pc-pull.py` |
+| SEC-04 | 强口令 + 实机部署复验 | P3 | pending | Pi 换 16+ 位口令；部署后未登录 `/api/ai/sessions` 401；备份 env 脱敏实机可见 | `/etc/workbench/env`、公网 curl |
+| P0-STREAK | 连续 3 晚备份日历 streak | P3 | pending | `manifest.log` 连续 3 个自然日 OK | `D:\PiBackUp\manifest.log` |
+| P3-01 | 网关请求审计（脱敏） | P3 | pending | 登录后 API 写 `api_audit`；30 天滚动 | 见 ROADMAP P3 |
+| P3-02 | 会话与敏感操作加固 | P3 | pending | 会话 7d 绝对超时；敏感操作二次确认 | 见 ROADMAP P3 |
+| P3-03 | 备份演练自动化 | P3 | pending | 14 天内有 DRILL_OK 可被 watchdog 检出 | `scripts/restore-drill.sh` |
+| P4-01…P4-05 | 通用工作台（AI/效率/搜索/导出/移动） | P4 | pending | 见 ROADMAP P4 | `web/`、`gateway/src/routes/efficiency.ts` |
+| P5-01…P5-05 | 树莓派控制台（曲线/SD/日志/监控槽/外送） | P5 | pending | 见 ROADMAP P5 | `web/pages/Console.tsx`、`gateway/src/sys/*` |
+| P6-01…P6-04 | 自动化与门户（可选，默认暂缓） | P6 | pending | 用两周后再勾选 | 见 ROADMAP P6 |
 
 ## 流转规则
 

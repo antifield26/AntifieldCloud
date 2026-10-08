@@ -28,7 +28,12 @@ def main() -> int:
     log: list[str] = []
     ok = True
     c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # 直连链路：拒绝未知主机密钥；known_hosts 缺失时明确失败，避免静默 MITM。
+    c.load_system_host_keys()
+    known = os.path.expanduser("~/.ssh/known_hosts")
+    if os.path.exists(known):
+        c.load_host_keys(known)
+    c.set_missing_host_key_policy(paramiko.RejectPolicy())
     try:
         c.connect(HOST, username=USER, key_filename=KEY, timeout=20, banner_timeout=20)
     except Exception as ex:

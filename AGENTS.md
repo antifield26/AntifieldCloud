@@ -14,6 +14,8 @@
 
 文档先行：`RESEARCH → ARCHITECTURE → ROADMAP → TASK-INDEX → AGENTS.md` 链条未自检通过前，不写业务代码。
 
+**认证挂钩铁律**：全局登录 `onRequest` 必须在**全部业务路由注册之前** `addHook`（Fastify 钩子只作用于其后注册的路由）。新增 `/api/*` 后跑 `gateway/test/auth-coverage.test.ts`。
+
 ## 2. 任务状态流转
 
 - `pending → in-progress`：开工前改 TASK-INDEX；`→ done`：验收（含实机验证）全过 + 文档同步后改；`→ blocked`：写明阻塞项与绕行方案。

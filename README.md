@@ -28,7 +28,9 @@ curl -s http://127.0.0.1:3000/health
 
 ## 当前状态
 
-- P0 代码任务：`P0-01…P0-08 done`；备份目标 `D:\PiBackUp`。P0 出口剩余：3 晚 streak（日历累积中）。
+- P0 代码任务：`P0-01…P0-08 done`；备份目标 `D:\PiBackUp`。P0 出口剩余：3 晚 streak（日历累积中，任务 `P0-STREAK`）。
 - P1/P2 代码全清（`P1-01`~`P1-06`、`AUTH-01/02`、`P2-02`/`P2-04`；`P2-01`/`P2-03` dropped）。
+- 安全修复 SEC-01..03 本地已落（AI 路由认证覆盖面、口令常数时间、备份 env 脱敏）；**待部署实机 + 强口令（SEC-04）**。
+- 后续里程碑：`P3 安全收口 → P4 通用工作台 → P5 树莓派控制台`（见 `docs/ROADMAP.md`；P6 默认暂缓）。
 - 网关 `127.0.0.1:3000`（`cloud.antifield.work`）；旧 `pidsh` ingress 已下线，DNS 已清。
 - 实机基线（2026-10-08）：Pi5 8G / Debian13 / SD 64G / Node v26.7.0 / opencode v2.0.24（serve 空载 RSS ~300M）/ cloudflared 2026.8.1。

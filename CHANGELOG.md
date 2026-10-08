@@ -57,3 +57,10 @@
 - **P2-04 落地（2026-10-08）**：登录 fail/ok 记 `auth_audit`（不记口令）；`GET/DELETE /api/auth/sessions`（id 前缀吊销）；`service_audit.actor` 从 `local` 改为 `ses:<会话前缀>`，线上越权行归因成功。本地 32/32。
 
 - **口令切换用户值（2026-10-08，用户选 A）**：Pi `/etc/workbench/env` 改用户口令并重启，实测裸值 200。细节：用户 `.env` 值为引号包裹形式，按 dotenv 惯例剥引号后生效（带引号视为错误口令 401）；旧生成口令已失效。公开文档不记录口令值。
+
+## 2026-10-09
+
+- **SEC-01 修复认证覆盖面（评估高危项）**：`registerAiRoutes` 原注册在全局 `onRequest` 登录钩子**之前**——Fastify 钩子只作用于其后注册的路由，导致 `/api/ai/*` 可无 cookie 调用。已移到钩子之后；新增 `gateway/test/auth-coverage.test.ts` 锁定业务 API 无 cookie → 401。**须部署到 Pi 后实机复验**。
+- **SEC-02 口令比较与 schema 清理**：`verifyPassword` 同长缓冲 + `timingSafeEqual`，消除长度旁路；删除 `auth_config` 残留建表。新增 `gateway/test/password.test.ts`。
+- **SEC-03 备份凭据脱敏 + 拉取端 host key**：`backup.sh` 备份 `env` 将口令置 `__REDACTED__`（真值只留 Pi `/etc/workbench/env`）；`pc-pull.py` 改 `RejectPolicy` + known_hosts。ARCHITECTURE §4/§5 同步。
+- **评估遗留**：① 公网登录口令强度不足，换 16+ 位随机（SEC-04）；② 部署后实机复验；③ P0「连续 3 晚」备份日历 streak 待 timer 走完。

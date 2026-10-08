@@ -18,8 +18,16 @@ export function verifyPassword(pw: unknown): boolean {
   if (typeof pw !== 'string') return false;
   const want = Buffer.from(expectedPassword());
   const got = Buffer.from(pw);
-  if (want.length < 8 || got.length !== want.length) return false;
-  return timingSafeEqual(got, want);
+  if (want.length < 8) return false;
+  // 同长缓冲 + timingSafeEqual，避免按长度提前返回造成时序差异。
+  const n = Math.max(want.length, got.length);
+  const a = Buffer.alloc(n);
+  const b = Buffer.alloc(n);
+  want.copy(a);
+  got.copy(b);
+  const lengthOk = want.length === got.length;
+  const eq = timingSafeEqual(a, b);
+  return lengthOk && eq;
 }
 
 export function newSession(db: DatabaseSync): { id: string; expires: number } {

@@ -59,7 +59,7 @@ export function createAdapter(opts: { baseUrl: string; username: string; passwor
 - 实现：`baseUrl=http://127.0.0.1:4096`，basic-auth（`OPENCODE_SERVER_USERNAME/PASSWORD` 环境变量，systemd `EnvironmentFile=/etc/workbench/env`，`0400 workbench:workbench`）。
 - 路由映射（v2.0.24 实测，OpenAPI 快照 `docs/opencode-openapi.json`）：健康 `GET /api/info`；事件 `GET /api/event`（SSE）；会话 `GET/POST /api/session`（包络 `{data}`）；下发 `POST /api/session/{id}/prompt {text}`；中断 `POST /api/session/{id}/interrupt`。注意 v1 路径（`/global/health`、`/event`、`/doc`）在 v2 返回 SPA HTML，不可用。
 - 错误语义：401/403→网关 502 + 告警（凭据错）；SSE 断流→指数退避重连（最大 30s）；非白名单 model/agent→网关 400（不透传）。
-- 契约测试：`gateway/test/opencode.contract.test.ts` 对 `GET /global/health`、`POST /session`、`POST /session/:id/message`（mock SSE）做版本矩阵测试。
+- 契约测试：`gateway/test/opencode.contract.test.ts` 对 v2 `GET /api/info`、`GET/POST /api/session`、`POST /api/session/:id/prompt`、`GET /api/session/:id/message`、`GET /api/event`（mock SSE）做版本矩阵测试；v1 路径不在测试矩阵内（v1 已退役）。
 
 ## 4. 数据库 schema（`wb.db`，与 `opencode.db` 物理分离）
 
@@ -74,15 +74,20 @@ CREATE TABLE jobs(id TEXT PK, name TEXT, cron TEXT, kind TEXT, payload TEXT, ena
 CREATE TABLE job_runs(id TEXT PK, job_id TEXT, started_at TEXT, finished_at TEXT, status TEXT, log TEXT);
 CREATE TABLE service_audit(id INTEGER PK AUTOINCREMENT, ts TEXT, actor TEXT, unit TEXT, action TEXT, allowed INT, reason TEXT);
 CREATE TABLE backups(id TEXT PK, ts TEXT, target TEXT, bytes INT, sha256 TEXT, status TEXT, log TEXT);
+CREATE TABLE sessions(id TEXT PK, expires_at INT, created_at INT); -- 会话（口令只在 env，不入库）
+CREATE TABLE auth_audit(id INTEGER PK AUTOINCREMENT, ts TEXT, result TEXT, note TEXT); -- 登录 ok/fail/locked
 ```
 
-- 备份对象：`wb.db*` + `config/*` + OpenCode 工作区（路径 P0 定，默认 `~/projects/workbench-*`，**不含** `opencode.db-WAL` 热文件，停服或 checkpoint 后拷贝）。
+- 备份对象：`wb.db*` + `config/*` + OpenCode 工作区（默认 `/home/workbench/.local/share/opencode`，**不含** `opencode.db-WAL` 热文件，停服或 checkpoint 后拷贝）。
 - 校验：每次备份写 `sha256`，失败写 `backups.status=failed` 并经流水线告警。
+- 凭据：备份内 `env` 为**脱敏副本**（`AUTH_LOGIN_PASSWORD` / `OPENCODE_SERVER_PASSWORD` 写 `__REDACTED__`），真值只存 Pi `/etc/workbench/env`（0400）；恢复后须人工重写口令再 `restart` 网关。
 
 ## 5. 安全模型
 
-- 认证链：`浏览器 → 内置密码登录（口令唯一来源 `.env: AUTH_LOGIN_PASSWORD`，会话 cookie HttpOnly/Lax/30d）→ cloudflared → 网关`（2026-10-08 用户决策弃用 CF Access；tunnel 保留做传输，Pi 仍零入站）。改密 = 改 env + restart（无在线改密端点）。
+- 认证链：`浏览器 → 内置密码登录（口令唯一来源 `.env` / `/etc/workbench/env: AUTH_LOGIN_PASSWORD`，会话 cookie HttpOnly/Lax/30d）→ cloudflared → 网关`（2026-10-08 用户决策弃用 CF Access；tunnel 保留做传输，Pi 仍零入站）。改密 = 改 env + restart（无在线改密端点）。
+- 覆盖面：全局 `onRequest` 钩子必须在**全部业务路由注册之前**挂载（Fastify 钩子只作用于其后注册的路由）；`/api/ai/*`、`/api/sys/*`、`/api/todos|notes|bookmarks|files`、`/api/jobs*`、`/api/portal/*` 一律要求会话。开放面仅 `/api/auth/status`、`/api/auth/login`、`/health` 与 SPA 静态资源。回归测试：`gateway/test/auth-coverage.test.ts`。
 - 用户隔离：新增 `workbench` 系统用户（`nologin` + `StrictModes`），运行网关 + `opencode serve`；`antifield` 的 NOPASSWD ALL 保持不动但**网关永不使用该身份**。
+- 权限语义：登录会话 ≈ `workbench` 身份（可经流水线 shell 任务执行命令、经白名单 sudo restart 服务）。单用户工作台可接受；若引入多用户/分享，须先拆权限。
 - 特权执行：网关以 `workbench` 身份直调只读动作；`restart` 走 `sudo -n /bin/systemctl restart <unit>`，由 `/etc/sudoers.d/workbench-systemctl`（`deploy/sudoers-workbench`，root:root 0440）限定到 3 条精确命令。网关单元**不设** `NoNewPrivileges`（否则 sudo 提权被禁；边界由 sudoers 保证）。
 - 白名单（初始，P0 可改，改动需更新本节 + TASK-INDEX）：`cloudflared.service`（restart only）、`workbench-gateway.service`、`opencode.service`、`nginx.service`（status only）。`antifield-cloud.service` 已退役（2026-10-08 stop+disable），不在白名单。白名单外 `POST /api/sys/services/*` 一律 `403 + service_audit.allowed=0`。
 - 审计：所有启停 + 备份 + AI 下发写入 `service_audit` / `job_runs`；日志脱敏（`password|token|key|secret` 正则）。
