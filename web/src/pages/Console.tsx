@@ -231,6 +231,19 @@ export default function Console() {
       <div class="bg-white shadow rounded p-3 text-sm text-gray-600">
         <div>journal：{ov()?.journal}</div>
       </div>
+      <div class="bg-white shadow rounded p-3">
+        <h2 class="font-bold mb-2">可选服务（只读，不在启停白名单）</h2>
+        <ul class="text-sm space-y-1">
+          <For each={ov()?.extra ?? []}>
+            {(s) => (
+              <li class="font-mono">
+                {s.unit}: <span class={s.active === 'active' ? 'text-green-700' : 'text-red-700'}>{s.active}</span>
+                {s.rssKb !== null && <span class="text-gray-500"> RSS {fmtMb(s.rssKb)}</span>}
+              </li>
+            )}
+          </For>
+        </ul>
+      </div>
     </div>
   );
 }

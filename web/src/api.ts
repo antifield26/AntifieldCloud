@@ -13,6 +13,7 @@ export interface Overview {
   tempC: number | null;
   diskWrittenKb: number;
   journal: string;
+  extra?: Array<{ unit: string; active: string; rssKb: number | null }>;
 }
 
 export interface ServiceState {

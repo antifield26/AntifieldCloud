@@ -94,3 +94,5 @@
 - **P5-02 落地**：磁盘健康代理——根分区剩余/24h 写入速率/粗估可用天数（61 天）/var/log 水位/TOP5 + watchdog disk 项（阈值 env 可调）；du 部分无权用 stdout 容错；构建产物目录加清理流程（staging 与 /opt 曾堆旧包）。本地 50/50。
 
 - **P5-03 落地**：日志查看器——unit/时间/条数过滤、级别着色、脱敏高亮、一键复制；API 排障演练：opencode 24h 仅 2 条正常行，cloudflared 355 条中 43 条边缘报错全部经 API 定位，未进 SSH。
+
+- **P5-04 落地**：可选服务监控槽——minecraft/mc-server 只读状态+RSS 进 overview（实测 2263M/83M），白名单与 sudoers 零改动。本地 52/52。

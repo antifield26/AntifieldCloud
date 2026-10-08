@@ -36,6 +36,37 @@ export async function serviceState(unit: string): Promise<string> {
   return out.trim().replace(/\n/g, ' ');
 }
 
+/** 只读监控槽：env 名单内的 unit 只读 ActiveState + 主进程 RSS。永不执行启停（白名单/sudoers 不动）。 */
+export function extraUnits(): string[] {
+  const raw = process.env.WB_EXTRA_UNITS ?? 'minecraft.service,mc-server.service';
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^[A-Za-z0-9@:._-]{1,128}$/.test(s))
+    .slice(0, 8);
+}
+
+export async function unitRssKb(pid: number): Promise<number | null> {
+  try {
+    const st = await readFile(`/proc/${pid}/status`, 'utf8');
+    const m = st.match(/^VmRSS:\s+(\d+)\s+kB/m);
+    return m !== null ? Number(m[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function extraStatus(): Promise<Array<{ unit: string; active: string; rssKb: number | null }>> {
+  const out: Array<{ unit: string; active: string; rssKb: number | null }> = [];
+  for (const unit of extraUnits()) {
+    const st = await run('/bin/systemctl', ['show', unit, '-p', 'ActiveState,MainPID'], 10000);
+    const active = (st.out.match(/ActiveState=(\S+)/) ?? [])[1] ?? '?';
+    const pid = Number((st.out.match(/MainPID=(\d+)/) ?? [])[1] ?? 0);
+    out.push({ unit, active, rssKb: pid > 0 ? await unitRssKb(pid) : null });
+  }
+  return out;
+}
+
 export async function controlService(unit: string, action: 'restart'): Promise<{ code: number; out: string }> {
   if (!PRIVILEGED.has(action)) throw new Error('not privileged action');
   return run('/usr/bin/sudo', ['-n', '/bin/systemctl', action, unit], 30000);

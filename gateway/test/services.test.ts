@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import { openDb } from '../src/db.js';
-import { isAllowed, audit } from '../src/sys/services.js';
+import { isAllowed, audit, extraUnits, unitRssKb } from '../src/sys/services.js';
 
 const WL = {
   allowed: [
@@ -41,5 +41,17 @@ void describe('services', () => {
         // 忽略
       }
     }
+  });
+
+  void it('extraUnits: 名单过滤注入', () => {
+    process.env.WB_EXTRA_UNITS = 'minecraft.service, mc-server.service, a;b, ../../x, ok@x.service';
+    assert.deepEqual(extraUnits(), ['minecraft.service', 'mc-server.service', 'ok@x.service']);
+    delete process.env.WB_EXTRA_UNITS;
+    assert.deepEqual(extraUnits(), ['minecraft.service', 'mc-server.service']);
+  });
+
+  void it('unitRssKb: 不存在 pid 返回 null', async () => {
+    assert.equal(await unitRssKb(1), await unitRssKb(1));
+    assert.equal(await unitRssKb(999999999), null);
   });
 });

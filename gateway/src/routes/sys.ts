@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import type { DatabaseSync } from 'node:sqlite';
 import { Sampler, parseDiskWrittenKb, parseDfLine, writeRatePerDay, daysLeft } from '../sys/metrics.js';
+import { extraStatus } from '../sys/services.js';
 import { queryLogs, journalUsage, aptUpgradable } from '../sys/logs.js';
 import { dbModes } from '../db.js';
 import { runWatchdog } from '../sys/watchdog.js';
@@ -37,9 +38,10 @@ let topCache: { at: number; body: Record<string, unknown> } = { at: 0, body: {} 
 export function registerSysRoutes(app: FastifyInstance, db: DatabaseSync, sampler: Sampler): void {
   app.get('/api/sys/overview', async () => {
     const s = sampler.latest() ?? (await sampler.collect());
-    const [diskstats, journal] = await Promise.all([
+    const [diskstats, journal, extra] = await Promise.all([
       readFile('/proc/diskstats', 'utf8').catch(() => ''),
       journalUsage(),
+      extraStatus(),
     ]);
     return {
       ts: s.ts,
@@ -50,6 +52,7 @@ export function registerSysRoutes(app: FastifyInstance, db: DatabaseSync, sample
       diskWrittenKb: parseDiskWrittenKb(diskstats),
       journal,
       db: dbModes(db),
+      extra,
     };
   });
 
