@@ -7,9 +7,9 @@ import { rmSync } from 'node:fs';
 import { openDb } from '../src/db.js';
 import { normalizePath, AuditBuffer } from '../src/sys/apiaudit.js';
 
-process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
+process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-audit-${Date.now()}`);
 
-process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
+process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-audit-${Date.now()}`);
 
 void describe('apiaudit', () => {
   void it('normalizePath 收敛 id、丢 query', () => {

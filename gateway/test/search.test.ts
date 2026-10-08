@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 
-process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
+process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-search-${Date.now()}`);
 
 const { buildApp } = await import('../src/app.js');
 const { loginCookie } = await import('./helper.js');

@@ -22,7 +22,7 @@ void describe('portal', () => {
     const p = join(tmpdir(), `portal-${Date.now()}.json`);
     writeFileSync(p, JSON.stringify({ services: [{ id: 'x', title: 'X', href: '/health' }] }));
     process.env.WB_PORTAL_PATH = p;
-    process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
+    process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-portal-${Date.now()}`);
     const { buildApp } = await import('../src/app.js');
     const { loginCookie } = await import('./helper.js');
     const { app } = await buildApp({ dbPath: join(tmpdir(), `wb-portal-${Date.now()}.db`), startSampler: false, startSched: false });

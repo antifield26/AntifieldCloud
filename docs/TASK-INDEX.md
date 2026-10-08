@@ -29,6 +29,7 @@
 | P1-06 | SPA 五页（控制台/AI/效率/流水线/门户） | P1 | done | P1-01..03 | 3h | 新包公网 200；AI 经网关建会/下发/出真实回复 | `web/` |
 | AUTH-01 | 内置密码认证（替代 CF Access） | P1 | done | P0-06 | 2h | 未登录 401；登录置 HttpOnly cookie；登出 401 | `gateway/src/auth/*` |
 | AUTH-02 | 口令改存 `AUTH_LOGIN_PASSWORD` | P1 | done | AUTH-01 | 1h | 口令只认 env；密封文件/DB 哈希残留已清 | `gateway/src/auth/*`、`deploy/env.example` |
+| AUTH-03 | 口令回存.db + 改密入口 | P1 | done | scrypt 哈希入库；密封初始口令；UI 改密；移除 env 口令 | \gateway/src/auth/*\ |
 | P2-01 | 适配器插件化 + LSP 按需 | P2 | dropped | — | — | 用户决策不做（v2 自带管理） | `gateway/src/opencode/*` |
 | P2-02 | 指标保留 + 导出 | P2 | done | P0-04 | 2h | 30 天滚动；CSV 线上导出；未登录 401 | `GET /api/sys/metrics/export` |
 | P2-03 | 备份多目标 + 加密 | P2 | dropped | — | — | 用户决策不做（Pi→PC + 7 天滚动已够） | `deploy/backup.sh` |

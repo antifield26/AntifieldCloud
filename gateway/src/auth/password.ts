@@ -1,7 +1,12 @@
-// 内置密码认证：口令唯一来源是环境变量 AUTH_LOGIN_PASSWORD（/etc/workbench/env，0400）。
-// 会话 cookie + 全局失败退避（tunnel 后同源 IP，限流按全局计数）。
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+// 内置密码认证：scrypt 哈希存 wb.db（auth_config），会话 cookie + 全局失败退避。
+// 会话绝对上限 7d（created_at 起算），滑动续期可关（WB_SESSION_SLIDING=0）。
+// 说明：tunnel 前所有来源 IP 都是 127.0.0.1，故限流按全局连续失败计数，不按 IP。
+import { randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
+import { writeFile, rm } from 'node:fs/promises';
 import type { DatabaseSync } from 'node:sqlite';
+
+const scrypt = promisify(scryptCb);
 
 export const SESSION_COOKIE = 'wb_session';
 export const SESSION_TTL_MS = 30 * 24 * 3600 * 1000;
@@ -10,45 +15,56 @@ export const SESSION_MAX_AGE_MS = 7 * 24 * 3600 * 1000;
 
 export const slidingOn = (): boolean => (process.env.WB_SESSION_SLIDING ?? '1') !== '0';
 
-export function expectedPassword(): string {
-  return process.env.AUTH_LOGIN_PASSWORD ?? '';
+export async function hashPassword(pw: string): Promise<string> {
+  const salt = randomBytes(16);
+  const dk = (await scrypt(pw, salt, 64)) as Buffer;
+  return `scrypt:${salt.toString('hex')}:${dk.toString('hex')}`;
 }
 
-export function isConfigured(): boolean {
-  return expectedPassword().length >= 8;
-}
-
-export function verifyPassword(pw: unknown): boolean {
+export async function verifyPassword(pw: unknown, stored: string): Promise<boolean> {
   if (typeof pw !== 'string') return false;
-  const want = Buffer.from(expectedPassword());
-  const got = Buffer.from(pw);
-  if (want.length < 8) return false;
-  // 同长缓冲 + timingSafeEqual，避免按长度提前返回造成时序差异。
-  const n = Math.max(want.length, got.length);
-  const a = Buffer.alloc(n);
-  const b = Buffer.alloc(n);
-  want.copy(a);
-  got.copy(b);
-  const lengthOk = want.length === got.length;
-  const eq = timingSafeEqual(a, b);
-  return lengthOk && eq;
+  const parts = stored.split(':');
+  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
+  const salt = Buffer.from(parts[1], 'hex');
+  const want = Buffer.from(parts[2], 'hex');
+  const dk = (await scrypt(pw, salt, 64)) as Buffer;
+  if (dk.length !== want.length) return false;
+  return timingSafeEqual(dk, want);
+}
+
+export function getHash(db: DatabaseSync): string | null {
+  const row = db.prepare("SELECT value FROM auth_config WHERE key='admin_hash'").get() as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setHash(db: DatabaseSync, hash: string): void {
+  db.prepare("INSERT OR REPLACE INTO auth_config(key,value) VALUES ('admin_hash',?)").run(hash);
+  db.prepare('DELETE FROM sessions').run();
+}
+
+/** 首启：无口令则生成随机口令，哈希入库，明文只写密封文件（用户首登改密后删除）。 */
+export async function ensurePassword(db: DatabaseSync, sealedPath: string): Promise<boolean> {
+  if (getHash(db) !== null) return false;
+  const pw = randomBytes(12).toString('base64url');
+  setHash(db, await hashPassword(pw));
+  await writeFile(sealedPath, `AntifieldCloud 初始密码（首登后请改密，改密后本文件自动删除）：\n${pw}\n`, { mode: 0o400 });
+  return true;
+}
+
+export function sealedPath(): string {
+  return process.env.WB_INITIAL_PW_FILE ?? '/var/lib/workbench/initial-password';
+}
+
+export async function removeSealed(): Promise<void> {
+  await rm(sealedPath(), { force: true });
 }
 
 export function newSession(db: DatabaseSync): { id: string; expires: number } {
   const id = randomBytes(24).toString('hex');
   const expires = Date.now() + SESSION_TTL_MS;
-  try {
-    db.exec('ALTER TABLE sessions ADD COLUMN created_at INT');
-  } catch {
-    // 列已存在
-  }
   db.prepare('INSERT INTO sessions(id,expires_at,created_at) VALUES (?,?,?)').run(id, expires, Date.now());
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
   return { id, expires };
-}
-
-export function auditLogin(db: DatabaseSync, result: 'ok' | 'fail' | 'locked'): void {
-  db.prepare('INSERT INTO auth_audit(ts,result,note) VALUES (?,?,?)').run(new Date().toISOString(), result, '');
 }
 
 export function validSession(db: DatabaseSync, id: string | undefined): boolean {
@@ -74,6 +90,10 @@ export function touchSession(db: DatabaseSync, id: string): void {
   if (Number(row.expires_at) - now >= 24 * 3600 * 1000) return;
   const cap = Number(row.created_at) + SESSION_MAX_AGE_MS;
   db.prepare('UPDATE sessions SET expires_at=? WHERE id=?').run(Math.min(now + SESSION_TTL_MS, cap), id);
+}
+
+export function auditLogin(db: DatabaseSync, result: 'ok' | 'fail' | 'locked'): void {
+  db.prepare('INSERT INTO auth_audit(ts,result,note) VALUES (?,?,?)').run(new Date().toISOString(), result, '');
 }
 
 export function destroySession(db: DatabaseSync, id: string): void {

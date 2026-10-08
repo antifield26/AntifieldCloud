@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 
-process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
+process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-cov-${Date.now()}`);
 process.env.OPENCODE_BASE_URL = 'http://127.0.0.1:1'; // 故意不可达，只测 401 前置
 
 const { buildApp } = await import('../src/app.js');

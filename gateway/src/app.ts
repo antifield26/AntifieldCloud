@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes, isOpen, cookieId } from './routes/auth.js';
+import { ensurePassword, sealedPath } from './auth/password.js';
 import { validSession, touchSession } from './auth/password.js';
 import { AuditBuffer, normalizePath } from './sys/apiaudit.js';
 import { registerSysRoutes } from './routes/sys.js';
@@ -42,6 +43,7 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
   const db = openDb(dbPath);
   await app.register(fastifyCookie);
   registerAuthRoutes(app, db);
+  await ensurePassword(db, process.env.WB_INITIAL_PW_FILE ?? sealedPath());
   const auditBuf = new AuditBuffer(db, Number(process.env.WB_AUDIT_FLUSH_MS ?? 60000));
   auditBuf.start();
   app.addHook('onRequest', async (req, reply) => {

@@ -1,28 +1,18 @@
-// 口令校验：长度不同/空/正确/错误 均应稳定拒绝或接受，且不因长度提前短路到错误路径。
+// 口令哈希 + 会话 7d 上限 + 失败退避测试。
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
-
-const { verifyPassword, isConfigured, authDelayMs, authFailed, authOk, validSession, touchSession, newSession } = await import('../src/auth/password.js');
+const { hashPassword, verifyPassword, authDelayMs, authFailed, authOk, validSession, touchSession, newSession } = await import('../src/auth/password.js');
 const { openDb } = await import('../src/db.js');
 
 void describe('password', () => {
-  void it('isConfigured 要求 ≥8 位', () => {
-    assert.equal(isConfigured(), true);
-  });
-
-  void it('verifyPassword 接受正确口令', () => {
-    assert.equal(verifyPassword('test-pass-123'), true);
-  });
-
-  void it('verifyPassword 拒绝错误/短/长/非字符串', () => {
-    assert.equal(verifyPassword('test-pass-12'), false);
-    assert.equal(verifyPassword('test-pass-1234'), false);
-    assert.equal(verifyPassword('wrong-password'), false);
-    assert.equal(verifyPassword(''), false);
-    assert.equal(verifyPassword(123), false);
-    assert.equal(verifyPassword(undefined), false);
+  void it('scrypt 哈希接受正确口令、拒绝错误', async () => {
+    const h = await hashPassword('correct-horse-123');
+    assert.equal(await verifyPassword('correct-horse-123', h), true);
+    assert.equal(await verifyPassword('wrong', h), false);
+    assert.equal(await verifyPassword('', h), false);
+    assert.equal(await verifyPassword(123, h), false);
+    assert.equal(await verifyPassword('x', 'garbage'), false);
   });
 
   void it('失败退避与锁定', () => {
@@ -40,8 +30,7 @@ void describe('password', () => {
     const { join } = await import('node:path');
     const { tmpdir } = await import('node:os');
     const { rmSync } = await import('node:fs');
-    const { openDb } = await import('../src/db.js');
-    const p = join(tmpdir(), 'wb-ses-' + String(Date.now()) + '.db');
+    const p = join(tmpdir(), `wb-ses-${Date.now()}.db`);
     const d = openDb(p);
     const s = newSession(d);
     assert.equal(validSession(d, s.id), true);
@@ -65,7 +54,11 @@ void describe('password', () => {
     delete process.env.WB_SESSION_SLIDING;
     d.close();
     for (const suf of ['', '-wal', '-shm', '-journal']) {
-      try { rmSync(p + suf); } catch { /* ignore */ }
+      try {
+        rmSync(p + suf);
+      } catch {
+        // 忽略
+      }
     }
   });
 });
