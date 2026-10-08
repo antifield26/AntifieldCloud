@@ -11,6 +11,9 @@ import {
   parseMeminfo,
   parseDiskWrittenKb,
   parseTemp,
+  parseDfLine,
+  writeRatePerDay,
+  daysLeft,
   Sampler,
 } from '../src/sys/metrics.js';
 import { redact, assertUnit } from '../src/sys/logs.js';
@@ -37,6 +40,23 @@ void describe('sys', () => {
   void it('parseTemp: vcgencmd', () => {
     assert.equal(parseTemp("temp=47.2'C\n"), 47.2);
     assert.equal(parseTemp('nope'), null);
+  });
+
+  void it('磁盘代理纯函数', () => {
+    const df = '文件系统 1B-blocks 已用 可用 已用% 挂载点\n/dev/mmcblk0p2 62562361344 34359738368 25123456789 58% /\n';
+    const r = parseDfLine(df, '/');
+    assert.ok(r !== null && r.totalB === 62562361344);
+    assert.equal(parseDfLine(df, '/nope'), null);
+    const now = Date.now();
+    const pts = [
+      { ts: now - 24 * 3600 * 1000, diskWrittenKb: 100000 },
+      { ts: now, diskWrittenKb: 100000 + 2880 },
+    ];
+    assert.equal(writeRatePerDay(pts, now), 2880);
+    assert.equal(writeRatePerDay([pts[0]], now), null);
+    assert.equal(daysLeft(24000000, 2880), Math.floor(24000000 / 2880));
+    assert.equal(daysLeft(1, 0), null);
+    assert.equal(daysLeft(1, null), null);
   });
 
   void it('redact: 凭据截断', () => {

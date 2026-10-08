@@ -8,7 +8,7 @@ import { openDb } from '../src/db.js';
 import { evaluate, recordAlerts, todoCheck, type WatchOpts } from '../src/sys/watchdog.js';
 import type { Sample } from '../src/sys/metrics.js';
 
-const OPTS: WatchOpts = { tempAlertC: 75, memMinMb: 1024, backupMaxH: 26, drillMaxD: 14 };
+const OPTS: WatchOpts = { tempAlertC: 75, memMinMb: 1024, backupMaxH: 26, drillMaxD: 14, diskMinGb: 5, logMaxPct: 80 };
 const UNITS = { cloudflared: true, opencode: true, serve: true };
 const S: Sample = { ts: 1, cpu: 1, memUsedKb: 7 * 1024 * 1024, memTotalKb: 8 * 1024 * 1024, tempC: 50, diskWrittenKb: 1 };
 const NOW = Date.parse('2026-10-08T06:00:00Z');
@@ -16,7 +16,7 @@ const FRESH = { ts: '2026-10-08T05:00:00Z', status: 'ok' };
 
 void describe('watchdog', () => {
   void it('全绿', () => {
-    const cs = evaluate(S, FRESH, NOW, OPTS, UNITS, { started_at: '2026-10-07T05:00:00Z', status: 'ok' });
+    const cs = evaluate(S, FRESH, NOW, OPTS, UNITS, { started_at: '2026-10-07T05:00:00Z', status: 'ok' }, { freeGb: 24, logPct: 3 });
     assert.ok(cs.every((c) => c.status === 'ok'));
   });
 
@@ -34,6 +34,18 @@ void describe('watchdog', () => {
     const a = todoCheck(['买牛奶', '交电费']);
     assert.equal(a.status, 'alert');
     assert.ok(a.detail.includes('买牛奶'));
+  });
+
+  void it('磁盘水位矩阵', () => {
+    const fresh = { started_at: '2026-10-07T05:00:00Z', status: 'ok' };
+    const ok = evaluate(S, FRESH, NOW, OPTS, UNITS, fresh, { freeGb: 24, logPct: 3 });
+    assert.equal(ok.find((c) => c.name === 'disk')?.status, 'ok');
+    const full = evaluate(S, FRESH, NOW, OPTS, UNITS, fresh, { freeGb: 2, logPct: 3 });
+    assert.equal(full.find((c) => c.name === 'disk')?.status, 'alert');
+    const logs = evaluate(S, FRESH, NOW, OPTS, UNITS, fresh, { freeGb: 24, logPct: 95 });
+    assert.equal(logs.find((c) => c.name === 'disk')?.status, 'alert');
+    const nodata = evaluate(S, FRESH, NOW, OPTS, UNITS, fresh, { freeGb: null as unknown as number, logPct: null });
+    assert.equal(nodata.find((c) => c.name === 'disk')?.status, 'unknown');
   });
 
   void it('超温/低内存/断线/备份过期各告警', () => {
@@ -55,8 +67,9 @@ void describe('watchdog', () => {
     const p = join(tmpdir(), `wb-wd-${Date.now()}.db`);
     const d = openDb(p);
     const fresh = { started_at: '2026-10-07T05:00:00Z', status: 'ok' };
-    assert.equal(recordAlerts(d, evaluate(S, FRESH, NOW, OPTS, UNITS, fresh)), 0);
-    const n = recordAlerts(d, evaluate({ ...S, tempC: 99 }, FRESH, NOW, OPTS, UNITS, fresh));
+    const diskOk = { freeGb: 24, logPct: 3 };
+    assert.equal(recordAlerts(d, evaluate(S, FRESH, NOW, OPTS, UNITS, fresh, diskOk)), 0);
+    const n = recordAlerts(d, evaluate({ ...S, tempC: 99 }, FRESH, NOW, OPTS, UNITS, fresh, diskOk));
     assert.equal(n, 1);
     const row = d.prepare("SELECT job_id,status,log FROM job_runs WHERE job_id='watchdog'").get() as {
       job_id: string; status: string; log: string;

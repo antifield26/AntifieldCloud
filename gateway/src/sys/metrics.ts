@@ -35,7 +35,34 @@ export function parseMeminfo(text: string): { totalKb: number; availKb: number }
   return { totalKb: get('MemTotal'), availKb: get('MemAvailable') };
 }
 
-/** mmcblk0 写扇区累计（/proc/diskstats 第 10 列为写扇区数，512B/扇区） */
+/** df -B1 输出解析：取挂载点行的可用/总量（bytes） */
+export function parseDfLine(df: string, mount: string): { availB: number; totalB: number } | null {
+  for (const line of df.split('\n')) {
+    const f = line.trim().split(/\s+/);
+    if (f.length >= 6 && f[f.length - 1] === mount) {
+      const total = Number(f[1]);
+      const avail = Number(f[3]);
+      if (Number.isFinite(total) && Number.isFinite(avail)) return { availB: avail, totalB: total };
+    }
+  }
+  return null;
+}
+
+/** 近24h写入速率（KB/天）：用 metrics_ts 累计值首尾差 */
+export function writeRatePerDay(points: Array<{ ts: number; diskWrittenKb: number }>, nowMs: number): number | null {
+  const day = points.filter((p) => nowMs - p.ts <= 24 * 3600 * 1000);
+  if (day.length < 2) return null;
+  const dtDays = (day[day.length - 1].ts - day[0].ts) / 86400000;
+  if (dtDays <= 0) return null;
+  const d = day[day.length - 1].diskWrittenKb - day[0].diskWrittenKb;
+  return d < 0 ? null : Math.round(d / dtDays);
+}
+
+/** 按日写量粗估可用天数 */
+export function daysLeft(freeKb: number, perDayKb: number | null): number | null {
+  if (perDayKb === null || perDayKb <= 0) return null;
+  return Math.floor(freeKb / perDayKb);
+}
 export function parseDiskWrittenKb(text: string): number {
   for (const line of text.split('\n')) {
     const f = line.trim().split(/\s+/);

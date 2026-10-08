@@ -14,6 +14,16 @@ interface MPoint {
   diskWrittenKb: number;
 }
 
+interface DiskHealth {
+  rootFreeKb: number | null;
+  rootTotalKb: number | null;
+  writePerDayKb: number | null;
+  daysLeft: number | null;
+  varLogUsePct: number | null;
+  top5: string[];
+  cached: boolean;
+}
+
 export default function Console() {
   const [ov, setOv] = createSignal<Overview | null>(null);
   const [svcs, setSvcs] = createSignal<ServiceState[]>([]);
@@ -21,19 +31,22 @@ export default function Console() {
   const [err, setErr] = createSignal('');
   const [range, setRange] = createSignal<'24h' | '7d'>('24h');
   const [pts, setPts] = createSignal<MPoint[]>([]);
+  const [disk, setDisk] = createSignal<DiskHealth | null>(null);
 
   const load = async (): Promise<void> => {
     try {
-      const [o, s, w, m] = await Promise.all([
+      const [o, s, w, m, dh] = await Promise.all([
         api<Overview>('/api/sys/overview'),
         api<{ units: ServiceState[] }>('/api/sys/services'),
         api<{ checks: Check[] }>('/api/sys/watchdog'),
         api<{ points: MPoint[] }>(`/api/sys/metrics?range=${range()}`),
+        api<DiskHealth>('/api/sys/disk-health'),
       ]);
       setOv(o);
       setSvcs(s.units);
       setChecks(w.checks);
       setPts(m.points);
+      setDisk(dh);
       setErr('');
     } catch (e) {
       setErr(String(e));
@@ -86,6 +99,23 @@ export default function Console() {
           <div><div class="text-sm text-gray-500">内存已用 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.memUsedKb / 1048576 }))} color="#16a34a" unit="G" /></div>
           <div><div class="text-sm text-gray-500">SD 累计写 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.diskWrittenKb / 1048576 }))} color="#9333ea" unit="G" /></div>
         </div>
+      </div>
+      <div class="bg-white shadow rounded p-3">
+        <h2 class="font-bold mb-2">磁盘健康（SD 无寿命读数，代理指标）</h2>
+        <Show when={disk()} fallback={<div class="text-gray-400 text-sm">加载中…</div>}>
+          <ul class="text-sm space-y-1">
+            <li>根分区剩余：{disk()!.rootFreeKb === null || disk()!.rootTotalKb === null ? '?' : `${fmtGb(disk()!.rootFreeKb as number)} / ${fmtGb(disk()!.rootTotalKb as number)}`}</li>
+            <li>近 24h 写入速率：{disk()!.writePerDayKb === null ? '数据不足' : `${fmtMb(disk()!.writePerDayKb as number)}/天`}</li>
+            <li>粗估可用天数：{disk()!.daysLeft ?? '—'}</li>
+            <li>/var/log 水位：{disk()!.varLogUsePct ?? '?'}%</li>
+            <li>
+              大目录 TOP5{disk()!.cached ? '（缓存）' : ''}：
+              <ul class="ml-4 list-disc">
+                <For each={disk()!.top5}>{(t) => <li class="font-mono text-xs">{t}</li>}</For>
+              </ul>
+            </li>
+          </ul>
+        </Show>
       </div>
       <div class="bg-white shadow rounded p-3">
         <h2 class="font-bold mb-2">告警</h2>

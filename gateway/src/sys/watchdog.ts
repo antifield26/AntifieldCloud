@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { Sample } from './metrics.js';
+import { parseDfLine } from './metrics.js';
 
 export interface Check {
   name: string;
@@ -15,6 +16,8 @@ export interface WatchOpts {
   memMinMb: number;
   backupMaxH: number;
   drillMaxD: number;
+  diskMinGb: number;
+  logMaxPct: number;
 }
 
 export const optsFromEnv = (): WatchOpts => ({
@@ -22,6 +25,8 @@ export const optsFromEnv = (): WatchOpts => ({
   memMinMb: Number(process.env.WB_MEM_MIN_MB ?? 1024),
   backupMaxH: Number(process.env.WB_BACKUP_MAX_H ?? 26),
   drillMaxD: Number(process.env.WB_DRILL_MAX_D ?? 14),
+  diskMinGb: Number(process.env.WB_DISK_MIN_GB ?? 5),
+  logMaxPct: Number(process.env.WB_LOG_MAX_PCT ?? 80),
 });
 
 function sh(cmd: string, args: string[], timeoutMs: number): Promise<string> {
@@ -59,6 +64,7 @@ export function evaluate(
   opts: WatchOpts,
   units: { cloudflared: boolean; opencode: boolean; serve: boolean },
   drill?: { started_at: string; status: string } | undefined,
+  disk?: { freeGb: number | null; logPct: number | null } | undefined,
 ): Check[] {
   const out: Check[] = [];
   out.push(
@@ -110,6 +116,18 @@ export function evaluate(
         : { name: 'drill', status: 'ok', detail: `${ageD.toFixed(1)}d ago` },
     );
   }
+  if (disk === undefined || disk.freeGb === null) {
+    out.push({ name: 'disk', status: 'unknown', detail: 'no data' });
+  } else {
+    const probs: string[] = [];
+    if (disk.freeGb < opts.diskMinGb) probs.push(`free ${disk.freeGb.toFixed(1)}G < ${opts.diskMinGb}G`);
+    if (disk.logPct !== null && disk.logPct > opts.logMaxPct) probs.push(`log ${disk.logPct}% > ${opts.logMaxPct}%`);
+    out.push(
+      probs.length > 0
+        ? { name: 'disk', status: 'alert', detail: probs.join('; ') }
+        : { name: 'disk', status: 'ok', detail: `free ${disk.freeGb.toFixed(1)}G` },
+    );
+  }
   return out;
 }
 
@@ -142,14 +160,28 @@ export async function runWatchdog(db: DatabaseSync, sample: Sample | null): Prom
   const lastBackup = db
     .prepare('SELECT ts,status FROM backups ORDER BY ts DESC LIMIT 1')
     .get() as { ts: string; status: string } | undefined;
-  const [cf, oc, sv] = await Promise.all([isActive('cloudflared.service'), isActive('opencode.service'), serveHealthy()]);
+  const [cf, oc, sv, dfB] = await Promise.all([
+    isActive('cloudflared.service'),
+    isActive('opencode.service'),
+    serveHealthy(),
+    sh('/usr/bin/df', ['-B1', '/', '/var/log'], 8000),
+  ]);
   const drill = db
     .prepare("SELECT started_at,status FROM job_runs WHERE job_id='drill' ORDER BY started_at DESC LIMIT 1")
     .get() as { started_at: string; status: string } | undefined;
   const overdue = db
     .prepare("SELECT title FROM todos WHERE done=0 AND due_at IS NOT NULL AND due_at != '' AND due_at < datetime('now') LIMIT 10")
     .all() as Array<{ title: string }>;
-  const checks = evaluate(sample, lastBackup, Date.now(), opts, { cloudflared: cf, opencode: oc, serve: sv }, drill);
+  const root = parseDfLine(dfB, '/');
+  const logFs = parseDfLine(dfB, '/var/log');
+  const disk =
+    root === null
+      ? undefined
+      : {
+          freeGb: Math.round((root.availB / 1024 ** 3) * 10) / 10,
+          logPct: logFs !== null && logFs.totalB > 0 ? Math.round(((logFs.totalB - logFs.availB) / logFs.totalB) * 100) : null,
+        };
+  const checks = evaluate(sample, lastBackup, Date.now(), opts, { cloudflared: cf, opencode: oc, serve: sv }, drill, disk);
   checks.push(todoCheck(overdue.map((r) => r.title)));
   recordAlerts(db, checks);
   return checks;
