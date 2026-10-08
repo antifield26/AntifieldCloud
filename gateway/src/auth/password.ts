@@ -25,9 +25,18 @@ export function verifyPassword(pw: unknown): boolean {
 export function newSession(db: DatabaseSync): { id: string; expires: number } {
   const id = randomBytes(24).toString('hex');
   const expires = Date.now() + SESSION_TTL_MS;
-  db.prepare('INSERT INTO sessions(id,expires_at) VALUES (?,?)').run(id, expires);
+  try {
+    db.exec('ALTER TABLE sessions ADD COLUMN created_at INT');
+  } catch {
+    // 列已存在
+  }
+  db.prepare('INSERT INTO sessions(id,expires_at,created_at) VALUES (?,?,?)').run(id, expires, Date.now());
   db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
   return { id, expires };
+}
+
+export function auditLogin(db: DatabaseSync, result: 'ok' | 'fail' | 'locked'): void {
+  db.prepare('INSERT INTO auth_audit(ts,result,note) VALUES (?,?,?)').run(new Date().toISOString(), result, '');
 }
 
 export function validSession(db: DatabaseSync, id: string | undefined): boolean {

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import { loadWhitelist, isAllowed, serviceState, controlService, audit } from '../sys/services.js';
+import { cookieId } from './auth.js';
 
 const WL_PATH = process.env.WB_WHITELIST_PATH ?? '/opt/workbench/config/systemd-whitelist.json';
 
@@ -15,7 +16,7 @@ export function registerServiceRoutes(app: FastifyInstance, db: DatabaseSync): v
 
   app.post<{ Params: { unit: string; action: string } }>('/api/sys/services/:unit/:action', async (req, reply) => {
     const { unit, action } = req.params;
-    const actor = 'local';
+    const actor = `ses:${(cookieId(req.headers.cookie) ?? 'none').slice(0, 8)}`;
     let wl;
     try {
       wl = await loadWhitelist(WL_PATH);

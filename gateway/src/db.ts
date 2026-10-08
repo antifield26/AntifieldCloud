@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS service_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, t
 CREATE TABLE IF NOT EXISTS backups(id TEXT PRIMARY KEY, ts TEXT, target TEXT, bytes INT, sha256 TEXT, status TEXT, log TEXT);
 CREATE TABLE IF NOT EXISTS auth_config(key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, expires_at INT);
+CREATE TABLE IF NOT EXISTS auth_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, result TEXT, note TEXT);
 `;
 
 let db: DatabaseSync | null = null;

@@ -126,6 +126,8 @@
 
 ## 9. 变更日志（2026-10-08 用户指令执行记录）
 
+- **P2-04 落地（2026-10-08）**：登录 fail/ok 记 `auth_audit`（不记口令）；`GET/DELETE /api/auth/sessions`（id 前缀吊销）；`service_audit.actor` 从 `local` 改为 `ses:<会话前缀>`，线上越权行归因成功。本地 32/32。
+
 - **P2-02 落地（2026-10-08）**：`GET /api/sys/metrics/export?range=`（1h/24h/7d）吐 CSV，线上导出真实行、未登录 401；30 天滚动由 flush 裁剪 + 单测覆盖。本地 31/31。
 
 - **AUTH-02 落地（2026-10-08，用户决策：口令只存 `.env` 的 `AUTH_LOGIN_PASSWORD`）**：删 DB 哈希/密封文件/改密端点，登录只认 env（timingSafeEqual，<8 位视为未配置）。线上实测 401/401/200 全对，旧密封与 `auth_config` 已清。教训×2：① 部署用了相对路径 `cp -a dist`（第二段命令 cwd 是 $HOME）致旧代码继续跑——一律绝对路径；② 拼接 shell 传密码时变量展开掉致空值——敏感值一律 `printf+单引号` 直写。口令已生成并设入 env，PC 临时脚本用后即删。
