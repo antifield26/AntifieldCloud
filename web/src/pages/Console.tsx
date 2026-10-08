@@ -1,25 +1,39 @@
 import { createSignal, onCleanup, For, Show } from 'solid-js';
 import { api, type Overview, type ServiceState, type Check } from '../api';
+import { LineChart } from '../chart';
 
 const fmtMb = (kb: number): string => `${Math.round(kb / 1024)}M`;
 const fmtGb = (kb: number): string => `${(kb / 1024 / 1024).toFixed(1)}G`;
+
+interface MPoint {
+  ts: number;
+  cpu: number | null;
+  memUsedKb: number;
+  memTotalKb: number;
+  tempC: number | null;
+  diskWrittenKb: number;
+}
 
 export default function Console() {
   const [ov, setOv] = createSignal<Overview | null>(null);
   const [svcs, setSvcs] = createSignal<ServiceState[]>([]);
   const [checks, setChecks] = createSignal<Check[]>([]);
   const [err, setErr] = createSignal('');
+  const [range, setRange] = createSignal<'24h' | '7d'>('24h');
+  const [pts, setPts] = createSignal<MPoint[]>([]);
 
   const load = async (): Promise<void> => {
     try {
-      const [o, s, w] = await Promise.all([
+      const [o, s, w, m] = await Promise.all([
         api<Overview>('/api/sys/overview'),
         api<{ units: ServiceState[] }>('/api/sys/services'),
         api<{ checks: Check[] }>('/api/sys/watchdog'),
+        api<{ points: MPoint[] }>(`/api/sys/metrics?range=${range()}`),
       ]);
       setOv(o);
       setSvcs(s.units);
       setChecks(w.checks);
+      setPts(m.points);
       setErr('');
     } catch (e) {
       setErr(String(e));
@@ -50,6 +64,28 @@ export default function Console() {
         <div class="bg-white shadow rounded p-3"><div class="text-gray-500 text-sm">CPU</div><div class="text-2xl">{ov()?.cpuPct ?? '?'}%</div></div>
         <div class="bg-white shadow rounded p-3"><div class="text-gray-500 text-sm">内存</div><div class="text-2xl">{ov() ? `${fmtGb(ov()!.memUsedKb)} / ${fmtGb(ov()!.memTotalKb)}` : '?'}</div></div>
         <div class="bg-white shadow rounded p-3"><div class="text-gray-500 text-sm">SD 已写</div><div class="text-2xl">{ov() ? fmtMb(ov()!.diskWrittenKb) : '?'}</div></div>
+      </div>
+      <div class="bg-white shadow rounded p-3">
+        <div class="flex gap-2 items-center mb-2">
+          <h2 class="font-bold">曲线</h2>
+          {(['24h', '7d'] as const).map((r) => (
+            <button
+              class={`px-2 py-1 rounded text-sm ${range() === r ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
+              onClick={() => {
+                setRange(r);
+                void load();
+              }}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div><div class="text-sm text-gray-500">温度 °C</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.tempC }))} color="#e11d48" unit="°C" /></div>
+          <div><div class="text-sm text-gray-500">CPU %</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.cpu }))} color="#2563eb" unit="%" /></div>
+          <div><div class="text-sm text-gray-500">内存已用 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.memUsedKb / 1048576 }))} color="#16a34a" unit="G" /></div>
+          <div><div class="text-sm text-gray-500">SD 累计写 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.diskWrittenKb / 1048576 }))} color="#9333ea" unit="G" /></div>
+        </div>
       </div>
       <div class="bg-white shadow rounded p-3">
         <h2 class="font-bold mb-2">告警</h2>

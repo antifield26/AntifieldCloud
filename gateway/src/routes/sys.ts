@@ -35,11 +35,12 @@ export function registerSysRoutes(app: FastifyInstance, db: DatabaseSync, sample
   });
 
   app.get<{ Querystring: { range?: string } }>('/api/sys/metrics', async (req) => {
-    const rangeMs = req.query.range === '24h' ? 24 * 3600 * 1000 : 3600 * 1000;
+    const rangeMs = req.query.range === '24h' ? 24 * 3600 * 1000 : req.query.range === '7d' ? 7 * 24 * 3600 * 1000 : 3600 * 1000;
+    const range: string = req.query.range === '7d' ? '7d' : req.query.range === '24h' ? '24h' : '1h';
     const rows = db
       .prepare('SELECT ts,cpu,mem_used AS memUsedKb,mem_total AS memTotalKb,temp_c AS tempC,disk_written_kb AS diskWrittenKb FROM metrics_ts WHERE ts > ? ORDER BY ts')
       .all(Date.now() - rangeMs) as Array<Record<string, unknown>>;
-    return { range: req.query.range ?? '1h', points: rows };
+    return { range, points: rows };
   });
 
   app.get<{ Querystring: { range?: string } }>(
