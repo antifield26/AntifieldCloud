@@ -20,6 +20,7 @@ export default function App() {
   const [authed, setAuthed] = createSignal<boolean | null>(null);
   const [q, setQ] = createSignal('');
   const [hits, setHits] = createSignal<Array<{ kind: string; id: string; title: string; snippet: string; jump: string }>>([]);
+  const [menuOpen, setMenuOpen] = createSignal(false);
   const check = async (): Promise<void> => {
     try {
       const s = await api<{ authenticated: boolean }>('/api/auth/status');
@@ -32,6 +33,7 @@ export default function App() {
   const pick = (id: string): void => {
     setTab(id);
     location.hash = id;
+    setMenuOpen(false);
   };
   let timer = 0;
   const search = (v: string): void => {
@@ -56,16 +58,21 @@ export default function App() {
         fallback={<Login onOk={() => void check().then(() => setAuthed(true))} />}
       >
         <div class="min-h-screen bg-gray-100">
-          <header class="bg-gray-900 text-white px-4 py-2 flex gap-2 items-center">
+          <header class="bg-gray-900 text-white px-4 py-2 flex gap-2 items-center flex-wrap">
             <span class="font-bold">AntifieldCloud</span>
-            {tabs.map((t) => (
-              <button
-                class={`px-3 py-1 rounded ${tab() === t.id ? 'bg-gray-700' : 'hover:bg-gray-800'}`}
-                onClick={() => pick(t.id)}
-              >
-                {t.title}
-              </button>
-            ))}
+            <button class="md:hidden px-3 py-1 rounded bg-gray-700" onClick={() => setMenuOpen(!menuOpen())}>
+              {menuOpen() ? '收起' : '菜单'}
+            </button>
+            <nav class={`${menuOpen() ? 'flex' : 'hidden'} md:flex gap-2 items-center flex-wrap basis-full md:basis-auto`}>
+              {tabs.map((t) => (
+                <button
+                  class={`px-3 py-1 rounded text-left ${tab() === t.id ? 'bg-gray-700' : 'hover:bg-gray-800'}`}
+                  onClick={() => pick(t.id)}
+                >
+                  {t.title}
+                </button>
+              ))}
+            </nav>
             <div class="relative ml-auto">
               <input
                 class="bg-gray-800 rounded px-2 py-1 text-sm w-48"

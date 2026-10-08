@@ -59,8 +59,8 @@ export default function Jobs() {
   };
 
   return (
-    <div class="p-4 flex gap-4">
-      <div class="w-80 shrink-0 space-y-2">
+    <div class="p-4 flex flex-col md:flex-row gap-4">
+      <div class="w-full md:w-80 shrink-0 space-y-2">
         <div class="bg-white shadow rounded p-3 space-y-2">
           <h2 class="font-bold">新建任务</h2>
           <input class="w-full border rounded px-2 py-1 text-sm" placeholder="名称" value={name()} onInput={(e) => setName(e.currentTarget.value)} />

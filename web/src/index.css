@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+/* 移动端基线：无横向滚动 */
+html,
+body {
+  overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+  /* 触控目标 ≥44px */
+  button,
+  input[type="checkbox"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  input[type="text"],
+  input[type="password"],
+  input[type="date"],
+  input[type="file"],
+  select,
+  textarea {
+    min-height: 44px;
+    font-size: 16px; /* 防 iOS 对焦缩放 */
+  }
+}

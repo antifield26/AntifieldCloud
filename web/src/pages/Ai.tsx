@@ -112,8 +112,8 @@ export default function Ai() {
   });
 
   return (
-    <div class="p-4 flex gap-4">
-      <div class="w-64 shrink-0">
+    <div class="p-4 flex flex-col md:flex-row gap-4">
+      <div class="w-full md:w-64 shrink-0">
         <button class="bg-blue-500 text-white px-3 py-1 rounded mb-2" onClick={() => void create()}>新建会话</button>
         <ul class="space-y-1">
           <For each={sessions()}>

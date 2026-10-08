@@ -57,7 +57,7 @@
 | P4-02 | 效率面板升级（笔记/待办/书签/文件） | done | P1-01 | 3h | ① 笔记 Markdown 预览（安全渲染，禁 script）；② 待办到期提醒经 jobs/watchdog 落记录；③ 书签标签 + 按标签筛；④ 文件上传列表显示大小/时间，文本可预览；⑤ 记一条笔记或待办 ≤3 次点击 | XSS：Markdown 渲染须消毒；文件预览不做 HTML 内嵌执行 | `web/src/pages/Efficiency.tsx`、`gateway/src/routes/efficiency.ts` |
 | P4-03 | 全局搜索 | done | P4-02 | 2h | `GET /api/search?q=` 检索 todos/notes/bookmarks/files_meta；前端顶栏入口；关键字命中列表可跳转；P95 响应 ≤200ms（本机千条级） | FTS5 或 LIKE 二选一，先 LIKE 足够则不引入 FTS 迁移 | `gateway/src/routes/efficiency.ts` 或新 `routes/search.ts`、`web/src/App.tsx` |
 | P4-04 | 导入导出 | done | P4-02 | 2h | ① 导出 JSON（四类）+ CSV（todos/notes）；② 导入 JSON 可合并或替换（参数指定）；③ 实机：导出→删测试行→导入还原；④ 导出走已鉴权 API，文件名含日期 | 大 body 限长；导入校验字段类型 | `gateway/src/routes/efficiency.ts`、`web/src/pages/Efficiency.tsx` |
-| P4-05 | 移动端可用性 | pending | P4-01, P4-02 | 1.5h | 手机浏览器：登录 → 记待办 → 看温度全链路；无横向滚动；触控目标 ≥44px；导航可折叠 | 只做响应式，不做原生 App/PWA 安装 | `web/src/index.css`、`web/src/App.tsx`、各 `pages/*` |
+| P4-05 | 移动端可用性 | done | P4-01, P4-02 | 1.5h | 手机浏览器：登录 → 记待办 → 看温度全链路；无横向滚动；触控目标 ≥44px；导航可折叠 | 只做响应式，不做原生 App/PWA 安装 | `web/src/index.css`、`web/src/App.tsx`、各 `pages/*` |
 
 **P4 出口**：日常记事/搜东西/AI 任务在桌面和手机都顺手；数据可完整导出迁移。
 
