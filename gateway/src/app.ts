@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuthRoutes, isOpen, cookieId } from './routes/auth.js';
 import { validSession } from './auth/password.js';
+import { AuditBuffer, normalizePath } from './sys/apiaudit.js';
 import { registerSysRoutes } from './routes/sys.js';
 import { registerServiceRoutes } from './routes/services.js';
 import { registerEfficiencyRoutes } from './routes/efficiency.js';
@@ -40,11 +41,28 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
   const db = openDb(dbPath);
   await app.register(fastifyCookie);
   registerAuthRoutes(app, db);
+  const auditBuf = new AuditBuffer(db, Number(process.env.WB_AUDIT_FLUSH_MS ?? 60000));
+  auditBuf.start();
   app.addHook('onRequest', async (req, reply) => {
+    (req as unknown as { startTime: number }).startTime = Date.now();
     if (!isOpen(req.url) && !validSession(db, cookieId(req.headers.cookie))) {
       return reply.code(401).send({ error: 'login required' });
     }
     return undefined;
+  });
+  // 审计记在 onResponse（onRequest 拒掉的 401 也会走到这里，actor=anon，不重复）。
+  app.addHook('onResponse', async (req, reply) => {
+    if (!req.url.startsWith('/api/')) return;
+    const start = (req as unknown as { startTime?: number }).startTime ?? Date.now();
+    const sid = cookieId(req.headers.cookie);
+    auditBuf.push({
+      ts: Date.now(),
+      actor: validSession(db, sid) ? `ses:${(sid ?? '').slice(0, 8)}` : 'anon',
+      method: req.method,
+      path: normalizePath(req.url),
+      status: reply.statusCode,
+      ms: Date.now() - start,
+    });
   });
   registerAiRoutes(app);
   const sampler = new Sampler(db);

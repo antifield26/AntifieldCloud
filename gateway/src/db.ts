@@ -15,16 +15,27 @@ CREATE TABLE IF NOT EXISTS service_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, t
 CREATE TABLE IF NOT EXISTS backups(id TEXT PRIMARY KEY, ts TEXT, target TEXT, bytes INT, sha256 TEXT, status TEXT, log TEXT);
 CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, expires_at INT);
 CREATE TABLE IF NOT EXISTS auth_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, result TEXT, note TEXT);
-`;
+CREATE TABLE IF NOT EXISTS api_audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INT, actor TEXT, method TEXT, path TEXT, status INT, ms INT);
+CREATE INDEX IF NOT EXISTS idx_api_audit_ts ON api_audit(ts);`;
 
 let db: DatabaseSync | null = null;
+let currentPath = '';
 
 export function openDb(path: string): DatabaseSync {
-  if (db !== null) return db;
+  if (db !== null && currentPath === path) return db;
+  if (db !== null) {
+    try {
+      db.close();
+    } catch {
+      // 忽略
+    }
+    db = null;
+  }
   const d = new DatabaseSync(path);
   d.exec('PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;');
   d.exec(SCHEMA);
   db = d;
+  currentPath = path;
   return d;
 }
 
