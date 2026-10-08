@@ -7,7 +7,7 @@ import { rmSync, mkdirSync } from 'node:fs';
 
 process.env.WB_FILES_DIR = join(tmpdir(), `wb-files-${Date.now()}`);
 mkdirSync(process.env.WB_FILES_DIR, { recursive: true });
-process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-eff-${Date.now()}`);
+process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
 
 const { buildApp } = await import('../src/app.js');
 const { loginCookie } = await import('./helper.js');

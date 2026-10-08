@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { DatabaseSync } from 'node:sqlite';
 import {
-  SESSION_COOKIE, SESSION_TTL_MS, hashPassword, verifyPassword, getHash, setHash,
-  newSession, validSession, destroySession, authDelayMs, authFailed, authOk, removeSealed,
+  SESSION_COOKIE, SESSION_TTL_MS, verifyPassword, isConfigured,
+  newSession, validSession, destroySession, authDelayMs, authFailed, authOk,
 } from '../auth/password.js';
 
 const cookieOpts = (secure: boolean): Record<string, unknown> => ({
@@ -16,16 +16,14 @@ const cookieOpts = (secure: boolean): Record<string, unknown> => ({
 export function registerAuthRoutes(app: FastifyInstance, db: DatabaseSync): void {
   app.get('/api/auth/status', async (req) => {
     const sid = cookieId(req.headers.cookie);
-    return { configured: getHash(db) !== null, authenticated: validSession(db, sid) };
+    return { configured: isConfigured(), authenticated: validSession(db, sid) };
   });
 
   app.post<{ Body: { password?: unknown } }>('/api/auth/login', async (req, reply) => {
     const wait = authDelayMs();
     if (wait < 0) return reply.code(429).send({ error: 'locked, try later' });
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-    const hash = getHash(db);
-    const ok =
-      typeof req.body?.password === 'string' && hash !== null && (await verifyPassword(req.body.password, hash));
+    const ok = isConfigured() && verifyPassword(req.body?.password);
     if (!ok) {
       authFailed();
       return reply.code(401).send({ error: 'bad password' });
@@ -41,22 +39,6 @@ export function registerAuthRoutes(app: FastifyInstance, db: DatabaseSync): void
   app.post('/api/auth/logout', async (req, reply) => {
     destroySession(db, cookieId(req.headers.cookie) ?? '');
     return reply.clearCookie(SESSION_COOKIE, { path: '/' }).send({ ok: true });
-  });
-
-  app.post<{ Body: { old?: unknown; next?: unknown } }>('/api/auth/password', async (req, reply) => {
-    const sid = cookieId(req.headers.cookie);
-    if (!validSession(db, sid)) return reply.code(401).send({ error: 'login required' });
-    const hash = getHash(db);
-    if (
-      typeof req.body?.old !== 'string' || typeof req.body?.next !== 'string' ||
-      req.body.next.length < 8 || req.body.next.length > 200 || hash === null ||
-      !(await verifyPassword(req.body.old, hash))
-    ) {
-      return reply.code(400).send({ error: 'bad old password or weak next (8-200 chars)' });
-    }
-    setHash(db, await hashPassword(req.body.next));
-    await removeSealed();
-    return { ok: true };
   });
 }
 

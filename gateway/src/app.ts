@@ -15,7 +15,6 @@ import { startWatchdog } from './sys/watchdog.js';
 import { createAdapter } from './opencode/adapter.js';
 import { openDb } from './db.js';
 import { Sampler } from './sys/metrics.js';
-import { ensurePassword, sealedPath } from './auth/password.js';
 import fastifyCookie from '@fastify/cookie';
 
 export interface AppContext {
@@ -39,7 +38,6 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
   }
   registerAiRoutes(app);
   const db = openDb(dbPath);
-  await ensurePassword(db, process.env.WB_INITIAL_PW_FILE ?? sealedPath());
   await app.register(fastifyCookie);
   registerAuthRoutes(app, db);
   app.addHook('onRequest', async (req, reply) => {

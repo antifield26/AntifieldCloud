@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import { matchCron } from '../src/jobs/scheduler.js';
 
-process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-jobs-${Date.now()}`);
+process.env.AUTH_LOGIN_PASSWORD = 'test-pass-123';
 
 const { buildApp } = await import('../src/app.js');
 const { loginCookie } = await import('./helper.js');
