@@ -66,3 +66,5 @@
 - **评估遗留**：① 公网登录口令强度不足，换 16+ 位随机（SEC-04）；② 部署后实机复验；③ P0「连续 3 晚」备份日历 streak 待 timer 走完。
 
 - **文档职责切分（2026-10-09）**：TASK-INDEX 扩为唯一任务事实源（P4-01…P6-04 逐条含依赖/工作量/实机验收/风险）；ROADMAP 精简为里程碑目标、顺序、总量与里程碑级风险，不再重复任务表。AGENTS 文档维护表已对齐。
+
+- **SEC-04 落地**：Pi \/etc/workbench/env\ 换 20 位随机强口令并重启，旧会话已清；复验未登录 \/api/ai/sessions\ 401、登录后 \/api/ai/health\ 2.0.24、旧口令 401；手动 \ackup.sh\ 快照 ok（env 双口令均为 \__REDACTED__\）；PC \pull.py\（known_hosts pin）\PULL_OK\。公开文档不记录口令值。
