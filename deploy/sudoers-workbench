@@ -1,0 +1,6 @@
+# workbench 网关 systemd 白名单：仅允许以下精确条目，sudo 免密。
+# 修改后同步 config/systemd-whitelist.json + docs/ARCHITECTURE.md §5。
+Cmnd_Alias WB_RESTART = /bin/systemctl restart workbench-gateway.service, \
+    /bin/systemctl restart opencode.service, \
+    /bin/systemctl restart cloudflared.service
+workbench ALL=(root) NOPASSWD: WB_RESTART

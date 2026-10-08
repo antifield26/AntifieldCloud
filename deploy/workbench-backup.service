@@ -1,0 +1,8 @@
+[Unit]
+Description=Workbench nightly snapshot (wb.db + opencode.db + config)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=workbench
+ExecStart=/opt/workbench/backup.sh

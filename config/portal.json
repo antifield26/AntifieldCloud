@@ -1,0 +1,5 @@
+{
+  "services": [
+    { "id": "nas", "title": "NAS（工作台文件服务）", "href": "/api/files", "note": "pi_nas 已退役（2026-10-08），由本工作台文件服务替代" }
+  ]
+}

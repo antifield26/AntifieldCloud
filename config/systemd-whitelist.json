@@ -1,0 +1,8 @@
+{
+  "allowed": [
+    { "unit": "cloudflared.service", "actions": ["restart", "status"] },
+    { "unit": "workbench-gateway.service", "actions": ["restart", "status"] },
+    { "unit": "opencode.service", "actions": ["restart", "status"] },
+    { "unit": "nginx.service", "actions": ["status"] }
+  ]
+}

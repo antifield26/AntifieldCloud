@@ -1,0 +1,20 @@
+[Unit]
+Description=Workbench Gateway (Fastify, localhost only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=workbench
+WorkingDirectory=/opt/workbench/gateway
+EnvironmentFile=/etc/workbench/env
+ExecStart=/usr/local/bin/node /opt/workbench/gateway/dist/index.js
+Restart=on-failure
+RestartSec=5
+MemoryMax=350M
+# 注：故意不设 NoNewPrivileges——网关需经 sudo（sudoers 精确到 3 条 restart）执行白名单启停；
+# 特权边界由 /etc/sudoers.d/workbench-systemctl 强制，见 P0-05。
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
