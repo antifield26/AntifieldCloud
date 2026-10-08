@@ -126,6 +126,8 @@
 
 ## 9. 变更日志（2026-10-08 用户指令执行记录）
 
+- **P2-02 落地（2026-10-08）**：`GET /api/sys/metrics/export?range=`（1h/24h/7d）吐 CSV，线上导出真实行、未登录 401；30 天滚动由 flush 裁剪 + 单测覆盖。本地 31/31。
+
 - **AUTH-02 落地（2026-10-08，用户决策：口令只存 `.env` 的 `AUTH_LOGIN_PASSWORD`）**：删 DB 哈希/密封文件/改密端点，登录只认 env（timingSafeEqual，<8 位视为未配置）。线上实测 401/401/200 全对，旧密封与 `auth_config` 已清。教训×2：① 部署用了相对路径 `cp -a dist`（第二段命令 cwd 是 $HOME）致旧代码继续跑——一律绝对路径；② 拼接 shell 传密码时变量展开掉致空值——敏感值一律 `printf+单引号` 直写。口令已生成并设入 env，PC 临时脚本用后即删。
 
 - **AUTH-01 落地（2026-10-08，用户决策：内置密码替代 CF Access，tunnel 保留做传输）**：scrypt 哈希入库 + `wb_session`（HttpOnly/Lax/30d）+ 全局失败退避（tunnel 后同源 IP，限流按全局计数）；首启生成随机口令，密封文件 `/var/lib/workbench/initial-password`（0400，改密自动删）；前端未认证只显登录页。线上实测：无 cookie 401、密封登录 200、登出后 401、sessions 已清零待用户首登。旧测试全量补登录（helper），本地 28/28。CF Access 不再需要（关闭 P0 缺口项）。

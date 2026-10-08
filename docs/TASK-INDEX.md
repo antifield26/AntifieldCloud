@@ -28,9 +28,9 @@
 | AUTH-01 | 内置密码认证（替代 CF Access） | P1 | done | 未登录 401；密封口令登录置 HttpOnly cookie；登出后 401（线上待用户首登改密，已被 AUTH-02 取代） | `gateway/src/auth/*` |
 | AUTH-02 | 口令改存 `.env: AUTH_LOGIN_PASSWORD` | P1 | done | 未登录/错口令 401，对口令 200；密封文件与 DB 哈希残留已清 | `gateway/src/auth/*`、`deploy/env.example` |
 | P2-01 | 适配器插件化 + LSP 按需 | P2 | pending | 多模型路由；LSP RSS 预算内 | `gateway/src/opencode/*` |
-| P2-02 | 指标保留 + 导出 | P2 | pending | 30天滚动；CSV 导出可用 | `wb.db`、`/api/sys/metrics` |
+| P2-02 | 指标保留 + 导出 | P2 | done | 30天滚动（flush 裁剪+单测）；CSV 线上导出真实行；未登录 401 | `wb.db`、`GET /api/sys/metrics/export` |
 | P2-03 | 备份多目标 + 加密 | P2 | pending | S3/USB 二选一 ok；加密恢复 ok | `deploy/backup.sh` |
-| P2-04 | 审计 + Access JWT 硬化 | P2 | pending | JWT 校验；越权 403 | `gateway/src/index.ts` |
+| P2-04 | 审计硬化（内置认证下） | P2 | pending | 登录尝试审计；会话列表/吊销；`service_audit.actor` 归因 | `gateway/src/routes/auth.ts` |
 
 ## 流转规则
 

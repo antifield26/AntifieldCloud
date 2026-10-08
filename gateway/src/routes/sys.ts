@@ -42,6 +42,24 @@ export function registerSysRoutes(app: FastifyInstance, db: DatabaseSync, sample
     return { range: req.query.range ?? '1h', points: rows };
   });
 
+  app.get<{ Querystring: { range?: string } }>(
+    '/api/sys/metrics/export',
+    async (req, reply) => {
+      const rangeMs = req.query.range === '24h' ? 24 * 3600 * 1000 : req.query.range === '7d' ? 7 * 24 * 3600 * 1000 : 3600 * 1000;
+      const rows = db
+        .prepare('SELECT ts,cpu,mem_used,mem_total,temp_c,disk_written_kb FROM metrics_ts WHERE ts > ? ORDER BY ts')
+        .all(Date.now() - rangeMs) as Array<Record<string, unknown>>;
+      const head = 'ts_iso,cpu_pct,mem_used_kb,mem_total_kb,temp_c,disk_written_kb';
+      const lines = rows.map((r) =>
+        [new Date(Number(r.ts)).toISOString(), r.cpu ?? '', r.mem_used, r.mem_total, r.temp_c ?? '', r.disk_written_kb].join(','),
+      );
+      return reply
+        .header('content-type', 'text/csv; charset=utf-8')
+        .header('content-disposition', `attachment; filename="metrics-${req.query.range ?? '1h'}.csv"`)
+        .send([head, ...lines].join('\n'));
+    },
+  );
+
   app.get('/api/sys/disk', async () => {
     const [df, diskstats] = await Promise.all([
       sh('/usr/bin/df', ['-hT', '/', '/tmp', '/var/log'], 10000),
