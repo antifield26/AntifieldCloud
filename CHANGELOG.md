@@ -102,3 +102,7 @@
 - **P5-05 格式修正**：告警改纯文本 + Title/Priority/Tags 头（手机直接可读）；测试 mock server 改桩 fetch（真 socket + undici keep-alive 会卡住测试进程不退出，教训）。已部署，发了一条[测试] ping 待用户确认可读性。
 
 - **P5-05 done**：用户确认手机端可读。P5 全清。
+
+## 2026-10-10
+
+- **文档事实源对齐（代码扫描复核）**：修正 README/ARCHITECTURE/ROADMAP/TASK-INDEX/AGENTS 与代码不一致处——① 口令终态为 `wb.db:auth_config.admin_hash`（废除 `AUTH_LOGIN_PASSWORD` 说法，SEC-02 验收改为「弃 env 口令路径」）；② ARCH 适配器接口/SSE 行为（无自动退避重连、无 model/agent 白名单）按 `adapter.ts` 改写；③ schema 补 `auth_config`/`api_audit`/`bookmarks.tags`/`sessions.created_at` 迁移；④ 目录树按仓库实扫更新；⑤ ROADMAP P3–P5 改 done，P5-01 收口 done；⑥ AUTH-03 表格列修复；⑦ 认证开放面/自检面与 `app.ts` 钩子顺序一致；⑧ 备份方向改为 PC SFTP 拉取；⑨ AGENTS 红线区分 env 真值与 DB 口令哈希。已知残留：cookie maxAge 30d vs 会话 7d；`restore-drill.sh` SQL 字符串拼接。

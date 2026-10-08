@@ -34,7 +34,7 @@
 
 1. 不开放任何入站端口；`opencode serve` 只绑 `127.0.0.1`，由网关代理。
 2. 不将白名单外服务纳入控制；白名单变更需同步 `config/systemd-whitelist.json` + ARCHITECTURE §5。
-3. 不在代码/日志/文档/测试中写入 API Key、CF 凭据、密码。凭据只存 `/etc/workbench/env`（`0400`）与 OpenCode 本地配置；日志脱敏 `password|token|key|secret`。
+3. 不在代码/日志/文档/测试中写入 API Key、CF 凭据、密码明文。敏感真值只存 `/etc/workbench/env`（`0400`）与 OpenCode 本地配置；网页登录口令只存 `wb.db:auth_config` 的 scrypt 哈希（明文永不入库）。日志脱敏 `password|token|key|secret`。
 4. 改动存储配置（journald/log2ram/fstab/apt 大包）前，先确认 `backups` 最近一条 `status=ok`（`sqlite3 wb.db "SELECT * FROM backups ORDER BY ts DESC LIMIT 1"`）。
 
 ## 5. 构建/部署/回滚速查（实机，workbench 用户）

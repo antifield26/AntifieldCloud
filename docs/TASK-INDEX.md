@@ -28,29 +28,29 @@
 | P1-05 | 下线旧 ingress | P1 | done | P0-06 | 1h | pidsh 公网 000（DNS 已清）；cloud 200 | cloudflared 配置 |
 | P1-06 | SPA 五页（控制台/AI/效率/流水线/门户） | P1 | done | P1-01..03 | 3h | 新包公网 200；AI 经网关建会/下发/出真实回复 | `web/` |
 | AUTH-01 | 内置密码认证（替代 CF Access） | P1 | done | P0-06 | 2h | 未登录 401；登录置 HttpOnly cookie；登出 401 | `gateway/src/auth/*` |
-| AUTH-02 | 口令改存 `AUTH_LOGIN_PASSWORD` | P1 | done | AUTH-01 | 1h | 口令只认 env；密封文件/DB 哈希残留已清 | `gateway/src/auth/*`、`deploy/env.example` |
-| AUTH-03 | 口令回存.db + 改密入口 | P1 | done | scrypt 哈希入库；密封初始口令；UI 改密；移除 env 口令 | \gateway/src/auth/*\ |
+| AUTH-02 | 口令改存 `AUTH_LOGIN_PASSWORD` | P1 | done | AUTH-01 | 1h | 口令只认 env；密封文件/DB 哈希残留已清（**后被 AUTH-03 取代**） | `gateway/src/auth/*`、`deploy/env.example` |
+| AUTH-03 | 口令回存.db + 改密入口 | P1 | done | AUTH-02 | 1h | scrypt 哈希入库（`auth_config.admin_hash`）；密封初始口令；UI 改密；移除 env 口令 | `gateway/src/auth/*` |
 | P2-01 | 适配器插件化 + LSP 按需 | P2 | dropped | — | — | 用户决策不做（v2 自带管理） | `gateway/src/opencode/*` |
 | P2-02 | 指标保留 + 导出 | P2 | done | P0-04 | 2h | 30 天滚动；CSV 线上导出；未登录 401 | `GET /api/sys/metrics/export` |
 | P2-03 | 备份多目标 + 加密 | P2 | dropped | — | — | 用户决策不做（Pi→PC + 7 天滚动已够） | `deploy/backup.sh` |
 | P2-04 | 审计硬化（登录/会话/归因） | P2 | done | AUTH-02 | 2h | `auth_audit` 有行；会话列表/吊销可用；`actor=ses:…` | `gateway/src/routes/auth.ts` |
 | SEC-01 | 修复认证覆盖面（AI 路由绕过） | 安全修复 | done | — | 1h | 无 cookie 业务 `/api/*`（含 `/api/ai/*`）→ 401；回归测试锁住 | `gateway/src/app.ts`、`gateway/test/auth-coverage.test.ts` |
-| SEC-02 | 口令常数时间比较 + 弃 `auth_config` | 安全修复 | done | — | 0.5h | 同长缓冲 `timingSafeEqual`；schema 无 `auth_config` | `gateway/src/auth/password.ts`、`gateway/src/db.ts`、`gateway/test/password.test.ts` |
+| SEC-02 | 口令常数时间比较 + 弃 env 口令路径 | 安全修复 | done | — | 0.5h | 同长缓冲 `timingSafeEqual`；登录口令不存 env（`auth_config` 由 AUTH-03 重新用于 scrypt 哈希，**schema 仍含该表**） | `gateway/src/auth/password.ts`、`gateway/src/db.ts`、`gateway/test/password.test.ts` |
 | SEC-03 | 备份 env 脱敏 + pc-pull host key | 安全修复 | done | — | 0.5h | 备份 `env` 口令 `__REDACTED__`；`RejectPolicy` + known_hosts | `deploy/backup.sh`、`scripts/pc-pull.py` |
 
-## P3 — 安全收口 + 可运维（进行中池）
+## P3 — 安全收口 + 可运维（done）
 
 | 编号 | 标题 | 状态 | 依赖 | 工作量 | 验收标准（实机） | 风险/备注 | 关联 |
 |---|---|---|---|---|---|---|---|
 | SEC-04 | 强口令 + 部署 SEC-01..03 复验 | done | SEC-01..03 | 1.5h | ① Pi `/etc/workbench/env` 换 16+ 位随机口令并 `restart workbench-gateway`；② 公网未登录 `GET /api/ai/sessions` → 401；③ 登录后 `/api/ai/health` 200/502；④ 手动 `backup.sh` 后备份 `env` 为 `__REDACTED__`；⑤ pc-pull 在 known_hosts 已 pin 时 `PULL_OK` | 换密后旧会话仍活，可 `DELETE FROM sessions`；口令不进仓库/日志 | `/etc/workbench/env`、公网 curl |
-| P0-STREAK | 连续3次备份成功（去日历化） | done | SEC-04 | 0.5h | 3 轮手动快照 ok + PC 拉取 sha 全对 + 演练 ok；定时延续按新窗口运行 | 窗口外 23:00-08:00 不跑任务 | \manifest.log\、deploy/workbench-backup.timer |
+| P0-STREAK | 连续3次备份成功（去日历化） | done | SEC-04 | 0.5h | 3 轮手动快照 ok + PC 拉取 sha 全对 + 演练 ok；定时延续按新窗口运行 | 窗口外 23:00-08:00 不跑任务 | `manifest.log`、deploy/workbench-backup.timer |
 | P3-01 | 网关请求审计（脱敏） | done | SEC-04 | 2h | 新表 `api_audit(ts,actor,method,path,status,ms)`；登录后 API 写入且**不含** body/query 敏感值；30 天滚动裁剪有单测；未登录 401 不写或写 `actor=anon` 仅 fail | 写放大 → 批量/采样；path 脱敏（id 收敛） | `gateway/src/db.ts`、`gateway/src/app.ts`、`gateway/test/` |
 | P3-02 | 会话与敏感操作加固 | done | SEC-04, P2-04 | 2h | 会话绝对超时 7d（创建时间起算）+ 可关滑动续期；shell job 执行 / service restart 前端二次确认；上述操作记 `auth_audit` 或 `api_audit` | **勿做成多用户/RBAC**；登录≈workbench 语义写进 ARCH | `gateway/src/auth/password.ts`、`web/src/pages/*` |
 | P3-03 | 备份演练自动化 | done | P0-STREAK | 1h | `restore-drill.sh` 可周跑（job 或 timer）；watchdog 检查 14 天内存在 `DRILL_OK` 记录；演练目录用后即删 | 演练目录勿留敏感；失败进告警 | `scripts/restore-drill.sh`、`gateway/src/sys/watchdog.ts` |
 
 **P3 出口**：公网业务 API 未登录不可达；强口令生效；请求/敏感操作可追溯；连续3次备份 + 演练可被机器检出。
 
-## P4 — 通用工作台（效率 + AI 使用面）
+## P4 — 通用工作台（效率 + AI 使用面，done）
 
 | 编号 | 标题 | 状态 | 依赖 | 工作量 | 验收标准（实机） | 风险/备注 | 关联 |
 |---|---|---|---|---|---|---|---|
@@ -62,17 +62,19 @@
 
 **P4 出口**：日常记事/搜东西/AI 任务在桌面和手机都顺手；数据可完整导出迁移。
 
-## P5 — 树莓派控制台（观测 + 运维面）
+## P5 — 树莓派控制台（观测 + 运维面，done）
 
 | 编号 | 标题 | 状态 | 依赖 | 工作量 | 验收标准（实机） | 风险/备注 | 关联 |
 |---|---|---|---|---|---|---|---|
-| P5-01 | 指标可视化（24h/7d 曲线） | in-progress | P0-04, P2-02 | 2.5h | 温度/CPU/内存/写入四线；范围切换 24h/7d；抽样点与 `vcgencmd`/`free`/diskstats 误差在展示精度内；无数据段不连假线 | 前端轻量 canvas/SVG 即可，不引重型图表库（除非必要） | `web/src/pages/Console.tsx`、`gateway/src/routes/sys.ts` |
+| P5-01 | 指标可视化（24h/7d 曲线） | done | P0-04, P2-02 | 2.5h | 温度/CPU/内存/写入四线；范围切换 24h/7d；抽样点与 `vcgencmd`/`free`/diskstats 误差在展示精度内；无数据段不连假线 | 前端轻量 canvas/SVG；无数据段断线 | `web/src/pages/Console.tsx`、`gateway/src/routes/sys.ts` |
 | P5-02 | SD/磁盘健康代理 | done | P0-07, P5-01 | 2h | 展示：根分区剩余、近 24h 写入速率、按日写量粗估可用天数、`/var/log`+journald 水位、大目录 TOP5；超阈值进 watchdog 告警 | SD 无 `life_time`，只能代理指标；阈值走 env 可调 | `gateway/src/sys/metrics.ts`、`gateway/src/sys/watchdog.ts` |
 | P5-03 | 日志查看器 | done | P0-04 | 2h | unit 过滤 + 时间范围 + 条数上限；级别着色；`password|token|key|secret` 脱敏高亮；一键复制；实机排一次 opencode 失败不进 SSH | 勿整段回显超大 journal；路径/unit 白名单或校验防注入 | `gateway/src/sys/logs.ts`、`web/src/pages/Console.tsx` |
 | P5-04 | 可选服务监控槽 | done | P5-01 | 1.5h | minecraft/mc-server（或 env 指定 unit）只读状态 + 近期内存/温度关联展示；**默认不入启停白名单**；overview 可见 RSS | 应对 R1 内存挤占；启停若要做须另开任务并改 ARCH §5 + sudoers | `config/systemd-whitelist.json`（只读不改）、`gateway/src/routes/sys.ts` |
 | P5-05 | 告警通道外送 | done | P1-04, P5-02 | 2h | 配置 webhook/ntfy URL（env 或 config，URL 不进日志明文可选脱敏）；watchdog 告警经 `kind=http` 外送；模拟超温 5min 内手机收到 | 不新增系统特权；失败重试有限次并记 `job_runs` | `gateway/src/sys/watchdog.ts`、`gateway/src/jobs/scheduler.ts`、`deploy/env.example` |
 
-**P5 出口**：趋势可看、SD 风险有数、排障可不进 SSH、异常能推到手机。
+**P5 出口**：趋势可看、SD 风险有数、排障可不进 SSH、异常能推到手机。（P5-05 已 done，用户确认手机可读。）
+
+**P3–P5 出口（汇总）**：公网业务 API 未登录不可达；口令 scrypt 入库 + 强口令；请求/敏感操作可追溯；备份+演练机器可检；AI 真流式/搜索/导出/移动可用；曲线/SD/日志/告警外送就绪。
 
 ## 流转规则
 
