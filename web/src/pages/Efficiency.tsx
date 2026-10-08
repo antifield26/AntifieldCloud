@@ -100,10 +100,36 @@ export default function Efficiency() {
       setErr(`预览失败：${String(e)}`);
     }
   };
+  const doImport = async (f: File | undefined, mode: string): Promise<void> => {
+    if (!f) return;
+    try {
+      const body = JSON.parse(await f.text()) as unknown;
+      const r = await api<{ ok: boolean; counts: Record<string, number> }>(`/api/import?mode=${mode}`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+      setErr(`导入完成：${JSON.stringify(r.counts)}`);
+      await load();
+    } catch (e) {
+      setErr(`导入失败：${String(e)}`);
+    }
+  };
 
   return (
     <div class="p-4 space-y-4">
       {err() && <div class="text-red-700">{err()}</div>}
+      <div class="flex gap-2 text-sm">
+        <a class="bg-gray-700 text-white px-2 py-1 rounded" href="/api/export?format=json">导出 JSON</a>
+        <a class="bg-gray-700 text-white px-2 py-1 rounded" href="/api/export?format=csv&kind=todos">导出待办 CSV</a>
+        <label class="bg-gray-700 text-white px-2 py-1 rounded cursor-pointer">
+          导入(JSON·合并)
+          <input type="file" accept=".json" class="hidden" onChange={(e) => void doImport(e.currentTarget.files?.[0], 'merge')} />
+        </label>
+        <label class="bg-red-700 text-white px-2 py-1 rounded cursor-pointer">
+          导入(JSON·替换)
+          <input type="file" accept=".json" class="hidden" onChange={(e) => void doImport(e.currentTarget.files?.[0], 'replace')} />
+        </label>
+      </div>
       <div class="bg-white shadow rounded p-3">
         <h2 class="font-bold mb-2">待办</h2>
         <div class="flex gap-2 mb-2">

@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
+import { registerImportExport } from './impexp.js';
 
 const FILES_DIR = process.env.WB_FILES_DIR ?? '/var/lib/workbench/files';
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -56,6 +57,7 @@ async function readRaw(stream: AsyncIterable<Uint8Array>): Promise<Buffer> {
 }
 
 export function registerEfficiencyRoutes(app: FastifyInstance, db: DatabaseSync): void {
+  registerImportExport(app, db);
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer' }, (_req, body, done) => {
     done(null, body);
   });
