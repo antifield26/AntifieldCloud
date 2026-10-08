@@ -6,16 +6,20 @@ import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import { matchCron } from '../src/jobs/scheduler.js';
 
+process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-jobs-${Date.now()}`);
+
 const { buildApp } = await import('../src/app.js');
+const { loginCookie } = await import('./helper.js');
 const dbPath = join(tmpdir(), `wb-jobs-${Date.now()}.db`);
 const { app } = await buildApp({ dbPath, startSampler: false, startSched: false });
+const COOKIE = await loginCookie(app);
 
 async function req(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown): Promise<{ status: number; json: unknown }> {
   const res = await app.inject({
     method,
     url,
     payload: body === undefined ? undefined : JSON.stringify(body),
-    headers: body === undefined ? {} : { 'content-type': 'application/json' },
+    headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), cookie: COOKIE },
   });
   return { status: res.statusCode, json: res.json() };
 }

@@ -25,6 +25,7 @@
 | P1-04 | 监控告警 | P1 | done | 五项全绿；压阈值 2 分钟内 2 条 alert 落 `job_runs`；阈值已恢复 | `gateway/src/sys/watchdog.ts` + jobs |
 | P1-05 | 下线旧 ingress | P1 | done | pidsh 公网 000（DNS 已清）；cloud 200；配置仅 cloud+mc+404 | cloudflared 配置 |
 | P1-06 | SPA 五页（控制台/AI/效率/流水线/门户） | P1 | done | 新包公网 200；AI 经网关建会/下发/轮询出真实回复；探针已清 | `web/` |
+| AUTH-01 | 内置密码认证（替代 CF Access） | P1 | done | 未登录 401；密封口令登录置 HttpOnly cookie；登出后 401；改密删密封文件（本地已测，线上待用户首登改密） | `gateway/src/auth/*` |
 | P2-01 | 适配器插件化 + LSP 按需 | P2 | pending | 多模型路由；LSP RSS 预算内 | `gateway/src/opencode/*` |
 | P2-02 | 指标保留 + 导出 | P2 | pending | 30天滚动；CSV 导出可用 | `wb.db`、`/api/sys/metrics` |
 | P2-03 | 备份多目标 + 加密 | P2 | pending | S3/USB 二选一 ok；加密恢复 ok | `deploy/backup.sh` |

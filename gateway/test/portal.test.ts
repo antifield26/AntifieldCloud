@@ -22,9 +22,12 @@ void describe('portal', () => {
     const p = join(tmpdir(), `portal-${Date.now()}.json`);
     writeFileSync(p, JSON.stringify({ services: [{ id: 'x', title: 'X', href: '/health' }] }));
     process.env.WB_PORTAL_PATH = p;
+    process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-portal-${Date.now()}`);
     const { buildApp } = await import('../src/app.js');
+    const { loginCookie } = await import('./helper.js');
     const { app } = await buildApp({ dbPath: join(tmpdir(), `wb-portal-${Date.now()}.db`), startSampler: false, startSched: false });
-    const res = await app.inject({ method: 'GET', url: '/api/portal/services' });
+    const cookie = await loginCookie(app);
+    const res = await app.inject({ method: 'GET', url: '/api/portal/services', headers: { cookie } });
     assert.equal(res.statusCode, 200);
     assert.equal((res.json() as { services: Array<{ id: string }> }).services[0].id, 'x');
     delete process.env.WB_PORTAL_PATH;

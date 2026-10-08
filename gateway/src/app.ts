@@ -3,6 +3,8 @@ import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { registerAiRoutes } from './routes/ai.js';
+import { registerAuthRoutes, isOpen, cookieId } from './routes/auth.js';
+import { validSession } from './auth/password.js';
 import { registerSysRoutes } from './routes/sys.js';
 import { registerServiceRoutes } from './routes/services.js';
 import { registerEfficiencyRoutes } from './routes/efficiency.js';
@@ -13,6 +15,8 @@ import { startWatchdog } from './sys/watchdog.js';
 import { createAdapter } from './opencode/adapter.js';
 import { openDb } from './db.js';
 import { Sampler } from './sys/metrics.js';
+import { ensurePassword, sealedPath } from './auth/password.js';
+import fastifyCookie from '@fastify/cookie';
 
 export interface AppContext {
   app: FastifyInstance;
@@ -35,6 +39,15 @@ export async function buildApp(opts?: { dbPath?: string; startSampler?: boolean;
   }
   registerAiRoutes(app);
   const db = openDb(dbPath);
+  await ensurePassword(db, process.env.WB_INITIAL_PW_FILE ?? sealedPath());
+  await app.register(fastifyCookie);
+  registerAuthRoutes(app, db);
+  app.addHook('onRequest', async (req, reply) => {
+    if (!isOpen(req.url) && !validSession(db, cookieId(req.headers.cookie))) {
+      return reply.code(401).send({ error: 'login required' });
+    }
+    return undefined;
+  });
   const sampler = new Sampler(db);
   if (opts?.startSampler !== false) sampler.start();
   registerSysRoutes(app, db, sampler);

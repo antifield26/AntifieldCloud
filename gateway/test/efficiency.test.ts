@@ -7,10 +7,13 @@ import { rmSync, mkdirSync } from 'node:fs';
 
 process.env.WB_FILES_DIR = join(tmpdir(), `wb-files-${Date.now()}`);
 mkdirSync(process.env.WB_FILES_DIR, { recursive: true });
+process.env.WB_INITIAL_PW_FILE = join(tmpdir(), `wb-sealed-eff-${Date.now()}`);
 
 const { buildApp } = await import('../src/app.js');
+const { loginCookie } = await import('./helper.js');
 const dbPath = join(tmpdir(), `wb-eff-${Date.now()}.db`);
 const { app } = await buildApp({ dbPath, startSampler: false });
+const COOKIE = await loginCookie(app);
 
 type Method = 'GET' | 'POST' | 'PATCH' | 'DELETE';
 
@@ -20,7 +23,14 @@ async function req(method: Method, url: string, body?: unknown, raw?: Buffer): P
     method,
     url,
     payload: raw ?? (body === undefined ? undefined : JSON.stringify(body)),
-    headers: !hasBody ? {} : raw !== undefined ? { 'content-type': 'application/octet-stream' } : { 'content-type': 'application/json' },
+    headers: {
+      ...(raw !== undefined
+        ? { 'content-type': 'application/octet-stream' }
+        : hasBody
+          ? { 'content-type': 'application/json' }
+          : {}),
+      cookie: COOKIE,
+    },
   });
   return { status: res.statusCode, json: res.json() };
 }
@@ -67,7 +77,7 @@ void describe('efficiency', () => {
     const meta = (await req('GET', '/api/files')).json as Array<{ id: string; size: number }>;
     assert.equal(meta.length, 1);
     assert.equal(meta[0].size, 5);
-    const dl = await app.inject({ method: 'GET', url: `/api/files/${id}` });
+    const dl = await app.inject({ method: 'GET', url: `/api/files/${id}`, headers: { cookie: COOKIE } });
     assert.equal(dl.statusCode, 200);
     assert.equal(dl.body, 'hello');
     assert.equal((await req('DELETE', `/api/files/${id}`)).status, 200);

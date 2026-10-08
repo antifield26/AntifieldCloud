@@ -81,7 +81,7 @@ CREATE TABLE backups(id TEXT PK, ts TEXT, target TEXT, bytes INT, sha256 TEXT, s
 
 ## 5. 安全模型
 
-- 认证链：`浏览器 → CF Access（邮箱/OTP）→ cloudflared → 网关`；网关再做 `HttpOnly Secure SameSite=Lax` 会话 cookie（P0 最小：信任 Access 头 + 本地会话；P1 加 OIDC JWT 校验，密钥放 `/etc/workbench/`）。
+- 认证链：`浏览器 → 内置密码登录（scrypt + 会话 cookie）→ cloudflared → 网关`（2026-10-08 用户决策弃用 CF Access；tunnel 保留做传输，Pi 仍零入站）。
 - 用户隔离：新增 `workbench` 系统用户（`nologin` + `StrictModes`），运行网关 + `opencode serve`；`antifield` 的 NOPASSWD ALL 保持不动但**网关永不使用该身份**。
 - 特权执行：网关以 `workbench` 身份直调只读动作；`restart` 走 `sudo -n /bin/systemctl restart <unit>`，由 `/etc/sudoers.d/workbench-systemctl`（`deploy/sudoers-workbench`，root:root 0440）限定到 3 条精确命令。网关单元**不设** `NoNewPrivileges`（否则 sudo 提权被禁；边界由 sudoers 保证）。
 - 白名单（初始，P0 可改，改动需更新本节 + TASK-INDEX）：`cloudflared.service`（restart only）、`workbench-gateway.service`、`opencode.service`、`nginx.service`（status only）。`antifield-cloud.service` 已退役（2026-10-08 stop+disable），不在白名单。白名单外 `POST /api/sys/services/*` 一律 `403 + service_audit.allowed=0`。
