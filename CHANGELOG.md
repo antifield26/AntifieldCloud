@@ -96,3 +96,5 @@
 - **P5-03 落地**：日志查看器——unit/时间/条数过滤、级别着色、脱敏高亮、一键复制；API 排障演练：opencode 24h 仅 2 条正常行，cloudflared 355 条中 43 条边缘报错全部经 API 定位，未进 SSH。
 
 - **P5-04 落地**：可选服务监控槽——minecraft/mc-server 只读状态+RSS 进 overview（实测 2263M/83M），白名单与 sudoers 零改动。本地 52/52。
+
+- **P5-05 机制就绪、待 URL（blocked）**：watchdog 告警外送（空 URL 跳过；3 次退避重试；终败记行；日志仅 host）+ env.example 模板；线上已部署（未配 URL，行为无变化）。解堵条件：用户给 ntfy topic 或自建 webhook让我配。本地 54/54。

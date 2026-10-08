@@ -152,7 +152,51 @@ export function recordAlerts(db: DatabaseSync, checks: Check[]): number {
     randomUUID(), 'watchdog', t, t, 'alert', log,
   );
   db.prepare('UPDATE jobs SET last_run=?,last_status=? WHERE id=?').run(t, 'alert', 'watchdog');
+  void sendAlert(alerts, log);
   return alerts.length;
+}
+
+/** 主机名脱敏：日志只留 host，URL 永不进日志/库。 */
+export function redactUrl(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '(bad-url)';
+  }
+}
+
+/** 告警外送：空 URL 直接跳过；3 次重试，终败记 job_runs，日志仅 host。 */
+export async function sendAlert(alerts: Check[], log: string): Promise<boolean> {
+  const url = (process.env.ALERT_WEBHOOK_URL ?? '').trim();
+  if (url === '') return false;
+  const host = redactUrl(url);
+  let lastErr = '';
+  for (let i = 0; i < 3; i++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ source: 'workbench-watchdog', at: new Date().toISOString(), alerts }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (res.ok) return true;
+      lastErr = `HTTP ${res.status}`;
+    } catch (err) {
+      lastErr = String(err).slice(0, 200);
+    }
+    await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
+  }
+  try {
+    const { openDb } = await import('../db.js');
+    const db = openDb(process.env.WB_DB_PATH ?? '/var/lib/workbench/wb.db');
+    const t = new Date().toISOString();
+    db.prepare('INSERT INTO job_runs(id,job_id,started_at,finished_at,status,log) VALUES (?,?,?,?,?,?)').run(
+      randomUUID(), 'watchdog', t, t, 'send-failed', `webhook ${host}: ${lastErr}\n${log}`.slice(0, 4000),
+    );
+  } catch {
+    // 库不可写则放弃（25 行内的静默兜底已有 watchdog 主记录）
+  }
+  return false;
 }
 
 export async function runWatchdog(db: DatabaseSync, sample: Sample | null): Promise<Check[]> {

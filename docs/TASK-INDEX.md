@@ -70,7 +70,7 @@
 | P5-02 | SD/磁盘健康代理 | done | P0-07, P5-01 | 2h | 展示：根分区剩余、近 24h 写入速率、按日写量粗估可用天数、`/var/log`+journald 水位、大目录 TOP5；超阈值进 watchdog 告警 | SD 无 `life_time`，只能代理指标；阈值走 env 可调 | `gateway/src/sys/metrics.ts`、`gateway/src/sys/watchdog.ts` |
 | P5-03 | 日志查看器 | done | P0-04 | 2h | unit 过滤 + 时间范围 + 条数上限；级别着色；`password|token|key|secret` 脱敏高亮；一键复制；实机排一次 opencode 失败不进 SSH | 勿整段回显超大 journal；路径/unit 白名单或校验防注入 | `gateway/src/sys/logs.ts`、`web/src/pages/Console.tsx` |
 | P5-04 | 可选服务监控槽 | done | P5-01 | 1.5h | minecraft/mc-server（或 env 指定 unit）只读状态 + 近期内存/温度关联展示；**默认不入启停白名单**；overview 可见 RSS | 应对 R1 内存挤占；启停若要做须另开任务并改 ARCH §5 + sudoers | `config/systemd-whitelist.json`（只读不改）、`gateway/src/routes/sys.ts` |
-| P5-05 | 告警通道外送 | pending | P1-04, P5-02 | 2h | 配置 webhook/ntfy URL（env 或 config，URL 不进日志明文可选脱敏）；watchdog 告警经 `kind=http` 外送；模拟超温 5min 内手机收到 | 不新增系统特权；失败重试有限次并记 `job_runs` | `gateway/src/sys/watchdog.ts`、`gateway/src/jobs/scheduler.ts`、`deploy/env.example` |
+| P5-05 | 告警通道外送 | blocked | P1-04, P5-02 | 2h | 配置 webhook/ntfy URL（env 或 config，URL 不进日志明文可选脱敏）；watchdog 告警经 `kind=http` 外送；模拟超温 5min 内手机收到 | 不新增系统特权；失败重试有限次并记 `job_runs` | `gateway/src/sys/watchdog.ts`、`gateway/src/jobs/scheduler.ts`、`deploy/env.example` |
 
 **P5 出口**：趋势可看、SD 风险有数、排障可不进 SSH、异常能推到手机。
 

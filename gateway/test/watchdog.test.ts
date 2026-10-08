@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rmSync } from 'node:fs';
 import { openDb } from '../src/db.js';
-import { evaluate, recordAlerts, todoCheck, type WatchOpts } from '../src/sys/watchdog.js';
+import { evaluate, recordAlerts, todoCheck, sendAlert, redactUrl, type WatchOpts } from '../src/sys/watchdog.js';
 import type { Sample } from '../src/sys/metrics.js';
 
 const OPTS: WatchOpts = { tempAlertC: 75, memMinMb: 1024, backupMaxH: 26, drillMaxD: 14, diskMinGb: 5, logMaxPct: 80 };
@@ -34,6 +34,40 @@ void describe('watchdog', () => {
     const a = todoCheck(['买牛奶', '交电费']);
     assert.equal(a.status, 'alert');
     assert.ok(a.detail.includes('买牛奶'));
+  });
+
+  void it('redactUrl 只留 host', () => {
+    assert.equal(redactUrl('https://ntfy.sh/mytopic'), 'ntfy.sh');
+    assert.equal(redactUrl('not a url'), '(bad-url)');
+  });
+
+  void it('sendAlert：空 URL 跳过、成功 1 次、失败 3 次记行且不泄 URL', async () => {
+    delete process.env.ALERT_WEBHOOK_URL;
+    assert.equal(await sendAlert([{ name: 't', status: 'alert', detail: 'x' }], 'x'), false);
+    const { createServer } = await import('node:http');
+    let hits = 0;
+    const srv = createServer((req, res) => {
+      hits++;
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        const j = JSON.parse(body) as { source: string };
+        if (j.source !== 'workbench-watchdog') {
+          res.writeHead(400);
+          res.end();
+          return;
+        }
+        res.writeHead(hits < 3 ? 500 : 200);
+        res.end();
+      });
+    });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const port = (srv.address() as { port: number }).port;
+    process.env.ALERT_WEBHOOK_URL = `http://127.0.0.1:${port}/hook?token=secret123`;
+    assert.equal(await sendAlert([{ name: 't', status: 'alert', detail: 'x' }], 'x'), true);
+    assert.equal(hits, 3);
+    delete process.env.ALERT_WEBHOOK_URL;
+    await new Promise<void>((r) => srv.close(() => r()));
   });
 
   void it('磁盘水位矩阵', () => {
