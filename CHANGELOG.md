@@ -108,3 +108,5 @@
 - **文档事实源对齐（代码扫描复核）**：修正 README/ARCHITECTURE/ROADMAP/TASK-INDEX/AGENTS 与代码不一致处——① 口令终态为 `wb.db:auth_config.admin_hash`（废除 `AUTH_LOGIN_PASSWORD` 说法，SEC-02 验收改为「弃 env 口令路径」）；② ARCH 适配器接口/SSE 行为（无自动退避重连、无 model/agent 白名单）按 `adapter.ts` 改写；③ schema 补 `auth_config`/`api_audit`/`bookmarks.tags`/`sessions.created_at` 迁移；④ 目录树按仓库实扫更新；⑤ ROADMAP P3–P5 改 done，P5-01 收口 done；⑥ AUTH-03 表格列修复；⑦ 认证开放面/自检面与 `app.ts` 钩子顺序一致；⑧ 备份方向改为 PC SFTP 拉取；⑨ AGENTS 红线区分 env 真值与 DB 口令哈希。已知残留：cookie maxAge 30d vs 会话 7d；`restore-drill.sh` SQL 字符串拼接。
 
 - **P6-01 UI/交互原型就绪**：根目录 `index.html` + `styles.css` + `app.js`（mock 数据，本地静态可预览）。风格：深色工位壳 / 薄荷绿信号 / 发丝线面板。交互：⌘K 命令面板、数字快捷键、Toast、危险操作模态确认、AI 对话式流式占位、生命体征条、控制台曲线/日志/服务、效率四区、流水线记录、门户卡片。下一步 P6-02 绑真实 `/api/*` 落 Solid。
+
+- **P6 改为多组 UI 待决策**：样例收进 `ui-proto/`（不入库）。`01-ops-desk` 深色工位、`02-paper` 浅色书房、`03-signal` 终端信号 —— 同 IA 三套视觉。任务链改为 P6-02 方案对比 → **P6-03 用户决策** → P6-04 Solid 落地。决策前不写业务前端。
