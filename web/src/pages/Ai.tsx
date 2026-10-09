@@ -1,14 +1,12 @@
 import { createSignal, For, onCleanup } from 'solid-js';
 import { api } from '../api';
+import { useSid } from '../store';
 
-interface Session {
+interface MsgItem {
   id: string;
-  title: string;
-}
-
-interface Ev {
-  type?: string;
-  data?: Record<string, unknown>;
+  type: string;
+  text?: string;
+  content?: Array<{ type: string; text?: string }>;
 }
 
 const TERMINAL = new Set([
@@ -19,76 +17,72 @@ const TERMINAL = new Set([
   'session.error',
 ]);
 
+const msgText = (m: MsgItem): string => {
+  if (typeof m.text === 'string') return m.text;
+  if (Array.isArray(m.content)) return m.content.map((c) => c.text ?? `[${c.type}]`).join('\n');
+  return `[${m.type}]`;
+};
+
 export default function Ai() {
-  const [sessions, setSessions] = createSignal<Session[]>([]);
-  const [sid, setSid] = createSignal('');
-  const [log, setLog] = createSignal<string[]>([]);
+  const [msgs, setMsgs] = createSignal<MsgItem[]>([]);
   const [input, setInput] = createSignal('');
   const [err, setErr] = createSignal('');
   const [busy, setBusy] = createSignal(false);
   const [started, setStarted] = createSignal(0);
   const [elapsed, setElapsed] = createSignal('');
   let es: EventSource | null = null;
+  let lastSid = '';
 
-  const loadSessions = async (): Promise<void> => {
-    setSessions(await api<Session[]>('/api/ai/sessions'));
+  const loadMsgs = async (): Promise<void> => {
+    const id = useSid();
+    if (!id) {
+      setMsgs([]);
+      return;
+    }
+    const j = (await api<{ data: MsgItem[] }>(`/api/ai/sessions/${id}/messages`)) as { data: MsgItem[] };
+    setMsgs(j.data ?? []);
   };
 
-  const closeStream = (): void => {
-    es?.close();
-    es = null;
-  };
-
-  const pick = (id: string): void => {
-    closeStream();
-    setBusy(false);
-    setSid(id);
-    setLog([]);
+  const stream = (id: string): void => {
+    if (es) {
+      es.close();
+      es = null;
+    }
     if (!id) return;
     es = new EventSource(`/api/ai/sessions/${id}/events`);
     es.onmessage = (m) => {
       try {
-        const ev = JSON.parse(m.data) as Ev;
+        const ev = JSON.parse(m.data) as { type?: string };
         const t = ev.type ?? '?';
         if (t === 'server.connected') return;
-        setLog((l) => [...l.slice(-300), t]);
         if (TERMINAL.has(t)) {
           setBusy(false);
-          closeStream();
+          void loadMsgs();
+          es?.close();
+          es = null;
         }
       } catch {
         // 忽略坏帧
       }
     };
     es.onerror = () => {
-      // 断线 3s 后重连（会话上下文在服务端保持）
-      closeStream();
+      es?.close();
+      es = null;
       setTimeout(() => {
-        if (sid() === id) pick(id);
+        if (useSid() === id) stream(id);
       }, 3000);
     };
   };
 
-  const create = async (): Promise<void> => {
-    const s = await api<Session>('/api/ai/sessions', { method: 'POST', body: JSON.stringify({ title: 'web' }) });
-    await loadSessions();
-    pick(s.id);
-  };
-
-  const remove = async (id: string): Promise<void> => {
-    if (!confirm(`删除会话 ${id.slice(0, 12)}？`)) return;
-    await api(`/api/ai/sessions/${id}`, { method: 'DELETE' });
-    if (sid() === id) pick('');
-    await loadSessions();
-  };
-
   const send = async (): Promise<void> => {
-    if (!sid() || !input().trim() || busy()) return;
+    const id = useSid();
+    if (!id || !input().trim() || busy()) return;
     setBusy(true);
     setStarted(Date.now());
     try {
-      await api(`/api/ai/sessions/${sid()}/prompt`, { method: 'POST', body: JSON.stringify({ text: input() }) });
+      await api(`/api/ai/sessions/${id}/prompt`, { method: 'POST', body: JSON.stringify({ text: input() }) });
       setInput('');
+      stream(id);
     } catch (e) {
       setErr(String(e));
       setBusy(false);
@@ -96,63 +90,63 @@ export default function Ai() {
   };
 
   const abort = async (): Promise<void> => {
-    if (!sid()) return;
-    await api(`/api/ai/sessions/${sid()}/abort`, { method: 'POST' });
-    setLog((l) => [...l, 'client: aborted']);
+    const id = useSid();
+    if (!id) return;
+    await api(`/api/ai/sessions/${id}/abort`, { method: 'POST' });
     setBusy(false);
   };
 
-  void loadSessions();
   const t = setInterval(() => {
+    if (useSid() !== lastSid) {
+      lastSid = useSid();
+      setBusy(false);
+      if (es) {
+        es.close();
+        es = null;
+      }
+      if (lastSid) {
+        void loadMsgs();
+        stream(lastSid);
+      } else {
+        setMsgs([]);
+      }
+    }
     if (busy()) setElapsed(`${Math.round((Date.now() - started()) / 1000)}s`);
   }, 500);
   onCleanup(() => {
     clearInterval(t);
-    closeStream();
+    es?.close();
   });
 
   return (
-    <div class="p-4 flex flex-col md:flex-row gap-4">
-      <div class="w-full md:w-64 shrink-0">
-        <button class="bg-blue-500 text-white px-3 py-1 rounded mb-2" onClick={() => void create()}>新建会话</button>
-        <ul class="space-y-1">
-          <For each={sessions()}>
-            {(s) => (
-              <li class="flex gap-1 items-center">
-                <button
-                  class={`flex-1 text-left px-2 py-1 rounded text-sm ${sid() === s.id ? 'bg-blue-100' : 'hover:bg-gray-200'}`}
-                  onClick={() => pick(s.id)}
-                >
-                  {s.title || s.id.slice(0, 12)}
-                </button>
-                <button class="text-red-500 text-sm" onClick={() => void remove(s.id)}>删</button>
-              </li>
-            )}
-          </For>
-        </ul>
-        {err() && <div class="text-red-700 text-sm mt-2">{err()}</div>}
+    <div class="flex flex-col gap-2">
+      {err() && <div class="text-red-700 text-sm">{err()}</div>}
+      <div class="chat">
+        <For each={msgs()}>
+          {(m) => (
+            <div class={`chat-msg ${m.type === 'user' ? 'user' : ''}`}>
+              <div class="who">{m.type}</div>
+              {msgText(m)}
+            </div>
+          )}
+        </For>
       </div>
-      <div class="flex-1 flex flex-col gap-2">
-        <div class="bg-white shadow rounded p-3 h-96 overflow-y-auto space-y-1 text-sm font-mono">
-          <For each={log()}>{(line) => <div>{line}</div>}</For>
-          {busy() && <div class="text-blue-600">…运行中 {elapsed()}</div>}
-        </div>
-        <div class="flex gap-2">
+      <div class="composer">
+        <div class="composer-row">
           <input
-            class="flex-1 border rounded px-2 py-1"
             value={input()}
             onInput={(e) => setInput(e.currentTarget.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') void send();
             }}
-            placeholder={sid() ? '输入任务回车下发' : '先新建或选择会话'}
+            placeholder={useSid() ? '输入任务回车下发' : '先在左侧新建或选择会话'}
           />
-          <button class="bg-blue-500 text-white px-3 py-1 rounded" disabled={busy()} onClick={() => void send()}>
+          <button class="btn btn-primary" disabled={busy()} onClick={() => void send()}>
             发送
           </button>
           {busy() && (
-            <button class="bg-red-500 text-white px-3 py-1 rounded" onClick={() => void abort()}>
-              中断
+            <button class="btn btn-danger" onClick={() => void abort()}>
+              中断 {elapsed()}
             </button>
           )}
         </div>
