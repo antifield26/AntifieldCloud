@@ -86,7 +86,9 @@
 | P6-04 | 选定方案落地 SolidJS | pending | P6-03 | 6h | 交互与选定样例一致；typecheck+build 过；公网登录→五页；触控 ≥44px | 保持 API 契约；抽 design tokens | `web/src/**` |
 
 **P6 出口**：有可辩护的视觉方向 → 落地后日常愿意打开；危险动作不误触；⌘K 成为主入口。
-
+| P6-05 | OC风06-dock三栏式 | done | P6-01 | 3h | 左图标轨+会话列+主区，底部状态栏；本地可预览 | 同构交互另写适配 JS | ui-proto/06-dock/ |
+| P6-06 | OC风07-command命令优先 | done | P6-01 | 3h | 无侧栏，顶部 omnibar + 右检查器；本地可预览 | 同上 | ui-proto/07-command/ |
+| P6-07 | OC风08-cards卡片工作区 | done | P6-01 | 3h | 首页卡片总览 + AI 右抽屉；本地可预览 | 同上 | ui-proto/08-cards/ || P6-05 | OC风06-dock三栏式 | in-progress | P6-01 | 3h | 左图标轨+会话列+主区，底部状态栏；本地可预览 | 同构交互另写适配 JS | ui-proto/06-dock/ |
 ## 流转规则
 
 - `pending → in-progress`：开工前改本表；`→ done`：验收（含实机）全过 + 文档同步后改；`→ blocked`：写明阻塞项与绕行；`→ dropped`：写明用户决策原因。
