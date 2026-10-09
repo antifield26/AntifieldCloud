@@ -118,3 +118,5 @@
 - **P6-03 拍板**：选定 06-dock 为最终方案；追加纯 CSS 美化层（焦点环/滚动条/过渡/空态/登录动效），零 JS 改动。
 
 - **P6-04① 框架**：App 重构为 06-dock 壳（图标轨+会话列+底栏+登录/cmdk/确认/toast），主题 CSS 并入，AI 页瘦身用共享会话 store；新包公网生效。
+
+- **P6-04② 五页换肤**：Console/Efficiency/Jobs/Portal/Login 全量改 06-dock 类（panel/stat-card/log-list/btn/chip/seg/modal/toast），白底残留清零；新包公网生效。

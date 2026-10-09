@@ -59,39 +59,39 @@ export default function Jobs() {
   };
 
   return (
-    <div class="p-4 flex flex-col md:flex-row gap-4">
+    <div class="cols">
       <div class="w-full md:w-80 shrink-0 space-y-2">
-        <div class="bg-white shadow rounded p-3 space-y-2">
-          <h2 class="font-bold">新建任务</h2>
-          <input class="w-full border rounded px-2 py-1 text-sm" placeholder="名称" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
-          <input class="w-full border rounded px-2 py-1 text-sm" placeholder="cron（空=手动）" value={cron()} onInput={(e) => setCron(e.currentTarget.value)} />
-          <select class="w-full border rounded px-2 py-1 text-sm" value={kind()} onChange={(e) => setKind(e.currentTarget.value)}>
+        <div class="panel space-y-2">
+          <div class="panel-title">新建任务</div>
+          <input placeholder="名称" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
+          <input placeholder="cron（空=手动）" value={cron()} onInput={(e) => setCron(e.currentTarget.value)} />
+          <select value={kind()} onChange={(e) => setKind(e.currentTarget.value)}>
             <option value="shell">shell</option>
             <option value="http">http</option>
             <option value="opencode">opencode</option>
           </select>
-          <textarea class="w-full border rounded px-2 py-1 text-sm font-mono" rows={3} value={payload()} onInput={(e) => setPayload(e.currentTarget.value)} />
-          <button class="bg-blue-500 text-white px-3 py-1 rounded" onClick={() => void create()}>创建</button>
-          {err() && <div class="text-red-700 text-sm">{err()}</div>}
+          <textarea class="mono" rows={3} value={payload()} onInput={(e) => setPayload(e.currentTarget.value)} />
+          <button class="btn btn-primary btn-sm" onClick={() => void create()}>创建</button>
+          {err() && <div class="form-err text-sm">{err()}</div>}
         </div>
         <For each={jobs()}>
           {(j) => (
-            <div class="bg-white shadow rounded p-2 text-sm flex gap-1 items-center">
-              <span class="flex-1"><b>{j.name}</b> <span class="text-gray-500">{j.kind} {j.cron} [{j.last_status ?? '-'}]</span></span>
-              <button class="text-green-600" onClick={() => void run(j.id)}>跑</button>
-              <button class="text-blue-600" onClick={() => void show(j.id)}>志</button>
-              <button class="text-red-500" onClick={() => void del(j.id)}>删</button>
+            <div class="panel tight flex gap-1 items-center text-sm">
+              <span class="grow"><b>{j.name}</b> <span class="muted">{j.kind} {j.cron} [{j.last_status ?? '-'}]</span></span>
+              <button class="mini-btn ok" onClick={() => void run(j.id)}>跑</button>
+              <button class="mini-btn" onClick={() => void show(j.id)}>志</button>
+              <button class="mini-btn danger" onClick={() => void del(j.id)}>删</button>
             </div>
           )}
         </For>
       </div>
-      <div class="flex-1 bg-white shadow rounded p-3">
-        <h2 class="font-bold mb-2">执行记录 {jid()}</h2>
+      <div class="flex-1 panel">
+        <div class="panel-title">执行记录 {jid()}</div>
         <For each={runs()}>
           {(r) => (
-            <div class="border-b py-2 text-sm">
-              <div><b>{r.status}</b> <span class="text-gray-500">{r.started_at}</span></div>
-              <pre class="whitespace-pre-wrap text-xs bg-gray-50 p-1 rounded">{r.log.slice(0, 2000)}</pre>
+            <div class="run-row">
+              <div><b class={r.status === 'done' ? 'ok' : r.status === 'failed' ? 'bad' : ''}>{r.status}</b> <span class="muted">{r.started_at}</span></div>
+              <pre class="code-preview">{r.log.slice(0, 2000)}</pre>
             </div>
           )}
         </For>

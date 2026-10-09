@@ -87,12 +87,10 @@ export default function Console() {
 
   const priColor = (p?: string): string =>
     p === '0' || p === '1' || p === '2' || p === '3'
-      ? 'bg-red-600 text-white'
+      ? 'pri crit'
       : p === '4'
-        ? 'bg-orange-400 text-white'
-        : p === '5' || p === '6'
-          ? 'bg-gray-500 text-white'
-          : 'bg-gray-200';
+        ? 'pri warn'
+        : 'pri info';
 
   const hlRedacted = (msg: string): string =>
     msg
@@ -115,111 +113,113 @@ export default function Console() {
   };
 
   return (
-    <div class="p-4 space-y-4">
+    <div class="page">
       <Show when={err()}>
-        <div class="bg-red-100 text-red-800 p-2 rounded">{err()}</div>
+        <div class="form-err">{err()}</div>
       </Show>
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div class="bg-white shadow rounded p-3"><div class="text-gray-500 text-sm">温度</div><div class="text-2xl">{ov()?.tempC ?? '?'}°C</div></div>
-        <div class="bg-white shadow rounded p-3"><div class="text-gray-500 text-sm">CPU</div><div class="text-2xl">{ov()?.cpuPct ?? '?'}%</div></div>
-        <div class="bg-white shadow rounded p-3"><div class="text-gray-500 text-sm">内存</div><div class="text-2xl">{ov() ? `${fmtGb(ov()!.memUsedKb)} / ${fmtGb(ov()!.memTotalKb)}` : '?'}</div></div>
-        <div class="bg-white shadow rounded p-3"><div class="text-gray-500 text-sm">SD 已写</div><div class="text-2xl">{ov() ? fmtMb(ov()!.diskWrittenKb) : '?'}</div></div>
+      <div class="stat-grid">
+        <article class="stat-card"><div class="stat-label">温度</div><div class="stat-value">{ov()?.tempC ?? '?'}<span class="unit">°C</span></div></article>
+        <article class="stat-card"><div class="stat-label">CPU</div><div class="stat-value">{ov()?.cpuPct ?? '?'}<span class="unit">%</span></div></article>
+        <article class="stat-card"><div class="stat-label">内存</div><div class="stat-value">{ov() ? fmtGb(ov()!.memUsedKb) : '?'}<span class="unit">/ {ov() ? fmtGb(ov()!.memTotalKb) : '?'}</span></div></article>
+        <article class="stat-card"><div class="stat-label">SD 已写</div><div class="stat-value">{ov() ? fmtMb(ov()!.diskWrittenKb) : '?'}<span class="unit">B</span></div></article>
       </div>
-      <div class="bg-white shadow rounded p-3">
-        <div class="flex gap-2 items-center mb-2">
-          <h2 class="font-bold">曲线</h2>
-          {(['24h', '7d'] as const).map((r) => (
-            <button
-              class={`px-2 py-1 rounded text-sm ${range() === r ? 'bg-blue-500 text-white' : 'bg-gray-200'}`}
-              onClick={() => {
-                setRange(r);
-                void load();
-              }}
-            >
-              {r}
-            </button>
-          ))}
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">曲线</span>
+          <div class="seg">
+            {(['24h', '7d'] as const).map((r) => (
+              <button
+                class={`seg-btn ${range() === r ? 'active' : ''}`}
+                onClick={() => {
+                  setRange(r);
+                  void load();
+                }}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div><div class="text-sm text-gray-500">温度 °C</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.tempC }))} color="#e11d48" unit="°C" /></div>
-          <div><div class="text-sm text-gray-500">CPU %</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.cpu }))} color="#2563eb" unit="%" /></div>
-          <div><div class="text-sm text-gray-500">内存已用 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.memUsedKb / 1048576 }))} color="#16a34a" unit="G" /></div>
-          <div><div class="text-sm text-gray-500">SD 累计写 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.diskWrittenKb / 1048576 }))} color="#9333ea" unit="G" /></div>
+        <div class="chart-grid">
+          <div><div class="chart-label">温度 °C</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.tempC }))} color="#e11d48" unit="°C" /></div>
+          <div><div class="chart-label">CPU %</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.cpu }))} color="#2563eb" unit="%" /></div>
+          <div><div class="chart-label">内存已用 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.memUsedKb / 1048576 }))} color="#16a34a" unit="G" /></div>
+          <div><div class="chart-label">SD 累计写 GB</div><LineChart data={pts().map((p) => ({ ts: p.ts, v: p.diskWrittenKb / 1048576 }))} color="#9333ea" unit="G" /></div>
         </div>
       </div>
-      <div class="bg-white shadow rounded p-3">
-        <h2 class="font-bold mb-2">磁盘健康（SD 无寿命读数，代理指标）</h2>
-        <Show when={disk()} fallback={<div class="text-gray-400 text-sm">加载中…</div>}>
-          <ul class="text-sm space-y-1">
+      <div class="panel">
+        <div class="panel-title">磁盘健康（SD 无寿命读数，代理指标）</div>
+        <Show when={disk()} fallback={<div class="muted">加载中…</div>}>
+          <ul class="kv">
             <li>根分区剩余：{disk()!.rootFreeKb === null || disk()!.rootTotalKb === null ? '?' : `${fmtGb(disk()!.rootFreeKb as number)} / ${fmtGb(disk()!.rootTotalKb as number)}`}</li>
             <li>近 24h 写入速率：{disk()!.writePerDayKb === null ? '数据不足' : `${fmtMb(disk()!.writePerDayKb as number)}/天`}</li>
             <li>粗估可用天数：{disk()!.daysLeft ?? '—'}</li>
             <li>/var/log 水位：{disk()!.varLogUsePct ?? '?'}%</li>
             <li>
               大目录 TOP5{disk()!.cached ? '（缓存）' : ''}：
-              <ul class="ml-4 list-disc">
-                <For each={disk()!.top5}>{(t) => <li class="font-mono text-xs">{t}</li>}</For>
+              <ul class="mono-list">
+                <For each={disk()!.top5}>{(t) => <li>{t}</li>}</For>
               </ul>
             </li>
           </ul>
         </Show>
       </div>
-      <div class="bg-white shadow rounded p-3">
-        <h2 class="font-bold mb-2">告警</h2>
-        <ul>
+      <div class="panel">
+        <div class="panel-title">告警</div>
+        <ul class="kv">
           <For each={checks()}>
             {(c) => (
-              <li class={c.status === 'alert' ? 'text-red-700' : 'text-green-700'}>
+              <li class={c.status === 'alert' ? 'bad' : 'ok'}>
                 {c.name}: {c.status} — {c.detail}
               </li>
             )}
           </For>
         </ul>
       </div>
-      <div class="bg-white shadow rounded p-3">
-        <div class="flex gap-2 items-center mb-2 flex-wrap">
-          <h2 class="font-bold">日志</h2>
-          <select class="border rounded px-2 py-1 text-sm" value={logUnit()} onChange={(e) => setLogUnit(e.currentTarget.value)}>
+      <div class="panel">
+        <div class="toolbar">
+          <span class="panel-title">日志</span>
+          <select value={logUnit()} onChange={(e) => setLogUnit(e.currentTarget.value)}>
             <For each={['opencode.service', 'workbench-gateway.service', 'cloudflared.service', 'ssh.service', 'nginx.service']}>
               {(u) => <option value={u}>{u}</option>}
             </For>
           </select>
-          <select class="border rounded px-2 py-1 text-sm" value={logSince()} onChange={(e) => setLogSince(e.currentTarget.value)}>
+          <select value={logSince()} onChange={(e) => setLogSince(e.currentTarget.value)}>
             <option value="-10min">近10分钟</option>
             <option value="-1h">近1小时</option>
             <option value="-24h">近24小时</option>
           </select>
-          <select class="border rounded px-2 py-1 text-sm" value={logLimit()} onChange={(e) => setLogLimit(Number(e.currentTarget.value))}>
+          <select value={logLimit()} onChange={(e) => setLogLimit(Number(e.currentTarget.value))}>
             {[50, 100, 300, 500].map((n) => (
               <option value={n}>{n} 条</option>
             ))}
           </select>
-          <button class="bg-blue-500 text-white px-3 py-1 rounded text-sm" onClick={() => void loadLogs()}>查询</button>
-          <button class="bg-gray-600 text-white px-3 py-1 rounded text-sm" onClick={() => void copyAll()}>
+          <button class="btn btn-primary btn-sm" onClick={() => void loadLogs()}>查询</button>
+          <button class="btn btn-sm" onClick={() => void copyAll()}>
             {copied() ? '已复制' : '一键复制'}
           </button>
         </div>
-        <ul class="space-y-1 text-xs font-mono max-h-96 overflow-y-auto">
+        <ul class="log-list scroll">
           <For each={logEntries()}>
             {(e) => (
-              <li class="flex gap-2 items-start border-b py-0.5">
-                <span class={`px-1 rounded shrink-0 ${priColor(e.pri)}`}>p{e.pri ?? '?'}</span>
-                <span class="text-gray-400 shrink-0">{e.ts.slice(0, 19)}</span>
-                <span innerHTML={hlRedacted(e.msg)} class="break-all" />
+              <li>
+                <span class={`pri ${priColor(e.pri)}`}>p{e.pri ?? '?'}</span>
+                <span class="ts">{e.ts.slice(0, 19)}</span>
+                <span innerHTML={hlRedacted(e.msg)} class="msg" />
               </li>
             )}
           </For>
         </ul>
       </div>
-      <div class="bg-white shadow rounded p-3">
-        <h2 class="font-bold mb-2">服务（白名单）</h2>
-        <ul class="space-y-1">
+      <div class="panel">
+        <div class="panel-title">服务（白名单）</div>
+        <ul class="svc-list">
           <For each={svcs()}>
             {(s) => (
-              <li class="flex items-center gap-2">
-                <span class="font-mono text-sm flex-1">{s.unit} <span class="text-gray-500">{s.state.split(' ').find((x) => x.startsWith('ActiveState='))}</span></span>
+              <li>
+                <span class="mono grow">{s.unit} <span class="muted">{s.state.split(' ').find((x) => x.startsWith('ActiveState='))}</span></span>
                 {s.actions.includes('restart') && (
-                  <button class="bg-blue-500 text-white px-2 py-1 rounded text-sm" onClick={() => void restart(s.unit)}>
+                  <button class="btn btn-primary btn-sm" onClick={() => void restart(s.unit)}>
                     重启
                   </button>
                 )}
@@ -228,17 +228,15 @@ export default function Console() {
           </For>
         </ul>
       </div>
-      <div class="bg-white shadow rounded p-3 text-sm text-gray-600">
-        <div>journal：{ov()?.journal}</div>
-      </div>
-      <div class="bg-white shadow rounded p-3">
-        <h2 class="font-bold mb-2">可选服务（只读，不在启停白名单）</h2>
-        <ul class="text-sm space-y-1">
+      <div class="panel muted">journal：{ov()?.journal}</div>
+      <div class="panel">
+        <div class="panel-title">可选服务（只读，不在启停白名单）</div>
+        <ul class="kv mono">
           <For each={ov()?.extra ?? []}>
             {(s) => (
-              <li class="font-mono">
-                {s.unit}: <span class={s.active === 'active' ? 'text-green-700' : 'text-red-700'}>{s.active}</span>
-                {s.rssKb !== null && <span class="text-gray-500"> RSS {fmtMb(s.rssKb)}</span>}
+              <li>
+                {s.unit}: <span class={s.active === 'active' ? 'ok' : 'bad'}>{s.active}</span>
+                {s.rssKb !== null && <span class="muted"> RSS {fmtMb(s.rssKb)}</span>}
               </li>
             )}
           </For>

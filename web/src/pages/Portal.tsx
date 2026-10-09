@@ -14,13 +14,13 @@ export default function Portal() {
     void api<{ services: Svc[] }>('/api/portal/services').then((j) => setSvcs(j.services));
   });
   return (
-    <div class="p-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div class="portal-grid">
       <For each={svcs()}>
         {(s) => (
-          <a href={s.href} class="bg-white shadow rounded p-4 hover:shadow-lg block">
-            <div class="font-bold">{s.title}</div>
-            <div class="text-sm text-blue-600">{s.href}</div>
-            <div class="text-sm text-gray-500">{s.note}</div>
+          <a href={s.href} class="card portal-card">
+            <div class="card-title">{s.title}</div>
+            <div class="mono muted">{s.href}</div>
+            <div class="muted text-sm">{s.note}</div>
           </a>
         )}
       </For>
