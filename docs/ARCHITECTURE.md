@@ -127,7 +127,7 @@ CREATE INDEX idx_api_audit_ts ON api_audit(ts);
 - 会话：绝对上限 7d（`created_at` 起算，NULL 老行强制失败）；滑动续期剩 <24h 时延到 `min(now+30d, created+7d)`。cookie `maxAge` 现为 30d（**大于**服务端 7d 上限，浏览器侧可残留无效 cookie；已知不一致，待收口为 7d）。
 - 红线（AGENTS.md 强制）：零入站端口；`serve` 只绑 localhost；Key 不进代码/日志/文档；动存储配置前备份链路必须 `status=ok`。
 
-## 6. 目录结构（与仓库一致，2026-10 扫描）
+## 6. 目录结构
 
 ```text
 AntifieldCloud/
