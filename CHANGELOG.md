@@ -120,3 +120,5 @@
 - **P6-04① 框架**：App 重构为 06-dock 壳（图标轨+会话列+底栏+登录/cmdk/确认/toast），主题 CSS 并入，AI 页瘦身用共享会话 store；新包公网生效。
 
 - **P6-04② 五页换肤**：Console/Efficiency/Jobs/Portal/Login 全量改 06-dock 类（panel/stat-card/log-list/btn/chip/seg/modal/toast），白底残留清零；新包公网生效。
+
+- **会话页 OC 化**：模型/智能体/变体选择器、权限坞、提供方设置面板；网关补 models/agents/providers/session-model-agent/permission-reply；Model.Ref 实测要 id 字段、204 空回执兼容。线上全通，探针已清。

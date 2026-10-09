@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { createAdapter } from '../src/opencode/adapter.js';
 
-function startMock(): Promise<{ url: string; close: () => Promise<void>; seen: { auth: string[]; prompts: string[] } }> {
-  const seen = { auth: [] as string[], prompts: [] as string[] };
+function startMock(): Promise<{ url: string; close: () => Promise<void>; seen: { auth: string[]; prompts: string[]; posts: string[] } }> {
+  const seen = { auth: [] as string[], prompts: [] as string[], posts: [] as string[] };
   const server = createServer((req, res) => {
     seen.auth.push(req.headers.authorization ?? '');
     if (req.url === '/api/info') {
@@ -55,6 +55,49 @@ function startMock(): Promise<{ url: string; close: () => Promise<void>; seen: {
     if (req.url === '/api/session/ses_new/message' && req.method === 'GET') {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ data: [{ id: 'msg_1', type: 'user' }] }));
+      return;
+    }
+    if (req.url === '/api/model' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'm1', modelID: 'm1', providerID: 'p1', name: 'M1', variants: { low: {}, high: {} } }] }));
+      return;
+    }
+    if (req.url === '/api/model/default' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: { id: 'm1', modelID: 'm1', providerID: 'p1' } }));
+      return;
+    }
+    if (req.url === '/api/agent' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'build', name: 'Build' }] }));
+      return;
+    }
+    if (req.url === '/api/provider' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'p1', name: 'P1' }] }));
+      return;
+    }
+    if (req.url === '/api/session/ses_new/model' && req.method === 'POST') {
+      seen.posts.push(req.url);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: { sessionID: 'ses_new' } }));
+      return;
+    }
+    if (req.url === '/api/session/ses_new/agent' && req.method === 'POST') {
+      seen.posts.push(req.url);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: { sessionID: 'ses_new' } }));
+      return;
+    }
+    if (req.url === '/api/session/ses_new/permission' && req.method === 'GET') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: [{ id: 'perm_1', title: 'run ls' }] }));
+      return;
+    }
+    if (req.url === '/api/session/ses_new/permission/perm_1/reply' && req.method === 'POST') {
+      seen.posts.push(req.url);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ data: true }));
       return;
     }
     res.writeHead(404);
@@ -131,6 +174,30 @@ void describe('adapter contract (v2)', () => {
           return d?.sessionID === undefined || d.sessionID === 'ses_new';
         }),
       );
+    } finally {
+      await mock.close();
+    }
+  });
+
+  void it('选择器与权限：models/agents/providers/model/agent/permission/reply', async () => {
+    const mock = await startMock();
+    try {
+      const a = createAdapter({ baseUrl: mock.url, username: 'opencode', password: 'pw' });
+      const models = (await a.listModels()) as { data: Array<{ id: string; variants: Record<string, unknown> }> };
+      assert.equal(models.data[0].id, 'm1');
+      assert.deepEqual(Object.keys(models.data[0].variants), ['low', 'high']);
+      const def = (await a.defaultModel()) as { data: { id: string } };
+      assert.equal(def.data.id, 'm1');
+      const agents = (await a.listAgents()) as { data: Array<{ id: string }> };
+      assert.equal(agents.data[0].id, 'build');
+      const provs = (await a.listProviders()) as { data: Array<{ id: string }> };
+      assert.equal(provs.data[0].id, 'p1');
+      await a.setSessionModel('ses_new', { providerID: 'p1', modelID: 'm1' });
+      await a.setSessionAgent('ses_new', 'build');
+      const perms = (await a.listPermissions('ses_new')) as { data: Array<{ id: string }> };
+      assert.equal(perms.data[0].id, 'perm_1');
+      await a.replyPermission('ses_new', 'perm_1', 'allow');
+      assert.ok(mock.seen.posts.includes('/api/session/ses_new/permission/perm_1/reply'));
     } finally {
       await mock.close();
     }

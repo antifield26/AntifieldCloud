@@ -29,7 +29,7 @@ export interface SendParts {
 export interface IOpenCodeAdapter {
   health(): Promise<OpenCodeVersion>;
   listSessions(): Promise<SessionSummary[]>;
-  createSession(title?: string, model?: string, agent?: string): Promise<SessionSummary>;
+  createSession(title?: string, model?: { providerID: string; modelID: string } | string, agent?: string): Promise<SessionSummary>;
   deleteSession(sessionId: string): Promise<boolean>;
   /** 下发 prompt 不等待（回执即返），进度经 messages() 轮询。 */
   promptOnly(sessionId: string, text: string): Promise<unknown>;
@@ -39,6 +39,14 @@ export interface IOpenCodeAdapter {
   sendMessage(sessionId: string, input: SendParts, onEvent: (ev: unknown) => void): Promise<void>;
   messages(sessionId: string): Promise<unknown>;
   abortSession(sessionId: string): Promise<boolean>;
+  listModels(): Promise<unknown>;
+  defaultModel(): Promise<unknown>;
+  listAgents(): Promise<unknown>;
+  listProviders(): Promise<unknown>;
+  setSessionModel(sessionId: string, model: { providerID: string; modelID: string; variant?: string }): Promise<unknown>;
+  setSessionAgent(sessionId: string, agent: string): Promise<unknown>;
+  listPermissions(sessionId: string): Promise<unknown>;
+  replyPermission(sessionId: string, requestID: string, response: 'allow' | 'deny'): Promise<unknown>;
 }
 
 interface AdapterOpts {
@@ -89,8 +97,15 @@ export function createAdapter(opts: AdapterOpts): IOpenCodeAdapter {
     }
   };
 
-  const unwrapList = (json: unknown): SessionSummary[] => {
-    const data = (json as { data: Array<Record<string, unknown>> }).data ?? [];
+  /** 204 空回执转 {ok:true}，否则解析 JSON。 */
+  const emptyOk = async (res: Response): Promise<unknown> => {
+    if (res.status === 204) return { ok: true };
+    const text = await res.text();
+    if (text.trim() === '') return { ok: true };
+    return JSON.parse(text) as unknown;
+  };
+
+  const unwrapList = (json: unknown): SessionSummary[] => {    const data = (json as { data: Array<Record<string, unknown>> }).data ?? [];
     return data.map((s) => ({
       id: String(s.id),
       title: String(s.title ?? ''),
@@ -158,7 +173,7 @@ export function createAdapter(opts: AdapterOpts): IOpenCodeAdapter {
       return unwrapList(await res.json());
     },
 
-    async createSession(title?: string, model?: string, agent?: string): Promise<SessionSummary> {
+    async createSession(title?: string, model?: { providerID: string; modelID: string } | string, agent?: string): Promise<SessionSummary> {
       const body: Record<string, unknown> = {};
       if (title !== undefined) body.title = title;
       if (model !== undefined) body.model = model;
@@ -229,6 +244,42 @@ export function createAdapter(opts: AdapterOpts): IOpenCodeAdapter {
     async abortSession(sessionId: string): Promise<boolean> {
       const res = await req('POST', `/api/session/${sessionId}/interrupt`);
       return res.ok;
+    },
+
+    async listModels(): Promise<unknown> {
+      return (await req('GET', '/api/model')).json();
+    },
+
+    async defaultModel(): Promise<unknown> {
+      return (await req('GET', '/api/model/default')).json();
+    },
+
+    async listAgents(): Promise<unknown> {
+      return (await req('GET', '/api/agent')).json();
+    },
+
+    async listProviders(): Promise<unknown> {
+      return (await req('GET', '/api/provider')).json();
+    },
+
+    async setSessionModel(sessionId: string, model: { providerID: string; modelID: string; variant?: string }): Promise<unknown> {
+      const ref: Record<string, string> = { id: model.modelID, providerID: model.providerID };
+      if (model.variant) ref.variant = model.variant;
+      const res = await req('POST', `/api/session/${sessionId}/model`, { model: ref });
+      return emptyOk(res);
+    },
+
+    async setSessionAgent(sessionId: string, agent: string): Promise<unknown> {
+      const res = await req('POST', `/api/session/${sessionId}/agent`, { agent });
+      return emptyOk(res);
+    },
+
+    async listPermissions(sessionId: string): Promise<unknown> {
+      return (await req('GET', `/api/session/${sessionId}/permission`)).json();
+    },
+
+    async replyPermission(sessionId: string, requestID: string, response: 'allow' | 'deny'): Promise<unknown> {
+      return (await req('POST', `/api/session/${sessionId}/permission/${requestID}/reply`, { response })).json();
     },
   };
 }

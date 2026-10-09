@@ -25,9 +25,9 @@ export function registerAiRoutes(app: FastifyInstance): void {
     }
   });
 
-  app.post<{ Body: { title?: string } }>('/api/ai/sessions', async (req, reply) => {
+  app.post<{ Body: { title?: string; model?: { providerID: string; modelID: string }; agent?: string } }>('/api/ai/sessions', async (req, reply) => {
     try {
-      return await adapter().createSession(req.body?.title);
+      return await adapter().createSession(req.body?.title, req.body?.model, req.body?.agent);
     } catch (err) {
       return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
     }
@@ -69,6 +69,86 @@ export function registerAiRoutes(app: FastifyInstance): void {
       return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
     }
   });
+
+  app.get('/api/ai/models', async (_req, reply) => {
+    try {
+      return await adapter().listModels();
+    } catch (err) {
+      return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+    }
+  });
+
+  app.get('/api/ai/models/default', async (_req, reply) => {
+    try {
+      return await adapter().defaultModel();
+    } catch (err) {
+      return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+    }
+  });
+
+  app.get('/api/ai/agents', async (_req, reply) => {
+    try {
+      return await adapter().listAgents();
+    } catch (err) {
+      return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+    }
+  });
+
+  app.get('/api/ai/providers', async (_req, reply) => {
+    try {
+      return await adapter().listProviders();
+    } catch (err) {
+      return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+    }
+  });
+
+  app.post<{ Params: { id: string }; Body: { providerID?: unknown; modelID?: unknown; variant?: unknown } }>(
+    '/api/ai/sessions/:id/model',
+    async (req, reply) => {
+      if (typeof req.body?.providerID !== 'string' || typeof req.body?.modelID !== 'string') {
+        return reply.code(400).send({ error: 'invalid model' });
+      }
+      const variant = typeof req.body?.variant === 'string' ? req.body.variant : undefined;
+      try {
+        return await adapter().setSessionModel(req.params.id, { providerID: req.body.providerID, modelID: req.body.modelID, variant });
+      } catch (err) {
+        return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { agent?: unknown } }>('/api/ai/sessions/:id/agent', async (req, reply) => {
+    if (typeof req.body?.agent !== 'string' || req.body.agent === '') {
+      return reply.code(400).send({ error: 'invalid agent' });
+    }
+    try {
+      return await adapter().setSessionAgent(req.params.id, req.body.agent);
+    } catch (err) {
+      return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+    }
+  });
+
+  app.get<{ Params: { id: string } }>('/api/ai/sessions/:id/permissions', async (req, reply) => {
+    try {
+      return await adapter().listPermissions(req.params.id);
+    } catch (err) {
+      return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+    }
+  });
+
+  app.post<{ Params: { id: string; rid: string }; Body: { response?: unknown } }>(
+    '/api/ai/sessions/:id/permissions/:rid/reply',
+    async (req, reply) => {
+      if (req.body?.response !== 'allow' && req.body?.response !== 'deny') {
+        return reply.code(400).send({ error: 'response must be allow|deny' });
+      }
+      try {
+        return await adapter().replyPermission(req.params.id, req.params.rid, req.body.response);
+      } catch (err) {
+        return reply.code(502).send({ error: 'opencode unreachable', detail: String(err) });
+      }
+    },
+  );
 
   // SSE 透传：浏览器 EventSource 直连网关，网关过滤后转发本会话事件。
   app.get<{ Params: { id: string } }>('/api/ai/sessions/:id/events', async (req, reply) => {

@@ -195,6 +195,7 @@ kbd { font-family: var(--mono); font-size: 10px; background: var(--bg-elev); bor
 .panel.tight { padding: 8px 12px; }
 .run-row { border-bottom: 1px solid var(--border-soft); padding: 8px 0; font-size: 13px; }
 .mini-btn.ok { border-color: var(--green); color: var(--green); }
+.perm-dock { border-color: var(--warn); }
 .portal-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
 @media (min-width: 768px) { .portal-grid { grid-template-columns: repeat(3, 1fr); } }
 .portal-card { display: block; text-decoration: none; color: inherit; }
