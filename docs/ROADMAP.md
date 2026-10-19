@@ -8,9 +8,14 @@
 
 ## v0.2.1
 
+- 文件页列表名称列可点击进入文件夹/预览文件。
+- 首次加入 OpenCode 兼容垫片（含可见“＋ 新会话”按钮）；该按钮已被 v0.2.2 移除。
+
+## v0.2.0
+
 - **审计修复**：C1 WebSocket 畸形 Cookie DoS、改密/恢复码再认证与限流、trustProxy 收紧、
   RCON 多包、上传预留/ENOSPC、HSTS/安全头、备份两阶段协议、部署自动回滚、迁移前快照、
-  memory cgroup、100 MiB 上传上限；详见 `docs/AUDIT-v0.2.0.md`。
+  memory cgroup、100 MiB 上传上限；详见 `docs/AUDIT.md`。
 - 知识库：Markdown 笔记 + 书签 + 标签 + 置顶 + FTS5 搜索。
 - 文件分享：单文件、可选密码/过期/最大下载次数/吊销、公开页 noindex、限流与审计。
 - PWA：可安装、离线壳、手机拍照上传；不缓存 API/文件。

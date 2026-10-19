@@ -1,4 +1,4 @@
-# AntifieldCloud v0.2.0 审计与修复记录
+# AntifieldCloud 审计与修复记录（v0.2.0）
 
 - 日期：2026-10-19
 - 范围：v0.1.0 全部代码、部署脚本、备份、Pi/Cloudflare、前端与测试
