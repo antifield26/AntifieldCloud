@@ -83,13 +83,13 @@ jobs:
         shell: powershell
         run: |
           $files = Get-ChildItem scripts -Filter *.ps1
-          if ($files.Count -eq 0) { Write-Error "未找到 PowerShell 脚本"; exit 1 }
+          if ($files.Count -eq 0) { Write-Error "No PowerShell scripts found"; exit 1 }
           $failed = $false
           foreach ($file in $files) {
             $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
             $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
             if (-not $hasBom) {
-              Write-Error "缺少 UTF-8 BOM（Windows PowerShell 5.1 中文会乱码）：$($file.Name)"
+              Write-Error "Missing UTF-8 BOM (Windows PowerShell 5.1 mojibake): $($file.Name)"
               $failed = $true
             }
             $tokens = $null
@@ -101,4 +101,4 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
-          Write-Host "PowerShell 5.1 解析与 UTF-8 BOM 检查通过（$($files.Count) 个脚本）"
+          Write-Host "PowerShell 5.1 parse/BOM check passed ($($files.Count) scripts)"
