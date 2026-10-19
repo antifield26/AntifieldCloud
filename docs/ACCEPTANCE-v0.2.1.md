@@ -49,6 +49,8 @@
 部署目录: /opt/antifieldcloud/releases/20261019T143637Z
 迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261019T143640775Z.sqlite
 服务: antifieldcloud.service (active, v0.2.1)
+tag: v0.2.1 → 57cb8d0
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.1
 ```
 
 ## 4. 注意
