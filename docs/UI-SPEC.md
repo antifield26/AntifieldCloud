@@ -1,4 +1,4 @@
-# AntifieldCloud UI 规范（v1）
+# AntifieldCloud UI 规范（v2，2026-10-19）
 
 ## 1. 定位与基调
 
@@ -185,3 +185,40 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 上传进度、预览三种类型、搜索、回收站恢复可完成。
 - Dashboard 数据/降级状态/刷新正常；白名单增删有反馈。
 - 键盘可完成登录、打开弹窗、关闭弹窗。
+
+## 10. v0.2.0 新增界面
+
+### 知识库 `/knowledge`
+
+- 主导航新增“知识库”；顶部 Tabs“笔记/书签”；搜索框 + 标签筛选 + 置顶/分页。
+- 笔记：左侧列表面板，右侧标题 + Markdown 编辑/预览切换 + 标签 + 置顶 + 保存/删除；移动端上下堆叠。
+- 书签：卡片/列表；新建/编辑弹窗含 URL/标题/描述/标签/置顶；外链新窗口打开并带 noopener。
+- 空态/骨架/错误重试；Markdown 只读预览，禁止 style/script/iframe。
+
+### 文件分享
+
+- Files 行操作“分享”打开 ShareDialog：密码（可选，≥4）、有效期（默认 7 天/最长 30 天）、最大下载次数（留空=不限）、备注。
+- 创建成功只展示一次链接 + 复制按钮；关闭前提示“链接只显示一次”。
+- `/shares` 管理页：文件名、状态、过期/次数、创建时间、吊销；不展示 token。
+- `/s/:token` 公开页：独立布局、无登录导航、noindex；文件名/大小/过期/次数/密码输入/下载；410 显示具体失效原因，404 显示不存在。
+
+### PWA / 手机
+
+- `manifest.webmanifest` + 图标；安装提示在 Settings/About 与底部；可关闭并记忆。
+- Service Worker 只缓存静态壳/资源/offline/manifest/图标；绝不缓存 `/api/*`、`/s/*`、文件内容。
+- Files 增加“拍照上传”（`accept=image/* capture=environment`）；390px 无横向滚动。
+
+### 告警
+
+- Dashboard“告警”卡片：当前 active 条件、最近历史、webhook 状态、严重度中文标签。
+- Settings“监控告警”：只读阈值/检查间隔/webhook 是否配置/最近评估；“测试 Webhook”按钮（POST /api/alerts/test）。
+- 未配置 webhook 时仍显示面板告警，不阻塞。
+
+## 11. v0.2.0 交互修复
+
+- Activity 使用服务端 action 精确筛选/分页；审计动作中文名与真实 action 对齐。
+- Files/搜索/Trash 请求可取消，旧响应不会覆盖新目录。
+- 上传逐文件取消/超时（15 分钟）/卸载 abort；恢复码弹窗复制/下载前禁止误关。
+- 改密/恢复码表单含 TOTP；密码 ≥12；429 显示 `details.retryAfterSec`。
+- `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关。
+- a11y：移动抽屉焦点陷阱、Dropdown 方向键、FormField aria-required、ConfirmDialog describedby、NotFound 标题。

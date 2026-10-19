@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -25,3 +28,77 @@ jobs:
 
       - name: Build web
         run: npm run build
+
+  prod-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 26
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+
+      # 模拟 Pi 上的生产安装，确认 server/src 没有引用 devDependencies。
+      - name: Install production dependencies only
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Check runtime dependency boundary
+        run: node scripts/check-prod-deps.mjs
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Shellcheck scripts
+        run: shellcheck -S warning scripts/*.sh deploy/*.sh
+
+  nftables:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install nftables
+        run: sudo apt-get update && sudo apt-get install -y nftables
+
+      # 只做语法/语义校验，不加载规则。
+      - name: Check nftables config
+        run: sudo nft -c -f deploy/nftables.conf
+
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check PowerShell BOM and syntax (PS 5.1)
+        shell: powershell
+        run: |
+          $files = Get-ChildItem scripts -Filter *.ps1
+          if ($files.Count -eq 0) { Write-Error "未找到 PowerShell 脚本"; exit 1 }
+          $failed = $false
+          foreach ($file in $files) {
+            $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+            $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+            if (-not $hasBom) {
+              Write-Error "缺少 UTF-8 BOM（Windows PowerShell 5.1 中文会乱码）：$($file.Name)"
+              $failed = $true
+            }
+            $tokens = $null
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors.Count -gt 0) {
+              foreach ($parseError in $errors) { Write-Error "$($file.Name): $($parseError.Message)" }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+          Write-Host "PowerShell 5.1 解析与 UTF-8 BOM 检查通过（$($files.Count) 个脚本）"

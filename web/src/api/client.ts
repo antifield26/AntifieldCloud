@@ -1,21 +1,40 @@
 // 统一 HTTP 客户端。
 // 职责：同源 fetch、credentials include、自动附带 CSRF 头、统一错误解析、401 会话失效回调。
 // 安全边界：不把密码、TOTP、恢复码写日志；不解析文件 ID 含义；错误信息只保留服务端可展示文案。
+// 公开接口（登录页/分享页）使用 skipAuthRedirect，避免匿名访问触发全局登录跳转。
 
 import type {
+  AlertTestResult,
+  AlertsResult,
   AuditPage,
+  Bookmark,
+  BookmarkInput,
+  BookmarkListResult,
+  BookmarkPatch,
   ClearTrashResult,
+  CreateShareInput,
+  CreateShareResult,
   DashboardData,
-  FileDetailResult,
+  DeleteFileResult,
   FileItem,
   FileListQuery,
   FileListResult,
   FileSearchResult,
+  KnowledgeQuery,
   LoginResult,
   MeResult,
   MinecraftStatus,
+  Note,
+  NoteInput,
+  NoteListResult,
+  NotePatch,
   OkResult,
   PasswordChallenge,
+  PublicShareInfo,
+  PublicShareUnlockResult,
+  RevokeShareResult,
+  ShareListResult,
+  TagsResult,
   TextPreviewResult,
   TrashListResult,
   UploadResult,
@@ -27,6 +46,7 @@ import type {
 const CSRF_COOKIE = 'af_csrf'
 const CSRF_HEADER = 'X-CSRF-Token'
 const JSON_HEADERS = { Accept: 'application/json' }
+const DEFAULT_UPLOAD_TIMEOUT_MS = 15 * 60 * 1000
 
 /** 常见错误码的中文兜底文案；服务端返回的 message 优先。 */
 const ERROR_MESSAGES: Record<string, string> = {
@@ -44,6 +64,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   insufficient_storage: '存储空间不足',
   invalid_credentials: '用户名或密码错误',
   invalid_code: '验证码或恢复码无效',
+  invalid_totp: '验证码无效',
   challenge_expired: '验证已过期，请重新登录',
   rcon_unavailable: 'RCON 不可用，暂时无法读取或修改白名单',
   already_whitelisted: '该玩家已在白名单中',
@@ -51,19 +72,35 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_name: '名称不合法',
   cycle_detected: '不能把文件夹移动到自身或子目录中',
   network_error: '网络连接失败，请检查网络后重试',
+  timeout: '请求超时，请检查网络后重试',
+  aborted: '操作已取消',
+  invalid_password: '密码错误',
+  share_expired: '分享链接已过期',
+  share_exhausted: '分享链接的下载次数已用尽',
+  share_revoked: '分享链接已被吊销',
+  webhook_not_configured: '未配置 Webhook，无法发送测试消息',
+  invalid_url: '链接格式不合法',
 }
 
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
   readonly retryAfterSec: number | null
+  readonly details: Record<string, unknown> | null
 
-  constructor(status: number, code: string, message: string, retryAfterSec: number | null = null) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    retryAfterSec: number | null = null,
+    details: Record<string, unknown> | null = null,
+  ) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
     this.retryAfterSec = retryAfterSec
+    this.details = details
   }
 }
 
@@ -77,6 +114,11 @@ export function toErrorMessage(error: unknown, fallback = '操作失败，请稍
 export function isApiError(error: unknown, code?: string): error is ApiError {
   if (!(error instanceof ApiError)) return false
   return code === undefined || error.code === code
+}
+
+/** AbortController 取消属于正常控制流，页面不应展示为错误。 */
+export function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
 }
 
 let csrfToken: string | null = null
@@ -110,7 +152,7 @@ function readCookie(name: string): string | null {
   return null
 }
 
-function buildQuery(params: Record<string, string | number | null | undefined>): string {
+function buildQuery(params: Record<string, string | number | boolean | null | undefined>): string {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value === null || value === undefined || value === '') continue
@@ -120,7 +162,7 @@ function buildQuery(params: Record<string, string | number | null | undefined>):
   return text ? `?${text}` : ''
 }
 
-function parseRetryAfter(headerValue: string | null): number | null {
+export function parseRetryAfter(headerValue: string | null): number | null {
   if (!headerValue) return null
   const seconds = Number(headerValue)
   if (Number.isFinite(seconds) && seconds >= 0) return seconds
@@ -129,27 +171,37 @@ function parseRetryAfter(headerValue: string | null): number | null {
   return Math.max(0, Math.round((date.getTime() - Date.now()) / 1000))
 }
 
-function parseErrorBody(body: unknown, status: number, retryAfterHeader: number | null): ApiError {
-  let code = status === 401 ? 'unauthenticated' : 'internal_error'
+/**
+ * 解析统一错误体：
+ * - 优先 `error.details.retryAfterSec`，其次 `error.retryAfterSec`、顶层 retryAfterSec、Retry-After 头
+ * - 无 body / 无 code 时按状态码回退
+ */
+export function parseApiError(body: unknown, status: number, retryAfterHeader: number | null): ApiError {
+  let code = status === 401 ? 'unauthenticated' : status === 403 ? 'forbidden' : 'internal_error'
   let message = ''
   let retryAfterSec = retryAfterHeader
+  let details: Record<string, unknown> | null = null
 
   if (body && typeof body === 'object') {
     const record = body as Record<string, unknown>
     const nested = record.error
     if (typeof record.retryAfterSec === 'number') retryAfterSec = record.retryAfterSec
     if (nested && typeof nested === 'object') {
-      const detail = nested as Record<string, unknown>
-      if (typeof detail.code === 'string' && detail.code) code = detail.code
-      if (typeof detail.message === 'string') message = detail.message
-      if (typeof detail.retryAfterSec === 'number') retryAfterSec = detail.retryAfterSec
+      const errorRecord = nested as Record<string, unknown>
+      if (typeof errorRecord.code === 'string' && errorRecord.code) code = errorRecord.code
+      if (typeof errorRecord.message === 'string') message = errorRecord.message
+      if (typeof errorRecord.retryAfterSec === 'number') retryAfterSec = errorRecord.retryAfterSec
+      if (errorRecord.details && typeof errorRecord.details === 'object') {
+        details = errorRecord.details as Record<string, unknown>
+        if (typeof details.retryAfterSec === 'number') retryAfterSec = details.retryAfterSec
+      }
     } else if (typeof record.message === 'string') {
       message = record.message
     }
   }
 
   if (!message) message = ERROR_MESSAGES[code] ?? `请求失败（HTTP ${status}）`
-  return new ApiError(status, code, message, retryAfterSec)
+  return new ApiError(status, code, message, retryAfterSec, details)
 }
 
 async function readJsonBody(response: Response): Promise<unknown> {
@@ -166,7 +218,7 @@ export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
-  /** 认证类请求（如登录）不触发全局 401 跳转。 */
+  /** 认证类/公开接口不触发全局 401 跳转。 */
   skipAuthRedirect?: boolean
 }
 
@@ -194,12 +246,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       signal: options.signal,
     })
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    if (isAbortError(error)) throw error
     throw new ApiError(0, 'network_error', ERROR_MESSAGES.network_error ?? '网络连接失败')
   }
 
   if (!response.ok) {
-    const error = parseErrorBody(await readJsonBody(response), response.status, parseRetryAfter(response.headers.get('Retry-After')))
+    const error = parseApiError(
+      await readJsonBody(response),
+      response.status,
+      parseRetryAfter(response.headers.get('Retry-After')),
+    )
     if (error.status === 401 && error.code === 'unauthenticated' && !options.skipAuthRedirect) {
       unauthorizedHandler?.()
     }
@@ -245,14 +301,21 @@ export function fileContentUrl(id: string, options: { inline?: boolean; download
   return query ? `${base}?${query}` : base
 }
 
+/** 公开分享内容地址：Cookie 由解锁接口写入，前端不附加任何查询参数。 */
+export function publicShareContentUrl(token: string): string {
+  return `/api/public/shares/${encodeURIComponent(token)}/content`
+}
+
 export interface UploadCallbacks {
   onProgress?: (loaded: number, total: number) => void
   signal?: AbortSignal
+  /** 默认 15 分钟，超时后拒绝为 timeout 错误 */
+  timeoutMs?: number
 }
 
 /**
  * 使用 XMLHttpRequest 上传以获得进度事件。
- * 每批文件单独一次请求，便于页面按文件展示进度与重试。
+ * 每个文件单独一次请求，便于页面按文件展示进度、取消与重试。
  */
 export function uploadFiles(
   files: File[],
@@ -264,11 +327,16 @@ export function uploadFiles(
       resolve({ items: [], errors: [] })
       return
     }
+    if (callbacks.signal?.aborted) {
+      reject(new ApiError(0, 'aborted', '上传已取消'))
+      return
+    }
 
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/api/files/upload')
     xhr.withCredentials = true
     xhr.responseType = 'text'
+    xhr.timeout = callbacks.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS
 
     const token = getCsrfToken()
     if (token) xhr.setRequestHeader(CSRF_HEADER, token)
@@ -291,19 +359,16 @@ export function uploadFiles(
         resolve((body as UploadResult | null) ?? { items: [], errors: [] })
         return
       }
-      const error = parseErrorBody(body, xhr.status, parseRetryAfter(xhr.getResponseHeader('Retry-After')))
+      const error = parseApiError(body, xhr.status, parseRetryAfter(xhr.getResponseHeader('Retry-After')))
       if (error.status === 401 && error.code === 'unauthenticated') unauthorizedHandler?.()
       reject(error)
     }
 
     xhr.onerror = () => reject(new ApiError(0, 'network_error', '上传失败：网络连接异常'))
     xhr.onabort = () => reject(new ApiError(0, 'aborted', '上传已取消'))
+    xhr.ontimeout = () => reject(new ApiError(0, 'timeout', '上传超时，请检查网络后重试'))
 
     if (callbacks.signal) {
-      if (callbacks.signal.aborted) {
-        reject(new ApiError(0, 'aborted', '上传已取消'))
-        return
-      }
       callbacks.signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -333,11 +398,13 @@ export const api = {
     },
   },
   account: {
-    changePassword(currentPassword: string, newPassword: string): Promise<OkResult> {
-      return post<OkResult>('/api/account/password', { currentPassword, newPassword })
+    /** 修改密码：需要当前密码 + TOTP；成功后其它会话失效。 */
+    changePassword(currentPassword: string, newPassword: string, totpCode: string): Promise<OkResult> {
+      return post<OkResult>('/api/account/password', { currentPassword, newPassword, totpCode })
     },
-    generateRecoveryCodes(password: string): Promise<{ codes: string[] }> {
-      return post<{ codes: string[] }>('/api/account/recovery-codes', { password })
+    /** 重新生成恢复码：需要当前密码 + TOTP；旧码立即失效。 */
+    generateRecoveryCodes(password: string, totpCode: string): Promise<{ codes: string[] }> {
+      return post<{ codes: string[] }>('/api/account/recovery-codes', { password, totpCode })
     },
     logoutAll(): Promise<OkResult> {
       return post<OkResult>('/api/account/logout-all')
@@ -346,14 +413,15 @@ export const api = {
   getDashboard(): Promise<DashboardData> {
     return get<DashboardData>('/api/dashboard')
   },
-  getAudit(limit = 50, offset = 0): Promise<AuditPage> {
-    return get<AuditPage>(`/api/audit${buildQuery({ limit, offset })}`)
+  getAudit(limit = 50, offset = 0, action?: string, signal?: AbortSignal): Promise<AuditPage> {
+    return get<AuditPage>(`/api/audit${buildQuery({ limit, offset, action })}`, { signal })
   },
+  /** /api/version 同时下发站点元数据；旧服务端只有 version。 */
   getVersion(): Promise<VersionResult> {
     return get<VersionResult>('/api/version')
   },
   files: {
-    list(query: FileListQuery = {}): Promise<FileListResult> {
+    list(query: FileListQuery = {}, signal?: AbortSignal): Promise<FileListResult> {
       return get<FileListResult>(
         `/api/files${buildQuery({
           parentId: query.parentId ?? null,
@@ -362,13 +430,11 @@ export const api = {
           sort: query.sort,
           dir: query.dir,
         })}`,
+        { signal },
       )
     },
-    search(keyword: string): Promise<FileSearchResult> {
-      return get<FileSearchResult>(`/api/files/search${buildQuery({ q: keyword })}`)
-    },
-    detail(id: string): Promise<FileDetailResult> {
-      return get<FileDetailResult>(`/api/files/${encodeId(id)}`)
+    search(keyword: string, signal?: AbortSignal): Promise<FileSearchResult> {
+      return get<FileSearchResult>(`/api/files/search${buildQuery({ q: keyword })}`, { signal })
     },
     createFolder(parentId: string | null, name: string): Promise<FileItem> {
       return post<FileItem>('/api/files/folder', { parentId, name })
@@ -376,31 +442,58 @@ export const api = {
     update(id: string, changes: { name?: string; parentId?: string | null }): Promise<FileItem> {
       return patch<FileItem>(`/api/files/${encodeId(id)}`, changes)
     },
-    remove(id: string): Promise<OkResult> {
-      return del<OkResult>(`/api/files/${encodeId(id)}`)
+    remove(id: string): Promise<DeleteFileResult> {
+      return del<DeleteFileResult>(`/api/files/${encodeId(id)}`)
     },
     getText(id: string): Promise<TextPreviewResult> {
       return get<TextPreviewResult>(`/api/files/${encodeId(id)}/text`)
     },
     contentUrl: fileContentUrl,
+    /** 创建文件分享链接（仅文件） */
+    createShare(id: string, input: CreateShareInput): Promise<CreateShareResult> {
+      return post<CreateShareResult>(`/api/files/${encodeId(id)}/shares`, input)
+    },
+  },
+  shares: {
+    list(): Promise<ShareListResult> {
+      return get<ShareListResult>('/api/shares')
+    },
+    revoke(id: string): Promise<RevokeShareResult> {
+      return del<RevokeShareResult>(`/api/shares/${encodeId(id)}`)
+    },
+  },
+  /** 公开分享接口：无需登录，不能触发全局登录跳转。 */
+  publicShares: {
+    info(token: string): Promise<PublicShareInfo> {
+      return get<PublicShareInfo>(`/api/public/shares/${encodeId(token)}`, { skipAuthRedirect: true })
+    },
+    unlock(token: string, password: string | null): Promise<PublicShareUnlockResult> {
+      return post<PublicShareUnlockResult>(
+        `/api/public/shares/${encodeId(token)}/unlock`,
+        password === null ? {} : { password },
+        { skipAuthRedirect: true },
+      )
+    },
+    contentUrl: publicShareContentUrl,
   },
   trash: {
-    list(page = 1, pageSize = 200): Promise<TrashListResult> {
-      return get<TrashListResult>(`/api/trash${buildQuery({ page, pageSize })}`)
+    list(page = 1, pageSize = 200, signal?: AbortSignal): Promise<TrashListResult> {
+      return get<TrashListResult>(`/api/trash${buildQuery({ page, pageSize })}`, { signal })
     },
     restore(id: string): Promise<FileItem> {
       return post<FileItem>(`/api/trash/${encodeId(id)}/restore`)
     },
-    remove(id: string): Promise<OkResult> {
-      return del<OkResult>(`/api/trash/${encodeId(id)}`)
+    remove(id: string): Promise<DeleteFileResult> {
+      return del<DeleteFileResult>(`/api/trash/${encodeId(id)}`)
     },
     clear(): Promise<ClearTrashResult> {
       return del<ClearTrashResult>('/api/trash')
     },
   },
   mc: {
-    status(): Promise<MinecraftStatus> {
-      return get<MinecraftStatus>('/api/mc/status')
+    /** force=1 跳过服务端 10 秒缓存，用于手动刷新。 */
+    status(force = false): Promise<MinecraftStatus> {
+      return get<MinecraftStatus>(`/api/mc/status${force ? '?force=1' : ''}`)
     },
     whitelist(): Promise<WhitelistResult> {
       return get<WhitelistResult>('/api/mc/whitelist')
@@ -410,6 +503,72 @@ export const api = {
     },
     removeWhitelist(name: string): Promise<WhitelistMutationResult> {
       return del<WhitelistMutationResult>(`/api/mc/whitelist/${encodeId(name)}`)
+    },
+  },
+  notes: {
+    list(query: KnowledgeQuery = {}, signal?: AbortSignal): Promise<NoteListResult> {
+      return get<NoteListResult>(
+        `/api/notes${buildQuery({
+          q: query.q,
+          tag: query.tag,
+          pinned: query.pinned,
+          page: query.page,
+          pageSize: query.pageSize,
+        })}`,
+        { signal },
+      )
+    },
+    get(id: string): Promise<Note> {
+      return get<Note>(`/api/notes/${encodeId(id)}`)
+    },
+    create(input: NoteInput): Promise<Note> {
+      return post<Note>('/api/notes', input)
+    },
+    update(id: string, patchBody: NotePatch): Promise<Note> {
+      return patch<Note>(`/api/notes/${encodeId(id)}`, patchBody)
+    },
+    remove(id: string): Promise<OkResult> {
+      return del<OkResult>(`/api/notes/${encodeId(id)}`)
+    },
+    tags(): Promise<TagsResult> {
+      return get<TagsResult>('/api/notes/tags')
+    },
+  },
+  bookmarks: {
+    list(query: KnowledgeQuery = {}, signal?: AbortSignal): Promise<BookmarkListResult> {
+      return get<BookmarkListResult>(
+        `/api/bookmarks${buildQuery({
+          q: query.q,
+          tag: query.tag,
+          pinned: query.pinned,
+          page: query.page,
+          pageSize: query.pageSize,
+        })}`,
+        { signal },
+      )
+    },
+    get(id: string): Promise<Bookmark> {
+      return get<Bookmark>(`/api/bookmarks/${encodeId(id)}`)
+    },
+    create(input: BookmarkInput): Promise<Bookmark> {
+      return post<Bookmark>('/api/bookmarks', input)
+    },
+    update(id: string, patchBody: BookmarkPatch): Promise<Bookmark> {
+      return patch<Bookmark>(`/api/bookmarks/${encodeId(id)}`, patchBody)
+    },
+    remove(id: string): Promise<OkResult> {
+      return del<OkResult>(`/api/bookmarks/${encodeId(id)}`)
+    },
+    tags(): Promise<TagsResult> {
+      return get<TagsResult>('/api/bookmarks/tags')
+    },
+  },
+  alerts: {
+    list(limit = 20): Promise<AlertsResult> {
+      return get<AlertsResult>(`/api/alerts${buildQuery({ limit })}`)
+    },
+    test(): Promise<AlertTestResult> {
+      return post<AlertTestResult>('/api/alerts/test')
     },
   },
 }

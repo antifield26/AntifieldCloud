@@ -11,12 +11,22 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import type { FileRow } from '../types.ts'
 import { audit } from '../auth/audit.ts'
-import { badRequest, conflict, notFound, quotaExceeded, unsupportedMedia } from '../util/errors.ts'
+import { badRequest, conflict, insufficientStorage, notFound, quotaExceeded, unsupportedMedia } from '../util/errors.ts'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
 import { transaction } from '../db.ts'
 import { canInline, detectMime, previewKindFor, sanitizeName, withSuffix, type PreviewKind } from './mime.ts'
 import { FileStorage } from './storage.ts'
+
+/** 可选日志接口，便于 purge/autoPurge 记录物理删除失败而不依赖 Fastify。 */
+export interface FileServiceLogger {
+  warn(obj: Record<string, unknown>, message: string): void
+}
+
+/** 上传前要求保留的最小磁盘余量，避免写满根分区导致 DB/备份一起失败。 */
+const MIN_FREE_DISK_BYTES = 1024 * 1024 * 1024
+/** 配额占用缓存的刷新间隔（用于流式上传预留，事务内仍以 DB 为准）。 */
+const RESERVATION_CACHE_MS = 500
 
 export interface FileItem {
   id: string
@@ -104,11 +114,15 @@ function escapeLike(value: string): string {
 export class FileService {
   private readonly db: DatabaseSync
   private readonly config: Config
+  private readonly log: FileServiceLogger | null
+  private reservedUploadBytes = 0
+  private usageCache: { at: number; usedBytes: number } | null = null
   readonly storage: FileStorage
 
-  constructor(db: DatabaseSync, config: Config) {
+  constructor(db: DatabaseSync, config: Config, log?: FileServiceLogger) {
     this.db = db
     this.config = config
+    this.log = log ?? null
     this.storage = new FileStorage(config.dataDir)
   }
 
@@ -216,6 +230,41 @@ export class FileService {
     }
   }
 
+  // ---------- 上传预留与磁盘检查 ----------
+
+  /** 读取（带短缓存）当前配额占用，供热路径上的流式预留使用。 */
+  private usedBytesForReservation(): number {
+    const now = Date.now()
+    if (this.usageCache && now - this.usageCache.at < RESERVATION_CACHE_MS) return this.usageCache.usedBytes
+    const row = this.db
+      .prepare("SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE kind = 'file'")
+      .get() as { total: number }
+    this.usageCache = { at: now, usedBytes: Number(row.total) }
+    return this.usageCache.usedBytes
+  }
+
+  /**
+   * 上传流式预留：所有进行中的上传字节都计入配额，避免并发请求各自通过
+   * 检查而把配额/磁盘临时打满。超限抛 409 quota_exceeded。
+   */
+  reserveUploadBytes(bytes: number): void {
+    if (bytes <= 0) return
+    const used = this.usedBytesForReservation()
+    const remaining = this.config.quotaBytes - used - this.reservedUploadBytes
+    if (bytes > remaining) throw quotaExceeded(Math.max(0, remaining))
+    this.reservedUploadBytes += bytes
+  }
+
+  releaseUploadBytes(bytes: number): void {
+    if (bytes <= 0) return
+    this.reservedUploadBytes = Math.max(0, this.reservedUploadBytes - bytes)
+  }
+
+  /** 上传前检查剩余磁盘空间（至少保留 MIN_FREE_DISK_BYTES），不足抛 507。 */
+  ensureFreeDiskSpace(): void {
+    if (this.usage().freeBytes < MIN_FREE_DISK_BYTES) throw insufficientStorage()
+  }
+
   // ---------- 变更 ----------
 
   createFolder(actor: Actor, parentId: string | null, rawName: string): FileItem {
@@ -238,11 +287,16 @@ export class FileService {
     return toItem(row)
   }
 
-  assertQuota(additionalBytes: number): void {
+  /**
+   * 事务内配额校验：DB 已用 + 其它进行中上传的预留 + 本次新增。
+   * ownReservedBytes 是当前请求已预留的字节（避免重复计算）。
+   */
+  assertQuota(additionalBytes: number, ownReservedBytes = 0): void {
     const used = this.db
       .prepare("SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE kind = 'file'")
       .get() as { total: number }
-    const remaining = this.config.quotaBytes - Number(used.total)
+    const reservedOthers = Math.max(0, this.reservedUploadBytes - Math.max(0, ownReservedBytes))
+    const remaining = this.config.quotaBytes - Number(used.total) - reservedOthers
     if (additionalBytes > remaining) throw quotaExceeded(Math.max(0, remaining))
   }
 
@@ -252,7 +306,7 @@ export class FileService {
    */
   async registerUpload(
     actor: Actor,
-    input: { parentId: string | null; rawName: string; tempPath: string; size: number; sha256: string },
+    input: { parentId: string | null; rawName: string; tempPath: string; size: number; sha256: string; reservedBytes?: number },
   ): Promise<FileItem> {
     this.activeDir(input.parentId)
     const name = sanitizeName(input.rawName)
@@ -261,7 +315,7 @@ export class FileService {
     const now = nowIso()
     const finalName = this.uniqueName(input.parentId, name)
     transaction(this.db, () => {
-      this.assertQuota(input.size)
+      this.assertQuota(input.size, input.reservedBytes ?? 0)
       this.db
         .prepare(
           `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
@@ -276,6 +330,7 @@ export class FileService {
       this.storage.removeTemp(input.tempPath)
       throw error
     }
+    if (this.usageCache) this.usageCache = { at: Date.now(), usedBytes: this.usageCache.usedBytes + input.size }
     audit(this.db, actor.username, 'upload', finalName, { id, size: input.size, parentId: input.parentId }, actor.ip)
     const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as FileRow
     return toItem(row)
@@ -447,9 +502,16 @@ export class FileService {
     transaction(this.db, () => {
       this.db.prepare('DELETE FROM files WHERE id = ?').run(id)
     })
+    const failures: { id: string; error: string }[] = []
     for (const entry of keys) {
-      if (entry.kind === 'file' && entry.storage_key) this.storage.remove(entry.storage_key)
+      if (entry.kind === 'file' && entry.storage_key) {
+        const error = this.storage.remove(entry.storage_key)
+        if (error) failures.push({ id: entry.storage_key, error: error.message })
+      }
     }
+    // 物理删除失败不改变 DB 结果（文件已不可见），但必须留日志便于人工清理。
+    if (failures.length > 0) this.log?.warn({ failures, freedBytes }, '回收站物理文件删除失败，需人工清理')
+    if (this.usageCache) this.usageCache = { at: Date.now(), usedBytes: Math.max(0, this.usageCache.usedBytes - freedBytes) }
     audit(this.db, actor.username, 'purge', row.name, { id, freedBytes }, actor.ip)
     return { count: keys.length, freedBytes }
   }
@@ -493,8 +555,8 @@ export class FileService {
     for (const row of rows) {
       try {
         count += this.purge({ username: 'system', ip: null }, row.id).count
-      } catch {
-        // 单条清理失败不影响其它条目。
+      } catch (error) {
+        this.log?.warn({ err: error, id: row.id }, '回收站自动清理失败')
       }
     }
     return count

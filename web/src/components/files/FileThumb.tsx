@@ -16,7 +16,8 @@ export function FileThumb({ file, size = 24 }: FileThumbProps) {
     setFailed(false)
   }, [file.id])
 
-  if (file.kind === 'dir' || file.previewKind !== 'image' || failed) {
+  // inlineAllowed=false 时服务端不会内联返回内容，直接回退图标
+  if (file.kind === 'dir' || file.previewKind !== 'image' || file.inlineAllowed === false || failed) {
     return (
       <span className="file-thumb file-thumb-placeholder">
         <FileIcon name={file.name} mime={file.mime} kind={file.kind} size={size + 10} />

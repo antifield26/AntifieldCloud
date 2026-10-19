@@ -48,11 +48,11 @@ export function Minecraft() {
   const [removeBusy, setRemoveBusy] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const loadStatus = useCallback(async (): Promise<void> => {
+  const loadStatus = useCallback(async (force = false): Promise<void> => {
     setStatusLoading(true)
     setStatusError(null)
     try {
-      setStatus(await api.mc.status())
+      setStatus(await api.mc.status(force))
     } catch (loadError) {
       setStatusError(toErrorMessage(loadError, '读取 Minecraft 状态失败'))
     } finally {
@@ -77,9 +77,10 @@ export function Minecraft() {
     void loadWhitelist()
   }, [loadStatus, loadWhitelist])
 
+  // 手动刷新跳过服务端 10 秒缓存
   const refreshAll = async (): Promise<void> => {
     setRefreshing(true)
-    await Promise.allSettled([loadStatus(), loadWhitelist()])
+    await Promise.allSettled([loadStatus(true), loadWhitelist()])
     setRefreshing(false)
   }
 

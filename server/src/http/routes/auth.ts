@@ -2,7 +2,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Config } from '../../config.ts'
 import type { AuthService } from '../../auth/service.ts'
-import { CSRF_COOKIE, clearAuthCookies, setAuthCookies } from '../../auth/cookies.ts'
+import { CSRF_COOKIE, clearAuthCookies, setAuthCookies, setCsrfCookie } from '../../auth/cookies.ts'
 import { badRequest } from '../../util/errors.ts'
 import { asRecord, clientIp, requireString } from '../util.ts'
 import { authOf, csrfGuard, requireAuth } from '../guards.ts'
@@ -10,6 +10,13 @@ import { authOf, csrfGuard, requireAuth } from '../guards.ts'
 function userAgent(request: FastifyRequest): string | null {
   const value = request.headers['user-agent']
   return typeof value === 'string' ? value.slice(0, 300) : null
+}
+
+/** 再认证请求体：当前密码 + TOTP 验证码（协议见 docs/API.md）。 */
+function reauthFields(body: Record<string, unknown>, passwordField: string): { password: string; totpCode: string } {
+  const password = requireString(body[passwordField], passwordField, 256)
+  const totpCode = requireString(body.totpCode, 'totpCode', 16)
+  return { password, totpCode }
 }
 
 export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: AuthService): void {
@@ -54,11 +61,18 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     return { ok: true }
   })
 
-  app.get('/api/auth/me', { preHandler: [requireAuth] }, async (request) => {
+  app.get('/api/auth/me', { preHandler: [requireAuth] }, async (request, reply) => {
     const context = authOf(request)
+    const existing = request.cookies?.[CSRF_COOKIE]
+    let csrfToken = typeof existing === 'string' && existing.length > 0 ? existing : null
+    // CSRF Cookie 丢失（浏览器清理、跨域策略变化）时轮换并补发，避免前端写操作永久失败。
+    if (!csrfToken) {
+      csrfToken = auth.rotateCsrfToken(context)
+      setCsrfCookie(reply, request, config, csrfToken, context.session.expires_at)
+    }
     return {
       user: { username: context.user.username },
-      csrfToken: request.cookies?.[CSRF_COOKIE] ?? null,
+      csrfToken,
       session: {
         createdAt: context.session.created_at,
         expiresAt: context.session.expires_at,
@@ -72,14 +86,24 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     const body = asRecord(request.body)
     const currentPassword = requireString(body.currentPassword, 'currentPassword', 256)
     const newPassword = requireString(body.newPassword, 'newPassword', 256)
-    await auth.changePassword(authOf(request), currentPassword, newPassword)
+    const totpCode = requireString(body.totpCode, 'totpCode', 16)
+    await auth.changePassword(authOf(request), {
+      currentPassword,
+      newPassword,
+      totpCode,
+      ip: clientIp(request),
+    })
     return { ok: true }
   })
 
   app.post('/api/account/recovery-codes', { preHandler: [requireAuth, csrf] }, async (request) => {
     const body = asRecord(request.body)
-    const password = requireString(body.password, 'password', 256)
-    const codes = await auth.regenerateRecoveryCodes(authOf(request), password)
+    const fields = reauthFields(body, 'password')
+    const codes = await auth.regenerateRecoveryCodes(authOf(request), {
+      password: fields.password,
+      totpCode: fields.totpCode,
+      ip: clientIp(request),
+    })
     return { codes }
   })
 

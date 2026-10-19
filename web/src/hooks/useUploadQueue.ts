@@ -1,11 +1,12 @@
-// 上传队列：并发 2、逐文件进度、失败重试。
+// 上传队列：并发 2、逐文件进度、取消、失败重试与卸载中止。
 // 每个文件单独一次请求，上传目标目录在入队时固定，避免用户切换目录后文件落错位置。
+// 安全边界：单文件大小上限由调用方传入（来自 /api/version 的 maxUploadBytes），前端只做预检。
 
-import { useCallback, useRef, useState } from 'react'
-import { toErrorMessage, uploadFiles } from '../api/client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { isApiError, toErrorMessage, uploadFiles } from '../api/client'
 import type { FileItem } from '../api/types'
 
-export type UploadTaskStatus = 'waiting' | 'uploading' | 'success' | 'error'
+export type UploadTaskStatus = 'waiting' | 'uploading' | 'success' | 'error' | 'cancelled'
 
 export interface UploadTask {
   id: number
@@ -21,21 +22,25 @@ export interface UploadSummary {
   total: number
   succeeded: number
   failed: number
+  cancelled: number
 }
 
 interface UseUploadQueueOptions {
   onFinished?: (summary: UploadSummary) => void
   onUploaded?: (item: FileItem) => void
+  maxFileBytes?: number
+  timeoutMs?: number
 }
 
 const MAX_CONCURRENCY = 2
-const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024
+const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024
 
 export interface UploadQueueApi {
   tasks: UploadTask[]
   busy: boolean
   enqueue: (files: File[], parentId: string | null) => void
   retry: (id: number) => void
+  cancel: (id: number) => void
   clear: () => void
 }
 
@@ -47,6 +52,7 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
   const activeRef = useRef(0)
   const nextIdRef = useRef(1)
   const reportedRef = useRef(true)
+  const controllersRef = useRef(new Map<number, AbortController>())
 
   const syncTasks = (next: UploadTask[]): void => {
     tasksRef.current = next
@@ -67,15 +73,20 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
       total: current.length,
       succeeded: current.filter((task) => task.status === 'success').length,
       failed: current.filter((task) => task.status === 'error').length,
+      cancelled: current.filter((task) => task.status === 'cancelled').length,
     })
   }
 
   function runTask(task: UploadTask): void {
     activeRef.current += 1
+    const controller = new AbortController()
+    controllersRef.current.set(task.id, controller)
     void (async () => {
       patchTask(task.id, { status: 'uploading', progress: 0, error: null })
       try {
         const result = await uploadFiles([task.file], task.parentId, {
+          signal: controller.signal,
+          timeoutMs: optionsRef.current.timeoutMs,
           onProgress: (loaded, total) => {
             const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0
             patchTask(task.id, { progress: percent })
@@ -90,8 +101,13 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
           if (item) optionsRef.current.onUploaded?.(item)
         }
       } catch (error) {
-        patchTask(task.id, { status: 'error', error: toErrorMessage(error, '上传失败，请重试') })
+        if (isApiError(error) && error.code === 'aborted') {
+          patchTask(task.id, { status: 'cancelled', error: '已取消上传' })
+        } else {
+          patchTask(task.id, { status: 'error', error: toErrorMessage(error, '上传失败，请重试') })
+        }
       } finally {
+        controllersRef.current.delete(task.id)
         activeRef.current = Math.max(0, activeRef.current - 1)
         pump()
         finishIfIdle()
@@ -109,15 +125,16 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
 
   const enqueue = useCallback((files: File[], parentId: string | null): void => {
     if (files.length === 0) return
+    const maxFileBytes = optionsRef.current.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES
     const created: UploadTask[] = files.map((file) => {
-      const oversized = file.size > MAX_FILE_BYTES
+      const oversized = file.size > maxFileBytes
       return {
         id: nextIdRef.current++,
         file,
         parentId,
         status: oversized ? 'error' : 'waiting',
         progress: 0,
-        error: oversized ? '文件超过单文件 2 GiB 限制' : null,
+        error: oversized ? '文件超过大小限制' : null,
         item: null,
       }
     })
@@ -135,10 +152,35 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
     pump()
   }, [])
 
+  const cancel = useCallback((id: number): void => {
+    const task = tasksRef.current.find((item) => item.id === id)
+    if (!task) return
+    if (task.status === 'waiting') {
+      patchTask(id, { status: 'cancelled', error: '已取消上传' })
+      finishIfIdle()
+      return
+    }
+    if (task.status === 'uploading') {
+      controllersRef.current.get(id)?.abort()
+    }
+  }, [])
+
   const clear = useCallback((): void => {
-    if (tasksRef.current.some((task) => task.status === 'waiting' || task.status === 'uploading')) return
+    const hasActive = tasksRef.current.some(
+      (task) => task.status === 'waiting' || task.status === 'uploading',
+    )
+    if (hasActive) return
     syncTasks([])
     reportedRef.current = true
+  }, [])
+
+  // 页面卸载时中止所有上传，避免请求泄漏
+  useEffect(() => {
+    const controllers = controllersRef.current
+    return () => {
+      for (const controller of controllers.values()) controller.abort()
+      controllers.clear()
+    }
   }, [])
 
   return {
@@ -146,6 +188,7 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
     busy: tasks.some((task) => task.status === 'waiting' || task.status === 'uploading'),
     enqueue,
     retry,
+    cancel,
     clear,
   }
 }

@@ -1,56 +1,73 @@
-# AntifieldCloud v0.1.0 实施计划（摘要）
+# AntifieldCloud v0.2.0 实施计划（摘要）
 
-完整版计划以会话审批稿为准；本文件是仓库内的权威范围/决策摘要。
+本文件是 v0.2.0 的权威范围/决策摘要；v0.1.0 的完整交付与验收见 `docs/ACCEPTANCE.md`。
 
 ## 目标
 
-Pi 5 上的个人工作台：统一登录（密码 + TOTP）、云盘（上传/预览/搜索/回收站/配额）、门户（主机指标/MC 状态/opencode/备份状态）、MC 白名单管理、opencode 统一登录反代、每日备份到 Windows PC。
+在 v0.1.0 已验收的个人工作台之上，完成一次深入审计与修复，并落地二期功能：**知识库、文件分享、PWA、监控告警**，同时把备份/部署/灾备提升到可长期运行的水平。
 
 ## 范围
 
-- 云盘：图片/文本/Markdown/PDF 预览；拖拽多文件上传+进度；文件名搜索；回收站；10 GiB 配额。
-- Minecraft：只读状态（在线/版本/玩家/TPS/白名单数/服务状态）+ 白名单增删；**不做**启停、任意命令、封禁、OP、踢人。
-- opencode：`ai.example.com` 反代，应用会话校验后注入 Basic 认证；不做 iframe/自定义 AI 面板。
-- 门户：主机指标、存储、服务状态、备份状态、最近活动、快捷入口。
-- 认证：单管理员；scrypt + TOTP；恢复码；限流；CSRF；会话 7 天。
-- 备份：Pi 端增量/周全量归档；Windows 每日 12:00 拉取到 `%USERPROFILE%\AntifieldCloudBackups`；恢复演练。
-- 加固：nftables 默认拒绝入站，RCON 仅本机；不改 RCON 密码、不重启 MC、不改 SSH 认证。
+### 审计修复（P0/P1）
+
+- C1 WebSocket 畸形 Cookie DoS；改密/恢复码再认证（密码+TOTP+限流+审计）。
+- trustProxy/客户端头信任边界；HSTS/AI/PDF 安全头；错误映射；上传预留/ENOSPC；tmp 清理。
+- RCON 多包、超时/关闭；登录限流内存上限；CSRF Cookie 补发。
+- 备份两阶段协议、ACL、恢复命令、age 密钥包、部署自动回滚、迁移前快照。
+- memory cgroup 启用；Cloudflare 100 MiB 上传上限；安全更新；健康探针。
+- 前端审计映射/竞态/密码策略/DOMPurify/style/上传取消/恢复码保护/next-url/域名元数据/a11y。
+
+### 二期功能
+
+- 知识库：Markdown 笔记 + 书签 + 标签 + 置顶 + FTS5 搜索；无附件/版本历史。
+- 分享：单文件，可选密码/过期（默认 7 天，最长 30 天）/最大下载次数/吊销；公开页 noindex。
+- PWA：manifest、SW（仅静态缓存）、offline、安装提示、手机拍照上传。
+- 告警：磁盘/温度/内存/服务/备份超期/欠压，通用 JSON webhook，去重/冷却/恢复，面板历史与测试。
 
 ## 非目标
 
-分享链接、音视频播放、在线编辑、版本历史、WebDAV/同步客户端、PWA、多用户、MC 启停/控制台、Cloudflare Access、SSD 迁移、Pi kiosk、清理 PiForge。
+备份可视化管理 UI、目录分享、音视频、WebDAV、多用户、Cloudflare Access、SSH 加固、附件/版本历史、大文件分片、媒体转码。
 
 ## 关键决策
 
 | 项 | 决策 |
 |---|---|
-| 域名 | `app.example.com`（应用）+ `ai.example.com`（opencode 反代），Cloudflare Tunnel `antifieldcloud` |
-| 同源策略 | 单 Node 进程按 Host 分流；会话 Cookie `Domain=.example.com` |
-| 数据 | SQLite（`node:sqlite`）+ 不可变文件内容；配额 10 GiB |
-| 部署 | `/opt/antifieldcloud/releases/<ts>` + `current` 符号链接；systemd `antifieldcloud` 用户 |
-| 运行时 | 系统 `/usr/local/bin/node` v26.11.1；服务端原生 TS；前端 PC 构建 |
-| Pi 系统 | nftables；不重启 MC；不改 RCON/SSH；旧 PiForge 残留不动 |
-| DNS | 用户手动添加 CNAME（tunnel token 非账号证书，CLI 无 DNS 权限） |
-| 备份 | 每日增量、周日全量；PC 12:00 + 登录补跑；D 盘保留 30 daily + 8 weekly |
+| 单文件上限 | 100 MiB（Cloudflare Free/Pro 代理限制） |
+| 分享 | 单文件；默认 168h；最长 720h；密码可选；0=不限下载（对外 null） |
+| 笔记/书签 | Markdown + 标签 + 置顶 + FTS5；无附件 |
+| 告警 | 通用 HTTP JSON webhook；URL/secret 仅 env；未配置时仅面板 |
+| 备份 | pending 不推进游标；PC `--ack` 后才推进；未 ack 不删；age 加密密钥包 |
+| 系统 | 允许一次 Pi 重启（含 MC 重启）；RCON 轮换；memory cgroup |
+| 兼容 | DB migration 2 additive；允许 API/行为收紧；部署前 DB 快照 |
 
 ## 阶段
 
-- P0 脚手架与工程规范
-- P1 服务端核心（config/db/auth/provision）
-- P2 云盘
-- P3 门户/MC/opencode 反代
-- P4 前端
-- P5 Pi 部署 + nftables + cloudflared
-- P6 备份 + 恢复演练
-- P7 DNS/公网验收 + 用户 provisioning
-- P8 文档/最终检查/tag v0.1.0
+1. 基线备份/探针/任务导出。
+2. P0/P1 服务端安全与正确性修复 + 测试。
+3. DB migration 2 + 笔记/分享/告警后端。
+4. 前端二期与审计修复 + 测试。
+5. 备份/部署/CI/灾备改造 + 文档。
+6. 本地 `npm run check`/build/安全回归。
+7. 部署 + Pi 维护（安全更新、RCON、cgroup、health timer、一次重启）。
+8. Windows 任务/ACL、备份拉取、age 密钥、webhook、PWA 验收。
+9. tag/GitHub Release v0.2.0 + 验收记录。
 
 ## 验收摘要
 
-1. 公网 HTTPS 登录（密码+TOTP），错误限流；恢复码可用。
-2. 上传（含中文名/大文件）→ 图片/文本/PDF 预览 → 搜索 → 回收站恢复；配额正确；SVG/HTML 只能下载。
-3. Dashboard 显示 MC 在线/玩家/TPS/白名单；白名单增删复核；非法名拒绝。
-4. `ai.example.com` 登录后免二次登录进入 opencode（兜底见 docs/DEPLOY.md）。
-5. Windows 备份任务生成 D: 归档；恢复演练通过；超 48 h 告警。
-6. nftables 后外部 25575 不可达、22/25565 正常；应用崩溃自恢复；RSS < 300 MB。
-7. `npm run check` 全绿；无密钥入库。
+1. `npm run check` 全绿（服务端 86+、前端 23）；CI 全绿。
+2. C1 不崩、改密/恢复码需 TOTP 且限流/审计；trustProxy 伪造头无效。
+3. 笔记/书签 CRUD/搜索；分享密码/过期/次数/吊销/410；公开页 noindex。
+4. PWA 安装/离线壳/拍照上传；SW 不缓存 API/文件。
+5. 告警条件/去重/恢复/测试 webhook；面板历史。
+6. 备份 pending→pull→SHA→ack；失败重试同一归档；ACL；全量+增量+secrets 恢复演练。
+7. 部署失败自动回滚；迁移前快照；release 含 LICENSE。
+8. Pi 重启后 5 服务 active；v0.2.0；RCON 强密码；memory cgroup 生效；smoke 16+/16+。
+9. 用户完成公网登录与手机/PWA 验收；记录到 `docs/ACCEPTANCE.md`。
+
+## 回滚
+
+- 代码：`scripts/deploy.ps1` 自动切回 previous；迁移前 `db-predeploy-*.sqlite` 手动恢复。
+- DB：migration 2 additive，旧 release 可启动；需要时恢复快照。
+- Pi：`/boot/firmware/cmdline.txt.pre-v0.2.0`、`server.properties.pre-v0.2.0`、systemd unit 备份、
+  env 备份；RCON 旧密码/旧配置可按 `.local` 备份恢复。
+- Windows：`backup-task-before-v0.2.0.xml`、旧脚本副本；ACL 变更可恢复继承。

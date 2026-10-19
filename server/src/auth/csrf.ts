@@ -2,12 +2,13 @@
 import type { FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
 import type { SessionRow } from '../types.ts'
-import { isLoopbackHost } from './cookies.ts'
+import { requestMeta } from '../http/request-meta.ts'
 import { sha256Hex, safeEqualHex } from '../util/ids.ts'
 
 export function allowedOrigins(config: Config, request: FastifyRequest): string[] {
   const origins = [config.appOrigin, config.aiOrigin]
-  if (config.allowInsecureLoopback && isLoopbackHost(request.hostname)) {
+  const meta = requestMeta(request)
+  if (config.allowInsecureLoopback && meta.loopback) {
     origins.push(`http://127.0.0.1:${config.port}`, `http://localhost:${config.port}`)
   }
   return origins

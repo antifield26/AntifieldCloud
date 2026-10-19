@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、Minecraft 状态/白名单、opencode 反代、主机概览、每日备份到 Windows PC。产品名 `AntifieldCloud · 个人工作台`。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库、文件分享、Minecraft 状态/白名单、opencode 反代、PWA、主机告警与每日备份到 Windows PC。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.2.0。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -34,7 +34,8 @@ npm run build          # 前端构建
 npm run typecheck      # server + web 两个 tsc 项目
 npm run lint           # ESLint，--max-warnings=0
 npm test               # node --test（scripts/run-tests.mjs 收集 server/test/**/*.test.ts）
-npm run check          # typecheck + lint + test，提交前必须全绿
+npm run test:web       # Vitest + jsdom（web/src/**/*.test.ts(x)）
+npm run check          # typecheck + lint + server test + web test，提交前必须全绿
 ```
 
 测试禁止依赖真实 Minecraft、真实 opencode、真实 network；使用进程内假服务器/夹具。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑。
@@ -52,6 +53,9 @@ server/src/
   mc/                SLP、RCON、白名单
   opencode/          ai.* Host 的认证反代
   dashboard/         主机指标、服务状态、备份状态
+  notes/             笔记/书签、标签、FTS5（二期）
+  shares/            文件分享、密码/过期/次数/公开访问（二期）
+  alerts/            告警条件/状态机/webhook（二期）
   http/              路由注册、错误处理、静态资源、安全头
   util/              通用工具（时间、路径、响应）
 web/src/             React 页面与组件（只依赖 docs/API.md 的契约）
@@ -69,7 +73,7 @@ deploy/              systemd、nftables、cloudflared ingress、env 模板
 4. 密码/TOTP/隧道凭据/opencode 密码不得进仓库、日志、错误响应、前端 bundle。
 5. 预览仅白名单类型内联；SVG/HTML/XML 强制下载；文本预览上限 1 MiB。
 6. 代理只允许固定上游 `http://127.0.0.1:4096`，客户端 `Authorization` 必须被覆盖。
-7. 不修改现有 Minecraft/opencode/nginx/frpc/SSH 配置；不重启 Minecraft；不清理 PiForge 残留。
+7. 不修改现有 Minecraft/opencode/nginx/frpc/SSH 配置；不重启 Minecraft（除非用户明确授权并已备份）；不清理 PiForge 残留。
 8. 部署、备份脚本必须幂等、可重试；失败要留下可诊断日志，不得静默吞错。
 
 ## 6. 数据库与数据
@@ -94,14 +98,20 @@ deploy/              systemd、nftables、cloudflared ingress、env 模板
 - Pi：`antifield@192.0.2.10` 直连；WiFi 198.51.100.10 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.11.1，世界可执行）；npm 指向 `/home/antifield/.nvm`，部署时以 root 使用。
 - opencode：`127.0.0.1:4096`，Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`。
-- Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`，服务器语言中文，输出含 `§` 颜色码需剥离。
-- Cloudflare：zone `example.com`；tunnel `antifieldcloud`；`mc.example.com` CNAME 到 SakuraFRP，**不要改**；`app/ai` 的 DNS 由用户手动添加。
+- Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（v0.2.0 已轮换为 32 位随机），
+  服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。
+- Pi 已启用 memory cgroup（`cgroup.controllers` 含 `memory`）；`antifieldcloud-health.timer` 每 60s 写
+  `/run/antifieldcloud/pi-health.json`；`age` 与 `unattended-upgrades` 已安装。
+- 备份已改为两阶段 pending/ack（未确认不删）；Windows 任务参数为实际 `-PiHost/-BackupRoot`，ACL 收紧。
+- Cloudflare：zone `example.com`；tunnel `antifieldcloud`；`mc.example.com` CNAME 到 SakuraFRP，**不要改**；
+  `app/ai` 的 DNS 由用户手动添加；严格 CSP 会拦截 Web Analytics/Challenge 注入，需后台关闭自动注入或接受报错。
 - 旧项目 PiForge 的残留（sudoers 注释、禁用的计划任务）保持原样，不继承、不清理。
 - 公开仓库中的域名/IP/备份路径均为示例值；本机实际部署信息见 `.local/DEPLOYMENT.md`（gitignored，不提交）。
 
 ## 9. 用户手动步骤（Agent 不得代替）
 
-1. Cloudflare 后台添加 `app`/`ai` CNAME。
+1. Cloudflare 后台添加 `app`/`ai` CNAME（已由用户完成）。
 2. 交互式运行 provisioning，设置密码、扫描 TOTP、保存恢复码。
-3. 安装 Windows 备份计划任务。
-4. 最终公网/手机验收。
+3. 安装/重装 Windows 备份计划任务（已用管理员 PowerShell 完成）。
+4. 离线保存 age 私钥；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
+5. 最终公网/手机/PWA 验收；完成正式恢复演练并记录。

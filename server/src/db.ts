@@ -104,6 +104,147 @@ const MIGRATIONS: string[] = [
   );
   INSERT OR IGNORE INTO backup_state (id) VALUES (1);
   `,
+  `
+  CREATE TABLE notes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    body_md TEXT NOT NULL,
+    pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_notes_updated ON notes(updated_at DESC);
+  CREATE INDEX idx_notes_pinned ON notes(pinned, updated_at DESC);
+
+  CREATE TABLE bookmarks (
+    id TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_bookmarks_updated ON bookmarks(updated_at DESC);
+  CREATE INDEX idx_bookmarks_pinned ON bookmarks(pinned, updated_at DESC);
+
+  CREATE TABLE tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE
+  );
+
+  CREATE TABLE note_tags (
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (note_id, tag_id)
+  );
+  CREATE INDEX idx_note_tags_tag ON note_tags(tag_id, note_id);
+
+  CREATE TABLE bookmark_tags (
+    bookmark_id TEXT NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
+    tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (bookmark_id, tag_id)
+  );
+  CREATE INDEX idx_bookmark_tags_tag ON bookmark_tags(tag_id, bookmark_id);
+
+  CREATE VIRTUAL TABLE notes_fts USING fts5(
+    title,
+    body_md,
+    content='notes',
+    content_rowid='rowid'
+  );
+  CREATE TRIGGER notes_fts_ai AFTER INSERT ON notes BEGIN
+    INSERT INTO notes_fts(rowid, title, body_md) VALUES (new.rowid, new.title, new.body_md);
+  END;
+  CREATE TRIGGER notes_fts_ad AFTER DELETE ON notes BEGIN
+    INSERT INTO notes_fts(notes_fts, rowid, title, body_md) VALUES ('delete', old.rowid, old.title, old.body_md);
+  END;
+  CREATE TRIGGER notes_fts_au AFTER UPDATE ON notes BEGIN
+    INSERT INTO notes_fts(notes_fts, rowid, title, body_md) VALUES ('delete', old.rowid, old.title, old.body_md);
+    INSERT INTO notes_fts(rowid, title, body_md) VALUES (new.rowid, new.title, new.body_md);
+  END;
+
+  CREATE VIRTUAL TABLE bookmarks_fts USING fts5(
+    title,
+    url,
+    description,
+    content='bookmarks',
+    content_rowid='rowid'
+  );
+  CREATE TRIGGER bookmarks_fts_ai AFTER INSERT ON bookmarks BEGIN
+    INSERT INTO bookmarks_fts(rowid, title, url, description) VALUES (new.rowid, new.title, new.url, new.description);
+  END;
+  CREATE TRIGGER bookmarks_fts_ad AFTER DELETE ON bookmarks BEGIN
+    INSERT INTO bookmarks_fts(bookmarks_fts, rowid, title, url, description) VALUES ('delete', old.rowid, old.title, old.url, old.description);
+  END;
+  CREATE TRIGGER bookmarks_fts_au AFTER UPDATE ON bookmarks BEGIN
+    INSERT INTO bookmarks_fts(bookmarks_fts, rowid, title, url, description) VALUES ('delete', old.rowid, old.title, old.url, old.description);
+    INSERT INTO bookmarks_fts(rowid, title, url, description) VALUES (new.rowid, new.title, new.url, new.description);
+  END;
+
+  CREATE TABLE shares (
+    id TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
+    password_salt TEXT,
+    expires_at TEXT NOT NULL,
+    max_downloads INTEGER NOT NULL DEFAULT 0 CHECK (max_downloads >= 0),
+    download_count INTEGER NOT NULL DEFAULT 0 CHECK (download_count >= 0),
+    created_at TEXT NOT NULL,
+    revoked_at TEXT,
+    created_by TEXT NOT NULL,
+    note TEXT
+  );
+  CREATE INDEX idx_shares_file ON shares(file_id, created_at DESC);
+  CREATE INDEX idx_shares_expires ON shares(expires_at);
+
+  CREATE TABLE share_sessions (
+    id TEXT PRIMARY KEY,
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    downloaded INTEGER NOT NULL DEFAULT 0 CHECK (downloaded IN (0, 1))
+  );
+  CREATE INDEX idx_share_sessions_expires ON share_sessions(expires_at);
+  CREATE INDEX idx_share_sessions_share ON share_sessions(share_id);
+
+  CREATE TABLE alert_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    status TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    details_json TEXT,
+    created_at TEXT NOT NULL,
+    delivered_at TEXT,
+    delivery_error TEXT
+  );
+  CREATE INDEX idx_alert_events_created ON alert_events(created_at DESC);
+  CREATE INDEX idx_alert_events_event ON alert_events(event, created_at DESC);
+
+  CREATE TABLE alert_state (
+    event TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    last_fired_at TEXT,
+    last_ok_at TEXT
+  );
+
+  CREATE TABLE backup_archives (
+    name TEXT PRIMARY KEY,
+    mode TEXT NOT NULL CHECK (mode IN ('full', 'inc')),
+    created_at TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    file_count INTEGER NOT NULL,
+    pulled_at TEXT,
+    acked_at TEXT,
+    deleted_at TEXT
+  );
+  CREATE INDEX idx_backup_archives_pending ON backup_archives(acked_at, created_at);
+  `,
 ]
 
 export interface OpenOptions {

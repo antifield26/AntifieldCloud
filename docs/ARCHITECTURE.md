@@ -46,9 +46,12 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | `mc/` | SLP 查询、RCON 客户端、状态/metrics、白名单增删与复核 |
 | `opencode/` | ai 主机的会话校验与认证反代 |
 | `dashboard/` | 主机指标、服务状态、opencode 健康、备份状态、活动聚合 |
+| `notes/` | 笔记/书签、标签、置顶、FTS5 搜索（v0.2.0） |
+| `shares/` | 文件分享 token/密码/过期/次数/吊销、公开访问（v0.2.0） |
+| `alerts/` | 阈值评估、状态去重/恢复、通用 webhook（v0.2.0） |
 | `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源 |
-| `cli/` | provisioning、备份 CLI |
-| `web/` | React SPA（登录、Dashboard、文件、回收站、MC、活动、设置） |
+| `cli/` | provisioning、两阶段备份 CLI |
+| `web/` | React SPA（登录、Dashboard、文件、回收站、知识库、分享、MC、活动、设置、公开分享页、PWA） |
 
 ## 4. 数据模型
 
@@ -60,7 +63,11 @@ SQLite（WAL）核心表：
 - `files`：`id / parent_id / name / kind(file|dir) / size / mime / sha256 / storage_key / created_at / updated_at / deleted_at / deleted_parent_id`；`files(id)` 自引用；`deleted_parent_id=''` 表示从根目录删除。
 - `audit_log`：动作、目标、IP；保留 90 天。
 - `login_attempts`：登录成功/失败记录。
-- `backup_state`：最近一次 Pi 端备份时间/归档/哈希/大小。
+- `backup_state`：最近一次 PC 已确认的备份时间/归档/哈希/大小。
+- `backup_archives`：pending/acked 归档（v0.2.0 两阶段协议）。
+- `notes`、`bookmarks`、`tags`、`note_tags`、`bookmark_tags`、`notes_fts`、`bookmarks_fts`（v0.2.0）。
+- `shares`、`share_sessions`：分享 token 哈希、密码、过期/次数、解锁会话（v0.2.0）。
+- `alert_events`、`alert_state`：告警历史/去重冷却（v0.2.0）。
 
 关键约束：
 - 文件内容是**不可变**的：上传后不再改写；重命名/移动只更新元数据。增量备份因此只需新增文件。
@@ -75,6 +82,9 @@ SQLite（WAL）核心表：
 3. 会话 Cookie：`af_session`（HttpOnly）+ `af_csrf`（可读）；HTTPS 下 `Secure; SameSite=Lax; Domain=.example.com`；loopback HTTP 例外。
 4. 写操作：`X-CSRF-Token` 与 DB 内 CSRF 哈希比对；若带 Origin，还必须在 app/ai/loopback 白名单。
 5. 改密/重置 TOTP 使其它会话失效；恢复码一次性。
+6. v0.2.0：改密/重生成恢复码要求当前密码 + TOTP，并受限流/审计；CSRF Cookie 丢失时 `/api/auth/me` 自动补发。
+7. 信任模型：`trustProxy:false`；仅 socket 为 loopback 时采信 `CF-Connecting-IP`/`X-Forwarded-Proto`，
+   Host 只取原始 Host；`X-Forwarded-Host` 不参与安全判断。
 
 ## 6. 云盘数据流
 

@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify'
 import type { Config } from '../../config.ts'
 import type { FileItem, FileService } from '../../files/service.ts'
 import { canInline, previewKindFor } from '../../files/mime.ts'
-import { AppError, badRequest, quotaExceeded, tooLarge } from '../../util/errors.ts'
+import { AppError, badRequest, insufficientStorage, tooLarge } from '../../util/errors.ts'
 import { asRecord, actorFrom, contentDisposition, decodeUploadFilename, parsePositiveInt, parseRange, requireString } from '../util.ts'
 import { csrfGuard, requireAuth } from '../guards.ts'
 
@@ -26,6 +26,7 @@ function statusForCode(code: string): number {
     case 'invalid_name':
     case 'invalid_request':
     case 'not_a_directory':
+    case 'upload_failed':
       return 400
     case 'unauthenticated':
       return 401
@@ -34,13 +35,27 @@ function statusForCode(code: string): number {
   }
 }
 
+/** 上传异常映射：磁盘满 → 507；超限 → 413；其它 → 通用 400（不回显路径/内部 message）。 */
+function uploadFailure(error: unknown): AppError {
+  if (error instanceof AppError) return error
+  const code = (error as NodeJS.ErrnoException).code
+  if (code === 'ENOSPC' || code === 'EDQUOT') return insufficientStorage()
+  if (code === 'FST_REQ_FILE_TOO_LARGE') return tooLarge('文件超过单文件大小限制')
+  return badRequest('上传失败，请重试', 'upload_failed')
+}
+
 interface UploadError {
   name: string
   code: string
   message: string
 }
 
-export function registerFileRoutes(app: FastifyInstance, config: Config, files: FileService): void {
+export function registerFileRoutes(
+  app: FastifyInstance,
+  config: Config,
+  files: FileService,
+  onTrashed?: (id: string) => void,
+): void {
   const csrf = csrfGuard(config)
 
   app.get('/api/files', { preHandler: [requireAuth] }, async (request) => {
@@ -56,7 +71,7 @@ export function registerFileRoutes(app: FastifyInstance, config: Config, files: 
 
   app.get('/api/files/search', { preHandler: [requireAuth] }, async (request) => {
     const query = asRecord(request.query)
-    const q = typeof query.q === 'string' ? query.q : ''
+    const q = typeof query.q === 'string' ? query.q.slice(0, 500) : ''
     return files.search(q, 100)
   })
 
@@ -76,9 +91,8 @@ export function registerFileRoutes(app: FastifyInstance, config: Config, files: 
     const items: FileItem[] = []
     const errors: UploadError[] = []
     let fileCount = 0
-    const usage = files.usage()
-    let reserved = 0
     const actor = actorFrom(request)
+    files.ensureFreeDiskSpace()
 
     try {
       for await (const part of request.parts()) {
@@ -96,15 +110,20 @@ export function registerFileRoutes(app: FastifyInstance, config: Config, files: 
         const tempPath = files.storage.tempPath()
         const hash = createHash('sha256')
         let size = 0
+        let reserved = 0
         try {
           const meter = new Transform({
             transform(chunk: Buffer, _encoding, callback) {
               hash.update(chunk)
               size += chunk.length
-              if (usage.usedBytes + reserved + size > config.quotaBytes) {
-                callback(quotaExceeded(Math.max(0, config.quotaBytes - usage.usedBytes - reserved)))
+              try {
+                // 全局配额预留：并发上传共享剩余配额，避免各自通过检查打满磁盘。
+                files.reserveUploadBytes(chunk.length)
+              } catch (error) {
+                callback(error instanceof Error ? error : new Error('配额不足'))
                 return
               }
+              reserved += chunk.length
               callback(null, chunk)
             },
           })
@@ -116,23 +135,23 @@ export function registerFileRoutes(app: FastifyInstance, config: Config, files: 
             tempPath,
             size,
             sha256: hash.digest('hex'),
+            reservedBytes: reserved,
           })
           items.push(item)
-          reserved += size
         } catch (error) {
           files.storage.removeTemp(tempPath)
-          const appError =
-            error instanceof AppError
-              ? error
-              : tooLarge(error instanceof Error ? error.message : '上传失败')
+          const appError = uploadFailure(error)
           errors.push({ name: rawName, code: appError.code, message: appError.message })
+        } finally {
+          files.releaseUploadBytes(reserved)
+          reserved = 0
         }
       }
     } catch (error) {
       if (error instanceof AppError) throw error
-      const message = error instanceof Error ? error.message : '上传失败'
-      if (items.length === 0) throw tooLarge(message)
-      errors.push({ name: '请求', code: 'upload_failed', message })
+      const appError = uploadFailure(error)
+      if (items.length === 0) throw appError
+      errors.push({ name: '请求', code: appError.code, message: appError.message })
     }
 
     if (items.length === 0) {
@@ -162,6 +181,8 @@ export function registerFileRoutes(app: FastifyInstance, config: Config, files: 
   app.delete('/api/files/:id', { preHandler: [requireAuth, csrf] }, async (request) => {
     const params = request.params as { id: string }
     const result = files.trash(actorFrom(request), params.id)
+    // 软删除不会触发 shares 的 FK 级联；同步吊销该子树下所有公开链接。
+    onTrashed?.(params.id)
     return { ok: true, id: params.id, count: result.count }
   })
 
@@ -192,6 +213,11 @@ export function registerFileRoutes(app: FastifyInstance, config: Config, files: 
       .header('etag', etag)
       .header('cache-control', 'private, max-age=60, must-revalidate')
       .header('content-disposition', contentDisposition(row.name, inline))
+    // 内联 PDF 也限制同源框架，避免被外部页面嵌入（同源嵌入由前端使用）。
+    if (inline && (row.mime ?? '').toLowerCase() === 'application/pdf') {
+      reply.header('x-frame-options', 'SAMEORIGIN')
+      reply.header('content-security-policy', "frame-ancestors 'self'")
+    }
     if (range) reply.header('content-range', `bytes ${start}-${end}/${size}`)
     if (size === 0) {
       return reply.send()

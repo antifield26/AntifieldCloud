@@ -1,4 +1,4 @@
-import { Activity, FileText, LogIn, Users } from 'lucide-react'
+import { Activity, Bell, BookOpen, FileText, LogIn, Share2, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AuditItem } from '../api/types'
 import { auditActionMeta } from '../lib/audit'
@@ -9,7 +9,10 @@ import { cx } from '../lib/classnames'
 const CATEGORY_ICONS: Record<AuditCategory, LucideIcon> = {
   auth: LogIn,
   file: FileText,
+  share: Share2,
   whitelist: Users,
+  knowledge: BookOpen,
+  alert: Bell,
   other: Activity,
 }
 

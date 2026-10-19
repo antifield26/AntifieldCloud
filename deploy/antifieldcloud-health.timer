@@ -1,0 +1,12 @@
+[Unit]
+Description=Run AntifieldCloud host health probe every 60s
+Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=antifieldcloud-health.service
+
+[Install]
+WantedBy=timers.target

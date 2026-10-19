@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity as ActivityIcon, RefreshCw } from 'lucide-react'
-import { api, toErrorMessage } from '../api/client'
+import { api, isAbortError, toErrorMessage } from '../api/client'
 import type { AuditItem } from '../api/types'
-import { auditActionMeta, auditCategory } from '../lib/audit'
+import { auditActionMeta, AUDIT_ACTION_GROUPS } from '../lib/audit'
 import type { AuditCategory } from '../lib/audit'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { PageHeader } from '../components/PageHeader'
@@ -17,23 +17,20 @@ import { RelativeTime } from '../components/RelativeTime'
 import { formatDateTime, truncateText } from '../lib/format'
 
 const PAGE_SIZE = 50
-const MAX_LOADED = 200
-
-const FILTERS = [
-  { value: 'all', label: '全部' },
-  { value: 'auth', label: '登录' },
-  { value: 'file', label: '文件' },
-  { value: 'whitelist', label: '白名单' },
-] as const
-
-type FilterValue = (typeof FILTERS)[number]['value']
 
 const CATEGORY_TONES: Record<AuditCategory, BadgeTone> = {
   auth: 'accent',
   file: 'muted',
+  share: 'info',
   whitelist: 'success',
+  knowledge: 'accent',
+  alert: 'warning',
   other: 'muted',
 }
+
+const ACTION_LABELS = new Map<string, string>(
+  AUDIT_ACTION_GROUPS.flatMap((group) => group.options.map((option) => [option.value, option.label])),
+)
 
 /** 审计详情是结构化对象，转成单行文本展示，不直接渲染对象。 */
 function auditDetailText(detail: Record<string, unknown> | null): string {
@@ -47,8 +44,8 @@ function auditDetailText(detail: Record<string, unknown> | null): string {
 }
 
 /**
- * 活动：审计列表 + 类型筛选 + 简单分页。
- * API 只支持 limit/offset，因此一次加载最近 200 条后在本地筛选与分页。
+ * 活动：审计列表 + 服务端动作精确筛选 + 服务端分页。
+ * `action` 参数由服务端执行精确匹配，避免一次拉取大量记录后在本地筛选。
  */
 export function Activity() {
   usePageTitle('活动')
@@ -57,26 +54,44 @@ export function Activity() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [filter, setFilter] = useState<FilterValue>('all')
+  const [action, setAction] = useState('')
   const [page, setPage] = useState(1)
+  const requestIdRef = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
     setLoading(true)
     setError(null)
     try {
-      const result = await api.getAudit(MAX_LOADED, 0)
+      const result = await api.getAudit(
+        PAGE_SIZE,
+        (page - 1) * PAGE_SIZE,
+        action || undefined,
+        controller.signal,
+      )
+      if (requestId !== requestIdRef.current) return
       setItems(result.items)
       setTotal(result.total)
     } catch (loadError) {
+      if (isAbortError(loadError) || requestId !== requestIdRef.current) return
       setError(toErrorMessage(loadError, '加载活动记录失败'))
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) setLoading(false)
     }
-  }, [])
+  }, [page, action])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    return () => abortRef.current?.abort()
+  }, [])
 
   const refresh = async (): Promise<void> => {
     setRefreshing(true)
@@ -84,18 +99,8 @@ export function Activity() {
     setRefreshing(false)
   }
 
-  const filtered = filter === 'all' ? items : items.filter((item) => auditCategory(item.action) === filter)
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-
-  useEffect(() => {
-    setPage(1)
-  }, [filter])
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages)
-  }, [page, totalPages])
-
-  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const actionLabel = action ? (ACTION_LABELS.get(action) ?? action) : '全部动作'
 
   const columns: Column<AuditItem>[] = [
     {
@@ -144,19 +149,31 @@ export function Activity() {
     <div className="activity-page">
       <PageHeader
         title="活动"
-        description={loading && items.length === 0 ? '正在加载审计记录…' : `共 ${total} 条记录 · 最多加载最近 ${MAX_LOADED} 条`}
+        description={
+          loading && items.length === 0
+            ? '正在加载审计记录…'
+            : `共 ${total} 条记录 · 当前筛选：${actionLabel}`
+        }
         actions={
           <>
             <div className="select-field">
-              <label className="sr-only" htmlFor="activity-filter">筛选活动类型</label>
+              <label className="sr-only" htmlFor="activity-filter">筛选审计动作</label>
               <select
                 id="activity-filter"
                 className="select"
-                value={filter}
-                onChange={(event) => setFilter(event.target.value as FilterValue)}
+                value={action}
+                onChange={(event) => {
+                  setAction(event.target.value)
+                  setPage(1)
+                }}
               >
-                {FILTERS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                <option value="">全部动作</option>
+                {AUDIT_ACTION_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.options.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -172,18 +189,12 @@ export function Activity() {
         }
       />
 
-      {total > MAX_LOADED ? (
-        <div className="notice notice-info">
-          仅加载最近 {MAX_LOADED} 条记录（共 {total} 条）；更早的记录请在服务端审计数据库中查看。
-        </div>
-      ) : null}
-
       {error ? <InlineError message={error} onRetry={() => void load()} className="page-inline-error" /> : null}
 
       <section className="surface-panel" aria-label="活动记录">
         <Table
           columns={columns}
-          rows={pageItems}
+          rows={items}
           rowKey={(item) => String(item.id)}
           loading={loading}
           skeletonRows={8}
@@ -191,20 +202,25 @@ export function Activity() {
           empty={
             <EmptyState
               icon={<ActivityIcon size={24} />}
-              title={filter === 'all' ? '暂无活动记录' : '该类型暂无记录'}
-              description="登录、文件操作与白名单变更会记录在这里。"
+              title={action ? `暂无「${actionLabel}」记录` : '暂无活动记录'}
+              description="登录、文件操作、分享与白名单变更都会记录在这里。"
               action={<Button variant="secondary" onClick={() => void load()}>刷新</Button>}
             />
           }
         />
 
-        {filtered.length > PAGE_SIZE ? (
+        {total > PAGE_SIZE ? (
           <div className="pager">
-            <Button variant="secondary" size="sm" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((value) => Math.max(1, value - 1))}
+            >
               上一页
             </Button>
             <span className="pager-info">
-              第 {page} / {totalPages} 页 · 当前筛选 {filtered.length} 条
+              第 {page} / {totalPages} 页 · 共 {total} 条
             </span>
             <Button
               variant="secondary"

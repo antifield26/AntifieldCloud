@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  Camera,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -14,7 +15,8 @@ import {
   Upload,
   X,
 } from 'lucide-react'
-import { api, toErrorMessage } from '../api/client'
+import { api, isAbortError, toErrorMessage } from '../api/client'
+import { useAppMeta } from '../meta/MetaContext'
 import type {
   BreadcrumbItem,
   FileItem,
@@ -42,6 +44,7 @@ import { FileThumb } from '../components/files/FileThumb'
 import { NameDialog } from '../components/files/NameDialog'
 import { MoveDialog } from '../components/files/MoveDialog'
 import { PreviewModal } from '../components/files/PreviewModal'
+import { ShareDialog } from '../components/files/ShareDialog'
 import { UploadPanel } from '../components/files/UploadPanel'
 import { formatBytes, formatPercent, percentOf } from '../lib/format'
 import { cx } from '../lib/classnames'
@@ -91,6 +94,7 @@ function sortFileList(list: FileItem[], field: FileSortField, direction: FileSor
 /** 文件页：目录浏览、搜索、上传队列、预览、重命名、移动与删除。 */
 export function Files() {
   const toast = useToast()
+  const { meta } = useAppMeta()
   const [searchParams, setSearchParams] = useSearchParams()
   const parentId = searchParams.get('parent')
 
@@ -125,11 +129,17 @@ export function Files() {
   const [moveTarget, setMoveTarget] = useState<FileItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FileItem | null>(null)
   const [previewTarget, setPreviewTarget] = useState<FileItem | null>(null)
+  const [shareTarget, setShareTarget] = useState<FileItem | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const refreshTimerRef = useRef<number | undefined>(undefined)
+  const listAbortRef = useRef<AbortController | null>(null)
+  const searchAbortRef = useRef<AbortController | null>(null)
+  const listRequestIdRef = useRef(0)
+  const searchRequestIdRef = useRef(0)
 
   const loadQuota = useCallback(async (): Promise<void> => {
     try {
@@ -140,18 +150,29 @@ export function Files() {
     }
   }, [])
 
+  // 列表请求带 AbortController + requestId，快速切换目录时丢弃旧响应
   const loadList = useCallback(async (): Promise<void> => {
+    listAbortRef.current?.abort()
+    const controller = new AbortController()
+    listAbortRef.current = controller
+    const requestId = listRequestIdRef.current + 1
+    listRequestIdRef.current = requestId
     setLoading(true)
     setError(null)
     try {
-      const result = await api.files.list({ parentId, page, pageSize: LIST_PAGE_SIZE, sort, dir })
+      const result = await api.files.list(
+        { parentId, page, pageSize: LIST_PAGE_SIZE, sort, dir },
+        controller.signal,
+      )
+      if (requestId !== listRequestIdRef.current) return
       setItems(result.items)
       setBreadcrumb(result.breadcrumb.length > 0 ? result.breadcrumb : [{ id: null, name: '全部文件' }])
       setTotal(result.total)
     } catch (loadError) {
+      if (isAbortError(loadError) || requestId !== listRequestIdRef.current) return
       setError(toErrorMessage(loadError, '加载文件列表失败'))
     } finally {
-      setLoading(false)
+      if (requestId === listRequestIdRef.current) setLoading(false)
     }
   }, [parentId, page, sort, dir])
 
@@ -164,30 +185,42 @@ export function Files() {
   }, [loadQuota])
 
   useEffect(() => {
+    searchAbortRef.current?.abort()
     if (!searching) {
       setSearchResult(null)
       setSearchError(null)
       setSearchLoading(false)
       return
     }
-    let active = true
+    const controller = new AbortController()
+    searchAbortRef.current = controller
+    const requestId = searchRequestIdRef.current + 1
+    searchRequestIdRef.current = requestId
     setSearchLoading(true)
     setSearchError(null)
     api.files
-      .search(debouncedSearch)
+      .search(debouncedSearch, controller.signal)
       .then((result) => {
-        if (active) setSearchResult(result)
+        if (requestId === searchRequestIdRef.current) setSearchResult(result)
       })
       .catch((searchFailure) => {
-        if (active) setSearchError(toErrorMessage(searchFailure, '搜索失败，请重试'))
+        if (isAbortError(searchFailure) || requestId !== searchRequestIdRef.current) return
+        setSearchError(toErrorMessage(searchFailure, '搜索失败，请重试'))
       })
       .finally(() => {
-        if (active) setSearchLoading(false)
+        if (requestId === searchRequestIdRef.current) setSearchLoading(false)
       })
     return () => {
-      active = false
+      controller.abort()
     }
   }, [debouncedSearch, searching, searchReloadKey])
+
+  useEffect(() => {
+    return () => {
+      listAbortRef.current?.abort()
+      searchAbortRef.current?.abort()
+    }
+  }, [])
 
   // 删除后当前页可能超出最大页数
   useEffect(() => {
@@ -210,10 +243,16 @@ export function Files() {
   }, [refreshAll])
 
   const uploadQueue = useUploadQueue({
+    maxFileBytes: meta.maxUploadBytes,
     onUploaded: scheduleRefresh,
     onFinished: (summary) => {
-      if (summary.failed > 0) toast.error(`上传结束：成功 ${summary.succeeded} 个，失败 ${summary.failed} 个`)
-      else if (summary.succeeded > 0) toast.success(`已上传 ${summary.succeeded} 个文件`)
+      if (summary.failed > 0) {
+        toast.error(`上传结束：成功 ${summary.succeeded} 个，失败 ${summary.failed} 个`)
+      } else if (summary.cancelled > 0) {
+        toast.info(`上传结束：成功 ${summary.succeeded} 个，取消 ${summary.cancelled} 个`)
+      } else if (summary.succeeded > 0) {
+        toast.success(`已上传 ${summary.succeeded} 个文件`)
+      }
     },
   })
 
@@ -384,6 +423,7 @@ export function Files() {
           onRename={() => setRenameTarget(file)}
           onMove={() => setMoveTarget(file)}
           onDelete={() => setDeleteTarget(file)}
+          onShare={meta.sharesEnabled && file.kind === 'file' ? () => setShareTarget(file) : undefined}
         />
       ),
     },
@@ -430,6 +470,13 @@ export function Files() {
             <Button variant="secondary" icon={<FolderPlus size={16} />} onClick={() => setCreateOpen(true)}>
               新建文件夹
             </Button>
+            <Button
+              variant="secondary"
+              icon={<Camera size={16} aria-hidden="true" />}
+              onClick={() => cameraInputRef.current?.click()}
+            >
+              拍照上传
+            </Button>
             <Button variant="primary" icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
               上传文件
             </Button>
@@ -441,6 +488,21 @@ export function Files() {
         ref={fileInputRef}
         type="file"
         multiple
+        className="sr-only"
+        tabIndex={-1}
+        onChange={(event) => {
+          const files = event.target.files ? Array.from(event.target.files) : []
+          enqueueFiles(files)
+          event.target.value = ''
+        }}
+      />
+
+      {/* 移动端拍照上传：accept=image/* + capture=environment 调起后置摄像头 */}
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
         className="sr-only"
         tabIndex={-1}
         onChange={(event) => {
@@ -594,6 +656,7 @@ export function Files() {
                         onRename={() => setRenameTarget(file)}
                         onMove={() => setMoveTarget(file)}
                         onDelete={() => setDeleteTarget(file)}
+                        onShare={meta.sharesEnabled && file.kind === 'file' ? () => setShareTarget(file) : undefined}
                       />
                     </div>
                   </div>
@@ -633,6 +696,7 @@ export function Files() {
         tasks={uploadQueue.tasks}
         busy={uploadQueue.busy}
         onRetry={uploadQueue.retry}
+        onCancel={uploadQueue.cancel}
         onClear={uploadQueue.clear}
       />
 
@@ -668,6 +732,8 @@ export function Files() {
       />
 
       <PreviewModal file={previewTarget} onClose={() => setPreviewTarget(null)} />
+
+      <ShareDialog file={shareTarget} onClose={() => setShareTarget(null)} />
 
       <ConfirmDialog
         open={deleteTarget !== null}

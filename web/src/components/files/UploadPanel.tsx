@@ -1,4 +1,4 @@
-import { Check, CircleAlert, LoaderCircle, Upload, X } from 'lucide-react'
+import { Check, CircleAlert, CircleSlash, LoaderCircle, Upload, X } from 'lucide-react'
 import type { UploadTask } from '../../hooks/useUploadQueue'
 import { ProgressBar } from '../ProgressBar'
 import { Button } from '../Button'
@@ -9,6 +9,7 @@ export interface UploadPanelProps {
   tasks: UploadTask[]
   busy: boolean
   onRetry: (id: number) => void
+  onCancel: (id: number) => void
   onClear: () => void
 }
 
@@ -16,15 +17,18 @@ function statusIcon(status: UploadTask['status']) {
   if (status === 'uploading') return <LoaderCircle size={16} className="spin" aria-hidden="true" />
   if (status === 'success') return <Check size={16} className="upload-success-icon" aria-hidden="true" />
   if (status === 'error') return <CircleAlert size={16} className="upload-error-icon" aria-hidden="true" />
+  if (status === 'cancelled') return <CircleSlash size={16} className="upload-wait-icon" aria-hidden="true" />
   return <Upload size={16} className="upload-wait-icon" aria-hidden="true" />
 }
 
-/** 上传队列浮层：逐文件展示进度、成功/失败与重试。 */
-export function UploadPanel({ tasks, busy, onRetry, onClear }: UploadPanelProps) {
+/** 上传队列浮层：逐文件展示进度、成功/失败、取消与重试。 */
+export function UploadPanel({ tasks, busy, onRetry, onCancel, onClear }: UploadPanelProps) {
   if (tasks.length === 0) return null
   const succeeded = tasks.filter((task) => task.status === 'success').length
   const failed = tasks.filter((task) => task.status === 'error').length
+  const cancelled = tasks.filter((task) => task.status === 'cancelled').length
   const total = tasks.length
+  const active = tasks.filter((task) => task.status === 'waiting' || task.status === 'uploading').length
 
   return (
     <section className="upload-panel" aria-label="上传队列">
@@ -32,7 +36,9 @@ export function UploadPanel({ tasks, busy, onRetry, onClear }: UploadPanelProps)
         <div>
           <h2 className="upload-panel-title">上传队列</h2>
           <p className="upload-panel-summary">
-            {busy ? `正在上传… ${succeeded + failed}/${total}` : `完成 ${succeeded + failed}/${total} · 成功 ${succeeded} · 失败 ${failed}`}
+            {busy
+              ? `正在上传 ${active} 项 · 成功 ${succeeded} · 失败 ${failed} · 取消 ${cancelled}`
+              : `完成 ${total} 项 · 成功 ${succeeded} · 失败 ${failed} · 取消 ${cancelled}`}
           </p>
         </div>
         <button
@@ -48,30 +54,49 @@ export function UploadPanel({ tasks, busy, onRetry, onClear }: UploadPanelProps)
       </header>
 
       <ul className="upload-list">
-        {tasks.map((task) => (
-          <li key={task.id} className={cx('upload-item', `upload-item-${task.status}`)}>
-            <span className="upload-item-icon" aria-hidden="true">
-              <FileIcon name={task.file.name} mime={task.file.type} size={17} />
-            </span>
-            <div className="upload-item-main">
-              <div className="upload-item-line">
-                <span className="upload-item-name" title={task.file.name}>{task.file.name}</span>
-                {statusIcon(task.status)}
-              </div>
-              {task.status === 'uploading' ? (
-                <ProgressBar value={task.progress} tone="accent" size="sm" ariaLabel={`${task.file.name} 上传进度 ${task.progress}%`} />
-              ) : null}
-              {task.status === 'success' ? <span className="upload-item-note">上传完成</span> : null}
-              {task.status === 'error' ? (
-                <div className="upload-item-error">
-                  <span>{task.error ?? '上传失败'}</span>
-                  <Button size="sm" variant="ghost" onClick={() => onRetry(task.id)}>重试</Button>
+        {tasks.map((task) => {
+          const cancellable = task.status === 'waiting' || task.status === 'uploading'
+          return (
+            <li key={task.id} className={cx('upload-item', `upload-item-${task.status}`)}>
+              <span className="upload-item-icon" aria-hidden="true">
+                <FileIcon name={task.file.name} mime={task.file.type} size={17} />
+              </span>
+              <div className="upload-item-main">
+                <div className="upload-item-line">
+                  <span className="upload-item-name" title={task.file.name}>{task.file.name}</span>
+                  {statusIcon(task.status)}
                 </div>
-              ) : null}
-              {task.status === 'waiting' ? <span className="upload-item-note">等待上传</span> : null}
-            </div>
-          </li>
-        ))}
+                {task.status === 'uploading' ? (
+                  <ProgressBar
+                    value={task.progress}
+                    tone="accent"
+                    size="sm"
+                    ariaLabel={`${task.file.name} 上传进度 ${task.progress}%`}
+                  />
+                ) : null}
+                {task.status === 'success' ? <span className="upload-item-note">上传完成</span> : null}
+                {task.status === 'waiting' ? <span className="upload-item-note">等待上传</span> : null}
+                {task.status === 'cancelled' ? (
+                  <div className="upload-item-error">
+                    <span>已取消上传</span>
+                    <Button size="sm" variant="ghost" onClick={() => onRetry(task.id)}>重新上传</Button>
+                  </div>
+                ) : null}
+                {task.status === 'error' ? (
+                  <div className="upload-item-error">
+                    <span>{task.error ?? '上传失败'}</span>
+                    <Button size="sm" variant="ghost" onClick={() => onRetry(task.id)}>重试</Button>
+                  </div>
+                ) : null}
+                {cancellable ? (
+                  <div className="upload-item-actions">
+                    <Button size="sm" variant="ghost" onClick={() => onCancel(task.id)}>取消</Button>
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )

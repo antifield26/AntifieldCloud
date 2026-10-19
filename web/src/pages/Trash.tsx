@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { FolderOpen, RefreshCw, RotateCcw, Trash as TrashIcon, Trash2 } from 'lucide-react'
-import { api, toErrorMessage } from '../api/client'
+import { api, isAbortError, toErrorMessage } from '../api/client'
+import { useAppMeta } from '../meta/MetaContext'
 import type { FileItem, TrashListResult } from '../api/types'
 import { PageHeader } from '../components/PageHeader'
 import { Button } from '../components/Button'
@@ -20,6 +21,7 @@ const TRASH_PAGE_SIZE = 200
 /** 回收站：恢复、彻底删除与清空；提示内容仍占用配额。 */
 export function Trash() {
   const toast = useToast()
+  const { meta } = useAppMeta()
   const [data, setData] = useState<TrashListResult | null>(null)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
@@ -31,23 +33,36 @@ export function Trash() {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [clearOpen, setClearOpen] = useState(false)
   const [clearBusy, setClearBusy] = useState(false)
+  const requestIdRef = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
     setLoading(true)
     setError(null)
     try {
-      const result = await api.trash.list(page, TRASH_PAGE_SIZE)
+      const result = await api.trash.list(page, TRASH_PAGE_SIZE, controller.signal)
+      if (requestId !== requestIdRef.current) return
       setData(result)
     } catch (loadError) {
+      if (isAbortError(loadError) || requestId !== requestIdRef.current) return
       setError(toErrorMessage(loadError, '加载回收站失败'))
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) setLoading(false)
     }
   }, [page])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    return () => abortRef.current?.abort()
+  }, [])
 
   const totalPages = Math.max(1, Math.ceil((data?.total ?? 0) / TRASH_PAGE_SIZE))
   useEffect(() => {
@@ -77,8 +92,9 @@ export function Trash() {
     if (!deleteTarget) return
     setDeleteBusy(true)
     try {
-      await api.trash.remove(deleteTarget.id)
-      toast.success(`已彻底删除「${deleteTarget.name}」`)
+      const result = await api.trash.remove(deleteTarget.id)
+      const freed = result.freedBytes ? `，释放 ${formatBytes(result.freedBytes)}` : ''
+      toast.success(`已彻底删除「${deleteTarget.name}」${freed}`)
       setDeleteTarget(null)
       await load()
     } catch (deleteError) {
@@ -92,7 +108,8 @@ export function Trash() {
     setClearBusy(true)
     try {
       const result = await api.trash.clear()
-      toast.success(`已清空回收站（${result.count} 项）`)
+      const freed = result.freedBytes ? `，释放 ${formatBytes(result.freedBytes)}` : ''
+      toast.success(`已清空回收站（${result.count} 项）${freed}`)
       setClearOpen(false)
       if (page === 1) await load()
       else setPage(1)
@@ -169,7 +186,11 @@ export function Trash() {
     <div className="trash-page">
       <PageHeader
         title="回收站"
-        description={data ? `共 ${data.total} 项 · 占用 ${formatBytes(data.trashBytes)}` : '已删除的文件会在这里保留 30 天'}
+        description={
+          data
+            ? `共 ${data.total} 项 · 占用 ${formatBytes(data.trashBytes)}`
+            : `已删除的文件会在这里保留 ${meta.trashRetentionDays} 天`
+        }
         actions={
           <>
             <Button
@@ -193,7 +214,9 @@ export function Trash() {
       />
 
       <div className="notice notice-info">
-        回收站中的文件仍占用配额{data ? `（当前 ${formatBytes(data.trashBytes)}）` : ''}；30 天后自动清理。彻底删除会立即释放配额。
+        回收站中的文件仍占用配额{data ? `（当前 ${formatBytes(data.trashBytes)}）` : ''}；
+        {meta.trashRetentionDays} 天后自动清理。彻底删除会立即释放配额。
+        {meta.trashRetentionFromServer ? null : '（保留天数未由服务端下发，按默认 30 天展示）'}
       </div>
 
       {error ? <InlineError message={error} onRetry={() => void load()} className="page-inline-error" /> : null}
@@ -210,7 +233,7 @@ export function Trash() {
             <EmptyState
               icon={<FolderOpen size={24} />}
               title="回收站是空的"
-              description="删除的文件会保留在这里 30 天，期间可随时恢复。"
+              description={`删除的文件会保留在这里 ${meta.trashRetentionDays} 天，期间可随时恢复。`}
               action={
                 <Link className="btn btn-secondary btn-md" to="/files">
                   <FolderOpen size={16} aria-hidden="true" />

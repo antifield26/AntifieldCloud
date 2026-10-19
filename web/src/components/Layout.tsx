@@ -2,21 +2,25 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
+  BookOpen,
   FolderOpen,
   Gamepad2,
   LayoutDashboard,
   LogOut,
   Menu,
   Settings,
+  Share2,
   Trash,
   X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '../auth/AuthContext'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { useAppMeta } from '../meta/MetaContext'
 import { useToast } from './Toast'
 import { Avatar } from './Avatar'
 import { Logo } from './Logo'
+import { PwaInstallPrompt } from './PwaInstallPrompt'
 import { cx } from '../lib/classnames'
 
 interface NavItem {
@@ -24,11 +28,14 @@ interface NavItem {
   label: string
   icon: LucideIcon
   end?: boolean
+  requiresShares?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: '工作台', icon: LayoutDashboard, end: true },
   { to: '/files', label: '文件', icon: FolderOpen },
+  { to: '/knowledge', label: '知识库', icon: BookOpen },
+  { to: '/shares', label: '分享', icon: Share2, requiresShares: true },
   { to: '/trash', label: '回收站', icon: Trash },
   { to: '/minecraft', label: 'Minecraft', icon: Gamepad2 },
   { to: '/activity', label: '活动', icon: Activity },
@@ -37,11 +44,16 @@ const NAV_ITEMS: NavItem[] = [
 const PAGE_TITLES: Record<string, string> = {
   '/': '工作台',
   '/files': '文件',
+  '/knowledge': '知识库',
+  '/shares': '分享管理',
   '/trash': '回收站',
   '/minecraft': 'Minecraft',
   '/activity': '活动',
   '/settings': '设置',
 }
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 interface SidebarContentProps {
   username: string
@@ -50,6 +62,7 @@ interface SidebarContentProps {
 
 function SidebarContent({ username, onNavigate }: SidebarContentProps) {
   const { logout } = useAuth()
+  const { meta } = useAppMeta()
   const navigate = useNavigate()
   const toast = useToast()
   const [loggingOut, setLoggingOut] = useState(false)
@@ -66,6 +79,8 @@ function SidebarContent({ username, onNavigate }: SidebarContentProps) {
     }
   }
 
+  const items = NAV_ITEMS.filter((item) => !item.requiresShares || meta.sharesEnabled)
+
   return (
     <div className="sidebar-inner">
       <div className="sidebar-brand">
@@ -73,7 +88,7 @@ function SidebarContent({ username, onNavigate }: SidebarContentProps) {
       </div>
 
       <nav className="sidebar-nav" aria-label="主导航">
-        {NAV_ITEMS.map((item) => (
+        {items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -121,10 +136,11 @@ function SidebarContent({ username, onNavigate }: SidebarContentProps) {
 const BOTTOM_TABS: NavItem[] = [
   { to: '/', label: '工作台', icon: LayoutDashboard, end: true },
   { to: '/files', label: '文件', icon: FolderOpen },
+  { to: '/knowledge', label: '知识库', icon: BookOpen },
   { to: '/minecraft', label: 'Minecraft', icon: Gamepad2 },
 ]
 
-/** 应用外壳：桌面固定侧栏；移动端顶部栏 + 抽屉导航 + 底部 Tab。 */
+/** 应用外壳：桌面固定侧栏；移动端顶部栏 + 抽屉导航（含焦点陷阱）+ 底部 Tab。 */
 export function Layout() {
   const { user } = useAuth()
   const location = useLocation()
@@ -133,25 +149,53 @@ export function Layout() {
   const pageTitle = PAGE_TITLES[location.pathname] ?? '工作台'
   usePageTitle(pageTitle)
 
-  // 路由切换时关闭抽屉并回到页面顶部
   useEffect(() => {
     setDrawerOpen(false)
     window.scrollTo({ top: 0, behavior: 'auto' })
   }, [location.pathname])
 
+  // 移动端抽屉：滚动锁、Esc 关闭、Tab 焦点陷阱与焦点恢复
   useEffect(() => {
     if (!drawerOpen) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const focusTimer = window.setTimeout(() => {
-      drawerRef.current?.querySelector<HTMLElement>('a, button')?.focus()
+      drawerRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR)?.focus()
     }, 20)
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setDrawerOpen(false)
+
+    const getFocusable = (): HTMLElement[] => {
+      const drawer = drawerRef.current
+      if (!drawer) return []
+      return Array.from(drawer.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+        (element) => element.tabIndex >= 0 && element.getClientRects().length > 0,
+      )
     }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDrawerOpen(false)
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = getFocusable()
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (!first || !last) return
+      const active = document.activeElement
+      if (event.shiftKey) {
+        if (active === first || !drawerRef.current?.contains(active)) {
+          event.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || !drawerRef.current?.contains(active)) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
     document.addEventListener('keydown', handleKeyDown)
     return () => {
       window.clearTimeout(focusTimer)
@@ -238,6 +282,8 @@ export function Layout() {
           </aside>
         </div>
       ) : null}
+
+      <PwaInstallPrompt />
     </div>
   )
 }

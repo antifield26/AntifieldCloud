@@ -1,6 +1,57 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-10-19
+
+### Added
+
+- 知识库：Markdown 笔记/书签、标签、置顶、分页与 FTS5 搜索（中文回退 LIKE）；独立审计。
+- 文件分享：单文件公开链接，可选密码、过期时间（默认 168h/最长 720h）、最大下载次数、吊销；
+  token 只存 SHA-256、密码 scrypt、公开页 noindex、独立限流与审计、Range/HEAD/ETag。
+- PWA：manifest、Service Worker（只缓存静态壳/资源）、offline.html、本地图标、安装提示、手机拍照上传；
+  CSP 增加 `manifest-src`/`worker-src`。
+- 监控告警：磁盘/温度/内存/服务/备份超期/待拉取备份/MC/欠压条件；通用 JSON webhook
+  （10s×3 重试、可选 HMAC）；去重/冷却/恢复通知；面板告警历史与测试按钮；root 健康探针 units。
+- 备份：两阶段协议（`--prepare/--pending/--ack/--snapshot-db`），PC 确认后才推进游标；
+  未 ack 归档不删除，acked 最多 2；`.part`→SHA→原子改名→`.sha256` 旁文件；Sunday 漏跑补全量；
+  备份任务显式 `-PiHost/-BackupRoot`，ACL 收紧，电池供电也运行，日志轮转。
+- 灾备：age 加密 env/cloudflared/MC/opencode 凭证包；恢复文档、真实命令与演练记录模板。
+- 部署：迁移前 DB 快照；健康检查失败自动回滚；retention 保护 current/previous；发布包包含 LICENSE。
+- CI：前端 Vitest、生产依赖边界、shellcheck、nftables 语法、Windows PowerShell 解析/BOM 检查。
+
+### Fixed / Security（v0.1.0 审计）
+
+- **C1**：未认证 WebSocket upgrade 携带畸形 Cookie 不再导致进程退出；upgrade 全 try/catch +
+  `uncaughtException` 兜底；新增回归测试。
+- **H1**：改密/恢复码要求 TOTP，增加 IP/全局/TOTP 限流、失败审计、恒定延迟；会话 CSRF Cookie
+  丢失时自动补发。
+- trustProxy 收紧：仅 loopback 对端才采信 Cloudflare 转发头；X-Forwarded-Host 不参与安全判断。
+- RCON 多包响应拼接（>4096B）、1 MiB 上限、超时/关闭不挂起；白名单复核保留。
+- 上传全局预留 + statfs 余量 + ENOSPC→507；启动清理 24h tmp；错误映射不回显内部 message/路径。
+- HSTS、AI 302/401/502 安全头、inline PDF XFO/CSP；登录限流 Map 容量上限。
+- 审计动作名与服务端对齐，Activity 服务端 action 筛选；Files/Trash 请求竞态修复；改密 12 位；
+  Markdown DOMPurify 禁 style；上传取消/超时；恢复码弹窗关闭保护；429 `details.retryAfterSec`；
+  a11y 焦点/键盘/aria；Minecraft 强制刷新；回收站天数/域名/上传上限由服务端下发。
+- 单文件上限按 Cloudflare Free/Pro 调整为 100 MiB。
+- 备份软删除文件同步吊销分享；公开分享 metadata 对齐前端契约（active/requiresPassword）。
+- RCON 密码已轮换（32 位随机）；Pi 已启用 memory cgroup（`MemoryMax=512M` 实际生效）。
+
+### Operations
+
+- Pi：Debian 安全更新、`age`、`unattended-upgrades`；health probe timer；memory cgroup；
+  RCON 密码轮换；一次重启完成 MC 重启与验证。
+- Windows：备份任务重装为两阶段脚本，ACL 仅当前用户 + Administrators + SYSTEM；D 盘实际路径见本地
+  `.local/DEPLOYMENT.md`（不提交）。
+- 公开仓库继续脱敏；实际域名/IP/备份路径/私钥只在本地。
+
+### Known limitations
+
+- SSH 密码登录保留（用户选择）；无 Cloudflare Access；单 SD 卡；Cloudflare 终止 TLS。
+- 分享下载次数为会话级近似限制；清 Cookie 可在 5 分钟会话内绕过一次计数（个人分享可接受）。
+- FTS5 unicode61 对中文按整段分词，含中文搜索自动回退 LIKE。
+- 笔记无附件/版本历史；分享不支持目录；无音视频/WebDAV/多用户。
+- Cloudflare 边缘约 100 MiB 请求体与 100s 超时；大文件后续需分片/对象存储。
+- `http-proxy` 在 Node 26 有 `util._extend` 弃用警告，Node 27 前需评估替换。
+- scrypt 仍为 N=2^15（升级需密码哈希版本迁移）。
 
 ## [0.1.0] - 2026-10-19
 
@@ -29,9 +80,3 @@
 ### License
 
 - MIT（见 `LICENSE`）。
-
-### Known limitations
-
-- RCON 密码未轮换、SSH 密码登录保留（用户选择）；见 docs/SECURITY.md 残留风险。
-- 无 Cloudflare Access、无多用户、无版本历史、无 WebDAV/同步客户端。
-- 无全盘/SD 加密；备份含 TOTP secret。

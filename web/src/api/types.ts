@@ -6,6 +6,7 @@ export interface ApiErrorBody {
   error: {
     code: string
     message: string
+    details?: Record<string, unknown>
     retryAfterSec?: number
   }
   retryAfterSec?: number
@@ -29,12 +30,13 @@ export interface PasswordChallenge {
 
 export interface LoginResult {
   user: User
-  csrfToken: string
+  /** 服务端在极少数情况下可能不下发 CSRF（如降级），前端需容忍 */
+  csrfToken: string | null
 }
 
 export interface MeResult {
   user: User
-  csrfToken: string
+  csrfToken: string | null
   session: SessionInfo
 }
 
@@ -104,6 +106,8 @@ export interface OpencodeStatus {
   reachable: boolean
   url: string
   sessions: number | null
+  /** 反向代理异常时的简短原因 */
+  error?: string | null
 }
 
 export interface BackupStatus {
@@ -162,6 +166,8 @@ export interface FileItem {
   createdAt: string
   updatedAt: string
   previewKind: PreviewKind
+  /** 是否允许 ?inline=1 内联预览（仅栅格图片/PDF）；旧服务端可能不下发 */
+  inlineAllowed?: boolean
   // 以下字段仅在回收站接口返回
   deletedAt?: string | null
   originalParentId?: string | null
@@ -184,11 +190,6 @@ export interface FileListResult {
 export interface FileSearchResult {
   items: FileItem[]
   total: number
-}
-
-export interface FileDetailResult {
-  item: FileItem
-  path: BreadcrumbItem[]
 }
 
 export interface UploadError {
@@ -218,9 +219,17 @@ export interface TrashListResult {
   trashBytes: number
 }
 
+export interface DeleteFileResult {
+  ok: boolean
+  id?: string
+  count?: number
+  freedBytes?: number
+}
+
 export interface ClearTrashResult {
   ok: boolean
   count: number
+  freedBytes?: number
 }
 
 export interface WhitelistResult {
@@ -237,8 +246,207 @@ export interface WhitelistMutationResult {
   error?: string | null
 }
 
+/** /api/version 的 v0.2 扩展；旧服务端可能只返回 version。 */
 export interface VersionResult {
   version: string
+  appOrigin?: string
+  aiOrigin?: string
+  trashRetentionDays?: number
+  maxUploadBytes?: number
+  sharesEnabled?: boolean
+  alertsEnabled?: boolean
+}
+
+/** 前端运行期需要的站点元数据（由 /api/version 推导 + 安全回退）。 */
+export interface AppMeta {
+  version: string | null
+  appOrigin: string
+  aiOrigin: string | null
+  trashRetentionDays: number
+  trashRetentionFromServer: boolean
+  maxUploadBytes: number
+  sharesEnabled: boolean
+  alertsEnabled: boolean
+}
+
+/* ---------- 知识库：笔记与书签 ---------- */
+
+export interface Note {
+  id: string
+  title: string
+  bodyMd: string
+  tags: string[]
+  pinned: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface NoteListResult {
+  items: Note[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export interface NoteInput {
+  title: string
+  bodyMd: string
+  tags?: string[]
+  pinned?: boolean
+}
+
+export type NotePatch = Partial<NoteInput>
+
+export interface Bookmark {
+  id: string
+  url: string
+  title: string
+  description: string
+  tags: string[]
+  pinned: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BookmarkListResult {
+  items: Bookmark[]
+  page: number
+  pageSize: number
+  total: number
+}
+
+export interface BookmarkInput {
+  url: string
+  title: string
+  description?: string
+  tags?: string[]
+  pinned?: boolean
+}
+
+export type BookmarkPatch = Partial<BookmarkInput>
+
+export interface TagCount {
+  name: string
+  count: number
+}
+
+export interface TagsResult {
+  items: TagCount[]
+}
+
+export interface KnowledgeQuery {
+  q?: string
+  tag?: string
+  pinned?: boolean
+  page?: number
+  pageSize?: number
+}
+
+/* ---------- 文件分享 ---------- */
+
+export interface Share {
+  id: string
+  fileId: string
+  fileName: string
+  expiresAt: string | null
+  /** null 表示不限下载次数 */
+  maxDownloads: number | null
+  downloadCount: number
+  createdAt: string
+  revokedAt: string | null
+  hasPassword: boolean
+  note: string | null
+}
+
+export interface CreateShareInput {
+  password?: string
+  /** 省略时服务端默认 168 小时（7 天）；最大 720 小时 */
+  expiresInHours?: number
+  /** 省略或传 0 表示不限次数 */
+  maxDownloads?: number
+  note?: string
+}
+
+export interface CreateShareResult {
+  share: Share
+  url: string
+}
+
+export interface ShareListResult {
+  items: Share[]
+}
+
+export interface RevokeShareResult {
+  ok: boolean
+  share?: Share
+}
+
+export type PublicShareState = 'active' | 'expired' | 'exhausted' | 'revoked'
+
+export interface PublicShareMeta {
+  fileName: string
+  size: number
+  mime: string | null
+  expiresAt: string | null
+  hasPassword: boolean
+  /** null 表示不限下载次数 */
+  maxDownloads: number | null
+  downloadCount: number
+  note: string | null
+}
+
+export interface PublicShareInfo {
+  share: PublicShareMeta
+  state: PublicShareState
+  requiresPassword: boolean
+}
+
+export interface PublicShareUnlockResult {
+  ok: boolean
+  share?: PublicShareMeta
+}
+
+/* ---------- 告警 ---------- */
+
+export interface AlertEvent {
+  id: number | string
+  event: string
+  severity: string
+  status: string
+  title: string
+  message: string
+  createdAt: string
+  deliveredAt: string | null
+  deliveryError: string | null
+}
+
+export interface AlertState {
+  event: string
+  status: string
+  lastFiredAt: string | null
+  lastOkAt: string | null
+}
+
+export interface AlertsConfig {
+  enabled: boolean
+  webhookConfigured: boolean
+  diskFreePct: number | null
+  tempC: number | null
+  backupMaxAgeHours: number | null
+  cooldownMinutes: number | null
+  checkIntervalSeconds: number | null
+}
+
+export interface AlertsResult {
+  items: AlertEvent[]
+  state: AlertState[]
+  config: AlertsConfig
+}
+
+export interface AlertTestResult {
+  ok: boolean
+  delivered: boolean
+  message?: string
 }
 
 export interface FileListQuery {

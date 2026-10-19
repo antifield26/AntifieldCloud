@@ -29,7 +29,9 @@ import { CopyButton } from '../components/CopyButton'
 import { Avatar } from '../components/Avatar'
 import { RelativeTime } from '../components/RelativeTime'
 import { AuditEntry } from '../components/AuditEntry'
+import { AlertsCard } from '../components/alerts/AlertsCard'
 import { SkeletonText } from '../components/Skeleton'
+import { useAppMeta } from '../meta/MetaContext'
 import { formatBytes, formatClock, formatDateTime, formatPercent, formatRelative, formatUptime, percentOf } from '../lib/format'
 import { cx } from '../lib/classnames'
 
@@ -54,6 +56,7 @@ const SERVICE_BADGE_TONES: Record<ServiceState, BadgeTone> = {
 
 /** 工作台：10s 轮询，页面隐藏时暂停；刷新失败保留旧数据并提示。 */
 export function Dashboard() {
+  const { meta } = useAppMeta()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -126,7 +129,8 @@ export function Dashboard() {
   const mcDegraded = minecraft.tps === null || minecraft.whitelistCount === null
   const tempClass =
     host.tempC === null ? 'text-dim' : host.tempC >= 85 ? 'text-danger' : host.tempC >= 75 ? 'text-warning' : undefined
-  const aiUrl = opencode.url || 'https://ai.example.com'
+  // 域名优先取服务端下发的 aiOrigin，其次 opencode.url；均缺失时不渲染可点击链接
+  const aiUrl = meta.aiOrigin || opencode.url || ''
 
   return (
     <div className="dashboard-page">
@@ -250,6 +254,10 @@ export function Dashboard() {
         />
       </div>
 
+      <div className="dashboard-row dashboard-row-alerts">
+        <AlertsCard />
+      </div>
+
       <div className="dashboard-row dashboard-row-details">
         <Card
           title="Minecraft 详情"
@@ -324,14 +332,24 @@ export function Dashboard() {
         <Card title="快捷入口">
           <ul className="quick-links">
             <li>
-              <a className="quick-link" href={aiUrl} target="_blank" rel="noopener noreferrer">
-                <span className="quick-icon" aria-hidden="true"><Sparkles size={18} /></span>
-                <span className="quick-text">
-                  <strong>AI 工作区</strong>
-                  <span>opencode · 统一登录</span>
-                </span>
-                <ExternalLink size={15} aria-hidden="true" />
-              </a>
+              {aiUrl ? (
+                <a className="quick-link" href={aiUrl} target="_blank" rel="noopener noreferrer">
+                  <span className="quick-icon" aria-hidden="true"><Sparkles size={18} /></span>
+                  <span className="quick-text">
+                    <strong>AI 工作区</strong>
+                    <span>opencode · 统一登录</span>
+                  </span>
+                  <ExternalLink size={15} aria-hidden="true" />
+                </a>
+              ) : (
+                <div className="quick-link quick-link-disabled" aria-disabled="true">
+                  <span className="quick-icon" aria-hidden="true"><Sparkles size={18} /></span>
+                  <span className="quick-text">
+                    <strong>AI 工作区</strong>
+                    <span>AI 地址未配置</span>
+                  </span>
+                </div>
+              )}
             </li>
             <li>
               <a className="quick-link" href="https://connect.raspberrypi.com" target="_blank" rel="noopener noreferrer">
@@ -382,6 +400,11 @@ export function Dashboard() {
               </li>
             ))}
           </ul>
+          {opencode.error || !opencode.reachable ? (
+            <div className="notice notice-warning">
+              opencode 当前不可达{opencode.error ? `：${opencode.error}` : '，请检查服务状态。'}
+            </div>
+          ) : null}
           <div className="service-extra">
             <div className="service-extra-row">
               <span>opencode 会话</span>

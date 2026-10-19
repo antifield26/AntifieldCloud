@@ -18,7 +18,7 @@
 | 上传耗尽磁盘 | 服务不可用 | 10 GiB 配额（含回收站）、单文件 2 GiB、单请求 20 文件、写前/流中/事务内三次检查、507 |
 | opencode 端口被直接访问 | AI 工作区被滥用 | 端口仅 loopback；ai 主机会话校验；服务端注入 Basic；不向浏览器下发密钥 |
 | RCON 被滥用 | 白名单/服务器被改 | 不提供任意命令；仅白名单增删；名字白名单校验；命令后复核；nftables 阻断非 loopback |
-| 备份泄露 | 文件与 TOTP 泄露 | 备份目录 0640、PC 目标目录 ACL、文档标注敏感性；不备份 env |
+| 备份泄露 | 文件与 TOTP 泄露 | 两阶段 pending/ack、归档 0640、PC 目录 ACL（当前用户+Administrators+SYSTEM）、`.sha256` 旁文件；密钥包 age 加密；普通归档仍含 TOTP |
 | 物理 SD 丢失 | 数据泄露/丢失 | 无全盘加密（当前限制）；建议后续 LUKS/加密备份；每日备份 |
 | 校园网扫描 | RCON/nginx 暴露 | nftables 默认拒绝入站；25575 仅 loopback；80/25565 限网段 |
 | 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建 |
@@ -52,33 +52,60 @@
 
 ### 运维
 - 服务用户 `antifieldcloud` 无 shell/无 sudo；systemd 只读系统、仅数据目录可写、`NoNewPrivileges`、`MemoryMax=512M`。
-- 环境文件 0640 root:antifieldcloud；仓库/CI 不含秘密。
-- 部署脚本幂等、带健康检查与 release 回滚；备份带 SHA-256 校验。
+  `MemoryMax` 依赖内核 memory cgroup：`/sys/fs/cgroup/cgroup.controllers` 必须包含 `memory`，若内核命令行带
+  `cgroup_disable=memory` 则限制不生效（检查方法见 docs/DEPLOY.md §8，smoke 会失败）。
+- 环境文件 0640 root:antifieldcloud；非敏感部署值放 `/etc/antifieldcloud/deploy.conf`（root 只读）；
+  仓库/CI 不含秘密，实际部署值只记录在 gitignored 的 `.local/DEPLOYMENT.md`。
+- 部署脚本：切换前 `backup.mjs --snapshot-db` 做一致性 DB 快照；健康检查失败自动切回上一 release 并复检；
+  release 保留 3 个且清理保护 current/previous；tar 包包含 LICENSE。
+- 备份两阶段：`--prepare` 只生成 pending，`--ack` 校验 SHA-256 后才推进游标；pending 未确认不删除；
+  已确认归档最多 2 个；归档 0640；PC 原子改名并写 `.sha256` 旁文件。
+- Windows 备份目录由 `install-backup-task.ps1` 用 `icacls` 收紧为当前用户 + Administrators + SYSTEM；
+  任务在电池供电时不跳过、安装前做 Pi 可达性预检、日志 >1 MiB 轮转。
+- 密钥包：`backup-secrets.sh` 用 age 公钥加密 `/etc/antifieldcloud/env`、cloudflared 配置/凭证、
+  `server.properties` 与 opencode env；私钥只离线保存，PC 拉取 `.age` + `.sha256`。
+- 主机健康探针：root 每 60s 写 `/run/antifieldcloud/pi-health.json`（0644，含欠压/降频/温度/风扇），
+  告警模块只读该文件；探针失败不影响主服务。
 
 ## 4. 残留风险（按用户选择保留）
 
-1. **RCON 密码仍为弱口令且监听所有接口**：nftables 后仅 loopback 可达，但本机被攻破即可控制 RCON。建议后续轮换强密码（需一次 MC 重启）。
+1. **RCON 已轮换为 32 位随机密码，但仍监听 0.0.0.0（Paper 无 bind 配置）**：nftables 仅放行 loopback；
+   本机被攻破仍可控制 RCON。后续可评估 systemd 网络命名空间/firewalld 细化。
 2. **SSH 密码登录开启、无 fail2ban**：当前公网未转发 22，只在直连/校园网可达；仍建议改为仅公钥 + fail2ban。
 3. **无 Cloudflare Access**：Cloudflare 边缘只有 TLS，账号安全完全依赖应用 TOTP；建议给 Cloudflare 账号开启 2FA。
 4. **Cloudflare 可见明文**：文件内容与登录流量对 Cloudflare 可见；敏感数据可考虑后续应用层加密。
 5. **单管理员、无多用户/权限分离**：审计日志可被管理员删除；适合个人使用。
-6. **备份含 TOTP secret 与文件内容**：PC 端目录 ACL 与物理安全是最后防线；建议加密备份。
+6. **普通备份归档仍含 TOTP secret 与文件内容**：PC 端 ACL 与物理安全是最后防线；密钥包已用 age 加密，
+   后续可评估整包加密（restic/age）与异地副本。age 私钥丢失将无法恢复密钥包。
 7. **opencode 自身认证行为随版本变化**：当前通过注入 Basic 实现 SSO；升级 opencode 后需复测（见 docs/DEPLOY.md 兜底）。
 8. **无 WAF/DDoS 防护**：Cloudflare 默认防护有限；大文件上传/登录仍可能消耗资源（有配额/限流）。
 9. **SD 卡无加密**：设备丢失即数据泄露；可后续迁移 SSD + LUKS。
 10. **限流在内存中**：应用重启清零；对分布式攻击效果有限。
+11. **Cloudflare 自动注入与严格 CSP 冲突**：Web Analytics/Challenge 脚本被 CSP 拦截；需在 Cloudflare 后台关闭
+    自动注入，或接受控制台报错；不建议放开 `script-src` 内联。
+12. **scrypt 仍为 N=2^15**：升级到 2^16/2^17 需要密码哈希版本迁移，列入后续。
+13. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
+14. **Cloudflare 约 100 MiB/100s 限制**：大文件后续需分片/对象存储。
 
 ## 5. 运维安全清单
 
-- 每月 `sudo apt-get update && sudo apt-get upgrade`（Minecraft 重启需选择窗口）。
-- 每季度检查 `journalctl -u antifieldcloud`、`nft list ruleset`、备份演练。
+- 每月 `sudo apt-get update && sudo apt-get upgrade`（Minecraft 重启需选择窗口）；关注
+  `apt-get -s upgrade` 的安全更新与 cloudflared 版本提示。
+- 每周检查：备份 pending 是否堆积、`backup-pull.json` 是否超过 48h、PC 归档是否有 `.sha256` 旁文件、
+  计划任务 `LastTaskResult`；日志 `%LOCALAPPDATA%\AntifieldCloud\backup.log`。
+- 每月检查：`systemctl --failed`、`journalctl -u antifieldcloud -p warning`、`nft list ruleset`、
+  `/sys/fs/cgroup/cgroup.controllers` 含 `memory`、`vcgencmd get_throttled`、`vcgencmd measure_temp`、
+  磁盘/内存余量。
+- 每季度检查：恢复演练（按 docs/BACKUP.md §6 解包并记录到 §7）、`cloudflared tunnel info` 连接与版本、
+  Windows 备份目录 ACL 是否仍无 Authenticated Users/Users、age 公钥/私钥保管情况。
 - 怀疑泄露时：
   1. 登录设置页“退出全部会话”；
   2. CLI 重置密码/TOTP；
-  3. 轮换 RCON/opencode 密码（`bootstrap-env.sh --force` 后重启应用）；
-  4. 检查审计日志与 `journalctl`；
-  5. 从备份恢复可疑文件。
-- 不要在聊天、截图、issue 中粘贴密码、TOTP 密钥、恢复码、隧道 token。
+  3. 轮换 RCON/opencode 密码（`bootstrap-env.sh --force` 后重启应用；非敏感配置会沿用现有值）；
+  4. 重新生成 age 密钥包并离线保管私钥；
+  5. 检查审计日志、`journalctl` 与备份 pending 状态；
+  6. 从备份恢复可疑文件。
+- 不要在聊天、截图、issue 中粘贴密码、TOTP 密钥、恢复码、隧道 token、age 私钥。
 
 ## 6. 安全验收（已覆盖）
 
@@ -86,6 +113,6 @@
 - 缺少 CSRF 的写请求 403。
 - 非法 Host 404。
 - 路径穿越名被清洗；SVG/HTML 无内联预览。
-- 超配额上传拒绝；回收站占配额。
-- 外部 25575 阻断（见 `scripts/smoke.ps1`）。
+- 超配额上传拒绝；回收站占配额；单请求上传大小受 `MAX_UPLOAD_BYTES`（默认 100 MiB，匹配 Cloudflare 代理上限）限制。
+- 外部 25575 阻断；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。
 - 仓库 `git grep` 不出现真实密钥。

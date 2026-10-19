@@ -3,28 +3,26 @@
  * - 先校验应用会话（TOTP 登录后的 Cookie）
  * - 注入 Basic 认证，overwrite 客户端 Authorization/Cookie
  * - 支持 SSE/WebSocket 流式；不记录请求体与 Authorization
+ * - 所有升级/代理入口都做异常兜底：任意畸形请求不得让进程退出
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { STATUS_CODES } from 'node:http'
 import type { Socket } from 'node:net'
 import httpProxy from 'http-proxy'
-import type { FastifyReply, FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
 import type { AuthService } from '../auth/service.ts'
-import { isLoopbackHost, readSessionToken } from '../auth/cookies.ts'
+import { readSessionToken } from '../auth/cookies.ts'
+import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
 
-export function normalizeHost(header: string | undefined): string {
-  if (!header) return ''
-  const value = header.trim().toLowerCase()
-  if (value.startsWith('[')) return value.replace(/^\[|\](:\d+)?$/g, '')
-  const colon = value.lastIndexOf(':')
-  return colon > 0 ? value.slice(0, colon) : value
-}
+export { normalizeHost, hostFromOrigin }
 
-export function hostFromOrigin(origin: string): string {
+/** Cookie 解码失败时保留原始值（后续会话校验自然失败），绝不让异常穿透。 */
+function safeDecode(value: string): string {
   try {
-    return new URL(origin).hostname.toLowerCase()
+    return decodeURIComponent(value)
   } catch {
-    return ''
+    return value
   }
 }
 
@@ -36,9 +34,50 @@ function parseCookieHeader(header: string | undefined): Record<string, string> {
     if (eq <= 0) continue
     const key = part.slice(0, eq).trim()
     const value = part.slice(eq + 1).trim()
-    if (key) out[key] = decodeURIComponent(value)
+    if (key) out[key] = safeDecode(value)
   }
   return out
+}
+
+function writeRawJson(socket: Socket | ServerResponse, statusCode: number, body: string, headers: Record<string, string> = {}): void {
+  try {
+    if ('writeHead' in socket && typeof socket.writeHead === 'function') {
+      const response = socket
+      if (response.headersSent) {
+        response.end()
+        return
+      }
+      response.writeHead(statusCode, {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        ...headers,
+      })
+      response.end(body)
+      return
+    }
+    const raw = socket
+    if (!raw.destroyed) {
+      raw.write(
+        `HTTP/1.1 ${statusCode} ${STATUS_CODES[statusCode] ?? 'Error'}\r\n` +
+          `content-type: application/json; charset=utf-8\r\ncache-control: no-store\r\n` +
+          `x-content-type-options: nosniff\r\nreferrer-policy: no-referrer\r\n` +
+          `content-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`,
+      )
+    }
+    raw.destroy()
+  } catch {
+    try {
+      socket.destroy()
+    } catch {
+      // 忽略：连接已经不可用。
+    }
+  }
+}
+
+interface ProxyLogger {
+  error(obj: unknown, message?: string): void
 }
 
 export class OpenCodeProxy {
@@ -48,10 +87,16 @@ export class OpenCodeProxy {
   private readonly aiHost: string
   private readonly appHost: string
   private readonly basicAuth: string
+  private readonly log: ProxyLogger | null
+  /** 已建立的 WebSocket 隧道（关闭时强制断开，避免 shutdown 挂起）。 */
+  private readonly upgradedSockets = new Set<Socket>()
+  /** 代理到 opencode 的上游连接（包括 WS 隧道），关闭时一并断开。 */
+  private readonly upstreamSockets = new Set<Socket>()
 
-  constructor(config: Config, auth: AuthService) {
+  constructor(config: Config, auth: AuthService, log?: FastifyBaseLogger) {
     this.config = config
     this.auth = auth
+    this.log = log ?? null
     this.aiHost = hostFromOrigin(config.aiOrigin)
     this.appHost = hostFromOrigin(config.appOrigin)
     this.basicAuth = `Basic ${Buffer.from(`${config.opencodeUsername}:${config.opencodePassword}`, 'utf8').toString('base64')}`
@@ -67,18 +112,21 @@ export class OpenCodeProxy {
       proxyReq.setHeader('authorization', this.basicAuth)
       proxyReq.removeHeader('cookie')
     })
-    this.proxy.on('error', (error, _req, res) => {
-      if (!res) return
-      const response = res as unknown as ServerResponse
-      if (typeof response.writeHead === 'function') {
-        if (!response.headersSent) {
-          response.writeHead(502, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-        }
-        response.end(JSON.stringify({ error: { code: 'opencode_unavailable', message: 'AI 工作区暂时不可用' } }))
-      } else {
-        ;(res as unknown as Socket).destroy()
+    this.proxy.on('open', (proxySocket) => {
+      const socket = proxySocket as unknown as Socket
+      this.upstreamSockets.add(socket)
+      const forget = (): void => {
+        this.upstreamSockets.delete(socket)
       }
-      void error
+      socket.once('close', forget)
+      socket.once('error', forget)
+    })
+    this.proxy.on('error', (error, _req, res) => {
+      this.log?.error({ err: error }, 'opencode 反代失败')
+      if (!res) return
+      writeRawJson(res as unknown as Socket | ServerResponse, 502, JSON.stringify({
+        error: { code: 'opencode_unavailable', message: 'AI 工作区暂时不可用' },
+      }))
     })
   }
 
@@ -87,11 +135,24 @@ export class OpenCodeProxy {
   }
 
   isAppHost(host: string): boolean {
-    return host === this.appHost || host === '' || isLoopbackHost(host)
+    return host === this.appHost || host === '' || isLoopbackHostname(host)
   }
 
   /** 在 Fastify onRequest 中调用；未认证时返回 302/401，认证后接管响应。 */
   handle(request: FastifyRequest, reply: FastifyReply): void {
+    try {
+      this.handleUnsafe(request, reply)
+    } catch (error) {
+      this.log?.error({ err: error }, 'opencode 代理请求处理异常')
+      if (!reply.raw.headersSent) {
+        writeRawJson(reply.raw, 502, JSON.stringify({ error: { code: 'opencode_unavailable', message: 'AI 工作区暂时不可用' } }))
+      } else {
+        reply.raw.destroy()
+      }
+    }
+  }
+
+  private handleUnsafe(request: FastifyRequest, reply: FastifyReply): void {
     const context = this.auth.authenticate(readSessionToken(request))
     if (!context) {
       if (request.method === 'GET' && this.wantsHtml(request)) {
@@ -122,8 +183,17 @@ export class OpenCodeProxy {
     return typeof accept === 'string' && accept.includes('text/html')
   }
 
-  /** 处理 WebSocket upgrade；只允许 ai 主机且会话有效。 */
+  /** 处理 WebSocket upgrade；只允许 ai 主机且会话有效。任何异常都只断开连接。 */
   handleUpgrade(request: IncomingMessage, socket: Socket, head: Buffer): void {
+    try {
+      this.handleUpgradeUnsafe(request, socket, head)
+    } catch (error) {
+      this.log?.error({ err: error }, 'opencode WebSocket 升级处理异常')
+      writeRawJson(socket, 400, JSON.stringify({ error: { code: 'invalid_request', message: '请求不合法' } }))
+    }
+  }
+
+  private handleUpgradeUnsafe(request: IncomingMessage, socket: Socket, head: Buffer): void {
     const host = normalizeHost(request.headers.host)
     if (host !== this.aiHost) {
       socket.destroy()
@@ -133,8 +203,7 @@ export class OpenCodeProxy {
     const token = cookies.af_session ?? null
     const context = this.auth.authenticate(token)
     if (!context) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\ncontent-type: application/json\r\nconnection: close\r\n\r\n')
-      socket.destroy()
+      writeRawJson(socket, 401, JSON.stringify({ error: { code: 'unauthenticated', message: '请先登录' } }))
       return
     }
     if (!this.config.opencodePassword) {
@@ -143,10 +212,35 @@ export class OpenCodeProxy {
     }
     delete request.headers.cookie
     delete request.headers.authorization
+    this.upgradedSockets.add(socket)
+    const forget = (): void => {
+      this.upgradedSockets.delete(socket)
+    }
+    socket.once('close', forget)
+    socket.once('error', () => {
+      forget()
+      socket.destroy()
+    })
     this.proxy.ws(request, socket, head, { headers: { authorization: this.basicAuth } })
   }
 
   close(): void {
+    for (const socket of this.upgradedSockets) {
+      try {
+        socket.destroy()
+      } catch {
+        // 忽略：连接可能已经断开。
+      }
+    }
+    this.upgradedSockets.clear()
+    for (const socket of this.upstreamSockets) {
+      try {
+        socket.destroy()
+      } catch {
+        // 忽略：连接可能已经断开。
+      }
+    }
+    this.upstreamSockets.clear()
     this.proxy.close()
   }
 

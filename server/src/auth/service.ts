@@ -1,6 +1,9 @@
 /**
  * 认证服务：密码挑战 → TOTP/恢复码 → 会话；限流、审计、改密、恢复码。
  * 不直接接触 Cookie/HTTP，路由层负责下发。
+ *
+ * 再认证（改密/恢复码重生成）：必须同时提供当前密码 + TOTP；失败统一延迟、
+ * 限流并审计（password_change_failed / recovery_regenerate_failed）。
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
@@ -16,8 +19,8 @@ import { isoAfterSeconds, nowIso } from '../util/time.ts'
 import { audit } from './audit.ts'
 import { SlidingWindowLimiter } from './limiter.ts'
 import { dummyPasswordHash, hashPassword, validatePassword, verifyPassword } from './password.ts'
-import { createSession, deleteAllSessions, deleteOtherSessions, deleteSession, findSession } from './sessions.ts'
-import { verifyTotp } from './totp.ts'
+import { createSession, deleteAllSessions, deleteOtherSessions, deleteSession, findSession, updateSessionCsrf } from './sessions.ts'
+import { verifyTotp, verifyTotpForReauth } from './totp.ts'
 import {
   findUserByUsername,
   parseRecoveryHashes,
@@ -25,6 +28,13 @@ import {
   updateRecoveryCodes,
   updateTotpLastStep,
 } from './users.ts'
+
+/** 生产环境再认证失败的恒定延迟（测试环境为 0，避免拖慢用例）。 */
+const REAUTH_FAILURE_DELAY_MS = 300
+/** TOTP 全局限流：登录/再认证的所有第二因素尝试共享，防分布式爆破。 */
+const TOTP_GLOBAL_MAX = 40
+/** 再认证全局限流：防止多来源同时猜当前密码。 */
+const REAUTH_GLOBAL_MAX = 30
 
 export interface LoginInput {
   username: string
@@ -41,6 +51,21 @@ export interface TotpInput {
   userAgent: string | null
 }
 
+export interface ReauthInput {
+  /** 当前密码（再认证的第一因素）。 */
+  password: string
+  /** 当前 TOTP 验证码（再认证的第二因素）。 */
+  totpCode: string
+  ip: string
+}
+
+export interface ChangePasswordInput {
+  currentPassword: string
+  newPassword: string
+  totpCode: string
+  ip: string
+}
+
 export interface LoginResult {
   user: { username: string }
   csrfToken: string
@@ -52,12 +77,17 @@ export class AuthService {
   readonly passwordLimiter = new SlidingWindowLimiter(15 * 60_000, 5)
   readonly totpLimiter = new SlidingWindowLimiter(15 * 60_000, 10)
   readonly globalLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
+  readonly totpGlobalLimiter = new SlidingWindowLimiter(60 * 60_000, TOTP_GLOBAL_MAX)
+  readonly reauthLimiter = new SlidingWindowLimiter(15 * 60_000, 5)
+  readonly reauthGlobalLimiter = new SlidingWindowLimiter(60 * 60_000, REAUTH_GLOBAL_MAX)
   private readonly db: DatabaseSync
   private readonly config: Config
+  private readonly reauthDelayMs: number
 
   constructor(db: DatabaseSync, config: Config) {
     this.db = db
     this.config = config
+    this.reauthDelayMs = config.nodeEnv === 'test' ? 0 : REAUTH_FAILURE_DELAY_MS
   }
 
   private recordAttempt(ip: string, success: boolean): void {
@@ -102,6 +132,8 @@ export class AuthService {
   async completeTotpLogin(input: TotpInput): Promise<LoginResult> {
     const retry = this.totpLimiter.hit(input.ip)
     if (retry > 0) throw rateLimited(retry)
+    const globalRetry = this.totpGlobalLimiter.hit('global')
+    if (globalRetry > 0) throw rateLimited(globalRetry)
 
     const row = this.db
       .prepare(
@@ -179,35 +211,82 @@ export class AuthService {
     audit(this.db, context.user.username, 'logout', null, null, ip)
   }
 
-  async changePassword(context: AuthContext, currentPassword: string, newPassword: string): Promise<void> {
+  /**
+   * 再认证：限流（IP + 全局）→ 当前密码（scrypt）→ TOTP（允许当前步）。
+   * 任一失败：记录尝试、审计失败动作、恒定延迟后抛错。
+   */
+  private async requireReauth(context: AuthContext, input: ReauthInput, failureAction: string): Promise<UserRow> {
+    const retry = this.reauthLimiter.hit(input.ip)
+    if (retry > 0) throw rateLimited(retry)
+    const globalRetry = this.reauthGlobalLimiter.hit('global')
+    if (globalRetry > 0) throw rateLimited(globalRetry)
+    const totpRetry = this.totpGlobalLimiter.hit('global')
+    if (totpRetry > 0) throw rateLimited(totpRetry)
+
     const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(context.user.id) as UserRow | undefined
     if (!row) throw unauthorized()
-    const valid = await verifyPassword(currentPassword, row.password_hash, row.password_salt)
-    if (!valid) throw invalidCredentials()
+
+    const valid = await verifyPassword(input.password, row.password_hash, row.password_salt)
+    if (!valid) {
+      this.recordAttempt(input.ip, false)
+      audit(this.db, row.username, failureAction, null, { reason: 'bad_password' }, input.ip)
+      await this.delayReauthFailure()
+      throw invalidCredentials()
+    }
+
+    const step = verifyTotpForReauth(row.totp_secret, input.totpCode, row.totp_last_step)
+    if (step === null) {
+      this.recordAttempt(input.ip, false)
+      audit(this.db, row.username, failureAction, null, { reason: 'bad_totp' }, input.ip)
+      await this.delayReauthFailure()
+      throw invalidCode()
+    }
+    if (step > row.totp_last_step) updateTotpLastStep(this.db, row.id, step)
+    return row
+  }
+
+  private async delayReauthFailure(): Promise<void> {
+    if (this.reauthDelayMs <= 0) return
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, this.reauthDelayMs)
+    })
+  }
+
+  async changePassword(context: AuthContext, input: ChangePasswordInput): Promise<void> {
+    const row = await this.requireReauth(
+      context,
+      { password: input.currentPassword, totpCode: input.totpCode, ip: input.ip },
+      'password_change_failed',
+    )
     try {
-      validatePassword(newPassword)
+      validatePassword(input.newPassword)
     } catch (error) {
       throw badRequest(error instanceof Error ? error.message : '新密码不合法', 'weak_password')
     }
-    const next = await hashPassword(newPassword)
+    const next = await hashPassword(input.newPassword)
     updatePassword(this.db, row.id, next.hash, next.salt)
     deleteOtherSessions(this.db, row.id, context.session.id)
-    audit(this.db, row.username, 'password_change', null, null, null)
+    audit(this.db, row.username, 'password_change', null, null, input.ip)
   }
 
-  async regenerateRecoveryCodes(context: AuthContext, password: string): Promise<string[]> {
-    const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(context.user.id) as UserRow | undefined
-    if (!row) throw unauthorized()
-    const valid = await verifyPassword(password, row.password_hash, row.password_salt)
-    if (!valid) throw invalidCredentials()
+  async regenerateRecoveryCodes(context: AuthContext, input: ReauthInput): Promise<string[]> {
+    const row = await this.requireReauth(context, input, 'recovery_regenerate_failed')
     const codes = Array.from({ length: 10 }, () => generateRecoveryCode())
     updateRecoveryCodes(
       this.db,
       row.id,
       codes.map((code) => recoveryCodeHash(code)),
     )
-    audit(this.db, row.username, 'recovery_regenerate', null, null, null)
+    audit(this.db, row.username, 'recovery_regenerate', null, null, input.ip)
     return codes
+  }
+
+  /** 会话存在但 CSRF Cookie 丢失时轮换 token 并返回新值（/api/auth/me 用）。 */
+  rotateCsrfToken(context: AuthContext): string {
+    const token = randomToken(24)
+    updateSessionCsrf(this.db, context.session.id, token)
+    context.session.csrf_hash = sha256Hex(token)
+    return token
   }
 
   logoutAll(context: AuthContext, ip: string): void {

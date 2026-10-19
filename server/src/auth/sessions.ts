@@ -55,6 +55,11 @@ export function findSession(db: DatabaseSync, token: string): SessionWithUser | 
   return row
 }
 
+/** 轮换会话 CSRF 哈希（Cookie 丢失后重发新 token 时使用）。 */
+export function updateSessionCsrf(db: DatabaseSync, sessionId: string, csrfToken: string): void {
+  db.prepare('UPDATE sessions SET csrf_hash = ? WHERE id = ?').run(sha256Hex(csrfToken), sessionId)
+}
+
 export function deleteSession(db: DatabaseSync, sessionId: string): void {
   db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId)
 }

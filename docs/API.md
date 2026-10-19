@@ -1,4 +1,4 @@
-# AntifieldCloud HTTP API 契约（v1）
+# AntifieldCloud HTTP API 契约（v2，2026-10-19）
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源。
 
@@ -7,26 +7,28 @@
 - JSON 请求/响应：`Content-Type: application/json; charset=utf-8`。
 - 时间：ISO 8601 UTC 字符串（如 `2026-10-19T09:00:00.000Z`）；前端按 `Asia/Shanghai` 展示。
 - 文件 ID：不透明字符串（UUID），前端不得解析其含义。
-- 分页：`page` 从 1 开始，`pageSize` 默认 200、最大 500；响应含 `page/pageSize/total`。
+- 分页：`page` 从 1 开始；文件默认 200、最大 500；笔记/书签默认 20、最大 100；响应含 `page/pageSize/total`。
 - 统一错误体：
 
 ```json
-{ "error": { "code": "invalid_credentials", "message": "用户名或密码错误" } }
+{ "error": { "code": "invalid_credentials", "message": "用户名或密码错误", "details": { } } }
 ```
 
-- 常见状态码：`400 invalid_request`、`401 unauthenticated`、`403 csrf_failed`、`404 not_found`、`409 conflict/quota_exceeded/already_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
+- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
 - 认证：登录成功后服务端下发 `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / `https://ai.example.com` / 本机。
 - 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/SECURITY.md）。
 - 登录限制：每 IP 5 次失败/15 分钟；全局 20 次/小时。`429` 响应包含 `retryAfterSec`。
+- 单文件上限：**100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
 - 未登录访问 `ai.example.com` 的 HTML 请求：`302` 到 `https://app.example.com/login?next=https%3A%2F%2Fai.example.com%2F`；API/WebSocket 返回 `401`。
 - 未知 Host 返回 `404`（应用只接受 app/ai 与 loopback）。
+- 再认证：`POST /api/account/password` 与 `/api/account/recovery-codes` 需要当前密码 + `totpCode`；每 IP 5 次/15 分钟 + 全局 30/h + TOTP 40/h，失败审计，恒定延迟。
 
 ## 1. 健康检查
 
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.1.0", "uptimeSec": 1234 }
+{ "ok": true, "version": "0.2.0", "uptimeSec": 1234 }
 ```
 
 ## 2. 认证与账号
@@ -336,6 +338,54 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`：`{ "version": "0.1.0" }`（需要会话，仅用于设置页）。
-- 静态资源：`/`、`/files`、`/trash`、`/minecraft`、`/settings` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存。
+- `GET /api/version`（需要会话）：`{ "version": "0.2.0", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true }`。
+- 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
+
+## 8. 知识库（笔记/书签）
+
+所有端点需要会话；写操作需 CSRF。Note 形状：
+
+```json
+{ "id": "uuid", "title": "标题", "bodyMd": "# Markdown", "tags": ["工作"], "pinned": true, "createdAt": "…", "updatedAt": "…" }
+```
+
+- `GET /api/notes?q=&tag=&pinned=true|false&page=1&pageSize=20` → `{items,page,pageSize,total}`。
+- `POST /api/notes` body `{title,bodyMd,tags?,pinned?}` → 201 Note。
+- `GET/PATCH/DELETE /api/notes/:id`；PATCH 字段可选；DELETE → `{ok:true}`。
+- `GET /api/notes/tags` → `{items:[{name,count}]}`。
+- Bookmark 形状：`{id,url,title,description,tags,pinned,createdAt,updatedAt}`；端点 `/api/bookmarks`、`/:id`、`/tags`，查询/分页同上。
+- 限制：标题 ≤200、正文 ≤200KB、标签 ≤20 个且单个 ≤32；书签 URL 仅 http/https；FTS5 中文自动回退 LIKE。
+
+## 9. 文件分享
+
+登录端点（会话 + CSRF）：
+
+- `POST /api/files/:id/shares` body `{password?, expiresInHours?, maxDownloads?, note?}` → 201：
+
+```json
+{ "share": { "id":"uuid","fileId":"uuid","fileName":"a.txt","fileSize":12,"fileMime":"text/plain","hasPassword":true,"expiresAt":"…","maxDownloads":3,"downloadCount":0,"createdAt":"…","revokedAt":null,"note":"…","status":"active" }, "url": "https://app.example.com/s/<token>" }
+```
+
+  `maxDownloads=0/null` 表示不限；URL 仅创建响应返回一次。
+- `GET /api/shares` → `{items:[Share],total}`（不含 token/URL）。
+- `DELETE /api/shares/:id` → `{ok:true,share}`（吊销）。
+
+公开端点（无需会话；POST 校验 Origin；限流）：
+
+- `GET /api/public/shares/:token` → 200 `{share:{fileName,size,mime,expiresAt,hasPassword,maxDownloads,downloadCount,note}, state:"active", requiresPassword:boolean}`；未知 404；失效 410（`share_expired/share_revoked/share_exhausted`）。
+- `POST /api/public/shares/:token/unlock` body `{password?}` → 200 `{ok:true,state,share,requiresPassword:false,expiresAt}` 并 Set-Cookie `af_share`（HttpOnly/SameSite=Lax/Secure，Path 限定该 token，5 分钟）；错误密码 401 `invalid_password`；限流 429。
+- `GET /api/public/shares/:token/content`（需 `af_share` Cookie）→ 文件流，`content-disposition: attachment`；支持 `Range`/`HEAD`/`ETag`/`304`/`416`；会话首次成功取内容计一次下载。
+- 公开页 `/s/:token` 带 `X-Robots-Tag: noindex, nofollow`。
+
+## 10. 告警
+
+- `GET /api/alerts?limit=20`（会话）→：
+
+```json
+{ "items": [{ "id":1,"event":"disk_low","severity":"critical","status":"firing","title":"…","message":"…","createdAt":"…","deliveredAt":null,"deliveryError":null }], "state": [{ "event":"disk_low","status":"firing","lastFiredAt":"…","lastOkAt":null }], "config": { "enabled":true,"webhookConfigured":false,"webhookType":"generic","diskFreePct":15,"tempC":80,"memoryUsedPct":90,"backupMaxAgeHours":48,"cooldownMinutes":360,"checkIntervalSeconds":300,"lastEvaluatedAt":null } }
+```
+
+- `POST /api/alerts/test`（会话 + CSRF，10 次/小时）→ `{ok:true,delivered:boolean,message?}`；未配置 webhook 返回 400 `webhook_not_configured`。
+- Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
+- 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、MC、欠压（health probe JSON）；同状态去重/冷却，恢复时发 resolved。

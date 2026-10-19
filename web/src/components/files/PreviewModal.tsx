@@ -58,6 +58,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
 
   const downloadUrl = api.files.contentUrl(file.id, { download: true })
   const inlineUrl = api.files.contentUrl(file.id, { inline: true })
+  const inlineAllowed = file.inlineAllowed !== false
   const description = `${file.kind === 'dir' ? '文件夹' : formatBytes(file.size)}${file.mime ? ` · ${file.mime}` : ''}`
 
   const downloadLink = (
@@ -83,7 +84,14 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
       }
     >
       {previewKind === 'image' ? (
-        imageError ? (
+        !inlineAllowed ? (
+          <EmptyState
+            icon={<FileX size={26} />}
+            title="该图片不允许内联预览"
+            description="服务端未允许内联返回该文件，请下载后查看。"
+            action={downloadLink}
+          />
+        ) : imageError ? (
           <EmptyState
             icon={<FileX size={26} />}
             title="图片预览失败"
@@ -103,7 +111,16 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
       ) : null}
 
       {previewKind === 'pdf' ? (
-        <iframe className="preview-pdf" title={`PDF 预览：${file.name}`} src={inlineUrl} />
+        !inlineAllowed ? (
+          <EmptyState
+            icon={<FileX size={26} />}
+            title="该 PDF 不允许内联预览"
+            description="服务端未允许内联返回该文件，请下载后查看。"
+            action={downloadLink}
+          />
+        ) : (
+          <iframe className="preview-pdf" title={`PDF 预览：${file.name}`} src={inlineUrl} />
+        )
       ) : null}
 
       {isText ? (

@@ -1,0 +1,24 @@
+[Unit]
+Description=AntifieldCloud host health probe (throttled/temp/fan)
+Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/antifieldcloud-health.sh
+# /run/antifieldcloud 由 systemd 创建，应用以 antifieldcloud 用户只读该 JSON。
+RuntimeDirectory=antifieldcloud
+RuntimeDirectoryMode=0755
+# 探针是 oneshot；必须保留 /run/antifieldcloud 供长效应用读取。
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+ReadWritePaths=/run/antifieldcloud
+
+[Install]
+WantedBy=multi-user.target

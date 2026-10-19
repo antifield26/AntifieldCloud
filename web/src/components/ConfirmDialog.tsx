@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import type { ReactNode } from 'react'
 import { TriangleAlert } from 'lucide-react'
 import { Button } from './Button'
@@ -30,11 +31,13 @@ export function ConfirmDialog({
   onConfirm,
   onClose,
 }: ConfirmDialogProps) {
+  const messageId = useId()
   return (
     <Modal
       open={open}
       size="sm"
       title={title}
+      ariaDescribedBy={messageId}
       onClose={loading ? () => undefined : onClose}
       busy={loading}
       footer={
@@ -55,7 +58,7 @@ export function ConfirmDialog({
           </span>
         ) : null}
         <div className="confirm-copy">
-          <p className="confirm-message">{message}</p>
+          <p className="confirm-message" id={messageId}>{message}</p>
           {details ? <div className="confirm-details">{details}</div> : null}
         </div>
       </div>

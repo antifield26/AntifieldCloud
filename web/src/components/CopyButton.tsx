@@ -16,6 +16,8 @@ export interface CopyButtonProps {
   ariaLabel?: string
   className?: string
   disabled?: boolean
+  /** 复制成功后的回调（如恢复码窗口用于确认已保存） */
+  onCopied?: () => void
 }
 
 /** 复制按钮：成功后 1.8s 内显示勾选与「已复制」反馈。 */
@@ -29,6 +31,7 @@ export function CopyButton({
   ariaLabel,
   className,
   disabled = false,
+  onCopied,
 }: CopyButtonProps) {
   const [copied, setCopied] = useState(false)
   const timerRef = useRef<number | undefined>(undefined)
@@ -43,6 +46,7 @@ export function CopyButton({
       return
     }
     setCopied(true)
+    onCopied?.()
     window.clearTimeout(timerRef.current)
     timerRef.current = window.setTimeout(() => setCopied(false), 1800)
   }

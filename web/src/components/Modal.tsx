@@ -27,6 +27,8 @@ export interface ModalProps {
   closeOnOverlay?: boolean
   hideClose?: boolean
   className?: string
+  /** 外部提供的描述元素 id（如 ConfirmDialog 的提示文本） */
+  ariaDescribedBy?: string
 }
 
 /**
@@ -45,6 +47,7 @@ export function Modal({
   closeOnOverlay = true,
   hideClose = false,
   className,
+  ariaDescribedBy,
 }: ModalProps) {
   const titleId = useId()
   const descriptionId = useId()
@@ -127,7 +130,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        aria-describedby={description ? descriptionId : undefined}
+        aria-describedby={ariaDescribedBy ?? (description ? descriptionId : undefined)}
         tabIndex={-1}
       >
         <header className="modal-header">

@@ -2,13 +2,11 @@
 import type { FastifyRequest } from 'fastify'
 import type { Actor } from '../files/service.ts'
 import { badRequest, unauthorized } from '../util/errors.ts'
+import { requestMeta } from './request-meta.ts'
 
+/** 客户端 IP：统一走 requestMeta 的信任模型，不要在别处直接读转发头。 */
 export function clientIp(request: FastifyRequest): string {
-  const header = request.headers['cf-connecting-ip']
-  if (typeof header === 'string' && header.trim()) return header.trim()
-  const forwarded = request.headers['x-forwarded-for']
-  if (typeof forwarded === 'string' && forwarded.trim()) return forwarded.split(',')[0]!.trim()
-  return request.ip
+  return requestMeta(request).ip
 }
 
 export function actorFrom(request: FastifyRequest): Actor {

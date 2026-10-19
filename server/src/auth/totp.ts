@@ -77,6 +77,22 @@ export function verifyTotp(secret: string, code: string, lastStep: number, atMs:
   return null
 }
 
+/**
+ * 再认证校验（改密/恢复码重生成）：允许命中「当前时间步」本身（登录刚用过的步也可），
+ * 返回命中 step；调用方仅在 step > lastStep 时推进 last_step。
+ */
+export function verifyTotpForReauth(secret: string, code: string, lastStep: number, atMs: number = Date.now()): number | null {
+  const normalized = code.replace(/\s+/g, '')
+  if (!/^\d{6}$/.test(normalized)) return null
+  const base = currentStep(atMs)
+  for (let offset = -1; offset <= 1; offset += 1) {
+    const step = base + offset
+    if (step < lastStep) continue
+    if (hotp(secret, step) === normalized) return step
+  }
+  return null
+}
+
 export function otpauthUri(secret: string, username: string, issuer = 'AntifieldCloud'): string {
   const label = encodeURIComponent(`${issuer}:${username}`)
   const params = new URLSearchParams({

@@ -16,6 +16,9 @@ import { AuthService } from './auth/service.ts'
 import { FileService } from './files/service.ts'
 import { MinecraftService } from './mc/service.ts'
 import { DashboardService } from './dashboard/service.ts'
+import { NoteService, BookmarkService } from './notes/service.ts'
+import { ShareService } from './shares/service.ts'
+import { AlertService } from './alerts/service.ts'
 import { OpenCodeProxy, normalizeHost } from './opencode/proxy.ts'
 import { purgeAudit } from './auth/audit.ts'
 import { readSessionToken } from './auth/cookies.ts'
@@ -24,6 +27,9 @@ import { registerAuthRoutes } from './http/routes/auth.ts'
 import { registerFileRoutes } from './http/routes/files.ts'
 import { registerMcRoutes } from './http/routes/mc.ts'
 import { registerDashboardRoutes } from './http/routes/dashboard.ts'
+import { registerNoteRoutes } from './http/routes/notes.ts'
+import { registerShareRoutes } from './http/routes/shares.ts'
+import { registerAlertRoutes } from './http/routes/alerts.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -34,6 +40,10 @@ export interface AppContext {
   files: FileService
   mc: MinecraftService
   dashboard: DashboardService
+  notes: NoteService
+  bookmarks: BookmarkService
+  shares: ShareService
+  alerts: AlertService
   proxy: OpenCodeProxy
   runMaintenance(): void
 }
@@ -46,6 +56,8 @@ const CSP = [
   "font-src 'self' data:",
   "connect-src 'self'",
   "frame-src 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self'",
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'self'",
@@ -55,16 +67,35 @@ const CSP = [
 export async function buildApp(config: Config, db: DatabaseSync): Promise<AppContext> {
   const app = Fastify({
     logger: loggerOptions(config),
-    trustProxy: true,
+    // 只监听 127.0.0.1，唯一入口是 cloudflared；转发头在 request-meta 中按信任模型解析，
+    // 不让 Fastify 用 X-Forwarded-* 覆盖 Host/协议/IP（避免 X-Forwarded-Host 影响安全判断）。
+    trustProxy: false,
     bodyLimit: 1024 * 1024,
     exposeHeadRoutes: true,
+    // 关闭时强制断开长连接（SSE/WebSocket），否则 systemd stop 可能挂到超时被 SIGKILL。
+    forceCloseConnections: true,
   })
 
   const auth = new AuthService(db, config)
-  const files = new FileService(db, config)
+  const files = new FileService(db, config, app.log)
   const mc = new MinecraftService(db, config)
   const dashboard = new DashboardService(db, config, files, mc)
-  const proxy = new OpenCodeProxy(config, auth)
+  const notes = new NoteService(db)
+  const bookmarks = new BookmarkService(db)
+  const shares = new ShareService(db, config)
+  const alerts = new AlertService(db, config, {
+    log: (level, message, detail) => {
+      const payload = detail ? { detail } : {}
+      if (level === 'error') app.log.error(payload, message)
+      else if (level === 'warn') app.log.warn(payload, message)
+      else app.log.info(payload, message)
+    },
+    minecraftStatus: async () => {
+      const status = await mc.status()
+      return { online: status.online, error: status.error }
+    },
+  })
+  const proxy = new OpenCodeProxy(config, auth, app.log)
 
   await app.register(cookie)
   await app.register(multipart, {
@@ -89,6 +120,11 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
           response.header('cache-control', 'public, max-age=31536000, immutable')
         } else if (normalized.endsWith('index.html')) {
           response.header('cache-control', 'no-store')
+        } else if (normalized.endsWith('/sw.js')) {
+          response.header('cache-control', 'no-cache')
+          response.header('service-worker-allowed', '/')
+        } else if (normalized.endsWith('/manifest.webmanifest') || normalized.endsWith('/offline.html')) {
+          response.header('cache-control', 'no-cache')
         }
       },
     })
@@ -96,22 +132,31 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     app.log.warn({ webRoot }, 'web/dist 不存在：仅提供 API（开发时请用 Vite）')
   }
 
-  // 安全响应头（AI 反代由 opencode 自己控制 CSP，不覆盖）。
+  // 安全响应头（AI 主机的应用层响应同样加固；opencode 自身响应由反代直通）。
   app.addHook('onSend', async (request, reply, payload) => {
     const host = normalizeHost(request.headers.host)
-    if (proxy.isAiHost(host)) return payload
     reply.header('x-content-type-options', 'nosniff')
     reply.header('referrer-policy', 'no-referrer')
     reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+    // HSTS 不带 includeSubDomains（mc 子域走 SakuraFRP，避免影响其它子域）。
+    reply.header('strict-transport-security', 'max-age=31536000')
+    if (proxy.isAiHost(host)) {
+      reply.header('cache-control', 'no-store')
+      return payload
+    }
     const path = request.raw.url ?? ''
-    if (path.startsWith('/api/') || path === '/healthz') {
+    if (path.startsWith('/s/')) {
+      reply.header('x-robots-tag', 'noindex, nofollow')
+      reply.header('cache-control', 'no-store')
+    } else if (path.startsWith('/api/') || path === '/healthz') {
       reply.header('cache-control', 'no-store')
     }
     const contentType = String(reply.getHeader('content-type') ?? '')
     if (contentType.includes('text/html')) {
       reply.header('content-security-policy', CSP)
       reply.header('x-frame-options', 'SAMEORIGIN')
-      reply.header('cache-control', 'no-store')
+      // offline.html 由 Service Worker 预缓存，不能被 no-store 覆盖；应用壳仍 no-store。
+      reply.header('cache-control', path === '/offline.html' ? 'no-cache' : 'no-store')
     }
     return payload
   })
@@ -138,9 +183,12 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   registerAuthRoutes(app, config, auth)
-  registerFileRoutes(app, config, files)
+  registerFileRoutes(app, config, files, (id) => shares.revokeForFileTree(id))
   registerMcRoutes(app, config, mc)
   registerDashboardRoutes(app, config, dashboard, db)
+  registerNoteRoutes(app, config, notes, bookmarks)
+  registerShareRoutes(app, config, shares)
+  registerAlertRoutes(app, config, alerts)
 
   registerErrorHandler(app)
 
@@ -159,16 +207,24 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   app.server.on('upgrade', (request, socket, head) => {
-    proxy.handleUpgrade(request, socket as unknown as import('node:net').Socket, head)
+    try {
+      proxy.handleUpgrade(request, socket as unknown as import('node:net').Socket, head)
+    } catch (error) {
+      // 兜底：升级路径异常不得让进程退出（进程重启会中断所有会话/上传）。
+      app.log.error({ err: error }, 'WebSocket 升级处理异常')
+      socket.destroy()
+    }
   })
 
   app.addHook('onClose', async () => {
+    alerts.stop()
     proxy.close()
   })
 
   function runMaintenance(): void {
     try {
       files.autoPurge(config.trashRetentionDays)
+      shares.cleanup()
       auth.cleanup()
       purgeAudit(db, config.auditRetentionDays)
     } catch (error) {
@@ -176,5 +232,5 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     }
   }
 
-  return { app, db, config, auth, files, mc, dashboard, proxy, runMaintenance }
+  return { app, db, config, auth, files, mc, dashboard, notes, bookmarks, shares, alerts, proxy, runMaintenance }
 }

@@ -36,6 +36,20 @@ export interface Config {
   opencodeUsername: string
   opencodePassword: string
   backupPullFile: string
+  sharesEnabled: boolean
+  shareDefaultExpiryHours: number
+  shareMaxExpiryHours: number
+  shareMaxDownloads: number
+  alertsEnabled: boolean
+  alertWebhookUrl: string
+  alertWebhookType: string
+  alertWebhookSecret: string
+  alertDiskFreePct: number
+  alertTempC: number
+  alertBackupMaxAgeHours: number
+  alertCooldownMinutes: number
+  alertCheckIntervalSeconds: number
+  piHealthFile: string
   appVersion: string
 }
 
@@ -126,7 +140,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     cookieDomain: str(merged, 'COOKIE_DOMAIN', '.example.com'),
     allowInsecureLoopback: bool(merged, 'ALLOW_INSECURE_LOOPBACK', true),
     quotaBytes: int(merged, 'QUOTA_BYTES', 10 * GIB, 64 * MIB, 1024 * GIB),
-    maxUploadBytes: int(merged, 'MAX_UPLOAD_BYTES', 2 * GIB, 1 * MIB, 1024 * GIB),
+    maxUploadBytes: int(merged, 'MAX_UPLOAD_BYTES', 100 * MIB, 1 * MIB, 1024 * GIB),
     maxFilesPerRequest: int(merged, 'MAX_FILES_PER_REQUEST', 20, 1, 100),
     textPreviewBytes: int(merged, 'TEXT_PREVIEW_BYTES', 1 * MIB, 4 * 1024, 16 * MIB),
     trashRetentionDays: int(merged, 'TRASH_RETENTION_DAYS', 30, 1, 365),
@@ -145,12 +159,62 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     opencodeUsername: str(merged, 'OPENCODE_USERNAME', 'opencode'),
     opencodePassword: str(merged, 'OPENCODE_PASSWORD', ''),
     backupPullFile: str(merged, 'BACKUP_PULL_FILE', resolve(dataDir, 'backup-pull.json')),
-    appVersion: str(merged, 'APP_VERSION', '0.1.0'),
+    sharesEnabled: bool(merged, 'SHARES_ENABLED', true),
+    shareDefaultExpiryHours: int(merged, 'SHARE_DEFAULT_EXPIRY_HOURS', 168, 1, 720),
+    shareMaxExpiryHours: int(merged, 'SHARE_MAX_EXPIRY_HOURS', 720, 1, 8760),
+    shareMaxDownloads: int(merged, 'SHARE_MAX_DOWNLOADS', 10_000, 1, 1_000_000),
+    alertsEnabled: bool(merged, 'ALERTS_ENABLED', true),
+    alertWebhookUrl: str(merged, 'ALERT_WEBHOOK_URL', ''),
+    alertWebhookType: str(merged, 'ALERT_WEBHOOK_TYPE', 'generic'),
+    alertWebhookSecret: str(merged, 'ALERT_WEBHOOK_SECRET', ''),
+    alertDiskFreePct: int(merged, 'ALERT_DISK_FREE_PCT', 15, 1, 90),
+    alertTempC: int(merged, 'ALERT_TEMP_C', 80, 40, 110),
+    alertBackupMaxAgeHours: int(merged, 'ALERT_BACKUP_MAX_AGE_HOURS', 48, 6, 720),
+    alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
+    alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
+    piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
+    appVersion: str(merged, 'APP_VERSION', '0.2.0'),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')
   }
+  if (config.shareDefaultExpiryHours > config.shareMaxExpiryHours) {
+    throw new Error('SHARE_DEFAULT_EXPIRY_HOURS 不能大于 SHARE_MAX_EXPIRY_HOURS')
+  }
+  if (config.alertWebhookType !== 'generic') {
+    throw new Error('ALERT_WEBHOOK_TYPE 目前只支持 generic')
+  }
+  validateOrigin(config.appOrigin, 'APP_ORIGIN')
+  validateOrigin(config.aiOrigin, 'AI_ORIGIN')
+  if (config.cookieDomain && !/^\.[A-Za-z0-9.-]+$/.test(config.cookieDomain)) {
+    throw new Error('COOKIE_DOMAIN 必须是以 . 开头的域名')
+  }
+  if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
+  if (config.nodeEnv === 'production' && !['127.0.0.1', 'localhost', '::1'].includes(config.host)) {
+    throw new Error('生产环境 HOST 必须是 loopback（应用只允许本地反代访问）')
+  }
   return config
+}
+
+function validateOrigin(value: string, key: string): void {
+  if (!value.startsWith('https://') || value.endsWith('/')) {
+    throw new Error(`${key} 必须是无尾斜杠的 https:// origin`)
+  }
+  try {
+    const url = new URL(value)
+    if (!url.hostname) throw new Error('missing host')
+  } catch {
+    throw new Error(`${key} 不是合法 URL`)
+  }
+}
+
+function validateHttpUrl(value: string, key: string): void {
+  try {
+    const url = new URL(value)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('protocol')
+  } catch {
+    throw new Error(`${key} 必须是 http(s) URL`)
+  }
 }
 
 /** 应用启动时确保数据目录存在且可写。 */

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Link, Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth/AuthContext'
+import { AppMetaProvider } from './meta/MetaContext'
 import { ToastProvider } from './components/Toast'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { Layout } from './components/Layout'
@@ -8,6 +9,9 @@ import { AppLoading } from './components/Loading'
 import { Login } from './pages/Login'
 import { Dashboard } from './pages/Dashboard'
 import { Files } from './pages/Files'
+import { Knowledge } from './pages/Knowledge'
+import { Shares } from './pages/Shares'
+import { PublicShare } from './pages/PublicShare'
 import { Trash } from './pages/Trash'
 import { Minecraft } from './pages/Minecraft'
 import { Activity } from './pages/Activity'
@@ -57,24 +61,32 @@ function NotFound() {
   )
 }
 
-/** 应用根节点：错误边界 → Toast → 登录态 → 路由。 */
+/**
+ * 应用根节点：错误边界 → Toast → 登录态 → 站点元数据 → 路由。
+ * /s/:token 为公开分享页，位于受保护路由之外，不依赖登录态。
+ */
 export function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
         <AuthProvider>
-          <Routes>
-            <Route path="/login" element={<LoginRoute />} />
-            <Route element={<ProtectedRoute />}>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/files" element={<Files />} />
-              <Route path="/trash" element={<Trash />} />
-              <Route path="/minecraft" element={<Minecraft />} />
-              <Route path="/activity" element={<Activity />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="*" element={<NotFound />} />
-            </Route>
-          </Routes>
+          <AppMetaProvider>
+            <Routes>
+              <Route path="/login" element={<LoginRoute />} />
+              <Route path="/s/:token" element={<PublicShare />} />
+              <Route element={<ProtectedRoute />}>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/files" element={<Files />} />
+                <Route path="/knowledge" element={<Knowledge />} />
+                <Route path="/shares" element={<Shares />} />
+                <Route path="/trash" element={<Trash />} />
+                <Route path="/minecraft" element={<Minecraft />} />
+                <Route path="/activity" element={<Activity />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<NotFound />} />
+              </Route>
+            </Routes>
+          </AppMetaProvider>
         </AuthProvider>
       </ToastProvider>
     </ErrorBoundary>

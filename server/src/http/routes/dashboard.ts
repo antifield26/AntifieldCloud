@@ -23,5 +23,13 @@ export function registerDashboardRoutes(
     return listAudit(db, { limit, offset, action })
   })
 
-  app.get('/api/version', { preHandler: [requireAuth] }, async () => ({ version: config.appVersion }))
+  app.get('/api/version', { preHandler: [requireAuth] }, async () => ({
+    version: config.appVersion,
+    appOrigin: config.appOrigin,
+    aiOrigin: config.aiOrigin,
+    trashRetentionDays: config.trashRetentionDays,
+    maxUploadBytes: config.maxUploadBytes,
+    sharesEnabled: config.sharesEnabled,
+    alertsEnabled: config.alertsEnabled,
+  }))
 }

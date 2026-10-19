@@ -2,7 +2,13 @@ import { useEffect, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 
-// 外链统一新窗口打开，避免预览跳转丢失当前页面。
+// 预览内容一律视为不可信：禁止 style 标签/属性，外链统一新窗口打开。
+const SANITIZE_CONFIG = {
+  USE_PROFILES: { html: true },
+  FORBID_TAGS: ['style'],
+  FORBID_ATTR: ['style'],
+}
+
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
   if (node.tagName === 'A') {
     node.setAttribute('target', '_blank')
@@ -27,7 +33,7 @@ export function MarkdownView({ content, className }: MarkdownViewProps) {
     void Promise.resolve(marked.parse(content))
       .then((parsed) => {
         if (!active) return
-        setHtml(DOMPurify.sanitize(parsed, { USE_PROFILES: { html: true } }))
+        setHtml(DOMPurify.sanitize(parsed, SANITIZE_CONFIG))
       })
       .catch(() => {
         if (active) setHtml('')
