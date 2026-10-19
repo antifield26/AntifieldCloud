@@ -1,21 +1,20 @@
 /**
- * OpenCode Web 兼容垫片：为移动端补齐“新建会话”入口，并接管桌面端失效的新建按钮。
+ * OpenCode Web 兼容垫片（无自定义按钮）：
+ * - 不添加任何可见 UI；只在捕获阶段接管 opencode 原生“新建会话”按钮/链接的点击。
+ * - 点击时调用 opencode 自身 `POST /api/session`，再跳转其标准 session 路由。
+ * - 以同源外部脚本加载，避免 opencode CSP（script-src 'self'）拦截内联脚本。
  *
- * 背景：opencode v2.0.32 在窄屏布局中不渲染新建会话按钮，桌面按钮在部分浏览器点击后不创建；
- * 垫片只调用 opencode 自身的 `POST /api/session`，随后跳到其标准 session 路由，不修改 opencode 数据。
- * 脚本以同源外部资源加载，避免 opencode 的 CSP（script-src 'self'）拦截内联脚本。
+ * 背景：opencode v2.0.32 在部分 Android 浏览器/宽高比下，原生新建按钮没有响应；
+ * 其按钮的 aria-label 为“新建会话/New session”。垫片只补这一个交互，不修改 opencode 服务或数据。
  */
 
 export const OPENCODE_SHIM_PATH = '/__af/oc-help.js'
 
 export const OPENCODE_SHIM_SCRIPT = String.raw`(() => {
-  const FLOATING_LABEL = '＋ 新会话'
-  const SESSION_BUTTON_SELECTOR = 'button[aria-label="新建会话"],button[aria-label="New session"]'
+  const NEW_SESSION_LABEL = /^(新建会话|New session|新会话)$/i
+
   const encodeOrigin = () =>
     btoa(location.origin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
-  const isNarrow = () =>
-    window.matchMedia('(max-width: 900px)').matches ||
-    /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
 
   const showError = (message) => {
     const node = document.createElement('div')
@@ -52,44 +51,29 @@ export const OPENCODE_SHIM_SCRIPT = String.raw`(() => {
     }
   }
 
-  const ensureFloatingButton = () => {
-    if (!isNarrow() || !document.body) return
-    if (document.querySelector('[data-af-new-session]')) return
-    const button = document.createElement('button')
-    button.type = 'button'
-    button.dataset.afNewSession = 'true'
-    button.textContent = FLOATING_LABEL
-    button.setAttribute('aria-label', '新建 opencode 会话')
-    button.style.cssText =
-      'position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom, 0px) + 16px);' +
-      'z-index:2147483646;padding:11px 16px;border-radius:999px;border:1px solid rgba(255,255,255,.2);' +
-      'background:#0a84ff;color:#fff;font:600 14px system-ui,sans-serif;' +
-      'box-shadow:0 6px 24px rgba(0,0,0,.35);cursor:pointer'
-    button.addEventListener('click', createSession)
-    document.body.appendChild(button)
+  const sessionButton = (event) => {
+    const target = event.target instanceof Element ? event.target.closest('button,[role="button"],a') : null
+    if (!target) return null
+    const aria = (target.getAttribute('aria-label') || '').trim()
+    const title = (target.getAttribute('title') || '').trim()
+    const text = (target.textContent || '').trim()
+    return NEW_SESSION_LABEL.test(aria) || NEW_SESSION_LABEL.test(title) || NEW_SESSION_LABEL.test(text)
+      ? target
+      : null
   }
 
-  // capture 阶段接管 opencode 自带的“新建会话”按钮：桌面端点击无效时仍能创建。
-  document.addEventListener(
-    'click',
-    (event) => {
-      const target = event.target instanceof Element ? event.target.closest(SESSION_BUTTON_SELECTOR) : null
-      if (!target) return
-      event.preventDefault()
-      event.stopPropagation()
-      void createSession()
-    },
-    true,
-  )
-
-  const start = () => {
-    ensureFloatingButton()
-    setTimeout(ensureFloatingButton, 1200)
-    setTimeout(ensureFloatingButton, 3000)
+  const handle = (event) => {
+    const button = sessionButton(event)
+    if (!button) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.stopImmediatePropagation()
+    void createSession()
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start)
-  else start()
-  window.addEventListener('resize', ensureFloatingButton)
+
+  // 同时捕获 click 与 pointerup：部分 Android WebView/浏览器在触摸布局下不派发 click。
+  document.addEventListener('click', handle, true)
+  document.addEventListener('pointerup', handle, true)
 })()
 `
 

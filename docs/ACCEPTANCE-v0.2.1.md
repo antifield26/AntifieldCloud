@@ -1,5 +1,8 @@
 # AntifieldCloud v0.2.1 验收记录
 
+> **已被 v0.2.2 取代**：v0.2.1 注入的可见“＋ 新会话”按钮已在 v0.2.2 移除，改为只接管原生按钮。
+> 本文件保留为历史记录；当前验收见 `docs/ACCEPTANCE-v0.2.2.md`。
+
 - 日期：2026-10-19（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
 - 版本：`v0.2.1`

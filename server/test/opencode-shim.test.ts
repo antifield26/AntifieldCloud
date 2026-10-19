@@ -59,7 +59,7 @@ test('opencode HTML 注入垫片、脚本同源返回、未认证仍走 302', as
     })
     assert.equal(script.statusCode, 200)
     assert.match(script.headers['content-type'] as string, /javascript/)
-    assert.match(script.body, /新建 opencode 会话/)
+    assert.match(script.body, /pointerup/)
 
     const unauth = await context.app.inject({ method: 'GET', url: '/', headers: { host: 'ai.test', accept: 'text/html' } })
     assert.equal(unauth.statusCode, 302)

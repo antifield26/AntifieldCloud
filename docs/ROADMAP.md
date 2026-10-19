@@ -1,11 +1,12 @@
 # 路线图
 
-## v0.2.1（当前）
+## v0.2.2（当前）
 
-- 文件页列表视图名称列可点击进入文件夹/预览文件。
-- OpenCode Web 兼容垫片：移动端新增“＋ 新会话”，接管桌面端失效按钮；同源外部脚本兼容 opencode CSP；不修改 opencode 数据。
+- 移除 v0.2.1 的可见“＋ 新会话”浮动按钮。
+- 捕获原生“新建会话”按钮（click/pointerup），修复 Android/宽屏移动浏览器无响应。
+- 保留 Rocket Loader opt-out 与文件列表点击修复。
 
-## v0.2.0
+## v0.2.1
 
 - **审计修复**：C1 WebSocket 畸形 Cookie DoS、改密/恢复码再认证与限流、trustProxy 收紧、
   RCON 多包、上传预留/ENOSPC、HSTS/安全头、备份两阶段协议、部署自动回滚、迁移前快照、

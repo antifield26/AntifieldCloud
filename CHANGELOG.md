@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.2] - 2026-10-19
+
+### Fixed
+
+- **移除 v0.2.1 添加的可见“＋ 新会话”浮动按钮**；兼容垫片不再注入任何 UI。
+- OpenCode Web：在捕获阶段接管 opencode **原生**“新建会话”按钮（click + pointerup），
+  修复 Android/宽屏移动浏览器中原生按钮点击无响应；仍调用 opencode `POST /api/session`，不改服务/数据。
+- 继续为 opencode 脚本加 `data-cfasync="false"`，避免 Cloudflare Rocket Loader 改写模块脚本导致
+  智能体/模型选择器不渲染。
+- 文件页列表名称列点击进入文件夹/预览文件的修复保留。
+
 ## [0.2.1] - 2026-10-19
 
 ### Fixed
