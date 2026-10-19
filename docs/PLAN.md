@@ -1,4 +1,4 @@
-# AntifieldCloud v0.2.0/v0.2.2 实施计划（摘要）
+# AntifieldCloud v0.2.x 实施计划（摘要）
 
 本文件是 v0.2.x 的权威范围/决策摘要；v0.1.0/v0.2.0/v0.2.1 的完整交付与验收见 `docs/ACCEPTANCE.md`（v0.2.2 在顶部）。
 
