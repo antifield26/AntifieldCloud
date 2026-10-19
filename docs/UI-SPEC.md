@@ -186,7 +186,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - Dashboard 数据/降级状态/刷新正常；白名单增删有反馈。
 - 键盘可完成登录、打开弹窗、关闭弹窗。
 
-## 10. v0.2.0 新增界面
+## 10. v0.2.x 新增界面
 
 ### 知识库 `/knowledge`
 
@@ -214,7 +214,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - Settings“监控告警”：只读阈值/检查间隔/webhook 是否配置/最近评估；“测试 Webhook”按钮（POST /api/alerts/test）。
 - 未配置 webhook 时仍显示面板告警，不阻塞。
 
-## 11. v0.2.0 交互修复
+## 11. v0.2.x 交互修复
 
 - Activity 使用服务端 action 精确筛选/分页；审计动作中文名与真实 action 对齐。
 - Files/搜索/Trash 请求可取消，旧响应不会覆盖新目录。
@@ -222,3 +222,4 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 改密/恢复码表单含 TOTP；密码 ≥12；429 显示 `details.retryAfterSec`。
 - `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关。
 - a11y：移动抽屉焦点陷阱、Dropdown 方向键、FormField aria-required、ConfirmDialog describedby、NotFound 标题。
+- OpenCode Web（v0.2.2）：不展示自定义“新会话”按钮；代理只接管原生按钮 click/pointerup，并 opt-out Rocket Loader 改写模块脚本。

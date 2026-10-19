@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.2.0）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.2.2）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -210,7 +210,7 @@ sudo systemctl show antifieldcloud -p MemoryCurrent -p MemoryMax
 
 - 若 controllers 缺少 `memory`：从内核命令行移除 `cgroup_disable=memory`（检查 `/boot/firmware/cmdline.txt` 与固件/镜像
   默认 cmdline 的实际来源），重启，再确认 `memory` 出现在 controllers 且 `MemoryCurrent` 有数值。
-- 该项是 v0.2.0 发布验收的硬性检查（`smoke.ps1` 会失败），不能用“应用内存占用低”代替。
+- 该项是 v0.2.x 发布验收的硬性检查（`smoke.ps1` 会失败），不能用“应用内存占用低”代替。
 
 ## 9. 防火墙验证与回滚
 

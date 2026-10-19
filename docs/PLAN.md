@@ -1,6 +1,6 @@
 # AntifieldCloud v0.2.0/v0.2.2 实施计划（摘要）
 
-本文件是 v0.2.x 的权威范围/决策摘要；v0.1.0 的完整交付与验收见 `docs/ACCEPTANCE.md`，v0.2.2 修复见 `docs/ACCEPTANCE-v0.2.2.md`。
+本文件是 v0.2.x 的权威范围/决策摘要；v0.1.0/v0.2.0/v0.2.1 的完整交付与验收见 `docs/ACCEPTANCE.md`（v0.2.2 在顶部）。
 
 ## v0.2.2 补充
 
@@ -56,18 +56,18 @@
 6. 本地 `npm run check`/build/安全回归。
 7. 部署 + Pi 维护（安全更新、RCON、cgroup、health timer、一次重启）。
 8. Windows 任务/ACL、备份拉取、age 密钥、webhook、PWA 验收。
-9. tag/GitHub Release v0.2.0 + 验收记录。
+9. tag/GitHub Release v0.2.2 + 验收记录。
 
 ## 验收摘要
 
-1. `npm run check` 全绿（服务端 86+、前端 23）；CI 全绿。
+1. `npm run check` 全绿（服务端 88、前端 23）；CI 全绿。
 2. C1 不崩、改密/恢复码需 TOTP 且限流/审计；trustProxy 伪造头无效。
 3. 笔记/书签 CRUD/搜索；分享密码/过期/次数/吊销/410；公开页 noindex。
 4. PWA 安装/离线壳/拍照上传；SW 不缓存 API/文件。
 5. 告警条件/去重/恢复/测试 webhook；面板历史。
 6. 备份 pending→pull→SHA→ack；失败重试同一归档；ACL；全量+增量+secrets 恢复演练。
 7. 部署失败自动回滚；迁移前快照；release 含 LICENSE。
-8. Pi 重启后 5 服务 active；v0.2.0；RCON 强密码；memory cgroup 生效；smoke 16+/16+。
+8. Pi 重启后 5 服务 active；v0.2.2；RCON 强密码；memory cgroup 生效；smoke 16/16。
 9. 用户完成公网登录与手机/PWA 验收；记录到 `docs/ACCEPTANCE.md`。
 
 ## 回滚

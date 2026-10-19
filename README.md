@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库、文件分享、Minecraft 状态与白名单管理、opencode AI 工作区入口、PWA、主机告警与每日备份。
 
-> 状态：v0.2.2（文件列表点击与 OpenCode Web 原生新建按钮修复；不再注入自定义按钮）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，v0.2.2 验收见 [docs/ACCEPTANCE-v0.2.2.md](docs/ACCEPTANCE-v0.2.2.md)，审计修复记录见 [docs/AUDIT-v0.2.0.md](docs/AUDIT-v0.2.0.md)。
+> 状态：v0.2.2（文件列表点击与 OpenCode Web 原生新建按钮修复；不再注入自定义按钮）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT-v0.2.0.md](docs/AUDIT-v0.2.0.md)。
 
 ## 技术栈
 
@@ -11,7 +11,7 @@
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables
 - 测试：`node --test`（服务端）+ Vitest/jsdom（前端纯函数与组件），ESLint，`tsc --noEmit`
 
-## v0.2.0 功能
+## v0.2.x 功能
 
 - 认证：密码 + TOTP；改密/重生成恢复码要求“当前密码 + TOTP”；CSRF、会话、限流、审计。
 - 云盘：目录、多文件上传（可取消/超时）、预览、Range 下载、回收站、10 GiB 配额；单文件上限 100 MiB（Cloudflare 代理限制）。
@@ -19,6 +19,7 @@
 - 文件分享：单文件公开链接，可选密码、过期时间（默认 7 天/最长 30 天）、最大下载次数、吊销；独立限流与审计。
 - PWA：可安装、离线壳、手机拍照上传；Service Worker 只缓存静态资源，绝不缓存 `/api`、`/s` 或文件内容。
 - 门户：主机指标、存储、MC 状态/白名单、opencode 健康、服务状态、备份状态、告警历史、最近活动。
+- OpenCode Web：Rocket Loader opt-out + 原生新建按钮兼容层（不添加可见按钮）；文件列表名称列可点击进入/预览。
 - 监控告警：磁盘/温度/服务/备份超期/欠压等条件，通用 JSON webhook，面板可查历史并手动测试。
 - 备份：两阶段归档（PC 确认后才推进游标）、未拉取归档不删除、SHA 旁文件、ACL 收紧、age 加密密钥包、恢复文档与演练。
 - 工程：迁移 2（笔记/分享/告警/备份归档表）、服务端 86+ 测试、前端 23 测试、CI 运维静态检查。

@@ -1,4 +1,129 @@
-# AntifieldCloud v0.2.0 验收记录
+# AntifieldCloud 验收记录
+
+> 当前版本 v0.2.2；v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+
+## v0.2.2（当前）
+
+- 日期：2026-10-19（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
+- 版本：`v0.2.2`（v0.2.1 的 UI 修正热修复）
+- 范围：移除自定义新会话按钮、修复 Android 原生新建按钮无响应；保留文件列表点击与 Rocket Loader opt-out
+
+### 1. 修复
+
+### 移除可见按钮
+
+- 删除 v0.2.1 注入的“＋ 新会话”浮动按钮及相关样式/文案。
+- 兼容垫片不再向页面添加任何 UI 元素。
+
+### 原生“新建会话”按钮
+
+- 在捕获阶段接管 opencode 原生 `button[aria-label="新建会话"]`（兼容 `New session`/`新会话`）的
+  `click` 与 `pointerup`；调用 opencode `POST /api/session`，跳转标准
+  `/server/<base64-origin>/session/<id>`。
+- 不修改 opencode 服务/数据；只对已认证 HTML 注入同源外部脚本 `/__af/oc-help.js`。
+- 继续为 opencode 脚本加 `data-cfasync="false"`，避免 Cloudflare Rocket Loader 改写模块脚本导致
+  智能体/模型选择器不渲染。
+
+### 文件列表
+
+- v0.2.1 的名称列按钮修复保留：文件夹进入、文件预览。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm run check` | 通过：服务端 88/88、前端 23/23 |
+| `npm run build` | 通过 |
+| `smoke.ps1` | 16/16 |
+| 生产 Health | `{"ok":true,"version":"0.2.2"}` |
+| Android/宽屏移动 UA 原生按钮 | 点击产生 `POST /api/session`；进入 `/server/.../session/ses_...`；会话内模型选择器显示；页面无自定义按钮 |
+| 文件列表点击 | 通过（临时文件夹已清理） |
+| CI / Release | main/tag CI success；[v0.2.2 Release](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.2) |
+
+### 3. 部署
+
+```text
+部署目录: /opt/antifieldcloud/releases/20261019T150230Z
+迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261019T150235470Z.sqlite
+服务: antifieldcloud.service (active, v0.2.2)
+tag: v0.2.2 → e4d4e8d
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.2
+```
+
+### 4. 说明
+
+- 智能体选择器在 opencode 只有单个 primary agent（当前 build）时由原生 UI 不展示；有多个 primary
+  agent 时 Rocket Loader opt-out 保证其正常渲染。
+- 测试用临时 app session、opencode 会话和文件夹均已清理。
+- 浏览器若仍显示旧 Service Worker/bundle，请清除站点数据或硬刷新。
+
+## v0.2.1（历史，已被 v0.2.2 取代）
+
+> **已被 v0.2.2 取代**：v0.2.1 注入的可见“＋ 新会话”按钮已在 v0.2.2 移除，改为只接管原生按钮。
+> 本段保留为历史记录；当前验收见本文件顶部 v0.2.2。
+
+- 日期：2026-10-19（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
+- 版本：`v0.2.1`
+- 范围：v0.2.0 已知问题修复（文件列表点击、OpenCode Web 移动端/选择器）
+
+### 1. 修复内容
+
+### 文件页列表视图
+
+- 名称列由静态 `div` 改为可访问的 `<button>`；文件夹点击进入，文件点击预览。
+- 桌面表格与移动卡片共用；操作列仍是独立按钮，不触发误进目录。
+- 保留网格视图原有行为。
+- 生产验证：临时创建文件夹 `v021-click-test`，桌面列表点击名称后 URL 变为
+  `/files?parent=<id>`；测试后已移入回收站并彻底删除。
+
+### OpenCode Web
+
+- **Rocket Loader 根因**：Cloudflare 把 opencode 的 `type="module"` 改写成随机 type 并延迟执行，
+  导致智能体/模型选择器与新建按钮失效。
+- 代理注入 HTML 时为 opencode 所有脚本加 `data-cfasync="false"`，并注入同源外部兼容脚本
+  `/__af/oc-help.js`（不违反 opencode CSP `script-src 'self'`）。
+- 移动端（含 Android UA）显示“＋ 新会话”浮动按钮；调用 opencode `POST /api/session` 后跳转标准
+  `/server/<base64-origin>/session/<id>`。
+- 桌面端“新建会话”按钮由捕获阶段接管，修复点击无响应。
+- 生产验证（Android UA、390×844、临时 session，测试后删除）：
+  - 首页出现“＋ 新会话”；
+  - 点击后 URL 进入 `/server/.../session/ses_...`；
+  - 会话输入框出现模型选择器 “MiniMax M3.1 Flash Free”；
+  - 测试 session 已删除，临时 app session 已从 DB 删除。
+- 说明：智能体选择器只在 opencode 存在多个 primary agent 时由原生 UI 展示；当前配置的 primary
+  agent 为 build，其他为 subagent。本次修复保证有可选智能体时不再被 Rocket Loader 隐藏。
+
+### 2. 自动化与冒烟
+
+| 项目 | 结果 |
+|---|---|
+| `npm run check`（tsc + ESLint + node:test + Vitest） | 通过；服务端 88/88、前端 23/23 |
+| `npm run build` | 通过；PWA 静态资源完整 |
+| `scripts/smoke.ps1`（公网 + Pi） | 16/16 通过 |
+| `GET https://app.antifield.work/healthz` | `{"ok":true,"version":"0.2.1"}` |
+| 生产文件列表点击 | 通过（临时文件夹，已清理） |
+| 生产 OpenCode Android UA | 通过（临时 session，已清理） |
+
+### 3. 部署
+
+```text
+部署目录: /opt/antifieldcloud/releases/20261019T143637Z
+迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261019T143640775Z.sqlite
+服务: antifieldcloud.service (active, v0.2.1)
+tag: v0.2.1 → 57cb8d0
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.1
+```
+
+### 4. 注意
+
+- 生产测试使用的临时 app session 已删除；临时文件夹已彻底删除；测试 opencode 会话已删除。
+- 若浏览器仍加载旧 Service Worker/旧 bundle，请 Ctrl+F5 或清除站点数据后刷新。
+- Cloudflare 仍会注入 Web Analytics/Challenge 脚本，严格 CSP 下可能控制台报错；不影响本次修复。
+- 大文件仍受 Cloudflare 约 100 MiB/100s 限制；SSH 密码登录、无 Cloudflare Access 等 v0.2.0 残留不变。
+
+## v0.2.0（历史）
 
 - 日期：2026-10-19（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 Model B（8 GB）/ Debian 13 trixie / aarch64 / 64 GB SD
@@ -6,7 +131,7 @@
 - 代码版本：`v0.2.0`（tag 指向本文件所在提交）
 - 结论：**技术验收通过；用户登录/手机/PWA 验收待本人完成**
 
-## 1. 自动化与构建
+### 1. 自动化与构建
 
 | 项目 | 结果 |
 |---|---|
@@ -16,7 +141,7 @@
 | `npm ci --omit=dev` + `check-prod-deps.mjs` | 通过 |
 | CI（shellcheck / nftables / PowerShell Parse+BOM） | 配置已加入，待推送后跑 |
 
-## 2. 部署与数据库
+### 2. 部署与数据库
 
 - 部署 release：`/opt/antifieldcloud/releases/20261019T131401Z`；`current` 指向该版本；健康检查 v0.2.0。
 - 迁移前 DB 快照：`/var/lib/antifieldcloud/backups/db-predeploy-20261019T131404874Z.sqlite`（SHA-256 已记录在部署日志）。
@@ -24,7 +149,7 @@
 - 原有用户/会话/文件数据保留；旧 release 可回滚（新增表 additive）。
 - 发布包包含 LICENSE；`deploy.ps1` 健康检查失败自动回滚已实现。
 
-## 3. 安全修复验证
+### 3. 安全修复验证
 
 | 审计项 | 验证 |
 |---|---|
@@ -37,7 +162,7 @@
 | 分享 | token 只存 SHA-256、密码 scrypt、过期/次数/吊销 410、Origin/限流、软删除同步吊销 |
 | 审计/UI | 真实 action 映射、Activity 服务端筛选、Files/Trash 竞态修复、Markdown 禁 style |
 
-## 4. Pi 系统与运维
+### 4. Pi 系统与运维
 
 - 一次 Pi 重启（同时 MC 重启）完成：5 个服务 active（antifieldcloud/cloudflared/minecraft/nginx/opencode）。
 - memory cgroup：`/sys/fs/cgroup/cgroup.controllers` 含 `memory`；`MemoryMax=512M`、`MemoryCurrent≈158M`，限制真实生效。
@@ -47,7 +172,7 @@
 - Cloudflare：app/ai 302/401 正常；`mc.example.com` 未改；Cloudflare 边缘仍有 Web Analytics/Challenge 注入被严格 CSP 拦截（已知，文档记录）。
 - 残留：SSH 密码登录保留、无 Cloudflare Access、单 SD 卡；cloudflared 仍未做 systemd 沙箱加固（后续）。
 
-## 5. 备份与灾备
+### 5. 备份与灾备
 
 - 两阶段协议：手动运行新 `backup-pull.ps1`：`--prepare` full → 下载 → SHA 校验 → 原子改名 → `--ack` → 删除远端；pending=0。
 - PC 目标：实际 Windows 目录（见本地 `.local/DEPLOYMENT.md`，不提交）；ACL 已收紧为当前用户 + Administrators + SYSTEM。
@@ -59,7 +184,7 @@
   密钥包在同一 Pi 上用私钥解密并核对文件列表后删除 Pi 私钥。演练记录见本地 `.local/DR-DRILL.md`。
 - 正式从 PC 恢复时的步骤见 `docs/BACKUP.md` §6；全量+增量命令已修正为按 manifest 选最新 DB。
 
-## 6. 功能验收（服务端/公开端点）
+### 6. 功能验收（服务端/公开端点）
 
 - `/healthz` → `{"ok":true,"version":"0.2.0"}`（公网 + Pi）。
 - PWA：`/manifest.webmanifest` 200 + `application/manifest+json`；`/sw.js` 200 + `Service-Worker-Allowed: /`；`/offline.html` 200。
@@ -70,7 +195,7 @@
 - **待完成**：用户本人公网登录/改密/恢复码、手机 PWA 安装/拍照上传、分享手机打开、告警 webhook 实际投递。
   服务端已用真实集成脚本验证登录之外的笔记/上传/分享解锁/下载链路，以及 `/api/version`/PWA 静态端点。
 
-## 7. 已知限制
+### 7. 已知限制
 
 - 分享下载次数为会话级近似；清 Cookie 可在 5 分钟会话内绕过一次计数。
 - 笔记无附件/版本历史；分享不含目录。
@@ -80,7 +205,7 @@
 - `http-proxy` Node 26 弃用警告；Node 27 前评估替换。
 - SSH 密码登录、无 Cloudflare Access、单 SD 卡未加密。
 
-## 8. 发布
+### 8. 发布
 
 ```text
 tag: v0.2.0
