@@ -1,0 +1,10 @@
+# 合并到 /etc/cloudflared/config.yml 的 ingress（保持 tunnel/credentials/protocol 不变）。
+# 注意：ingress 按顺序匹配，404 必须放最后；mc 条目保留现状（其 DNS 实际指向 SakuraFRP）。
+ingress:
+  - hostname: app.example.com
+    service: http://127.0.0.1:3000
+  - hostname: ai.example.com
+    service: http://127.0.0.1:3000
+  - hostname: mc.example.com
+    service: tcp://localhost:25565
+  - service: http_status:404

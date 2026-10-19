@@ -1,0 +1,37 @@
+/* 设计令牌：颜色、圆角、字体与布局尺寸。所有页面样式只引用这里的变量。 */
+
+:root {
+  --bg: #0a0e14;
+  --bg-elevated: #0f151d;
+  --surface: #121a24;
+  --surface-hover: #17212d;
+  --border: #1f2b3a;
+  --border-strong: #2b3b4f;
+  --text: #e6edf3;
+  --text-muted: #93a4b8;
+  --text-dim: #6b7d92;
+  --accent: #22d3ee;
+  --accent-strong: #06b6d4;
+  --accent-soft: rgba(34, 211, 238, 0.12);
+  --success: #34d399;
+  --warning: #fbbf24;
+  --danger: #f87171;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --font: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, monospace;
+
+  /* 扩展令牌：布局、间距、层级与动效 */
+  --sidebar-width: 232px;
+  --content-max: 1320px;
+  --topbar-height: 56px;
+  --transition: 160ms ease;
+  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.28);
+  --overlay-bg: rgba(4, 7, 11, 0.72);
+  --success-soft: rgba(52, 211, 153, 0.12);
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --info-soft: rgba(34, 211, 238, 0.08);
+  color-scheme: dark;
+}

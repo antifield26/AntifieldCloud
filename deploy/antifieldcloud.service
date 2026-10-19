@@ -1,0 +1,31 @@
+[Unit]
+Description=AntifieldCloud personal workbench
+Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=antifieldcloud
+Group=antifieldcloud
+WorkingDirectory=/opt/antifieldcloud/current
+EnvironmentFile=/etc/antifieldcloud/env
+Environment=NODE_ENV=production
+ExecStart=/usr/local/bin/node server/src/main.ts
+Restart=on-failure
+RestartSec=3
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/antifieldcloud
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+LimitNOFILE=65535
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
