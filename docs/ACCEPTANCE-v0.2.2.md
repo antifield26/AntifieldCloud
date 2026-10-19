@@ -35,7 +35,7 @@
 | 生产 Health | `{"ok":true,"version":"0.2.2"}` |
 | Android/宽屏移动 UA 原生按钮 | 点击产生 `POST /api/session`；进入 `/server/.../session/ses_...`；会话内模型选择器显示；页面无自定义按钮 |
 | 文件列表点击 | 通过（临时文件夹已清理） |
-| CI / Release | 本次提交后更新 |
+| CI / Release | main/tag CI success；[v0.2.2 Release](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.2) |
 
 ## 3. 部署
 
@@ -43,7 +43,8 @@
 部署目录: /opt/antifieldcloud/releases/20261019T150230Z
 迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261019T150235470Z.sqlite
 服务: antifieldcloud.service (active, v0.2.2)
-tag: v0.2.2
+tag: v0.2.2 → e4d4e8d
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.2
 ```
 
 ## 4. 说明
