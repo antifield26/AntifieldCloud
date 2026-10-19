@@ -284,5 +284,5 @@ curl -fsS http://127.0.0.1:3000/healthz
 | 备份面板红色 | 计划任务失败/超过 48h：查任务 LastTaskResult、`%LOCALAPPDATA%\AntifieldCloud\backup.log` |
 | 密钥包未生成 | 按 `docs/BACKUP.md` §5 安装 age 并写入公钥；不影响普通归档 |
 | 磁盘占用 | `df -h /`、`du -sh /var/lib/antifieldcloud/*`；配额 10 GiB；release/备份保留策略见文档 |
-| 公网页面空白 / 入口脚本未执行 | 入口脚本 `data-cfasync="false"` 已处理；若仍异常，在 Cloudflare Speed → Optimization 关闭 Rocket Loader |
+| 公网页面空白 / 入口脚本未执行 | app 入口脚本已加 `data-cfasync="false"`；ai 代理会为 opencode 全部脚本注入 `data-cfasync="false"` 并加移动端兼容垫片；若仍异常，在 Cloudflare Speed → Optimization 关闭 Rocket Loader |
 | 校园网暂时无法解析 | 递归 DNS 负缓存（约 30 分钟）；等待或用手机流量验证。不要修改 `mc.example.com` |

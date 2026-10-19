@@ -165,6 +165,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   app.addHook('onRequest', async (request, reply) => {
     const host = normalizeHost(request.headers.host)
     if (proxy.isAiHost(host)) {
+      if (await proxy.serveShim(request, reply)) return reply
       proxy.handle(request, reply)
       return reply
     }

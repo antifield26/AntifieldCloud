@@ -725,6 +725,28 @@ a.quick-link:hover,
   min-width: 0;
 }
 
+/* 列表视图的名称列可点击进入文件夹/预览文件；重置 button 默认样式。 */
+.file-name-button {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-name-button:hover .file-name {
+  color: var(--accent);
+}
+
+.file-name-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
 .file-name-text {
   display: flex;
   align-items: center;

@@ -14,6 +14,7 @@ import type { Config } from '../config.ts'
 import type { AuthService } from '../auth/service.ts'
 import { readSessionToken } from '../auth/cookies.ts'
 import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
+import { injectOpenCodeShim, OPENCODE_SHIM_PATH, OPENCODE_SHIM_SCRIPT } from './shim.ts'
 
 export { normalizeHost, hostFromOrigin }
 
@@ -138,9 +139,73 @@ export class OpenCodeProxy {
     return host === this.appHost || host === '' || isLoopbackHostname(host)
   }
 
-  /** 在 Fastify onRequest 中调用；未认证时返回 302/401，认证后接管响应。 */
-  handle(request: FastifyRequest, reply: FastifyReply): void {
+  /**
+   * opencode Web 兼容垫片：
+   * - 返回 /__af/oc-help.js（同源脚本，不触发 opencode CSP 的内联限制）；
+   * - 对已认证的 HTML 导航注入该脚本，修复移动端没有“新建会话”入口、桌面按钮点击无效。
+   * 返回 true 表示已接管响应；false 交回原来的 http-proxy 路径。
+   */
+  async serveShim(request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+    const method = request.method
+    if (method !== 'GET' && method !== 'HEAD') return false
+    const rawUrl = request.raw.url ?? '/'
+    const path = rawUrl.split('?')[0] ?? '/'
+    const context = this.auth.authenticate(readSessionToken(request))
+    if (!context) return false
+    request.auth = context
+
+    if (path === OPENCODE_SHIM_PATH) {
+      reply
+        .code(200)
+        .header('content-type', 'application/javascript; charset=utf-8')
+        .header('cache-control', 'no-cache')
+        .send(OPENCODE_SHIM_SCRIPT)
+      return true
+    }
+
+    const accept = request.headers.accept ?? ''
+    const htmlNavigation =
+      path === '/' ||
+      path === '/index.html' ||
+      (typeof accept === 'string' && accept.includes('text/html'))
+    if (!htmlNavigation) return false
+    if (path.startsWith('/api/') || path.startsWith('/_assets/') || path.startsWith('/__af/')) return false
+    if (!this.config.opencodePassword) return false
+
     try {
+      const upstream = await fetch(`${this.config.opencodeUrl}${rawUrl}`, {
+        headers: {
+          accept: 'text/html',
+          authorization: this.basicAuth,
+        },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!upstream.ok) return false
+      const contentType = upstream.headers.get('content-type') ?? ''
+      if (!contentType.includes('text/html')) return false
+      const html = injectOpenCodeShim(await upstream.text())
+      const headers: Record<string, string> = {
+        'content-type': contentType,
+        'cache-control': 'no-store',
+        'x-af-oc-shim': '1',
+      }
+      for (const name of ['content-security-policy', 'content-language', 'vary']) {
+        const value = upstream.headers.get(name)
+        if (value) headers[name] = value
+      }
+      reply.code(upstream.status).headers(headers)
+      if (method === 'HEAD') reply.send()
+      else reply.send(html)
+      return true
+    } catch (error) {
+      this.log?.error({ err: error }, 'opencode 兼容垫片注入失败，回退原生代理')
+      return false
+    }
+  }
+
+  /** 在 Fastify onRequest 中调用；未认证时返回 302/401，认证后接管响应。 */
+  handle(request: FastifyRequest, reply: FastifyReply): void {    try {
       this.handleUnsafe(request, reply)
     } catch (error) {
       this.log?.error({ err: error }, 'opencode 代理请求处理异常')

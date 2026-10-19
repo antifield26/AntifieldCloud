@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.1] - 2026-10-19
+
+### Fixed
+
+- 文件页列表视图的名称列现在可点击进入文件夹/预览文件（名称列改为可访问按钮，保留网格视图）。
+- OpenCode Web 兼容垫片：
+  - 移动端（含 Android 浏览器）常驻“＋ 新会话”按钮，调用 opencode `POST /api/session` 并跳转标准 session 路由。
+  - 接管桌面端“新建会话”按钮，修复点击无响应。
+  - 垫片以同源外部脚本 `/__af/oc-help.js` 注入，兼容 opencode CSP `script-src 'self'`，不修改 opencode 数据。
+  - OpenCode 原生页面仍由代理透传；仅对已认证 HTML 导航注入。
+
 ## [0.2.0] - 2026-10-19
 
 ### Added

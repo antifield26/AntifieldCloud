@@ -1,6 +1,11 @@
-# AntifieldCloud v0.2.0 实施计划（摘要）
+# AntifieldCloud v0.2.0/v0.2.1 实施计划（摘要）
 
-本文件是 v0.2.0 的权威范围/决策摘要；v0.1.0 的完整交付与验收见 `docs/ACCEPTANCE.md`。
+本文件是 v0.2.x 的权威范围/决策摘要；v0.1.0 的完整交付与验收见 `docs/ACCEPTANCE.md`，v0.2.1 修复见 `docs/ACCEPTANCE-v0.2.1.md`。
+
+## v0.2.1 补充
+
+- 文件页列表名称列可点击。
+- OpenCode Web 兼容垫片（同源外部脚本）：移动端新建会话、桌面端按钮接管；不修改 opencode 服务/数据。
 
 ## 目标
 

@@ -384,7 +384,12 @@ export function Files() {
       header: <SortHeader label="名称" field="name" sort={sort} dir={dir} onSortChange={changeSort} />,
       primary: true,
       render: (file) => (
-        <div className="file-name-cell">
+        <button
+          type="button"
+          className="file-name-cell file-name-button"
+          onClick={() => openFile(file)}
+          aria-label={file.kind === 'dir' ? `打开文件夹 ${file.name}` : `预览 ${file.name}`}
+        >
           <FileIcon name={file.name} mime={file.mime} kind={file.kind} size={20} />
           <div className="file-name-text">
             <span className="file-name" title={file.name}>{file.name}</span>
@@ -392,7 +397,7 @@ export function Files() {
               <span className="file-preview-mark">可预览</span>
             ) : null}
           </div>
-        </div>
+        </button>
       ),
     },
     {

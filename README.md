@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库、文件分享、Minecraft 状态与白名单管理、opencode AI 工作区入口、PWA、主机告警与每日备份。
 
-> 状态：v0.2.0。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，v0.2.0 验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT-v0.2.0.md](docs/AUDIT-v0.2.0.md)。
+> 状态：v0.2.1（文件列表点击与 OpenCode Web 移动端新建会话修复）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，v0.2.1 验收见 [docs/ACCEPTANCE-v0.2.1.md](docs/ACCEPTANCE-v0.2.1.md)，审计修复记录见 [docs/AUDIT-v0.2.0.md](docs/AUDIT-v0.2.0.md)。
 
 ## 技术栈
 
