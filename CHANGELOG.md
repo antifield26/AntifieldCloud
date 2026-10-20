@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.1] - 2026-10-20
+
+### Added
+
+- 大文件分片上传：单文件 5 GiB、8 MiB/块、断点续传、配额预留、24h 会话过期、每用户 3 并发；不做对象存储。
+- `POST /api/uploads`、`PUT /api/uploads/:id/chunks/:idx`、`GET`、`complete`、`abort`；migration 4（`upload_sessions` / `upload_chunks`）。
+- 前端大文件自动分片：>100 MiB 走分片，并发 2 块，localStorage 只保存 uploadId/已收块号；刷新/断线自动补缺块；取消后重试可续传。
+- 审计/运维：persistent journald（log2ram 64 MiB 上限）、cloudflared 2026.10.1 + systemd 加固、nftables WiFi 源收窄到 `/21`、rpcbind 禁用、unattended-upgrades dry-run 验证。
+
 ## [0.3.0] - 2026-10-20
 
 ### Added

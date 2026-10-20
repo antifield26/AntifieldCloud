@@ -207,6 +207,27 @@ export interface UploadResult {
   errors: UploadError[]
 }
 
+/** 分片上传 init/status 契约（后端 v0.3.1）。 */
+export interface ChunkUploadInit {
+  uploadId: string
+  chunkSize: number
+  totalChunks: number
+  expiresAt: string
+  received: number[]
+}
+
+export interface ChunkUploadStatus {
+  uploadId: string
+  fileName: string
+  size: number
+  chunkSize: number
+  totalChunks: number
+  received: number[]
+  missing: number[]
+  status: 'uploading' | 'assembling' | 'completed' | 'aborted' | 'expired'
+  expiresAt: string
+}
+
 export interface TextPreviewResult {
   name: string
   mime: string
@@ -261,6 +282,9 @@ export interface VersionResult {
   alertsEnabled?: boolean
   /** 备份恢复向导是否可用；后端未就绪时为 false */
   backupRestoreEnabled?: boolean
+  chunkedUploadEnabled?: boolean
+  chunkSizeBytes?: number
+  chunkMaxFileBytes?: number
 }
 
 /** 前端运行期需要的站点元数据（由 /api/version 推导 + 安全回退）。 */
@@ -274,6 +298,9 @@ export interface AppMeta {
   sharesEnabled: boolean
   alertsEnabled: boolean
   backupRestoreEnabled: boolean
+  chunkedUploadEnabled: boolean
+  chunkSizeBytes: number
+  chunkMaxFileBytes: number
 }
 
 /* ---------- 知识库：笔记与书签 ---------- */

@@ -1,4 +1,4 @@
-# AntifieldCloud HTTP API 契约（v2，2026-10-19）
+# AntifieldCloud HTTP API 契约（v2，2026-10-20）
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源。
 
@@ -18,7 +18,7 @@
 - 认证：登录成功后服务端下发 `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / `https://ai.example.com` / 本机。
 - 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/SECURITY.md）。
 - 登录限制：每 IP 5 次失败/15 分钟；全局 20 次/小时。`429` 响应包含 `retryAfterSec`。
-- 单文件上限：**100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
+- 单文件上限：普通 multipart **100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；更大文件走分片上传（v0.3.1，默认上限 **5 GiB**、8 MiB/块）。超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
 - 未登录访问 `ai.example.com` 的 HTML 请求：`302` 到 `https://app.example.com/login?next=https%3A%2F%2Fai.example.com%2F`；API/WebSocket 返回 `401`。
 - 未知 Host 返回 `404`（应用只接受 app/ai 与 loopback）。
 - 再认证：`POST /api/account/password` 与 `/api/account/recovery-codes` 需要当前密码 + `totpCode`；每 IP 5 次/15 分钟 + 全局 30/h + TOTP 40/h，失败审计，恒定延迟。
@@ -28,7 +28,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.3.0", "uptimeSec": 1234 }
+{ "ok": true, "version": "0.3.1", "uptimeSec": 1234 }
 ```
 
 ## 2. 认证与账号
@@ -230,7 +230,7 @@
 `multipart/form-data`：
 
 - 字段 `parentId`（可选，空=根；也可用查询参数 `?parentId=`）
-- 文件字段名 `files`（可多个；单文件 ≤ 2 GiB；单请求 ≤ 20 个文件）
+- 文件字段名 `files`（可多个；普通单请求单文件 ≤ 100 MiB；单请求 ≤ 20 个文件；更大文件走分片上传）
 
 成功 `200`（允许部分失败）：
 
@@ -272,6 +272,46 @@
 ```
 
 非文本 `415 unsupported_media_type`；超过 1 MiB 时 `truncated: true` 并只返回前 1 MiB。
+
+### 分片上传（v0.3.1）
+
+大文件（`/api/version` 的 `chunkedUploadEnabled=true` 且大于 `maxUploadBytes`）走分片；每块 `application/octet-stream`，默认 8 MiB，单文件上限 5 GiB。所有写操作要求登录 + `X-CSRF-Token`；会话仅创建者可见。
+
+#### POST /api/uploads
+
+```json
+{ "name": "movie.mp4", "parentId": "uuid-or-null", "size": 5242880000, "sha256": "optional-hex" }
+```
+
+成功 `201`：
+
+```json
+{ "uploadId": "uuid", "chunkSize": 8388608, "totalChunks": 626, "expiresAt": "ISO", "received": [] }
+```
+
+`400 invalid_size/invalid_sha256`、`409 too_many_uploads/quota_exceeded`、`413 file_too_large`、`507 insufficient_storage`。
+
+#### PUT /api/uploads/:id/chunks/:index
+
+Header：`Content-Type: application/octet-stream`；body 必须是该块的精确字节数（尾块为剩余大小，其它块为 `chunkSize`）。可乱序、可重试；同索引同内容幂等，不同内容 `409 chunk_conflict`。成功 `200 { "index": 0, "received": 1 }`。越界 `400 invalid_chunk_index`，大小不符 `400 invalid_chunk_size`。
+
+#### GET /api/uploads/:id
+
+成功 `200`：
+
+```json
+{ "uploadId":"uuid","fileName":"movie.mp4","size":5242880000,"chunkSize":8388608,"totalChunks":626,"received":[0,1],"missing":[2],"status":"uploading","expiresAt":"ISO" }
+```
+
+#### POST /api/uploads/:id/complete
+
+body 可带 `{ "sha256": "hex" }`；服务端校验缺块、拼接、SHA 后调用文件登记，返回 `200 { "ok": true, "file": FileItem }`。缺块 `400 chunks_missing`；SHA 不匹配 `400 checksum_mismatch`；重复 complete 幂等返回已登记文件。
+
+#### DELETE /api/uploads/:id
+
+取消会话并清理临时块；成功 `200 { "ok": true }`。已完成的会话不能取消（`409 upload_completed`）。
+
+限制：24h 会话过期、每用户最多 3 个活跃会话；过期/取消释放配额预留；维护任务清理过期块目录。
 
 ## 5. 回收站
 
@@ -338,7 +378,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.3.0", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 2000 }`。
+- `GET /api/version`（需要会话）：`{ "version": "0.3.1", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120 }`。
 - 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
 

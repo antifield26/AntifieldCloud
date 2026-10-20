@@ -11,7 +11,7 @@ function columnsOf(db: DatabaseSync, table: string): string[] {
   return (db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[]).map((row) => row.name)
 }
 
-test('schema v2 旧库升级到 v3：追加列、旧行 origin=pi、restore_plans 可用', () => {
+test('schema v2 旧库升级到 v4：追加列、旧行 origin=pi、restore_plans/upload 表可用', () => {
   const dir = mkdtempSync(join(tmpdir(), 'afc-backup-migration-'))
   const path = join(dir, 'old.sqlite')
   try {
@@ -38,7 +38,7 @@ test('schema v2 旧库升级到 v3：追加列、旧行 origin=pi、restore_plan
     const db = openDatabase({ path })
     try {
       const version = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '3')
+      assert.equal(version.value, '4')
       const columns = columnsOf(db, 'backup_archives')
       for (const column of ['verified_at', 'origin', 'manifest_json', 'last_error']) {
         assert.ok(columns.includes(column), `backup_archives 缺少列 ${column}`)
@@ -63,6 +63,10 @@ test('schema v2 旧库升级到 v3：追加列、旧行 origin=pi、restore_plan
         'target_name',
       ])
 
+      // v0.3.1：分片会话表随迁移创建，旧备份数据不受影响。
+      assert.ok(columnsOf(db, 'upload_sessions').includes('received'))
+      assert.ok(columnsOf(db, 'upload_chunks').includes('sha256'))
+
       // 导入归档行可以写入新字段，且旧数据仍可查询。
       db.prepare(
         `INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, origin, verified_at)
@@ -77,7 +81,7 @@ test('schema v2 旧库升级到 v3：追加列、旧行 origin=pi、restore_plan
     // 再次打开不应重复执行迁移，数据保留。
     const reopened = openDatabase({ path })
     try {
-      assert.equal((reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }).value, '3')
+      assert.equal((reopened.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }).value, '4')
       assert.equal((reopened.prepare('SELECT COUNT(*) AS c FROM backup_archives').get() as { c: number }).c, 2)
     } finally {
       reopened.close()

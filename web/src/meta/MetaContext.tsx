@@ -26,6 +26,9 @@ function fallbackMeta(): AppMeta {
     sharesEnabled: true,
     alertsEnabled: true,
     backupRestoreEnabled: false,
+    chunkedUploadEnabled: false,
+    chunkSizeBytes: 0,
+    chunkMaxFileBytes: 0,
   }
 }
 
@@ -51,6 +54,11 @@ function buildMeta(version: VersionResult): AppMeta {
     sharesEnabled: version.sharesEnabled !== false,
     alertsEnabled: version.alertsEnabled !== false,
     backupRestoreEnabled: version.backupRestoreEnabled === true,
+    chunkedUploadEnabled: version.chunkedUploadEnabled === true,
+    chunkSizeBytes:
+      typeof version.chunkSizeBytes === 'number' && version.chunkSizeBytes > 0 ? version.chunkSizeBytes : 0,
+    chunkMaxFileBytes:
+      typeof version.chunkMaxFileBytes === 'number' && version.chunkMaxFileBytes > 0 ? version.chunkMaxFileBytes : 0,
   }
 }
 

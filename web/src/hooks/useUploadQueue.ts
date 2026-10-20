@@ -3,8 +3,9 @@
 // 安全边界：单文件大小上限由调用方传入（来自 /api/version 的 maxUploadBytes），前端只做预检。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { isApiError, toErrorMessage, uploadFiles } from '../api/client'
+import { isApiError, toErrorMessage, uploadFileChunked, uploadFiles } from '../api/client'
 import type { FileItem } from '../api/types'
+import { DEFAULT_CHUNK_MAX_BYTES, DEFAULT_CHUNK_SIZE_BYTES, shouldUseChunked } from '../lib/chunked'
 
 export type UploadTaskStatus = 'waiting' | 'uploading' | 'success' | 'error' | 'cancelled'
 
@@ -30,6 +31,10 @@ interface UseUploadQueueOptions {
   onUploaded?: (item: FileItem) => void
   maxFileBytes?: number
   timeoutMs?: number
+  chunkedUploadEnabled?: boolean
+  chunkThresholdBytes?: number
+  chunkSizeBytes?: number
+  chunkMaxFileBytes?: number
 }
 
 const MAX_CONCURRENCY = 2
@@ -84,14 +89,26 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
     void (async () => {
       patchTask(task.id, { status: 'uploading', progress: 0, error: null })
       try {
-        const result = await uploadFiles([task.file], task.parentId, {
-          signal: controller.signal,
-          timeoutMs: optionsRef.current.timeoutMs,
-          onProgress: (loaded, total) => {
-            const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0
-            patchTask(task.id, { progress: percent })
-          },
+        const chunked = shouldUseChunked(task.file.size, {
+          enabled: optionsRef.current.chunkedUploadEnabled === true,
+          thresholdBytes: optionsRef.current.chunkThresholdBytes ?? optionsRef.current.maxFileBytes,
+          maxBytes: optionsRef.current.chunkMaxFileBytes ?? DEFAULT_CHUNK_MAX_BYTES,
         })
+        const onProgress = (loaded: number, total: number): void => {
+          const percent = total > 0 ? Math.min(100, Math.round((loaded / total) * 100)) : 0
+          patchTask(task.id, { progress: percent })
+        }
+        const result = chunked
+          ? await uploadFileChunked(task.file, task.parentId, {
+              chunkSize: optionsRef.current.chunkSizeBytes ?? DEFAULT_CHUNK_SIZE_BYTES,
+              signal: controller.signal,
+              onProgress,
+            })
+          : await uploadFiles([task.file], task.parentId, {
+              signal: controller.signal,
+              timeoutMs: optionsRef.current.timeoutMs,
+              onProgress,
+            })
         const failure = result.errors[0]
         if (failure) {
           patchTask(task.id, { status: 'error', error: failure.message || '上传失败' })
@@ -125,7 +142,10 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
 
   const enqueue = useCallback((files: File[], parentId: string | null): void => {
     if (files.length === 0) return
-    const maxFileBytes = optionsRef.current.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES
+    const chunked = optionsRef.current.chunkedUploadEnabled === true
+    const maxFileBytes = chunked
+      ? (optionsRef.current.chunkMaxFileBytes ?? DEFAULT_CHUNK_MAX_BYTES)
+      : (optionsRef.current.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES)
     const created: UploadTask[] = files.map((file) => {
       const oversized = file.size > maxFileBytes
       return {

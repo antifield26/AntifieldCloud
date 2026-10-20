@@ -267,6 +267,36 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_restore_plans_status ON restore_plans(status, expires_at);
   `,
+  `
+  -- v0.3.1：5 GB 分片上传会话与块索引。仅追加表，旧库（schema v3）可直接升级。
+  CREATE TABLE upload_sessions (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT,
+    file_name TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    chunk_size INTEGER NOT NULL,
+    total_chunks INTEGER NOT NULL,
+    received INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL CHECK (status IN ('uploading', 'assembling', 'completed', 'aborted', 'expired')),
+    expected_sha256 TEXT,
+    file_id TEXT,
+    actor TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_upload_sessions_active ON upload_sessions(status, expires_at);
+  CREATE INDEX idx_upload_sessions_actor ON upload_sessions(actor, status);
+
+  CREATE TABLE upload_chunks (
+    session_id TEXT NOT NULL,
+    idx INTEGER NOT NULL,
+    size INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (session_id, idx)
+  );
+  `,
 ]
 
 export interface OpenOptions {

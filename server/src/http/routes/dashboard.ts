@@ -34,5 +34,8 @@ export function registerDashboardRoutes(
     backupRestoreEnabled: config.backupRestoreEnabled,
     backupImportMaxBytes: config.backupImportMaxBytes,
     backupRestoreMaxEntries: config.backupRestoreMaxEntries,
+    chunkedUploadEnabled: config.chunkedUploadEnabled,
+    chunkSizeBytes: config.chunkSizeBytes,
+    chunkMaxFileBytes: config.chunkMaxFileBytes,
   }))
 }

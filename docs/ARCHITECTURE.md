@@ -43,6 +43,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移、事务 |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计 |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类 |
+| `uploads/` | v0.3.1 分片上传会话/块索引、配额预留、断点状态、拼接与过期清理 |
 | `mc/` | SLP 查询、RCON 客户端、状态/metrics、白名单增删与复核 |
 | `opencode/` | ai 主机认证反代；HTML 模式 shim/attributes/passthrough；Rocket Loader opt-out 与可选最小隐藏点击接管（v0.3，不添加可见 UI） |
 | `backups/` | 归档导入/校验、full+inc 链解析、文件级恢复计划与执行（v0.3，不执行整库恢复） |
@@ -67,6 +68,7 @@ SQLite（WAL）核心表：
 - `backup_state`：最近一次 PC 已确认的备份时间/归档/哈希/大小。
 - `backup_archives`：pending/acked 归档（v0.2.x 两阶段协议）；v0.3 增加 `verified_at/origin/manifest_json/last_error`。
 - `restore_plans`：文件级恢复计划（归档链、选择、目标名、状态、操作者、过期，v0.3）。
+- `upload_sessions` / `upload_chunks`：v0.3.1 分片会话（大小/块数/已收/状态/过期/操作者）与块索引（序号/大小/SHA）；临时块只在 `tmp/chunks/<uploadId>/`。
 - `notes`、`bookmarks`、`tags`、`note_tags`、`bookmark_tags`、`notes_fts`、`bookmarks_fts`（v0.2.x）。
 - `shares`、`share_sessions`：分享 token 哈希、密码、过期/次数、解锁会话（v0.2.x）。
 - `alert_events`、`alert_state`：告警历史/去重冷却（v0.2.x）。
@@ -90,7 +92,8 @@ SQLite（WAL）核心表：
 
 ## 6. 云盘数据流
 
-- 上传：浏览器 XHR（进度）→ multipart → 逐文件流式写入 `tmp/`，同时计算 SHA-256、累计大小、检查配额 → 事务内再次校验配额并插入行 → rename 到 `files/<xx>/<id>`；失败清理临时文件。
+- 上传：小于 100 MiB 走浏览器 XHR（进度）→ multipart → 逐文件流式写入 `tmp/`，同时计算 SHA-256、累计大小、检查配额 → 事务内再次校验配额并插入行 → rename 到 `files/<xx>/<id>`；失败清理临时文件。
+- 大文件：浏览器按 8 MiB `PUT /api/uploads/:id/chunks/:idx`（可乱序/重试）→ 服务端写 `tmp/chunks` 并记录块哈希 → `complete` 顺序拼接、校验 SHA 后调用同一 `FileService.registerUpload` 原子落库；24h 会话过期/取消清理临时块并释放预留。
 - 列表/搜索/面包屑：全部按 DB 查询；搜索 `LIKE ... ESCAPE` 限 100 条。
 - 预览：图片/PDF/白名单音视频通过 `/content?inline=1`（支持 Range、ETag；不转码）；文本/Markdown 通过 `/text` 返回 JSON（≤1 MiB）；SVG/HTML/XML 强制附件；mkv/avi 等回退下载。
 - 回收站：递归软删除；列表只显示顶层项；恢复递归；彻底删除删除物理文件。

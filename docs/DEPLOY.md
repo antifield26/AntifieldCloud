@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.3.0）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.3.1）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -75,7 +75,10 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `BACKUP_RESTORE_ENABLED=true`：启用 Web 备份列表/导入/文件级恢复；默认 false 时恢复计划/执行返回 403。
   - `BACKUP_IMPORT_MAX_BYTES=104857600`：Web 归档导入上限，实际还受 `MAX_UPLOAD_BYTES` 限制。
   - `OPENCODE_HTML_MODE=shim|attributes|passthrough`：默认 `shim`；Cloudflare 关闭注入并验证后可切 `passthrough`。
-  - `CHUNKED_UPLOAD_ENABLED`（v0.3.1）、`MAX_CHUNK_BYTES`/`CHUNK_FILE_MAX_BYTES`（见 v0.3.1 发布说明）。
+  - `CHUNKED_UPLOAD_ENABLED=true`：启用 5 GiB 分片上传（默认 true）。
+  - `CHUNK_SIZE_BYTES=8388608`：块大小，1–100 MiB；Cloudflare 代理下建议 8 MiB。
+  - `CHUNK_MAX_FILE_BYTES=5368709120`：单文件上限，默认 5 GiB，不得超过配额。
+  - `CHUNK_SESSION_TTL_HOURS=24`、`CHUNK_MAX_CONCURRENT_SESSIONS=3`：会话过期与每用户并发上限。
 
 ## 3. 从 PC 部署（带迁移前 DB 快照与自动回滚）
 
@@ -260,6 +263,21 @@ ss -tlnp | grep -E ':25565|:25575'
   重新 `nft -c -f` 校验并加载；网段宁窄勿宽（例如实际为 `/21` 就不要写 `/16`）。
 - 解绑/回滚：`sudo systemctl disable --now nftables && sudo nft flush ruleset`（需物理键鼠或已建立的 SSH）。
 
+## 9.1 v0.3.1 主机加固记录
+
+- **journald persistent**：`/etc/systemd/journald.conf.d/60-workbench-persistent.conf` 设
+  `Storage=persistent`、`SystemMaxUse=64M`、`RuntimeMaxUse=32M`；Pi 的 `/var/log` 由 log2ram 承载（zygote 128M），
+  64M + log2ram 的 `JOURNALD_AWARE=true` 会在关机前同步；回滚为删除该 drop-in 并重启 journald。
+- **cloudflared**：升级到 `2026.10.1`；`/etc/systemd/system/cloudflared.service.d/20-hardening.conf`
+  启用 `NoNewPrivileges/PrivateTmp/ProtectSystem=full/ProtectHome` 等；回滚二进制使用
+  `/var/backups/antifieldcloud/cloudflared-2026.8.1`，删 drop-in + `daemon-reload`。
+- **nftables**：WiFi 源从示例 `/16` 收窄为实际 `/21`（如 `172.23.88.0/21`）；修改前备份 `/etc/nftables.conf`，
+  `nft -c -f` 校验后 reload；回滚备份文件。
+- **rpcbind**：`systemctl disable --now rpcbind.socket rpcbind.service`；无 NFS 依赖，111 已关闭。
+- **时钟**：`fake-hwclock-load.service` 与 `fake-hwclock-save.timer` 已启用（RTC 无电池时提供关机时间近似值），
+  NTP/systemd-timesyncd 仍负责最终校时；如需硬件 RTC，安装 CR2032 电池。
+- **RCON**：Paper 无 bind 配置，25575 仍监听所有接口；仅由 nftables 的 `tcp dport 25575 drop` 阻断非 loopback。
+
 ## 10. cloudflared 加固与升级（建议）
 
 默认 unit 以 root 运行且没有沙箱参数。建议用 drop-in 限制（按实际 cloudflared 版本验证可写路径）：
@@ -323,5 +341,5 @@ curl -fsS http://127.0.0.1:3000/healthz
 | 公网页面空白 / 入口脚本未执行 | app 入口脚本已加 `data-cfasync="false"`；ai 代理按 `OPENCODE_HTML_MODE` 处理；若仍异常，在 Cloudflare Speed → Optimization/Configuration Rules 关闭 `ai` 的 Rocket Loader |
 | 备份密钥包状态红/unknown | 看 `backup-pull.json` 的 `secretsOk/secretsLastError`；检查 age 公钥权限与 `backup-secrets.sh`；文件归档成功不等于密钥包成功 |
 | 备份恢复 403 restore_disabled | env 未设 `BACKUP_RESTORE_ENABLED=true` 或未重启应用 |
-| 大文件上传 413 | v0.3.0 单请求 100 MiB；v0.3.1 分片上传后再提高上限 |
+| 大文件上传 413 | 普通单请求上限 100 MiB；>100 MiB 应自动走分片（`CHUNKED_UPLOAD_ENABLED=true`、5 GiB 上限）。检查 `/api/version` 的 `chunkedUploadEnabled/chunkSizeBytes/chunkMaxFileBytes`，以及块请求是否被 Cloudflare 单请求限制拦截 |
 | 校园网暂时无法解析 | 递归 DNS 负缓存（约 30 分钟）；等待或用手机流量验证。不要修改 `mc.example.com` |

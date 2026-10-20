@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库、文件分享、Minecraft 状态/白名单、opencode 反代、PWA、主机告警与每日备份到 Windows PC。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.3.0。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库、文件分享、Minecraft 状态/白名单、opencode 反代、PWA、主机告警与每日备份到 Windows PC。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.3.1。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -50,6 +50,7 @@ server/src/
   db.ts              SQLite 打开、迁移、事务辅助
   auth/              scrypt、TOTP、会话、CSRF、限流、恢复码
   files/             存储、上传、配额、搜索、预览、回收站
+  uploads/           分片上传会话/块索引、配额预留、拼接与过期清理（v0.3.1）
   mc/                SLP、RCON、白名单
   opencode/          ai.* Host 的认证反代 + HTML 模式（shim/attributes/passthrough）
   backups/           归档导入/校验、文件级恢复、恢复计划与审计

@@ -43,6 +43,11 @@ export interface Config {
   backupImportMaxBytes: number
   backupRestorePlanTtlMinutes: number
   backupRestoreMaxEntries: number
+  chunkedUploadEnabled: boolean
+  chunkSizeBytes: number
+  chunkMaxFileBytes: number
+  chunkSessionTtlHours: number
+  chunkMaxConcurrentSessions: number
   sharesEnabled: boolean
   shareDefaultExpiryHours: number
   shareMaxExpiryHours: number
@@ -177,6 +182,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupImportMaxBytes: int(merged, 'BACKUP_IMPORT_MAX_BYTES', 100 * MIB, 1 * MIB, 1024 * GIB),
     backupRestorePlanTtlMinutes: int(merged, 'BACKUP_RESTORE_PLAN_TTL_MINUTES', 30, 5, 1440),
     backupRestoreMaxEntries: int(merged, 'BACKUP_RESTORE_MAX_ENTRIES', 5000, 1, 100_000),
+    chunkedUploadEnabled: bool(merged, 'CHUNKED_UPLOAD_ENABLED', true),
+    chunkSizeBytes: int(merged, 'CHUNK_SIZE_BYTES', 8 * MIB, 1 * MIB, 100 * MIB),
+    chunkMaxFileBytes: int(merged, 'CHUNK_MAX_FILE_BYTES', 5 * GIB, 1 * MIB, 10 * GIB),
+    chunkSessionTtlHours: int(merged, 'CHUNK_SESSION_TTL_HOURS', 24, 1, 168),
+    chunkMaxConcurrentSessions: int(merged, 'CHUNK_MAX_CONCURRENT_SESSIONS', 3, 1, 20),
     sharesEnabled: bool(merged, 'SHARES_ENABLED', true),
     shareDefaultExpiryHours: int(merged, 'SHARE_DEFAULT_EXPIRY_HOURS', 168, 1, 720),
     shareMaxExpiryHours: int(merged, 'SHARE_MAX_EXPIRY_HOURS', 720, 1, 8760),
@@ -191,7 +201,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.3.0'),
+    appVersion: str(merged, 'APP_VERSION', '0.3.1'),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')

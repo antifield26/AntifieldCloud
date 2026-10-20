@@ -220,6 +220,6 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
 - 已覆盖：App 数据归档（DB + 文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照）。
 - 未覆盖：Minecraft 世界（体积/`save-off`/一致性要求，另立项）；VPS 远端归档/异地副本；对象存储。
-- v0.3.0 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，v0.3.1 分片上传后扩展。
+- v0.3.0 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入仍独立于文件分片上传。
 - 普通归档仍含 TOTP/会话明文；PC ACL/离线介质是最后防线。age 私钥丢失=密钥包不可恢复。
 - 恢复演练记录见 §7 与 `.local/DR-DRILL.md`；每次升级前重新演练。

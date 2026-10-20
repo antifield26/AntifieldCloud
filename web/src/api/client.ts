@@ -18,6 +18,8 @@ import type {
   BookmarkListResult,
   BookmarkPatch,
   ClearTrashResult,
+  ChunkUploadInit,
+  ChunkUploadStatus,
   CreateShareInput,
   CreateShareResult,
   DashboardData,
@@ -51,6 +53,7 @@ import type {
   WhitelistMutationResult,
   WhitelistResult,
 } from './types'
+import { chunkCount, isValidResumeRecord, resumeStorageKey, uploadFingerprint, type ResumeRecord } from '../lib/chunked'
 
 const CSRF_COOKIE = 'af_csrf'
 const CSRF_HEADER = 'X-CSRF-Token'
@@ -392,6 +395,181 @@ export function uploadFiles(
     for (const file of files) form.append('files', file, file.name)
     xhr.send(form)
   })
+}
+
+/* ---------- 大文件分片上传（v0.3.1） ---------- */
+
+export interface ChunkedUploadOptions {
+  chunkSize?: number
+  signal?: AbortSignal
+  onProgress?: (loaded: number, total: number) => void
+  /** 并发块数；默认 2。 */
+  concurrency?: number
+}
+
+function readResumeRecord(key: string): ResumeRecord | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed: unknown = JSON.parse(raw)
+    return isValidResumeRecord(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeResumeRecord(key: string, record: ResumeRecord): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(record))
+  } catch {
+    // 隐私模式/配额不足时只放弃断点，不影响本次上传。
+  }
+}
+
+function clearResumeRecord(key: string): void {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // ignore
+  }
+}
+
+function uploadChunkXhr(
+  uploadId: string,
+  index: number,
+  data: Blob,
+  callbacks: { signal?: AbortSignal; onProgress?: (loaded: number, total: number) => void; timeoutMs?: number },
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (callbacks.signal?.aborted) {
+      reject(new ApiError(0, 'aborted', '上传已取消'))
+      return
+    }
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', `/api/uploads/${encodeId(uploadId)}/chunks/${index}`)
+    xhr.withCredentials = true
+    xhr.responseType = 'text'
+    xhr.timeout = callbacks.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    const token = getCsrfToken()
+    if (token) xhr.setRequestHeader(CSRF_HEADER, token)
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) callbacks.onProgress?.(event.loaded, event.total)
+    }
+    xhr.onload = () => {
+      let body: unknown
+      try {
+        body = xhr.responseText ? (JSON.parse(xhr.responseText) as unknown) : null
+      } catch {
+        body = null
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve()
+        return
+      }
+      const error = parseApiError(body, xhr.status, parseRetryAfter(xhr.getResponseHeader('Retry-After')))
+      if (error.status === 401 && error.code === 'unauthenticated') unauthorizedHandler?.()
+      reject(error)
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'network_error', '分片上传失败：网络连接异常'))
+    xhr.onabort = () => reject(new ApiError(0, 'aborted', '上传已取消'))
+    xhr.ontimeout = () => reject(new ApiError(0, 'timeout', '分片上传超时，请重试'))
+    callbacks.signal?.addEventListener('abort', () => xhr.abort(), { once: true })
+    xhr.send(data)
+  })
+}
+
+/**
+ * 大文件分片上传：先恢复同文件/同目录的会话，缺块并发上传，最后 complete。
+ * 断点只保存 uploadId/已收块号，不缓存文件内容；取消后下次重试仍可续传。
+ */
+export async function uploadFileChunked(
+  file: File,
+  parentId: string | null,
+  options: ChunkedUploadOptions = {},
+): Promise<UploadResult> {
+  const chunkSize = options.chunkSize ?? 8 * 1024 * 1024
+  const fingerprint = uploadFingerprint(file, parentId)
+  const storageKey = resumeStorageKey(fingerprint)
+  const total = file.size
+  const totalChunks = chunkCount(file.size, chunkSize)
+  if (totalChunks <= 0) throw new ApiError(0, 'invalid_file', '文件大小不正确')
+
+  const sendProgress = (completed: number, current: number): void => {
+    options.onProgress?.(Math.min(total, completed + current), total)
+  }
+
+  let session: ChunkUploadInit
+  const resumed = readResumeRecord(storageKey)
+  if (resumed && resumed.parentId === parentId && resumed.name === file.name && resumed.size === file.size) {
+    try {
+      const status = await get<ChunkUploadStatus>(`/api/uploads/${encodeId(resumed.uploadId)}`, { signal: options.signal })
+      if (status.status === 'uploading' && status.chunkSize === chunkSize && status.size === file.size) {
+        session = {
+          uploadId: status.uploadId,
+          chunkSize: status.chunkSize,
+          totalChunks: status.totalChunks,
+          expiresAt: status.expiresAt,
+          received: status.received,
+        }
+      } else {
+        clearResumeRecord(storageKey)
+        session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size })
+      }
+    } catch {
+      clearResumeRecord(storageKey)
+      session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size })
+    }
+  } else {
+    session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size })
+  }
+
+  const record: ResumeRecord = {
+    uploadId: session.uploadId,
+    parentId,
+    name: file.name,
+    size: file.size,
+    received: [...session.received],
+    expiresAt: session.expiresAt,
+  }
+  writeResumeRecord(storageKey, record)
+  const received = new Set(session.received)
+  const missing: number[] = []
+  for (let index = 0; index < totalChunks; index++) if (!received.has(index)) missing.push(index)
+
+  const completedBytes = (): number => {
+    let bytes = 0
+    for (const index of received) {
+      const start = index * chunkSize
+      bytes += Math.min(chunkSize, file.size - start)
+    }
+    return bytes
+  }
+  let next = 0
+  const concurrency = Math.max(1, Math.min(4, Math.floor(options.concurrency ?? 2)))
+  const workers = Array.from({ length: Math.min(concurrency, Math.max(1, missing.length)) }, async () => {
+    while (next < missing.length) {
+      if (options.signal?.aborted) throw new ApiError(0, 'aborted', '上传已取消')
+      const index = missing[next++]!
+      const start = index * chunkSize
+      const end = Math.min(file.size, start + chunkSize)
+      await uploadChunkXhr(session.uploadId, index, file.slice(start, end), {
+        signal: options.signal,
+        timeoutMs: DEFAULT_UPLOAD_TIMEOUT_MS,
+        onProgress: (loaded) => sendProgress(completedBytes(), loaded),
+      })
+      received.add(index)
+      record.received = [...received].sort((a, b) => a - b)
+      writeResumeRecord(storageKey, record)
+      sendProgress(completedBytes(), 0)
+    }
+  })
+  await Promise.all(workers)
+  const result = await post<{ ok: true; file: FileItem }>(`/api/uploads/${encodeId(session.uploadId)}/complete`, {}, {
+    signal: options.signal,
+  })
+  clearResumeRecord(storageKey)
+  return { items: [result.file], errors: [] }
 }
 
 /* ---------- 备份归档上传（独立 multipart，不进入文件列表上传队列） ---------- */

@@ -1,8 +1,53 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.3.0；v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.3.1；v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 
-## v0.3.0（当前）
+## v0.3.1（当前）
+
+- 日期：2026-10-20（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
+- 版本：`v0.3.1`
+- 范围：5 GiB 分片上传/断点续传；配套系统加固（journald、cloudflared、nftables、rpcbind）。
+
+### 1. 交付
+
+- 后端：`UploadService` + `/api/uploads` init/status/chunk/complete/abort；migration 4 `upload_sessions/upload_chunks`；8 MiB 块、5 GiB 上限、24h 会话、每用户 3 并发、配额预留、乱序/幂等/哈希校验、过期清理。
+- 前端：>100 MiB 自动分片，2 块并发；`localStorage` 只保存 uploadId/已收块号；刷新/断线补缺块；取消保留断点；进度/重试沿用上传面板。
+- 系统：journald `Storage=persistent`（适配 log2ram 64 MiB）、cloudflared 升级 2026.10.1 + systemd 加固、nftables WiFi 源从 `/16` 收窄到实际 `/21`、rpcbind 禁用、unattended-upgrades dry-run 验证。
+- 文档：API/UI/ARCH/SECURITY/DEPLOY/PLAN/ROADMAP/README/AGENTS/CHANGELOG 同步。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm run check` | 通过：服务端 150/150、前端 52/52 |
+| `npm run build` | 通过 |
+| 生产 Health | `{"ok":true,"version":"0.3.1"}` |
+| schema | v4；`upload_sessions/upload_chunks` 存在 |
+| 分片 API | 生产 12 MiB（8 MiB + 尾块）init→chunk→status→complete 成功，文件登记后删除/清空 |
+| 前端 | tsc/eslint/test:web 通过；分片纯函数 4 组测试 |
+| 系统 | journald persistent、cloudflared 2026.10.1 active、nft `/21`、rpcbind/111 关闭 |
+| 备份 | 两阶段任务与 secrets 状态保持；v0.3.0 已验证 |
+| 临时数据 | 12 MiB 测试文件已删除；app session 清理 |
+
+### 3. 部署
+
+```text
+部署目录: /opt/antifieldcloud/releases/20261020T025708Z
+迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261020T025710864Z.sqlite
+服务: antifieldcloud.service (active, v0.3.1)
+tag: v0.3.1
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.3.1
+```
+
+### 4. 未决
+
+- 5 GiB 真实公网上传未跑满（12 MiB 已实测；逻辑/上限/过期测试覆盖），Cloudflare 总时长受网络影响。
+- RCON 仍监听所有接口（Paper 无 bind 配置）；已由 nftables 阻断非 loopback，保留为已知限制。
+- age 私钥仍需用户移到离线介质并删除本地明文副本。
+- OpenCode 无垫片：Cloudflare 规则已验证；上游原生新建按钮仍失效，保留最小隐藏接管（详见 v0.3.0 历史）。
+
+## v0.3.0（历史）
 
 - 日期：2026-10-20（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境

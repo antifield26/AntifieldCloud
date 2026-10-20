@@ -15,7 +15,7 @@
 | 会话劫持/CSRF | 未授权文件/白名单操作 | HttpOnly+Secure+SameSite=Lax Cookie、CSRF 双提交、Origin 校验、改密失效其它会话 |
 | 路径穿越/任意文件读取 | 读取/覆盖 Pi 文件 | 只接受 DB id；物理路径由 id 派生；文件名清洗；无路径参数 |
 | 恶意预览内容 XSS | 窃取会话 | 仅栅格图片/PDF/白名单音视频内联；文本走 JSON 由 React 转义；SVG/HTML/XML 强制下载；CSP `media-src 'self'` |
-| 上传耗尽磁盘 | 服务不可用 | 10 GiB 配额（含回收站）、单文件 2 GiB、单请求 20 文件、写前/流中/事务内三次检查、507 |
+| 上传耗尽磁盘 | 服务不可用 | 10 GiB 配额（含回收站）、单请求 100 MiB/20 文件、分片单文件 5 GiB/8 MiB 块；写前/流中/事务内检查、507；分片会话 24h 过期、3 并发/用户、配额预留 |
 | opencode 端口被直接访问 | AI 工作区被滥用 | 端口仅 loopback；ai 主机会话校验；服务端注入 Basic；不向浏览器下发密钥 |
 | RCON 被滥用 | 白名单/服务器被改 | 不提供任意命令；仅白名单增删；名字白名单校验；命令后复核；nftables 阻断非 loopback |
 | 备份泄露 | 文件与 TOTP 泄露 | 两阶段 pending/ack、归档 0640、PC 目录 ACL（当前用户+Administrators+SYSTEM）、`.sha256` 旁文件；密钥包 age 加密；普通归档仍含 TOTP |
@@ -43,6 +43,7 @@
 - 名称 NFC、去控制字符/路径分隔符、长度限制、冲突自动后缀；同目录唯一索引。
 - 内容不可变（无在线编辑）；上传先写临时文件再原子移动。
 - 配额包含回收站；删除为软删除；30 天自动清理。
+- 分片上传（v0.3.1）：会话只按服务端 id 访问，块序号/大小由会话约束；临时目录 `tmp/chunks` 0700、文件 0600；块哈希记录、complete 重新拼接并校验 SHA；24h 过期/取消释放配额与临时文件；每用户 3 个活跃会话；不缓存文件内容到 localStorage（只存 uploadId/块号）。
 - MIME/预览白名单；音视频仅允许 mp4/webm/mp3/m4a/ogg/flac/wav，不转码；`X-Content-Type-Options: nosniff`；下载 `Content-Disposition` 文件名编码。
 
 ### HTTP
@@ -87,7 +88,7 @@
     自动注入，或接受控制台报错；不建议放开 `script-src` 内联。
 12. **scrypt 仍为 N=2^15**：升级到 2^16/2^17 需要密码哈希版本迁移，列入后续。
 13. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
-14. **Cloudflare 约 100 MiB/100s 限制**：大文件后续需分片/对象存储。
+14. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；v0.3.1 用 8 MiB 分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 
 ## 5. 运维安全清单
 
@@ -117,6 +118,6 @@
 - 路径穿越名被清洗；SVG/HTML 无内联预览；音视频只允许白名单容器。
 - 分享密码新建最少 8 位；公开信息不含备注；回收站文件旧分享返回 410；token 日志脱敏。
 - 备份管理：导入需 TOTP、tar 安全校验、恢复仅新目录、计划过期/单并发；整库恢复不暴露 Web。
-- 超配额上传拒绝；回收站占配额；单请求上传大小受 `MAX_UPLOAD_BYTES`（默认 100 MiB，匹配 Cloudflare 代理上限）限制。
+- 超配额上传拒绝；回收站占配额；普通单请求受 `MAX_UPLOAD_BYTES`（默认 100 MiB）限制；分片上传受 5 GiB 上限、8 MiB 块、会话过期/并发限制与配额预留约束。
 - 外部 25575 阻断；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。
 - 仓库 `git grep` 不出现真实密钥。

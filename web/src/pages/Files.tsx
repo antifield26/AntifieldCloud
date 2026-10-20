@@ -244,6 +244,10 @@ export function Files() {
 
   const uploadQueue = useUploadQueue({
     maxFileBytes: meta.maxUploadBytes,
+    chunkedUploadEnabled: meta.chunkedUploadEnabled,
+    chunkThresholdBytes: meta.maxUploadBytes,
+    chunkSizeBytes: meta.chunkSizeBytes > 0 ? meta.chunkSizeBytes : undefined,
+    chunkMaxFileBytes: meta.chunkMaxFileBytes > 0 ? meta.chunkMaxFileBytes : undefined,
     onUploaded: scheduleRefresh,
     onFinished: (summary) => {
       if (summary.failed > 0) {

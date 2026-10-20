@@ -20,6 +20,7 @@ import { NoteService, BookmarkService } from './notes/service.ts'
 import { ShareService } from './shares/service.ts'
 import { AlertService } from './alerts/service.ts'
 import { BackupService } from './backups/service.ts'
+import { UploadService } from './uploads/service.ts'
 import { OpenCodeProxy, normalizeHost } from './opencode/proxy.ts'
 import { purgeAudit } from './auth/audit.ts'
 import { readSessionToken } from './auth/cookies.ts'
@@ -32,6 +33,7 @@ import { registerNoteRoutes } from './http/routes/notes.ts'
 import { registerShareRoutes } from './http/routes/shares.ts'
 import { registerAlertRoutes } from './http/routes/alerts.ts'
 import { registerBackupRoutes } from './http/routes/backups.ts'
+import { registerUploadRoutes } from './http/routes/uploads.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -47,6 +49,7 @@ export interface AppContext {
   shares: ShareService
   alerts: AlertService
   backups: BackupService
+  uploads: UploadService
   proxy: OpenCodeProxy
   runMaintenance(): void
 }
@@ -109,8 +112,15 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       else app.log.info(payload, message)
     },
   })
+  const uploads = new UploadService(db, config, files)
 
   await app.register(cookie)
+  // 分片块使用 raw body；bodyLimit 与路由级限制共同兜底，避免 8 MiB 块被 1 MiB 全局限制拒绝。
+  app.addContentTypeParser(
+    'application/octet-stream',
+    { parseAs: 'buffer', bodyLimit: config.chunkSizeBytes + 64 * 1024 },
+    (_request, body, done) => done(null, body),
+  )
   await app.register(multipart, {
     limits: {
       fileSize: config.maxUploadBytes,
@@ -204,6 +214,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerShareRoutes(app, config, shares)
   registerAlertRoutes(app, config, alerts)
   registerBackupRoutes(app, config, backups)
+  registerUploadRoutes(app, config, uploads)
 
   registerErrorHandler(app)
 
@@ -241,6 +252,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       files.autoPurge(config.trashRetentionDays)
       shares.cleanup()
       backups.cleanup()
+      uploads.cleanupExpired()
       auth.cleanup()
       purgeAudit(db, config.auditRetentionDays)
     } catch (error) {
@@ -248,5 +260,5 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     }
   }
 
-  return { app, db, config, auth, files, mc, dashboard, notes, bookmarks, shares, alerts, backups, proxy, runMaintenance }
+  return { app, db, config, auth, files, mc, dashboard, notes, bookmarks, shares, alerts, backups, uploads, proxy, runMaintenance }
 }

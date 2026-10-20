@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库、文件分享、Minecraft 状态与白名单管理、opencode AI 工作区入口、PWA、主机告警与每日备份。
 
-> 状态：v0.3.0（备份管理/文件级恢复、音视频播放、审计修复、OpenCode 无垫片验证门禁）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.3.1（5 GiB 分片上传/断点续传；备份管理与文件级恢复、音视频播放、审计修复、OpenCode 兼容门禁）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -10,6 +10,12 @@
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables
 - 测试：`node --test`（服务端）+ Vitest/jsdom（前端纯函数与组件），ESLint，`tsc --noEmit`
+
+## v0.3.1 功能
+
+- **大文件分片上传**：单文件 5 GiB、8 MiB/块、断点续传、配额预留、24h 会话过期、每用户 3 并发；不做对象存储。
+- **自动选择**：>100 MiB（普通 multipart 上限）自动走分片；刷新/断线后按 uploadId 续传缺块；取消后重试可续传。
+- **migration 4**：`upload_sessions` / `upload_chunks`；`/api/uploads` init/status/chunk/complete/abort。
 
 ## v0.3.0 功能
 
@@ -30,7 +36,7 @@
 - OpenCode Web：Rocket Loader opt-out + 原生新建按钮兼容层（不添加可见按钮）；文件列表名称列可点击进入/预览。
 - 监控告警：磁盘/温度/服务/备份超期/欠压等条件，通用 JSON webhook，面板可查历史并手动测试。
 - 备份：两阶段归档（PC 确认后才推进游标）、未拉取归档不删除、SHA 旁文件、ACL 收紧、age 加密密钥包、恢复文档与演练。
-- 工程：迁移 3、服务端 140 测试、前端 48 测试、CI 运维静态检查。
+- 工程：迁移 4、服务端 150 测试、前端 52 测试、CI 运维静态检查。
 
 ## 常用命令
 

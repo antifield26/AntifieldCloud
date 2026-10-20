@@ -249,3 +249,12 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 公开分享不展示“仅自己可见”备注；一次性 URL 创建成功后禁止误关。
 - PWA 缓存名随构建版本更新并清理旧缓存；SW 仍不缓存 API/媒体/文件内容。
+
+## 13. v0.3.1 大文件分片上传
+
+- `/api/version` 的 `chunkedUploadEnabled/chunkSizeBytes/chunkMaxFileBytes` 驱动前端；未下发时保持单请求上传。
+- 文件大小 > `maxUploadBytes`（普通 multipart 上限）且 ≤ 5 GiB 时自动走分片，块默认 8 MiB，每文件独立队列任务。
+- 上传面板复用现有进度/取消/重试：显示总进度百分比；断点记录只存 uploadId/已收块号到 localStorage，不缓存文件内容。
+- 刷新/断线后同一文件（名称+大小+lastModified+目录）自动查询服务端状态并只补缺块；服务端会话过期则重新 init。
+- 取消保留断点供重试；服务端 24h 后清理会话与临时块。390px 面板不横向滚动。
+- 单请求仍受 100 MiB/Cloudflare 代理限制；分片块 8 MiB 远低于限制，5 GiB 文件约 640 块。
