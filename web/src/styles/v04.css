@@ -8,10 +8,26 @@
 
 .metrics-card-container .card-actions {
   flex-wrap: wrap;
+  min-width: 0;
 }
 
+/* 周期选择器在窄屏（Android）不压缩文字：按钮不收缩、标签不换行，放不下时横向滚动。 */
 .metric-range-tabs {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.metric-range-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.metric-range-tabs .segmented-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .metrics-grid {
@@ -790,7 +806,18 @@
 
 @media (max-width: 900px) {
   .metrics-card-container .card-header {
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .metrics-card-container .card-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .metric-range-tabs {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .backup-status-grid {

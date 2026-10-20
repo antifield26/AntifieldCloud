@@ -28,6 +28,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Version consistency
+        run: node scripts/check-version.mjs
+
       - name: Check (typecheck + lint + test)
         run: npm run check
 

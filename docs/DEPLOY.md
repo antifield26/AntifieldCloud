@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.4.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.4.2）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -123,13 +123,13 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.1 v0.4.1 应用部署步骤（版本升级时执行）
+### 3.1 v0.4.2 应用部署步骤（版本升级时执行）
 
-1. 本地：`npm run check`、`npm run build`，确认 `package.json` 版本 0.4.1（schema 仍为 v6，无新迁移）。
+1. 本地：`npm run check`、`npm run build`，确认 `package.json` 版本 0.4.2（schema 仍为 v6，无新迁移）。
 2. 执行 `.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本会完成迁移前快照、APP_VERSION 注入、切换与版本健康检查。
 3. 如新 env 键缺失，运行 `sudo bash /opt/antifieldcloud/current/scripts/bootstrap-env.sh --dry-run`
    预览，再 `--force` 写入（保留现有非敏感值），然后 `sudo systemctl restart antifieldcloud`。
-4. 运行 `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.4.1`；确认 `antifieldcloud-world.timer` 下次触发时间。
+4. 运行 `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.4.2`；确认 `antifieldcloud-world.timer` 下次触发时间。
 5. OpenCode 升级/兼容检查见 §3.2（应用部署与 OpenCode 升级相互独立，建议先应用后升级并分别验收）。
 
 ### 3.2 OpenCode v2.1.1 升级与兼容性复核（本机执行）
@@ -289,7 +289,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 世界拉取/演练：Windows 周度 `world-pull.ps1` 与季度 `drill.ps1` 由用户手动安装任务（§9.2）；未安装时状态 unknown。
 - Web 恢复：只允许导入/校验/文件级恢复到新目录（`skippedMissing` 会剔除并在结果报告）；整库恢复仍按 `docs/BACKUP.md` §8 离线执行。
 - 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载。
-- 验收：`npm run check`（234/129）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、`smoke.ps1 -ExpectedVersion 0.4.1`、
+- 验收：`npm run check`（234/129）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、`smoke.ps1 -ExpectedVersion 0.4.2`、
   Android/桌面原生新建按钮矩阵、备份导入/校验/恢复（临时 DATA_DIR）、世界备份首次执行与 PC 拉取、`drill.ps1` 演练通过；
   OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
 

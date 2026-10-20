@@ -8,6 +8,12 @@
 - 处理 Dependabot PR（actions/checkout 4→7、actions/setup-node 4→7、gitleaks-action 2→3）；关闭不兼容的 TypeScript 7 major。
 - 清理 Pi legacy 世界归档（约 9 GiB），旧 cron 保持停用；应用版本 0.4.1，schema 仍为 v6。
 
+## v0.4.2 补充
+
+- 维护版：TypeScript 7.0.2 迁移（官方并排方案：`@typescript/native` 提供 `tsc`，`typescript` 别名到 `@typescript/typescript6` 供 typescript-eslint）。
+- 修复 Android 指标趋势周期选择器压缩文字标签；工作区/文档清理，CI 增加 check-version。
+- 版本 0.4.2；schema v6 不变。
+
 ## 目标
 
 在 v0.3.x 已交付的云盘/知识库/分享/告警/备份/分片上传基础上，完成 v0.4.0：**可观测性与备份可视化、笔记附件与版本、多文件分享、Minecraft 世界一致性备份与 PC 拉取、恢复演练自动化、系统与网络安全加固**，并把文档与审计发现的漂移全部收敛到当前行为。

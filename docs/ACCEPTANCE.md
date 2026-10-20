@@ -1,8 +1,48 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.4.1；v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.4.2；v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 
-## v0.4.1（当前）
+## v0.4.2（当前）
+
+- 日期：2026-10-20（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境 + Windows 本地工作区
+- 版本：`v0.4.2`
+- 范围：TypeScript 7 兼容性迁移；Android 指标趋势周期选择器窄屏修复；工作区清理与文档对齐；应用发布。
+
+### 1. 交付
+
+- **TypeScript 7**：按官方并排方案，`@typescript/native` 别名安装 TypeScript 7.0.2（提供 `tsc` 7.0.2），`typescript` 别名指向 `@typescript/typescript6@6.0.2` 供 typescript-eslint 8.71.2（尚不支持 TS7 API）；`npm ci` 可复现，typecheck/lint/test/build 全绿。
+- **Android 趋势布局**：`.segmented-button` 增加 `flex: 0 0 auto` 与 `white-space: nowrap`；≤900px 时趋势卡头部纵向排列、范围选择器占满一行并横向滚动（隐藏滚动条），周期文字不再被压缩；范围切换/aria/轮询逻辑不变。
+- **工作区清理**：删除生成的 `web/coverage`、`web/node_modules` 缓存、`web/.vite-temp` 等；重新构建 `web/dist`；保留 `scripts/*` 中仍在使用的稳定入口（`backup.mjs`/`provision.mjs` 被服务端与文档引用）。
+- **文档对齐**：README/AGENTS/PLAN/ROADMAP/UI-SPEC/API/DEPLOY/BACKUP 版本与测试基线同步；CI 增加 `check-version.mjs`。
+- 应用 v0.4.2，schema v6 不变；无服务端功能变更。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm ci --dry-run` | 通过（lockfile 与 TS alias 可复现） |
+| `npx tsc --version` | **7.0.2** |
+| `npm run typecheck` / `lint` | 通过（lint 使用 `typescript@6.0.2` alias） |
+| `npm run check` | 通过：服务端/脚本 234、前端 129 |
+| `npm run build` | 通过（web/dist 重建） |
+| Android 真机 | 待用户 390px/Android 复测（CSS 修复无法用 jsdom 验证布局） |
+| 应用部署 | 待发布后补 |
+| `smoke.ps1` | 待发布后补 |
+
+### 3. 部署
+
+```text
+待发布后补（release / 迁移前快照 / healthz / smoke）
+```
+
+### 4. 未决
+
+- `typescript-eslint@8.71.2` 不支持 TS7 API，双 alias 需保留到其支持 TS7.1；升级 typescript-eslint 后重新评估移除 `@typescript/typescript6`。
+- Android 真机验收由用户完成（本次仅代码/CSS 级修复与构建验证）。
+- 工作区未删除 `scripts/backup.mjs`/`provision.mjs`：它们是服务端 `backups/service.ts`、部署/备份文档依赖的稳定入口，删除需跨域改代码，不在本维护版做破坏性清理。
+
+## v0.4.1（历史）
 
 - 日期：2026-10-20（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境

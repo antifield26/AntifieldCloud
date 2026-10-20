@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.2] - 2026-10-20
+
+### Changed
+
+- **TypeScript 7 迁移**：采用官方并排方案——`@typescript/native` 别名安装 TypeScript 7.0.2 提供 `tsc`，`typescript` 别名指向 `@typescript/typescript6@6.0.2` 供 typescript-eslint 使用（8.71.2 尚不支持 TS7 API）；`typecheck`/`lint`/`test`/`build`/`npm ci` 全部通过。
+- **Android 指标趋势布局**：周期范围按钮不再被 flex 压缩、标签不换行；趋势卡头部在 ≤900px 纵向排列，范围选择器横向滚动（隐藏滚动条），修复窄屏文字标签被挤压。
+- **工作区清理与文档对齐**：删除生成的 `web/coverage`、`web/node_modules` 缓存与 `.vite-temp`；重新生成 `web/dist`；README/AGENTS/PLAN/ROADMAP/UI-SPEC/API/DEPLOY/BACKUP 版本与测试基线同步；CI 增加 `check-version` 校验。
+
+### Dependencies
+
+- `typescript` 6.0.3 → **7.0.2**（经 `@typescript/native` 别名）；保留 `@typescript/typescript6@6.0.2` 仅供 lint 工具链使用。
+
 ## [0.4.1] - 2026-10-20
 
 ### Changed

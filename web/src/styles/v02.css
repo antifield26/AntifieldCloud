@@ -440,6 +440,7 @@ a.knowledge-card-title:hover {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex: 0 0 auto;
   height: 28px;
   padding: 0 11px;
   border: none;
@@ -448,6 +449,7 @@ a.knowledge-card-title:hover {
   color: var(--text-muted);
   font: inherit;
   font-size: 12px;
+  white-space: nowrap;
   cursor: pointer;
 }
 

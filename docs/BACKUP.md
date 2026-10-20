@@ -330,7 +330,7 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 
 ### 8.4 验证清单
 
-1. `/healthz` 返回 `{"ok":true,"version":"0.4.1",...}`，服务 active；`/api/version` 登录后版本一致。
+1. `/healthz` 返回 `{"ok":true,"version":"0.4.2",...}`，服务 active；`/api/version` 登录后版本一致。
 2. 登录成功（TOTP 仍有效，因为 DB 快照含用户与 TOTP secret）；恢复码可用。
 3. 文件列表数量、随机抽样文件的 SHA-256 与 API `GET /api/files/:id` 的 `sha256` 字段一致；笔记附件可见。
 4. 图片/文本/PDF/预览正常，回收站内容与备份时一致；多文件分享/笔记版本可打开。

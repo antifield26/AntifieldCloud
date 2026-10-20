@@ -2,13 +2,14 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.4.1，数据库 schema v6（迁移 5 为结构变更，迁移 6 为孤儿分享数据修复，不改变表结构）；OpenCode 服务端 v2.1.1。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.4.2，数据库 schema v6（迁移 5 为结构变更，迁移 6 为孤儿分享数据修复，不改变表结构）；OpenCode 服务端 v2.1.1。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
 - `docs/API.md`：HTTP 契约（服务端/前端共同遵守）
 - `docs/UI-SPEC.md`：界面与交互
 - `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`
+- `docs/ROADMAP.md`：路线图与当前版本边界
 - `docs/AUDIT.md`：第一轮 v0.2.0 + 第二轮 v0.3.x 审计与残留
 - `docs/ACCEPTANCE.md`：当前版本验收与历史记录
 
@@ -24,6 +25,7 @@
 - 相对导入必须带 `.ts` 后缀；禁止 enum/namespace/参数属性等非可擦除语法（`erasableSyntaxOnly` 已开启）。
 - 前端由 Vite 构建，产物 `web/dist`；服务端只托管静态产物，不参与前端编译。
 - 依赖：服务端运行时依赖放 `dependencies`；React/Vite/ESLint 等仅构建期依赖放 `devDependencies`（Pi 上 `npm ci --omit=dev` 不安装）。
+- 类型工具链（TS7 并排）：`npx tsc` 来自 `@typescript/native`（TypeScript 7.0.2）；`typescript` 包是 `@typescript/typescript6@6.0.2` 别名，仅供 typescript-eslint（8.x 尚不支持 TS7 API）。不要删除/合并这两个 alias，直到 typescript-eslint 支持 TS7.1 API。
 - 不使用 Docker；Pi 上用 systemd 原生命令运行。
 
 ## 3. 命令
