@@ -353,3 +353,4 @@ curl -fsS http://127.0.0.1:3000/healthz
 - Minecraft 世界不在应用备份覆盖内；`minecraft-backups` 是本地唯一世界副本（cron 约保留 2 天），只能先复制到 PC/离线介质，再按保留策略处理。
 - 旧内核 `/opt/jdk` 等系统组件先在 `/boot`/Java 依赖确认后再处理；保留至少一个可回退内核。
 - 清理后运行 `smoke.ps1`，并记录释放量；不要清理 `preflight/age-key`。
+- 已移除服务残留：先查 `/etc/systemd/system`、`systemctl list-unit-files`、`/home/*`、`/var/lib/*`、`/etc/{nginx,letsencrypt,subuid,subgid}`；`workbench/piforge` 等旧用户或数据、旧 `antifieldcloud.service.pre-*`、`cloudflared-update.*`、旧 env/`server.properties` 备份。旧 env/RCON 备份含密钥，确认后应安全删除，不做普通备份保留；active 的 nginx/certbot/frpc 先确认用途再处理。
