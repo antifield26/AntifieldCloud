@@ -107,9 +107,9 @@ Check "Pi SSH 可达" {
 }
 
 Check "Pi 服务状态" {
-  $out = Invoke-PiSsh "systemctl is-active antifieldcloud cloudflared nginx opencode minecraft | tr '\n' ' '"
+  $out = Invoke-PiSsh "systemctl is-active antifieldcloud cloudflared opencode minecraft | tr '\n' ' '"
   $text = ($out | Out-String).Trim()
-  if ($text -notmatch "active active active active active") { throw $text }
+  if ($text -notmatch "active active active active") { throw $text }
   $text
 }
 

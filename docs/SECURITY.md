@@ -3,7 +3,7 @@
 ## 1. 资产与信任边界
 
 - **公网入口**：`app.example.com`、`ai.example.com` 经 Cloudflare Tunnel；Cloudflare 终止 TLS，可见明文。
-- **Pi 本机**：应用只监听 `127.0.0.1:3000`；cloudflared 出站连接；nginx 仅 LAN；opencode `127.0.0.1:4096`。
+- **Pi 本机**：应用只监听 `127.0.0.1:3000`；cloudflared 出站连接；opencode `127.0.0.1:4096`；nginx/certbot 旧入口已移除。
 - **现有服务**：Minecraft（Paper 26.1.2，在线模式关闭、白名单开启）、SakuraFRP、RDP/桌面、opencode。
 - **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码）、SQLite（TOTP secret、会话哈希、恢复码哈希）、备份归档。
 
@@ -21,7 +21,7 @@
 | 备份泄露 | 文件与 TOTP 泄露 | 两阶段 pending/ack、归档 0640、PC 目录 ACL（当前用户+Administrators+SYSTEM）、`.sha256` 旁文件；密钥包 age 加密；普通归档仍含 TOTP |
 | 备份归档被恶意替换/注入 | 文件覆盖/路径穿越 | Web 导入需 TOTP；文件名白名单、SHA-256、tar 路径/链接/设备/大小校验；恢复只到新目录、不覆盖；整库恢复仅离线 root CLI |
 | 物理 SD 丢失 | 数据泄露/丢失 | 无全盘加密（当前限制）；建议后续 LUKS/加密备份；每日备份 |
-| 校园网扫描 | RCON/nginx 暴露 | nftables 默认拒绝入站；25575 仅 loopback；80/25565 限网段 |
+| 校园网扫描 | RCON/Minecraft 暴露 | nftables 默认拒绝入站；25575 仅 loopback；25565 限网段 |
 | 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建 |
 
 ## 3. 已实现控制

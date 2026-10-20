@@ -79,7 +79,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 第二行：
   - Minecraft 详情卡：玩家名列表（空态“暂无玩家在线”）、TPS、服务状态、公共地址复制按钮、“管理白名单”链接。
   - 快捷入口卡：AI 工作区（`https://ai.example.com`）、RPi Connect、Minecraft 地址（复制）、云盘（本页）。
-  - 服务状态卡：minecraft/cloudflared/nginx/opencode 四个圆点 + 状态文字。
+  - 服务状态卡：minecraft/cloudflared/opencode 三个圆点 + 状态文字。
 - 第三行：最近活动（审计 8 条，图标 + 动作 + 目标 + 相对时间）。
 - 所有卡片有 loading 骨架；错误时卡片内“加载失败 + 重试”。
 

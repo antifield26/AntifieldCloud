@@ -20,7 +20,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  ├─ opencode.service（现有）
  ├─ minecraft.service（现有）
  ├─ cloudflared.service（现有，新增 app/ai ingress）
- ├─ nginx :80（现有默认站，nftables 限 LAN）
+ ├─ nginx :80 已移除（旧入口清理，v0.3.2）
  └─ nftables（新增）
 ```
 

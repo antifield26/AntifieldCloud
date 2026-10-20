@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.3.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.3.2）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -8,7 +8,7 @@
 
 - Pi：`antifield@192.0.2.10`（直连网线），WiFi 示例 `198.51.100.10`。
 - 域名：`app.example.com`（应用）、`ai.example.com`（opencode 反代），Cloudflare Tunnel `antifieldcloud`。
-- 现有服务不改：Minecraft、SakuraFRP、opencode、nginx、RDP/桌面。
+- 现有服务不改：Minecraft、SakuraFRP、opencode、RDP/桌面；nginx/certbot 旧入口已于 v0.3.2 移除。
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
@@ -353,4 +353,4 @@ curl -fsS http://127.0.0.1:3000/healthz
 - Minecraft 世界不在应用备份覆盖内；`minecraft-backups` 是本地唯一世界副本（cron 约保留 2 天），只能先复制到 PC/离线介质，再按保留策略处理。
 - 旧内核 `/opt/jdk` 等系统组件先在 `/boot`/Java 依赖确认后再处理；保留至少一个可回退内核。
 - 清理后运行 `smoke.ps1`，并记录释放量；不要清理 `preflight/age-key`。
-- 已移除服务残留：先查 `/etc/systemd/system`、`systemctl list-unit-files`、`/home/*`、`/var/lib/*`、`/etc/{nginx,letsencrypt,subuid,subgid}`；`workbench/piforge` 等旧用户或数据、旧 `antifieldcloud.service.pre-*`、`cloudflared-update.*`、旧 env/`server.properties` 备份。旧 env/RCON 备份含密钥，确认后应安全删除，不做普通备份保留；active 的 nginx/certbot/frpc 先确认用途再处理。
+- 旧入口/TLS：`nginx`、`certbot` 及其 `/etc/nginx`、`/etc/letsencrypt`、`/var/www/html`、80 端口已作为旧入口清理；服务监控只保留 minecraft/cloudflared/opencode。

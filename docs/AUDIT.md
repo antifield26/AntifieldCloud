@@ -119,6 +119,7 @@
 - Minecraft 世界未纳入备份；5 GiB 仅做逻辑/上限/12 MiB 实测，未跑满公网带宽。
 - Cloudflare Web Analytics 自动注入未关闭时仍会被严格 CSP 拦截；不影响功能。
 - 单 SD 卡/无全盘加密、单管理员、无限流持久化等既有风险保留。
+- v0.3.2 已关闭旧入口/旧 TLS 残留：nginx/certbot 及 `/etc/nginx`、`/etc/letsencrypt`、80 端口移除；服务监控降为 minecraft/cloudflared/opencode。
 
 ### 5. 结论
 

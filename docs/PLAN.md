@@ -2,6 +2,11 @@
 
 本文件是 v0.2.x/v0.3.x 的权威范围/决策摘要；完整交付与验收见 `docs/ACCEPTANCE.md`（当前版本在顶部）。
 
+## v0.3.2 补充
+
+- 旧入口/TLS 清理：nginx/certbot、`/etc/nginx`、`/etc/letsencrypt`、80 端口移除；服务监控降为 3 项。
+- workbench/piforge 残留、旧 unit/env/RCON 备份与 `.local` 冗余记录清理。
+
 ## v0.3.0 补充
 
 - 深度审计修复 + 备份管理/文件级恢复 + 音视频播放 + OpenCode 无垫片门禁。

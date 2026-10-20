@@ -40,7 +40,6 @@ import { cx } from '../lib/classnames'
 const SERVICE_LABELS: Record<keyof ServicesStatus, string> = {
   minecraft: 'Minecraft',
   cloudflared: 'Cloudflare Tunnel',
-  nginx: 'Nginx',
   opencode: 'opencode',
 }
 

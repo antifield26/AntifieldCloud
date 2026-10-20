@@ -60,7 +60,7 @@ export interface AlertDeps {
   log?: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
   /** 内存告警阈值（已用百分比），默认 90。 */
   memoryUsedPct?: number
-  /** 需要监控的 systemd unit；默认 minecraft/cloudflared/nginx/opencode。 */
+  /** 需要监控的 systemd unit；默认 minecraft/cloudflared/opencode（nginx 已作为旧入口移除）。 */
   serviceUnits?: Record<string, string>
   /** unknown 连续评估阈值（默认 3，测试可调小）。 */
   unknownThreshold?: number
@@ -266,7 +266,6 @@ export class AlertService {
     this.serviceUnits = deps.serviceUnits ?? {
       minecraft: config.mcSystemdUnit,
       cloudflared: 'cloudflared',
-      nginx: 'nginx',
       opencode: 'opencode',
     }
   }

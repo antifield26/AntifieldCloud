@@ -60,7 +60,6 @@ export class DashboardService {
     this.services = new ServiceMonitor({
       minecraft: config.mcSystemdUnit,
       cloudflared: 'cloudflared',
-      nginx: 'nginx',
       opencode: 'opencode',
     })
   }

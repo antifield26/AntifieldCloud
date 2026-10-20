@@ -125,7 +125,6 @@ export interface BackupStatus {
 export interface ServicesStatus {
   minecraft: ServiceState
   cloudflared: ServiceState
-  nginx: ServiceState
   opencode: ServiceState
 }
 

@@ -1,6 +1,11 @@
 # 路线图
 
-## v0.3.1（当前）
+## v0.3.2（当前）
+
+- 旧入口/TLS 清理：移除 nginx/certbot、旧 TLS 状态与 80 端口；服务监控降为 3 项。
+- workbench/piforge/旧 unit/env/RCON 备份清理；`.local` 冗余记录清理；nftables 仅保留 25565。
+
+## v0.3.1
 
 - 5 GB 级大文件分片/断点续传上传到 Pi；8 MiB 分片、配额预留、过期清理、前端续传；不做对象存储。
 - migration 4：`upload_sessions` / `upload_chunks`。

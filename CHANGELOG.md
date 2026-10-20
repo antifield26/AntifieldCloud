@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.2] - 2026-10-20
+
+### Changed
+
+- 移除旧入口：`nginx`/`nginx-common`/`certbot`/`python3-certbot*` 及 `/etc/nginx`、`/etc/letsencrypt`、`/var/www/html`、nginx 日志/状态；80 端口关闭。
+- 服务监控与告警从 4 项降为 `minecraft/cloudflared/opencode`；前端服务状态卡同步为 3 项，避免误报 nginx 离线。
+- nftables 移除 80 端口放行，仅保留 Minecraft 25565（直连/校园网段）。
+- 清理 workbench/piforge 残留、旧 `antifieldcloud.service.pre-*`、`cloudflared-update.*`、旧 env/RCON 备份；`.local` 冗余记录清理。
+
+### Docs
+
+- 更新 DEPLOY/API/UI/ARCH/SECURITY/ACCEPTANCE/AGENTS；补充旧入口与残留清理记录。
+
 ## [0.3.1] - 2026-10-20
 
 ### Added

@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库、文件分享、Minecraft 状态与白名单管理、opencode AI 工作区入口、PWA、主机告警与每日备份。
 
-> 状态：v0.3.1（5 GiB 分片上传/断点续传；备份管理与文件级恢复、音视频播放、审计修复、OpenCode 兼容门禁）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.3.2（清理旧 nginx/certbot 入口与 TLS 状态；5 GiB 分片上传/断点续传；备份管理与文件级恢复、音视频播放、审计修复、OpenCode 兼容门禁）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -10,6 +10,12 @@
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables
 - 测试：`node --test`（服务端）+ Vitest/jsdom（前端纯函数与组件），ESLint，`tsc --noEmit`
+
+## v0.3.2 功能
+
+- **旧入口清理**：移除 nginx/certbot 包与 `/etc/nginx`、`/etc/letsencrypt`、`/var/www/html`，关闭 80 端口；服务监控从 4 项降为 minecraft/cloudflared/opencode。
+- **运维清理**：workbench/piforge 残留、旧 unit/env/RCON 备份已安全删除；磁盘扫描与清理记录见 `docs/DEPLOY.md` §14。
+- **安全**：旧入口/TLS 状态不再保留；严格 CSP/Cloudflare Tunnel 入口不变。
 
 ## v0.3.1 功能
 

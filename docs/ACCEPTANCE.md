@@ -1,8 +1,52 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.3.1；v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.3.2；v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 
-## v0.3.1（当前）
+## v0.3.2（当前）
+
+- 日期：2026-10-20（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
+- 版本：`v0.3.2`
+- 范围：旧 nginx/certbot 入口与 TLS 状态清理、服务监控收敛、workbench/piforge/旧配置清理。
+
+### 1. 交付
+
+- 移除 `nginx`/`nginx-common`/`certbot`/`python3-certbot*` 及 `/etc/nginx`、`/etc/letsencrypt`、`/var/www/html`、nginx 日志/状态；80 端口无监听。
+- `minecraft/cloudflared/opencode` 为受监控服务；Dashboard/告警/前端状态卡同步为 3 项，避免 nginx 误报。
+- nftables 移除 80 端口放行，仅保留 25565。
+- 删除 workbench 用户/组/103M 旧数据、piforge subuid/gid、旧 `antifieldcloud.service.pre-*`、`cloudflared-update.*`、旧 env/RCON 备份；`.local` 清理旧脚本/全量快照/样本/历史 bundle。
+- 文档/烟测脚本更新为 4 个系统服务（不含 nginx）。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm run check` | 通过：服务端 150/150、前端 52/52 |
+| `npm run build` | 通过 |
+| 生产 Health | `{"ok":true,"version":"0.3.2"}` |
+| `smoke.ps1` | 16/16（服务状态 4 项 active） |
+| 旧入口 | nginx/certbot inactive/not-found；80 无监听；`/etc/nginx`、`/etc/letsencrypt` 已删除 |
+| 服务监控 | minecraft/cloudflared/opencode 3 项；`systemctl --failed` 0 |
+| 残留清理 | workbench/piforge/旧 unit/旧 env/RCON 已清理；`.local` 仅保留部署/演练/扫描/age 私钥 |
+| 备份 | `lastPullAt=2026-10-20T04:00:08Z`，secretsOk=true |
+
+### 3. 部署
+
+```text
+部署目录: /opt/antifieldcloud/releases/20261020T102328Z
+迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261020T102331729Z.sqlite
+服务: antifieldcloud.service (active, v0.3.2)
+tag: v0.3.2
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.3.2
+```
+
+### 4. 未决
+
+- 5 GiB 真实公网上传未跑满；OpenCode 上游原生按钮仍失效，保留最小隐藏接管。
+- RCON 仍监听所有接口（Paper 无 bind 配置），由 nftables 阻断非 loopback。
+- age 私钥仍需用户离线化；Minecraft 世界未纳入应用备份。
+
+## v0.3.1（历史）
 
 - 日期：2026-10-20（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境

@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库、文件分享、Minecraft 状态/白名单、opencode 反代、PWA、主机告警与每日备份到 Windows PC。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.3.1。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库、文件分享、Minecraft 状态/白名单、opencode 反代、PWA、主机告警与每日备份到 Windows PC。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.3.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -77,7 +77,7 @@ deploy/              systemd、nftables、cloudflared ingress、env 模板
 4. 密码/TOTP/隧道凭据/opencode 密码不得进仓库、日志、错误响应、前端 bundle。
 5. 预览仅白名单类型内联；SVG/HTML/XML 强制下载；文本预览上限 1 MiB。
 6. 代理只允许固定上游 `http://127.0.0.1:4096`，客户端 `Authorization` 必须被覆盖。
-7. 不修改现有 Minecraft/opencode/nginx/frpc/SSH 配置；不重启 Minecraft（除非用户明确授权并已备份）；不清理 PiForge 残留。
+7. 不修改现有 Minecraft/opencode/frpc/SSH 配置；不重启 Minecraft（除非用户明确授权并已备份）；nginx/certbot 旧入口已移除，不再作为监控项。
 8. 部署、备份脚本必须幂等、可重试；失败要留下可诊断日志，不得静默吞错。
 
 ## 6. 数据库与数据
