@@ -1,8 +1,9 @@
-# 备份与恢复（v0.2.x 两阶段协议）
+# 备份与恢复（v0.3.x 两阶段协议）
 
 > 目标：SD 卡损坏、误删、升级失败时，能恢复 `/var/lib/antifieldcloud` 的文件与 SQLite 元数据。
-> 备份分两种：**数据归档**（DB 快照 + 文件内容，明文，含 TOTP/会话）与**密钥包**（age 加密的 env/云隧道/Minecraft 配置）。
+> 备份分两种：**数据归档**（DB 快照 + 文件内容，明文，含 TOTP/会话）与**密钥包**（age 加密的 env/云隧道/Minecraft 配置/opencode 数据）。
 > 归档与密钥包都只允许落在本机或离线介质，不上传公开网盘。
+> 本版覆盖 App 数据 + opencode 数据；Minecraft 世界尚未纳入（见 §10）。
 
 ## 1. 策略
 
@@ -14,10 +15,11 @@
   由 DB 快照覆盖。存在未确认 pending 时，增量起点取最新 pending 时间，避免重复打包。
 - **保留**：Pi 上 pending 归档一直保留到确认；已确认归档最多 2 个（拉取成功后由 Windows 删除，CLI 兜底清理）。
   PC 保留 30 个 daily 日期目录 + 8 个 weekly 日期目录；密钥包保留 90 天。
-- **空间保护**：生成前检查剩余空间（本次估算 + 现有 pending 大小 + 2 GiB），不足则返回 JSON 错误且不生成归档。
+- **空间保护**：生成前检查剩余空间（本次估算 + 现有 pending + 仍占盘的已确认归档 + 孤儿归档 + 2 GiB），不足则返回 JSON 错误且不生成归档。
 - **完整性**：归档 SHA-256 写入 DB 与 PC 的 `.sha256` 旁文件；`--ack` 会再次校验 Pi 上文件；PC 下载后校验后再原子改名。
 - **密钥**：归档包含 DB（TOTP secret、会话、恢复码哈希）与文件内容，落盘权限 0640；密钥包使用 age 加密，
   私钥只保存在离线介质。
+- **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
 
 ## 2. 归档结构与协议
 
@@ -30,8 +32,9 @@ snapshot-20261019T100101239Z-full.tar.gz
 
 `manifest.json` 字段：`schema / createdAt / mode(full|inc) / since / database / files[] / fileCount / totalBytes`。
 
-DB 表 `backup_archives`（迁移 2）记录：`name(PK) / mode / created_at / sha256 / size / file_count / pulled_at / acked_at / deleted_at`。
+DB 表 `backup_archives`（迁移 2；v0.3 增加 `verified_at/origin/manifest_json/last_error`）记录：`name(PK) / mode / created_at / sha256 / size / file_count / pulled_at / acked_at / deleted_at / origin`。
 `backup_state.last_backup_at` 只在 `--ack` 后推进，兼容 v0.1 已有行；v0.2.0 首次拉取会因无已确认全量自动做全量。
+v0.3 文件级恢复计划表：`restore_plans`（归档链、选择、目标名、状态、操作者、过期）。
 
 ## 3. Pi 端命令（以 antifieldcloud 运行）
 
@@ -47,7 +50,8 @@ $CLI --snapshot-db                # 仅做一致性 DB 快照（部署/升级前
 
 - 成功输出单行 JSON；失败 `{ok:false,error}` 且退出码 1。归档权限 0640；DB 快照与清单 0600；`.backup.lock` 超过 1 小时视为陈旧。
 - `--ack` 只接受与 DB 记录一致的 SHA-256，且只允许游标前进（乱序 ack 安全）。
-- 兼容入口：无参数运行等价于“prepare + 立即 ack”，仅保留给旧脚本/测试，Windows 拉取任务不再使用。
+- 兼容入口：必须显式 `$CLI --legacy` 才执行“prepare + 立即 ack”；普通无参数运行会报错，旧脚本/任务应改用 `--prepare`/`--ack`。输出会标记 deprecated。
+- `--pending`/`--prepare` 额外返回 `orphans[]/orphanBytes/warnings`；原生无参不再隐式确认。
 
 ## 4. Windows 计划任务
 
@@ -61,9 +65,11 @@ cd "$env:USERPROFILE\projects\AntifieldCloud"
 - 安装脚本会：复制 `backup-pull.ps1` 到 `%LOCALAPPDATA%\AntifieldCloud\`；用 `icacls` 把备份目录 ACL 收紧为
   **当前用户 + Administrators + SYSTEM**；安装前做 `PiHost:22` 可达性预检；`-DryRun` 只打印计划不注册任务。
 - 拉取流程：`--pending` →（无 pending 才 `--prepare`）→ `.part` 下载 → SHA-256 校验 → 原子改名 → 写
-  `<archive>.sha256` → `--ack` → 删除 Pi 归档；失败保留 pending，下一轮重试同一归档，不重复生成。
+  `<archive>.sha256` → `--ack` → 删除 Pi 归档及 `.sha256`；失败保留 pending，下一轮重试同一归档，不重复生成。
+- 所有 SSH/SCP 有硬超时（`ssh -n` + job kill），secrets 拉取独立 try；`backup-pull.json` 分开记录
+  `secretsAttempted/secretsOk/lastSecretsAt/secretsLastError/secretsArchiveName`，secrets 失败 `ok=false` 且退出码 1。
 - 日志：`%LOCALAPPDATA%\AntifieldCloud\backup.log`（超过 1 MiB 自动轮转为 `backup.log.1`）。
-- 状态：成功拉取后写 `/var/lib/antifieldcloud/backup-pull.json`，面板“备份”卡片超过 48h 显示红色告警。
+- 状态：成功拉取后写 `/var/lib/antifieldcloud/backup-pull.json`，面板“备份”卡与告警读取；文件成功但密钥包失败会显示异常。
 - 旧任务 `PiBackUp-Nightly` 保持原样，不修改。
 
 ## 5. 密钥包（age 加密）
@@ -87,10 +93,11 @@ sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
 
 - 打包内容：`/etc/antifieldcloud/env`、`/etc/cloudflared/config.yml`、`/etc/cloudflared/cert.pem`、
   `/etc/cloudflared/<tunnel-uuid>.json`、`/home/antifield/minecraft-server/server.properties`、
-  `/etc/opencode/opencode.env`。
+  `/etc/opencode/opencode.env`、opencode `opencode.json`/`service.json` 及 opencode SQLite 一致性快照。
+- 脚本校验 age 公钥 root 属主/不可组写；明文只落 0700 临时目录并 trap 清理；不输出密码/密钥。
 - 输出：`/var/lib/antifieldcloud/backups/secrets/secrets-<UTC>.tar.age` + `.sha256`；目录 root:antifield 2750，文件 0640。
 - Windows 任务会自动拉取到 `$BackupRoot\secrets\<日期>\` 并写 `.sha256`；Pi 保留最近 2 份，PC 保留 90 天。
-- 未安装 age/未配置公钥时只记录警告，不影响文件归档备份。
+- 未安装 age/未配置公钥时只记录警告，不影响文件归档备份；但 secrets 状态会显示失败/未尝试。
 
 ## 6. 恢复（实际命令）
 
@@ -188,10 +195,31 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 
 | 现象 | 处理 |
 |---|---|
-| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移 2：重启一次服务或先升级部署，确认代码/DB 已是 v0.2.0 |
+| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移 2：重启一次服务或先升级部署，确认代码/DB 已是 v0.3.0（schema 3） |
 | pending 一直不减少 | PC 下载失败：看 `backup.log`；确认直连/SSH；保留 pending 是预期行为，不要手工删 DB 行 |
 | `--ack` 报 SHA 不匹配 | 归档损坏/被替换；对比 PC `.sha256`，从 PC 副本重新确认或重新 `--prepare --full` |
-| `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+2 GiB |
-| 密钥备份报 `age 未安装/缺少公钥` | 按 §5 安装 age 并写入 `/etc/antifieldcloud/secrets-age.pub`；不影响普通归档 |
+| `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB |
+| 密钥备份报 `age 未安装/缺少公钥` | 按 §5 安装 age 并写公钥；文件归档仍可成功，但 `secretsOk` 会为 false，属预期可见状态 |
 | 备份面板超 48h 红色 | 检查计划任务 LastTaskResult、`backup.log`、Pi 直连与 pending 状态 |
+| 备份面板密钥状态异常/unknown | 看 `backup-pull.json` 的 `secretsAttempted/secretsOk/secretsLastError`；确认新脚本已安装、age 公钥权限正确 |
 | 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN/COOKIE_DOMAIN 一致；必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
+
+## 10. Web 文件级恢复（v0.3）
+
+Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
+
+1. Settings → 备份与恢复 → 上传归档（≤100 MiB；需要 TOTP）或 scp 到 `DATA_DIR/backups/imports/` 后刷新；
+2. 校验归档（流式 SHA-256 + tar 安全扫描）；
+3. 恢复向导选择 full+inc 链和文件/目录 → TOTP + 输入 `RESTORE` → 计划 30 分钟有效；
+4. 执行后只新建“恢复-<时间>”文件夹，使用新文件 ID，不覆盖原数据；失败会清理未完成内容；
+5. 整库恢复仍走 §6 的离线 root 流程，Web 不提供。
+
+信任边界：归档含 TOTP/会话，导入需要管理员 TOTP；tar 仍按不可信输入处理，不提供归档下载。归档计划的 `restore_plans` 状态可查询；执行单并发。
+
+## 11. 覆盖与限制（v0.3.0）
+
+- 已覆盖：App 数据归档（DB + 文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照）。
+- 未覆盖：Minecraft 世界（体积/`save-off`/一致性要求，另立项）；VPS 远端归档/异地副本；对象存储。
+- v0.3.0 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，v0.3.1 分片上传后扩展。
+- 普通归档仍含 TOTP/会话明文；PC ACL/离线介质是最后防线。age 私钥丢失=密钥包不可恢复。
+- 恢复演练记录见 §7 与 `.local/DR-DRILL.md`；每次升级前重新演练。

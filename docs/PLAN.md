@@ -1,6 +1,18 @@
-# AntifieldCloud v0.2.x 实施计划（摘要）
+# AntifieldCloud v0.3.x 实施计划（摘要）
 
-本文件是 v0.2.x 的权威范围/决策摘要；v0.1.0/v0.2.0/v0.2.1 的完整交付与验收见 `docs/ACCEPTANCE.md`（v0.2.2 在顶部）。
+本文件是 v0.2.x/v0.3.x 的权威范围/决策摘要；完整交付与验收见 `docs/ACCEPTANCE.md`（当前版本在顶部）。
+
+## v0.3.0 补充
+
+- 深度审计修复 + 备份管理/文件级恢复 + 音视频播放 + OpenCode 无垫片门禁。
+- 备份：Web 上传归档（≤100 MiB）+ 文件级恢复到新目录；整库恢复仅离线 root CLI；App + opencode 数据覆盖；手动 prepare。
+- OpenCode：Cloudflare 关闭 ai 的 Rocket Loader/自动注入后 Test `attributes`/`passthrough`；失败保留最小隐藏 click 接管。
+- 大文件 5 GB 分片放到 v0.3.1。
+- 环境开关：`BACKUP_RESTORE_ENABLED`、`OPENCODE_HTML_MODE`；migration 3。
+
+## v0.3.1 补充
+
+- 分片上传到 Pi，单文件 5 GB，8 MiB 分片，断点续传/配额/清理；不做对象存储。
 
 ## v0.2.2 补充
 

@@ -14,7 +14,7 @@ import { SlidingWindowLimiter } from '../../auth/limiter.ts'
 import { requestMeta } from '../request-meta.ts'
 import { AppError, forbidden, rateLimited } from '../../util/errors.ts'
 import { sha256Hex } from '../../util/ids.ts'
-import { asRecord, actorFrom, clientIp, contentDisposition, parseRange } from '../util.ts'
+import { asRecord, actorFrom, clientIp, contentDisposition, parsePositiveInt, parseRange } from '../util.ts'
 import { csrfGuard, requireAuth } from '../guards.ts'
 
 const SHARE_COOKIE = 'af_share'
@@ -102,8 +102,12 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
     return result
   })
 
-  app.get('/api/shares', { preHandler: [requireAuth] }, async () => {
-    return shares.list()
+  app.get('/api/shares', { preHandler: [requireAuth] }, async (request) => {
+    const query = asRecord(request.query)
+    return shares.list({
+      page: parsePositiveInt(query.page, 1, 1, 100_000),
+      pageSize: parsePositiveInt(query.pageSize, 100, 1, 500),
+    })
   })
 
   app.delete('/api/shares/:id', { preHandler: [requireAuth, csrf] }, async (request) => {

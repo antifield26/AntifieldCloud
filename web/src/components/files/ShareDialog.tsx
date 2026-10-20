@@ -11,7 +11,9 @@ import { Modal } from '../Modal'
 import { Button } from '../Button'
 import { FormField } from '../FormField'
 import { CopyButton } from '../CopyButton'
+import { ConfirmDialog } from '../ConfirmDialog'
 import { formatDateTime } from '../../lib/format'
+import { absoluteShareUrl, shouldProtectShareLinkClose } from '../../lib/share-link'
 
 export interface ShareDialogProps {
   file: FileItem | null
@@ -28,12 +30,6 @@ const EXPIRES_OPTIONS = [
   { value: '1', label: '1 小时' },
 ]
 
-function absoluteShareUrl(raw: string, appOrigin: string): string {
-  if (/^https?:\/\//i.test(raw)) return raw
-  if (!appOrigin) return raw
-  return `${appOrigin.replace(/\/$/, '')}${raw.startsWith('/') ? raw : `/${raw}`}`
-}
-
 export function ShareDialog({ file, onClose }: ShareDialogProps) {
   const { meta } = useAppMeta()
   const [password, setPassword] = useState('')
@@ -43,6 +39,8 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<CreateShareResult | null>(null)
+  const [linkSaved, setLinkSaved] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
   const formId = useId()
 
   const open = file !== null
@@ -57,14 +55,16 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
     setBusy(false)
     setError(null)
     setResult(null)
+    setLinkSaved(false)
+    setConfirmClose(false)
   }, [open, file?.id])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (!file) return
     setError(null)
-    if (password && password.length < 4) {
-      setError('分享密码至少需要 4 个字符')
+    if (password && password.length < 8) {
+      setError('分享密码至少需要 8 个字符')
       return
     }
     let max: number | undefined
@@ -97,32 +97,55 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
     onClose()
   }
 
+  // 一次性链接未复制/打开时，关闭（含 Esc/遮罩/完成）需要二次确认
+  const requestClose = (): void => {
+    if (busy) return
+    if (shouldProtectShareLinkClose(Boolean(result), linkSaved)) {
+      setConfirmClose(true)
+      return
+    }
+    onClose()
+  }
+
   return (
-    <Modal
-      open={open}
-      title={result ? '分享链接已创建' : '分享文件'}
-      description={file ? `为「${file.name}」创建公开下载链接` : undefined}
-      size="md"
-      onClose={close}
-      busy={busy}
-      footer={
-        result ? (
-          <>
-            <CopyButton value={shareUrl} label="复制链接" size="md" variant="secondary" />
-            <a className="btn btn-secondary btn-md" href={shareUrl} target="_blank" rel="noopener noreferrer">
-              <ExternalLink size={16} aria-hidden="true" />
-              <span className="btn-label">打开链接</span>
-            </a>
-            <Button variant="primary" onClick={onClose}>完成</Button>
-          </>
-        ) : (
-          <>
-            <Button variant="ghost" onClick={close} disabled={busy}>取消</Button>
-            <Button variant="primary" type="submit" form={formId} loading={busy}>创建链接</Button>
-          </>
-        )
-      }
-    >
+    <>
+      <Modal
+        open={open}
+        title={result ? '分享链接已创建' : '分享文件'}
+        description={file ? `为「${file.name}」创建公开下载链接` : undefined}
+        size="md"
+        onClose={requestClose}
+        busy={busy}
+        footer={
+          result ? (
+            <>
+              <CopyButton
+                value={shareUrl}
+                label="复制链接"
+                size="md"
+                variant="secondary"
+                onCopied={() => setLinkSaved(true)}
+              />
+              <a
+                className="btn btn-secondary btn-md"
+                href={shareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setLinkSaved(true)}
+              >
+                <ExternalLink size={16} aria-hidden="true" />
+                <span className="btn-label">打开链接</span>
+              </a>
+              <Button variant="primary" onClick={requestClose}>完成</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={close} disabled={busy}>取消</Button>
+              <Button variant="primary" type="submit" form={formId} loading={busy}>创建链接</Button>
+            </>
+          )
+        }
+      >
       {result ? (
         <div className="share-result">
           <div className="notice notice-warning">
@@ -156,7 +179,7 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
         </div>
       ) : (
         <form id={formId} className="share-form" onSubmit={(event) => void handleSubmit(event)}>
-          <FormField label="分享密码" htmlFor="share-password" hint="可选；访问者需要输入密码才能下载。">
+          <FormField label="分享密码" htmlFor="share-password" hint="可选；至少 8 个字符，访问者需输入密码才能下载。">
             <input
               id="share-password"
               className="input"
@@ -206,6 +229,21 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
           {error ? <p className="field-error" role="alert">{error}</p> : null}
         </form>
       )}
-    </Modal>
+      </Modal>
+
+      <ConfirmDialog
+        open={confirmClose}
+        title="关闭分享链接窗口"
+        message="分享链接只显示一次，关闭后将无法再次查看完整链接。"
+        details="请先复制或打开链接；关闭后可在“分享管理”查看状态，但无法恢复完整 URL。"
+        confirmText="仍然关闭"
+        cancelText="返回保存"
+        onConfirm={() => {
+          setConfirmClose(false)
+          onClose()
+        }}
+        onClose={() => setConfirmClose(false)}
+      />
+    </>
   )
 }

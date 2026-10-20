@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库、文件分享、Minecraft 状态与白名单管理、opencode AI 工作区入口、PWA、主机告警与每日备份。
 
-> 状态：v0.2.2（文件列表点击与 OpenCode Web 原生新建按钮修复；不再注入自定义按钮）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.3.0（备份管理/文件级恢复、音视频播放、审计修复、OpenCode 无垫片验证门禁）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -10,6 +10,14 @@
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables
 - 测试：`node --test`（服务端）+ Vitest/jsdom（前端纯函数与组件），ESLint，`tsc --noEmit`
+
+## v0.3.0 功能
+
+- **备份管理/恢复**：Web 归档列表、手动准备 pending、上传/校验、文件级恢复到新目录（TOTP + typed confirmation）；整库恢复仅离线 CLI；应用数据 + opencode 数据纳入备份覆盖。
+- **音视频播放**：mp4/webm/mp3/m4a/ogg/flac/wav 原生 Range 播放，不转码；mkv/avi 等回退下载。
+- **审计修复**：回收站分享 410、分享审计节流/密码≥8/备注私有/token 日志脱敏/GC、告警 unknown 降级与 90 天保留、备份脚本硬超时与 secrets 独立状态、孤儿/legacy 归档可观测。
+- **OpenCode**：`shim|attributes|passthrough` 模式；Cloudflare 关闭 Rocket Loader/自动注入后验证无垫片；失败保留最小隐藏接管，不添加可见按钮。
+- **文档/运维**：migration 3（`backup_archives` 扩展 + `restore_plans`）、备份状态字段、Cloudflare/OpenCode runbook。
 
 ## v0.2.x 功能
 
@@ -22,7 +30,7 @@
 - OpenCode Web：Rocket Loader opt-out + 原生新建按钮兼容层（不添加可见按钮）；文件列表名称列可点击进入/预览。
 - 监控告警：磁盘/温度/服务/备份超期/欠压等条件，通用 JSON webhook，面板可查历史并手动测试。
 - 备份：两阶段归档（PC 确认后才推进游标）、未拉取归档不删除、SHA 旁文件、ACL 收紧、age 加密密钥包、恢复文档与演练。
-- 工程：迁移 2（笔记/分享/告警/备份归档表）、服务端 86+ 测试、前端 23 测试、CI 运维静态检查。
+- 工程：迁移 3、服务端 140 测试、前端 48 测试、CI 运维静态检查。
 
 ## 常用命令
 

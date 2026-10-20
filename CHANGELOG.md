@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0] - 2026-10-20
+
+### Added
+
+- 备份管理：列表、手动生成 pending、归档导入/校验、文件级恢复到新目录（TOTP + typed confirmation）；整库恢复仅离线 CLI。
+- 备份覆盖：opencode DB/config 纳入 age 加密密钥包；文件备份 + 密钥包状态分离。
+- 音视频播放：mp4/webm/mp3/m4a/ogg/flac/wav 原生 Range 播放，不转码；mkv/avi 回退下载。
+- OpenCode `OPENCODE_HTML_MODE=shim|attributes|passthrough`，支持关闭 Cloudflare 注入后的无垫片验证。
+- migration 3：`backup_archives` 扩展 + `restore_plans`；`/api/backups`、`/api/restores` 路由。
+
+### Fixed
+
+- 备份任务 SSH/SCP 硬超时；secrets 拉取独立状态（`secretsOk/lastSecretsError`），不再“文件成功即全部成功”。
+- 回收站文件旧分享返回 410；分享下载审计节流；密码≥8；公开备注移除；token 日志脱敏；过期/吊销 GC。
+- 告警 unknown 降级与恢复、事件+状态事务化、90 天保留；备份密钥包告警。
+- legacy 无参备份改为显式 `--legacy`；孤儿归档可观测并计入空间预算；sidecar 清理。
+- 前端分享备注/一次性 URL/PWA 缓存/审计映射；媒体与备份向导测试。
+- 文档与 API/UI/ARCH/SECURITY/DEPLOY/BACKUP 同步。
+
 ## [0.2.2] - 2026-10-19
 
 ### Fixed

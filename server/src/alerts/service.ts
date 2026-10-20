@@ -6,7 +6,9 @@
  *   测试不依赖真实主机/网络。
  * - 日志与错误信息中绝不输出 webhook URL 与 secret；投递失败只记录脱敏后的原因。
  * - 状态机持久化在 alert_state：首次越界产生 firing 事件；持续越界按冷却时间重复通知；
- *   恢复时产生 resolved 事件。无法读取的指标视为 unknown，不改变现有状态。
+ *   恢复时产生 resolved 事件。无法读取的指标视为 unknown：连续 N 次不可读后降级为
+ *   unknown 事件（同一降级只发一次），数据源恢复后发 resolved；事件与状态写入在同一事务内。
+ * - alert_events 保留 90 天，评估周期内按小时节流清理旧事件。
  * - start()/stop() 由进程入口接入；构造函数不自行启动定时器。
  */
 import { execFile } from 'node:child_process'
@@ -16,6 +18,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import os from 'node:os'
 import { promisify } from 'node:util'
 import type { Config } from '../config.ts'
+import { transaction } from '../db.ts'
 import { nowIso } from '../util/time.ts'
 
 const execFileAsync = promisify(execFile)
@@ -23,8 +26,14 @@ const execFileAsync = promisify(execFile)
 export const DEFAULT_MEMORY_USED_PCT = 90
 export const WEBHOOK_TIMEOUT_MS = 10_000
 export const WEBHOOK_MAX_ATTEMPTS = 3
+/** unknown 连续评估次数达到该值时降级产生事件。 */
+export const UNKNOWN_DEGRADE_THRESHOLD = 3
+/** alert_events 保留天数。 */
+export const ALERT_EVENT_RETENTION_DAYS = 90
 const EVENT_LIMIT_DEFAULT = 20
 const EVENT_LIMIT_MAX = 200
+/** 事件清理最小间隔，避免每次评估都执行 DELETE。 */
+const EVENT_PRUNE_INTERVAL_MS = 60 * 60_000
 
 export type AlertSeverity = 'info' | 'warning' | 'critical'
 export type AlertStatus = 'firing' | 'ok' | 'unknown'
@@ -53,6 +62,8 @@ export interface AlertDeps {
   memoryUsedPct?: number
   /** 需要监控的 systemd unit；默认 minecraft/cloudflared/nginx/opencode。 */
   serviceUnits?: Record<string, string>
+  /** unknown 连续评估阈值（默认 3，测试可调小）。 */
+  unknownThreshold?: number
 }
 
 export interface AlertEventItem {
@@ -222,6 +233,10 @@ export class AlertService {
     AlertDeps
   private readonly memoryUsedPct: number
   private readonly serviceUnits: Record<string, string>
+  private readonly unknownThreshold: number
+  /** event → 连续 unknown 次数（进程内即可：重启后重新累计）。 */
+  private readonly unknownStreak = new Map<string, number>()
+  private lastEventPruneAt = 0
   private timer: NodeJS.Timeout | null = null
   private running = false
   private lastEvaluatedAt: string | null = null
@@ -247,6 +262,7 @@ export class AlertService {
       ...deps,
     }
     this.memoryUsedPct = deps.memoryUsedPct ?? DEFAULT_MEMORY_USED_PCT
+    this.unknownThreshold = Math.max(1, deps.unknownThreshold ?? UNKNOWN_DEGRADE_THRESHOLD)
     this.serviceUnits = deps.serviceUnits ?? {
       minecraft: config.mcSystemdUnit,
       cloudflared: 'cloudflared',
@@ -293,6 +309,7 @@ export class AlertService {
       await this.servicesCondition(),
       this.backupOverdueCondition(),
       this.backupPendingCondition(),
+      this.backupSecretsCondition(),
       await this.minecraftCondition(),
       this.underVoltageCondition(health),
     ]
@@ -475,6 +492,53 @@ export class AlertService {
     }
   }
 
+  /** PC 拉取脚本写入的密钥包状态；旧状态没有字段时明确标为 unknown，不冒充成功。 */
+  private backupSecretsCondition(): AlertCondition {
+    let raw: {
+      secretsAttempted?: boolean
+      secretsOk?: boolean
+      lastSecretsAt?: string | null
+      secretsLastError?: string | null
+    }
+    try {
+      raw = JSON.parse(this.deps.readFile(this.config.backupPullFile)) as typeof raw
+    } catch {
+      return this.unknown('backup_secrets', '密钥包备份', '无法读取备份状态')
+    }
+    if (!raw || raw.secretsAttempted !== true) {
+      return this.unknown('backup_secrets', '密钥包备份', '尚未记录密钥包拉取状态')
+    }
+    if (raw.secretsOk === false) {
+      return {
+        event: 'backup_secrets',
+        severity: 'warning',
+        status: 'firing',
+        title: '密钥包备份失败',
+        message: `最近一次密钥包拉取失败${raw.secretsLastError ? `：${raw.secretsLastError}` : ''}`,
+        details: { lastSecretsAt: raw.lastSecretsAt ?? null, error: raw.secretsLastError ?? null },
+      }
+    }
+    if (!raw.lastSecretsAt) {
+      return this.unknown('backup_secrets', '密钥包备份', '密钥包成功状态缺少时间')
+    }
+    const ageHours = (this.deps.now().getTime() - Date.parse(raw.lastSecretsAt)) / 3_600_000
+    if (!Number.isFinite(ageHours)) {
+      return this.unknown('backup_secrets', '密钥包备份', '密钥包时间不可解析')
+    }
+    const threshold = Math.max(72, this.config.alertBackupMaxAgeHours)
+    const firing = ageHours > threshold
+    return {
+      event: 'backup_secrets',
+      severity: 'warning',
+      status: firing ? 'firing' : 'ok',
+      title: '密钥包备份超期',
+      message: firing
+        ? `最近一次密钥包备份在 ${round1(ageHours)} 小时前（阈值 ${threshold} 小时）`
+        : '密钥包备份正常',
+      details: { lastSecretsAt: raw.lastSecretsAt, ageHours: round1(ageHours), thresholdHours: threshold },
+    }
+  }
+
   private async minecraftCondition(): Promise<AlertCondition> {
     if (!this.deps.minecraftStatus) return this.unknown('mc_offline', 'Minecraft 状态', '未接入 Minecraft 状态')
     let status: { online: boolean; error?: string | null } | null
@@ -534,6 +598,11 @@ export class AlertService {
       for (const event of events) {
         if (await this.deliver(event)) delivered += 1
       }
+      try {
+        this.pruneEventsIfDue()
+      } catch (error) {
+        this.deps.log('warn', '告警事件清理失败', { error: this.sanitizeError(error) })
+      }
       this.lastEvaluatedAt = evaluatedIso
       return {
         skipped: false,
@@ -551,7 +620,9 @@ export class AlertService {
   // ---------- 状态机 ----------
 
   private applyCondition(condition: AlertCondition, now: Date): AlertEventRow | null {
-    if (condition.status === 'unknown') return null
+    if (condition.status === 'unknown') return this.applyUnknownCondition(condition, now)
+    // 数据源恢复可用：重置连续 unknown 计数。
+    this.unknownStreak.delete(condition.event)
     const nowMs = now.getTime()
     const state = this.db.prepare('SELECT * FROM alert_state WHERE event = ?').get(condition.event) as unknown as
       | AlertStateRow
@@ -561,34 +632,41 @@ export class AlertService {
       const lastFired = state?.last_fired_at ? Date.parse(state.last_fired_at) : Number.NaN
       const inCooldown = state?.status === 'firing' && Number.isFinite(lastFired) && nowMs - lastFired < cooldownMs
       if (inCooldown) return null
-      const event = this.insertEvent(condition, 'firing', now)
-      this.db
-        .prepare(
-          `INSERT INTO alert_state (event, status, last_fired_at, last_ok_at) VALUES (?, 'firing', ?, ?)
-           ON CONFLICT(event) DO UPDATE SET status = 'firing', last_fired_at = excluded.last_fired_at`,
-        )
-        .run(condition.event, event.created_at, state?.last_ok_at ?? null)
-      return event
+      return transaction(this.db, () => {
+        const event = this.insertEvent(condition, 'firing', now)
+        this.db
+          .prepare(
+            `INSERT INTO alert_state (event, status, last_fired_at, last_ok_at) VALUES (?, 'firing', ?, ?)
+             ON CONFLICT(event) DO UPDATE SET status = 'firing', last_fired_at = excluded.last_fired_at`,
+          )
+          .run(condition.event, event.created_at, state?.last_ok_at ?? null)
+        return event
+      })
     }
-    // status === 'ok'
-    if (state?.status === 'firing') {
-      const previous = this.db
-        .prepare("SELECT severity, title FROM alert_events WHERE event = ? AND status = 'firing' ORDER BY id DESC LIMIT 1")
-        .get(condition.event) as { severity: string; title: string } | undefined
-      const event = this.insertEvent(
-        {
-          ...condition,
-          severity: (previous?.severity as AlertSeverity | undefined) ?? 'info',
-          title: `${previous?.title ?? condition.title}（已恢复）`,
-          message: '指标已恢复正常',
-        },
-        'resolved',
-        now,
-      )
-      this.db
-        .prepare("UPDATE alert_state SET status = 'ok', last_ok_at = ? WHERE event = ?")
-        .run(event.created_at, condition.event)
-      return event
+    // status === 'ok'：从 firing 或 unknown 恢复都产生一条 resolved 事件。
+    if (state?.status === 'firing' || state?.status === 'unknown') {
+      const degraded = state.status === 'unknown'
+      const previous = degraded
+        ? undefined
+        : (this.db
+            .prepare("SELECT severity, title FROM alert_events WHERE event = ? AND status = 'firing' ORDER BY id DESC LIMIT 1")
+            .get(condition.event) as { severity: string; title: string } | undefined)
+      return transaction(this.db, () => {
+        const event = this.insertEvent(
+          {
+            ...condition,
+            severity: degraded ? 'info' : ((previous?.severity as AlertSeverity | undefined) ?? 'info'),
+            title: degraded ? `${condition.title}（数据已恢复）` : `${previous?.title ?? condition.title}（已恢复）`,
+            message: degraded ? '指标数据源恢复可用' : '指标已恢复正常',
+          },
+          'resolved',
+          now,
+        )
+        this.db
+          .prepare("UPDATE alert_state SET status = 'ok', last_ok_at = ? WHERE event = ?")
+          .run(event.created_at, condition.event)
+        return event
+      })
     }
     this.db
       .prepare(
@@ -599,7 +677,50 @@ export class AlertService {
     return null
   }
 
-  private insertEvent(condition: AlertCondition, status: 'firing' | 'resolved', now: Date): AlertEventRow {
+  /**
+   * unknown 连续出现：未到阈值保持既有状态；达到阈值后降级为 unknown 事件并写状态。
+   * 同一降级只发一次（state.status 已是 unknown 时不再重复），数据恢复时由 ok 分支发 resolved。
+   */
+  private applyUnknownCondition(condition: AlertCondition, now: Date): AlertEventRow | null {
+    const streak = (this.unknownStreak.get(condition.event) ?? 0) + 1
+    this.unknownStreak.set(condition.event, streak)
+    if (streak < this.unknownThreshold) return null
+    const state = this.db.prepare('SELECT * FROM alert_state WHERE event = ?').get(condition.event) as unknown as
+      | AlertStateRow
+      | undefined
+    if (state?.status === 'unknown') return null
+    return transaction(this.db, () => {
+      const event = this.insertEvent(
+        {
+          ...condition,
+          severity: 'warning',
+          title: `${condition.title}（数据不可用）`,
+          message: `连续 ${streak} 次无法评估：${condition.message}`,
+          details: { ...condition.details, unknownStreak: streak, degraded: true },
+        },
+        'unknown',
+        now,
+      )
+      this.db
+        .prepare(
+          `INSERT INTO alert_state (event, status, last_fired_at, last_ok_at) VALUES (?, 'unknown', ?, ?)
+           ON CONFLICT(event) DO UPDATE SET status = 'unknown', last_fired_at = excluded.last_fired_at`,
+        )
+        .run(condition.event, event.created_at, state?.last_ok_at ?? null)
+      return event
+    })
+  }
+
+  /** 清理超过保留期的告警事件（按小时节流）。 */
+  private pruneEventsIfDue(): void {
+    const nowMs = this.deps.now().getTime()
+    if (this.lastEventPruneAt > 0 && nowMs - this.lastEventPruneAt < EVENT_PRUNE_INTERVAL_MS) return
+    this.lastEventPruneAt = nowMs
+    const cutoff = new Date(nowMs - ALERT_EVENT_RETENTION_DAYS * 86_400_000).toISOString()
+    this.db.prepare('DELETE FROM alert_events WHERE created_at < ?').run(cutoff)
+  }
+
+  private insertEvent(condition: AlertCondition, status: 'firing' | 'resolved' | 'unknown', now: Date): AlertEventRow {
     const createdAt = now.toISOString()
     const result = this.db
       .prepare(

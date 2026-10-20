@@ -13,6 +13,9 @@ export interface BackupStatus {
   sizeBytes: number
   ok: boolean
   overdue: boolean
+  secretsOk: boolean | null
+  lastSecretsAt: string | null
+  secretsLastError: string | null
 }
 
 export interface OpenCodeStatus {
@@ -103,6 +106,9 @@ export class DashboardService {
         lastPullAt?: string
         sizeBytes?: number
         ok?: boolean
+        secretsOk?: boolean
+        lastSecretsAt?: string | null
+        secretsLastError?: string | null
       }
       if (!raw.lastPullAt) return null
       const ageHours = (Date.now() - Date.parse(raw.lastPullAt)) / 3_600_000
@@ -112,6 +118,9 @@ export class DashboardService {
         sizeBytes: Number(raw.sizeBytes ?? 0),
         ok: raw.ok !== false,
         overdue: ageHours > 48,
+        secretsOk: typeof raw.secretsOk === 'boolean' ? raw.secretsOk : null,
+        lastSecretsAt: raw.lastSecretsAt ?? null,
+        secretsLastError: raw.secretsLastError ?? null,
       }
     } catch {
       return null

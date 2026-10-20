@@ -1,6 +1,18 @@
 # 路线图
 
-## v0.2.2（当前）
+## v0.3.1（下一版）
+
+- 5 GB 级大文件分片/断点续传上传到 Pi；8 MiB 分片、配额预留、过期清理、前端续传；不做对象存储。
+
+## v0.3.0（当前）
+
+- 深度审计修复：备份脚本硬超时/secrets 状态、回收站分享 410、分享审计节流/密码/日志、告警 unknown/保留、备份孤儿/legacy。
+- 备份管理：Web 列表/手动 prepare/导入校验/文件级恢复到新目录；整库恢复仅离线 CLI；App + opencode 数据覆盖。
+- 音视频播放：白名单容器 Range 播放，不转码。
+- OpenCode：`shim|attributes|passthrough` 模式；Cloudflare 关闭 Rocket Loader 后验证无垫片，失败保留最小隐藏接管。
+- 文档/迁移 3/运维 runbook。
+
+## v0.2.2
 
 - 移除 v0.2.1 的可见“＋ 新会话”浮动按钮。
 - 捕获原生“新建会话”按钮（click/pointerup），修复 Android/宽屏移动浏览器无响应。

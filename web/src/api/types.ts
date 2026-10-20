@@ -116,6 +116,10 @@ export interface BackupStatus {
   sizeBytes: number | null
   ok: boolean | null
   overdue: boolean | null
+  /** v0.3 可选扩展：待确认归档/孤儿归档数与最近错误 */
+  pendingCount?: number | null
+  orphanCount?: number | null
+  lastError?: string | null
 }
 
 export interface ServicesStatus {
@@ -152,7 +156,7 @@ export interface AuditPage {
 }
 
 export type FileKind = 'file' | 'dir'
-export type PreviewKind = 'image' | 'text' | 'markdown' | 'pdf' | 'none'
+export type PreviewKind = 'image' | 'text' | 'markdown' | 'pdf' | 'audio' | 'video' | 'none'
 
 export interface FileItem {
   id: string
@@ -255,6 +259,8 @@ export interface VersionResult {
   maxUploadBytes?: number
   sharesEnabled?: boolean
   alertsEnabled?: boolean
+  /** 备份恢复向导是否可用；后端未就绪时为 false */
+  backupRestoreEnabled?: boolean
 }
 
 /** 前端运行期需要的站点元数据（由 /api/version 推导 + 安全回退）。 */
@@ -267,6 +273,7 @@ export interface AppMeta {
   maxUploadBytes: number
   sharesEnabled: boolean
   alertsEnabled: boolean
+  backupRestoreEnabled: boolean
 }
 
 /* ---------- 知识库：笔记与书签 ---------- */
@@ -392,7 +399,8 @@ export interface PublicShareMeta {
   /** null 表示不限下载次数 */
   maxDownloads: number | null
   downloadCount: number
-  note: string | null
+  /** 备注仅分享者可见；公开接口可能不再返回该字段 */
+  note?: string | null
 }
 
 export interface PublicShareInfo {
@@ -447,6 +455,133 @@ export interface AlertTestResult {
   ok: boolean
   delivered: boolean
   message?: string
+}
+
+/* ---------- 备份管理与文件级恢复（v0.3，契约按 task-7 实现） ---------- */
+
+export type BackupMode = 'full' | 'inc'
+export type BackupArchiveStatus = 'pending' | 'acked' | 'imported' | 'missing'
+export type BackupOrigin = 'pi' | 'import' | 'legacy'
+
+/** 归档内 tar 安全解析后的清单摘要（不含文件内容）。 */
+export interface BackupManifest {
+  mode: BackupMode
+  createdAt: string
+  since: string | null
+  fileCount: number
+  totalBytes: number
+}
+
+export interface BackupArchive {
+  /** 等于 name；后端没有独立数字 id */
+  id: string
+  name: string
+  mode: BackupMode
+  createdAt: string
+  sizeBytes: number
+  sha256: string
+  status: BackupArchiveStatus
+  origin: BackupOrigin
+  verifiedAt: string | null
+  pulledAt: string | null
+  ackedAt: string | null
+  lastError: string | null
+  manifest: BackupManifest | null
+}
+
+/** imports 目录中存在但 DB 无记录的文件（孤儿）或待导入文件。 */
+export interface BackupInboxItem {
+  name: string
+  sizeBytes: number
+  modifiedAt: string
+  imported: boolean
+}
+
+export interface BackupState {
+  lastPullAt: string | null
+  pendingCount: number
+  ackedCount: number
+  importCount: number
+  orphanCount: number
+  lastError: string | null
+  dataDirFreeBytes: number
+}
+
+export interface BackupListResult {
+  items: BackupArchive[]
+  inbox: BackupInboxItem[]
+  orphans: BackupInboxItem[]
+  state: BackupState
+}
+
+export interface BackupImportVerify {
+  ok: boolean
+  error?: string
+}
+
+export interface BackupImportResult {
+  archive: BackupArchive
+  verify?: BackupImportVerify
+}
+
+export interface BackupVerifyResult {
+  ok: boolean
+  archive: BackupArchive
+}
+
+export interface BackupPrepareResult {
+  ok: boolean
+  mode?: 'full' | 'inc'
+  archiveName?: string
+  sizeBytes?: number
+  sha256?: string
+  fileCount?: number
+  pending?: BackupArchive[]
+}
+
+/** GET /api/backups/archives/:name/entries 的只读归档内容（最多 500 条）。 */
+export interface BackupArchiveEntry {
+  path: string
+  name: string
+  kind: 'file' | 'dir'
+  size: number
+}
+
+export interface BackupEntriesResult {
+  path: string
+  items: BackupArchiveEntry[]
+}
+
+export interface RestorePlan {
+  id: string
+  status: string
+  targetName: string
+  archive: string
+  archives: string[]
+  fileCount: number
+  totalBytes: number
+  createdAt: string
+  expiresAt: string
+  completedAt?: string | null
+  error?: string | null
+}
+
+export interface RestorePlanResult {
+  plan: RestorePlan
+}
+
+export interface RestoreResult {
+  targetFolderId: string
+  targetName: string
+  filesRestored: number
+  bytesRestored: number
+  durationMs: number
+}
+
+export interface RestoreExecuteResult {
+  ok: boolean
+  plan: RestorePlan
+  result: RestoreResult
 }
 
 export interface FileListQuery {

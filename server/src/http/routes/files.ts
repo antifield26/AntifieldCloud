@@ -5,7 +5,7 @@ import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { FastifyInstance } from 'fastify'
 import type { Config } from '../../config.ts'
-import type { FileItem, FileService } from '../../files/service.ts'
+import type { Actor, FileItem, FileService } from '../../files/service.ts'
 import { canInline, previewKindFor } from '../../files/mime.ts'
 import { AppError, badRequest, insufficientStorage, tooLarge } from '../../util/errors.ts'
 import { asRecord, actorFrom, contentDisposition, decodeUploadFilename, parsePositiveInt, parseRange, requireString } from '../util.ts'
@@ -48,6 +48,21 @@ interface UploadError {
   name: string
   code: string
   message: string
+}
+
+/**
+ * 删除到回收站前先吊销该子树的分享。
+ * 顺序保证：吊销失败 → 抛错并中止删除（文件仍可访问，不会产生“回收站里仍可下载的分享”）；
+ * 吊销成功后即使软删除失败，也只是分享提前失效，安全方向。
+ */
+export function trashFileWithShareRevoke(
+  files: FileService,
+  revokeShares: ((id: string) => void) | undefined,
+  actor: Actor,
+  id: string,
+): { count: number; item: FileItem } {
+  revokeShares?.(id)
+  return files.trash(actor, id)
 }
 
 export function registerFileRoutes(
@@ -180,9 +195,8 @@ export function registerFileRoutes(
 
   app.delete('/api/files/:id', { preHandler: [requireAuth, csrf] }, async (request) => {
     const params = request.params as { id: string }
-    const result = files.trash(actorFrom(request), params.id)
-    // 软删除不会触发 shares 的 FK 级联；同步吊销该子树下所有公开链接。
-    onTrashed?.(params.id)
+    // 先吊销分享再软删除；钩子失败时中止删除，避免留下可下载的回收站内容。
+    const result = trashFileWithShareRevoke(files, onTrashed, actorFrom(request), params.id)
     return { ok: true, id: params.id, count: result.count }
   })
 

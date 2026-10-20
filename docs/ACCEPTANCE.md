@@ -1,8 +1,55 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.2.2；v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.3.0；v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 
-## v0.2.2（当前）
+## v0.3.0（当前）
+
+- 日期：2026-10-20（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
+- 版本：`v0.3.0`
+- 范围：深度审计修复、备份管理/文件级恢复、音视频播放、OpenCode 无垫片门禁；大文件分片留到 v0.3.1。
+
+### 1. 交付
+
+- 审计修复：备份 SSH/SCP 硬超时与 secrets 独立状态；回收站分享 410；分享审计节流/密码≥8/备注私有/token 日志脱敏/GC；告警 unknown 降级与 90 天保留；legacy 无参备份显式化；孤儿归档可观测；备份空间纳入已确认/孤儿。
+- 备份管理：`migration 3`（`backup_archives` 扩展 + `restore_plans`）；Web 列表、手动 prepare、归档导入/校验、文件级恢复到新目录（TOTP + `RESTORE`）；整库恢复仅离线 CLI；密钥包纳入 opencode DB/config 一致性快照。
+- 媒体：`previewKind` 增加 audio/video，白名单 mp4/webm/mp3/m4a/ogg/flac/wav；CSP `media-src 'self'`；Range/HEAD/416；不转码。
+- OpenCode：`OPENCODE_HTML_MODE=shim|attributes|passthrough`；默认 shim（无可见自定义按钮）；无垫片验证需 Cloudflare 关闭 ai 的 Rocket Loader/自动注入（待用户操作）。
+- 文档/状态：API/UI/ARCH/SECURITY/DEPLOY/BACKUP/PLAN/ROADMAP/README/AGENTS/CHANGELOG 同步；`.local/preflight` ACL 收紧。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm run check` | 通过：服务端 140/140、前端 48/48 |
+| `npm run build` | 通过（Vite 构建；仅 chunk 体积警告） |
+| `smoke.ps1` | 16/16 |
+| 生产 Health | `{"ok":true,"version":"0.3.0"}` |
+| schema | v3；`restore_plans` 存在；部署前 DB 快照已生成 |
+| 备份 | 手动 prepare 生成 full pending；PC 新脚本拉取 + ack + secrets=ok；PC secrets 含 opencode（约 1.3 MB）；`--no-warnings` 修复 PowerShell 5.1 JSON 解析 |
+| 媒体 | 生产上传 mp3 → `previewKind=audio`、`inlineAllowed=true`；`?inline=1` 为 inline，Range 返回 206；测试文件已删除 |
+| 文件列表 | 名称列点击修复保留（v0.2.1） |
+| OpenCode | 生产仍默认 shim（无可见按钮）；`attributes`/`passthrough` 模式及测试已加入；无垫片浏览器矩阵待 Cloudflare 设置后执行 |
+| 临时数据 | 临时 app session、媒体测试文件已清理；pending 备份已拉取/确认 |
+
+### 3. 部署
+
+```text
+部署目录: /opt/antifieldcloud/releases/20261020T012822Z
+迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261020T012824807Z.sqlite
+服务: antifieldcloud.service (active, v0.3.0)
+tag: v0.3.0
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.3.0
+```
+
+### 4. 未决
+
+- Cloudflare `ai` 的 Rocket Loader/自动注入关闭后，执行 `attributes`/`passthrough` 无垫片矩阵；失败保留最小隐藏 click 接管（已确认）。
+- 系统级加固（journald persistent/RTC、cloudflared 升级、nft 收窄/rpcbind/RCON bind）逐项确认后执行。
+- Minecraft 世界未纳入备份；大文件 5 GB 分片在 v0.3.1。
+- age 私钥仍需用户移到离线介质并删除本地明文副本。
+
+## v0.2.2（历史）
 
 - 日期：2026-10-19（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境

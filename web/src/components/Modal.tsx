@@ -29,6 +29,8 @@ export interface ModalProps {
   className?: string
   /** 外部提供的描述元素 id（如 ConfirmDialog 的提示文本） */
   ariaDescribedBy?: string
+  /** 打开后优先聚焦的选择器（危险操作可默认聚焦取消按钮） */
+  initialFocus?: string
 }
 
 /**
@@ -48,6 +50,7 @@ export function Modal({
   hideClose = false,
   className,
   ariaDescribedBy,
+  initialFocus,
 }: ModalProps) {
   const titleId = useId()
   const descriptionId = useId()
@@ -66,9 +69,10 @@ export function Modal({
     const focusTimer = window.setTimeout(() => {
       const panel = panelRef.current
       if (!panel) return
+      const preferred = initialFocus ? panel.querySelector<HTMLElement>(initialFocus) : null
       const autofocus = panel.querySelector<HTMLElement>('[data-autofocus]')
       const focusable = getFocusable(panel)
-      const target = autofocus ?? focusable[0] ?? panel
+      const target = preferred ?? autofocus ?? focusable[0] ?? panel
       target.focus()
     }, 20)
 

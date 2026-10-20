@@ -1,7 +1,7 @@
 /** 文件名清洗、MIME 推断与预览分类。预览安全边界集中在这里。 */
 import { extname } from 'node:path'
 
-export type PreviewKind = 'image' | 'pdf' | 'text' | 'markdown' | 'none'
+export type PreviewKind = 'image' | 'pdf' | 'text' | 'markdown' | 'audio' | 'video' | 'none'
 
 const IMAGE_TYPES: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -10,6 +10,19 @@ const IMAGE_TYPES: Record<string, string> = {
   '.gif': 'image/gif',
   '.webp': 'image/webp',
   '.avif': 'image/avif',
+}
+
+/** 仅允许浏览器原生可控播放的容器；不做转码，mkv/avi 等回退下载。 */
+const MEDIA_TYPES: Record<string, { mime: string; kind: 'audio' | 'video' }> = {
+  '.mp4': { mime: 'video/mp4', kind: 'video' },
+  '.m4v': { mime: 'video/mp4', kind: 'video' },
+  '.webm': { mime: 'video/webm', kind: 'video' },
+  '.mp3': { mime: 'audio/mpeg', kind: 'audio' },
+  '.m4a': { mime: 'audio/mp4', kind: 'audio' },
+  '.ogg': { mime: 'audio/ogg', kind: 'audio' },
+  '.oga': { mime: 'audio/ogg', kind: 'audio' },
+  '.flac': { mime: 'audio/flac', kind: 'audio' },
+  '.wav': { mime: 'audio/wav', kind: 'audio' },
 }
 
 const TEXT_TYPES: Record<string, string> = {
@@ -73,6 +86,7 @@ export function detectMime(name: string): string {
   const lower = name.toLowerCase()
   const ext = extname(lower)
   if (IMAGE_TYPES[ext]) return IMAGE_TYPES[ext]
+  if (MEDIA_TYPES[ext]) return MEDIA_TYPES[ext].mime
   if (lower.endsWith('.pdf')) return 'application/pdf'
   if (TEXT_TYPES[ext]) return TEXT_TYPES[ext]
   if (NON_EXTENSION_NAMES[lower]) return NON_EXTENSION_NAMES[lower]
@@ -88,14 +102,16 @@ export function previewKindFor(name: string, mime: string): PreviewKind {
   if (mime.startsWith('image/') && mime !== 'image/svg+xml') return 'image'
   if (mime === 'application/pdf') return 'pdf'
   const ext = extname(name.toLowerCase())
+  const media = MEDIA_TYPES[ext]
+  if (media) return media.kind
   if (ext === '.md' || ext === '.markdown') return 'markdown'
   if (mime.startsWith('text/') || mime === 'application/json' || mime === 'application/xml') return 'text'
   return 'none'
 }
 
-/** 仅栅格图片 / PDF 允许 inline；文本走 /text JSON，其它一律附件。 */
+/** 栅格图片、PDF、白名单音视频允许 inline；文本走 /text JSON，其它一律附件。 */
 export function canInline(preview: PreviewKind): boolean {
-  return preview === 'image' || preview === 'pdf'
+  return preview === 'image' || preview === 'pdf' || preview === 'audio' || preview === 'video'
 }
 
 const MAX_NAME_LENGTH = 200

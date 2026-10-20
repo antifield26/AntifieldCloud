@@ -78,11 +78,28 @@ function events(fx: AlertFixture): { id: number; event: string; status: string; 
 }
 
 test('磁盘阈值：首次 firing、冷却内去重、冷却后重复通知与恢复', async () => {
-  const fx = alertFixture({ deps: { statfs: () => ({ availableBytes: 5, totalBytes: 100 }) } })
+  const fx = alertFixture({
+    deps: {
+      statfs: () => ({ availableBytes: 5, totalBytes: 100 }),
+      // 其它数据源保持可用，避免 unknown 降级事件干扰本用例的事件计数。
+      readFile: (path) =>
+        path.endsWith('backup-pull.json')
+          ? JSON.stringify({
+              lastPullAt: T0,
+              secretsAttempted: true,
+              secretsOk: true,
+              lastSecretsAt: T0,
+            })
+          : JSON.stringify({ tempC: 45, underVoltage: false, throttled: '0x0' }),
+      serviceStates: async () => ({ minecraft: 'active' }),
+      minecraftStatus: async () => ({ online: true }),
+    },
+  })
   try {
+    fx.db.prepare('UPDATE backup_state SET last_backup_at = ? WHERE id = 1').run(T0)
     const first = await fx.alerts.evaluateOnce()
     assert.equal(first.skipped, false)
-    assert.equal(first.checked, 8)
+    assert.equal(first.checked, 9)
     assert.equal(first.firing, 1)
     assert.match(eventNames(events(fx))[0] ?? '', /^disk_low:firing$/)
     assert.equal(events(fx)[0]?.severity, 'critical', '剩余 5% 低于阈值一半应为 critical')

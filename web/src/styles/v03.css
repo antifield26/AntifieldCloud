@@ -1,0 +1,360 @@
+/* v0.3 样式：备份管理/恢复向导、媒体播放器与备份状态补充。 */
+
+/* ---------- Dashboard 备份卡 ---------- */
+
+.stat-footer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* ---------- 备份管理（Settings） ---------- */
+
+.backup-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backup-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.backup-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-toolbar-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.backup-section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.backup-name-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.backup-name-icon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--text-dim);
+}
+
+.backup-name {
+  display: block;
+  max-width: 360px;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-sha {
+  display: block;
+  color: var(--text-dim);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-status-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.backup-verified {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--success);
+  font-size: 11px;
+}
+
+.backup-file-input {
+  height: auto;
+  padding: 8px 10px;
+  font-size: 12.5px;
+}
+
+.backup-import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.backup-import-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- 恢复向导 ---------- */
+
+.restore-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+}
+
+.restore-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--text-dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.restore-step-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 10px;
+}
+
+.restore-step-active {
+  border-color: rgba(34, 211, 238, 0.32);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.restore-step-done {
+  color: var(--text-muted);
+}
+
+.restore-step-done .restore-step-index {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.restore-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.restore-archive-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.restore-archive-summary strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.restore-entry-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.restore-entry-list {
+  max-height: 240px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+  list-style: none;
+}
+
+.restore-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.restore-entry:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.restore-entry-selected {
+  background: var(--accent-soft);
+}
+
+.restore-entry input {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent-strong);
+}
+
+.restore-entry-kind {
+  flex: none;
+  width: 32px;
+  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+.restore-entry-dir {
+  color: var(--accent);
+}
+
+.restore-entry-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restore-entry-size {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.restore-executing-text {
+  margin-right: auto;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.restore-result {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ---------- 媒体播放 ---------- */
+
+.media-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.media-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.media-stage-video {
+  min-height: 240px;
+}
+
+.media-video {
+  width: 100%;
+  max-height: 68vh;
+  border-radius: 6px;
+  background: #000;
+}
+
+.media-audio {
+  width: 100%;
+  max-width: 560px;
+}
+
+.media-hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.media-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ---------- 响应式 ---------- */
+
+@media (max-width: 900px) {
+  .backup-name {
+    max-width: 200px;
+  }
+
+  .restore-entry-list {
+    max-height: 200px;
+  }
+}
+
+@media (max-width: 640px) {
+  .backup-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .backup-toolbar-actions {
+    justify-content: flex-end;
+  }
+
+  .backup-summary {
+    font-size: 11.5px;
+  }
+
+  .restore-steps {
+    gap: 4px;
+  }
+
+  .restore-step {
+    padding: 4px 8px;
+    font-size: 10.5px;
+  }
+
+  .restore-executing-text {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .media-stage-video {
+    min-height: 180px;
+  }
+}

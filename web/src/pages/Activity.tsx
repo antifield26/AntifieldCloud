@@ -25,6 +25,7 @@ const CATEGORY_TONES: Record<AuditCategory, BadgeTone> = {
   whitelist: 'success',
   knowledge: 'accent',
   alert: 'warning',
+  backup: 'warning',
   other: 'muted',
 }
 

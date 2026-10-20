@@ -223,3 +223,29 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关。
 - a11y：移动抽屉焦点陷阱、Dropdown 方向键、FormField aria-required、ConfirmDialog describedby、NotFound 标题。
 - OpenCode Web（v0.2.2）：不展示自定义“新会话”按钮；代理只接管原生按钮 click/pointerup，并 opt-out Rocket Loader 改写模块脚本。
+
+## 12. v0.3.0 新增界面
+
+### 备份与恢复
+
+- Dashboard 备份卡：最近拉取、待确认归档、密钥包状态、异常提示与“管理备份”。
+- Settings“备份与恢复”：归档列表（模式/时间/大小/SHA 前缀/状态/来源）、刷新、上传（≤100 MiB，TOTP）、校验、恢复入口。
+- 恢复向导三步：选择归档/文件 → 校验摘要 → TOTP + typed confirmation（`RESTORE`）→ 结果；执行中锁 Esc/遮罩、失败可重试；仅恢复到新目录，不覆盖。
+- 危险操作默认焦点“取消”；TOTP `autocomplete=one-time-code`；390px 卡片化/全屏向导、footer sticky。
+
+### 音视频播放
+
+- Files 预览新增原生 `<video controls playsInline preload=metadata>` / `<audio controls>`，`/content?inline=1`；支持 Range/seek。
+- 不支持格式/mkv/avi 回退下载；错误区分格式、网络、415/416；不缓存媒体、不做转码、不引入外部播放器。
+- 移动端视频 16:9，播放器原生控件；表格/卡片仍可下载。
+
+### OpenCode 兼容
+
+- `OPENCODE_HTML_MODE`：`shim`（默认）、`attributes`（只 opt-out Rocket Loader）、`passthrough`（无垫片，需 Cloudflare 关闭注入）。
+- 无垫片验证通过后不再注入任何脚本；失败时只保留最小隐藏 click/pointerup 接管，不添加可见按钮。
+- 代理返回 `x-af-oc-mode` 诊断头；Cloudflare 后台规则见 DEPLOY。
+
+### 分享/PWA
+
+- 公开分享不展示“仅自己可见”备注；一次性 URL 创建成功后禁止误关。
+- PWA 缓存名随构建版本更新并清理旧缓存；SW 仍不缓存 API/媒体/文件内容。

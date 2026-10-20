@@ -14,11 +14,12 @@
 | 互联网暴力破解登录 | 账号接管 | scrypt、TOTP、每 IP 5 次/15 分钟限流、全局 20 次/小时、统一错误、300 ms 失败延迟 |
 | 会话劫持/CSRF | 未授权文件/白名单操作 | HttpOnly+Secure+SameSite=Lax Cookie、CSRF 双提交、Origin 校验、改密失效其它会话 |
 | 路径穿越/任意文件读取 | 读取/覆盖 Pi 文件 | 只接受 DB id；物理路径由 id 派生；文件名清洗；无路径参数 |
-| 恶意预览内容 XSS | 窃取会话 | 仅栅格图片/PDF 内联；文本走 JSON 由 React 转义；SVG/HTML/XML 强制下载；CSP |
+| 恶意预览内容 XSS | 窃取会话 | 仅栅格图片/PDF/白名单音视频内联；文本走 JSON 由 React 转义；SVG/HTML/XML 强制下载；CSP `media-src 'self'` |
 | 上传耗尽磁盘 | 服务不可用 | 10 GiB 配额（含回收站）、单文件 2 GiB、单请求 20 文件、写前/流中/事务内三次检查、507 |
 | opencode 端口被直接访问 | AI 工作区被滥用 | 端口仅 loopback；ai 主机会话校验；服务端注入 Basic；不向浏览器下发密钥 |
 | RCON 被滥用 | 白名单/服务器被改 | 不提供任意命令；仅白名单增删；名字白名单校验；命令后复核；nftables 阻断非 loopback |
 | 备份泄露 | 文件与 TOTP 泄露 | 两阶段 pending/ack、归档 0640、PC 目录 ACL（当前用户+Administrators+SYSTEM）、`.sha256` 旁文件；密钥包 age 加密；普通归档仍含 TOTP |
+| 备份归档被恶意替换/注入 | 文件覆盖/路径穿越 | Web 导入需 TOTP；文件名白名单、SHA-256、tar 路径/链接/设备/大小校验；恢复只到新目录、不覆盖；整库恢复仅离线 root CLI |
 | 物理 SD 丢失 | 数据泄露/丢失 | 无全盘加密（当前限制）；建议后续 LUKS/加密备份；每日备份 |
 | 校园网扫描 | RCON/nginx 暴露 | nftables 默认拒绝入站；25575 仅 loopback；80/25565 限网段 |
 | 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建 |
@@ -42,10 +43,10 @@
 - 名称 NFC、去控制字符/路径分隔符、长度限制、冲突自动后缀；同目录唯一索引。
 - 内容不可变（无在线编辑）；上传先写临时文件再原子移动。
 - 配额包含回收站；删除为软删除；30 天自动清理。
-- MIME/预览白名单；`X-Content-Type-Options: nosniff`；下载 `Content-Disposition` 文件名编码。
+- MIME/预览白名单；音视频仅允许 mp4/webm/mp3/m4a/ogg/flac/wav，不转码；`X-Content-Type-Options: nosniff`；下载 `Content-Disposition` 文件名编码。
 
 ### HTTP
-- CSP：`default-src 'self'; script-src 'self'; frame-ancestors 'self'; object-src 'none'` 等。
+- CSP：`default-src 'self'; script-src 'self'; media-src 'self'; frame-ancestors 'self'; object-src 'none'` 等。
 - `X-Frame-Options: SAMEORIGIN`（同源 PDF 预览）、`Referrer-Policy: no-referrer`、`Permissions-Policy` 最小化。
 - API 全部 `no-store`；错误响应不含堆栈。
 - 日志脱敏：Cookie/Authorization/密码/TOTP 字段。
@@ -63,7 +64,8 @@
 - Windows 备份目录由 `install-backup-task.ps1` 用 `icacls` 收紧为当前用户 + Administrators + SYSTEM；
   任务在电池供电时不跳过、安装前做 Pi 可达性预检、日志 >1 MiB 轮转。
 - 密钥包：`backup-secrets.sh` 用 age 公钥加密 `/etc/antifieldcloud/env`、cloudflared 配置/凭证、
-  `server.properties` 与 opencode env；私钥只离线保存，PC 拉取 `.age` + `.sha256`。
+  `server.properties`、opencode env 及 opencode DB/config（一致性快照）；私钥只离线保存，PC 拉取 `.age` + `.sha256`。
+- 备份状态分开记录 `secretsOk/secretsLastError/lastSecretsAt`；密钥包失败不冒充文件备份成功，告警可读。
 - 主机健康探针：root 每 60s 写 `/run/antifieldcloud/pi-health.json`（0644，含欠压/降频/温度/风扇），
   告警模块只读该文件；探针失败不影响主服务。
 
@@ -77,7 +79,7 @@
 5. **单管理员、无多用户/权限分离**：审计日志可被管理员删除；适合个人使用。
 6. **普通备份归档仍含 TOTP secret 与文件内容**：PC 端 ACL 与物理安全是最后防线；密钥包已用 age 加密，
    后续可评估整包加密（restic/age）与异地副本。age 私钥丢失将无法恢复密钥包。
-7. **opencode 自身认证行为随版本变化**：当前通过注入 Basic 实现 SSO；升级 opencode 后需复测（见 docs/DEPLOY.md 兜底）。
+7. **opencode 自身认证/UI 行为随版本变化**：当前通过注入 Basic 实现 SSO；升级后需复测。原生新建按钮在上游部分版本有缺陷；v0.3 先关闭 Cloudflare Rocket Loader/升级验证，失败才保留最小隐藏点击接管（无可见 UI）。
 8. **无 WAF/DDoS 防护**：Cloudflare 默认防护有限；大文件上传/登录仍可能消耗资源（有配额/限流）。
 9. **SD 卡无加密**：设备丢失即数据泄露；可后续迁移 SSD + LUKS。
 10. **限流在内存中**：应用重启清零；对分布式攻击效果有限。
@@ -112,7 +114,9 @@
 - 未登录 `/api/*` 401；ai 未登录 HTML 302、API 401。
 - 缺少 CSRF 的写请求 403。
 - 非法 Host 404。
-- 路径穿越名被清洗；SVG/HTML 无内联预览。
+- 路径穿越名被清洗；SVG/HTML 无内联预览；音视频只允许白名单容器。
+- 分享密码新建最少 8 位；公开信息不含备注；回收站文件旧分享返回 410；token 日志脱敏。
+- 备份管理：导入需 TOTP、tar 安全校验、恢复仅新目录、计划过期/单并发；整库恢复不暴露 Web。
 - 超配额上传拒绝；回收站占配额；单请求上传大小受 `MAX_UPLOAD_BYTES`（默认 100 MiB，匹配 Cloudflare 代理上限）限制。
 - 外部 25575 阻断；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。
 - 仓库 `git grep` 不出现真实密钥。

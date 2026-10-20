@@ -3,10 +3,13 @@
  * - 只缓存静态壳资源（离线页、图标、manifest）与构建后的 /assets/* 哈希资源；
  * - 绝不缓存 /api/*（含文件内容）、/healthz 与公开分享页 /s/*；
  * - 导航请求网络优先，离线时回退 offline.html。
- * 版本号变化时清理旧缓存；新 SW 立即接管页面。 */
+ * 版本：注册 URL 带 ?v=<构建入口 hash>，缓存名随之变化；新 SW 立即接管并清理旧静态缓存。 */
 /* eslint-disable no-undef */
 
-const CACHE_NAME = 'antifieldcloud-static-v1'
+const REGISTRATION_URL = new URL(self.location.href)
+const BUILD_VERSION = REGISTRATION_URL.searchParams.get('v') || 'v1'
+const CACHE_PREFIX = 'antifieldcloud-static-'
+const CACHE_NAME = `${CACHE_PREFIX}${BUILD_VERSION}`
 const OFFLINE_URL = '/offline.html'
 const PRECACHE_URLS = [
   OFFLINE_URL,
@@ -33,7 +36,13 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(
+          keys
+            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
+            .map((key) => caches.delete(key)),
+        ),
+      )
       .then(() => self.clients.claim()),
   )
 })

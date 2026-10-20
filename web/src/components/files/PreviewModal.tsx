@@ -9,6 +9,7 @@ import { InlineError } from '../InlineError'
 import { LoadingBlock } from '../Loading'
 import { EmptyState } from '../EmptyState'
 import { MarkdownView } from '../MarkdownView'
+import { MediaPreview } from './MediaPreview'
 import { formatBytes } from '../../lib/format'
 
 export interface PreviewModalProps {
@@ -30,6 +31,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
   const fileId = file?.id ?? null
   const previewKind = file?.previewKind ?? 'none'
   const isText = previewKind === 'text' || previewKind === 'markdown'
+  const isMedia = previewKind === 'audio' || previewKind === 'video'
 
   useEffect(() => {
     setText(null)
@@ -73,7 +75,7 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
       open
       title={file.name}
       description={description}
-      size={previewKind === 'pdf' ? 'xl' : 'lg'}
+      size={previewKind === 'pdf' || previewKind === 'video' ? 'xl' : 'lg'}
       onClose={onClose}
       footer={
         <div className="preview-footer">
@@ -121,6 +123,10 @@ export function PreviewModal({ file, onClose }: PreviewModalProps) {
         ) : (
           <iframe className="preview-pdf" title={`PDF 预览：${file.name}`} src={inlineUrl} />
         )
+      ) : null}
+
+      {isMedia ? (
+        <MediaPreview key={file.id} file={file} inlineUrl={inlineUrl} downloadUrl={downloadUrl} />
       ) : null}
 
       {isText ? (

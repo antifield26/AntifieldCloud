@@ -25,6 +25,7 @@ function fallbackMeta(): AppMeta {
     maxUploadBytes: DEFAULT_MAX_UPLOAD_BYTES,
     sharesEnabled: true,
     alertsEnabled: true,
+    backupRestoreEnabled: false,
   }
 }
 
@@ -49,6 +50,7 @@ function buildMeta(version: VersionResult): AppMeta {
     maxUploadBytes,
     sharesEnabled: version.sharesEnabled !== false,
     alertsEnabled: version.alertsEnabled !== false,
+    backupRestoreEnabled: version.backupRestoreEnabled === true,
   }
 }
 

@@ -28,7 +28,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.2.2", "uptimeSec": 1234 }
+{ "ok": true, "version": "0.3.0", "uptimeSec": 1234 }
 ```
 
 ## 2. 认证与账号
@@ -258,10 +258,10 @@
 ### GET /api/files/:id/content
 
 查询参数：
-- `inline=1`：仅当文件是栅格图片或 PDF 时生效，返回 `Content-Disposition: inline`；其它类型忽略该参数。
+- `inline=1`：栅格图片、PDF、白名单音视频（mp4/webm/mp3/m4a/ogg/flac/wav）返回 `Content-Disposition: inline`；其它类型忽略该参数。
 - `download=1`：强制附件。
 
-默认按 `previewKind` 决定 inline/attachment。支持 `Range: bytes=…`（单区间，206；不可满足 416）。响应头包含 `Content-Type`、`Content-Length`、`Content-Disposition`（RFC 5987）、`Accept-Ranges: bytes`、`ETag`。禁止内联 SVG/HTML/XML。`GET` 路由自动提供 `HEAD`。
+默认按 `previewKind` 决定 inline/attachment。支持 `Range: bytes=…`（单区间，206；不可满足 416）。响应头包含 `Content-Type`、`Content-Length`、`Content-Disposition`（RFC 5987）、`Accept-Ranges: bytes`、`ETag`。禁止内联 SVG/HTML/XML；音视频不转码。`GET` 路由自动提供 `HEAD`。
 
 ### GET /api/files/:id/text
 
@@ -338,7 +338,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.2.2", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true }`。
+- `GET /api/version`（需要会话）：`{ "version": "0.3.0", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 2000 }`。
 - 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
 
@@ -367,13 +367,14 @@ RCON 不可用：`502 rcon_unavailable`。
 { "share": { "id":"uuid","fileId":"uuid","fileName":"a.txt","fileSize":12,"fileMime":"text/plain","hasPassword":true,"expiresAt":"…","maxDownloads":3,"downloadCount":0,"createdAt":"…","revokedAt":null,"note":"…","status":"active" }, "url": "https://app.example.com/s/<token>" }
 ```
 
-  `maxDownloads=0/null` 表示不限；URL 仅创建响应返回一次。
-- `GET /api/shares` → `{items:[Share],total}`（不含 token/URL）。
+  `maxDownloads=0/null` 表示不限；URL 仅创建响应返回一次。新建密码分享最少 8 位；旧短密码分享仍可解锁。
+- `GET /api/shares?page=1&pageSize=100` → `{items:[Share],total,page,pageSize}`（不含 token/URL；pageSize 最大 500）。
 - `DELETE /api/shares/:id` → `{ok:true,share}`（吊销）。
+- `DELETE /api/files/:id`：先吊销该文件/子树分享，再软删除；吊销失败返回 500 且文件不删除。
 
 公开端点（无需会话；POST 校验 Origin；限流）：
 
-- `GET /api/public/shares/:token` → 200 `{share:{fileName,size,mime,expiresAt,hasPassword,maxDownloads,downloadCount,note}, state:"active", requiresPassword:boolean}`；未知 404；失效 410（`share_expired/share_revoked/share_exhausted`）。
+- `GET /api/public/shares/:token` → 200 `{share:{fileName,size,mime,expiresAt,hasPassword,maxDownloads,downloadCount}, state:"active", requiresPassword:boolean}`；未知 404；失效 410（`share_expired/share_revoked/share_exhausted`）；文件已删除 410 `share_gone`。公开信息不含 `note`。
 - `POST /api/public/shares/:token/unlock` body `{password?}` → 200 `{ok:true,state,share,requiresPassword:false,expiresAt}` 并 Set-Cookie `af_share`（HttpOnly/SameSite=Lax/Secure，Path 限定该 token，5 分钟）；错误密码 401 `invalid_password`；限流 429。
 - `GET /api/public/shares/:token/content`（需 `af_share` Cookie）→ 文件流，`content-disposition: attachment`；支持 `Range`/`HEAD`/`ETag`/`304`/`416`；会话首次成功取内容计一次下载。
 - 公开页 `/s/:token` 带 `X-Robots-Tag: noindex, nofollow`。
@@ -386,6 +387,22 @@ RCON 不可用：`502 rcon_unavailable`。
 { "items": [{ "id":1,"event":"disk_low","severity":"critical","status":"firing","title":"…","message":"…","createdAt":"…","deliveredAt":null,"deliveryError":null }], "state": [{ "event":"disk_low","status":"firing","lastFiredAt":"…","lastOkAt":null }], "config": { "enabled":true,"webhookConfigured":false,"webhookType":"generic","diskFreePct":15,"tempC":80,"memoryUsedPct":90,"backupMaxAgeHours":48,"cooldownMinutes":360,"checkIntervalSeconds":300,"lastEvaluatedAt":null } }
 ```
 
-- `POST /api/alerts/test`（会话 + CSRF，10 次/小时）→ `{ok:true,delivered:boolean,message?}`；未配置 webhook 返回 400 `webhook_not_configured`。
+- `POST /api/alerts/test`（会话 + CSRF，10 次/小时）→ `{ok:true,delivered:boolean,message?}`；未配置 webhook 返回 200 `{ok:false,delivered:false,message:"未配置 webhook URL"}`。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
-- 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、MC、欠压（health probe JSON）；同状态去重/冷却，恢复时发 resolved。
+- 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
+
+## 11. 备份管理 / 文件级恢复
+
+全部需要会话；写操作需 CSRF；危险操作另需 TOTP（body `totpCode` 或请求头 `X-TOTP-Code`）和 typed confirmation。整库恢复不通过 Web 执行。
+
+- `GET /api/backups` → `{items:[Archive],inbox,orphans,state}`。Archive 含 `name/mode/createdAt/sizeBytes/sha256/status/origin/verifiedAt/pulledAt/ackedAt/lastError/manifest`；不返回归档路径或下载 URL。
+- `POST /api/backups/prepare` body `{totpCode,full?,confirmText:"PREPARE"}`（3 次/小时）→ 只生成 Pi pending 归档，不 ack、不推进游标。
+- `POST /api/backups/import`（multipart 字段 `file`，TOTP 走 `X-TOTP-Code`；10 次/小时）→ 201 `{archive,verify}`。归档名必须匹配 `^snapshot-[0-9TZ]+(?:-[0-9]+)?-(full|inc)\.tar\.gz$`；落盘 `DATA_DIR/backups/imports` 0700，拒绝覆盖；单请求 ≤ min(MAX_UPLOAD_BYTES, 100 MiB)。
+- `POST /api/backups/verify` body `{name}` → 流式 SHA-256 + tar 安全解析；409 checksum_mismatch、422 invalid_archive/unsafe_archive、404 archive_not_found。
+- `GET /api/backups/archives/:name/entries?path=/` → `{path,items,truncated}`，用于恢复选择；仅已校验归档。
+- `POST /api/backups/restore-plan` body `{archive?,paths?,targetName?,totpCode,confirmText:"RESTORE"}` → `{plan}`；校验 full+inc 链、空间/配额、文件数上限；计划 30 分钟过期。
+- `POST /api/restores/:planId/execute` body `{totpCode,confirmText:"RESTORE"}` → `{plan,result}`；只恢复文件内容到**新文件夹**（新 ID，不覆盖），单并发/锁；`410 plan_expired`、`409 restore_busy/plan_completed`。
+- `GET /api/restores/:planId` → `{plan}`。
+- 错误码：`restore_disabled` 403、`archive_not_verified`/`archive_chain_invalid` 409、`invalid_selection`/`confirmation_failed` 400、`invalid_totp` 401、`restore_too_many_files` 400。
+- 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。
+- 整库恢复：`scripts/restore.sh`（root，停服，pre-restore 快照，失败回滚）不在 Web API 内。

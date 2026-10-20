@@ -77,12 +77,17 @@ export const OPENCODE_SHIM_SCRIPT = String.raw`(() => {
 })()
 `
 
+/** 只给已有脚本加 data-cfasync="false"，不注入任何 JS。 */
+export function injectOpenCodeScriptOptOut(html: string): string {
+  return html.replace(/<script(?![^>]*\bdata-cfasync=)/gi, '<script data-cfasync="false"')
+}
+
 /** 将外部垫片脚本插入 opencode HTML；同源路径在 CSP script-src 'self' 下允许加载。 */
 export function injectOpenCodeShim(html: string): string {
   if (html.includes(OPENCODE_SHIM_PATH)) return html
   // Cloudflare Rocket Loader 会改写 type="module" 并延迟执行，导致 opencode 的
   // agent/model 选择器不渲染、新建按钮失效。给已有脚本加 data-cfasync="false" 跳过它。
-  const optedOut = html.replace(/<script(?![^>]*\bdata-cfasync=)/gi, '<script data-cfasync="false"')
+  const optedOut = injectOpenCodeScriptOptOut(html)
   const tag = `<script data-cfasync="false" src="${OPENCODE_SHIM_PATH}" defer></script>`
   const index = optedOut.toLowerCase().lastIndexOf('</body>')
   if (index >= 0) return `${optedOut.slice(0, index)}${tag}${optedOut.slice(index)}`

@@ -19,6 +19,7 @@ import { DashboardService } from './dashboard/service.ts'
 import { NoteService, BookmarkService } from './notes/service.ts'
 import { ShareService } from './shares/service.ts'
 import { AlertService } from './alerts/service.ts'
+import { BackupService } from './backups/service.ts'
 import { OpenCodeProxy, normalizeHost } from './opencode/proxy.ts'
 import { purgeAudit } from './auth/audit.ts'
 import { readSessionToken } from './auth/cookies.ts'
@@ -30,6 +31,7 @@ import { registerDashboardRoutes } from './http/routes/dashboard.ts'
 import { registerNoteRoutes } from './http/routes/notes.ts'
 import { registerShareRoutes } from './http/routes/shares.ts'
 import { registerAlertRoutes } from './http/routes/alerts.ts'
+import { registerBackupRoutes } from './http/routes/backups.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -44,6 +46,7 @@ export interface AppContext {
   bookmarks: BookmarkService
   shares: ShareService
   alerts: AlertService
+  backups: BackupService
   proxy: OpenCodeProxy
   runMaintenance(): void
 }
@@ -54,6 +57,7 @@ const CSP = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
+  "media-src 'self'",
   "connect-src 'self'",
   "frame-src 'self'",
   "manifest-src 'self'",
@@ -96,6 +100,15 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     },
   })
   const proxy = new OpenCodeProxy(config, auth, app.log)
+  const backups = new BackupService(db, config, {
+    files,
+    logger: (level, message, detail) => {
+      const payload = detail ? { detail } : {}
+      if (level === 'error') app.log.error(payload, message)
+      else if (level === 'warn') app.log.warn(payload, message)
+      else app.log.info(payload, message)
+    },
+  })
 
   await app.register(cookie)
   await app.register(multipart, {
@@ -190,6 +203,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerNoteRoutes(app, config, notes, bookmarks)
   registerShareRoutes(app, config, shares)
   registerAlertRoutes(app, config, alerts)
+  registerBackupRoutes(app, config, backups)
 
   registerErrorHandler(app)
 
@@ -226,6 +240,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     try {
       files.autoPurge(config.trashRetentionDays)
       shares.cleanup()
+      backups.cleanup()
       auth.cleanup()
       purgeAudit(db, config.auditRetentionDays)
     } catch (error) {
@@ -233,5 +248,5 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     }
   }
 
-  return { app, db, config, auth, files, mc, dashboard, notes, bookmarks, shares, alerts, proxy, runMaintenance }
+  return { app, db, config, auth, files, mc, dashboard, notes, bookmarks, shares, alerts, backups, proxy, runMaintenance }
 }

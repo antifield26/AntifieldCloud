@@ -245,6 +245,28 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_backup_archives_pending ON backup_archives(acked_at, created_at);
   `,
+  `
+  -- v0.3.0：备份管理/文件级恢复。仅追加列与新表，旧库（schema v2）可直接升级。
+  ALTER TABLE backup_archives ADD COLUMN verified_at TEXT;
+  ALTER TABLE backup_archives ADD COLUMN origin TEXT NOT NULL DEFAULT 'pi';
+  ALTER TABLE backup_archives ADD COLUMN manifest_json TEXT;
+  ALTER TABLE backup_archives ADD COLUMN last_error TEXT;
+  CREATE INDEX idx_backup_archives_origin ON backup_archives(origin);
+
+  CREATE TABLE restore_plans (
+    id TEXT PRIMARY KEY,
+    archives_json TEXT NOT NULL,
+    selection_json TEXT NOT NULL,
+    target_name TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('planned', 'executing', 'completed', 'failed', 'expired')),
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    completed_at TEXT,
+    error TEXT
+  );
+  CREATE INDEX idx_restore_plans_status ON restore_plans(status, expires_at);
+  `,
 ]
 
 export interface OpenOptions {

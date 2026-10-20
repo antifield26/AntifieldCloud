@@ -17,6 +17,8 @@ import { api, toErrorMessage } from '../api/client'
 import type { DashboardData, ServiceState, ServicesStatus } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useNow } from '../hooks/useNow'
+import { useBackups } from '../hooks/useBackups'
+import { summarizeBackups } from '../lib/backups'
 import { PageHeader } from '../components/PageHeader'
 import { Stat } from '../components/Stat'
 import { Card } from '../components/Card'
@@ -57,6 +59,7 @@ const SERVICE_BADGE_TONES: Record<ServiceState, BadgeTone> = {
 /** 工作台：10s 轮询，页面隐藏时暂停；刷新失败保留旧数据并提示。 */
 export function Dashboard() {
   const { meta } = useAppMeta()
+  const backups = useBackups()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -126,6 +129,10 @@ export function Dashboard() {
   const backupStale = backup
     ? Boolean(backup.overdue) || backup.ok === false || (backup.ageHours !== null && backup.ageHours > 48)
     : false
+  const backupOverview = backups.data ? summarizeBackups(backups.data) : null
+  // 优先使用 dashboard 下发字段；旧服务端回退到 /api/backups 汇总
+  const pendingBackups = backup?.pendingCount ?? backupOverview?.pending ?? 0
+  const backupError = backup?.lastError ?? backupOverview?.error ?? null
   const mcDegraded = minecraft.tps === null || minecraft.whitelistCount === null
   const tempClass =
     host.tempC === null ? 'text-dim' : host.tempC >= 85 ? 'text-danger' : host.tempC >= 75 ? 'text-warning' : undefined
@@ -233,23 +240,34 @@ export function Dashboard() {
           value={backup?.lastPullAt ? formatRelative(backup.lastPullAt, now) : '无记录'}
           tone={backupStale ? 'danger' : 'default'}
           badge={
-            backup === null ? (
-              <Badge tone="muted">无数据</Badge>
-            ) : backupStale ? (
+            backupStale ? (
               <Badge tone="danger" dot>备份已过期</Badge>
+            ) : pendingBackups > 0 ? (
+              <Badge tone="warning" dot>{pendingBackups} 个待确认</Badge>
+            ) : backupError ? (
+              <Badge tone="danger">备份异常</Badge>
+            ) : backup === null ? (
+              <Badge tone="muted">无数据</Badge>
             ) : (
               <Badge tone="success" dot>正常</Badge>
             )
           }
           hint={
             backup
-              ? `${formatBytes(backup.sizeBytes)} · 最近拉取 ${formatDateTime(backup.lastPullAt)}`
+              ? `${formatBytes(backup.sizeBytes)} · 最近拉取 ${formatDateTime(backup.lastPullAt)}${pendingBackups > 0 ? ` · ${pendingBackups} 个归档待 Windows 拉取确认` : ''}`
               : '尚未收到 Windows 备份任务的上报'
           }
           footer={
-            backupStale ? (
-              <span className="stat-note text-danger">最近拉取已超过 48 小时，请检查 Windows 备份计划任务。</span>
-            ) : null
+            <>
+              {backupStale ? (
+                <span className="stat-note text-danger">最近拉取已超过 48 小时，请检查 Windows 备份计划任务。</span>
+              ) : null}
+              {backupError ? <span className="stat-note text-danger">最近错误：{backupError}</span> : null}
+              <div className="stat-footer-row">
+                <Link className="text-link" to="/settings#backup">管理备份</Link>
+                {pendingBackups > 0 ? <span className="stat-note">待确认归档需 PC 拉取并 ack</span> : null}
+              </div>
+            </>
           }
         />
       </div>

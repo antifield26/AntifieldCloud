@@ -2,7 +2,8 @@
  * 备份 CLI（在 Pi 上以 antifieldcloud 运行）：
  * - 两阶段协议：`--prepare` 只生成 pending 归档；Windows 拉取成功校验后 `--ack` 才推进备份游标。
  * - `--pending` 供拉取脚本查询待拉取归档与建议模式；`--snapshot-db` 供部署/升级前做一致性 DB 快照。
- * - 无参数模式保留 v0.1 行为（生成并立即确认），仅用于兼容旧调用。
+ * - 旧单阶段模式必须显式 `--legacy`（deprecated，仅排障用），无动作参数会直接报错。
+ * - 输出附带 backups 目录中无 DB 记录的孤儿归档；只报告，不自动删除敏感数据。
  *
  * 一致性：所有文件内容不可变，增量只取 `created_at > 上次已确认备份时间` 的新增文件；
  * 重命名/移动只改元数据，由 DB 快照覆盖。
@@ -54,6 +55,7 @@ interface ParsedArgs {
   full: boolean
   name: string | null
   sha256: string | null
+  noWarnings: boolean
 }
 
 interface FileEntry {
@@ -96,24 +98,38 @@ interface ArchiveResult {
   fileCount: number
   totalBytes: number
   createdAt: string
+  orphanBytes: number
+  orphans: OrphanArchive[]
 }
 
-/** 解析命令行；同一时间只允许一个动作。 */
+/** backups 目录中存在、但 backup_archives 里没有记录的归档（只报告，不删除）。 */
+interface OrphanArchive {
+  name: string
+  sizeBytes: number
+  modifiedAt: string
+}
+
+/** 解析命令行；同一时间只允许一个动作，旧单阶段模式必须显式 --legacy。 */
 function parseArgs(argv: string[]): ParsedArgs {
   const commands: Command[] = []
   let full = false
   let name: string | null = null
   let sha256: string | null = null
+  let noWarnings = false
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index]!
     if (arg === '--full') {
       full = true
+    } else if (arg === '--no-warnings') {
+      noWarnings = true
     } else if (arg === '--prepare') {
       commands.push('prepare')
     } else if (arg === '--pending') {
       commands.push('pending')
     } else if (arg === '--snapshot-db') {
       commands.push('snapshot-db')
+    } else if (arg === '--legacy') {
+      commands.push('legacy')
     } else if (arg === '--ack') {
       commands.push('ack')
       name = argv[++index] ?? null
@@ -125,7 +141,12 @@ function parseArgs(argv: string[]): ParsedArgs {
   }
   const unique = [...new Set(commands)]
   if (unique.length > 1) throw new Error(`动作互斥：${unique.join(' / ')}`)
-  const command = unique[0] ?? 'legacy'
+  if (unique.length === 0) {
+    throw new Error(
+      '未指定动作：请使用 --prepare、--pending、--ack <name> --sha256 <hash> 或 --snapshot-db；旧的单阶段模式需显式 --legacy',
+    )
+  }
+  const command = unique[0]!
   if (command === 'ack') {
     if (!name) throw new Error('--ack 需要归档名')
     if (!sha256) throw new Error('--ack 需要 --sha256')
@@ -134,9 +155,9 @@ function parseArgs(argv: string[]): ParsedArgs {
     throw new Error('--ack/--sha256 只能与 --ack 一起使用')
   }
   if (full && command !== 'prepare' && command !== 'legacy') {
-    throw new Error('--full 只能与 --prepare 或无参数模式一起使用')
+    throw new Error('--full 只能与 --prepare 或 --legacy 一起使用')
   }
-  return { command, full, name, sha256 }
+  return { command, full, name, sha256, noWarnings }
 }
 
 function compactTimestamp(date: Date): string {
@@ -216,8 +237,49 @@ function emit(payload: object): void {
   console.log(JSON.stringify(payload))
 }
 
+/**
+ * 扫描 backups 目录中形如 snapshot-*.tar.gz、但 backup_archives 无记录的归档。
+ * 只读报告，绝不自动删除（归档含敏感数据，需人工确认来源）。
+ */
+function listOrphanArchives(db: DatabaseSync, backupsDir: string): OrphanArchive[] {
+  const known = new Set(
+    (db.prepare('SELECT name FROM backup_archives').all() as unknown as Array<{ name: string }>).map(
+      (row) => row.name,
+    ),
+  )
+  const orphans: OrphanArchive[] = []
+  for (const name of readdirSync(backupsDir)) {
+    if (!/^snapshot-.+\.tar\.gz$/.test(name) || known.has(name)) continue
+    try {
+      const stats = statSync(join(backupsDir, name))
+      if (!stats.isFile()) continue
+      orphans.push({
+        name,
+        sizeBytes: stats.size,
+        modifiedAt: new Date(stats.mtimeMs).toISOString(),
+      })
+    } catch {
+      // 读取失败的文件不列为孤儿，避免输出不可靠信息。
+    }
+  }
+  return orphans.sort((left, right) => left.name.localeCompare(right.name))
+}
+
+/** 已确认归档只在文件仍存在时计入磁盘占用（拉取成功后文件通常已被删除）。 */
+function existingArchiveBytes(rows: Array<{ name: string; size: number }>, backupsDir: string): number {
+  let total = 0
+  for (const row of rows) {
+    if (existsSync(join(backupsDir, row.name))) total += Number(row.size)
+  }
+  return total
+}
+
 /** 读取 pending 归档（含是否仍存在），供拉取脚本决定拉取/生成。 */
-function listPending(db: DatabaseSync, backupsDir: string): Record<string, unknown> {
+function listPending(
+  db: DatabaseSync,
+  backupsDir: string,
+  includeWarnings = true,
+): Record<string, unknown> {
   const pending = db
     .prepare(
       'SELECT name, mode, created_at, sha256, size, file_count FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL ORDER BY created_at ASC',
@@ -233,12 +295,21 @@ function listPending(db: DatabaseSync, backupsDir: string): Record<string, unkno
       "SELECT created_at FROM backup_archives WHERE mode = 'full' AND acked_at IS NOT NULL AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
     )
     .get() as { created_at: string } | undefined
+  const acked = db
+    .prepare('SELECT name, size FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL')
+    .all() as unknown as Array<{ name: string; size: number }>
+  const orphans = listOrphanArchives(db, backupsDir)
+  const pendingBytes = pending.reduce((sum, row) => sum + Number(row.size), 0)
+  const ackedBytes = existingArchiveBytes(acked, backupsDir)
+  const orphanBytes = orphans.reduce((sum, row) => sum + row.sizeBytes, 0)
   const now = Date.now()
   const needsFull = !lastFull || now - Date.parse(lastFull.created_at) > FULL_INTERVAL_MS
   return {
     ok: true,
     count: pending.length,
-    pendingBytes: pending.reduce((sum, row) => sum + Number(row.size), 0),
+    pendingBytes,
+    ackedBytes,
+    orphanBytes,
     pending: pending.map((row) => ({
       name: row.name,
       mode: row.mode,
@@ -248,6 +319,11 @@ function listPending(db: DatabaseSync, backupsDir: string): Record<string, unkno
       fileCount: Number(row.file_count),
       exists: existsSync(join(backupsDir, row.name)),
     })),
+    orphans,
+    warnings:
+      includeWarnings && orphans.length > 0
+        ? [`发现 ${orphans.length} 个无 DB 记录的孤儿归档（${orphanBytes} bytes），未自动删除，请人工核对`]
+        : [],
     lastAckedAt: lastAcked?.created_at ?? null,
     lastFullAt: lastFull?.created_at ?? null,
     needsFull,
@@ -310,6 +386,7 @@ async function createArchive(
   config: Config,
   backupsDir: string,
   forceFull: boolean,
+  legacy = false,
 ): Promise<ArchiveResult> {
   const created = new Date()
   const stamp = compactTimestamp(created)
@@ -336,6 +413,13 @@ async function createArchive(
       )
       .all() as unknown as PendingRow[]
     const pendingBytes = pending.reduce((sum, row) => sum + Number(row.size), 0)
+    const acked = snapshotDb
+      .prepare('SELECT name, size FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL')
+      .all() as unknown as Array<{ name: string; size: number }>
+    // 只有文件仍在磁盘上的已确认归档才占用空间；孤儿归档按实际文件大小计入。
+    const ackedBytes = existingArchiveBytes(acked, backupsDir)
+    const orphans = listOrphanArchives(db, backupsDir)
+    const orphanBytes = orphans.reduce((sum, row) => sum + row.sizeBytes, 0)
     const pendingStart = pending.length > 0 ? pending[pending.length - 1]!.created_at : null
     const previous = state?.last_backup_at ?? null
     // 没有已确认历史且没有待拉取归档时才自动全量；已有 pending 全量时按增量继续。
@@ -368,11 +452,11 @@ async function createArchive(
     const totalBytes = files.reduce((sum, file) => sum + Number(file.size), 0)
     const estimate = totalBytes + dbBytes
     const available = freeBytes(config.dataDir)
-    // pending 归档在确认前必须保留在 Pi 上，空间预算要包含它们。
-    const required = estimate + pendingBytes + PREPARE_RESERVE_BYTES
+    // pending 未确认、acked 未清理、孤儿归档都仍需留在磁盘上，空间预算全部计入。
+    const required = estimate + pendingBytes + ackedBytes + orphanBytes + PREPARE_RESERVE_BYTES
     if (available < required) {
       throw new Error(
-        `磁盘空间不足：需要约 ${Math.ceil(required / GIB)} GiB（含 ${pending.length} 个待拉取归档 ${Math.ceil(pendingBytes / GIB)} GiB），可用 ${Math.ceil(available / GIB)} GiB`,
+        `磁盘空间不足：需要约 ${Math.ceil(required / GIB)} GiB（本次约 ${Math.ceil(estimate / GIB)} GiB + pending ${pending.length} 个/${Math.ceil(pendingBytes / GIB)} GiB + acked 未清理 ${acked.length} 个/${Math.ceil(ackedBytes / GIB)} GiB + 孤儿 ${orphans.length} 个/${Math.ceil(orphanBytes / GIB)} GiB），可用 ${Math.ceil(available / GIB)} GiB`,
       )
     }
 
@@ -406,7 +490,16 @@ async function createArchive(
     db.prepare(
       'INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
     ).run(archiveName, mode, createdAt, sha256, sizeBytes, files.length)
-    audit(db, 'cli', 'backup_prepare', archiveName, { mode, files: files.length, sizeBytes }, null)
+    audit(
+      db,
+      'cli',
+      legacy ? 'backup_legacy' : 'backup_prepare',
+      archiveName,
+      legacy
+        ? { mode, files: files.length, sizeBytes, deprecated: true }
+        : { mode, files: files.length, sizeBytes },
+      null,
+    )
 
     return {
       ok: true,
@@ -419,6 +512,8 @@ async function createArchive(
       fileCount: files.length,
       totalBytes,
       createdAt,
+      orphanBytes,
+      orphans,
     }
   } catch (error) {
     if (createdArchivePath) {
@@ -460,6 +555,7 @@ async function ackArchive(
   backupsDir: string,
   name: string,
   sha256Input: string,
+  legacy = false,
 ): Promise<Record<string, unknown>> {
   const expectedSha = sha256Input.toLowerCase()
   const row = db
@@ -497,11 +593,20 @@ async function ackArchive(
         'UPDATE backup_state SET last_backup_at = ?, last_archive = ?, last_sha256 = ?, last_size = ? WHERE id = 1',
       ).run(row.created_at, name, row.sha256, row.size)
     }
-    audit(db, 'cli', 'backup_ack', name, { mode: row.mode, sizeBytes: Number(row.size) }, null)
+    audit(
+      db,
+      'cli',
+      'backup_ack',
+      name,
+      legacy
+        ? { mode: row.mode, sizeBytes: Number(row.size), deprecated: true, legacy: true }
+        : { mode: row.mode, sizeBytes: Number(row.size) },
+      null,
+    )
   }
 
   const removed = pruneAcked(db, backupsDir)
-  return { ok: true, name, alreadyAcked, removed, mode: row.mode }
+  return { ok: true, name, alreadyAcked, removed, mode: row.mode, deprecated: legacy }
 }
 
 /** 已确认归档最多保留 MAX_ACKED_ARCHIVES 个；pending 归档永不在这里删除。 */
@@ -551,7 +656,7 @@ async function main(): Promise<void> {
 
   try {
     if (args.command === 'pending') {
-      emit(listPending(db, backupsDir))
+      emit(listPending(db, backupsDir, !args.noWarnings))
       return
     }
 
@@ -562,14 +667,22 @@ async function main(): Promise<void> {
         emit(await ackArchive(db, backupsDir, args.name!, args.sha256!))
         return
       }
-      const result = await createArchive(db, config, backupsDir, args.full)
+      const legacy = args.command === 'legacy'
+      const result = await createArchive(db, config, backupsDir, args.full, legacy)
       if (args.command === 'prepare') {
         emit(result)
         return
       }
-      // 兼容 v0.1 单阶段调用：生成后立即确认（不删除归档文件）。
-      const acked = await ackArchive(db, backupsDir, result.archiveName, result.sha256)
-      emit({ ...result, status: 'acked', alreadyAcked: acked.alreadyAcked, removed: acked.removed })
+      // 显式 --legacy：生成后立即确认（不删除归档文件），仅用于排障/兼容旧调用。
+      const acked = await ackArchive(db, backupsDir, result.archiveName, result.sha256, true)
+      emit({
+        ...result,
+        status: 'acked',
+        alreadyAcked: acked.alreadyAcked,
+        removed: acked.removed,
+        deprecated: true,
+        legacy: true,
+      })
     } finally {
       releaseLock(lockFd, lockPath)
     }

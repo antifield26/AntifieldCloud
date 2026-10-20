@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.2.2）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.3.0）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -71,6 +71,11 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
 - 解析顺序：命令行参数 > 现有 env > `/etc/antifieldcloud/deploy.conf` > 示例默认值；`--force` **不会**把真实域名重置为
   `example.com`。若仍使用占位域名，脚本会打印警告。
 - 可选参数：`--app-origin= --ai-origin= --cookie-domain= --mc-public-address= --data-dir= --web-dist-dir= --admin-username=`。
+- v0.3 可选 env（写入 `/etc/antifieldcloud/env`，按需）：
+  - `BACKUP_RESTORE_ENABLED=true`：启用 Web 备份列表/导入/文件级恢复；默认 false 时恢复计划/执行返回 403。
+  - `BACKUP_IMPORT_MAX_BYTES=104857600`：Web 归档导入上限，实际还受 `MAX_UPLOAD_BYTES` 限制。
+  - `OPENCODE_HTML_MODE=shim|attributes|passthrough`：默认 `shim`；Cloudflare 关闭注入并验证后可切 `passthrough`。
+  - `CHUNKED_UPLOAD_ENABLED`（v0.3.1）、`MAX_CHUNK_BYTES`/`CHUNK_FILE_MAX_BYTES`（见 v0.3.1 发布说明）。
 
 ## 3. 从 PC 部署（带迁移前 DB 快照与自动回滚）
 
@@ -147,6 +152,25 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 - cloudflared 以 root 运行且当前 unit 无沙箱；建议按第 10 节做 drop-in 加固，并定期用
   `cloudflared tunnel info` 的版本提示升级（`--no-autoupdate` 不会自动升级）。
 
+### 5.1 Rocket Loader / 自动注入（OpenCode 无垫片前置）
+
+目标：只为 `ai` 主机关闭 Cloudflare 对模块脚本的改写/自动注入，不影响 `app`。
+
+1. Cloudflare Dashboard → Rules → **Configuration Rules** → Create rule：
+   - 表达式：`http.host eq "ai.example.com"`；
+   - 设置：**Rocket Loader: Off**；
+   - 保存并部署。官方已将 Rocket Loader 从 Page Rules 迁移到 Configuration Rules。
+2. Speed → Optimization：如仍启用 Rocket Loader，保持全局设置不动，以 host 规则为准。
+3. Web Analytics → Manage Site：自动注入设为 **Disable**（严格 CSP 下 beacon 被拦截）。
+4. 如启用 Bot Fight Mode，其 JavaScript Detections 不能单独关闭；可整体关闭或接受控制台 CSP 报错。
+5. 验收：
+   - `curl -fsS https://ai.example.com/` 的 HTML 中 `type="module"` 未被改写；无 `data-cfasync` 依赖；
+   - 认证浏览器桌面/Android/390/915 宽屏测试原生“新建会话”、模型/智能体选择器、SSE/WS；
+   - 代理设置 `OPENCODE_HTML_MODE=passthrough`（或 `attributes` 过渡）后再观察 24h；失败切回 `shim`。
+6. 回滚：删除该 Configuration Rule → 恢复 `OPENCODE_HTML_MODE=shim` → 重启应用。
+
+注意：opencode 上游原生新建按钮在部分版本/空项目状态有缺陷；若关闭注入后仍无响应，按验收记录保留最小隐藏 click/pointerup 接管（无可见按钮），不重新引入 v0.2.1 的浮动按钮。
+
 ## 6. 验证
 
 本机（Pi 上）：
@@ -178,6 +202,18 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 手工检查：`https://app.example.com` 登录、上传/预览、Dashboard MC 状态、白名单增删、文件分享与告警卡片；
 `https://ai.example.com` 登录后进入 opencode。若 opencode 仍要求输入自身密码，属于其 UI 行为，
 从 Pi `sudo grep OPENCODE_PASSWORD /etc/opencode/opencode.env` 获取后输入一次（不写入前端）。
+
+### 6.1 v0.3 备份管理/媒体/迁移
+
+- 迁移：v0.3 新增 schema migration 3（`backup_archives` 列 + `restore_plans`），部署脚本会在切换前自动 `--snapshot-db`。
+- 启用：`BACKUP_RESTORE_ENABLED=true`；重启应用后 `/api/version` 应返回 `backupRestoreEnabled:true`。
+- Windows 备份脚本：更新仓库后重新运行 `install-backup-task.ps1`（管理员），确认任务 Args 仍指向实际 `PiHost/BackupRoot`；
+  手动跑一次核对 `backup.log` 出现 `secrets=ok`，Pi `backup-pull.json` 含 `secretsOk=true`。
+- Pi 密钥包：首次部署后执行一次 `sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh`，核对输出
+  `includesOpencode=true`；用离线 age 私钥解密抽查 `opencode/opencode.db`（不要在生产回显密码）。
+- Web 恢复：只允许导入/校验/文件级恢复到新目录；整库恢复仍按 `docs/BACKUP.md` §6 离线执行。
+- 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载。
+- 验收：`npm run check`、`npm run build`、`smoke.ps1`、Android/桌面原生新建按钮矩阵、备份导入/校验/恢复（临时 DATA_DIR）。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -284,5 +320,8 @@ curl -fsS http://127.0.0.1:3000/healthz
 | 备份面板红色 | 计划任务失败/超过 48h：查任务 LastTaskResult、`%LOCALAPPDATA%\AntifieldCloud\backup.log` |
 | 密钥包未生成 | 按 `docs/BACKUP.md` §5 安装 age 并写入公钥；不影响普通归档 |
 | 磁盘占用 | `df -h /`、`du -sh /var/lib/antifieldcloud/*`；配额 10 GiB；release/备份保留策略见文档 |
-| 公网页面空白 / 入口脚本未执行 | app 入口脚本已加 `data-cfasync="false"`；ai 代理会为 opencode 全部脚本注入 `data-cfasync="false"` 并加移动端兼容垫片；若仍异常，在 Cloudflare Speed → Optimization 关闭 Rocket Loader |
+| 公网页面空白 / 入口脚本未执行 | app 入口脚本已加 `data-cfasync="false"`；ai 代理按 `OPENCODE_HTML_MODE` 处理；若仍异常，在 Cloudflare Speed → Optimization/Configuration Rules 关闭 `ai` 的 Rocket Loader |
+| 备份密钥包状态红/unknown | 看 `backup-pull.json` 的 `secretsOk/secretsLastError`；检查 age 公钥权限与 `backup-secrets.sh`；文件归档成功不等于密钥包成功 |
+| 备份恢复 403 restore_disabled | env 未设 `BACKUP_RESTORE_ENABLED=true` 或未重启应用 |
+| 大文件上传 413 | v0.3.0 单请求 100 MiB；v0.3.1 分片上传后再提高上限 |
 | 校园网暂时无法解析 | 递归 DNS 负缓存（约 30 分钟）；等待或用手机流量验证。不要修改 `mc.example.com` |

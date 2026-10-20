@@ -168,12 +168,6 @@ export function PublicShare() {
                     <dt>过期时间</dt>
                     <dd>{share.expiresAt ? formatDateTime(share.expiresAt) : '永不过期'}</dd>
                   </div>
-                  {share.note ? (
-                    <div className="public-share-meta-row">
-                      <dt>备注</dt>
-                      <dd>{share.note}</dd>
-                    </div>
-                  ) : null}
                 </dl>
 
                 {share.hasPassword && !unlocked ? (

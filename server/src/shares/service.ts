@@ -5,8 +5,10 @@
  * - token 为 32 字节 CSPRNG base64url，仅创建时以 URL 形式返回一次；数据库只存 SHA-256。
  * - 分享密码走 scrypt（见 shares/password.ts），数据库只存 hash + salt；日志/审计不出现 token 或密码。
  * - 过期、吊销、下载次数用尽统一返回 410；密码分享必须先 unlock 拿到 5 分钟 HttpOnly 会话 Cookie。
+ * - 文件被软删除（回收站）后，即使吊销钩子未执行，公开 metadata/content 也返回 410。
  * - 下载次数按「分享会话」只计一次：会话首次成功取到内容时原子自增（Range 后续请求不重复计），
  *   因此 maxDownloads 是对新会话的近似限制，无法防御清 Cookie 的恶意客户端（个人分享可接受）。
+ * - 公开下载审计按 share+IP+10 分钟窗口去重，避免公开链接被刷爆 audit_log；计数不受影响。
  * - 公开路由不经过会话认证，由路由层做 Origin/限流；本服务只做数据与状态校验。
  */
 import type { ReadStream } from 'node:fs'
@@ -21,7 +23,17 @@ import { newId, randomToken, sha256Hex } from '../util/ids.ts'
 import { hashSharePassword, verifySharePassword } from './password.ts'
 
 export const SHARE_SESSION_TTL_SECONDS = 300
+/** 分享密码最小长度（仅新建校验；旧分享验证不受影响）。 */
+export const SHARE_PASSWORD_MIN_LENGTH = 8
+/** 公开下载审计去重窗口：同一 share+IP 在窗口内只记一条审计。 */
+export const DOWNLOAD_AUDIT_WINDOW_MS = 10 * 60_000
+/** 审计去重 Map 上限，超出后按时间淘汰，避免公开链接制造内存增长。 */
+const DOWNLOAD_AUDIT_MAX_ENTRIES = 4096
+/** 过期/吊销分享行保留天数，之后由日常维护 GC（关联会话级联删除）。 */
+export const SHARE_ROW_RETENTION_DAYS = 30
 const MAX_NOTE_LENGTH = 500
+const DEFAULT_SHARE_PAGE_SIZE = 100
+const MAX_SHARE_PAGE_SIZE = 500
 
 export type ShareState = 'active' | 'expired' | 'exhausted' | 'revoked'
 
@@ -103,7 +115,6 @@ export interface PublicShareInfo {
   /** null 表示不限次数（数据库 0）。 */
   maxDownloads: number | null
   downloadCount: number
-  note: string | null
 }
 
 export interface PublicShareResponse {
@@ -129,9 +140,16 @@ export interface ContentAccess {
   mustCount: boolean
 }
 
+export interface ShareListOptions {
+  page?: number
+  pageSize?: number
+}
+
 export interface ShareListResult {
   items: ShareItem[]
   total: number
+  page: number
+  pageSize: number
 }
 
 interface FileMetaRow {
@@ -183,6 +201,9 @@ function parsePassword(value: unknown): string | null {
   if (value === undefined || value === null || value === '') return null
   if (typeof value !== 'string') throw badRequest('分享密码必须是字符串', 'invalid_password')
   if (value.trim() === '') return null
+  if (value.length < SHARE_PASSWORD_MIN_LENGTH) {
+    throw badRequest(`分享密码至少需要 ${SHARE_PASSWORD_MIN_LENGTH} 个字符`, 'invalid_password')
+  }
   return value
 }
 
@@ -195,6 +216,8 @@ export class ShareService {
   private readonly config: Config
   readonly storage: ShareStorage
   private readonly clock: () => Date
+  /** share+IP → 最近一次写入下载审计的时间戳（毫秒）。 */
+  private readonly downloadAuditSeen = new Map<string, number>()
 
   constructor(db: DatabaseSync, config: Config, options: ShareServiceOptions | ShareStorage = {}) {
     this.db = db
@@ -245,7 +268,9 @@ export class ShareService {
 
   private fileForShare(share: ShareRow): FileRow {
     const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(share.file_id) as unknown as FileRow | undefined
-    if (!row) throw gone('share_gone', '分享的文件已不存在')
+    // 软删除文件在彻底删除前仍存在于 files 表；公开读取必须按“已不存在”处理，
+    // 不能只依赖回收站路由里的吊销钩子（钩子失败/漏接时防止旧链接继续下载）。
+    if (!row || row.deleted_at) throw gone('share_gone', '分享的文件已不存在')
     return row
   }
 
@@ -295,7 +320,6 @@ export class ShareService {
       hasPassword: Boolean(share.password_hash),
       maxDownloads: Number(share.max_downloads) > 0 ? Number(share.max_downloads) : null,
       downloadCount: Number(share.download_count),
-      note: share.note,
     }
   }
 
@@ -389,11 +413,17 @@ export class ShareService {
     return { share: this.toItem(this.shareById(id)), url: this.shareUrl(token) }
   }
 
-  list(): ShareListResult {
+  list(options: ShareListOptions = {}): ShareListResult {
+    const page = Number.isInteger(options.page) && (options.page as number) >= 1 ? (options.page as number) : 1
+    const requestedSize = Number.isInteger(options.pageSize) && (options.pageSize as number) >= 1
+      ? (options.pageSize as number)
+      : DEFAULT_SHARE_PAGE_SIZE
+    const pageSize = Math.min(MAX_SHARE_PAGE_SIZE, requestedSize)
+    const total = (this.db.prepare('SELECT COUNT(*) AS c FROM shares').get() as { c: number }).c
     const rows = this.db
-      .prepare('SELECT * FROM shares ORDER BY created_at DESC, id DESC')
-      .all() as unknown as ShareRow[]
-    return { items: rows.map((row) => this.toItem(row)), total: rows.length }
+      .prepare('SELECT * FROM shares ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?')
+      .all(pageSize, (page - 1) * pageSize) as unknown as ShareRow[]
+    return { items: rows.map((row) => this.toItem(row)), total, page, pageSize }
   }
 
   revoke(actor: ShareActor, shareId: string): ShareItem {
@@ -466,9 +496,19 @@ export class ShareService {
     return shares.length
   }
 
-  /** 清理过期会话；由日常维护流程调用。 */
+  /** 清理过期会话；顺带 GC 长期过期/吊销的分享行。返回清理的会话数。 */
   cleanup(): number {
     const result = this.db.prepare('DELETE FROM share_sessions WHERE expires_at <= ?').run(this.nowIso())
+    this.purgeStaleRows()
+    return Number(result.changes)
+  }
+
+  /** 删除超过保留期的过期/吊销分享（含关联会话）；返回删除行数。 */
+  purgeStaleRows(retentionDays = SHARE_ROW_RETENTION_DAYS): number {
+    const cutoff = new Date(this.nowDate().getTime() - Math.max(1, retentionDays) * 86_400_000).toISOString()
+    const result = this.db
+      .prepare('DELETE FROM shares WHERE (revoked_at IS NOT NULL AND revoked_at < ?) OR (expires_at < ?)')
+      .run(cutoff, cutoff)
     return Number(result.changes)
   }
 
@@ -540,6 +580,26 @@ export class ShareService {
     }
   }
 
+  /** 公开下载审计是否应写入：同一 share+IP 在窗口内只记一次。 */
+  private shouldAuditDownload(shareId: string, ip: string | null, nowMs: number): boolean {
+    const key = `${shareId}|${ip ?? 'unknown'}`
+    const last = this.downloadAuditSeen.get(key)
+    if (last !== undefined && nowMs - last < DOWNLOAD_AUDIT_WINDOW_MS) return false
+    this.downloadAuditSeen.set(key, nowMs)
+    if (this.downloadAuditSeen.size > DOWNLOAD_AUDIT_MAX_ENTRIES) {
+      const cutoff = nowMs - DOWNLOAD_AUDIT_WINDOW_MS
+      for (const [entryKey, seenAt] of this.downloadAuditSeen) {
+        if (seenAt < cutoff) this.downloadAuditSeen.delete(entryKey)
+      }
+      while (this.downloadAuditSeen.size > DOWNLOAD_AUDIT_MAX_ENTRIES) {
+        const oldest = this.downloadAuditSeen.keys().next()
+        if (oldest.done) break
+        this.downloadAuditSeen.delete(oldest.value)
+      }
+    }
+    return true
+  }
+
   /** 会话首次成功取内容时原子 +1；次数用尽/已吊销/已过期返回 410。 */
   markDownloaded(access: ContentAccess, ip: string | null): void {
     const now = this.nowIso()
@@ -559,10 +619,13 @@ export class ShareService {
       if (access.session) {
         this.db.prepare('UPDATE share_sessions SET downloaded = 1 WHERE id = ?').run(access.session.id)
       }
-      audit(this.db, 'anonymous', 'share_download', access.file.name, {
-        shareId: access.share.id,
-        fileId: access.share.file_id,
-      }, ip)
+      // 计数与限次语义按真实下载执行；仅审计写入按 share+IP+窗口节流，防止公开链接刷爆 audit_log。
+      if (this.shouldAuditDownload(access.share.id, ip, this.nowDate().getTime())) {
+        audit(this.db, 'anonymous', 'share_download', access.file.name, {
+          shareId: access.share.id,
+          fileId: access.share.file_id,
+        }, ip)
+      }
     })
   }
 }

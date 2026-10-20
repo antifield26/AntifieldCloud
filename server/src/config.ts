@@ -35,7 +35,14 @@ export interface Config {
   opencodeUrl: string
   opencodeUsername: string
   opencodePassword: string
+  /** opencode HTML 处理模式：shim=兼容垫片，attributes=只改写 cfasync，passthrough=完全透传。 */
+  opencodeHtmlMode: 'shim' | 'attributes' | 'passthrough'
   backupPullFile: string
+  /** 备份管理/文件级恢复功能开关；关闭时 API 仍可列出状态但拒绝导入/恢复。 */
+  backupRestoreEnabled: boolean
+  backupImportMaxBytes: number
+  backupRestorePlanTtlMinutes: number
+  backupRestoreMaxEntries: number
   sharesEnabled: boolean
   shareDefaultExpiryHours: number
   shareMaxExpiryHours: number
@@ -119,6 +126,12 @@ function bool(env: Record<string, string>, key: string, fallback: boolean): bool
   throw new Error(`配置项 ${key} 非法布尔值：${raw}`)
 }
 
+function parseOpenCodeHtmlMode(env: Record<string, string>): 'shim' | 'attributes' | 'passthrough' {
+  const raw = (env.OPENCODE_HTML_MODE ?? 'shim').trim().toLowerCase()
+  if (raw === 'shim' || raw === 'attributes' || raw === 'passthrough') return raw
+  throw new Error(`配置项 OPENCODE_HTML_MODE 非法：${raw}（允许 shim/attributes/passthrough）`)
+}
+
 const MIB = 1024 * 1024
 const GIB = 1024 * MIB
 
@@ -158,7 +171,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     opencodeUrl: str(merged, 'OPENCODE_URL', 'http://127.0.0.1:4096').replace(/\/+$/, ''),
     opencodeUsername: str(merged, 'OPENCODE_USERNAME', 'opencode'),
     opencodePassword: str(merged, 'OPENCODE_PASSWORD', ''),
+    opencodeHtmlMode: parseOpenCodeHtmlMode(merged),
     backupPullFile: str(merged, 'BACKUP_PULL_FILE', resolve(dataDir, 'backup-pull.json')),
+    backupRestoreEnabled: bool(merged, 'BACKUP_RESTORE_ENABLED', false),
+    backupImportMaxBytes: int(merged, 'BACKUP_IMPORT_MAX_BYTES', 100 * MIB, 1 * MIB, 1024 * GIB),
+    backupRestorePlanTtlMinutes: int(merged, 'BACKUP_RESTORE_PLAN_TTL_MINUTES', 30, 5, 1440),
+    backupRestoreMaxEntries: int(merged, 'BACKUP_RESTORE_MAX_ENTRIES', 5000, 1, 100_000),
     sharesEnabled: bool(merged, 'SHARES_ENABLED', true),
     shareDefaultExpiryHours: int(merged, 'SHARE_DEFAULT_EXPIRY_HOURS', 168, 1, 720),
     shareMaxExpiryHours: int(merged, 'SHARE_MAX_EXPIRY_HOURS', 720, 1, 8760),
@@ -173,7 +191,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.2.2'),
+    appVersion: str(merged, 'APP_VERSION', '0.3.0'),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')

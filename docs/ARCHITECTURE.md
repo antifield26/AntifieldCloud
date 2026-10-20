@@ -44,12 +44,12 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计 |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类 |
 | `mc/` | SLP 查询、RCON 客户端、状态/metrics、白名单增删与复核 |
-| `opencode/` | ai 主机的会话校验与认证反代 |
-| `dashboard/` | 主机指标、服务状态、opencode 健康、备份状态、活动聚合 |
+| `opencode/` | ai 主机认证反代；HTML 模式 shim/attributes/passthrough；Rocket Loader opt-out 与可选最小隐藏点击接管（v0.3，不添加可见 UI） |
+| `backups/` | 归档导入/校验、full+inc 链解析、文件级恢复计划与执行（v0.3，不执行整库恢复） |
+| `dashboard/` | 主机指标、服务状态、opencode 健康、备份/密钥状态、活动聚合 |
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索（v0.2.x） |
 | `shares/` | 文件分享 token/密码/过期/次数/吊销、公开访问（v0.2.x） |
 | `alerts/` | 阈值评估、状态去重/恢复、通用 webhook（v0.2.x） |
-| `opencode/` | ai 主机认证反代；Rocket Loader opt-out 与原生新建按钮兼容垫片（v0.2.2，不添加可见 UI） |
 | `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源 |
 | `cli/` | provisioning、两阶段备份 CLI |
 | `web/` | React SPA（登录、Dashboard、文件、回收站、知识库、分享、MC、活动、设置、公开分享页、PWA） |
@@ -65,7 +65,8 @@ SQLite（WAL）核心表：
 - `audit_log`：动作、目标、IP；保留 90 天。
 - `login_attempts`：登录成功/失败记录。
 - `backup_state`：最近一次 PC 已确认的备份时间/归档/哈希/大小。
-- `backup_archives`：pending/acked 归档（v0.2.x 两阶段协议）。
+- `backup_archives`：pending/acked 归档（v0.2.x 两阶段协议）；v0.3 增加 `verified_at/origin/manifest_json/last_error`。
+- `restore_plans`：文件级恢复计划（归档链、选择、目标名、状态、操作者、过期，v0.3）。
 - `notes`、`bookmarks`、`tags`、`note_tags`、`bookmark_tags`、`notes_fts`、`bookmarks_fts`（v0.2.x）。
 - `shares`、`share_sessions`：分享 token 哈希、密码、过期/次数、解锁会话（v0.2.x）。
 - `alert_events`、`alert_state`：告警历史/去重冷却（v0.2.x）。
@@ -91,7 +92,7 @@ SQLite（WAL）核心表：
 
 - 上传：浏览器 XHR（进度）→ multipart → 逐文件流式写入 `tmp/`，同时计算 SHA-256、累计大小、检查配额 → 事务内再次校验配额并插入行 → rename 到 `files/<xx>/<id>`；失败清理临时文件。
 - 列表/搜索/面包屑：全部按 DB 查询；搜索 `LIKE ... ESCAPE` 限 100 条。
-- 预览：图片/PDF 通过 `/content?inline=1`（支持 Range、ETag）；文本/Markdown 通过 `/text` 返回 JSON（≤1 MiB）；SVG/HTML/XML 强制附件。
+- 预览：图片/PDF/白名单音视频通过 `/content?inline=1`（支持 Range、ETag；不转码）；文本/Markdown 通过 `/text` 返回 JSON（≤1 MiB）；SVG/HTML/XML 强制附件；mkv/avi 等回退下载。
 - 回收站：递归软删除；列表只显示顶层项；恢复递归；彻底删除删除物理文件。
 
 ## 7. Minecraft
@@ -105,8 +106,11 @@ SQLite（WAL）核心表：
 
 - CLI 用 `node:sqlite` 的 `backup()` 生成一致性 DB 快照；从快照读 `backup_state` 与文件列表。
 - 全量：所有文件；增量：`created_at > 上次成功备份` 的文件 + DB 快照 + manifest。
-- `tar -czf` 归档，SHA-256；保留 2 份；空间不足拒绝。
-- Windows 计划任务通过 SSH 触发 CLI、`scp` 拉取、校验、删除远端归档、写回状态 JSON。
+- `tar -czf` 归档，SHA-256；pending 未确认不删除；未确认/已确认归档与孤儿计入空间预算。
+- Windows 计划任务通过 SSH 触发 CLI、`scp` 拉取、校验、删除远端归档及 sidecar、写回状态 JSON（含 secrets 状态）。
+- 密钥包 age 加密，包含 env/cloudflared/Minecraft/opencode 数据（opencode DB 用一致性快照）；私钥离线。
+- Web 备份管理只做归档导入/校验/文件级恢复到新目录；整库恢复走 root CLI（停服 + pre-restore 快照 + 回滚），不暴露 Web。
+- 归档 tar 按不可信输入校验：拒绝路径穿越、符号/硬链接、设备、超大条目；导入需 TOTP，恢复计划 30 分钟过期。
 
 ## 9. 部署与运行
 
@@ -119,5 +123,6 @@ SQLite（WAL）核心表：
 - Cloudflare 终止 TLS，Cloudflare 可见明文；TOTP 是应用层第二道门。
 - opencode 自身 Basic 密码由服务端注入，不下发前端；opencode 端口不对外。
 - Minecraft RCON 弱密码仍存在，但仅 loopback 可达；后续可轮换并加 fail2ban。
-- 文件预览按类型白名单；HTML/SVG 不内联；文本预览由 React 转义。
+- 文件预览按类型白名单；HTML/SVG 不内联；音视频只播放白名单容器；文本预览由 React 转义。
+- 备份归档导入是受 TOTP 门禁的管理员输入，但仍按不可信 tar 校验；不提供归档下载；Web 永不执行整库替换。
 - 应用故障不影响 Minecraft/opencode/桌面；cloudflared 故障只影响公网入口。

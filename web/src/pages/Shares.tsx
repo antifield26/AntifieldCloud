@@ -175,7 +175,7 @@ export function Shares() {
         <div className="notice notice-muted">服务端未启用文件分享功能（/api/version sharesEnabled=false）。</div>
       ) : (
         <div className="notice notice-info">
-          分享链接创建于文件页，完整链接只在创建时展示一次；这里可以查看状态、下载次数并吊销。
+          分享链接创建于文件页，完整链接只在创建时展示一次；这里可以查看状态、下载次数并吊销。备注仅自己可见，不会出现在公开分享页。
         </div>
       )}
 

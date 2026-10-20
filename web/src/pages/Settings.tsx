@@ -15,6 +15,7 @@ import { CopyButton } from '../components/CopyButton'
 import { Modal } from '../components/Modal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { InlineError } from '../components/InlineError'
+import { BackupManager } from '../components/backups/BackupManager'
 import { useToast } from '../components/Toast'
 import { formatBytes, formatDate, formatDateTime, formatDateTimeWithSeconds, truncateText } from '../lib/format'
 import { downloadTextFile } from '../lib/download'
@@ -411,6 +412,20 @@ export function Settings() {
               </div>
             </>
           ) : null}
+        </Card>
+
+        <Card
+          title="备份与恢复"
+          description="归档列表、导入校验与文件级恢复；恢复需要 TOTP 与确认文本。"
+          actions={
+            <Badge tone={meta.backupRestoreEnabled ? 'accent' : 'muted'}>
+              {meta.backupRestoreEnabled ? '恢复向导已启用' : '恢复向导未启用'}
+            </Badge>
+          }
+          className="settings-card-wide"
+        >
+          <div id="backup" className="settings-anchor" aria-hidden="true" />
+          <BackupManager />
         </Card>
 
         <Card title="关于" description="AntifieldCloud · 个人工作台" className="settings-card">

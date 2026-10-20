@@ -14,7 +14,7 @@ import type { Config } from '../config.ts'
 import type { AuthService } from '../auth/service.ts'
 import { readSessionToken } from '../auth/cookies.ts'
 import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
-import { injectOpenCodeShim, OPENCODE_SHIM_PATH, OPENCODE_SHIM_SCRIPT } from './shim.ts'
+import { injectOpenCodeScriptOptOut, injectOpenCodeShim, OPENCODE_SHIM_PATH, OPENCODE_SHIM_SCRIPT } from './shim.ts'
 
 export { normalizeHost, hostFromOrigin }
 
@@ -140,12 +140,15 @@ export class OpenCodeProxy {
   }
 
   /**
-   * opencode Web 兼容垫片：
-   * - 返回 /__af/oc-help.js（同源脚本，不触发 opencode CSP 的内联限制）；
-   * - 对已认证的 HTML 导航注入该脚本，修复移动端没有“新建会话”入口、桌面按钮点击无效。
+   * opencode Web HTML 处理：
+   * - shim：注入同源脚本并 opt-out Rocket Loader（默认，兼容当前上游）；
+   * - attributes：只加 data-cfasync，不注入 JS；
+   * - passthrough：完全交给原生代理（用于 Cloudflare 已关闭注入后的无垫片验证）。
    * 返回 true 表示已接管响应；false 交回原来的 http-proxy 路径。
    */
   async serveShim(request: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+    const mode = this.config.opencodeHtmlMode
+    if (mode === 'passthrough') return false
     const method = request.method
     if (method !== 'GET' && method !== 'HEAD') return false
     const rawUrl = request.raw.url ?? '/'
@@ -154,7 +157,7 @@ export class OpenCodeProxy {
     if (!context) return false
     request.auth = context
 
-    if (path === OPENCODE_SHIM_PATH) {
+    if (mode === 'shim' && path === OPENCODE_SHIM_PATH) {
       reply
         .code(200)
         .header('content-type', 'application/javascript; charset=utf-8')
@@ -184,12 +187,14 @@ export class OpenCodeProxy {
       if (!upstream.ok) return false
       const contentType = upstream.headers.get('content-type') ?? ''
       if (!contentType.includes('text/html')) return false
-      const html = injectOpenCodeShim(await upstream.text())
+      const html =
+        mode === 'shim' ? injectOpenCodeShim(await upstream.text()) : injectOpenCodeScriptOptOut(await upstream.text())
       const headers: Record<string, string> = {
         'content-type': contentType,
         'cache-control': 'no-store',
-        'x-af-oc-shim': '1',
+        'x-af-oc-mode': mode,
       }
+      if (mode === 'shim') headers['x-af-oc-shim'] = '1'
       for (const name of ['content-security-policy', 'content-language', 'vary']) {
         const value = upstream.headers.get(name)
         if (value) headers[name] = value
@@ -199,7 +204,7 @@ export class OpenCodeProxy {
       else reply.send(html)
       return true
     } catch (error) {
-      this.log?.error({ err: error }, 'opencode 兼容垫片注入失败，回退原生代理')
+      this.log?.error({ err: error }, 'opencode HTML 处理失败，回退原生代理')
       return false
     }
   }

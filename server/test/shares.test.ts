@@ -175,7 +175,8 @@ test('密码分享：解锁、Cookie 会话、下载次数只计一次', async (
     const downloadAudits = fx.db
       .prepare("SELECT actor, target, detail_json FROM audit_log WHERE action = 'share_download'")
       .all() as unknown as { actor: string; target: string; detail_json: string | null }[]
-    assert.equal(downloadAudits.length, 2)
+    // 下载计数逐次累加（2 次），但审计按 share+IP+时间窗节流，同一 IP 只记 1 条。
+    assert.equal(downloadAudits.length, 1)
     assert.equal(downloadAudits[0]?.actor, 'anonymous')
     assert.equal(downloadAudits[0]?.target, 'secret.txt')
     assert.ok(!String(downloadAudits[0]?.detail_json).includes(token))
@@ -277,10 +278,11 @@ test('分享输入校验与开关', async () => {
       400,
       'invalid_password',
     )
-    // 分享密码不受账号 ≥12 字符策略限制（1–256 字符）。
-    const shortPassword = await fx.shares.create(ACTOR, file.id, { password: '123' })
-    const shortToken = tokenFromUrl(shortPassword.url)
-    assert.equal((await fx.shares.unlock(shortToken, '123')).state, 'active')
+    // 分享密码最小 8 位（账号密码 ≥12 的策略不适用；8–256 位允许）。
+    await expectRejects(fx.shares.create(ACTOR, file.id, { password: '1234567' }), 400, 'invalid_password')
+    const minPassword = await fx.shares.create(ACTOR, file.id, { password: '12345678' })
+    const minToken = tokenFromUrl(minPassword.url)
+    assert.equal((await fx.shares.unlock(minToken, '12345678')).state, 'active')
     await expectRejects(fx.shares.create(ACTOR, file.id, { note: 'x'.repeat(501) }), 400, 'invalid_note')
     await expectRejects(fx.shares.create(ACTOR, 'not-a-file', {}), 404, 'not_found')
     const folder = fx.files.createFolder(ACTOR, null, 'dir')

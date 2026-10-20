@@ -31,5 +31,8 @@ export function registerDashboardRoutes(
     maxUploadBytes: config.maxUploadBytes,
     sharesEnabled: config.sharesEnabled,
     alertsEnabled: config.alertsEnabled,
+    backupRestoreEnabled: config.backupRestoreEnabled,
+    backupImportMaxBytes: config.backupImportMaxBytes,
+    backupRestoreMaxEntries: config.backupRestoreMaxEntries,
   }))
 }

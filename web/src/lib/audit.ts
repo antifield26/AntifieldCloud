@@ -2,7 +2,7 @@
 // 动作名以服务端实际写入值为准（mkdir/rename/move/trash/restore/purge/recovery_regenerate 等）。
 // 未知动作原样展示，避免服务端新增动作时前端丢失信息。
 
-export type AuditCategory = 'auth' | 'file' | 'share' | 'whitelist' | 'knowledge' | 'alert' | 'other'
+export type AuditCategory = 'auth' | 'file' | 'share' | 'whitelist' | 'knowledge' | 'alert' | 'backup' | 'other'
 
 export interface AuditActionMeta {
   label: string
@@ -40,6 +40,16 @@ const ACTION_META: Record<string, AuditActionMeta> = {
   alert_test: { label: '测试告警', category: 'alert' },
   alert_fire: { label: '触发告警', category: 'alert' },
   alert_recover: { label: '告警恢复', category: 'alert' },
+  // v0.3 备份/恢复审计（动作名以服务端实际写入为准，未知动作仍原样展示）
+  backup_prepare: { label: '准备备份', category: 'backup' },
+  backup_import: { label: '导入归档', category: 'backup' },
+  backup_verify: { label: '校验归档', category: 'backup' },
+  backup_restore: { label: '恢复备份', category: 'backup' },
+  backup_orphan: { label: '孤儿归档', category: 'backup' },
+  restore_plan: { label: '创建恢复计划', category: 'backup' },
+  restore_execute: { label: '执行恢复', category: 'backup' },
+  restore_failed: { label: '恢复失败', category: 'backup' },
+  restore_complete: { label: '恢复完成', category: 'backup' },
 }
 
 export function auditActionMeta(action: string): AuditActionMeta {
@@ -112,6 +122,17 @@ export const AUDIT_ACTION_GROUPS: AuditActionGroup[] = [
       { value: 'bookmark_create', label: '新建书签' },
       { value: 'bookmark_update', label: '编辑书签' },
       { value: 'bookmark_delete', label: '删除书签' },
+    ],
+  },
+  {
+    label: '备份与恢复',
+    options: [
+      { value: 'backup_prepare', label: '准备备份' },
+      { value: 'backup_import', label: '导入归档' },
+      { value: 'backup_verify', label: '校验归档' },
+      { value: 'restore_plan', label: '创建恢复计划' },
+      { value: 'restore_execute', label: '执行恢复' },
+      { value: 'restore_failed', label: '恢复失败' },
     ],
   },
 ]

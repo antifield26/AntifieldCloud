@@ -7,6 +7,12 @@ import type {
   AlertTestResult,
   AlertsResult,
   AuditPage,
+  BackupArchive,
+  BackupEntriesResult,
+  BackupImportResult,
+  BackupListResult,
+  BackupPrepareResult,
+  BackupVerifyResult,
   Bookmark,
   BookmarkInput,
   BookmarkListResult,
@@ -32,6 +38,9 @@ import type {
   PasswordChallenge,
   PublicShareInfo,
   PublicShareUnlockResult,
+  RestoreExecuteResult,
+  RestorePlan,
+  RestorePlanResult,
   RevokeShareResult,
   ShareListResult,
   TagsResult,
@@ -80,6 +89,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   share_revoked: '分享链接已被吊销',
   webhook_not_configured: '未配置 Webhook，无法发送测试消息',
   invalid_url: '链接格式不合法',
+  confirmation_failed: '确认文本不正确',
+  checksum_mismatch: '归档 SHA-256 校验失败',
+  invalid_archive: '归档内容不合法或已损坏',
+  plan_expired: '恢复计划已过期，请重新创建',
+  restore_busy: '已有恢复任务在执行，请稍后再试',
+  backup_not_verified: '恢复链中的归档尚未校验通过',
 }
 
 export class ApiError extends Error {
@@ -379,6 +394,116 @@ export function uploadFiles(
   })
 }
 
+/* ---------- 备份归档上传（独立 multipart，不进入文件列表上传队列） ---------- */
+
+export interface BackupUploadCallbacks {
+  onProgress?: (loaded: number, total: number) => void
+  signal?: AbortSignal
+  /** 默认 30 分钟 */
+  timeoutMs?: number
+}
+
+const DEFAULT_BACKUP_UPLOAD_TIMEOUT_MS = 30 * 60 * 1000
+
+/**
+ * 上传备份归档（POST /api/backups/import，multipart 字段 file）。
+ * multipart 无法在读取 body 前校验 TOTP，服务端要求 `X-TOTP-Code` 请求头。
+ * 归档不进入文件配额；服务端负责名称白名单、SHA-256 与 tar 安全校验。
+ */
+export function uploadBackupArchive(
+  file: File,
+  totpCode: string,
+  callbacks: BackupUploadCallbacks = {},
+): Promise<BackupImportResult> {
+  return new Promise((resolve, reject) => {
+    if (callbacks.signal?.aborted) {
+      reject(new ApiError(0, 'aborted', '上传已取消'))
+      return
+    }
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/backups/import')
+    xhr.withCredentials = true
+    xhr.responseType = 'text'
+    xhr.timeout = callbacks.timeoutMs ?? DEFAULT_BACKUP_UPLOAD_TIMEOUT_MS
+
+    const token = getCsrfToken()
+    if (token) xhr.setRequestHeader(CSRF_HEADER, token)
+    xhr.setRequestHeader('X-TOTP-Code', totpCode)
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return
+      callbacks.onProgress?.(event.loaded, event.total)
+    }
+
+    const normalize = (body: unknown): BackupImportResult => {
+      if (body && typeof body === 'object') {
+        const record = body as Record<string, unknown>
+        if (record.archive && typeof record.archive === 'object') {
+          const verify =
+            record.verify && typeof record.verify === 'object'
+              ? (record.verify as BackupImportResult['verify'])
+              : undefined
+          return { archive: record.archive as BackupArchive, verify }
+        }
+        if (typeof record.id === 'string') return { archive: record as unknown as BackupArchive }
+      }
+      throw new ApiError(0, 'invalid_response', '服务端返回的归档信息无法解析')
+    }
+
+    xhr.onload = () => {
+      let body: unknown = null
+      if (xhr.responseText) {
+        try {
+          body = JSON.parse(xhr.responseText) as unknown
+        } catch {
+          body = null
+        }
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(normalize(body))
+        } catch (normalizeError) {
+          reject(normalizeError)
+        }
+        return
+      }
+      const error = parseApiError(body, xhr.status, parseRetryAfter(xhr.getResponseHeader('Retry-After')))
+      if (error.status === 401 && error.code === 'unauthenticated') unauthorizedHandler?.()
+      reject(error)
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'network_error', '归档上传失败：网络连接异常'))
+    xhr.onabort = () => reject(new ApiError(0, 'aborted', '上传已取消'))
+    xhr.ontimeout = () => reject(new ApiError(0, 'timeout', '归档上传超时，请检查网络后重试'))
+
+    if (callbacks.signal) {
+      callbacks.signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
+    const form = new FormData()
+    form.append('file', file, file.name)
+    xhr.send(form)
+  })
+}
+
+function normalizeRestorePlan(body: unknown): RestorePlanResult {
+  if (body && typeof body === 'object') {
+    const record = body as Record<string, unknown>
+    if (record.plan && typeof record.plan === 'object') return { plan: record.plan as RestorePlan }
+    if (typeof record.id === 'string') return { plan: record as unknown as RestorePlan }
+  }
+  throw new ApiError(0, 'invalid_response', '服务端返回的恢复计划无法解析')
+}
+
+function normalizeExecuteResult(body: unknown): RestoreExecuteResult {
+  if (body && typeof body === 'object') {
+    const record = body as Record<string, unknown>
+    const plan = record.plan && typeof record.plan === 'object' ? (record.plan as RestorePlan) : null
+    const result = record.result && typeof record.result === 'object' ? (record.result as RestoreExecuteResult['result']) : null
+    if (plan && result) return { ok: record.ok === undefined ? true : Boolean(record.ok), plan, result }
+  }
+  throw new ApiError(0, 'invalid_response', '服务端返回的恢复结果无法解析')
+}
+
 export const api = {
   auth: {
     password(username: string, password: string): Promise<PasswordChallenge> {
@@ -419,6 +544,59 @@ export const api = {
   /** /api/version 同时下发站点元数据；旧服务端只有 version。 */
   getVersion(): Promise<VersionResult> {
     return get<VersionResult>('/api/version')
+  },
+  backups: {
+    /** 归档列表：Pi pending/acked + 导入归档 + inbox/orphans + 汇总状态。 */
+    list(signal?: AbortSignal): Promise<BackupListResult> {
+      return get<BackupListResult>('/api/backups', { signal })
+    },
+    /** 触发 Pi 端备份准备（只生成 pending，不 ack、不推进游标）。 */
+    prepare(totpCode?: string): Promise<BackupPrepareResult> {
+      return post<BackupPrepareResult>('/api/backups/prepare', {
+        confirmText: 'PREPARE',
+        ...(totpCode ? { totpCode } : {}),
+      })
+    },
+    /** 上传归档：multipart + X-TOTP-Code 头，返回 archive 与自动校验结果。 */
+    importArchive: uploadBackupArchive,
+    /** 流式 SHA-256 + tar 安全校验；失败 409 checksum_mismatch / 422 invalid_archive。 */
+    verify(name: string): Promise<BackupVerifyResult> {
+      return post<BackupVerifyResult>('/api/backups/verify', { name })
+    },
+    /** 只读归档内容（最多 500 条），用于恢复时选择文件/目录。 */
+    entries(name: string, path = '/'): Promise<BackupEntriesResult> {
+      return get<BackupEntriesResult>(
+        `/api/backups/archives/${encodeId(name)}/entries${buildQuery({ path })}`,
+      )
+    },
+    /** 创建恢复计划：选择归档（链由服务端按 manifest 解析）与可选文件路径。 */
+    async restorePlan(input: {
+      archive: string
+      paths?: string[]
+      totpCode: string
+    }): Promise<RestorePlanResult> {
+      return normalizeRestorePlan(
+        await post<unknown>('/api/backups/restore-plan', {
+          archive: input.archive,
+          ...(input.paths && input.paths.length > 0 ? { paths: input.paths } : {}),
+          totpCode: input.totpCode,
+          confirmText: 'RESTORE',
+        }),
+      )
+    },
+    /** 计划详情（轮询执行状态）。 */
+    async getRestore(planId: string): Promise<RestorePlanResult> {
+      return normalizeRestorePlan(await get<unknown>(`/api/restores/${encodeId(planId)}`))
+    },
+    /** 执行恢复：TOTP + typed confirmation；服务端只恢复到新目录，失败可重试。 */
+    async executeRestore(planId: string, totpCode: string): Promise<RestoreExecuteResult> {
+      return normalizeExecuteResult(
+        await post<unknown>(`/api/restores/${encodeId(planId)}/execute`, {
+          totpCode,
+          confirmText: 'RESTORE',
+        }),
+      )
+    },
   },
   files: {
     list(query: FileListQuery = {}, signal?: AbortSignal): Promise<FileListResult> {
