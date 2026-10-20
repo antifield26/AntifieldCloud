@@ -48,7 +48,7 @@
 迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261020T135842657Z.sqlite
 服务: antifieldcloud.service (active, v0.4.0)；schema v6
 tag: v0.4.0
-release: 待发布
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.4.0
 ```
 
 ### 4. 未决
