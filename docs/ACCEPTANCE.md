@@ -26,14 +26,18 @@
 | `npm run typecheck` / `lint` | 通过（lint 使用 `typescript@6.0.2` alias） |
 | `npm run check` | 通过：服务端/脚本 234、前端 129 |
 | `npm run build` | 通过（web/dist 重建） |
-| Android 真机 | 待用户 390px/Android 复测（CSS 修复无法用 jsdom 验证布局） |
-| 应用部署 | 待发布后补 |
-| `smoke.ps1` | 待发布后补 |
+| Android 真机 | CSS 修复已在 Edge headless 390×420 视口渲染验证：周期标签完整不压缩、刷新按钮换行；真实 Android 浏览器待用户复测 |
+| 应用部署 | release `/opt/antifieldcloud/releases/20261020T153138Z`；healthz `0.4.2`；迁移前快照 `db-predeploy-20261020T153204366Z.sqlite`；部署后只读 smoke 15/15 |
+| `smoke.ps1` | **22 通过 / 0 失败 / 0 警告**（含公网/CSP/PWA/分享/告警/服务/版本/cgroup/nftables/备份/世界/演练/脚本 hash/本地 SHA） |
 
 ### 3. 部署
 
 ```text
-待发布后补（release / 迁移前快照 / healthz / smoke）
+应用: v0.4.2（release 20261020T153138Z；迁移前快照 db-predeploy-20261020T153204366Z.sqlite）
+类型工具链: tsc 7.0.2（@typescript/native）+ typescript 6.0.2 alias（typescript-eslint）
+Pi: schema v6 不变；OpenCode v2.1.1 不受影响
+tag: v0.4.2
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.4.2
 ```
 
 ### 4. 未决
