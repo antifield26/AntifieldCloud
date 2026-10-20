@@ -343,3 +343,13 @@ curl -fsS http://127.0.0.1:3000/healthz
 | 备份恢复 403 restore_disabled | env 未设 `BACKUP_RESTORE_ENABLED=true` 或未重启应用 |
 | 大文件上传 413 | 普通单请求上限 100 MiB；>100 MiB 应自动走分片（`CHUNKED_UPLOAD_ENABLED=true`、5 GiB 上限）。检查 `/api/version` 的 `chunkedUploadEnabled/chunkSizeBytes/chunkMaxFileBytes`，以及块请求是否被 Cloudflare 单请求限制拦截 |
 | 校园网暂时无法解析 | 递归 DNS 负缓存（约 30 分钟）；等待或用手机流量验证。不要修改 `mc.example.com` |
+
+## 14. 磁盘清理与保留策略
+
+- 先只读确认：`df -hT /`、`df -i /`、`du -xhd1 /`、`journalctl --disk-usage`；不要直接对 `/home` 或 `/var/lib` 做递归删除。
+- 可安全清理：`apt-get clean` 的包缓存、两代以前 `/opt/antifieldcloud/releases/<old>`（保留 current/previous）、旧 `cloudflared` 备份二进制、journald vacuum（保留 7 天且 ≤ 文档上限）。
+- 开发缓存需确认：`~/.local/share/pnpm/store`、`~/.nvm` 旧 Node、`~/.rustup` 非 active toolchain、`~/.cargo/registry`、`~/.npm/_cacache`；清理前确认无其他项目依赖，联网可重建。
+- **不要清理**：`/var/lib/antifieldcloud`（DB/files/backups/secrets）、`/var/lib/opencode`、当前与 previous release、`/var/swap`、`minecraft-server/world`、`minecraft-backups`。
+- Minecraft 世界不在应用备份覆盖内；`minecraft-backups` 是本地唯一世界副本（cron 约保留 2 天），只能先复制到 PC/离线介质，再按保留策略处理。
+- 旧内核 `/opt/jdk` 等系统组件先在 `/boot`/Java 依赖确认后再处理；保留至少一个可回退内核。
+- 清理后运行 `smoke.ps1`，并记录释放量；不要清理 `preflight/age-key`。
