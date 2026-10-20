@@ -40,12 +40,16 @@ const ACTION_META: Record<string, AuditActionMeta> = {
   alert_test: { label: '测试告警', category: 'alert' },
   alert_fire: { label: '触发告警', category: 'alert' },
   alert_recover: { label: '告警恢复', category: 'alert' },
-  // v0.3 备份/恢复审计（动作名以服务端实际写入为准，未知动作仍原样展示）
+  // v0.4.0：备份/恢复审计使用服务端实际动作名（旧动作名仅用于历史记录展示）
   backup_prepare: { label: '准备备份', category: 'backup' },
   backup_import: { label: '导入归档', category: 'backup' },
   backup_verify: { label: '校验归档', category: 'backup' },
+  backup_restore_plan: { label: '创建恢复计划', category: 'backup' },
+  backup_restore_execute: { label: '执行恢复', category: 'backup' },
+  backup_restore_failed: { label: '恢复失败', category: 'backup' },
   backup_restore: { label: '恢复备份', category: 'backup' },
   backup_orphan: { label: '孤儿归档', category: 'backup' },
+  // 历史轮次可能写入的旧动作名，保留展示映射，避免旧记录显示原始英文
   restore_plan: { label: '创建恢复计划', category: 'backup' },
   restore_execute: { label: '执行恢复', category: 'backup' },
   restore_failed: { label: '恢复失败', category: 'backup' },
@@ -95,7 +99,6 @@ export const AUDIT_ACTION_GROUPS: AuditActionGroup[] = [
       { value: 'trash', label: '删除文件' },
       { value: 'restore', label: '恢复文件' },
       { value: 'purge', label: '彻底删除' },
-      { value: 'download', label: '下载文件' },
     ],
   },
   {
@@ -130,9 +133,39 @@ export const AUDIT_ACTION_GROUPS: AuditActionGroup[] = [
       { value: 'backup_prepare', label: '准备备份' },
       { value: 'backup_import', label: '导入归档' },
       { value: 'backup_verify', label: '校验归档' },
-      { value: 'restore_plan', label: '创建恢复计划' },
-      { value: 'restore_execute', label: '执行恢复' },
-      { value: 'restore_failed', label: '恢复失败' },
+      { value: 'backup_restore_plan', label: '创建恢复计划' },
+      { value: 'backup_restore_execute', label: '执行恢复' },
+      { value: 'backup_restore_failed', label: '恢复失败' },
     ],
   },
 ]
+
+/* ---------- 活动时间范围筛选（v0.4.0） ---------- */
+
+export type AuditTimeRange = 'all' | '1h' | '24h' | '7d' | '30d'
+
+export interface AuditTimeRangeOption {
+  value: AuditTimeRange
+  label: string
+  /** 距今天数；all 为 null */
+  hours: number | null
+}
+
+export const AUDIT_TIME_RANGES: AuditTimeRangeOption[] = [
+  { value: 'all', label: '全部时间', hours: null },
+  { value: '1h', label: '最近 1 小时', hours: 1 },
+  { value: '24h', label: '最近 24 小时', hours: 24 },
+  { value: '7d', label: '最近 7 天', hours: 24 * 7 },
+  { value: '30d', label: '最近 30 天', hours: 24 * 30 },
+]
+
+/** 把时间范围选项换算为服务端 from 参数（ISO 8601 UTC）；全部时间返回 null。 */
+export function auditTimeRangeFrom(range: AuditTimeRange, now = Date.now()): string | null {
+  const option = AUDIT_TIME_RANGES.find((item) => item.value === range)
+  if (!option || option.hours === null) return null
+  return new Date(now - option.hours * 3_600_000).toISOString()
+}
+
+export function auditTimeRangeLabel(range: AuditTimeRange): string {
+  return AUDIT_TIME_RANGES.find((item) => item.value === range)?.label ?? range
+}

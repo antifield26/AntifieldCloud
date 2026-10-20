@@ -1,0 +1,29 @@
+version: 2
+
+updates:
+  # 运行时依赖与构建期依赖分开管理：月度检查，避免 Pi 部署窗口被频繁 PR 打断。
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+      time: "05:00"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      dev-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+      time: "05:30"
+      timezone: Asia/Shanghai
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies

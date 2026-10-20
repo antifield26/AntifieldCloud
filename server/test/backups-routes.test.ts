@@ -72,9 +72,20 @@ test('未登录 401；登录后清单字段完整', async () => {
     assert.equal(anonymous.statusCode, 401)
     const list = await app.app.inject({ method: 'GET', url: '/api/backups', headers: app.authHeaders() })
     assert.equal(list.statusCode, 200)
-    const body = list.json() as { items: unknown[]; inbox: unknown[]; orphans: unknown[]; state: Record<string, unknown> }
-    assert.deepEqual(Object.keys(body).sort(), ['inbox', 'items', 'orphans', 'state'])
+    const body = list.json() as {
+      items: unknown[]
+      inbox: unknown[]
+      orphans: unknown[]
+      state: Record<string, unknown>
+      world: unknown
+      worldPull: unknown
+      drill: unknown
+    }
+    assert.deepEqual(Object.keys(body).sort(), ['drill', 'inbox', 'items', 'orphans', 'state', 'world', 'worldPull'])
     assert.equal(body.state.importCount, 0)
+    assert.equal(body.world, null, '状态文件缺失时返回 null 而不是抛错')
+    assert.equal(body.drill, null)
+    assert.equal(body.worldPull, null)
     assert.ok(!JSON.stringify(list.json()).includes(fx.dir), '清单不得包含绝对路径')
   } finally {
     await closeAll(app)

@@ -178,7 +178,9 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
     return (
       <>
         <div className="restore-entry-toolbar">
-          <span className="field-hint">共 {state.entries.length} 条（最多展示 500 条），留空表示全部活动文件。</span>
+          <span className="field-hint">
+            共 {state.entries.length} 条（最多展示 500 条），留空表示全部活动文件；单次恢复上限 {meta.backupRestoreMaxEntries} 个文件。
+          </span>
           <div>
             <Button variant="ghost" size="sm" onClick={() => dispatch({ type: 'clear-paths' })}>
               清除选择

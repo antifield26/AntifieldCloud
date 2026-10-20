@@ -27,6 +27,16 @@ function shareStatus(share: Share): { label: string; tone: BadgeTone } {
   return { label: '有效', tone: 'success' }
 }
 
+/** 多文件分享的展示名：文件名 + 条目数（旧服务端无 itemCount 时按 1 处理）。 */
+function shareItemCount(share: Share): number {
+  return share.itemCount && share.itemCount > 0 ? share.itemCount : 1
+}
+
+function shareLabel(share: Share): string {
+  const count = shareItemCount(share)
+  return count > 1 ? `${share.fileName} 等 ${count} 个文件` : share.fileName
+}
+
 /** 分享管理页：列表、状态与吊销。 */
 export function Shares() {
   usePageTitle('分享管理')
@@ -72,7 +82,7 @@ export function Shares() {
     setRevokeBusy(true)
     try {
       await api.shares.revoke(revokeTarget.id)
-      toast.success(`已吊销「${revokeTarget.fileName}」的分享链接`)
+      toast.success(`已吊销「${shareLabel(revokeTarget)}」的分享链接`)
       setRevokeTarget(null)
       await load()
     } catch (revokeError) {
@@ -87,7 +97,22 @@ export function Shares() {
       key: 'file',
       header: '文件',
       primary: true,
-      render: (share) => <span className="knowledge-card-title">{share.fileName}</span>,
+      render: (share) => {
+        const count = shareItemCount(share)
+        return (
+          <div className="share-file-cell">
+            <span className="knowledge-card-title">{share.fileName}</span>
+            {count > 1 ? <Badge tone="info">{count} 个文件</Badge> : null}
+          </div>
+        )
+      },
+    },
+    {
+      key: 'items',
+      header: '文件数',
+      align: 'right',
+      className: 'cell-size',
+      render: (share) => `${shareItemCount(share)} 个`,
     },
     {
       key: 'status',
@@ -139,7 +164,7 @@ export function Shares() {
           className="text-danger"
           icon={<Trash2 size={15} aria-hidden="true" />}
           disabled={Boolean(share.revokedAt)}
-          aria-label={`吊销分享 ${share.fileName}`}
+          aria-label={`吊销分享 ${shareLabel(share)}`}
           onClick={() => setRevokeTarget(share)}
         >
           吊销
@@ -208,7 +233,7 @@ export function Shares() {
       <ConfirmDialog
         open={revokeTarget !== null}
         title="吊销分享"
-        message={revokeTarget ? `确定吊销「${revokeTarget.fileName}」的分享链接？` : ''}
+        message={revokeTarget ? `确定吊销「${shareLabel(revokeTarget)}」的分享链接？` : ''}
         details="吊销后链接立即失效，访问者会看到 410 状态；此操作不可撤销。"
         confirmText="吊销链接"
         loading={revokeBusy}

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Activity as ActivityIcon, RefreshCw } from 'lucide-react'
+import { Activity as ActivityIcon, RefreshCw, Search, X } from 'lucide-react'
 import { api, isAbortError, toErrorMessage } from '../api/client'
 import type { AuditItem } from '../api/types'
-import { auditActionMeta, AUDIT_ACTION_GROUPS } from '../lib/audit'
-import type { AuditCategory } from '../lib/audit'
+import { auditActionMeta, AUDIT_ACTION_GROUPS, AUDIT_TIME_RANGES, auditTimeRangeFrom, auditTimeRangeLabel } from '../lib/audit'
+import type { AuditCategory, AuditTimeRange } from '../lib/audit'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { PageHeader } from '../components/PageHeader'
 import { Button } from '../components/Button'
@@ -45,8 +46,9 @@ function auditDetailText(detail: Record<string, unknown> | null): string {
 }
 
 /**
- * 活动：审计列表 + 服务端动作精确筛选 + 服务端分页。
- * `action` 参数由服务端执行精确匹配，避免一次拉取大量记录后在本地筛选。
+ * 活动：审计列表 + 服务端动作精确筛选 + 关键词/时间范围筛选 + 服务端分页。
+ * `action` 精确匹配、`q` 对 action/target/ip 做 LIKE、`from/to` 为 ISO 时间，均由服务端执行，
+ * 避免一次拉取大量记录后在本地筛选。默认视图（无任何筛选）与旧版一致。
  */
 export function Activity() {
   usePageTitle('活动')
@@ -56,6 +58,9 @@ export function Activity() {
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [action, setAction] = useState('')
+  const [query, setQuery] = useState('')
+  const [timeRange, setTimeRange] = useState<AuditTimeRange>('all')
+  const debouncedQuery = useDebouncedValue(query.trim(), 300)
   const [page, setPage] = useState(1)
   const requestIdRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
@@ -69,10 +74,14 @@ export function Activity() {
     setLoading(true)
     setError(null)
     try {
-      const result = await api.getAudit(
-        PAGE_SIZE,
-        (page - 1) * PAGE_SIZE,
-        action || undefined,
+      const result = await api.getAuditPage(
+        {
+          limit: PAGE_SIZE,
+          offset: (page - 1) * PAGE_SIZE,
+          action: action || undefined,
+          q: debouncedQuery || undefined,
+          from: auditTimeRangeFrom(timeRange) ?? undefined,
+        },
         controller.signal,
       )
       if (requestId !== requestIdRef.current) return
@@ -84,7 +93,7 @@ export function Activity() {
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }
-  }, [page, action])
+  }, [page, action, debouncedQuery, timeRange])
 
   useEffect(() => {
     void load()
@@ -94,6 +103,11 @@ export function Activity() {
     return () => abortRef.current?.abort()
   }, [])
 
+  // 任一筛选变化都回到第一页，避免停留在越界页码
+  useEffect(() => {
+    setPage(1)
+  }, [action, debouncedQuery, timeRange])
+
   const refresh = async (): Promise<void> => {
     setRefreshing(true)
     await load()
@@ -102,6 +116,22 @@ export function Activity() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const actionLabel = action ? (ACTION_LABELS.get(action) ?? action) : '全部动作'
+  const timeLabel = auditTimeRangeLabel(timeRange)
+  const hasFilters = Boolean(action || debouncedQuery || timeRange !== 'all')
+
+  const clearFilters = (): void => {
+    setAction('')
+    setQuery('')
+    setTimeRange('all')
+  }
+
+  const filterSummary = [
+    actionLabel,
+    timeRange !== 'all' ? timeLabel : null,
+    debouncedQuery ? `关键词「${debouncedQuery}」` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   const columns: Column<AuditItem>[] = [
     {
@@ -153,20 +183,46 @@ export function Activity() {
         description={
           loading && items.length === 0
             ? '正在加载审计记录…'
-            : `共 ${total} 条记录 · 当前筛选：${actionLabel}`
+            : `共 ${total} 条记录 · 当前筛选：${filterSummary || '全部动作'}`
         }
         actions={
           <>
+            <div className="search-field activity-search">
+              <Search size={16} className="search-icon" aria-hidden="true" />
+              <input
+                type="search"
+                className="search-input"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="搜索动作、目标或 IP…"
+                aria-label="搜索审计记录"
+              />
+              {query ? (
+                <button type="button" className="search-clear" onClick={() => setQuery('')} aria-label="清除搜索">
+                  <X size={15} aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+            <div className="select-field">
+              <label className="sr-only" htmlFor="activity-time-filter">筛选时间范围</label>
+              <select
+                id="activity-time-filter"
+                className="select"
+                value={timeRange}
+                onChange={(event) => setTimeRange(event.target.value as AuditTimeRange)}
+              >
+                {AUDIT_TIME_RANGES.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
             <div className="select-field">
               <label className="sr-only" htmlFor="activity-filter">筛选审计动作</label>
               <select
                 id="activity-filter"
                 className="select"
                 value={action}
-                onChange={(event) => {
-                  setAction(event.target.value)
-                  setPage(1)
-                }}
+                onChange={(event) => setAction(event.target.value)}
               >
                 <option value="">全部动作</option>
                 {AUDIT_ACTION_GROUPS.map((group) => (
@@ -178,6 +234,9 @@ export function Activity() {
                 ))}
               </select>
             </div>
+            {hasFilters ? (
+              <Button variant="ghost" size="sm" onClick={clearFilters}>清除筛选</Button>
+            ) : null}
             <Button
               variant="secondary"
               icon={<RefreshCw size={16} aria-hidden="true" />}
@@ -203,9 +262,19 @@ export function Activity() {
           empty={
             <EmptyState
               icon={<ActivityIcon size={24} />}
-              title={action ? `暂无「${actionLabel}」记录` : '暂无活动记录'}
-              description="登录、文件操作、分享与白名单变更都会记录在这里。"
-              action={<Button variant="secondary" onClick={() => void load()}>刷新</Button>}
+              title={hasFilters ? '没有匹配的审计记录' : '暂无活动记录'}
+              description={
+                hasFilters
+                  ? '换个关键词、时间范围或动作后再试，也可以清除筛选。'
+                  : '登录、文件操作、分享与白名单变更都会记录在这里。'
+              }
+              action={
+                hasFilters ? (
+                  <Button variant="secondary" onClick={clearFilters}>清除筛选</Button>
+                ) : (
+                  <Button variant="secondary" onClick={() => void load()}>刷新</Button>
+                )
+              }
             />
           }
         />

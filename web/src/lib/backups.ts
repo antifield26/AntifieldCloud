@@ -95,12 +95,15 @@ export function shaPrefix(sha256: string | null | undefined): string {
 }
 
 /** 归档上传前的前端预检：文件名白名单 + 大小上限（服务端仍会复核）。 */
-export function validateBackupFile(file: { name: string; size: number }): string | null {
+export function validateBackupFile(
+  file: { name: string; size: number },
+  maxBytes = MAX_BACKUP_UPLOAD_BYTES,
+): string | null {
   if (!BACKUP_FILE_PATTERN.test(file.name)) {
     return '归档文件名需类似 snapshot-<名称>-(full|inc).tar.gz'
   }
   if (file.size <= 0) return '归档文件为空'
-  if (file.size > MAX_BACKUP_UPLOAD_BYTES) return '归档文件不能超过 100 MiB'
+  if (file.size > maxBytes) return `归档文件不能超过 ${Math.round(maxBytes / (1024 * 1024))} MiB`
   return null
 }
 

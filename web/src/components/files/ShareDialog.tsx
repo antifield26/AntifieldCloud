@@ -1,9 +1,9 @@
-// 创建文件分享链接：密码、过期时间、最大下载次数与备注。
-// 链接只在创建响应中返回一次，弹窗内提示先复制再关闭。
+// 创建文件分享链接：支持单文件入口与 Files 页多选（fileIds 数组）两种方式。
+// 链接只在创建响应中返回一次，弹窗内提示先复制再关闭；多文件显示条目数与总大小。
 
 import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Files } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type { CreateShareResult, FileItem } from '../../api/types'
 import { useAppMeta } from '../../meta/MetaContext'
@@ -12,12 +12,17 @@ import { Button } from '../Button'
 import { FormField } from '../FormField'
 import { CopyButton } from '../CopyButton'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { formatDateTime } from '../../lib/format'
+import { formatBytes, formatDateTime } from '../../lib/format'
 import { absoluteShareUrl, shouldProtectShareLinkClose } from '../../lib/share-link'
 
 export interface ShareDialogProps {
-  file: FileItem | null
+  /** 单文件入口（文件行操作）；与 files 二选一 */
+  file?: FileItem | null
+  /** 多选入口；长度 1 时等价于 file */
+  files?: FileItem[]
   onClose: () => void
+  /** 创建成功回调（Files 页用于退出多选模式） */
+  onCreated?: (result: CreateShareResult) => void
 }
 
 // 不传 expiresInHours 时后端按默认 168 小时（7 天）处理；当前不提供“永不过期”。
@@ -30,7 +35,7 @@ const EXPIRES_OPTIONS = [
   { value: '1', label: '1 小时' },
 ]
 
-export function ShareDialog({ file, onClose }: ShareDialogProps) {
+export function ShareDialog({ file = null, files, onClose, onCreated }: ShareDialogProps) {
   const { meta } = useAppMeta()
   const [password, setPassword] = useState('')
   const [expires, setExpires] = useState('')
@@ -43,8 +48,16 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
   const [confirmClose, setConfirmClose] = useState(false)
   const formId = useId()
 
-  const open = file !== null
+  const targets = files && files.length > 0 ? files : file ? [file] : []
+  const open = targets.length > 0
+  const targetIds = targets.map((item) => item.id)
+  const targetKey = targetIds.join(',')
+  const isMulti = targets.length > 1
+  const totalBytes = targets.reduce((sum, item) => sum + item.size, 0)
+  const primary = targets[0] ?? null
   const shareUrl = result ? absoluteShareUrl(result.url, meta.appOrigin) : ''
+  const resultItemCount = result ? (result.share.itemCount ?? targets.length) : 0
+  const resultTotalBytes = result?.share.totalSizeBytes ?? totalBytes
 
   useEffect(() => {
     if (!open) return
@@ -57,12 +70,16 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
     setResult(null)
     setLinkSaved(false)
     setConfirmClose(false)
-  }, [open, file?.id])
+  }, [open, targetKey])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
-    if (!file) return
+    if (!primary) return
     setError(null)
+    if (targets.length > meta.shareMaxItems) {
+      setError(`单次最多分享 ${meta.shareMaxItems} 个文件，本次选择了 ${targets.length} 个`)
+      return
+    }
     if (password && password.length < 8) {
       setError('分享密码至少需要 8 个字符')
       return
@@ -83,8 +100,11 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
       if (expires) input.expiresInHours = Number(expires)
       if (max !== undefined) input.maxDownloads = max
       if (note.trim()) input.note = note.trim()
-      const created = await api.files.createShare(file.id, input)
+      const created = isMulti
+        ? await api.shares.createBundle({ ...input, fileIds: targetIds })
+        : await api.files.createShare(primary.id, input)
       setResult(created)
+      onCreated?.(created)
     } catch (createError) {
       setError(toErrorMessage(createError, '创建分享失败，请重试'))
     } finally {
@@ -111,8 +131,14 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
     <>
       <Modal
         open={open}
-        title={result ? '分享链接已创建' : '分享文件'}
-        description={file ? `为「${file.name}」创建公开下载链接` : undefined}
+        title={result ? '分享链接已创建' : isMulti ? '分享所选文件' : '分享文件'}
+        description={
+          primary
+            ? isMulti
+              ? `为所选 ${targets.length} 个文件创建公开下载链接`
+              : `为「${primary.name}」创建公开下载链接`
+            : undefined
+        }
         size="md"
         onClose={requestClose}
         busy={busy}
@@ -141,94 +167,120 @@ export function ShareDialog({ file, onClose }: ShareDialogProps) {
           ) : (
             <>
               <Button variant="ghost" onClick={close} disabled={busy}>取消</Button>
-              <Button variant="primary" type="submit" form={formId} loading={busy}>创建链接</Button>
+              <Button variant="primary" type="submit" form={formId} loading={busy}>
+                {isMulti ? `创建 ${targets.length} 个文件的分享` : '创建链接'}
+              </Button>
             </>
           )
         }
       >
-      {result ? (
-        <div className="share-result">
-          <div className="notice notice-warning">
-            分享链接只显示这一次，请立即复制保存；关闭后可在“分享管理”中查看状态，但不会再次显示完整链接。
-          </div>
-          <p className="share-result-url mono">{shareUrl}</p>
-          <dl className="settings-list">
-            <div className="settings-list-row">
-              <dt>文件</dt>
-              <dd>{result.share.fileName}</dd>
+        {result ? (
+          <div className="share-result">
+            <div className="notice notice-warning">
+              分享链接只显示这一次，请立即复制保存；关闭后可在“分享管理”中查看状态，但不会再次显示完整链接。
             </div>
-            <div className="settings-list-row">
-              <dt>过期时间</dt>
-              <dd>{result.share.expiresAt ? formatDateTime(result.share.expiresAt) : '永不过期'}</dd>
-            </div>
-            <div className="settings-list-row">
-              <dt>最大下载次数</dt>
-              <dd>{result.share.maxDownloads ?? '不限'}</dd>
-            </div>
-            <div className="settings-list-row">
-              <dt>密码保护</dt>
-              <dd>{result.share.hasPassword ? '已设置' : '无'}</dd>
-            </div>
-            {result.share.note ? (
+            <p className="share-result-url mono">{shareUrl}</p>
+            <dl className="settings-list">
               <div className="settings-list-row">
-                <dt>备注</dt>
-                <dd>{result.share.note}</dd>
+                <dt>文件</dt>
+                <dd>
+                  {isMulti ? `${result.share.fileName} 等 ${resultItemCount} 个文件` : result.share.fileName}
+                </dd>
+              </div>
+              <div className="settings-list-row">
+                <dt>文件数</dt>
+                <dd>{resultItemCount} 个</dd>
+              </div>
+              <div className="settings-list-row">
+                <dt>总大小</dt>
+                <dd>{formatBytes(resultTotalBytes)}</dd>
+              </div>
+              <div className="settings-list-row">
+                <dt>过期时间</dt>
+                <dd>{result.share.expiresAt ? formatDateTime(result.share.expiresAt) : '永不过期'}</dd>
+              </div>
+              <div className="settings-list-row">
+                <dt>最大下载次数</dt>
+                <dd>{result.share.maxDownloads ?? '不限'}</dd>
+              </div>
+              <div className="settings-list-row">
+                <dt>密码保护</dt>
+                <dd>{result.share.hasPassword ? '已设置' : '无'}</dd>
+              </div>
+              {result.share.note ? (
+                <div className="settings-list-row">
+                  <dt>备注</dt>
+                  <dd>{result.share.note}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </div>
+        ) : (
+          <form id={formId} className="share-form" onSubmit={(event) => void handleSubmit(event)}>
+            {isMulti ? (
+              <div className="share-selection" aria-label="已选文件">
+                <div className="share-selection-head">
+                  <Files size={16} aria-hidden="true" />
+                  <span>已选 {targets.length} 个文件 · 共 {formatBytes(totalBytes)}</span>
+                </div>
+                <ul className="share-selection-list">
+                  {targets.slice(0, 5).map((item) => (
+                    <li key={item.id} title={item.name}>{item.name}</li>
+                  ))}
+                  {targets.length > 5 ? <li>等 {targets.length} 个文件…</li> : null}
+                </ul>
               </div>
             ) : null}
-          </dl>
-        </div>
-      ) : (
-        <form id={formId} className="share-form" onSubmit={(event) => void handleSubmit(event)}>
-          <FormField label="分享密码" htmlFor="share-password" hint="可选；至少 8 个字符，访问者需输入密码才能下载。">
-            <input
-              id="share-password"
-              className="input"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="new-password"
-              disabled={busy}
-            />
-          </FormField>
-          <FormField label="有效期" htmlFor="share-expires" hint="默认 7 天；最长 30 天。">
-            <select
-              id="share-expires"
-              className="select share-select"
-              value={expires}
-              onChange={(event) => setExpires(event.target.value)}
-              disabled={busy}
-            >
-              {EXPIRES_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="最大下载次数" htmlFor="share-max-downloads" hint="留空表示不限次数。">
-            <input
-              id="share-max-downloads"
-              className="input"
-              type="number"
-              min={1}
-              step={1}
-              value={maxDownloads}
-              onChange={(event) => setMaxDownloads(event.target.value)}
-              placeholder="不限"
-              disabled={busy}
-            />
-          </FormField>
-          <FormField label="备注" htmlFor="share-note" hint="仅自己可见，便于识别链接用途。">
-            <input
-              id="share-note"
-              className="input"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              maxLength={200}
-              disabled={busy}
-            />
-          </FormField>
-          {error ? <p className="field-error" role="alert">{error}</p> : null}
-        </form>
-      )}
+            <FormField label="分享密码" htmlFor="share-password" hint="可选；至少 8 个字符，访问者需输入密码才能下载。">
+              <input
+                id="share-password"
+                className="input"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="new-password"
+                disabled={busy}
+              />
+            </FormField>
+            <FormField label="有效期" htmlFor="share-expires" hint="默认 7 天；最长 30 天。">
+              <select
+                id="share-expires"
+                className="select share-select"
+                value={expires}
+                onChange={(event) => setExpires(event.target.value)}
+                disabled={busy}
+              >
+                {EXPIRES_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </FormField>
+            <FormField label="最大下载次数" htmlFor="share-max-downloads" hint="留空表示不限次数。">
+              <input
+                id="share-max-downloads"
+                className="input"
+                type="number"
+                min={1}
+                step={1}
+                value={maxDownloads}
+                onChange={(event) => setMaxDownloads(event.target.value)}
+                placeholder="不限"
+                disabled={busy}
+              />
+            </FormField>
+            <FormField label="备注" htmlFor="share-note" hint="仅自己可见，便于识别链接用途。">
+              <input
+                id="share-note"
+                className="input"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                maxLength={200}
+                disabled={busy}
+              />
+            </FormField>
+            {error ? <p className="field-error" role="alert">{error}</p> : null}
+          </form>
+        )}
       </Modal>
 
       <ConfirmDialog

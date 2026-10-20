@@ -3,10 +3,12 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { FileItem } from '../api/types'
 import { useUploadQueue } from './useUploadQueue'
 
-const mocks = vi.hoisted(() => ({ uploadFiles: vi.fn() }))
+const mocks = vi.hoisted(() => ({ uploadFiles: vi.fn(), abandonChunkedUpload: vi.fn() }))
 
 vi.mock('../api/client', () => ({
   uploadFiles: mocks.uploadFiles,
+  uploadFileChunked: vi.fn(),
+  abandonChunkedUpload: mocks.abandonChunkedUpload,
   isApiError: (error: unknown): boolean => Boolean(error && typeof error === 'object' && 'code' in error),
   toErrorMessage: (error: unknown, fallback = '操作失败'): string =>
     error && typeof error === 'object' && 'message' in error
@@ -40,6 +42,8 @@ function makeItem(name = 'a.txt'): FileItem {
 
 beforeEach(() => {
   mocks.uploadFiles.mockReset()
+  mocks.abandonChunkedUpload.mockReset()
+  mocks.abandonChunkedUpload.mockResolvedValue(undefined)
 })
 
 afterEach(cleanup)
@@ -88,5 +92,35 @@ describe('useUploadQueue', () => {
     await waitFor(() => expect(result.current.tasks[0]?.status).toBe('success'))
     await waitFor(() => expect(onFinished).toHaveBeenCalledTimes(1))
     expect(onFinished.mock.calls[0]?.[0]).toMatchObject({ succeeded: 1, failed: 0, cancelled: 0 })
+  })
+
+  it('放弃并清理调用 DELETE 断点并标记 cancelled', async () => {
+    mocks.uploadFiles.mockResolvedValue({ items: [makeItem()], errors: [] })
+    const { result } = renderHook(() => useUploadQueue())
+    act(() => result.current.enqueue([makeFile('big.bin', '1234567890')], null))
+    await waitFor(() => expect(result.current.tasks[0]?.status).toBe('success'))
+    const taskId = result.current.tasks[0]?.id ?? 0
+    await act(async () => {
+      await result.current.discard(taskId)
+    })
+    expect(mocks.abandonChunkedUpload).toHaveBeenCalledTimes(1)
+    expect(mocks.abandonChunkedUpload.mock.calls[0]?.[0]).toBeInstanceOf(File)
+    expect(mocks.abandonChunkedUpload.mock.calls[0]?.[1]).toBeNull()
+    await waitFor(() => expect(result.current.tasks[0]?.status).toBe('cancelled'))
+    expect(result.current.tasks[0]?.error).toContain('清理断点')
+  })
+
+  it('清理服务端会话失败时标记为错误', async () => {
+    mocks.uploadFiles.mockResolvedValue({ items: [makeItem()], errors: [] })
+    mocks.abandonChunkedUpload.mockRejectedValue(new Error('网络连接失败'))
+    const { result } = renderHook(() => useUploadQueue())
+    act(() => result.current.enqueue([makeFile('big.bin', '1234567890')], null))
+    await waitFor(() => expect(result.current.tasks[0]?.status).toBe('success'))
+    const taskId = result.current.tasks[0]?.id ?? 0
+    await act(async () => {
+      await expect(result.current.discard(taskId)).rejects.toThrow('网络连接失败')
+    })
+    await waitFor(() => expect(result.current.tasks[0]?.status).toBe('error'))
+    expect(result.current.tasks[0]?.error).toContain('网络连接失败')
   })
 })

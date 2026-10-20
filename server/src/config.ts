@@ -43,11 +43,30 @@ export interface Config {
   backupImportMaxBytes: number
   backupRestorePlanTtlMinutes: number
   backupRestoreMaxEntries: number
+  /** 备份生成（Web prepare/CLI）超时秒数；需覆盖 5 GiB 打包，默认 55 分钟。 */
+  backupPrepareTimeoutSec: number
   chunkedUploadEnabled: boolean
   chunkSizeBytes: number
   chunkMaxFileBytes: number
   chunkSessionTtlHours: number
   chunkMaxConcurrentSessions: number
+  /** 笔记附件单项/每笔记限额；附件计入总配额但不在普通文件列表展示。 */
+  noteAttachmentMaxBytes: number
+  noteMaxAttachments: number
+  /** 每篇笔记保留的版本数（更新时自动快照）。 */
+  noteVersionsKeep: number
+  /** 单个分享最多包含的文件数（多文件打包分享）。 */
+  shareMaxItems: number
+  /** 指标历史采样与保留；关闭后不写入新样本，历史查询仍可用。 */
+  metricsEnabled: boolean
+  metricsSampleSeconds: number
+  metricsRetentionDays: number
+  /** 世界备份/拉取/演练状态文件（由 root 脚本或 PC 脚本写入，应用只读）。 */
+  worldBackupStatusFile: string
+  worldPullStatusFile: string
+  drillStatusFile: string
+  alertWorldBackupMaxAgeHours: number
+  alertDrillMaxAgeDays: number
   sharesEnabled: boolean
   shareDefaultExpiryHours: number
   shareMaxExpiryHours: number
@@ -182,11 +201,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupImportMaxBytes: int(merged, 'BACKUP_IMPORT_MAX_BYTES', 100 * MIB, 1 * MIB, 1024 * GIB),
     backupRestorePlanTtlMinutes: int(merged, 'BACKUP_RESTORE_PLAN_TTL_MINUTES', 30, 5, 1440),
     backupRestoreMaxEntries: int(merged, 'BACKUP_RESTORE_MAX_ENTRIES', 5000, 1, 100_000),
+    backupPrepareTimeoutSec: int(merged, 'BACKUP_PREPARE_TIMEOUT_SEC', 3300, 60, 7200),
     chunkedUploadEnabled: bool(merged, 'CHUNKED_UPLOAD_ENABLED', true),
     chunkSizeBytes: int(merged, 'CHUNK_SIZE_BYTES', 8 * MIB, 1 * MIB, 100 * MIB),
     chunkMaxFileBytes: int(merged, 'CHUNK_MAX_FILE_BYTES', 5 * GIB, 1 * MIB, 10 * GIB),
     chunkSessionTtlHours: int(merged, 'CHUNK_SESSION_TTL_HOURS', 24, 1, 168),
     chunkMaxConcurrentSessions: int(merged, 'CHUNK_MAX_CONCURRENT_SESSIONS', 3, 1, 20),
+    noteAttachmentMaxBytes: int(merged, 'NOTE_ATTACHMENT_MAX_BYTES', 25 * MIB, 1 * MIB, 100 * MIB),
+    noteMaxAttachments: int(merged, 'NOTE_MAX_ATTACHMENTS', 100, 1, 1000),
+    noteVersionsKeep: int(merged, 'NOTE_VERSIONS_KEEP', 20, 1, 100),
+    shareMaxItems: int(merged, 'SHARE_MAX_ITEMS', 50, 1, 200),
+    metricsEnabled: bool(merged, 'METRICS_ENABLED', true),
+    metricsSampleSeconds: int(merged, 'METRICS_SAMPLE_SECONDS', 60, 10, 3600),
+    metricsRetentionDays: int(merged, 'METRICS_RETENTION_DAYS', 30, 1, 365),
+    worldBackupStatusFile: str(merged, 'WORLD_BACKUP_STATUS_FILE', resolve(dataDir, 'world-backup-status.json')),
+    worldPullStatusFile: str(merged, 'WORLD_PULL_STATUS_FILE', resolve(dataDir, 'world-pull-status.json')),
+    drillStatusFile: str(merged, 'DRILL_STATUS_FILE', resolve(dataDir, 'drill-status.json')),
+    alertWorldBackupMaxAgeHours: int(merged, 'ALERT_WORLD_BACKUP_MAX_AGE_HOURS', 192, 6, 8760),
+    alertDrillMaxAgeDays: int(merged, 'ALERT_DRILL_MAX_AGE_DAYS', 35, 1, 365),
     sharesEnabled: bool(merged, 'SHARES_ENABLED', true),
     shareDefaultExpiryHours: int(merged, 'SHARE_DEFAULT_EXPIRY_HOURS', 168, 1, 720),
     shareMaxExpiryHours: int(merged, 'SHARE_MAX_EXPIRY_HOURS', 720, 1, 8760),
@@ -201,7 +233,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.3.2'),
+    appVersion: str(merged, 'APP_VERSION', '0.4.0'),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')

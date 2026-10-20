@@ -23,6 +23,7 @@ import {
   mkdirSync,
   openSync,
   readdirSync,
+  renameSync,
   rmSync,
   statfsSync,
   statSync,
@@ -33,7 +34,7 @@ import { join, resolve } from 'node:path'
 import { DatabaseSync, backup } from 'node:sqlite'
 import { promisify } from 'node:util'
 import { ensureRuntimeDirs, loadConfig, type Config } from '../config.ts'
-import { openDatabase } from '../db.ts'
+import { getMeta, openDatabase, setMeta, transaction } from '../db.ts'
 import { audit } from '../auth/audit.ts'
 
 const execFileAsync = promisify(execFile)
@@ -46,6 +47,10 @@ const MAX_ACKED_ARCHIVES = 2
 const MAX_PREDEPLOY_SNAPSHOTS = 10
 /** 超过该天数没有成功全量则建议再做一次全量。 */
 const FULL_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
+/** meta 键：上次 ack 后仍未落盘、等待恢复后自动补入增量的文件 id（JSON 数组）。 */
+const BACKUP_MISSING_META_KEY = 'backup_missing_files'
+/** prepare 输出中缺失 id 的展示上限，完整列表在 manifest/meta 中。 */
+const MAX_MISSING_REPORT = 200
 
 type Command = 'prepare' | 'pending' | 'ack' | 'snapshot-db' | 'legacy'
 type ArchiveMode = 'full' | 'inc'
@@ -81,6 +86,7 @@ interface ArchiveRow {
   size: number
   acked_at: string | null
   deleted_at: string | null
+  manifest_json: string | null
 }
 
 interface BackupStateRow {
@@ -100,6 +106,12 @@ interface ArchiveResult {
   createdAt: string
   orphanBytes: number
   orphans: OrphanArchive[]
+  /** 缺失物理文件被跳过时的告警；空数组表示全部落盘文件都已归档。 */
+  warnings: string[]
+  /** 快照中存在但磁盘缺失、本次未归档的文件 id（已写入 manifest 便于人工核对）。 */
+  skippedMissing: string[]
+  /** 上次 ack 记录、本次强制重新检查的历史缺失文件数。 */
+  previousMissing: number
 }
 
 /** backups 目录中存在、但 backup_archives 里没有记录的归档（只报告，不删除）。 */
@@ -274,6 +286,49 @@ function existingArchiveBytes(rows: Array<{ name: string; size: number }>, backu
   return total
 }
 
+/** 读取 meta 中记录的“等待恢复后补入”的缺失文件 id。 */
+function readMissingIds(db: DatabaseSync): string[] {
+  const raw = getMeta(db, BACKUP_MISSING_META_KEY)
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/** 覆盖写入缺失文件 id 列表（空数组表示全部已恢复）。 */
+function writeMissingIds(db: DatabaseSync, ids: string[]): void {
+  const unique = [...new Set(ids)].sort()
+  setMeta(db, BACKUP_MISSING_META_KEY, JSON.stringify(unique))
+}
+
+/** readdir 的安全版本：目录不存在/不可读时返回空数组。 */
+function readdirSyncSafe(dir: string): string[] {
+  try {
+    return readdirSync(dir)
+  } catch {
+    return []
+  }
+}
+
+/** 扫描 tar 失败残留的 .part 文件（只报告，供 pending 输出可观测）。 */
+function listPartialArchives(backupsDir: string): Array<{ name: string; sizeBytes: number; modifiedAt: string }> {
+  const partials: Array<{ name: string; sizeBytes: number; modifiedAt: string }> = []
+  for (const name of readdirSyncSafe(backupsDir)) {
+    if (!name.endsWith('.part')) continue
+    try {
+      const stats = statSync(join(backupsDir, name))
+      if (!stats.isFile()) continue
+      partials.push({ name, sizeBytes: stats.size, modifiedAt: new Date(stats.mtimeMs).toISOString() })
+    } catch {
+      // 忽略不可读条目。
+    }
+  }
+  return partials.sort((left, right) => left.name.localeCompare(right.name))
+}
+
 /** 读取 pending 归档（含是否仍存在），供拉取脚本决定拉取/生成。 */
 function listPending(
   db: DatabaseSync,
@@ -282,28 +337,42 @@ function listPending(
 ): Record<string, unknown> {
   const pending = db
     .prepare(
-      'SELECT name, mode, created_at, sha256, size, file_count FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL ORDER BY created_at ASC',
+      "SELECT name, mode, created_at, sha256, size, file_count FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at ASC",
     )
     .all() as unknown as PendingRow[]
   const lastAcked = db
     .prepare(
-      'SELECT created_at FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1',
+      "SELECT created_at FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at DESC LIMIT 1",
     )
     .get() as { created_at: string } | undefined
   const lastFull = db
     .prepare(
-      "SELECT created_at FROM backup_archives WHERE mode = 'full' AND acked_at IS NOT NULL AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+      "SELECT created_at FROM backup_archives WHERE mode = 'full' AND acked_at IS NOT NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at DESC LIMIT 1",
     )
     .get() as { created_at: string } | undefined
   const acked = db
-    .prepare('SELECT name, size FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL')
+    .prepare("SELECT name, size FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL AND origin = 'pi'")
     .all() as unknown as Array<{ name: string; size: number }>
   const orphans = listOrphanArchives(db, backupsDir)
+  const partials = listPartialArchives(backupsDir)
+  const missingFiles = readMissingIds(db)
   const pendingBytes = pending.reduce((sum, row) => sum + Number(row.size), 0)
   const ackedBytes = existingArchiveBytes(acked, backupsDir)
   const orphanBytes = orphans.reduce((sum, row) => sum + row.sizeBytes, 0)
   const now = Date.now()
   const needsFull = !lastFull || now - Date.parse(lastFull.created_at) > FULL_INTERVAL_MS
+  const warnings: string[] = []
+  if (includeWarnings && orphans.length > 0) {
+    warnings.push(`发现 ${orphans.length} 个无 DB 记录的孤儿归档（${orphanBytes} bytes），未自动删除，请人工核对`)
+  }
+  if (includeWarnings && partials.length > 0) {
+    warnings.push(`发现 ${partials.length} 个未完成的 .part 归档残留，确认无备份任务运行后可手动清理`)
+  }
+  if (includeWarnings && missingFiles.length > 0) {
+    warnings.push(
+      `有 ${missingFiles.length} 个文件在磁盘缺失，已阻止其内容进入备份；文件恢复后会由下一次增量自动补入`,
+    )
+  }
   return {
     ok: true,
     count: pending.length,
@@ -320,10 +389,10 @@ function listPending(
       exists: existsSync(join(backupsDir, row.name)),
     })),
     orphans,
-    warnings:
-      includeWarnings && orphans.length > 0
-        ? [`发现 ${orphans.length} 个无 DB 记录的孤儿归档（${orphanBytes} bytes），未自动删除，请人工核对`]
-        : [],
+    partials,
+    missingFiles: missingFiles.slice(0, MAX_MISSING_REPORT),
+    missingFileCount: missingFiles.length,
+    warnings,
     lastAckedAt: lastAcked?.created_at ?? null,
     lastFullAt: lastFull?.created_at ?? null,
     needsFull,
@@ -409,12 +478,12 @@ async function createArchive(
       | undefined
     const pending = snapshotDb
       .prepare(
-        'SELECT name, mode, created_at, sha256, size, file_count FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL ORDER BY created_at ASC',
+        "SELECT name, mode, created_at, sha256, size, file_count FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at ASC",
       )
       .all() as unknown as PendingRow[]
     const pendingBytes = pending.reduce((sum, row) => sum + Number(row.size), 0)
     const acked = snapshotDb
-      .prepare('SELECT name, size FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL')
+      .prepare("SELECT name, size FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL AND origin = 'pi'")
       .all() as unknown as Array<{ name: string; size: number }>
     // 只有文件仍在磁盘上的已确认归档才占用空间；孤儿归档按实际文件大小计入。
     const ackedBytes = existingArchiveBytes(acked, backupsDir)
@@ -441,13 +510,50 @@ async function createArchive(
       if (sequence > 100) throw new Error('无法生成唯一归档名：备份目录残留过多')
     }
 
-    const files = (
+    const previousMissing = readMissingIds(snapshotDb)
+    const baseSelected = (
       mode === 'full'
         ? snapshotDb.prepare("SELECT id, size, created_at FROM files WHERE kind = 'file'").all()
         : snapshotDb
             .prepare("SELECT id, size, created_at FROM files WHERE kind = 'file' AND created_at > ?")
             .all(since)
     ) as unknown as FileEntry[]
+    // 上次缺失的文件即使早于水位也强制纳入本次选择：恢复后立即补入增量，避免水位越过永久漏备。
+    const selectedById = new Map(baseSelected.map((file) => [file.id, file]))
+    if (previousMissing.length > 0) {
+      const placeholders = previousMissing.map(() => '?').join(', ')
+      const recovered = snapshotDb
+        .prepare(`SELECT id, size, created_at FROM files WHERE id IN (${placeholders})`)
+        .all(...previousMissing) as unknown as FileEntry[]
+      for (const file of recovered) selectedById.set(file.id, file)
+    }
+    const selected = [...selectedById.values()]
+
+    // 物理文件预检：DB 有行但磁盘文件缺失时跳过并记录，不能让 tar 因缺失文件整体失败
+    // （否则一次断电/手工误删会让后续每日备份永久停止）。
+    const files: FileEntry[] = []
+    const skippedMissing: string[] = []
+    for (const file of selected) {
+      const physicalPath = join(config.dataDir, 'files', file.id.slice(0, 2), file.id)
+      if (existsSync(physicalPath)) files.push(file)
+      else skippedMissing.push(file.id)
+    }
+    // 时针回拨/未来时间戳检测：增量依赖 created_at > 上次水位，回拨会永久漏备。
+    const clockWarnings: string[] = []
+    const futureCount = files.filter((file) => file.created_at > createdAt).length
+    if (futureCount > 0) {
+      clockWarnings.push(`${futureCount} 个文件 created_at 晚于当前时间，请检查系统时钟（NTP）`)
+    }
+    if (previous && previous > createdAt) {
+      clockWarnings.push('备份水位晚于当前时间，系统时钟可能回拨；建议立即做一次 --full')
+    }
+    const warnings: string[] = []
+    if (skippedMissing.length > 0) {
+      warnings.push(
+        `${skippedMissing.length} 个文件在磁盘上缺失，已跳过并记录到 manifest.skippedMissing；ack 后仍会阻止其内容进入备份，恢复后由下一次增量自动补入`,
+      )
+    }
+    warnings.push(...clockWarnings)
 
     const totalBytes = files.reduce((sum, file) => sum + Number(file.size), 0)
     const estimate = totalBytes + dbBytes
@@ -469,6 +575,8 @@ async function createArchive(
       files: files.map((file) => ({ id: file.id, size: Number(file.size), createdAt: file.created_at })),
       fileCount: files.length,
       totalBytes,
+      skippedMissing,
+      warnings,
     }
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), { mode: 0o600 })
 
@@ -478,26 +586,36 @@ async function createArchive(
       ...files.map((file) => `files/${file.id.slice(0, 2)}/${file.id}`),
     ]
     writeFileSync(listPath, `${entries.join('\n')}\n`, { mode: 0o600 })
-    await execFileAsync('tar', ['-czf', archivePath, '-C', config.dataDir, '--files-from', listPath], {
+    // 先写 .part 再原子改名：tar 中途失败/被 kill 时不会留下看似完整的 snapshot 残片。
+    const archivePartPath = `${archivePath}.part`
+    // 仅测试注入：模拟 tar 中途失败，验证残片清理；生产环境该分支不可达。
+    if (process.env.NODE_ENV === 'test' && process.env.BACKUP_SIMULATE_TAR_FAILURE === '1') {
+      writeFileSync(archivePartPath, 'partial-archive')
+      throw new Error('模拟 tar 失败')
+    }
+    await execFileAsync('tar', ['-czf', archivePartPath, '-C', config.dataDir, '--files-from', listPath], {
       maxBuffer: 16 * 1024 * 1024,
     })
+    renameSync(archivePartPath, archivePath)
     createdArchivePath = archivePath
     // 归档含 TOTP 与会话等敏感数据：显式 0640，不依赖调用方 umask。
     chmodSync(archivePath, 0o640)
 
     const sizeBytes = statSync(archivePath).size
     const sha256 = await sha256File(archivePath)
+    const manifestJson = JSON.stringify(manifest)
     db.prepare(
-      'INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)',
-    ).run(archiveName, mode, createdAt, sha256, sizeBytes, files.length)
+      `INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at, manifest_json)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+    ).run(archiveName, mode, createdAt, sha256, sizeBytes, files.length, manifestJson)
     audit(
       db,
       'cli',
       legacy ? 'backup_legacy' : 'backup_prepare',
       archiveName,
       legacy
-        ? { mode, files: files.length, sizeBytes, deprecated: true }
-        : { mode, files: files.length, sizeBytes },
+        ? { mode, files: files.length, sizeBytes, deprecated: true, skippedMissing: skippedMissing.length }
+        : { mode, files: files.length, sizeBytes, skippedMissing: skippedMissing.length },
       null,
     )
 
@@ -514,6 +632,9 @@ async function createArchive(
       createdAt,
       orphanBytes,
       orphans,
+      warnings,
+      skippedMissing,
+      previousMissing: previousMissing.length,
     }
   } catch (error) {
     if (createdArchivePath) {
@@ -521,6 +642,15 @@ async function createArchive(
         unlinkSync(createdArchivePath)
       } catch {
         // 归档清理失败不影响错误返回。
+      }
+    }
+    // tar 中途失败/超时被 kill：清理本次 .part 残片，避免 pending/孤儿报告长期堆积。
+    for (const name of readdirSyncSafe(backupsDir)) {
+      if (!name.startsWith(`snapshot-${stamp}`) || !name.endsWith('.part')) continue
+      try {
+        rmSync(join(backupsDir, name), { force: true })
+      } catch {
+        // 忽略清理失败，pending 输出会报告残留。
       }
     }
     throw error
@@ -560,7 +690,7 @@ async function ackArchive(
   const expectedSha = sha256Input.toLowerCase()
   const row = db
     .prepare(
-      'SELECT name, mode, created_at, sha256, size, acked_at, deleted_at FROM backup_archives WHERE name = ?',
+      'SELECT name, mode, created_at, sha256, size, acked_at, deleted_at, manifest_json FROM backup_archives WHERE name = ?',
     )
     .get(name) as ArchiveRow | undefined
   if (!row) throw new Error(`未知归档：${name}`)
@@ -582,42 +712,83 @@ async function ackArchive(
       throw new Error(`归档大小与记录不一致：本地 ${actualSize} / 记录 ${row.size}`)
     }
 
-    const now = new Date().toISOString()
-    db.prepare('UPDATE backup_archives SET pulled_at = ?, acked_at = ? WHERE name = ?').run(now, now, name)
-    const state = db.prepare('SELECT last_backup_at FROM backup_state WHERE id = 1').get() as
-      | BackupStateRow
-      | undefined
-    // 游标只前进：乱序 ack 时保留最新已确认时间。
-    if (!state?.last_backup_at || row.created_at > state.last_backup_at) {
-      db.prepare(
-        'UPDATE backup_state SET last_backup_at = ?, last_archive = ?, last_sha256 = ?, last_size = ? WHERE id = 1',
-      ).run(row.created_at, name, row.sha256, row.size)
-    }
-    audit(
-      db,
-      'cli',
-      'backup_ack',
-      name,
-      legacy
-        ? { mode: row.mode, sizeBytes: Number(row.size), deprecated: true, legacy: true }
-        : { mode: row.mode, sizeBytes: Number(row.size) },
-      null,
-    )
+    // 归档行、游标、缺失文件状态与审计在同一事务内提交，避免只推进一部分导致漏备/重复通知。
+    transaction(db, () => {
+      const now = new Date().toISOString()
+      db.prepare('UPDATE backup_archives SET pulled_at = ?, acked_at = ? WHERE name = ?').run(now, now, name)
+      advanceCursor(db, row)
+      // 本次 archive 的 skippedMissing 成为下一轮必须重新检查的集合；恢复后由 prepare 自动补入。
+      const missing = parseSkippedMissing(row.manifest_json)
+      writeMissingIds(db, missing)
+      audit(
+        db,
+        'cli',
+        'backup_ack',
+        name,
+        legacy
+          ? { mode: row.mode, sizeBytes: Number(row.size), deprecated: true, legacy: true, missingFiles: missing.length }
+          : { mode: row.mode, sizeBytes: Number(row.size), missingFiles: missing.length },
+        null,
+      )
+    })
+  } else {
+    // 幂等补游标：历史 ack 可能只更新了行没推进 backup_state（旧实现/中断），按最大已确认时间修复。
+    transaction(db, () => {
+      const latest = db
+        .prepare(
+          "SELECT name, created_at, sha256, size FROM backup_archives WHERE acked_at IS NOT NULL ORDER BY created_at DESC LIMIT 1",
+        )
+        .get() as ArchiveRow | undefined
+      if (latest) advanceCursor(db, latest)
+    })
   }
 
   const removed = pruneAcked(db, backupsDir)
   return { ok: true, name, alreadyAcked, removed, mode: row.mode, deprecated: legacy }
 }
 
-/** 已确认归档最多保留 MAX_ACKED_ARCHIVES 个；pending 归档永不在这里删除。 */
+/** 游标只前进：乱序 ack 时保留最新已确认时间。 */
+function advanceCursor(
+  db: DatabaseSync,
+  row: Pick<ArchiveRow, 'created_at' | 'name' | 'sha256' | 'size'>,
+): void {
+  const state = db.prepare('SELECT last_backup_at FROM backup_state WHERE id = 1').get() as
+    | BackupStateRow
+    | undefined
+  if (!state?.last_backup_at || row.created_at > state.last_backup_at) {
+    db.prepare(
+      'UPDATE backup_state SET last_backup_at = ?, last_archive = ?, last_sha256 = ?, last_size = ? WHERE id = 1',
+    ).run(row.created_at, row.name, row.sha256, row.size)
+  }
+}
+
+/** 从归档 manifest_json 解析 skippedMissing（缺失物理文件的 id）；异常返回空数组。 */
+function parseSkippedMissing(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return []
+    const value = (parsed as Record<string, unknown>).skippedMissing
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 已确认归档清理：不得删除唯一/最新 full 及其之后的所有 inc（恢复链依赖）。
+ * 只允许删除「最新 full 之前」的旧归档；无 full 时保留最近 MAX_ACKED_ARCHIVES 个。
+ */
 function pruneAcked(db: DatabaseSync, backupsDir: string): string[] {
   const rows = db
     .prepare(
-      'SELECT name FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL ORDER BY created_at DESC',
+      "SELECT name, mode FROM backup_archives WHERE acked_at IS NOT NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at DESC",
     )
-    .all() as unknown as Array<{ name: string }>
+    .all() as unknown as Array<{ name: string; mode: ArchiveMode }>
+  const newestFull = rows.findIndex((row) => row.mode === 'full')
+  const keepCount = newestFull >= 0 ? newestFull + 1 : MAX_ACKED_ARCHIVES
   const removed: string[] = []
-  for (const row of rows.slice(MAX_ACKED_ARCHIVES)) {
+  for (const row of rows.slice(keepCount)) {
     const archivePath = join(backupsDir, row.name)
     try {
       if (existsSync(archivePath)) unlinkSync(archivePath)

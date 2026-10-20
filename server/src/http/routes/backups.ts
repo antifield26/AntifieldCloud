@@ -9,7 +9,7 @@ import type { BackupService } from '../../backups/service.ts'
 import type { Config } from '../../config.ts'
 import { SlidingWindowLimiter } from '../../auth/limiter.ts'
 import { badRequest, rateLimited, unauthorized } from '../../util/errors.ts'
-import { asRecord, actorFrom } from '../util.ts'
+import { asRecord, actorFrom, clientIp } from '../util.ts'
 import { csrfGuard, requireAuth } from '../guards.ts'
 
 function totpOf(request: FastifyRequest, body?: Record<string, unknown>): unknown {
@@ -31,6 +31,8 @@ export function registerBackupRoutes(app: FastifyInstance, config: Config, backu
   const verifyLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
   const planLimiter = new SlidingWindowLimiter(60 * 60_000, 10)
   const executeLimiter = new SlidingWindowLimiter(60 * 60_000, 5)
+  // 归档内容浏览会解包 DB 快照，按 IP 限流避免被反复触发消耗 CPU/磁盘。
+  const entriesLimiter = new SlidingWindowLimiter(60_000, 30)
 
   function limit(limiter: SlidingWindowLimiter, key: string): void {
     const retry = limiter.hit(key)
@@ -97,6 +99,7 @@ export function registerBackupRoutes(app: FastifyInstance, config: Config, backu
   // ---------- 浏览归档内快照 ----------
 
   app.get('/api/backups/archives/:name/entries', { preHandler: [requireAuth] }, async (request) => {
+    limit(entriesLimiter, clientIp(request))
     const params = request.params as { name: string }
     const query = asRecord(request.query)
     return backups.listArchiveEntries(params.name, query.path)

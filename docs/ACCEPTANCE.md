@@ -1,8 +1,66 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.3.2；v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.4.0；v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 
-## v0.3.2（当前）
+## v0.4.0（当前）
+
+- 日期：2026-10-20（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
+- 版本：`v0.4.0`
+- 范围：第三轮深度审计与 P0/P1/非破坏 P2 修复；可观测性（指标历史/筛选/备份状态）；笔记附件与版本历史；多文件打包分享；Minecraft 世界一致性备份/PC 拉取/恢复演练自动化；工程与 CI 门禁；系统加固。
+
+### 1. 交付
+
+- 审计：`docs/AUDIT.md` 第三轮（4 路并行只读审计 + Lead 复核）；六维评分卡；P0/P1 修复与残余风险清单。
+- 数据：migration 5（`files.origin`、含 origin 唯一索引、`note_attachments`、`note_versions`、`share_items` 回填、`metrics_samples`）+ migration 6（孤儿 shares 数据修复，不改表结构）；v4→v6 迁移测试。
+- 可观测性：60s 采样/30 天保留、`GET /api/metrics`（1h/6h/24h/7d/30d、≤240 点）；Dashboard 四张 SVG 趋势卡；Activity 搜索/时间范围；AlertsCard 筛选分页；备份健康卡（应用归档/密钥包/pending/acked/孤儿/世界备份/PC 拉取/演练）。
+- 笔记：附件（1–5/请求、25 MiB、每笔记 100、计入配额、origin=note 隐藏）；版本历史（变更快照、保留 20、预览/恢复）。
+- 分享：多文件 `POST /api/shares`（1–50 个、`itemCount/totalSizeBytes`）；公开页 items + 逐文件下载；次数按会话计；删除文件吊销整个分享。
+- 世界备份：`scripts/backup-world.mjs`（save-off/save-all flush/save-on finally、tar 0/1 容忍、gzip 校验、SHA/状态、保留 4）+ weekly systemd timer；旧 cron 验收后停用，旧 9 GiB 归档保留。
+- 灾备：`scripts/world-pull.ps1` 两阶段拉取（PC 保留 4）；`scripts/drill.ps1` + `drill-verify.mjs` 恢复演练（SHA/tar/DB integrity/manifest，报告 180 天）；状态文件接入 Dashboard 与告警（world/pull/drill stale）。
+- 工程：版本单源（package.json，app 默认读取）；CI 覆盖 check/coverage/audit/secret-scan/shellcheck/nftables/PowerShell + Dependabot；`test:coverage`/`test:web:coverage`；部署脚本版本注入/DB 回滚/预检/smoke；PS 5.1 UTF-8 修复；bootstrap-env 保留未知键；systemd 加固；nftables 22/25565 收窄。
+- 测试：服务端/脚本 **234**（服务端 218 + 运维脚本 16）、前端 **129**；`npm run check` / `npm run build` 通过。
+- 文档：API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BACKUP/ROADMAP/PLAN/AGENTS/README/CHANGELOG 同步。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm run check` | 通过：服务端/脚本 234/234（服务端 218 + 脚本 16）、前端 129/129 |
+| `npm run build` | 通过（Vite 构建，chunk 体积警告已知） |
+| 覆盖率 | 服务端 lines/functions/branches 91.7/86.7/77.4；前端 36.6/31.5/34.2（阈值 75/75/65 与 35/30/33） |
+| schema | v6；v4→v6 迁移测试通过；生产启动日志 `migrated to schema v5`/`v6` |
+| 部署 | 成功：`/opt/antifieldcloud/releases/20261020T135813Z`；迁移前快照 `db-predeploy-20261020T135842657Z.sqlite`；自动回滚流程已由脚本实现 |
+| 生产 Health | `{"ok":true,"version":"0.4.0"}`；服务 active、`systemctl --failed` 0 |
+| `smoke.ps1` | **22 通过 / 0 失败 / 0 警告**（公网/CSP/PWA/分享 404/告警 401/服务/版本/cgroup/nftables/备份/世界/演练/脚本 hash/本地 SHA） |
+| 世界备份 | systemd 手动触发成功：`world-20261020T140037Z.tar.gz`，3,203,778,333 B，SHA-256 `d9e5049298ec68f9cbbae43186e6ebf02617bbd554b714a584af6609bf18b85e`；`saveOffOk/saveOnOk=true`、tar/gzip 校验通过；timer 已 enable（周日 04:00） |
+| PC 世界拉取 | `world-pull.ps1` 成功：拉取 1、待拉取 0、本地保留 1、SHA 校验通过；远端已 ack 删除；`world-pull-status.json` ok=true |
+| 恢复演练 | `drill.ps1 -ExpectedSchemaVersion 6 -IncludeWorld` 通过：full+inc 链 SHA/manifest、DB schema=6/integrity=ok/FK 0 违规、世界 `world/level.dat` 解包校验成功；报告 `D:\Backups\AntifieldCloud\drills\20261020T140730Z`，已回写 Pi |
+| 旧 cron | 已停用（原 `minecraft-backups` 行移除，备份 `/home/antifield/crontab.bak-v040`）；旧 9 GiB 归档保留未删 |
+| 系统加固 | app unit 加固后 `systemd-analyze security` ≈3.2 OK；nftables 22/25565 收窄到直连/校园网段且 22 限速，应用后新 SSH、25565、25575 行为符合预期 |
+| 指标采样 | 部署后 22 条 `metrics_samples`（60s 采样运行中）；`/api/metrics` 未登录 401 |
+| 功能抽查 | 自动化测试覆盖指标/附件/版本/多文件分享/备份状态；公网 UI 交互与 390px/PWA 需用户最终人工验收 |
+
+### 3. 部署
+
+```text
+部署目录: /opt/antifieldcloud/releases/20261020T135813Z
+迁移前 DB 快照: /var/lib/antifieldcloud/backups/db-predeploy-20261020T135842657Z.sqlite
+服务: antifieldcloud.service (active, v0.4.0)；schema v6
+tag: v0.4.0
+release: 待发布
+```
+
+### 4. 未决
+
+- SSH/sudo 暴露面按用户选择仅文档披露（未改配置）；建议后续收敛（见 AUDIT §4）。
+- 增量备份时钟水位（DR-1）、导入归档保留（DR-7）、告警未投递重试（DR-22）等列后续。
+- 5 GiB 公网上传未跑满；世界备份/拉取/演练已完成首轮生产验证，后续按周/季度执行。
+- Windows 周度世界拉取与演练计划任务需用户手动安装（AGENTS §9）。
+- 旧 `/home/antifield/minecraft-backups` 约 9 GiB 未自动删除，确认 PC 副本后手动清理。
+- 真机 390px/PWA 视觉与交互需用户最终人工验收。
+
+## v0.3.2（历史）
 
 - 日期：2026-10-20（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境

@@ -10,6 +10,8 @@ export interface UploadPanelProps {
   busy: boolean
   onRetry: (id: number) => void
   onCancel: (id: number) => void
+  /** 放弃并清理：DELETE 服务端分片会话 + 清除本地断点 */
+  onDiscard?: (id: number) => void
   onClear: () => void
 }
 
@@ -22,7 +24,7 @@ function statusIcon(status: UploadTask['status']) {
 }
 
 /** 上传队列浮层：逐文件展示进度、成功/失败、取消与重试。 */
-export function UploadPanel({ tasks, busy, onRetry, onCancel, onClear }: UploadPanelProps) {
+export function UploadPanel({ tasks, busy, onRetry, onCancel, onDiscard, onClear }: UploadPanelProps) {
   if (tasks.length === 0) return null
   const succeeded = tasks.filter((task) => task.status === 'success').length
   const failed = tasks.filter((task) => task.status === 'error').length
@@ -79,13 +81,27 @@ export function UploadPanel({ tasks, busy, onRetry, onCancel, onClear }: UploadP
                 {task.status === 'cancelled' ? (
                   <div className="upload-item-error">
                     <span>已取消上传</span>
-                    <Button size="sm" variant="ghost" onClick={() => onRetry(task.id)}>重新上传</Button>
+                    <div className="upload-item-button-row">
+                      {onDiscard ? (
+                        <Button size="sm" variant="ghost" onClick={() => onDiscard(task.id)}>
+                          放弃并清理
+                        </Button>
+                      ) : null}
+                      <Button size="sm" variant="ghost" onClick={() => onRetry(task.id)}>重新上传</Button>
+                    </div>
                   </div>
                 ) : null}
                 {task.status === 'error' ? (
                   <div className="upload-item-error">
                     <span>{task.error ?? '上传失败'}</span>
-                    <Button size="sm" variant="ghost" onClick={() => onRetry(task.id)}>重试</Button>
+                    <div className="upload-item-button-row">
+                      {onDiscard ? (
+                        <Button size="sm" variant="ghost" onClick={() => onDiscard(task.id)}>
+                          放弃并清理
+                        </Button>
+                      ) : null}
+                      <Button size="sm" variant="ghost" onClick={() => onRetry(task.id)}>重试</Button>
+                    </div>
                   </div>
                 ) : null}
                 {cancellable ? (

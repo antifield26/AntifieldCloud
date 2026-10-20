@@ -4,11 +4,13 @@ import { createHash } from 'node:crypto'
 import { existsSync, writeFileSync } from 'node:fs'
 import type { FileService } from '../src/files/service.ts'
 import { FileService as Service } from '../src/files/service.ts'
+import type { DatabaseSync } from 'node:sqlite'
 import { previewKindFor, sanitizeName } from '../src/files/mime.ts'
 import { cleanupDir, tempDataDir, testConfig, testDb } from './helpers.ts'
 
 interface Fixture {
   dir: string
+  db: DatabaseSync
   files: FileService
   actor: { username: string; ip: string | null }
   close: () => void
@@ -21,6 +23,7 @@ async function fixture(overrides = {}): Promise<Fixture> {
   const files = new Service(db, config)
   return {
     dir,
+    db,
     files,
     actor: { username: 'tester', ip: '127.0.0.1' },
     close: () => {
@@ -171,6 +174,87 @@ test('配额包含回收站，超限拒绝上传', async () => {
       /存储空间不足/,
     )
     fx.files.storage.removeTemp(temp3)
+  } finally {
+    fx.close()
+  }
+})
+
+test('并发同名上传：事务内唯一名去重，得到 a/b 两个文件', async () => {
+  const fx = await fixture()
+  try {
+    const [first, second] = await Promise.all([
+      upload(fx.files, fx.actor, null, 'race.txt', Buffer.from('1')),
+      upload(fx.files, fx.actor, null, 'race.txt', Buffer.from('2')),
+    ])
+    const names = [first.name, second.name].sort()
+    assert.deepEqual(names, ['race (2).txt', 'race.txt'])
+    const list = fx.files.list({ parentId: null, page: 1, pageSize: 50, sort: 'name', dir: 'asc' })
+    assert.equal(list.total, 2)
+  } finally {
+    fx.close()
+  }
+})
+
+test('落盘后父目录被移入回收站：提交失败并回滚物理文件', async () => {
+  const fx = await fixture()
+  try {
+    const folder = fx.files.createFolder(fx.actor, null, '临时目录')
+    fx.files.trash(fx.actor, folder.id)
+    const tempPath = fx.files.storage.tempPath()
+    writeFileSync(tempPath, Buffer.from('orphan'))
+    await assert.rejects(
+      () =>
+        fx.files.registerUpload(fx.actor, {
+          parentId: folder.id,
+          rawName: 'late.txt',
+          tempPath,
+          size: 6,
+          sha256: createHash('sha256').update('orphan').digest('hex'),
+        }),
+      /目标文件夹不存在/,
+    )
+    fx.files.storage.removeTemp(tempPath)
+    assert.equal(fx.files.usage().usedBytes, 0, '失败上传不占配额')
+    const rows = fx.db.prepare("SELECT COUNT(*) AS c FROM files WHERE name = 'late.txt'").get() as { c: number }
+    assert.equal(rows.c, 0, '失败上传不留下 DB 行')
+  } finally {
+    fx.close()
+  }
+})
+
+test('回收站原路径批量解析：嵌套目录显示完整路径，空回收站不报错', async () => {
+  const fx = await fixture()
+  try {
+    const a = fx.files.createFolder(fx.actor, null, 'A')
+    const b = fx.files.createFolder(fx.actor, a.id, 'B')
+    const nested = await upload(fx.files, fx.actor, b.id, 'inner.txt', Buffer.from('x'))
+    const rootFile = await upload(fx.files, fx.actor, null, 'root.txt', Buffer.from('y'))
+    fx.files.trash(fx.actor, nested.id)
+    fx.files.trash(fx.actor, rootFile.id)
+    const trash = fx.files.listTrash({ page: 1, pageSize: 50 })
+    assert.equal(trash.total, 2)
+    const paths = new Map(trash.items.map((item) => [item.name, item.originalPath]))
+    assert.equal(paths.get('inner.txt'), '全部文件 / A / B')
+    assert.equal(paths.get('root.txt'), '全部文件')
+    assert.equal(trash.trashBytes, 2)
+  } finally {
+    fx.close()
+  }
+})
+
+test('空回收站容错：嵌套/并发已删除的条目视为已完成，不中断其余清理', async () => {
+  const fx = await fixture()
+  try {
+    const folder = fx.files.createFolder(fx.actor, null, 'outer')
+    const child = fx.files.createFolder(fx.actor, folder.id, 'inner')
+    await upload(fx.files, fx.actor, child.id, 'x.txt', Buffer.from('x'))
+    fx.files.trash(fx.actor, folder.id)
+    // 模拟异常数据：子目录也被标记为顶层回收站条目，清空时父条目已级联删除它。
+    fx.db.prepare("UPDATE files SET deleted_parent_id = '' WHERE id = ?").run(child.id)
+    const result = fx.files.emptyTrash(fx.actor)
+    assert.ok(result.count >= 1)
+    const remaining = fx.db.prepare('SELECT COUNT(*) AS c FROM files WHERE deleted_at IS NOT NULL').get() as { c: number }
+    assert.equal(remaining.c, 0)
   } finally {
     fx.close()
   }

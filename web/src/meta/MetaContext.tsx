@@ -10,7 +10,20 @@ import { useAuth } from '../auth/AuthContext'
 import { currentSiteLocation, deriveSiblingOrigin, safeOrigin } from '../lib/origin'
 
 const DEFAULT_TRASH_RETENTION_DAYS = 30
-const DEFAULT_MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
+// 与 docs/API.md 的单请求上限一致：Cloudflare 代理下最大 100 MiB
+const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+const DEFAULT_NOTE_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
+const DEFAULT_NOTE_MAX_ATTACHMENTS = 100
+const DEFAULT_NOTE_VERSIONS_KEEP = 20
+const DEFAULT_SHARE_MAX_ITEMS = 50
+const DEFAULT_METRICS_SAMPLE_SECONDS = 60
+const DEFAULT_METRICS_RETENTION_DAYS = 30
+const DEFAULT_BACKUP_IMPORT_MAX_BYTES = 100 * 1024 * 1024
+const DEFAULT_BACKUP_RESTORE_MAX_ENTRIES = 5000
+
+function positiveNumber(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+}
 
 function fallbackMeta(): AppMeta {
   const location = currentSiteLocation()
@@ -29,6 +42,15 @@ function fallbackMeta(): AppMeta {
     chunkedUploadEnabled: false,
     chunkSizeBytes: 0,
     chunkMaxFileBytes: 0,
+    noteAttachmentMaxBytes: DEFAULT_NOTE_ATTACHMENT_MAX_BYTES,
+    noteMaxAttachments: DEFAULT_NOTE_MAX_ATTACHMENTS,
+    noteVersionsKeep: DEFAULT_NOTE_VERSIONS_KEEP,
+    shareMaxItems: DEFAULT_SHARE_MAX_ITEMS,
+    metricsEnabled: true,
+    metricsSampleSeconds: DEFAULT_METRICS_SAMPLE_SECONDS,
+    metricsRetentionDays: DEFAULT_METRICS_RETENTION_DAYS,
+    backupImportMaxBytes: DEFAULT_BACKUP_IMPORT_MAX_BYTES,
+    backupRestoreMaxEntries: DEFAULT_BACKUP_RESTORE_MAX_ENTRIES,
   }
 }
 
@@ -59,6 +81,21 @@ function buildMeta(version: VersionResult): AppMeta {
       typeof version.chunkSizeBytes === 'number' && version.chunkSizeBytes > 0 ? version.chunkSizeBytes : 0,
     chunkMaxFileBytes:
       typeof version.chunkMaxFileBytes === 'number' && version.chunkMaxFileBytes > 0 ? version.chunkMaxFileBytes : 0,
+    noteAttachmentMaxBytes: positiveNumber(version.noteAttachmentMaxBytes, DEFAULT_NOTE_ATTACHMENT_MAX_BYTES),
+    noteMaxAttachments: Math.floor(positiveNumber(version.noteMaxAttachments, DEFAULT_NOTE_MAX_ATTACHMENTS)),
+    noteVersionsKeep: Math.floor(positiveNumber(version.noteVersionsKeep, DEFAULT_NOTE_VERSIONS_KEEP)),
+    shareMaxItems: Math.floor(positiveNumber(version.shareMaxItems, DEFAULT_SHARE_MAX_ITEMS)),
+    metricsEnabled: version.metricsEnabled !== false,
+    metricsSampleSeconds: Math.floor(
+      positiveNumber(version.metricsSampleSeconds, DEFAULT_METRICS_SAMPLE_SECONDS),
+    ),
+    metricsRetentionDays: Math.floor(positiveNumber(version.metricsRetentionDays, DEFAULT_METRICS_RETENTION_DAYS)),
+    backupImportMaxBytes: Math.floor(
+      positiveNumber(version.backupImportMaxBytes, DEFAULT_BACKUP_IMPORT_MAX_BYTES),
+    ),
+    backupRestoreMaxEntries: Math.floor(
+      positiveNumber(version.backupRestoreMaxEntries, DEFAULT_BACKUP_RESTORE_MAX_ENTRIES),
+    ),
   }
 }
 

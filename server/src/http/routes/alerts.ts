@@ -16,8 +16,15 @@ export function registerAlertRoutes(app: FastifyInstance, config: Config, alerts
 
   app.get('/api/alerts', { preHandler: [requireAuth] }, async (request) => {
     const query = asRecord(request.query)
-    const limit = parsePositiveInt(query.limit, 20, 1, 200)
-    return alerts.list(limit)
+    const text = (value: unknown, max: number): string | null =>
+      typeof value === 'string' && value.trim() ? value.trim().slice(0, max) : null
+    return alerts.list({
+      limit: parsePositiveInt(query.limit, 20, 1, 200),
+      offset: parsePositiveInt(query.offset, 0, 0, 100_000),
+      event: text(query.event, 100),
+      status: text(query.status, 20),
+      severity: text(query.severity, 20),
+    })
   })
 
   app.post('/api/alerts/test', { preHandler: [requireAuth, csrf] }, async (request) => {

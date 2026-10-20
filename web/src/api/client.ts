@@ -4,9 +4,11 @@
 // 公开接口（登录页/分享页）使用 skipAuthRedirect，避免匿名访问触发全局登录跳转。
 
 import type {
+  AlertListQuery,
   AlertTestResult,
   AlertsResult,
   AuditPage,
+  AuditQuery,
   BackupArchive,
   BackupEntriesResult,
   BackupImportResult,
@@ -20,6 +22,7 @@ import type {
   ClearTrashResult,
   ChunkUploadInit,
   ChunkUploadStatus,
+  CreateShareBundleInput,
   CreateShareInput,
   CreateShareResult,
   DashboardData,
@@ -31,11 +34,18 @@ import type {
   KnowledgeQuery,
   LoginResult,
   MeResult,
+  MetricsRange,
+  MetricsResult,
   MinecraftStatus,
   Note,
+  NoteAttachment,
+  NoteAttachmentListResult,
   NoteInput,
   NoteListResult,
   NotePatch,
+  NoteVersionListResult,
+  NoteVersionQuery,
+  NoteVersionResult,
   OkResult,
   PasswordChallenge,
   PublicShareInfo,
@@ -45,6 +55,7 @@ import type {
   RestorePlanResult,
   RevokeShareResult,
   ShareListResult,
+  StorageInfo,
   TagsResult,
   TextPreviewResult,
   TrashListResult,
@@ -93,11 +104,30 @@ const ERROR_MESSAGES: Record<string, string> = {
   webhook_not_configured: '未配置 Webhook，无法发送测试消息',
   invalid_url: '链接格式不合法',
   confirmation_failed: '确认文本不正确',
-  checksum_mismatch: '归档 SHA-256 校验失败',
+  checksum_mismatch: 'SHA-256 校验失败，请重新上传',
   invalid_archive: '归档内容不合法或已损坏',
   plan_expired: '恢复计划已过期，请重新创建',
   restore_busy: '已有恢复任务在执行，请稍后再试',
   backup_not_verified: '恢复链中的归档尚未校验通过',
+  archive_not_verified: '归档尚未校验通过，请先校验',
+  archive_chain_invalid: '恢复链不完整或清单不一致',
+  archive_not_found: '归档不存在',
+  invalid_selection: '选择的内容不合法',
+  restore_too_many_files: '恢复文件数超过服务端上限',
+  restore_disabled: '服务端未启用恢复向导',
+  // v0.4.0：指标、多文件分享与笔记附件/版本
+  invalid_range: '指标时间范围不合法',
+  share_bundle: '该分享包含多个文件，请逐个下载',
+  share_item_not_found: '分享中的文件不存在或已被移除',
+  share_gone: '分享的文件已被删除',
+  attachment_limit: '附件数量超过限制',
+  invalid_response: '服务端返回的数据无法解析',
+  too_many_uploads: '未完成的分片上传会话过多，请清理后重试',
+  chunks_missing: '仍有分片未上传，请重试',
+  chunk_conflict: '同一分片内容不一致，请放弃后重新上传',
+  upload_completed: '上传会话已完成，无法取消',
+  invalid_chunk_index: '分片序号不合法',
+  invalid_chunk_size: '分片大小不合法',
 }
 
 export class ApiError extends Error {
@@ -324,6 +354,11 @@ export function publicShareContentUrl(token: string): string {
   return `/api/public/shares/${encodeURIComponent(token)}/content`
 }
 
+/** 多文件公开分享的逐文件下载地址；itemId 越权时服务端返回 404。 */
+export function publicShareItemContentUrl(token: string, itemId: string): string {
+  return `/api/public/shares/${encodeURIComponent(token)}/items/${encodeURIComponent(itemId)}/content`
+}
+
 export interface UploadCallbacks {
   onProgress?: (loaded: number, total: number) => void
   signal?: AbortSignal
@@ -392,6 +427,82 @@ export function uploadFiles(
 
     const form = new FormData()
     if (parentId) form.append('parentId', parentId)
+    for (const file of files) form.append('files', file, file.name)
+    xhr.send(form)
+  })
+}
+
+/* ---------- 笔记附件上传（v0.4.0，独立 multipart，不进入文件上传队列） ---------- */
+
+export interface NoteAttachmentUploadCallbacks {
+  onProgress?: (loaded: number, total: number) => void
+  signal?: AbortSignal
+  /** 默认 15 分钟 */
+  timeoutMs?: number
+}
+
+/**
+ * 上传笔记附件（POST /api/notes/:id/attachments，multipart 字段 files，1–5 个）。
+ * 附件计入总配额但属于笔记私有数据：不出现在文件列表/搜索/回收站，仅经笔记接口管理。
+ * 前端只做数量/大小预检，限额与命名去重由服务端最终裁决。
+ */
+export function uploadNoteAttachments(
+  noteId: string,
+  files: File[],
+  callbacks: NoteAttachmentUploadCallbacks = {},
+): Promise<NoteAttachmentListResult> {
+  return new Promise((resolve, reject) => {
+    if (files.length === 0) {
+      resolve({ items: [] })
+      return
+    }
+    if (callbacks.signal?.aborted) {
+      reject(new ApiError(0, 'aborted', '附件上传已取消'))
+      return
+    }
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api/notes/${encodeId(noteId)}/attachments`)
+    xhr.withCredentials = true
+    xhr.responseType = 'text'
+    xhr.timeout = callbacks.timeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS
+
+    const token = getCsrfToken()
+    if (token) xhr.setRequestHeader(CSRF_HEADER, token)
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) callbacks.onProgress?.(event.loaded, event.total)
+    }
+
+    const parseBody = (): unknown => {
+      if (!xhr.responseText) return null
+      try {
+        return JSON.parse(xhr.responseText) as unknown
+      } catch {
+        return null
+      }
+    }
+
+    xhr.onload = () => {
+      const body = parseBody()
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const record = body && typeof body === 'object' ? (body as Record<string, unknown>) : null
+        const items = record && Array.isArray(record.items) ? (record.items as NoteAttachment[]) : []
+        resolve({ items })
+        return
+      }
+      const error = parseApiError(body, xhr.status, parseRetryAfter(xhr.getResponseHeader('Retry-After') ?? null))
+      if (error.status === 401 && error.code === 'unauthenticated') unauthorizedHandler?.()
+      reject(error)
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'network_error', '附件上传失败：网络连接异常'))
+    xhr.onabort = () => reject(new ApiError(0, 'aborted', '附件上传已取消'))
+    xhr.ontimeout = () => reject(new ApiError(0, 'timeout', '附件上传超时，请检查网络后重试'))
+
+    if (callbacks.signal) {
+      callbacks.signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
+    const form = new FormData()
     for (const file of files) form.append('files', file, file.name)
     xhr.send(form)
   })
@@ -572,6 +683,28 @@ export async function uploadFileChunked(
   return { items: [result.file], errors: [] }
 }
 
+/* ---------- 分片上传断点清理（v0.4.0） ---------- */
+
+/**
+ * 放弃某个文件的分片上传：DELETE 服务端会话并清除 localStorage 断点。
+ * - 没有断点记录时为空操作；
+ * - 服务端会话已完成/不存在（409/404）视为已清理，不向上抛错；
+ * - 其它错误向上抛出，由调用方提示，但断点记录已清除，避免永久占用并发会话。
+ */
+export async function abandonChunkedUpload(file: File, parentId: string | null): Promise<void> {
+  const fingerprint = uploadFingerprint(file, parentId)
+  const key = resumeStorageKey(fingerprint)
+  const record = readResumeRecord(key)
+  clearResumeRecord(key)
+  if (!record) return
+  try {
+    await del<{ ok: boolean }>(`/api/uploads/${encodeId(record.uploadId)}`)
+  } catch (error) {
+    if (isApiError(error) && (error.status === 404 || error.status === 409)) return
+    throw error
+  }
+}
+
 /* ---------- 备份归档上传（独立 multipart，不进入文件列表上传队列） ---------- */
 
 export interface BackupUploadCallbacks {
@@ -716,8 +849,30 @@ export const api = {
   getDashboard(): Promise<DashboardData> {
     return get<DashboardData>('/api/dashboard')
   },
+  /** 轻量存储配额（v0.4.0）：文件页使用，避免为取配额触发 Dashboard 聚合。 */
+  getStorage(signal?: AbortSignal): Promise<StorageInfo> {
+    return get<StorageInfo>('/api/storage', { signal })
+  },
+  /** 指标历史（v0.4.0）：服务端按桶聚合，最多 240 点；非法 range 返回 400 invalid_range。 */
+  getMetrics(range: MetricsRange = '24h', signal?: AbortSignal): Promise<MetricsResult> {
+    return get<MetricsResult>(`/api/metrics${buildQuery({ range })}`, { signal })
+  },
   getAudit(limit = 50, offset = 0, action?: string, signal?: AbortSignal): Promise<AuditPage> {
     return get<AuditPage>(`/api/audit${buildQuery({ limit, offset, action })}`, { signal })
+  },
+  /** 审计查询（v0.4.0）：支持动作/关键词/时间范围与分页，参数全部可选。 */
+  getAuditPage(query: AuditQuery = {}, signal?: AbortSignal): Promise<AuditPage> {
+    return get<AuditPage>(
+      `/api/audit${buildQuery({
+        limit: query.limit,
+        offset: query.offset,
+        action: query.action,
+        q: query.q,
+        from: query.from,
+        to: query.to,
+      })}`,
+      { signal },
+    )
   },
   /** /api/version 同时下发站点元数据；旧服务端只有 version。 */
   getVersion(): Promise<VersionResult> {
@@ -811,8 +966,12 @@ export const api = {
     },
   },
   shares: {
-    list(): Promise<ShareListResult> {
-      return get<ShareListResult>('/api/shares')
+    list(page = 1, pageSize = 100, signal?: AbortSignal): Promise<ShareListResult> {
+      return get<ShareListResult>(`/api/shares${buildQuery({ page, pageSize })}`, { signal })
+    },
+    /** v0.4.0 多文件分享：fileIds 1–50、去重，全部为活动普通文件。 */
+    createBundle(input: CreateShareBundleInput): Promise<CreateShareResult> {
+      return post<CreateShareResult>('/api/shares', input)
     },
     revoke(id: string): Promise<RevokeShareResult> {
       return del<RevokeShareResult>(`/api/shares/${encodeId(id)}`)
@@ -831,6 +990,7 @@ export const api = {
       )
     },
     contentUrl: publicShareContentUrl,
+    itemContentUrl: publicShareItemContentUrl,
   },
   trash: {
     list(page = 1, pageSize = 200, signal?: AbortSignal): Promise<TrashListResult> {
@@ -889,6 +1049,36 @@ export const api = {
     tags(): Promise<TagsResult> {
       return get<TagsResult>('/api/notes/tags')
     },
+    /** v0.4.0 笔记附件：计入总配额，不出现在普通文件列表/搜索/回收站。 */
+    attachments: {
+      list(noteId: string, signal?: AbortSignal): Promise<NoteAttachmentListResult> {
+        return get<NoteAttachmentListResult>(`/api/notes/${encodeId(noteId)}/attachments`, { signal })
+      },
+      upload: uploadNoteAttachments,
+      /** 硬删除附件并释放配额（不进入回收站）。 */
+      remove(noteId: string, fileId: string): Promise<OkResult> {
+        return del<OkResult>(`/api/notes/${encodeId(noteId)}/attachments/${encodeId(fileId)}`)
+      },
+    },
+    /** v0.4.0 笔记历史版本：更新标题/正文/标签时自动快照。 */
+    versions: {
+      list(noteId: string, query: NoteVersionQuery = {}, signal?: AbortSignal): Promise<NoteVersionListResult> {
+        return get<NoteVersionListResult>(
+          `/api/notes/${encodeId(noteId)}/versions${buildQuery({ limit: query.limit, offset: query.offset })}`,
+          { signal },
+        )
+      },
+      get(noteId: string, versionId: string, signal?: AbortSignal): Promise<NoteVersionResult> {
+        return get<NoteVersionResult>(
+          `/api/notes/${encodeId(noteId)}/versions/${encodeId(versionId)}`,
+          { signal },
+        )
+      },
+      /** 恢复历史版本；恢复前服务端会先保存当前版本快照。 */
+      restore(noteId: string, versionId: string): Promise<Note> {
+        return post<Note>(`/api/notes/${encodeId(noteId)}/versions/${encodeId(versionId)}/restore`)
+      },
+    },
   },
   bookmarks: {
     list(query: KnowledgeQuery = {}, signal?: AbortSignal): Promise<BookmarkListResult> {
@@ -920,8 +1110,18 @@ export const api = {
     },
   },
   alerts: {
-    list(limit = 20): Promise<AlertsResult> {
-      return get<AlertsResult>(`/api/alerts${buildQuery({ limit })}`)
+    /** 告警历史：limit/offset 分页，可按事件/状态/严重度筛选（v0.4.0，参数均可选）。 */
+    list(limit = 20, query: Omit<AlertListQuery, 'limit'> = {}, signal?: AbortSignal): Promise<AlertsResult> {
+      return get<AlertsResult>(
+        `/api/alerts${buildQuery({
+          limit,
+          offset: query.offset,
+          event: query.event,
+          status: query.status,
+          severity: query.severity,
+        })}`,
+        { signal },
+      )
     },
     test(): Promise<AlertTestResult> {
       return post<AlertTestResult>('/api/alerts/test')

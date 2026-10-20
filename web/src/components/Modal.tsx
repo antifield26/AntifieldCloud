@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
@@ -11,6 +11,38 @@ function getFocusable(panel: HTMLElement): HTMLElement[] {
   return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
     (element) => element.tabIndex >= 0 && element.getClientRects().length > 0,
   )
+}
+
+/* ---------- 模态栈：只允许栈顶处理 Esc/Tab，非栈顶置为 inert ---------- */
+
+let modalStack: string[] = []
+const stackListeners = new Set<() => void>()
+
+function notifyModalStack(): void {
+  for (const listener of stackListeners) listener()
+}
+
+function pushModal(id: string): void {
+  modalStack = [...modalStack.filter((item) => item !== id), id]
+  notifyModalStack()
+}
+
+function removeModal(id: string): void {
+  const next = modalStack.filter((item) => item !== id)
+  if (next.length === modalStack.length) return
+  modalStack = next
+  notifyModalStack()
+}
+
+function isTopModal(id: string): boolean {
+  return modalStack[modalStack.length - 1] === id
+}
+
+function subscribeModalStack(listener: () => void): () => void {
+  stackListeners.add(listener)
+  return () => {
+    stackListeners.delete(listener)
+  }
 }
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -36,6 +68,8 @@ export interface ModalProps {
 /**
  * 模态对话框：Portal 渲染、焦点陷阱、Esc 关闭、遮罩点击关闭、恢复焦点与页面滚动。
  * busy 为 true 时禁止关闭，避免提交中丢失操作。
+ * 支持嵌套（如分享一次性链接确认、恢复码未保存确认）：只有栈顶弹窗处理 Esc/Tab 并接收焦点，
+ * 下层弹窗设置 inert/aria-hidden，避免两层 document 监听互相抢键盘事件。
  */
 export function Modal({
   open,
@@ -54,21 +88,46 @@ export function Modal({
 }: ModalProps) {
   const titleId = useId()
   const descriptionId = useId()
+  const modalId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   const busyRef = useRef(busy)
+  const isTopRef = useRef(true)
+  const [isTop, setIsTop] = useState(true)
   onCloseRef.current = onClose
   busyRef.current = busy
+  isTopRef.current = isTop
 
+  // 入栈/出栈：open 期间注册为当前弹窗，栈变化时更新 isTop
+  useEffect(() => {
+    if (!open) return
+    pushModal(modalId)
+    setIsTop(isTopModal(modalId))
+    const unsubscribe = subscribeModalStack(() => setIsTop(isTopModal(modalId)))
+    return () => {
+      unsubscribe()
+      removeModal(modalId)
+    }
+  }, [open, modalId])
+
+  // 页面滚动锁定与焦点恢复（每个弹窗独立保存，按 LIFO 恢复）
   useEffect(() => {
     if (!open) return
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+      previouslyFocused?.focus()
+    }
+  }, [open])
 
+  // 只有栈顶弹窗接收焦点、处理 Esc 与 Tab 焦点陷阱
+  useEffect(() => {
+    if (!open || !isTop) return
+    const panel = panelRef.current
+    if (!panel) return
     const focusTimer = window.setTimeout(() => {
-      const panel = panelRef.current
-      if (!panel) return
       const preferred = initialFocus ? panel.querySelector<HTMLElement>(initialFocus) : null
       const autofocus = panel.querySelector<HTMLElement>('[data-autofocus]')
       const focusable = getFocusable(panel)
@@ -77,6 +136,7 @@ export function Modal({
     }, 20)
 
     const handleKeyDown = (event: KeyboardEvent): void => {
+      if (!isTopRef.current) return
       if (event.key === 'Escape') {
         if (!busyRef.current) {
           event.preventDefault()
@@ -86,8 +146,6 @@ export function Modal({
         return
       }
       if (event.key !== 'Tab') return
-      const panel = panelRef.current
-      if (!panel) return
       const focusable = getFocusable(panel)
       if (focusable.length === 0) {
         event.preventDefault()
@@ -112,19 +170,18 @@ export function Modal({
     document.addEventListener('keydown', handleKeyDown, true)
     return () => {
       window.clearTimeout(focusTimer)
-      document.body.style.overflow = previousOverflow
       document.removeEventListener('keydown', handleKeyDown, true)
-      previouslyFocused?.focus()
     }
-  }, [open])
+  }, [open, isTop, initialFocus])
 
   if (!open) return null
 
   return createPortal(
     <div
-      className="modal-overlay"
+      className={cx('modal-overlay', !isTop && 'modal-overlay-inactive')}
       onMouseDown={(event) => {
         if (event.target !== event.currentTarget) return
+        if (!isTop) return
         if (closeOnOverlay && !busy) onClose()
       }}
     >
@@ -132,10 +189,12 @@ export function Modal({
         ref={panelRef}
         className={cx('modal-panel', `modal-${size}`, className)}
         role="dialog"
-        aria-modal="true"
+        aria-modal={isTop ? 'true' : undefined}
+        aria-hidden={isTop ? undefined : true}
         aria-labelledby={titleId}
         aria-describedby={ariaDescribedBy ?? (description ? descriptionId : undefined)}
         tabIndex={-1}
+        inert={!isTop}
       >
         <header className="modal-header">
           <div className="modal-heading">

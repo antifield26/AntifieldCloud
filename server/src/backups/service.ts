@@ -38,6 +38,7 @@ import { verifyTotpForReauth } from '../auth/totp.ts'
 import type { FileService } from '../files/service.ts'
 import { AppError, badRequest, conflict, notFound } from '../util/errors.ts'
 import { newId, randomToken } from '../util/ids.ts'
+import { readStatusFile, type StatusFileRecord } from '../util/status.ts'
 import { nowIso } from '../util/time.ts'
 import { inspectTarGz, invalidArchive, scanTarGz, unsafeArchive } from './tar.ts'
 
@@ -49,10 +50,17 @@ const MAX_RESTORE_FILES = 2000
 const MAX_RESTORE_PATHS = 100
 const MAX_ENTRY_LIST = 500
 const MAX_IMPORT_BYTES = 100 * 1024 * 1024
-const PREPARE_TIMEOUT_MS = 10 * 60_000
+const PREPARE_TIMEOUT_MS = 3300 * 1000
 const STAGING_TTL_MS = 24 * 60 * 60_000
 const LOCK_STALE_MS = 2 * 60 * 60_000
 const RESERVED_FREE_BYTES = 256 * 1024 * 1024
+/** 加载归档内 DB 快照时的行数上限，避免恶意/异常归档把内存打满（512M MemoryMax）。 */
+const MAX_SNAPSHOT_ROWS = 100_000
+/** 归档内 DB 快照文件大小上限（解压后），防止压缩炸弹。 */
+const MAX_SNAPSHOT_DB_BYTES = 256 * 1024 * 1024
+/** staging 目录总占用上限（同时受可用空间 20% 约束）。 */
+const MAX_STAGING_BYTES = 2 * 1024 * 1024 * 1024
+const STAGING_FREE_RATIO = 0.2
 
 export interface BackupServiceConfig {
   dataDir: string
@@ -67,17 +75,27 @@ export interface BackupServiceConfig {
   backupRestoreMaxEntries?: number
   /** 恢复功能总开关；false 时计划/执行/浏览接口返回 403。 */
   backupRestoreEnabled?: boolean
-  /** 生成归档超时（毫秒），默认 10 分钟。 */
+  /** 生成归档超时（毫秒）；未显式配置时按 backupPrepareTimeoutSec 计算。 */
   backupPrepareTimeoutMs?: number
+  /** 生成归档超时（秒），默认 3300（55 分钟，覆盖 5 GiB 归档打包）。 */
+  backupPrepareTimeoutSec?: number
+  /** 世界备份/拉取/演练状态文件；由 root 脚本写入，应用只读，缺失时返回 null。 */
+  worldBackupStatusFile?: string
+  worldPullStatusFile?: string
+  drillStatusFile?: string
+  /** 加载归档快照的最大行数（测试可调小），默认 100000。 */
+  backupSnapshotMaxRows?: number
 }
 
-export type BackupRunner = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string }>
+export type BackupRunner = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string; timedOut?: boolean }>
 
 export interface BackupServiceOptions {
   files: FileService
   now?: () => Date
   runner?: BackupRunner
   logger?: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
+  /** 测试注入可用空间（字节）；返回 null 时走真实 statfs。 */
+  freeBytes?: () => number | null
 }
 
 export interface BackupActor {
@@ -147,6 +165,10 @@ export interface BackupListResult {
     lastError: string | null
     dataDirFreeBytes: number
   }
+  /** 世界备份/拉取/演练只读状态（文件缺失为 null）；不含密钥与服务器路径。 */
+  world: StatusFileRecord | null
+  worldPull: StatusFileRecord | null
+  drill: StatusFileRecord | null
 }
 
 export interface ImportResult {
@@ -166,6 +188,8 @@ export interface RestorePlanItem {
   expiresAt: string
   completedAt: string | null
   error: string | null
+  /** 因归档 manifest 标记缺失而被跳过的文件 id；恢复仍会继续进行。 */
+  skippedMissing: string[]
 }
 
 export interface RestoreResult {
@@ -174,6 +198,8 @@ export interface RestoreResult {
   filesRestored: number
   bytesRestored: number
   durationMs: number
+  /** 归档中缺少内容、本次未恢复的文件 id。 */
+  skippedMissing: string[]
 }
 
 export interface ArchiveEntryItem {
@@ -200,6 +226,7 @@ interface SelectionJson {
   paths: string[]
   fileCount: number
   totalBytes: number
+  skippedMissing?: string[]
 }
 
 interface SnapshotRow {
@@ -210,6 +237,8 @@ interface SnapshotRow {
   size: number
   sha256: string | null
   mime: string | null
+  /** 快照可能来自 v0.3（无 origin 列），读取时按 user 处理。 */
+  origin: string | null
 }
 
 interface SnapshotIndex {
@@ -284,6 +313,23 @@ function formatLimit(bytes: number): string {
   return `${Math.max(1, Math.floor(bytes / 1024))} KB`
 }
 
+/** 归档来源归类：legacy 行视为 Pi（升级前默认 origin=pi），导入归档单独成链。 */
+function archiveOrigin(row: Pick<ArchiveRow, 'origin'>): 'pi' | 'import' {
+  return row.origin === 'import' ? 'import' : 'pi'
+}
+
+/** 从 manifest_json 中提取 skippedMissing（旧归档没有该字段时返回空）。 */
+function manifestSkippedMissing(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const parsed = asRecord(JSON.parse(raw))
+    const value = parsed.skippedMissing
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 export class BackupService {
   private readonly db: DatabaseSync
   private readonly config: Required<BackupServiceConfig>
@@ -291,6 +337,7 @@ export class BackupService {
   private readonly clock: () => Date
   private readonly runner: BackupRunner
   private readonly log: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
+  private readonly freeBytesOverride: (() => number | null) | null
   private prepareRunning = false
   private restoreRunning = false
 
@@ -299,6 +346,7 @@ export class BackupService {
     this.files = options.files
     this.clock = options.now ?? (() => new Date())
     this.log = options.logger ?? (() => {})
+    this.freeBytesOverride = options.freeBytes ?? null
     this.config = {
       dataDir: config.dataDir,
       quotaBytes: config.quotaBytes,
@@ -308,7 +356,13 @@ export class BackupService {
       backupRestorePlanTtlMinutes: config.backupRestorePlanTtlMinutes ?? 30,
       backupRestoreMaxEntries: config.backupRestoreMaxEntries ?? MAX_RESTORE_FILES,
       backupRestoreEnabled: config.backupRestoreEnabled ?? true,
-      backupPrepareTimeoutMs: config.backupPrepareTimeoutMs ?? PREPARE_TIMEOUT_MS,
+      backupPrepareTimeoutMs:
+        config.backupPrepareTimeoutMs ?? Math.max(1, config.backupPrepareTimeoutSec ?? PREPARE_TIMEOUT_MS / 1000) * 1000,
+      backupPrepareTimeoutSec: config.backupPrepareTimeoutSec ?? PREPARE_TIMEOUT_MS / 1000,
+      worldBackupStatusFile: config.worldBackupStatusFile ?? join(config.dataDir, 'world-backup-status.json'),
+      worldPullStatusFile: config.worldPullStatusFile ?? join(config.dataDir, 'world-pull-status.json'),
+      drillStatusFile: config.drillStatusFile ?? join(config.dataDir, 'drill-status.json'),
+      backupSnapshotMaxRows: Math.max(1, config.backupSnapshotMaxRows ?? MAX_SNAPSHOT_ROWS),
     }
     this.runner = options.runner ?? this.defaultRunner()
   }
@@ -411,11 +465,79 @@ export class BackupService {
   }
 
   private freeBytes(): number {
+    const override = this.freeBytesOverride?.()
+    if (typeof override === 'number' && Number.isFinite(override)) return Math.max(0, override)
     try {
       const stats = statfsSync(this.config.dataDir)
       return Number(stats.bavail) * Number(stats.bsize)
     } catch {
       return 0
+    }
+  }
+
+  /** 当前 staging 目录总占用（字节）；目录不存在/不可读按 0。 */
+  private stagingBytes(): number {
+    let total = 0
+    const walk = (dir: string): void => {
+      let entries
+      try {
+        entries = readdirSync(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        const full = join(dir, entry.name)
+        try {
+          if (entry.isDirectory()) walk(full)
+          else if (entry.isFile()) total += statSync(full).size
+        } catch {
+          // 单条目统计失败忽略。
+        }
+      }
+    }
+    walk(this.stagingRoot)
+    return total
+  }
+
+  /** 清理 staging 下超过 TTL 的异常残留目录（崩溃/异常中断）。 */
+  private cleanupStaleStaging(): void {
+    let entries
+    try {
+      entries = readdirSync(this.stagingRoot, { withFileTypes: true })
+    } catch {
+      return
+    }
+    const now = this.clock().getTime()
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const full = join(this.stagingRoot, entry.name)
+      try {
+        if (now - statSync(full).mtimeMs > STAGING_TTL_MS) rmSync(full, { recursive: true, force: true })
+      } catch {
+        // 清理失败不影响后续流程。
+      }
+    }
+  }
+
+  /**
+   * staging 空间预检：同时受总量上限（2 GiB）与可用空间 20% 约束，
+   * 不足返回 507，避免解包归档把系统盘写满。
+   */
+  private assertStagingCapacity(neededBytes: number): void {
+    this.cleanupStaleStaging()
+    const free = this.freeBytes()
+    if (free === 0) {
+      // 无法读取可用空间（异常环境/测试）：不允许会解包的操作，只读操作继续。
+      if (neededBytes > 0) throw new AppError(507, 'insufficient_storage', '无法读取磁盘空间，已拒绝解包归档')
+      return
+    }
+    if (neededBytes > 0 && free < neededBytes + RESERVED_FREE_BYTES) {
+      throw new AppError(507, 'insufficient_storage', '磁盘空间不足，无法解包归档')
+    }
+    const cap = Math.min(MAX_STAGING_BYTES, Math.floor(free * STAGING_FREE_RATIO))
+    const used = this.stagingBytes()
+    if (neededBytes > cap || used + neededBytes > cap) {
+      throw new AppError(507, 'insufficient_storage', '备份解包临时空间不足，请清理后重试')
     }
   }
 
@@ -464,6 +586,9 @@ export class BackupService {
         lastError,
         dataDirFreeBytes: this.freeBytes(),
       },
+      world: readStatusFile(this.config.worldBackupStatusFile),
+      worldPull: readStatusFile(this.config.worldPullStatusFile),
+      drill: readStatusFile(this.config.drillStatusFile),
     }
   }
 
@@ -489,21 +614,71 @@ export class BackupService {
         })
         return { code: 0, stdout: result.stdout, stderr: result.stderr }
       } catch (error) {
-        const record = error as { code?: number; stdout?: string; stderr?: string; message?: string }
+        const record = error as { code?: number; stdout?: string; stderr?: string; message?: string; killed?: boolean; signal?: string }
         return {
           code: typeof record.code === 'number' ? record.code : 1,
           stdout: record.stdout ?? '',
           stderr: record.stderr ?? record.message ?? '备份脚本执行失败',
+          timedOut: record.killed === true || record.signal === 'SIGTERM',
         }
       }
     }
   }
 
-  async prepare(actor: BackupActor, options: { full?: boolean } = {}): Promise<{ ok: true; mode: 'full' | 'inc'; archiveName: string; sizeBytes: number; sha256: string; fileCount: number }> {
-    if (this.prepareRunning) throw conflict('已有备份生成任务在执行', 'backup_busy')
-    if (existsSync(join(this.backupsDir, '.backup.lock'))) {
-      throw conflict('备份 CLI 正在运行（锁文件存在）', 'backup_busy')
+  /** 超时/失败后的清理：只清理本次运行产生的锁与 .part 残片，避免误删其它进程的锁。 */
+  private cleanupPrepareArtifacts(startedAt: number): void {
+    const lockPath = join(this.backupsDir, '.backup.lock')
+    try {
+      if (existsSync(lockPath) && statSync(lockPath).mtimeMs >= startedAt - 5_000) {
+        rmSync(lockPath, { force: true })
+        this.log('warn', '备份生成超时/失败，已清理本次遗留的锁文件')
+      }
+    } catch {
+      // 清理失败由后续人工处理。
     }
+    let names: string[]
+    try {
+      names = readdirSync(this.backupsDir)
+    } catch {
+      names = []
+    }
+    for (const name of names) {
+      if (!name.endsWith('.part')) continue
+      const full = join(this.backupsDir, name)
+      try {
+        if (statSync(full).mtimeMs >= startedAt - 5_000) rmSync(full, { force: true })
+      } catch {
+        // 忽略单个残片清理失败。
+      }
+    }
+  }
+
+  /** 锁状态：fresh=其它进程正在运行；stale=超过 1 小时可接管。 */
+  private lockState(): 'none' | 'fresh' | 'stale' {
+    const lockPath = join(this.backupsDir, '.backup.lock')
+    try {
+      if (!existsSync(lockPath)) return 'none'
+      return Date.now() - statSync(lockPath).mtimeMs > 60 * 60 * 1000 ? 'stale' : 'fresh'
+    } catch {
+      return 'none'
+    }
+  }
+
+  async prepare(actor: BackupActor, options: { full?: boolean } = {}): Promise<{
+    ok: true
+    mode: 'full' | 'inc'
+    archiveName: string
+    sizeBytes: number
+    sha256: string
+    fileCount: number
+    warnings: string[]
+    skippedMissing: string[]
+  }> {
+    if (this.prepareRunning) throw conflict('已有备份生成任务在执行', 'backup_busy')
+    const lock = this.lockState()
+    if (lock === 'fresh') throw conflict('备份 CLI 正在运行（锁文件存在）', 'backup_busy')
+    if (lock === 'stale') this.log('warn', '发现陈旧的备份锁文件（>1h），交给 CLI 按同样的陈旧规则接管')
+    const startedAt = Date.now()
     this.prepareRunning = true
     try {
       this.ensureLayout()
@@ -517,14 +692,39 @@ export class BackupService {
       } catch {
         parsed = null
       }
+      if (result.timedOut === true) {
+        this.cleanupPrepareArtifacts(startedAt)
+        throw new AppError(500, 'backup_prepare_timeout', '备份生成超时，已清理临时文件；请确认磁盘/系统负载后重试')
+      }
       if (result.code !== 0 || !parsed || parsed.ok !== true) {
+        this.cleanupPrepareArtifacts(startedAt)
         const message = sanitizeMessage(String(parsed?.error ?? result.stderr ?? '备份脚本执行失败'), this.config.dataDir)
         throw new AppError(502, 'backup_prepare_failed', `生成备份失败：${message}`)
       }
       const archiveName = validArchiveName(parsed.archiveName)
       const mode: 'full' | 'inc' = parsed.mode === 'full' ? 'full' : 'inc'
-      const item = { ok: true as const, mode, archiveName, sizeBytes: Number(parsed.sizeBytes ?? 0), sha256: String(parsed.sha256 ?? ''), fileCount: Number(parsed.fileCount ?? 0) }
-      audit(this.db, actor.username, 'backup_prepare', archiveName, { mode, sizeBytes: item.sizeBytes, fileCount: item.fileCount }, actor.ip)
+      const warnings = Array.isArray(parsed.warnings)
+        ? parsed.warnings.filter((value): value is string => typeof value === 'string').slice(0, 20)
+        : []
+      const skippedMissing = Array.isArray(parsed.skippedMissing)
+        ? parsed.skippedMissing.filter((value): value is string => typeof value === 'string')
+        : []
+      const item = {
+        ok: true as const,
+        mode,
+        archiveName,
+        sizeBytes: Number(parsed.sizeBytes ?? 0),
+        sha256: String(parsed.sha256 ?? ''),
+        fileCount: Number(parsed.fileCount ?? 0),
+        warnings,
+        skippedMissing,
+      }
+      audit(this.db, actor.username, 'backup_prepare', archiveName, {
+        mode,
+        sizeBytes: item.sizeBytes,
+        fileCount: item.fileCount,
+        skippedMissing: skippedMissing.length,
+      }, actor.ip)
       return item
     } finally {
       this.prepareRunning = false
@@ -693,6 +893,7 @@ export class BackupService {
       if (DB_ENTRY_PATTERN.test(header.path)) {
         count += 1
         if (count > 1) throw unsafeArchive('归档包含多个数据库快照')
+        if (header.size > MAX_SNAPSHOT_DB_BYTES) throw invalidArchive('归档内数据库快照过大')
         return { kind: 'extract', dest: target }
       }
       return { kind: 'skip' }
@@ -709,8 +910,20 @@ export class BackupService {
         | { name: string }
         | undefined
       if (!table) throw invalidArchive('数据库快照缺少 files 表')
+      // 先计数再读行：恶意/异常快照可能在恢复前把内存打满。
+      const total = (db.prepare('SELECT COUNT(*) AS c FROM files').get() as { c: number }).c
+      if (Number(total) > this.config.backupSnapshotMaxRows) {
+        throw invalidArchive('数据库快照行数超出上限', {
+          rows: Number(total),
+          maxRows: this.config.backupSnapshotMaxRows,
+        })
+      }
+      const columns = (db.prepare('PRAGMA table_info(files)').all() as unknown as { name: string }[]).map(
+        (column) => column.name,
+      )
+      const originColumn = columns.includes('origin') ? 'origin' : 'NULL AS origin'
       const rows = db
-        .prepare("SELECT id, parent_id, name, kind, size, sha256, mime FROM files WHERE deleted_at IS NULL")
+        .prepare(`SELECT id, parent_id, name, kind, size, sha256, mime, ${originColumn} FROM files WHERE deleted_at IS NULL`)
         .all() as unknown as SnapshotRow[]
       return this.buildSnapshotIndex(rows)
     } finally {
@@ -721,7 +934,9 @@ export class BackupService {
   private buildSnapshotIndex(rows: SnapshotRow[]): SnapshotIndex {
     const byId = new Map<string, SnapshotRow>()
     const childrenOf = new Map<string | null, SnapshotRow[]>()
-    for (const row of rows) {
+    // 普通文件树只包含 origin='user' 行：笔记附件/系统保留不随归档恢复进用户目录。
+    const visibleRows = rows.filter((row) => (row.origin ?? 'user') === 'user')
+    for (const row of visibleRows) {
       byId.set(row.id, row)
       const list = childrenOf.get(row.parent_id) ?? []
       list.push(row)
@@ -737,7 +952,7 @@ export class BackupService {
       }
     }
     walk(null, '', 0)
-    return { rows: rows.filter((row) => pathOf.has(row.id)), byId, pathOf, childrenOf }
+    return { rows: visibleRows.filter((row) => pathOf.has(row.id)), byId, pathOf, childrenOf }
   }
 
   private resolveSelection(index: SnapshotIndex, paths: string[]): { selected: Set<string>; files: SnapshotRow[]; totalBytes: number; notFound: string[] } {
@@ -792,8 +1007,10 @@ export class BackupService {
     }
   }
 
-  private async stagingScope<T>(fn: (dir: string) => Promise<T>): Promise<T> {
+  private async stagingScope<T>(fn: (dir: string) => Promise<T>, neededBytes = 0): Promise<T> {
     this.ensureLayout()
+    // 解包前先做空间预检（总量上限 + 可用空间比例），不足返回 507。
+    this.assertStagingCapacity(neededBytes)
     const dir = join(this.stagingRoot, randomToken(12))
     mkdirSync(dir, { recursive: true, mode: 0o700 })
     try {
@@ -804,7 +1021,9 @@ export class BackupService {
   }
 
   private resolveChain(target: ArchiveRow): ArchiveRow[] {
-    const rows = this.allRows()
+    // 只在与目标同来源（Pi / Web 导入）的归档集内解析链：跨来源拼链会得到错误的父子关系。
+    const targetOrigin = archiveOrigin(target)
+    const rows = this.allRows().filter((row) => archiveOrigin(row) === targetOrigin)
     const sorted = rows.slice().sort((a, b) => {
       const left = this.effectiveCreatedAt(a)
       const right = this.effectiveCreatedAt(b)
@@ -863,6 +1082,7 @@ export class BackupService {
       expiresAt: row.expires_at,
       completedAt: row.completed_at,
       error: row.error,
+      skippedMissing: Array.isArray(selection.skippedMissing) ? selection.skippedMissing : [],
     }
   }
 
@@ -888,7 +1108,20 @@ export class BackupService {
     if (selection.notFound.length > 0) {
       throw badRequest('部分路径在归档中不存在', 'invalid_selection')
     }
-    if (selection.files.length === 0) throw badRequest('选择内容为空', 'invalid_selection')
+    // 归档 manifest 标记为缺失的文件内容不可用：从选择中剔除并明确报告，而不是整体失败。
+    const missingContent = new Set(chain.flatMap((row) => manifestSkippedMissing(row.manifest_json)))
+    const skippedMissing = selection.files.filter((file) => missingContent.has(file.id)).map((file) => file.id)
+    if (skippedMissing.length > 0) {
+      const skippedSet = new Set(skippedMissing)
+      selection.files = selection.files.filter((file) => !skippedSet.has(file.id))
+      for (const id of skippedMissing) selection.selected.delete(id)
+      selection.totalBytes = selection.files.reduce((sum, row) => sum + Number(row.size), 0)
+    }
+    if (selection.files.length === 0) {
+      throw new AppError(400, 'invalid_selection', '所选文件在归档中缺失，无法恢复', {
+        skippedMissing: skippedMissing.slice(0, 200),
+      })
+    }
     if (selection.files.length > this.config.backupRestoreMaxEntries) {
       throw badRequest(`单次最多恢复 ${this.config.backupRestoreMaxEntries} 个文件`, 'restore_too_many_files')
     }
@@ -896,8 +1129,10 @@ export class BackupService {
     if (usage.usedBytes + selection.totalBytes > this.config.quotaBytes) {
       throw conflict('剩余配额不足以恢复所选文件', 'quota_exceeded')
     }
-    if (this.freeBytes() < selection.totalBytes + RESERVED_FREE_BYTES) {
-      throw conflict('磁盘剩余空间不足', 'insufficient_storage')
+    // 解包与落盘都会额外占用空间（contentDir + 最终文件），按选择字节 ×2 预检。
+    const requiredBytes = selection.totalBytes * 2 + RESERVED_FREE_BYTES
+    if (this.freeBytes() < requiredBytes) {
+      throw new AppError(507, 'insufficient_storage', '磁盘剩余空间不足，无法完成恢复')
     }
     const now = this.clock()
     const plan: PlanRow = {
@@ -907,6 +1142,7 @@ export class BackupService {
         paths,
         fileCount: selection.files.length,
         totalBytes: selection.totalBytes,
+        skippedMissing,
       } satisfies SelectionJson),
       target_name: targetName,
       status: 'planned',
@@ -928,6 +1164,7 @@ export class BackupService {
       paths,
       fileCount: selection.files.length,
       totalBytes: selection.totalBytes,
+      skippedMissing: skippedMissing.length,
       targetName,
     }, actor.ip)
     return this.toPlanItem(plan)
@@ -1024,12 +1261,30 @@ export class BackupService {
           if (usage.usedBytes + resolved.totalBytes > this.config.quotaBytes) {
             throw conflict('剩余配额不足以恢复所选文件', 'quota_exceeded')
           }
-          if (this.freeBytes() < resolved.totalBytes + RESERVED_FREE_BYTES) {
-            throw conflict('磁盘剩余空间不足', 'insufficient_storage')
+          if (this.freeBytes() < resolved.totalBytes * 2 + RESERVED_FREE_BYTES) {
+            throw new AppError(507, 'insufficient_storage', '磁盘剩余空间不足，无法完成恢复')
           }
           const contentDir = join(staging, 'content')
           mkdirSync(contentDir, { recursive: true, mode: 0o700 })
-          const extracted = await this.extractContents(chain, resolved.files.map((row) => row.id), contentDir)
+          const { extracted, missing } = await this.extractContents(
+            chain,
+            resolved.files.map((row) => row.id),
+            contentDir,
+          )
+          // 归档 manifest 记录/实际内容缺失的文件：跳过并从选择中剔除，其余内容继续恢复。
+          const missingContent = new Set([...missing, ...chain.flatMap((row) => manifestSkippedMissing(row.manifest_json))])
+          const availableFiles = resolved.files.filter((file) => !missingContent.has(file.id) && extracted.has(file.id))
+          if (availableFiles.length === 0) {
+            throw new AppError(422, 'invalid_archive', '归档缺少所选文件的全部内容', {
+              skippedMissing: resolved.files.map((file) => file.id).slice(0, 200),
+            })
+          }
+          const availableIds = new Set(availableFiles.map((file) => file.id))
+          const selectedAvailable = new Set([...resolved.selected].filter((id) => {
+            const row = snapshot.byId.get(id)
+            return !row || row.kind === 'dir' || availableIds.has(id)
+          }))
+          const skippedMissing = resolved.files.filter((file) => !availableFiles.includes(file)).map((file) => file.id)
           const createdFiles: string[] = []
           const createdFolders: string[] = []
           const target = this.files.createFolder(
@@ -1039,18 +1294,27 @@ export class BackupService {
           )
           createdFolders.push(target.id)
           try {
-            await this.restoreTree(snapshot, resolved.selected, extracted, target, createdFiles, createdFolders, actor)
+            await this.restoreTree(
+              snapshot,
+              selectedAvailable,
+              new Map([...extracted].filter(([id]) => availableIds.has(id))),
+              target,
+              createdFiles,
+              createdFolders,
+              actor,
+            )
           } catch (error) {
             this.cleanupCreated(createdFiles, createdFolders)
             throw error
           }
-          const bytesRestored = resolved.files.reduce((sum, row) => sum + Number(row.size), 0)
+          const bytesRestored = availableFiles.reduce((sum, row) => sum + Number(row.size), 0)
           return {
             targetFolderId: target.id,
             targetName: target.name,
-            filesRestored: resolved.files.length,
+            filesRestored: availableFiles.length,
             bytesRestored,
             durationMs: Date.now() - started,
+            skippedMissing,
           } satisfies RestoreResult
         })
         const completedAt = this.clock().toISOString()
@@ -1062,6 +1326,7 @@ export class BackupService {
           archives: JSON.parse(plan.archives_json) as string[],
           files: result.filesRestored,
           bytes: result.bytesRestored,
+          skippedMissing: result.skippedMissing.length,
           targetFolderId: result.targetFolderId,
           durationMs: result.durationMs,
         }, actor.ip)
@@ -1089,7 +1354,7 @@ export class BackupService {
     return `${desired} ${randomToken(2)}`
   }
 
-  private async extractContents(chain: ArchiveRow[], neededIds: string[], contentDir: string): Promise<Map<string, string>> {
+  private async extractContents(chain: ArchiveRow[], neededIds: string[], contentDir: string): Promise<{ extracted: Map<string, string>; missing: string[] }> {
     const needed = new Set(neededIds)
     const extracted = new Map<string, string>()
     for (const row of chain.slice().reverse()) {
@@ -1106,8 +1371,7 @@ export class BackupService {
       })
     }
     const missing = neededIds.filter((id) => !extracted.has(id))
-    if (missing.length > 0) throw invalidArchive('归档链缺少所选文件内容', { missing: missing.length })
-    return extracted
+    return { extracted, missing }
   }
 
   /**
@@ -1195,7 +1459,18 @@ export class BackupService {
     this.assertRestoreEnabled()
     const row = this.rowByName(name)
     if (!row.verified_at) throw conflict('归档尚未校验，无法浏览', 'archive_not_verified')
-    if (!existsSync(this.storedPath(row))) throw notFound('归档文件不存在', 'archive_missing')
+    const archivePath = this.storedPath(row)
+    if (!existsSync(archivePath)) throw notFound('归档文件不存在', 'archive_missing')
+    // 基于归档实际文件大小做磁盘预检（不信任归档内 manifest 的元数据）。
+    let archiveBytes: number
+    try {
+      archiveBytes = statSync(archivePath).size
+    } catch {
+      throw notFound('归档文件不存在', 'archive_missing')
+    }
+    if (archiveBytes > 0 && this.freeBytes() > 0 && this.freeBytes() < archiveBytes + RESERVED_FREE_BYTES) {
+      throw new AppError(507, 'insufficient_storage', '磁盘空间不足，无法解包归档')
+    }
     const rawPath = typeof path === 'string' && path.trim() ? path.trim() : '/'
     const normalized = normalizeSelectionPaths([rawPath])[0]!
     return this.stagingScope(async (dir) => {
@@ -1214,7 +1489,7 @@ export class BackupService {
         size: Number(child.size),
       }))
       return { path: normalized, items, truncated }
-    })
+    }, archiveBytes)
   }
 
   getRestorePlan(planId: string): RestorePlanItem {

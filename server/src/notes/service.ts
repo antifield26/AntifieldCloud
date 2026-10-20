@@ -1,5 +1,5 @@
 /**
- * 笔记与书签领域服务：CRUD、标签、置顶、FTS5 全文搜索、分页。
+ * 笔记与书签领域服务：CRUD、标签、置顶、FTS5 全文搜索、分页、附件与版本历史。
  *
  * 安全边界：
  * - 标题/正文/标签/描述只做长度与类型校验，原样入库；转义由前端负责（API 只输出 JSON）。
@@ -7,12 +7,16 @@
  * - FTS5 查询只把提取出的字母/数字/汉字词元包成短语后参数化传入 MATCH；
  *   MATCH 语法异常或查询含中文（unicode61 分词对中文按整段成词）时回退 LIKE。
  * - 标签数量/长度受限，标签名大小写不敏感复用（tags.name 为 COLLATE NOCASE）。
+ * - 附件经 FileService 以 origin='note' 落库并计入总配额：不出现在普通文件列表/搜索/回收站，
+ *   只能通过笔记接口管理；删除笔记时硬删除附件行与物理文件。内容访问走鉴权的文件内容路由。
+ * - 版本快照在标题/正文/标签变化时写入；恢复版本前先快照当前内容，跨笔记的 versionId 一律 404。
  */
 import type { DatabaseSync } from 'node:sqlite'
-import type { Actor } from '../files/service.ts'
+import type { Config } from '../config.ts'
+import type { Actor, FileService } from '../files/service.ts'
 import { audit } from '../auth/audit.ts'
 import { transaction } from '../db.ts'
-import { badRequest, notFound } from '../util/errors.ts'
+import { AppError, badRequest, notFound, tooLarge } from '../util/errors.ts'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
 
@@ -24,6 +28,10 @@ export const MAX_BOOKMARK_URL_LENGTH = 2048
 export const MAX_DESCRIPTION_LENGTH = 2000
 export const DEFAULT_PAGE_SIZE = 20
 export const MAX_PAGE_SIZE = 100
+/** 单次笔记附件上传的文件数上限（与 docs/API.md §13 一致）。 */
+export const MAX_ATTACHMENTS_PER_REQUEST = 5
+/** 版本列表分页上限。 */
+export const MAX_VERSION_PAGE_SIZE = 100
 
 type SqlParam = string | number | bigint | null | Uint8Array
 
@@ -59,6 +67,46 @@ export interface NoteItem {
   pinned: boolean
   createdAt: string
   updatedAt: string
+  /** 附件元数据（不含物理路径）；内容通过 url 走鉴权文件路由。 */
+  attachments: NoteAttachmentItem[]
+}
+
+/** 笔记附件：fileId 即 /api/files/:id/content 的 id。 */
+export interface NoteAttachmentItem {
+  fileId: string
+  name: string
+  size: number
+  mime: string | null
+  url: string
+}
+
+/** 服务层接收的已完成落盘临时文件（由路由流式计算大小/SHA 后传入）。 */
+export interface NoteAttachmentUpload {
+  rawName: string
+  tempPath: string
+  size: number
+  sha256: string
+  /** 当前请求已为该文件预留的配额字节。 */
+  reservedBytes?: number
+}
+
+export interface NoteVersionSummary {
+  id: string
+  title: string
+  createdAt: string
+}
+
+export interface NoteVersionItem extends NoteVersionSummary {
+  noteId: string
+  bodyMd: string
+  tags: string[]
+}
+
+export interface NoteServiceOptions {
+  /** 附件依赖；未注入时附件接口返回 500（笔记 CRUD 仍可用）。 */
+  files?: FileService
+  config?: Config
+  log?: { warn(obj: Record<string, unknown>, message: string): void }
 }
 
 export interface BookmarkItem {
@@ -282,7 +330,7 @@ function tagsFor(
   return out
 }
 
-function toNoteItem(row: NoteRow, tags: string[]): NoteItem {
+function toNoteItem(row: NoteRow, tags: string[], attachments: NoteAttachmentItem[] = []): NoteItem {
   return {
     id: row.id,
     title: row.title,
@@ -291,6 +339,7 @@ function toNoteItem(row: NoteRow, tags: string[]): NoteItem {
     pinned: row.pinned === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    attachments,
   }
 }
 
@@ -312,13 +361,60 @@ function changedFields(input: object): string[] {
   return Object.keys(record).filter((key) => record[key] !== undefined)
 }
 
+/** 标签集合语义比较（大小写不敏感、忽略顺序）；用于判断是否需要写版本快照。 */
+export function sameTags(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false
+  const normalize = (tags: string[]): string[] => tags.map((tag) => tag.toLowerCase()).sort()
+  const a = normalize(left)
+  const b = normalize(right)
+  return a.every((tag, index) => tag === b[index])
+}
+
 // ---------- 笔记 ----------
+
+interface NoteVersionRow {
+  id: string
+  note_id: string
+  title: string
+  body_md: string
+  tags_json: string
+  actor: string
+  created_at: string
+}
+
+interface NoteAttachmentRow {
+  note_id: string
+  file_id: string
+  name: string
+  size: number
+  mime: string | null
+}
+
+function attachmentUrl(fileId: string): string {
+  return `/api/files/${fileId}/content?inline=1`
+}
+
+function parseStoredTags(raw: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((tag): tag is string => typeof tag === 'string')
+  } catch {
+    return []
+  }
+}
 
 export class NoteService {
   private readonly db: DatabaseSync
+  private readonly files: FileService | null
+  private readonly config: Config | null
+  private readonly log: NoteServiceOptions['log'] | null
 
-  constructor(db: DatabaseSync) {
+  constructor(db: DatabaseSync, options: NoteServiceOptions = {}) {
     this.db = db
+    this.files = options.files ?? null
+    this.config = options.config ?? null
+    this.log = options.log ?? null
   }
 
   private row(id: string): NoteRow {
@@ -331,9 +427,36 @@ export class NoteService {
     return tagsFor(this.db, 'note_tags', 'note_id', ids)
   }
 
+  /** 批量读取附件，避免列表接口 N+1 查询；已删除的附件行不展示。 */
+  private attachmentsOf(noteIds: string[]): Map<string, NoteAttachmentItem[]> {
+    const out = new Map<string, NoteAttachmentItem[]>()
+    if (noteIds.length === 0) return out
+    const placeholders = noteIds.map(() => '?').join(', ')
+    const rows = this.db
+      .prepare(
+        `SELECT a.note_id AS note_id, f.id AS file_id, f.name AS name, f.size AS size, f.mime AS mime
+         FROM note_attachments a JOIN files f ON f.id = a.file_id
+         WHERE a.note_id IN (${placeholders}) AND f.deleted_at IS NULL AND f.origin = 'note'
+         ORDER BY a.created_at ASC, f.rowid ASC`,
+      )
+      .all(...noteIds) as unknown as NoteAttachmentRow[]
+    for (const row of rows) {
+      const list = out.get(row.note_id) ?? []
+      list.push({
+        fileId: row.file_id,
+        name: row.name,
+        size: Number(row.size),
+        mime: row.mime,
+        url: attachmentUrl(row.file_id),
+      })
+      out.set(row.note_id, list)
+    }
+    return out
+  }
+
   get(id: string): NoteItem {
     const row = this.row(id)
-    return toNoteItem(row, this.tagsOf([row.id]).get(row.id) ?? [])
+    return toNoteItem(row, this.tagsOf([row.id]).get(row.id) ?? [], this.attachmentsOf([row.id]).get(row.id) ?? [])
   }
 
   private filters(query: ListQuery): Condition {
@@ -419,7 +542,13 @@ export class NoteService {
         .all(...filter.params, pageSize, offset) as unknown as NoteRow[]
     }
     const tags = this.tagsOf(rows.map((row) => row.id))
-    return { items: rows.map((row) => toNoteItem(row, tags.get(row.id) ?? [])), page, pageSize, total }
+    const attachments = this.attachmentsOf(rows.map((row) => row.id))
+    return {
+      items: rows.map((row) => toNoteItem(row, tags.get(row.id) ?? [], attachments.get(row.id) ?? [])),
+      page,
+      pageSize,
+      total,
+    }
   }
 
   create(actor: Actor, input: CreateNoteInput): NoteItem {
@@ -450,18 +579,27 @@ export class NoteService {
       sets.push('title = ?')
       params.push(title)
     }
+    let bodyMd = row.body_md
     if (input.bodyMd !== undefined) {
+      bodyMd = validateBody(input.bodyMd)
       sets.push('body_md = ?')
-      params.push(validateBody(input.bodyMd))
+      params.push(bodyMd)
     }
     if (input.pinned !== undefined) {
       sets.push('pinned = ?')
       params.push(parsePinned(input.pinned) ? 1 : 0)
     }
+    const currentTags = this.tagsOf([id]).get(id) ?? []
     const tags = input.tags === undefined ? null : normalizeTags(input.tags)
     if (sets.length === 0 && tags === null) throw badRequest('至少提供一个修改字段', 'invalid_request')
     const now = nowIso()
+    // 只有标题/正文/标签实际变化才保留旧版本；仅改置顶不产生版本。
+    const contentChanged =
+      (input.title !== undefined && title !== row.title) ||
+      (input.bodyMd !== undefined && bodyMd !== row.body_md) ||
+      (tags !== null && !sameTags(tags, currentTags))
     transaction(this.db, () => {
+      if (contentChanged) this.insertVersion(row, currentTags, actor, now)
       this.db.prepare('UPDATE notes SET updated_at = ? WHERE id = ?').run(now, id)
       if (sets.length > 0) {
         this.db.prepare(`UPDATE notes SET ${sets.join(', ')} WHERE id = ?`).run(...params, id)
@@ -474,12 +612,252 @@ export class NoteService {
 
   remove(actor: Actor, id: string): { ok: true; id: string } {
     const row = this.row(id)
+    const fileIds = (
+      this.db.prepare('SELECT file_id FROM note_attachments WHERE note_id = ?').all(id) as unknown as {
+        file_id: string
+      }[]
+    ).map((item) => item.file_id)
     transaction(this.db, () => {
+      // 级联删除 note_tags/note_attachments/note_versions；随后硬删除附件文件行。
       this.db.prepare('DELETE FROM notes WHERE id = ?').run(id)
       cleanupOrphanTags(this.db)
     })
-    audit(this.db, actor.username, 'note_delete', row.title, { id }, actor.ip)
+    if (fileIds.length > 0) {
+      if (this.files) {
+        try {
+          this.files.deleteFiles(actor, fileIds, {
+            auditAction: 'note_attachment_delete',
+            detail: { noteId: id, reason: 'note_delete' },
+          })
+        } catch (error) {
+          // 文件行删除失败不改变笔记删除结果（附件不可见且仍计入配额），留日志便于人工处理。
+          this.log?.warn({ err: error, noteId: id, count: fileIds.length }, '笔记删除后清理附件失败')
+        }
+      } else {
+        transaction(this.db, () => {
+          const placeholders = fileIds.map(() => '?').join(', ')
+          this.db.prepare(`DELETE FROM files WHERE id IN (${placeholders})`).run(...fileIds)
+        })
+      }
+    }
+    audit(this.db, actor.username, 'note_delete', row.title, { id, attachments: fileIds.length }, actor.ip)
     return { ok: true, id }
+  }
+
+  // ---------- 附件 ----------
+
+  private attachmentDeps(): { files: FileService; config: Config } {
+    if (!this.files || !this.config) {
+      throw new AppError(500, 'internal_error', '笔记附件功能未启用')
+    }
+    return { files: this.files, config: this.config }
+  }
+
+  listAttachments(noteId: string): { items: NoteAttachmentItem[] } {
+    this.row(noteId)
+    return { items: this.attachmentsOf([noteId]).get(noteId) ?? [] }
+  }
+
+  /**
+   * 登记附件：校验数量/单文件大小/每笔记上限后，用 FileService 以 origin='note' 落库（计入总配额）。
+   * 任一步失败回滚已登记的附件（含物理文件），避免留下无主配额占用。
+   * onRegistered(index) 在每个文件成功落库后回调，调用方可在此时释放该文件的配额预留
+   * （否则后续文件的配额校验会把已消费的预留当成他人占用而误报 409）。
+   */
+  async addAttachments(
+    actor: Actor,
+    noteId: string,
+    uploads: NoteAttachmentUpload[],
+    options: { onRegistered?: (index: number) => void } = {},
+  ): Promise<{ items: NoteAttachmentItem[] }> {
+    const { files, config } = this.attachmentDeps()
+    const note = this.row(noteId)
+    if (uploads.length === 0 || uploads.length > MAX_ATTACHMENTS_PER_REQUEST) {
+      throw badRequest(`每次上传 1–${MAX_ATTACHMENTS_PER_REQUEST} 个附件`, 'invalid_request')
+    }
+    const existing = (
+      this.db.prepare('SELECT COUNT(*) AS c FROM note_attachments WHERE note_id = ?').get(noteId) as { c: number }
+    ).c
+    if (Number(existing) + uploads.length > config.noteMaxAttachments) {
+      throw new AppError(400, 'too_many_attachments', `每篇笔记最多 ${config.noteMaxAttachments} 个附件`)
+    }
+    for (const upload of uploads) {
+      if (!Number.isFinite(upload.size) || upload.size < 0) throw badRequest('附件大小不合法', 'invalid_request')
+      if (upload.size > config.noteAttachmentMaxBytes) {
+        throw tooLarge(`单个附件不能超过 ${Math.floor(config.noteAttachmentMaxBytes / 1024 / 1024)} MiB`)
+      }
+    }
+    files.ensureFreeDiskSpace()
+    const created: string[] = []
+    const items: NoteAttachmentItem[] = []
+    try {
+      for (const [index, upload] of uploads.entries()) {
+        const file = await files.registerUpload(actor, {
+          parentId: null,
+          rawName: upload.rawName,
+          tempPath: upload.tempPath,
+          size: upload.size,
+          sha256: upload.sha256,
+          reservedBytes: upload.reservedBytes ?? 0,
+          origin: 'note',
+        })
+        created.push(file.id)
+        this.db
+          .prepare('INSERT INTO note_attachments (note_id, file_id, created_at) VALUES (?, ?, ?)')
+          .run(noteId, file.id, nowIso())
+        items.push({
+          fileId: file.id,
+          name: file.name,
+          size: file.size,
+          mime: file.mime,
+          url: attachmentUrl(file.id),
+        })
+        options.onRegistered?.(index)
+      }
+    } catch (error) {
+      if (created.length > 0) {
+        try {
+          files.deleteFiles(actor, created, {
+            auditAction: 'note_attachment_delete',
+            detail: { noteId, reason: 'rollback' },
+          })
+        } catch (cleanupError) {
+          this.log?.warn({ err: cleanupError, noteId }, '附件回滚失败')
+        }
+      }
+      throw error
+    }
+    audit(this.db, actor.username, 'note_attachment_add', note.title, {
+      noteId,
+      count: items.length,
+      bytes: items.reduce((sum, item) => sum + item.size, 0),
+    }, actor.ip)
+    return { items }
+  }
+
+  removeAttachment(actor: Actor, noteId: string, fileId: string): { ok: true } {
+    const { files } = this.attachmentDeps()
+    this.row(noteId)
+    const link = this.db
+      .prepare('SELECT file_id FROM note_attachments WHERE note_id = ? AND file_id = ?')
+      .get(noteId, fileId) as { file_id: string } | undefined
+    if (!link) throw notFound('附件不存在')
+    files.deleteFiles(actor, [fileId], {
+      auditAction: 'note_attachment_delete',
+      detail: { noteId, reason: 'manual' },
+    })
+    return { ok: true }
+  }
+
+  /**
+   * 维护对账：删除 origin='note' 但没有 note_attachments 关联的孤儿文件。
+   * 崩溃/删除中断可能留下不可见但仍占配额的文件行，由日常维护清理并告警留痕。
+   */
+  cleanupOrphanAttachments(): number {
+    if (!this.files) return 0
+    const rows = this.db
+      .prepare(
+        `SELECT id FROM files f WHERE f.origin = 'note'
+         AND NOT EXISTS (SELECT 1 FROM note_attachments a WHERE a.file_id = f.id)`,
+      )
+      .all() as unknown as { id: string }[]
+    if (rows.length === 0) return 0
+    const result = this.files.deleteFiles(
+      { username: 'system', ip: null },
+      rows.map((row) => row.id),
+      { auditAction: 'note_attachment_orphan_cleanup', detail: { reason: 'orphan' } },
+    )
+    this.log?.warn({ count: result.count, freedBytes: result.freedBytes }, '清理无关联的笔记附件孤儿文件')
+    return result.count
+  }
+
+  // ---------- 版本历史 ----------
+
+  private insertVersion(row: NoteRow, tags: string[], actor: Actor, createdAt: string): void {
+    this.db
+      .prepare(
+        'INSERT INTO note_versions (id, note_id, title, body_md, tags_json, actor, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      )
+      .run(newId(), row.id, row.title, row.body_md, JSON.stringify(tags), actor.username, createdAt)
+    this.pruneVersions(row.id)
+  }
+
+  /** 每篇笔记只保留最近 noteVersionsKeep 条；同一毫秒写入时按 rowid 稳定排序。 */
+  private pruneVersions(noteId: string): void {
+    const keep = this.config?.noteVersionsKeep ?? 20
+    this.db
+      .prepare(
+        `DELETE FROM note_versions WHERE note_id = ? AND id NOT IN (
+           SELECT id FROM note_versions WHERE note_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?
+         )`,
+      )
+      .run(noteId, noteId, keep)
+  }
+
+  listVersions(
+    noteId: string,
+    options: { limit?: number; offset?: number } = {},
+  ): { items: NoteVersionSummary[]; total: number; limit: number; offset: number } {
+    this.row(noteId)
+    const limit = Math.min(
+      MAX_VERSION_PAGE_SIZE,
+      Math.max(1, Number.isInteger(options.limit) ? (options.limit as number) : 20),
+    )
+    const offset = Math.max(0, Number.isInteger(options.offset) ? (options.offset as number) : 0)
+    const total = (
+      this.db.prepare('SELECT COUNT(*) AS c FROM note_versions WHERE note_id = ?').get(noteId) as { c: number }
+    ).c
+    const rows = this.db
+      .prepare(
+        'SELECT id, title, created_at FROM note_versions WHERE note_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?',
+      )
+      .all(noteId, limit, offset) as unknown as { id: string; title: string; created_at: string }[]
+    return {
+      items: rows.map((row) => ({ id: row.id, title: row.title, createdAt: row.created_at })),
+      total: Number(total),
+      limit,
+      offset,
+    }
+  }
+
+  getVersion(noteId: string, versionId: string): { version: NoteVersionItem } {
+    this.row(noteId)
+    const row = this.db
+      .prepare('SELECT * FROM note_versions WHERE id = ? AND note_id = ?')
+      .get(versionId, noteId) as unknown as NoteVersionRow | undefined
+    // 跨笔记的 versionId 与不存在一律 404，避免泄露其它笔记版本是否存在。
+    if (!row) throw notFound('版本不存在')
+    return {
+      version: {
+        id: row.id,
+        noteId: row.note_id,
+        title: row.title,
+        bodyMd: row.body_md,
+        tags: parseStoredTags(row.tags_json),
+        createdAt: row.created_at,
+      },
+    }
+  }
+
+  /** 恢复历史版本：先把当前内容快照入版本表，再写回标题/正文/标签（置顶状态不变）。 */
+  restoreVersion(actor: Actor, noteId: string, versionId: string): NoteItem {
+    const current = this.row(noteId)
+    const row = this.db
+      .prepare('SELECT * FROM note_versions WHERE id = ? AND note_id = ?')
+      .get(versionId, noteId) as unknown as NoteVersionRow | undefined
+    if (!row) throw notFound('版本不存在')
+    const now = nowIso()
+    const currentTags = this.tagsOf([noteId]).get(noteId) ?? []
+    const tags = parseStoredTags(row.tags_json)
+    transaction(this.db, () => {
+      this.insertVersion(current, currentTags, actor, now)
+      this.db
+        .prepare('UPDATE notes SET title = ?, body_md = ?, updated_at = ? WHERE id = ?')
+        .run(row.title, row.body_md, now, noteId)
+      replaceTags(this.db, 'note_tags', 'note_id', noteId, tags)
+    })
+    audit(this.db, actor.username, 'note_version_restore', row.title, { noteId, versionId, id: noteId }, actor.ip)
+    return this.get(noteId)
   }
 
   listTags(): { items: TagCount[] } {

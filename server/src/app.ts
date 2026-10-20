@@ -22,7 +22,9 @@ import { AlertService } from './alerts/service.ts'
 import { BackupService } from './backups/service.ts'
 import { UploadService } from './uploads/service.ts'
 import { OpenCodeProxy, normalizeHost } from './opencode/proxy.ts'
-import { purgeAudit } from './auth/audit.ts'
+import { MetricsService } from './metrics/service.ts'
+import { createMetricsSampler } from './metrics/sampler.ts'
+import { purgeAudit, audit } from './auth/audit.ts'
 import { readSessionToken } from './auth/cookies.ts'
 import { registerErrorHandler } from './http/errors.ts'
 import { registerAuthRoutes } from './http/routes/auth.ts'
@@ -34,6 +36,7 @@ import { registerShareRoutes } from './http/routes/shares.ts'
 import { registerAlertRoutes } from './http/routes/alerts.ts'
 import { registerBackupRoutes } from './http/routes/backups.ts'
 import { registerUploadRoutes } from './http/routes/uploads.ts'
+import { registerMetricsRoutes } from './http/routes/metrics.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -50,7 +53,10 @@ export interface AppContext {
   alerts: AlertService
   backups: BackupService
   uploads: UploadService
+  metrics: MetricsService
   proxy: OpenCodeProxy
+  /** listen 成功后启动指标采样（metricsEnabled=false 时空操作；重复调用幂等）。 */
+  startMetrics(): void
   runMaintenance(): void
 }
 
@@ -87,9 +93,24 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   const files = new FileService(db, config, app.log)
   const mc = new MinecraftService(db, config)
   const dashboard = new DashboardService(db, config, files, mc)
-  const notes = new NoteService(db)
+  const notes = new NoteService(db, {
+    files,
+    config,
+    log: {
+      warn: (obj, message) => app.log.warn(obj, message),
+    },
+  })
   const bookmarks = new BookmarkService(db)
   const shares = new ShareService(db, config)
+  const metrics = new MetricsService(db)
+  // 复用 DashboardService 的 HostMonitor 采集 CPU，避免两个采样器互相覆盖 CPU 基线。
+  const metricsSampler = createMetricsSampler({
+    config,
+    metrics,
+    host: { snapshot: () => dashboard.hostSnapshot() },
+    files,
+    log: (level, message, detail) => app.log[level](detail ?? {}, message),
+  })
   const alerts = new AlertService(db, config, {
     log: (level, message, detail) => {
       const payload = detail ? { detail } : {}
@@ -102,7 +123,9 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       return { online: status.online, error: status.error }
     },
   })
-  const proxy = new OpenCodeProxy(config, auth, app.log)
+  const proxy = new OpenCodeProxy(config, auth, app.log, {
+    audit: (action, target, detail, ip) => audit(db, 'anonymous', action, target, detail, ip),
+  })
   const backups = new BackupService(db, config, {
     files,
     logger: (level, message, detail) => {
@@ -210,11 +233,12 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerFileRoutes(app, config, files, (id) => shares.revokeForFileTree(id))
   registerMcRoutes(app, config, mc)
   registerDashboardRoutes(app, config, dashboard, db)
-  registerNoteRoutes(app, config, notes, bookmarks)
+  registerNoteRoutes(app, config, notes, bookmarks, files)
   registerShareRoutes(app, config, shares)
   registerAlertRoutes(app, config, alerts)
   registerBackupRoutes(app, config, backups)
   registerUploadRoutes(app, config, uploads)
+  registerMetricsRoutes(app, metrics)
 
   registerErrorHandler(app)
 
@@ -244,21 +268,54 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
 
   app.addHook('onClose', async () => {
     alerts.stop()
+    metricsSampler.stop()
     proxy.close()
   })
 
+  function startMetrics(): void {
+    if (!config.metricsEnabled) return
+    metricsSampler.start()
+  }
+
   function runMaintenance(): void {
-    try {
-      files.autoPurge(config.trashRetentionDays)
-      shares.cleanup()
-      backups.cleanup()
-      uploads.cleanupExpired()
-      auth.cleanup()
-      purgeAudit(db, config.auditRetentionDays)
-    } catch (error) {
-      app.log.error({ err: error }, '日常维护失败')
+    // 每个维护任务独立隔离：单个任务失败不能阻断其余清理（否则一个异常会长期堆积全部数据）。
+    const tasks: Array<[string, () => unknown]> = [
+      ['回收站清理', () => files.autoPurge(config.trashRetentionDays)],
+      ['分享清理', () => shares.cleanup()],
+      ['备份清理', () => backups.cleanup()],
+      ['分片上传过期清理', () => uploads.cleanupExpired()],
+      ['分片上传孤儿目录清理', () => uploads.cleanupOrphanSessions()],
+      ['笔记附件孤儿清理', () => notes.cleanupOrphanAttachments()],
+      ['指标保留清理', () => metrics.prune(config.metricsRetentionDays)],
+      ['认证数据清理', () => auth.cleanup()],
+      ['审计保留清理', () => purgeAudit(db, config.auditRetentionDays)],
+    ]
+    for (const [name, task] of tasks) {
+      try {
+        task()
+      } catch (error) {
+        app.log.error({ err: error, task: name }, '日常维护任务失败')
+      }
     }
   }
 
-  return { app, db, config, auth, files, mc, dashboard, notes, bookmarks, shares, alerts, backups, uploads, proxy, runMaintenance }
+  return {
+    app,
+    db,
+    config,
+    auth,
+    files,
+    mc,
+    dashboard,
+    notes,
+    bookmarks,
+    shares,
+    alerts,
+    backups,
+    uploads,
+    metrics,
+    proxy,
+    startMetrics,
+    runMaintenance,
+  }
 }

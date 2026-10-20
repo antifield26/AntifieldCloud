@@ -11,7 +11,7 @@ import type { Socket } from 'node:net'
 import httpProxy from 'http-proxy'
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
-import type { AuthService } from '../auth/service.ts'
+import { isLoopbackAddress, type AuthService } from '../auth/service.ts'
 import { readSessionToken } from '../auth/cookies.ts'
 import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
 import { injectOpenCodeScriptOptOut, injectOpenCodeShim, OPENCODE_SHIM_PATH, OPENCODE_SHIM_SCRIPT } from './shim.ts'
@@ -81,6 +81,13 @@ interface ProxyLogger {
   error(obj: unknown, message?: string): void
 }
 
+export interface OpenCodeProxyOptions {
+  /** 安全拒绝审计；由 app 注入，避免代理层依赖 DB。 */
+  audit?: (action: string, target: string | null, detail: Record<string, unknown>, ip: string | null) => void
+}
+
+type OriginKind = 'http' | 'websocket'
+
 export class OpenCodeProxy {
   private readonly proxy: ReturnType<typeof httpProxy.createProxyServer>
   private readonly config: Config
@@ -89,15 +96,17 @@ export class OpenCodeProxy {
   private readonly appHost: string
   private readonly basicAuth: string
   private readonly log: ProxyLogger | null
+  private readonly audit: OpenCodeProxyOptions['audit'] | null
   /** 已建立的 WebSocket 隧道（关闭时强制断开，避免 shutdown 挂起）。 */
   private readonly upgradedSockets = new Set<Socket>()
   /** 代理到 opencode 的上游连接（包括 WS 隧道），关闭时一并断开。 */
   private readonly upstreamSockets = new Set<Socket>()
 
-  constructor(config: Config, auth: AuthService, log?: FastifyBaseLogger) {
+  constructor(config: Config, auth: AuthService, log?: FastifyBaseLogger, options: OpenCodeProxyOptions = {}) {
     this.config = config
     this.auth = auth
     this.log = log ?? null
+    this.audit = options.audit ?? null
     this.aiHost = hostFromOrigin(config.aiOrigin)
     this.appHost = hostFromOrigin(config.appOrigin)
     this.basicAuth = `Basic ${Buffer.from(`${config.opencodeUsername}:${config.opencodePassword}`, 'utf8').toString('base64')}`
@@ -140,6 +149,42 @@ export class OpenCodeProxy {
   }
 
   /**
+   * Origin 白名单：只允许 app/ai 两个正式 origin；WS 握手额外接受 ws(s) 形式。
+   * loopback 开发例外要求对端也是 loopback，避免生产环境被本机以外的 Origin 绕过。
+   * 返回 false 表示应拒绝（403 + 审计）。
+   */
+  private originAllowed(originHeader: string | string[] | undefined, kind: OriginKind, remoteIp: string | null): boolean {
+    const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader
+    // 同源导航可能不带 Origin；WebSocket 必须带（浏览器都会发送）。
+    if (origin === undefined || origin === '') return kind === 'http'
+    let parsed: URL
+    try {
+      parsed = new URL(origin)
+    } catch {
+      return false
+    }
+    const hostname = parsed.hostname.toLowerCase()
+    const isLoopbackPeer = remoteIp !== null && isLoopbackAddress(remoteIp)
+    const loopbackOrigin = hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]'
+    if (this.config.allowInsecureLoopback && isLoopbackPeer && loopbackOrigin) return true
+    const protocol = parsed.protocol
+    if (kind === 'websocket') {
+      // 非 loopback（生产）只接受 TLS origin；浏览器 WS 握手的 Origin 通常为 https。
+      if (protocol !== 'https:' && protocol !== 'wss:') return false
+    } else if (protocol !== 'https:') {
+      return false
+    }
+    const host = parsed.host.toLowerCase()
+    return host === this.aiHost || host === this.appHost
+  }
+
+  /** 记录安全拒绝（不记录 token/Cookie）。 */
+  private auditOriginRejected(kind: OriginKind, origin: string | string[] | undefined, ip: string | null): void {
+    const value = Array.isArray(origin) ? origin[0] : origin
+    this.audit?.('opencode_origin_rejected', value ? value.slice(0, 256) : null, { kind }, ip)
+  }
+
+  /**
    * opencode Web HTML 处理：
    * - shim：注入同源脚本并 opt-out Rocket Loader（默认，兼容当前上游）；
    * - attributes：只加 data-cfasync，不注入 JS；
@@ -156,6 +201,13 @@ export class OpenCodeProxy {
     const context = this.auth.authenticate(readSessionToken(request))
     if (!context) return false
     request.auth = context
+    if (!this.originAllowed(request.headers.origin, 'http', request.socket.remoteAddress ?? null)) {
+      this.auditOriginRejected('http', request.headers.origin, request.socket.remoteAddress ?? null)
+      reply.code(403).header('cache-control', 'no-store').send({
+        error: { code: 'origin_rejected', message: '请求来源不受信任' },
+      })
+      return true
+    }
 
     if (mode === 'shim' && path === OPENCODE_SHIM_PATH) {
       reply
@@ -239,6 +291,15 @@ export class OpenCodeProxy {
       })
       return
     }
+    // 已登录后校验 Origin：防止被第三方站点借用浏览器 Cookie 发起跨站请求。
+    const remoteIp = request.socket.remoteAddress ?? null
+    if (!this.originAllowed(request.headers.origin, 'http', remoteIp)) {
+      this.auditOriginRejected('http', request.headers.origin, remoteIp)
+      reply.code(403).header('cache-control', 'no-store').send({
+        error: { code: 'origin_rejected', message: '请求来源不受信任' },
+      })
+      return
+    }
     if (!this.config.opencodePassword) {
       reply.code(503).send({ error: { code: 'opencode_not_configured', message: 'opencode 未配置' } })
       return
@@ -274,6 +335,13 @@ export class OpenCodeProxy {
     const context = this.auth.authenticate(token)
     if (!context) {
       writeRawJson(socket, 401, JSON.stringify({ error: { code: 'unauthenticated', message: '请先登录' } }))
+      return
+    }
+    // WS 握手必须携带合法 Origin（浏览器总是发送）；不匹配/缺失一律 403 + 审计。
+    const remoteIp = request.socket.remoteAddress ?? null
+    if (!this.originAllowed(request.headers.origin, 'websocket', remoteIp)) {
+      this.auditOriginRejected('websocket', request.headers.origin, remoteIp)
+      writeRawJson(socket, 403, JSON.stringify({ error: { code: 'origin_rejected', message: '请求来源不受信任' } }))
       return
     }
     if (!this.config.opencodePassword) {

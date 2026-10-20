@@ -1,12 +1,15 @@
 /**
- * 文件分享领域服务：登录用户创建/查看/吊销单文件分享；公开按 token 访问。
+ * 文件分享领域服务：登录用户创建/查看/吊销单文件或多文件分享；公开按 token 访问。
  *
  * 安全边界：
  * - token 为 32 字节 CSPRNG base64url，仅创建时以 URL 形式返回一次；数据库只存 SHA-256。
  * - 分享密码走 scrypt（见 shares/password.ts），数据库只存 hash + salt；日志/审计不出现 token 或密码。
  * - 过期、吊销、下载次数用尽统一返回 410；密码分享必须先 unlock 拿到 5 分钟 HttpOnly 会话 Cookie。
+ * - 只有活动普通云盘文件（origin='user'）可被分享；笔记附件/目录/回收站文件一律拒绝。
+ * - 多文件分享：shares.file_id 保存首个文件（兼容旧查询），share_items 保存完整条目；
+ *   旧单文件 /content 端点仅对单文件分享可用，多文件返回 409 share_bundle。
  * - 文件被软删除（回收站）后，即使吊销钩子未执行，公开 metadata/content 也返回 410。
- * - 下载次数按「分享会话」只计一次：会话首次成功取到内容时原子自增（Range 后续请求不重复计），
+ * - 下载次数按「分享会话」只计一次：会话首次成功取到内容时原子自增（同一会话后续 Range/多文件不重复计），
  *   因此 maxDownloads 是对新会话的近似限制，无法防御清 Cookie 的恶意客户端（个人分享可接受）。
  * - 公开下载审计按 share+IP+10 分钟窗口去重，避免公开链接被刷爆 audit_log；计数不受影响。
  * - 公开路由不经过会话认证，由路由层做 Origin/限流；本服务只做数据与状态校验。
@@ -83,12 +86,24 @@ export interface CreateShareInput {
   note?: unknown
 }
 
+/** 公开分享页可展示的单个文件信息（不含 note/路径/物理位置）。 */
+export interface PublicShareItem {
+  id: string
+  name: string
+  size: number
+  mime: string | null
+}
+
 export interface ShareItem {
   id: string
   fileId: string
   fileName: string
   fileSize: number | null
   fileMime: string | null
+  /** 分享包含的文件数（单文件为 1）。 */
+  itemCount: number
+  /** 分享全部文件的 size 之和（未解锁时也可安全返回）。 */
+  totalSizeBytes: number
   hasPassword: boolean
   expiresAt: string
   /** null 表示不限次数（数据库 0），与前端 `maxDownloads ?? '不限'` 约定一致。 */
@@ -110,11 +125,16 @@ export interface PublicShareInfo {
   fileName: string
   size: number
   mime: string | null
+  itemCount: number
+  /** 全部文件大小之和；未解锁时也可返回（不泄露文件名）。 */
+  totalSizeBytes: number
   expiresAt: string
   hasPassword: boolean
   /** null 表示不限次数（数据库 0）。 */
   maxDownloads: number | null
   downloadCount: number
+  /** 仅在无需密码或已解锁时返回，避免未解锁泄露文件清单。 */
+  items?: PublicShareItem[]
 }
 
 export interface PublicShareResponse {
@@ -266,40 +286,82 @@ export class ShareService {
     return row
   }
 
-  private fileForShare(share: ShareRow): FileRow {
-    const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(share.file_id) as unknown as FileRow | undefined
-    // 软删除文件在彻底删除前仍存在于 files 表；公开读取必须按“已不存在”处理，
-    // 不能只依赖回收站路由里的吊销钩子（钩子失败/漏接时防止旧链接继续下载）。
-    if (!row || row.deleted_at) throw gone('share_gone', '分享的文件已不存在')
-    return row
+  /**
+   * 分享中的文件 id 列表（按加入顺序）；历史行没有 share_items 时回退到 shares.file_id。
+   * 软删除文件在彻底删除前仍存在于 files 表，读取时必须按“已不存在”处理——
+   * 不能只依赖回收站路由里的吊销钩子（钩子失败/漏接时防止旧链接继续下载）。
+   */
+  private shareFileIds(shareId: string): string[] {
+    const rows = this.db
+      .prepare('SELECT file_id FROM share_items WHERE share_id = ? ORDER BY rowid ASC')
+      .all(shareId) as unknown as { file_id: string }[]
+    return rows.length > 0 ? rows.map((row) => row.file_id) : []
+  }
+
+  private shareFileIdsOrFirst(share: ShareRow): string[] {
+    const ids = this.shareFileIds(share.id)
+    return ids.length > 0 ? ids : [share.file_id]
+  }
+
+  private fileById(fileId: string): FileRow | null {
+    return (this.db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as unknown as FileRow | undefined) ?? null
+  }
+
+  /**
+   * 分享当前包含的全部文件；任一文件已删除（含回收站）都返回 410 share_gone，
+   * 避免多文件分享部分可下载造成状态不一致。
+   */
+  private filesForShare(share: ShareRow): FileRow[] {
+    const ids = this.shareFileIdsOrFirst(share)
+    const files: FileRow[] = []
+    for (const id of ids) {
+      const row = this.fileById(id)
+      if (!row || row.deleted_at) throw gone('share_gone', '分享的文件已不存在')
+      files.push(row)
+    }
+    return files
   }
 
   private activeFile(fileId: string): FileRow {
     const row = this.db
-      .prepare("SELECT * FROM files WHERE id = ? AND kind = 'file' AND deleted_at IS NULL")
+      .prepare("SELECT * FROM files WHERE id = ? AND kind = 'file' AND deleted_at IS NULL AND origin = 'user'")
       .get(fileId) as unknown as FileRow | undefined
     if (row) return row
-    const any = this.db.prepare('SELECT * FROM files WHERE id = ?').get(fileId) as unknown as FileRow | undefined
+    const any = this.fileById(fileId)
     if (!any) throw notFound('文件不存在')
     if (any.deleted_at) throw badRequest('文件在回收站中，无法分享', 'file_unavailable')
-    throw badRequest('仅支持分享单个文件', 'not_a_file')
+    if (any.kind !== 'file') throw badRequest('仅支持分享文件', 'not_a_file')
+    throw badRequest('笔记附件不能单独分享', 'not_a_file')
   }
 
-  private fileMeta(share: ShareRow): FileMetaRow {
+  private firstFileMeta(share: ShareRow): FileMetaRow {
     const row = this.db
       .prepare('SELECT name AS file_name, size AS file_size, mime AS file_mime FROM files WHERE id = ?')
       .get(share.file_id) as FileMetaRow | undefined
     return row ?? { file_name: null, file_size: null, file_mime: null }
   }
 
+  /** 分享全部文件大小之和；历史行没有 share_items 时退回首个文件。 */
+  private shareTotalSize(share: ShareRow): number {
+    const ids = this.shareFileIdsOrFirst(share)
+    if (ids.length === 0) return 0
+    const placeholders = ids.map(() => '?').join(', ')
+    const row = this.db
+      .prepare(`SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE id IN (${placeholders})`)
+      .get(...ids) as { total: number }
+    return Number(row.total)
+  }
+
   private toItem(row: ShareRow): ShareItem {
-    const meta = this.fileMeta(row)
+    const meta = this.firstFileMeta(row)
     return {
       id: row.id,
       fileId: row.file_id,
       fileName: meta.file_name ?? '(文件已删除)',
       fileSize: meta.file_size === null ? null : Number(meta.file_size),
       fileMime: meta.file_mime,
+      itemCount: this.shareFileIdsOrFirst(row).length,
+      totalSizeBytes: this.shareTotalSize(row),
       hasPassword: Boolean(row.password_hash),
       expiresAt: row.expires_at,
       maxDownloads: Number(row.max_downloads) > 0 ? Number(row.max_downloads) : null,
@@ -311,16 +373,34 @@ export class ShareService {
     }
   }
 
-  private publicInfo(share: ShareRow, file: FileRow): PublicShareInfo {
+  private toPublicItem(file: FileRow): PublicShareItem {
+    return { id: file.id, name: file.name, size: Number(file.size), mime: file.mime }
+  }
+
+  private publicInfo(share: ShareRow, files: FileRow[], includeItems: boolean): PublicShareInfo {
+    const first = files[0]
+    if (!first) throw gone('share_gone', '分享的文件已不存在')
     return {
-      fileName: file.name,
-      size: Number(file.size),
-      mime: file.mime,
+      fileName: first.name,
+      size: Number(first.size),
+      mime: first.mime,
+      itemCount: files.length,
+      totalSizeBytes: files.reduce((sum, file) => sum + Number(file.size), 0),
       expiresAt: share.expires_at,
       hasPassword: Boolean(share.password_hash),
       maxDownloads: Number(share.max_downloads) > 0 ? Number(share.max_downloads) : null,
       downloadCount: Number(share.download_count),
+      ...(includeItems ? { items: files.map((file) => this.toPublicItem(file)) } : {}),
     }
+  }
+
+  /** 校验分享项归属：itemId 必须属于该分享。 */
+  private assertItemBelongs(share: ShareRow, itemId: string): FileRow {
+    const belongs = this.shareFileIdsOrFirst(share).includes(itemId)
+    if (!belongs) throw notFound('分享中不存在该文件', 'share_item_not_found')
+    const file = this.fileById(itemId)
+    if (!file || file.deleted_at) throw gone('share_gone', '分享的文件已不存在')
+    return file
   }
 
   private shareUrl(token: string): string {
@@ -361,9 +441,20 @@ export class ShareService {
 
   // ---------- 登录用户操作 ----------
 
+  /** 单文件兼容入口：等价于 fileIds:[fileId]。 */
   async create(actor: ShareActor, fileId: string, input: CreateShareInput): Promise<CreatedShare> {
+    return this.createBundle(actor, [fileId], input)
+  }
+
+  /**
+   * 多文件分享：fileIds 1–shareMaxItems 个、去重，必须全部是活动普通云盘文件。
+   * shares.file_id 写首个文件（兼容旧查询），share_items 写全部条目。
+   */
+  async createBundle(actor: ShareActor, fileIds: unknown, input: CreateShareInput): Promise<CreatedShare> {
     if (!this.config.sharesEnabled) throw sharesDisabled()
-    const file = this.activeFile(fileId)
+    const ids = this.normalizeFileIds(fileIds)
+    const files = ids.map((fileId) => this.activeFile(fileId))
+    const first = files[0]!
     const expiresInHours = parseExpiryHours(input.expiresInHours, this.config)
     const maxDownloads = parseMaxDownloads(input.maxDownloads, this.config)
     const note = parseNote(input.note)
@@ -382,8 +473,8 @@ export class ShareService {
     const createdAt = created.toISOString()
     const expiresAt = new Date(created.getTime() + expiresInHours * 3_600_000).toISOString()
     transaction(this.db, () => {
-      // 密码哈希期间可能被并发移入回收站，事务内复核。
-      this.activeFile(fileId)
+      // 密码哈希期间文件可能被并发移入回收站/删除，事务内逐个复核。
+      for (const fileId of ids) this.activeFile(fileId)
       this.db
         .prepare(
           `INSERT INTO shares (id, file_id, token_hash, password_hash, password_salt, expires_at,
@@ -392,7 +483,7 @@ export class ShareService {
         )
         .run(
           id,
-          fileId,
+          first.id,
           sha256Hex(token),
           passwordHash?.hash ?? null,
           passwordHash?.salt ?? null,
@@ -402,15 +493,41 @@ export class ShareService {
           actor.username,
           note,
         )
+      const insertItem = this.db.prepare('INSERT INTO share_items (share_id, file_id) VALUES (?, ?)')
+      for (const fileId of ids) insertItem.run(id, fileId)
     })
-    audit(this.db, actor.username, 'share_create', file.name, {
+    audit(this.db, actor.username, 'share_create', first.name, {
       shareId: id,
-      fileId,
+      fileId: first.id,
+      fileIds: ids,
+      itemCount: ids.length,
       hasPassword: passwordHash !== null,
       expiresInHours,
       maxDownloads,
     }, actor.ip)
     return { share: this.toItem(this.shareById(id)), url: this.shareUrl(token) }
+  }
+
+  /** 归一化多文件 id：1–shareMaxItems、去重、拒绝非字符串/超长项。 */
+  private normalizeFileIds(input: unknown): string[] {
+    if (!Array.isArray(input)) throw badRequest('fileIds 必须是文件 ID 数组', 'invalid_file_ids')
+    if (input.length === 0) throw badRequest('至少选择一个文件', 'invalid_file_ids')
+    if (input.length > 1000) throw badRequest('fileIds 数量过多', 'invalid_file_ids')
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const raw of input) {
+      if (typeof raw !== 'string' || raw.length === 0 || raw.length > 128) {
+        throw badRequest('文件 ID 不合法', 'invalid_file_ids')
+      }
+      if (seen.has(raw)) continue
+      seen.add(raw)
+      out.push(raw)
+    }
+    if (out.length === 0) throw badRequest('至少选择一个文件', 'invalid_file_ids')
+    if (out.length > this.config.shareMaxItems) {
+      throw badRequest(`单个分享最多 ${this.config.shareMaxItems} 个文件`, 'too_many_items')
+    }
+    return out
   }
 
   list(options: ShareListOptions = {}): ShareListResult {
@@ -457,7 +574,7 @@ export class ShareService {
     return this.revokeForFileTree(fileId)
   }
 
-  /** 递归吊销文件树上的分享（目录删除时使用）。 */
+  /** 递归吊销文件树上的分享（目录删除/回收站时使用），包含作为分享条目之一的文件。 */
   revokeForFileTree(rootId: string): number {
     const shares = this.db
       .prepare(
@@ -466,25 +583,21 @@ export class ShareService {
            UNION ALL
            SELECT f.id FROM files f JOIN tree t ON f.parent_id = t.id
          )
-         SELECT s.id AS id, s.file_id AS file_id FROM shares s
-         WHERE s.revoked_at IS NULL AND s.file_id IN (SELECT id FROM tree)`,
+         SELECT s.id AS id FROM shares s
+         WHERE s.revoked_at IS NULL AND (
+           s.file_id IN (SELECT id FROM tree)
+           OR EXISTS (SELECT 1 FROM share_items si WHERE si.share_id = s.id AND si.file_id IN (SELECT id FROM tree))
+         )`,
       )
-      .all(rootId) as unknown as { id: string; file_id: string }[]
+      .all(rootId) as unknown as { id: string }[]
     if (shares.length === 0) return 0
     const now = this.nowIso()
     const names = shares.map(() => '?').join(', ')
     transaction(this.db, () => {
-      this.db
-        .prepare(
-          `WITH RECURSIVE tree(id) AS (
-             SELECT id FROM files WHERE id = ?
-             UNION ALL
-             SELECT f.id FROM files f JOIN tree t ON f.parent_id = t.id
-           )
-           UPDATE shares SET revoked_at = ?
-           WHERE revoked_at IS NULL AND file_id IN (SELECT id FROM tree)`,
-        )
-        .run(rootId, now)
+      this.db.prepare(`UPDATE shares SET revoked_at = ? WHERE revoked_at IS NULL AND id IN (${names})`).run(
+        now,
+        ...shares.map((row) => row.id),
+      )
       this.db.prepare(`DELETE FROM share_sessions WHERE share_id IN (${names})`).run(...shares.map((row) => row.id))
     })
     const file = this.db.prepare('SELECT name FROM files WHERE id = ?').get(rootId) as { name: string } | undefined
@@ -519,11 +632,11 @@ export class ShareService {
     const share = this.shareByToken(token)
     const now = this.nowDate().getTime()
     this.assertUsable(share, now)
-    const file = this.fileForShare(share)
+    const files = this.filesForShare(share)
     const session = this.validSession(share.id, parseTokenCookie(sessionToken))
     const requiresPassword = Boolean(share.password_hash) && session === null
     return {
-      share: this.publicInfo(share, file),
+      share: this.publicInfo(share, files, !requiresPassword),
       state: 'active',
       requiresPassword,
     }
@@ -538,10 +651,10 @@ export class ShareService {
     }
     const valid = await verifySharePassword(password, share.password_hash, share.password_salt)
     if (!valid) throw new AppError(401, 'invalid_password', '分享密码错误')
-    const file = this.fileForShare(share)
+    const files = this.filesForShare(share)
     const session = this.createSession(share.id)
     return {
-      share: this.publicInfo(share, file),
+      share: this.publicInfo(share, files, true),
       state: 'active',
       requiresPassword: false,
       sessionToken: session.token,
@@ -549,14 +662,38 @@ export class ShareService {
     }
   }
 
-  /** 校验公开内容访问权限；返回文件与需要计数的会话信息。 */
+  /**
+   * 校验公开内容访问权限并返回目标文件；旧 /content 端点仅允许单文件分享。
+   * 多文件分享返回 409 share_bundle，客户端改用 items/:itemId/content。
+   */
   openContent(token: unknown, sessionToken: unknown, method: 'GET' | 'HEAD'): ContentAccess {
     if (!this.config.sharesEnabled) throw notFound('分享链接不存在')
     const share = this.shareByToken(token)
     const now = this.nowDate().getTime()
     if (share.revoked_at) throw gone('share_revoked', '分享链接已吊销')
     if (Date.parse(share.expires_at) <= now) throw gone('share_expired', '分享链接已过期')
-    const file = this.fileForShare(share)
+    const ids = this.shareFileIdsOrFirst(share)
+    if (ids.length > 1) {
+      throw new AppError(409, 'share_bundle', '该分享包含多个文件，请逐个下载')
+    }
+    const file = this.filesForShare(share)[0]
+    if (!file) throw gone('share_gone', '分享的文件已不存在')
+    return this.accessFor(share, file, sessionToken, method)
+  }
+
+  /** 校验公开内容访问权限并返回分享内指定文件；itemId 不属于该分享时 404。 */
+  openItemContent(token: unknown, sessionToken: unknown, itemId: string, method: 'GET' | 'HEAD'): ContentAccess {
+    if (!this.config.sharesEnabled) throw notFound('分享链接不存在')
+    const share = this.shareByToken(token)
+    const now = this.nowDate().getTime()
+    if (share.revoked_at) throw gone('share_revoked', '分享链接已吊销')
+    if (Date.parse(share.expires_at) <= now) throw gone('share_expired', '分享链接已过期')
+    const file = this.assertItemBelongs(share, itemId)
+    return this.accessFor(share, file, sessionToken, method)
+  }
+
+  /** 会话/密码/次数校验；无密码分享在首次 GET 时懒创建 5 分钟会话。 */
+  private accessFor(share: ShareRow, file: FileRow, sessionToken: unknown, method: 'GET' | 'HEAD'): ContentAccess {
     let session = this.validSession(share.id, parseTokenCookie(sessionToken))
     const hasPassword = Boolean(share.password_hash)
     if (hasPassword && !session) throw shareLocked()
@@ -621,9 +758,12 @@ export class ShareService {
       }
       // 计数与限次语义按真实下载执行；仅审计写入按 share+IP+窗口节流，防止公开链接刷爆 audit_log。
       if (this.shouldAuditDownload(access.share.id, ip, this.nowDate().getTime())) {
-        audit(this.db, 'anonymous', 'share_download', access.file.name, {
+        // 审计 target 固定用分享的首个文件名（多文件分享不暴露其他条目）。
+        const firstName = this.firstFileMeta(access.share).file_name ?? access.file.name
+        audit(this.db, 'anonymous', 'share_download', firstName, {
           shareId: access.share.id,
-          fileId: access.share.file_id,
+          fileId: access.file.id,
+          itemCount: this.shareFileIdsOrFirst(access.share).length,
         }, ip)
       }
     })

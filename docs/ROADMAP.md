@@ -1,74 +1,44 @@
 # 路线图
 
-## v0.3.2（当前）
+## v0.4.0（当前已交付）
 
-- 旧入口/TLS 清理：移除 nginx/certbot、旧 TLS 状态与 80 端口；服务监控降为 3 项。
-- workbench/piforge/旧 unit/env/RCON 备份清理；`.local` 冗余记录清理；nftables 仅保留 25565。
-
-## v0.3.1
-
-- 5 GB 级大文件分片/断点续传上传到 Pi；8 MiB 分片、配额预留、过期清理、前端续传；不做对象存储。
-- migration 4：`upload_sessions` / `upload_chunks`。
-
-## v0.3.0
-
-- 深度审计修复：备份脚本硬超时/secrets 状态、回收站分享 410、分享审计节流/密码/日志、告警 unknown/保留、备份孤儿/legacy。
-- 备份管理：Web 列表/手动 prepare/导入校验/文件级恢复到新目录；整库恢复仅离线 CLI；App + opencode 数据覆盖。
-- 音视频播放：白名单容器 Range 播放，不转码。
-- OpenCode：`shim|attributes|passthrough` 模式；Cloudflare 关闭 Rocket Loader 后验证无垫片，失败保留最小隐藏接管。
-- 文档/迁移 3/运维 runbook。
-
-## v0.2.2
-
-- 移除 v0.2.1 的可见“＋ 新会话”浮动按钮。
-- 捕获原生“新建会话”按钮（click/pointerup），修复 Android/宽屏移动浏览器无响应。
-- 保留 Rocket Loader opt-out 与文件列表点击修复。
-
-## v0.2.1
-
-- 文件页列表名称列可点击进入文件夹/预览文件。
-- 首次加入 OpenCode 兼容垫片（含可见“＋ 新会话”按钮）；该按钮已被 v0.2.2 移除。
-
-## v0.2.0
-
-- **审计修复**：C1 WebSocket 畸形 Cookie DoS、改密/恢复码再认证与限流、trustProxy 收紧、
-  RCON 多包、上传预留/ENOSPC、HSTS/安全头、备份两阶段协议、部署自动回滚、迁移前快照、
-  memory cgroup、100 MiB 上传上限；详见 `docs/AUDIT.md`。
-- 知识库：Markdown 笔记 + 书签 + 标签 + 置顶 + FTS5 搜索。
-- 文件分享：单文件、可选密码/过期/最大下载次数/吊销、公开页 noindex、限流与审计。
-- PWA：可安装、离线壳、手机拍照上传；不缓存 API/文件。
-- 监控告警：磁盘/温度/服务/备份/欠压，通用 JSON webhook，面板历史与测试。
-- 备份/灾备：PC 确认后推进游标、未拉取不删除、SHA 旁文件、ACL、age 加密密钥包、恢复演练。
-- 运维：健康探针 timer、`unattended-upgrades`、RCON 轮换、一次 Pi 重启完成加固。
+- **可观测性**：主机指标 60s 采样/30 天保留、1h/6h/24h/7d/30d 范围查询、Dashboard 四张 SVG 趋势卡、Activity 关键词/时间范围、Alerts 筛选分页、`/api/storage`。
+- **笔记增强**：附件（1–5/请求、25 MiB、每笔记 100、计入配额、`origin=note` 隔离）与版本历史（保留 20、查看/恢复）。
+- **多文件分享**：1–50 个文件、`itemCount/totalSizeBytes`、公开逐项下载、按分享会话计数、删除即吊销；仍不生成服务端 zip。
+- **世界备份与灾备**：`antifieldcloud-world.timer` 周度一致性备份（保留 4 份）、Windows `world-pull` 两阶段拉取（失败不 ack）、`drill` 自动恢复演练（报告 180 天）、三类状态文件与超期告警、密钥包 `KEEP=2`/tmpfs。
+- **备份链路完善**：`skippedMissing/warnings`、prepare 超时对齐、ack 事务、恢复 origin 过滤、快照/staging 上限、归档浏览限流。
+- **加固**：systemd capability/设备/内核面收紧、nftables 收窄 22/25565/25575、opencode Origin 校验、审计截断、CI coverage/audit/secret-scan/dependabot。
+- **文档**：全量同步并收敛审计 OP-19/WE-24 漂移；新增 `check-version.mjs`。
 
 ## 下一批候选（按价值排序）
 
-1. **备份可视化管理 / 恢复向导**：面板列归档、手动触发、从归档恢复；当前只有状态/告警与 CLI。
-2. **音视频在线播放**：Range + 封面；不做 Pi 重型转码。
-3. **WebDAV / rclone**：只读优先，读写需处理锁/并发/配额。
-4. **Minecraft 启停/日志**：窄权限 helper、固定命令、二次确认；需系统级改动。
-5. **Cloudflare Access 第二层**：身份策略叠加应用 TOTP。
-6. **SSD 迁移**：USB/NVMe HAT，迁移数据与备份临时目录。
-7. **笔记增强**：附件/图片、版本历史、知识库分享（工作量大）。
-8. **多用户与权限**：角色/配额/审计隔离；不建议近期。
-9. **大文件分片/对象存储**：绕开 Cloudflare 100 MiB/100s 限制。
-10. **可观测性**：指标历史、更多告警通道（企业微信/钉钉/邮件）、日志聚合。
+1. **整包加密 + 异地副本**：普通归档仍含 TOTP/会话明文；优先评估 age/restic 整包加密、VPS/对象存储异地副本与生命周期。
+2. **目录/打包分享**：目录选择、流式 zip（不落盘）、分享内相对路径；需处理配额、次数与 tar 安全。
+3. **笔记公开分享**：只读 token + 密码/过期，沿用分享限流与 noindex；需先定义 Markdown/附件外链的泄漏边界。
+4. **WebDAV / rclone（只读优先）**：读写需处理锁/并发/配额；复用现有 DB id 与不可变语义。
+5. **可观测性扩展**：更多告警通道（企业微信/钉钉/邮件）、日志聚合/检索、外部 uptime 监控；指标长期降采样。
+6. **Minecraft 启停/日志**：窄权限 helper、固定命令白名单、二次确认与审计；需系统级改动与用户授权。
+7. **SSD 迁移 + LUKS**：USB/NVMe HAT，迁移数据/备份临时目录并做全盘加密。
+8. **Cloudflare Access 第二层**：身份策略叠加应用 TOTP。
+9. **多用户与权限分离**：角色/配额/审计隔离；与“个人工作台”定位存在取舍，暂缓。
+10. **SSH/sudo 加固**：改仅公钥、收紧 `antifield` 的 `NOPASSWD ALL`、加 fail2ban；需用户确认后执行。
 
 ## 明确不做（至少近期）
 
 - 多租户/SaaS 化、公开注册。
 - 端到端加密同步客户端（Syncthing 式）——与 Web 云盘定位冲突。
 - Minecraft 任意 RCON 控制台/插件管理。
-- 在 Pi 上跑重型媒体转码/大模型推理。
+- 服务端媒体转码/大模型推理。
 - 替换现有 Minecraft/SakuraFRP/opencode 服务。
+- 为分享生成服务端 zip 包（多文件逐项下载已够用）。
 
 ## 已知限制
 
-- SD 卡单盘、无 RAID；每日备份依赖 PC 与直连网线。
-- SSH 密码登录保留、无 Cloudflare Access（用户选择）。
-- 分享下载次数为会话级近似限制；无目录分享。
-- 笔记无附件/版本历史；FTS5 中文回退 LIKE。
-- Cloudflare 约 100 MiB 请求体与 100s 超时；大文件需后续分片。
-- 单进程；限流状态重启即清空。
-- 备份包含 TOTP secret；age 私钥由用户离线保存，丢失则密钥包不可恢复。
-- `http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换。
+- SSH 密码登录保留；Pi 登录用户 `antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择），待加固。
+- RCON 仍监听所有接口，仅由 nftables 限制为 loopback；无 Cloudflare Access；单 SD、无全盘加密。
+- Cloudflare 终止 TLS，可见明文；Cloudflare 约 100 MiB/100s 请求限制约束单请求上传（大文件走分片）。
+- 限流为内存态，重启清零；`http-proxy` 在 Node 26 有弃用警告；scrypt 仍为 N=2^15。
+- 分享下载次数为会话级近似限制；无目录打包/公开笔记分享；多文件分享逐项下载。
+- 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练任务需用户手动安装；无异地世界副本。
+- 备份无整包加密与异地副本；普通归档含 TOTP/会话明文，PC ACL 与离线介质是最后防线。
+- 旧世界 cron 已停用、旧 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。

@@ -1,10 +1,11 @@
 /**
  * 文件分享 HTTP 路由。
  *
- * - 登录端点：创建 / 列表 / 吊销，需要会话 + CSRF。
- * - 公开端点：metadata / unlock / content，不挂会话认证，但做 Origin 校验（POST）与进程内限流；
- *   密码分享通过 5 分钟 HttpOnly `af_share` Cookie 解锁，Cookie path 限定到单个 token。
- * - content 支持 HEAD/ETag/Range；只有在会话首次成功取内容时才计入下载次数。
+ * - 登录端点：创建（单文件兼容 / 多文件）/ 列表 / 吊销，需要会话 + CSRF。
+ * - 公开端点：metadata / unlock / 单文件 content / 多文件逐项 content，不挂会话认证，
+ *   但做 Origin 校验（POST）与进程内限流；密码分享通过 5 分钟 HttpOnly `af_share` Cookie 解锁，
+ *   Cookie path 限定到单个 token 的公开前缀。
+ * - content 支持 HEAD/ETag/Range；只有在会话首次成功取内容时才计入下载次数（多文件按会话一次）。
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../../config.ts'
@@ -102,6 +103,16 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
     return result
   })
 
+  app.post('/api/shares', { preHandler: [requireAuth, csrf] }, async (request, reply) => {
+    const context = request.auth
+    if (!context) throw new AppError(401, 'unauthenticated', '请先登录')
+    limit(createLimiter, context.user.username)
+    const body = asRecord(request.body)
+    const result = await shares.createBundle(actorFrom(request), body.fileIds, body)
+    reply.code(201)
+    return result
+  })
+
   app.get('/api/shares', { preHandler: [requireAuth] }, async (request) => {
     const query = asRecord(request.query)
     return shares.list({
@@ -145,12 +156,17 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
     }
   })
 
-  app.get('/api/public/shares/:token/content', async (request, reply) => {
-    const token = tokenParam(request)
-    const ip = clientIp(request)
-    limit(contentLimiter, ip)
-    const method = request.method === 'HEAD' ? 'HEAD' : 'GET'
-    const access: ContentAccess = shares.openContent(token, shareCookie(request), method)
+  /**
+   * 公开内容响应公共实现：设置会话 Cookie、ETag/304、Range/416、附件头；
+   * 仅在会话首次成功取内容时计数。HEAD 复用 GET 路由并由 Fastify 丢弃正文。
+   */
+  function sendContent(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    token: string,
+    access: ContentAccess,
+    ip: string,
+  ): unknown {
     if (access.newSessionToken) {
       setShareCookie(reply, request, token, access.newSessionToken, SHARE_SESSION_TTL_SECONDS)
     }
@@ -160,14 +176,13 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
     reply.header('x-robots-tag', 'noindex, nofollow')
     if (request.headers['if-none-match'] === etag) {
       reply.code(304).header('etag', etag).send()
-      return
+      return reply
     }
     const range = parseRange(request.headers.range, size)
     if (range === 'invalid') {
       reply.code(416).header('content-range', `bytes */${size}`).send()
-      return
+      return reply
     }
-    if (access.mustCount) shares.markDownloaded(access, ip)
     const start = range ? range.start : 0
     const end = range ? range.end : Math.max(0, size - 1)
     const length = size === 0 ? 0 : end - start + 1
@@ -180,8 +195,48 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
       .header('cache-control', 'no-store')
       .header('content-disposition', contentDisposition(file.name, false))
     if (range) reply.header('content-range', `bytes ${start}-${end}/${size}`)
-    if (size === 0) return reply.send()
-    // HEAD 也返回可读流，由 Fastify 的 HEAD onSend 丢弃内容并保留上面设置的 content-length。
-    return reply.send(shares.storage.createReadStream(file.id, { start, end }))
+    if (size === 0) {
+      if (access.mustCount) markCounted(access, ip)
+      return reply.send()
+    }
+    const stream = shares.storage.createReadStream(file.id, { start, end })
+    // 下载计数只在流完整读完后 +1：客户端中断（连接失败/取消）不计次，避免半开连接刷掉次数。
+    if (access.mustCount) {
+      let counted = false
+      stream.once('end', () => {
+        if (counted) return
+        counted = true
+        markCounted(access, ip)
+      })
+    }
+    return reply.send(stream)
+  }
+
+  /** 响应已开始发送后的计数失败只影响次数，不能再改状态码；异常交给 Fastify 日志。 */
+  function markCounted(access: ContentAccess, ip: string): void {
+    try {
+      shares.markDownloaded(access, ip)
+    } catch {
+      // 次数用尽/分享被并发吊销：静默忽略，下载内容已开始发送。
+    }
+  }
+
+  app.get('/api/public/shares/:token/content', async (request, reply) => {
+    const token = tokenParam(request)
+    const ip = clientIp(request)
+    limit(contentLimiter, ip)
+    const method = request.method === 'HEAD' ? 'HEAD' : 'GET'
+    // 旧端点仅支持单文件分享；多文件分享由服务层返回 409 share_bundle。
+    const access = shares.openContent(token, shareCookie(request), method)
+    return sendContent(request, reply, token, access, ip)
+  })
+
+  app.get('/api/public/shares/:token/items/:itemId/content', async (request, reply) => {
+    const params = request.params as { token: string; itemId: string }
+    const ip = clientIp(request)
+    limit(contentLimiter, ip)
+    const method = request.method === 'HEAD' ? 'HEAD' : 'GET'
+    const access = shares.openItemContent(params.token, shareCookie(request), params.itemId, method)
+    return sendContent(request, reply, params.token, access, ip)
   })
 }

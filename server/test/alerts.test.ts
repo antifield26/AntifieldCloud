@@ -82,15 +82,20 @@ test('磁盘阈值：首次 firing、冷却内去重、冷却后重复通知与�
     deps: {
       statfs: () => ({ availableBytes: 5, totalBytes: 100 }),
       // 其它数据源保持可用，避免 unknown 降级事件干扰本用例的事件计数。
-      readFile: (path) =>
-        path.endsWith('backup-pull.json')
-          ? JSON.stringify({
-              lastPullAt: T0,
-              secretsAttempted: true,
-              secretsOk: true,
-              lastSecretsAt: T0,
-            })
-          : JSON.stringify({ tempC: 45, underVoltage: false, throttled: '0x0' }),
+      readFile: (path) => {
+        if (path.endsWith('backup-pull.json')) {
+          return JSON.stringify({
+            lastPullAt: T0,
+            secretsAttempted: true,
+            secretsOk: true,
+            lastSecretsAt: T0,
+          })
+        }
+        if (path.endsWith('status.json')) {
+          return JSON.stringify({ lastRunAt: T0, ok: true })
+        }
+        return JSON.stringify({ tempC: 45, underVoltage: false, throttled: '0x0' })
+      },
       serviceStates: async () => ({ minecraft: 'active' }),
       minecraftStatus: async () => ({ online: true }),
     },
@@ -99,7 +104,7 @@ test('磁盘阈值：首次 firing、冷却内去重、冷却后重复通知与�
     fx.db.prepare('UPDATE backup_state SET last_backup_at = ? WHERE id = 1').run(T0)
     const first = await fx.alerts.evaluateOnce()
     assert.equal(first.skipped, false)
-    assert.equal(first.checked, 9)
+    assert.equal(first.checked, 12, '12 个告警条件（含 v0.4.0 世界备份/拉取/演练）')
     assert.equal(first.firing, 1)
     assert.match(eventNames(events(fx))[0] ?? '', /^disk_low:firing$/)
     assert.equal(events(fx)[0]?.severity, 'critical', '剩余 5% 低于阈值一半应为 critical')
@@ -375,7 +380,7 @@ test('GET/POST 告警路由：认证、CSRF、形状与测试限流', async () =
     fetchCalls = 0
     const list = await app.inject({ method: 'GET', url: '/api/alerts?limit=5', headers: authHeaders() })
     assert.equal(list.statusCode, 200)
-    assert.deepEqual(Object.keys(list.json()).sort(), ['config', 'items', 'state'])
+    assert.deepEqual(Object.keys(list.json()).sort(), ['config', 'items', 'state', 'total'])
     const body = list.json() as {
       items: unknown[]
       state: unknown[]

@@ -5,13 +5,16 @@
  * - 客户端只能通过 DB id 访问文件，物理路径由 id 派生。
  * - 文件内容不可变；重命名/移动只改元数据（备份可只带新增内容）。
  * - 配额包含回收站；所有写操作在事务中重新校验。
+ * - files.origin 区分可见性：user=普通云盘，note=笔记附件（不在列表/搜索/回收站出现，
+ *   只能经笔记接口管理，内容仍走鉴权的 /api/files/:id/content），system=系统保留。
+ *   用户可见查询与目录操作只作用于 origin='user' 的行。
  */
 import { closeSync, openSync, readSync, statfsSync, unlinkSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import type { FileRow } from '../types.ts'
 import { audit } from '../auth/audit.ts'
-import { badRequest, conflict, insufficientStorage, notFound, quotaExceeded, unsupportedMedia } from '../util/errors.ts'
+import { AppError, badRequest, conflict, insufficientStorage, notFound, quotaExceeded, unsupportedMedia } from '../util/errors.ts'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
 import { transaction } from '../db.ts'
@@ -56,6 +59,21 @@ export interface Breadcrumb {
 export interface Actor {
   username: string
   ip: string | null
+}
+
+/** 文件可见性来源，与 files.origin 对应。 */
+export type FileOrigin = 'user' | 'note' | 'system'
+
+export interface DeleteFilesOptions {
+  /** 审计动作名，默认 file_delete。 */
+  auditAction?: string
+  /** 审计详情里附带的额外元数据（不含文件内容/路径）。 */
+  detail?: Record<string, unknown>
+}
+
+export interface DeleteFilesResult {
+  count: number
+  freedBytes: number
 }
 
 export interface ListOptions {
@@ -111,6 +129,12 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 
+/** 同目录同 origin 唯一索引冲突（并发落库时重算名称并重试）。 */
+function isUniqueNameConflict(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return /UNIQUE constraint failed: files\./.test(error.message)
+}
+
 export class FileService {
   private readonly db: DatabaseSync
   private readonly config: Config
@@ -128,22 +152,37 @@ export class FileService {
 
   // ---------- 查询 ----------
 
+  /**
+   * 任意 origin 的活动行：仅内容预览/物理读取使用（笔记附件经鉴权内容路由访问）。
+   * 用户可见的元数据/目录操作一律走 userActiveRow。
+   */
   private activeRow(id: string): FileRow {
     const row = this.db.prepare('SELECT * FROM files WHERE id = ? AND deleted_at IS NULL').get(id) as unknown as FileRow | undefined
     if (!row) throw notFound('文件不存在')
     return row
   }
 
+  /** 普通云盘活动行；笔记附件/系统行对文件接口视为不存在。 */
+  private userActiveRow(id: string): FileRow {
+    const row = this.db
+      .prepare("SELECT * FROM files WHERE id = ? AND deleted_at IS NULL AND origin = 'user'")
+      .get(id) as unknown as FileRow | undefined
+    if (!row) throw notFound('文件不存在')
+    return row
+  }
+
   private activeDir(id: string | null): FileRow | null {
     if (id === null) return null
-    const row = this.db.prepare('SELECT * FROM files WHERE id = ? AND deleted_at IS NULL').get(id) as unknown as FileRow | undefined
+    const row = this.db
+      .prepare("SELECT * FROM files WHERE id = ? AND deleted_at IS NULL AND origin = 'user'")
+      .get(id) as unknown as FileRow | undefined
     if (!row) throw notFound('目标文件夹不存在')
     if (row.kind !== 'dir') throw badRequest('目标不是文件夹', 'not_a_directory')
     return row
   }
 
   get(id: string): { item: FileItem; path: Breadcrumb[] } {
-    const row = this.activeRow(id)
+    const row = this.userActiveRow(id)
     return { item: toItem(row), path: this.breadcrumbFor(row.parent_id) }
   }
 
@@ -155,7 +194,8 @@ export class FileService {
       if (seen.has(current)) break
       seen.add(current)
       const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(current) as unknown as FileRow | undefined
-      if (!row) break
+      // 只沿普通云盘目录树回溯；附件/系统行不参与用户面包屑。
+      if (!row || row.origin !== 'user') break
       chain.push({ id: row.id, name: row.name })
       current = row.parent_id
     }
@@ -169,7 +209,7 @@ export class FileService {
     const pageSize = Math.min(500, Math.max(1, Math.floor(options.pageSize)))
     const total = (
       this.db
-        .prepare('SELECT COUNT(*) AS c FROM files WHERE parent_id IS ? AND deleted_at IS NULL')
+        .prepare("SELECT COUNT(*) AS c FROM files WHERE parent_id IS ? AND deleted_at IS NULL AND origin = 'user'")
         .get(parentId) as { c: number }
     ).c
     const sortColumn = options.sort === 'updated' ? 'updated_at' : options.sort === 'size' ? 'size' : 'name'
@@ -177,7 +217,7 @@ export class FileService {
     const order = sortColumn === 'name' ? `kind = 'dir' DESC, name COLLATE NOCASE ${direction}` : `kind = 'dir' DESC, ${sortColumn} ${direction}`
     const rows = this.db
       .prepare(
-        `SELECT * FROM files WHERE parent_id IS ? AND deleted_at IS NULL
+        `SELECT * FROM files WHERE parent_id IS ? AND deleted_at IS NULL AND origin = 'user'
          ORDER BY ${order} LIMIT ? OFFSET ?`,
       )
       .all(parentId, pageSize, (page - 1) * pageSize) as unknown as FileRow[]
@@ -197,13 +237,17 @@ export class FileService {
     const rows = this.db
       .prepare(
         `SELECT * FROM files
-         WHERE deleted_at IS NULL AND kind = 'file' AND name LIKE ? ESCAPE '\\'
+         WHERE deleted_at IS NULL AND kind = 'file' AND origin = 'user' AND name LIKE ? ESCAPE '\\'
          ORDER BY updated_at DESC LIMIT ?`,
       )
       .all(pattern, limit) as unknown as FileRow[]
     return { items: rows.map(toItem), total: rows.length }
   }
 
+  /**
+   * 配额与用量：usedBytes/trashBytes 统计全部 kind='file'（含笔记附件，配额语义不变），
+   * fileCount 只统计用户云盘可见文件（origin='user' 且未删除）。
+   */
   usage(): Usage {
     const used = this.db
       .prepare("SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE kind = 'file'")
@@ -212,7 +256,7 @@ export class FileService {
       .prepare("SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE kind = 'file' AND deleted_at IS NOT NULL")
       .get() as { total: number }
     const count = this.db
-      .prepare("SELECT COUNT(*) AS c FROM files WHERE kind = 'file' AND deleted_at IS NULL")
+      .prepare("SELECT COUNT(*) AS c FROM files WHERE kind = 'file' AND deleted_at IS NULL AND origin = 'user'")
       .get() as { c: number }
     let freeBytes: number
     try {
@@ -267,22 +311,22 @@ export class FileService {
 
   // ---------- 变更 ----------
 
-  createFolder(actor: Actor, parentId: string | null, rawName: string): FileItem {
+  createFolder(actor: Actor, parentId: string | null, rawName: string, origin: FileOrigin = 'user'): FileItem {
     this.activeDir(parentId)
     const name = sanitizeName(rawName)
     if (!name) throw badRequest('文件夹名不能为空', 'invalid_name')
     const now = nowIso()
     const id = newId()
-    const finalName = this.uniqueName(parentId, name)
+    const finalName = this.uniqueName(parentId, name, undefined, origin)
     transaction(this.db, () => {
       this.db
         .prepare(
-          `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
-           VALUES (?, ?, ?, 'dir', 0, NULL, NULL, NULL, ?, ?, NULL, NULL)`,
+          `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id, origin)
+           VALUES (?, ?, ?, 'dir', 0, NULL, NULL, NULL, ?, ?, NULL, NULL, ?)`,
         )
-        .run(id, parentId, finalName, now, now)
+        .run(id, parentId, finalName, now, now, origin)
     })
-    audit(this.db, actor.username, 'mkdir', finalName, { id, parentId }, actor.ip)
+    audit(this.db, actor.username, 'mkdir', finalName, { id, parentId, origin }, actor.ip)
     const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as FileRow
     return toItem(row)
   }
@@ -303,52 +347,84 @@ export class FileService {
   /**
    * 上传落库：tempPath 已完整写入并计算 sha256。
    * 事务内重新校验配额；物理文件 rename 失败则回滚 DB 行。
+   * origin 默认 user；笔记附件传 'note' 且 parentId 必须为 null（不进用户目录树）。
    */
   async registerUpload(
     actor: Actor,
-    input: { parentId: string | null; rawName: string; tempPath: string; size: number; sha256: string; reservedBytes?: number },
+    input: {
+      parentId: string | null
+      rawName: string
+      tempPath: string
+      size: number
+      sha256: string
+      reservedBytes?: number
+      origin?: FileOrigin
+    },
   ): Promise<FileItem> {
+    const origin = input.origin ?? 'user'
+    if (origin !== 'user' && input.parentId !== null) {
+      throw badRequest('非用户文件必须位于根目录', 'invalid_parent')
+    }
     this.activeDir(input.parentId)
     const name = sanitizeName(input.rawName)
     const id = newId()
     const mime = detectMime(name)
     const now = nowIso()
-    const finalName = this.uniqueName(input.parentId, name)
-    transaction(this.db, () => {
-      this.assertQuota(input.size, input.reservedBytes ?? 0)
-      this.db
-        .prepare(
-          `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
-           VALUES (?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, NULL, NULL)`,
-        )
-        .run(id, input.parentId, finalName, input.size, mime, input.sha256, id, now, now)
-    })
+    // 先把物理文件落盘并 fsync（temp→final 原子 rename + 父目录 fsync），再提交 DB 行；
+    // 这样断电最多产生“有文件无行”（可清理的孤儿），不会出现“有行无文件”导致 tar 备份失败。
     try {
       await this.storage.moveIntoPlace(input.tempPath, id)
     } catch (error) {
-      this.db.prepare('DELETE FROM files WHERE id = ?').run(id)
       this.storage.removeTemp(input.tempPath)
       throw error
     }
+    let finalName = name
+    try {
+      // 落盘 await 期间父目录可能被移入回收站、同名并发上传可能插入新行：
+      // 事务内复核父目录并重算唯一名；UNIQUE 冲突最多重试 3 次。
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          transaction(this.db, () => {
+            this.activeDir(input.parentId)
+            this.assertQuota(input.size, input.reservedBytes ?? 0)
+            finalName = this.uniqueName(input.parentId, name, undefined, origin)
+            this.db
+              .prepare(
+                `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id, origin)
+                 VALUES (?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
+              )
+              .run(id, input.parentId, finalName, input.size, mime, input.sha256, id, now, now, origin)
+          })
+          break
+        } catch (error) {
+          if (attempt < 2 && isUniqueNameConflict(error)) continue
+          throw error
+        }
+      }
+    } catch (error) {
+      // 配额/父目录/DB 失败时回滚物理文件，避免不可见占用磁盘。
+      this.storage.remove(id)
+      throw error
+    }
     if (this.usageCache) this.usageCache = { at: Date.now(), usedBytes: this.usageCache.usedBytes + input.size }
-    audit(this.db, actor.username, 'upload', finalName, { id, size: input.size, parentId: input.parentId }, actor.ip)
+    audit(this.db, actor.username, 'upload', finalName, { id, size: input.size, parentId: input.parentId, origin }, actor.ip)
     const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as FileRow
     return toItem(row)
   }
 
   rename(actor: Actor, id: string, rawName: string): FileItem {
-    const row = this.activeRow(id)
+    const row = this.userActiveRow(id)
     const name = sanitizeName(rawName)
     if (!name) throw badRequest('名称不能为空', 'invalid_name')
     if (name.toLowerCase() === row.name.toLowerCase()) return toItem(row)
     const finalName = this.uniqueName(row.parent_id, name, id)
     this.db.prepare('UPDATE files SET name = ?, updated_at = ? WHERE id = ?').run(finalName, nowIso(), id)
     audit(this.db, actor.username, 'rename', finalName, { id, from: row.name }, actor.ip)
-    return toItem(this.activeRow(id))
+    return toItem(this.userActiveRow(id))
   }
 
   move(actor: Actor, id: string, targetParentId: string | null): FileItem {
-    const row = this.activeRow(id)
+    const row = this.userActiveRow(id)
     this.activeDir(targetParentId)
     if (targetParentId === id) throw conflict('不能移动到自身', 'cycle_detected')
     let cursor = targetParentId
@@ -365,11 +441,11 @@ export class FileService {
       .prepare('UPDATE files SET parent_id = ?, name = ?, updated_at = ? WHERE id = ?')
       .run(targetParentId, finalName, nowIso(), id)
     audit(this.db, actor.username, 'move', finalName, { id, parentId: targetParentId }, actor.ip)
-    return toItem(this.activeRow(id))
+    return toItem(this.userActiveRow(id))
   }
 
   trash(actor: Actor, id: string): { count: number; item: FileItem } {
-    const row = this.activeRow(id)
+    const row = this.userActiveRow(id)
     const now = nowIso()
     let changes = 0
     transaction(this.db, () => {
@@ -411,21 +487,27 @@ export class FileService {
     const total = (
       this.db
         .prepare(
-          'SELECT COUNT(*) AS c FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL',
+          "SELECT COUNT(*) AS c FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL AND origin = 'user'",
         )
         .get() as { c: number }
     ).c
     const rows = this.db
       .prepare(
-        `SELECT * FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL
+        `SELECT * FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL AND origin = 'user'
          ORDER BY deleted_at DESC LIMIT ? OFFSET ?`,
       )
       .all(pageSize, (page - 1) * pageSize) as unknown as FileRow[]
     const trash = this.db
-      .prepare("SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE kind = 'file' AND deleted_at IS NOT NULL")
+      .prepare(
+        "SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE kind = 'file' AND deleted_at IS NOT NULL AND origin = 'user'",
+      )
       .get() as { total: number }
+    // 批量解析原路径：单条递归 CTE 查完所有顶层项祖先，避免 500×64 次同步查询。
+    const parentPaths = this.pathNamesForParents(
+      rows.map((row) => (row.deleted_parent_id ? row.deleted_parent_id : null)),
+    )
     return {
-      items: rows.map((row) => this.toTrashItem(row)),
+      items: rows.map((row) => this.toTrashItem(row, parentPaths)),
       page,
       pageSize,
       total,
@@ -433,13 +515,43 @@ export class FileService {
     }
   }
 
-  private toTrashItem(row: FileRow): TrashItem {
+  /** 批量计算多个父目录的展示路径（'全部文件 / a / b'），返回 parentId → path。 */
+  private pathNamesForParents(parentIds: (string | null)[]): Map<string, string> {
+    const out = new Map<string, string>()
+    const unique = [...new Set(parentIds.filter((id): id is string => Boolean(id)))]
+    if (unique.length === 0) return out
+    const placeholders = unique.map(() => '?').join(', ')
+    const rows = this.db
+      .prepare(
+        `WITH RECURSIVE chain(root_id, id, parent_id, name, depth) AS (
+           SELECT f.id, f.id, f.parent_id, f.name, 0 FROM files f WHERE f.id IN (${placeholders})
+           UNION ALL
+           SELECT c.root_id, p.id, p.parent_id, p.name, c.depth + 1
+             FROM chain c JOIN files p ON p.id = c.parent_id WHERE c.depth < 64
+         )
+         SELECT root_id, name, depth FROM chain ORDER BY root_id ASC, depth DESC`,
+      )
+      .all(...unique) as unknown as { root_id: string; name: string; depth: number }[]
+    const grouped = new Map<string, string[]>()
+    for (const row of rows) {
+      const list = grouped.get(row.root_id) ?? []
+      list.push(row.name)
+      grouped.set(row.root_id, list)
+    }
+    for (const [rootId, names] of grouped) out.set(rootId, ['全部文件', ...names].join(' / '))
+    return out
+  }
+
+  private toTrashItem(row: FileRow, parentPaths?: Map<string, string>): TrashItem {
     const originalParentId = row.deleted_parent_id === '' ? null : row.deleted_parent_id
+    const originalPath = parentPaths
+      ? (originalParentId ? (parentPaths.get(originalParentId) ?? '全部文件') : '全部文件')
+      : this.pathNames(originalParentId)
     return {
       ...toItem(row),
       deletedAt: row.deleted_at ?? nowIso(),
       originalParentId,
-      originalPath: this.pathNames(originalParentId),
+      originalPath,
     }
   }
 
@@ -451,7 +563,8 @@ export class FileService {
       if (seen.has(current)) break
       seen.add(current)
       const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(current) as unknown as FileRow | undefined
-      if (!row) break
+      // 与面包屑一致：只回溯普通云盘目录。
+      if (!row || row.origin !== 'user') break
       names.push(row.name)
       current = row.parent_id
     }
@@ -459,7 +572,9 @@ export class FileService {
   }
 
   restore(actor: Actor, id: string): FileItem {
-    const row = this.db.prepare('SELECT * FROM files WHERE id = ? AND deleted_at IS NOT NULL').get(id) as unknown as FileRow | undefined
+    const row = this.db
+      .prepare("SELECT * FROM files WHERE id = ? AND deleted_at IS NOT NULL AND origin = 'user'")
+      .get(id) as unknown as FileRow | undefined
     if (!row) throw notFound('回收站中不存在该文件')
     if (row.deleted_parent_id === null) throw badRequest('该条目不是回收站顶层项', 'invalid_restore')
     const originalParentId = row.deleted_parent_id === '' ? null : row.deleted_parent_id
@@ -487,11 +602,13 @@ export class FileService {
         .run(targetParentId, finalName, nowIso(), id)
     })
     audit(this.db, actor.username, 'restore', finalName, { id, parentId: targetParentId }, actor.ip)
-    return toItem(this.activeRow(id))
+    return toItem(this.userActiveRow(id))
   }
 
   purge(actor: Actor, id: string): { count: number; freedBytes: number } {
-    const row = this.db.prepare('SELECT * FROM files WHERE id = ? AND deleted_at IS NOT NULL').get(id) as unknown as FileRow | undefined
+    const row = this.db
+      .prepare("SELECT * FROM files WHERE id = ? AND deleted_at IS NOT NULL AND origin = 'user'")
+      .get(id) as unknown as FileRow | undefined
     if (!row) throw notFound('回收站中不存在该文件')
     if (row.deleted_parent_id === null) throw badRequest('该条目不是回收站顶层项', 'invalid_purge')
     const keys = this.storageKeysForTree(id)
@@ -516,7 +633,7 @@ export class FileService {
     return { count: keys.length, freedBytes }
   }
 
-  private storageKeysForTree(id: string): { id: string; kind: string; size: number; storage_key: string | null }[] {
+  private storageKeysForTree(id: string): { id: string; kind: string; size: number; storage_key: string | null; name: string }[] {
     const rows = this.db
       .prepare(
         `WITH RECURSIVE tree(id) AS (
@@ -524,22 +641,28 @@ export class FileService {
            UNION ALL
            SELECT f.id FROM files f JOIN tree t ON f.parent_id = t.id
          )
-         SELECT id, kind, size, storage_key FROM files WHERE id IN (SELECT id FROM tree)`,
+         SELECT id, kind, size, storage_key, name FROM files WHERE id IN (SELECT id FROM tree)`,
       )
-      .all(id) as unknown as { id: string; kind: string; size: number; storage_key: string | null }[]
+      .all(id) as unknown as { id: string; kind: string; size: number; storage_key: string | null; name: string }[]
     return rows
   }
 
   emptyTrash(actor: Actor): { count: number; freedBytes: number } {
     const rows = this.db
-      .prepare("SELECT id FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL")
+      .prepare("SELECT id FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL AND origin = 'user'")
       .all() as unknown as { id: string }[]
     let count = 0
     let freedBytes = 0
     for (const row of rows) {
-      const result = this.purge(actor, row.id)
-      count += result.count
-      freedBytes += result.freedBytes
+      try {
+        const result = this.purge(actor, row.id)
+        count += result.count
+        freedBytes += result.freedBytes
+      } catch (error) {
+        // 嵌套回收站/并发清理：条目已被删除（notFound）视为完成，不中断其余条目。
+        if (error instanceof AppError && error.statusCode === 404) continue
+        this.log?.warn({ err: error, id: row.id }, '清空回收站时删除条目失败')
+      }
     }
     return { count, freedBytes }
   }
@@ -548,7 +671,7 @@ export class FileService {
     const cutoff = new Date(Date.now() - retentionDays * 86_400_000).toISOString()
     const rows = this.db
       .prepare(
-        "SELECT id FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL AND deleted_at < ?",
+        "SELECT id FROM files WHERE deleted_at IS NOT NULL AND deleted_parent_id IS NOT NULL AND origin = 'user' AND deleted_at < ?",
       )
       .all(cutoff) as unknown as { id: string }[]
     let count = 0
@@ -560,6 +683,46 @@ export class FileService {
       }
     }
     return count
+  }
+
+  // ---------- 硬删除（笔记附件等不可见文件） ----------
+
+  /**
+   * 硬删除文件行（目录递归，级联 note_attachments/share_items/子行），提交后再删物理文件。
+   * 物理删除失败只记日志（DB 已不可见），返回释放的字节数与删除条目数。
+   * 调用方负责先校验这些 id 属于自己管理的范围（如笔记附件归属）。
+   */
+  deleteFiles(actor: Actor, ids: string[], options: DeleteFilesOptions = {}): DeleteFilesResult {
+    const roots = [...new Set(ids.filter((id) => typeof id === 'string' && id.length > 0))]
+    if (roots.length === 0) return { count: 0, freedBytes: 0 }
+    // 先收集子树（含 storage_key/size）；根 id 不存在时返回空，由调用方决定是否报错。
+    const entries = new Map<string, { kind: string; size: number; storage_key: string | null; name: string }>()
+    for (const root of roots) {
+      for (const entry of this.storageKeysForTree(root)) {
+        entries.set(entry.id, { kind: entry.kind, size: entry.size, storage_key: entry.storage_key, name: entry.name })
+      }
+    }
+    if (entries.size === 0) return { count: 0, freedBytes: 0 }
+    const freedBytes = [...entries.values()].reduce((sum, entry) => (entry.kind === 'file' ? sum + Number(entry.size) : sum), 0)
+    const target =
+      entries.size === 1 ? ([...entries.values()][0]?.name ?? roots[0]!) : `${roots.length} 个文件`
+    transaction(this.db, () => {
+      for (const root of roots) this.db.prepare('DELETE FROM files WHERE id = ?').run(root)
+    })
+    const failures: { id: string; error: string }[] = []
+    for (const [id, entry] of entries) {
+      if (entry.kind !== 'file' || !entry.storage_key) continue
+      const error = this.storage.remove(entry.storage_key)
+      if (error) failures.push({ id, error: error.message })
+    }
+    if (failures.length > 0) this.log?.warn({ failures, freedBytes }, '物理文件删除失败，需人工清理')
+    if (this.usageCache) this.usageCache = { at: Date.now(), usedBytes: Math.max(0, this.usageCache.usedBytes - freedBytes) }
+    audit(this.db, actor.username, options.auditAction ?? 'file_delete', target, {
+      count: entries.size,
+      freedBytes,
+      ...(options.detail ?? {}),
+    }, actor.ip)
+    return { count: entries.size, freedBytes }
   }
 
   // ---------- 内容 ----------
@@ -605,10 +768,11 @@ export class FileService {
 
   // ---------- 内部 ----------
 
-  private uniqueName(parentId: string | null, desired: string, excludeId?: string): string {
+  /** 同父目录、同 origin 下名称唯一（大小写不敏感）；不同 origin 可同名。 */
+  private uniqueName(parentId: string | null, desired: string, excludeId?: string, origin: FileOrigin = 'user'): string {
     const rows = this.db
-      .prepare('SELECT id, name FROM files WHERE parent_id IS ? AND deleted_at IS NULL')
-      .all(parentId) as unknown as { id: string; name: string }[]
+      .prepare('SELECT id, name FROM files WHERE parent_id IS ? AND deleted_at IS NULL AND origin = ?')
+      .all(parentId, origin) as unknown as { id: string; name: string }[]
     const used = new Set(rows.filter((row) => row.id !== excludeId).map((row) => row.name.toLowerCase()))
     if (!used.has(desired.toLowerCase())) return desired
     for (let index = 2; index < 10_000; index += 1) {

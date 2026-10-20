@@ -58,7 +58,7 @@ function upgrade(port: number, lines: string[]): Promise<{ response: string; soc
   })
 }
 
-function upgradeHeaders(host: string, cookie?: string): string[] {
+function upgradeHeaders(host: string, cookie?: string, origin?: string): string[] {
   return [
     'GET / HTTP/1.1',
     `Host: ${host}`,
@@ -66,6 +66,7 @@ function upgradeHeaders(host: string, cookie?: string): string[] {
     'Upgrade: websocket',
     'Sec-WebSocket-Version: 13',
     'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+    ...(origin ? [`Origin: ${origin}`] : []),
     ...(cookie ? [`Cookie: ${cookie}`] : []),
   ]
 }
@@ -121,7 +122,10 @@ test('WebSocket 升级：未登录 401、未知 Host 断开、正常会话转发
     assert.doesNotMatch(unknownHost.response, /^HTTP\/1\.1 101/)
     unknownHost.socket.destroy()
 
-    const authed = await upgrade(address.port, upgradeHeaders('ai.test', `af_session=${session.token}`))
+    const authed = await upgrade(
+      address.port,
+      upgradeHeaders('ai.test', `af_session=${session.token}`, 'https://ai.test'),
+    )
     assert.match(authed.response, /^HTTP\/1\.1 101/, authed.response)
     await new Promise((resolve) => setTimeout(resolve, 100))
     assert.equal(upstream.records.length, 1)
@@ -131,6 +135,14 @@ test('WebSocket 升级：未登录 401、未知 Host 断开、正常会话转发
     )
     assert.equal(upstream.records[0]?.cookie, undefined)
     authed.socket.destroy()
+
+    // 错误 Origin（兄弟子域/null/缺失）一律 403，不建立隧道。
+    for (const origin of ['https://evil.test', 'https://app.test.evil.test', 'null', undefined]) {
+      const rejected = await upgrade(address.port, upgradeHeaders('ai.test', `af_session=${session.token}`, origin))
+      assert.match(rejected.response, /^HTTP\/1\.1 403/, `Origin=${String(origin)} 应被拒绝：${rejected.response}`)
+      rejected.socket.destroy()
+    }
+    assert.equal(upstream.records.length, 1, '被拒绝的升级不应触达上游')
   } finally {
     // WS 隧道需先断开，否则 Fastify server.close 会等待连接（120s 后才超时）。
     context.proxy.close()

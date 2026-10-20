@@ -497,6 +497,10 @@ export function Knowledge() {
           setEditingNote(null)
         }}
         onSaved={handleNoteSaved}
+        onRestored={() => {
+          // 恢复后编辑器保持打开；后台刷新列表摘要与标签
+          void refresh()
+        }}
       />
 
       <BookmarkEditor

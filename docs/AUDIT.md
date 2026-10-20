@@ -126,3 +126,109 @@
 - 第二轮审计范围内未发现未关闭的 P0/P1；A2-01/A2-04 属最高风险项，已修复并有回归测试。
 - 备份链、分享撤销、告警状态、tar 恢复、分片上传是后续回归重点；每次部署后跑 `npm run check` + `smoke.ps1`。
 - 本轮审计记录为**补档**，不能替代独立第三方审计；下一轮应在发布前保留各审计子任务的最终报告原文。
+
+## 第三轮（v0.3.2 → v0.4.0，2026-10-20）
+
+### 0. 执行方式与记录边界
+
+- 范围：v0.3.2 基线 + v0.4.0 增量（迁移 5 结构变更 + 迁移 6 孤儿分享数据修复、笔记附件/版本、多文件分享、指标、世界备份/演练、状态 API）。
+- 方式：4 个独立子审计员并行只读审计（服务端安全、服务端数据/可靠性、前端/契约、运维/CI/脚本），Lead 做架构复核、修复排期与最终集成；审计阶段未修改生产，Pi 仅执行只读命令。
+- 证据：静态审查 + 进程内 PoC + 既有测试；修复以 `npm run check`、新增回归测试、迁移测试与生产验收为准。
+- 边界：审计期间工作树被 v0.4.0 实现并发修改，部分发现基于中间快照；最终修复后由 Lead 对 P0/P1 做定向复核。本记录不替代独立第三方渗透测试。
+
+### 1. 评分卡（1–5）
+
+| 维度 | v0.3.2 基线 | v0.4.0 修复后 | 主要依据 |
+|---|---|---|---|
+| 架构设计 | 4 | 4 | 模块边界清晰；新增 metrics/状态文件为独立模块；backups/alerts 仍偏大，module split 列后续 |
+| 功能完整度 | 3 | 4 | 指标历史/筛选、笔记附件/版本、多文件分享、世界备份/演练补齐；目录分享/笔记公开分享仍缺 |
+| 安全设计 | 4 | 4 | 认证/CSRF/路径/tar 扎实；修复审计日志膨胀、限流锁死、AI 反代 Origin、快照行数/staging 上限；SSH/sudo 暴露面按用户选择仅披露 |
+| 可靠性/数据完整性 | 3 | 4 | 上传耐久性、备份 pending origin、ack 事务、链解析、恢复 origin/空间、状态可见性修复；DR-1 时钟水位、导入归档保留、告警重投仍残留 |
+| 测试与 CI | 3 | 4 | 服务端 214、前端 129、脚本 16；新增覆盖率门禁、`npm audit`、gitleaks、Dependabot、systemd/nftables/PowerShell 检查 |
+| 可维护性/运维 | 3 | 4 | 版本单源、部署回滚还原 DB、UTF-8 修复、smoke 版本断言、systemd 加固、nftables 收窄、文档漂移修正 |
+
+**综合：v0.3.2 约 3.2/5 → v0.4.0 约 4.0/5**（运维审计基线 3/5、数据 2.5/5、前端 3/5、安全 3.5/5；均为各自维度的独立评分）。
+
+### 2. 发现汇总与处置
+
+#### 2.1 运维/CI/脚本（OP-01～OP-25）
+
+| 级别 | 代表问题 | 处置 |
+|---|---|---|
+| P0 | `antifield` 拥有 `(ALL) NOPASSWD: ALL`、SSH 密码登录、22 全源放行 | **按用户选择仅文档披露**（不改 SSH/sudo）；SECURITY/DEPLOY 记录为残余风险与收敛建议 |
+| P0 | 旧世界 cron 无 `save-off/save-all`、`tar && mv` 在 tar 退出 1 时静默不产出、失败累积 3.2GB tmp | 新增 root 世界备份脚本（固定 RCON save-off/save-all flush/save-on finally、tar 0/1 容忍、gzip 校验、SHA/状态、保留 4、空间预检）；验收后停用旧 cron |
+| P1 | `bootstrap-env.sh --force` 丢未知键（含恢复开关/webhook/新键） | 已修：保留未知键、补 v0.4.0 键、删除 0.2.0 兜底 |
+| P1 | 版本 5 处重复、deploy 不注入/不校验 `APP_VERSION` | 已修：package.json 单源；deploy 注入并断言 `/healthz.version` |
+| P1 | 自动回滚不还原迁移前 DB 快照 | 已修：stop→还原快照（含 -wal/-shm）→切 release→start；无快照拒绝自动回滚 |
+| P1 | PS 5.1 按 GBK 解码 UTF-8 导致备份 3 连败 | 已修：所有 ps1 设置 UTF-8 输出编码、`--no-warnings`、ASCII 状态码、剥非 ASCII 兜底 |
+| P1/P2 | 备份状态写失败触发整轮重试→重复 prepare；secrets 立即删远端；icacls 未校验；job 超时不杀进程树 | 已修：状态写 finally/幂等、重试跳过已 ack、secrets KEEP=2、icacls 全 ACE+版本标记、Start-Process/taskkill 杀进程树 |
+| P2 | systemd 加固缺口、nftables 22 全源/25565 link-local 过宽、journald 仅当前 boot、smoke 不校验版本/secrets/世界状态 | 已修：app/world unit 加固；nftables 22 与 25565 收窄到直连/校园网并限速；smoke 增加版本/systemctl/secrets/world/drill/脚本 hash；journald 列后续 |
+| P2 | CI 缺覆盖率/依赖审计/密钥扫描/Dependabot、无 timeout/concurrency | 已修（见 2.5） |
+| P3 | 旧 9GB 归档、孤儿归档权限、`check-prod-deps` 不启动、npm 指向 nvm 等 | 记录；孤儿归档人工清理；npm 预检与文档提示已加，nvm 清理禁止项入 DEPLOY |
+
+#### 2.2 服务端安全（SA-01～SA-16）
+
+| 级别 | 问题 | 处置 |
+|---|---|---|
+| P2 | 未认证审计日志膨胀（username 无长度、audit 行可达 1MiB） | 已修：username≤64、audit actor≤64/target≤256/detail≤4KiB、列表返回再截断；测试覆盖 |
+| P2 | 全局密码/TOTP 限流可被单 IP 占满锁死管理员 | 已修：全局阈值 60/h、120/h，loopback 不占桶；每 IP 仍 5/15min；残余分布式限流风险记录 |
+| P2 | 恶意归档 SQLite 无行数上限、entries 无限流、staging 绕过磁盘预检 | 已修：fast snapshot 100k 行上限、DB 大小上限、entries 30/min、staging ≤2GiB/20%、实际 stat 磁盘预检；超限 422/429/507 |
+| P2 | AI 反代缺 Origin/WS Origin，兄弟子域 Cookie 可跨站 | 已修：ai HTTP/WS 校验 Origin（loopback 开发例外），非法 403+审计；长期 host-only Cookie/签名票据列后续 |
+| P3 | 分享解锁 oracle、备份 TOTP 失败无审计、OPENCODE_URL/COOKIE_DOMAIN 校验、XFF 透传、空 Host、状态文件无大小上限 | 部分修（状态文件 64KiB 上限/字段白名单、错误文案脱敏）；其余记录 |
+
+#### 2.3 服务端数据/可靠性（DR-1～DR-25）
+
+| 级别 | 问题 | 处置 |
+|---|---|---|
+| P1 | 备份 pending 混入 Web 导入归档→每日备份卡死/增量漏文件 | 已修：CLI/dashboard/alerts 统一 `origin='pi'`；测试导入后 pending=0 |
+| P1 | 分片上传 parent 判断 `folder`≠`dir`，无法传入目录 | 已修 + 目录用例 |
+| P1 | 上传先 DB 后落盘、无 fsync，断电出现“有行无文件”并卡死备份 | 已修：temp fsync→rename→父目录 fsync→提交 DB；备份预检跳过缺失并记 skippedMissing |
+| P1 | skippedMissing 未阻止水位、恢复不消费 | 已修（第三批）：meta 记录缺失文件、恢复纳入/报告，游标不越过 |
+| P2 | Web prepare 10min 超时/陈旧锁、ack 非事务、tar 残片、导入无保留 | 主要已修（prepare 超时可配、锁 stale 接管、ack 事务、残片清理）；导入归档删除/保留列后续 |
+| P2 | registerUpload TOCTOU 并发同名/父目录回收站、上传会话过期/双重释放、缺块重传 | 已修：事务内重算/重校验、过期检查、release 只对预留、缺块 stat 修复 |
+| P2 | 恢复链混 origin、prune 误删唯一 full、恢复 origin 未过滤、2× 磁盘 | 已修：链按来源解析、保留 full、恢复排除 note/system、2× 空间预检 |
+| P2 | 迁移回填 FK 孤儿、schema_version 超前静默启动、维护任务串行、emptyTrash 嵌套 | 已修：`WHERE EXISTS` 回填 + foreign_key_check、超前版本拒绝启动、维护任务独立 try、notFound 视为已删 |
+| P2 | 分享下载计数在流发送前消耗 | 已修：流成功完成后再计数/审计 |
+| P2/P3 | 增量时钟回拨水位（DR-1）、导入归档无删除/保留（DR-7）、告警未投递重试（DR-22）、锁心跳（DR-23）、origin 扩展/旧 release 回滚（DR-25）、listTrash N+1（DR-17）、chunk 目录孤儿（DR-24） | 部分修复/记录；见 §4 残余 |
+
+#### 2.4 前端/契约/可维护性（WE-01～WE-24）
+
+| 级别 | 问题 | 处置 |
+|---|---|---|
+| P1 | metrics 测试与实现 0 语义冲突；多文件分享 API 先行但公开页单文件 | 已修：测试统一；公开页多文件清单+逐项下载、Shares itemCount |
+| P2 | totalSizeBytes 缺失、审计动作映射漂移、嵌套 Modal 焦点陷阱、备份状态 UI 空白、分片会话无法放弃、Files 用 dashboard 取配额、RelativeTime 每行定时器/Dashboard 1s 重渲染、附件单请求无逐项进度 | 全部已修（totalSizeBytes、audit 映射、Modal 栈、BackupStatusCard、放弃并清理、/api/storage、共享时钟+memo、逐文件附件上传） |
+| P3 | eslint react-hooks/jsx-a11y、深链滚动、分享分页、fetch 超时/竞态、分片幂等、bundle lazy、外链图片 CSP、错误码映射、UI-SPEC 漂移 | 部分修（外链图片占位、错误码、UI-SPEC 同步）；其余记录 |
+
+#### 2.5 测试与 CI 基线
+
+- `npm run check`：服务端/脚本 234（服务端 218 + 脚本 16）、前端 129，全绿；`npm run build` 通过。
+- 新增 `npm run test:coverage`（服务端 lines 75/functions 75/branches 65）与 `test:web:coverage`（35/30/33），当前实测服务端 91.7/86.7/77.4、前端 36.6/31.5/34.2。
+- CI：check、coverage、prod-dependencies、audit（`npm audit --omit=dev --audit-level=high`）、secret-scan（gitleaks）、shellcheck、nftables、PowerShell BOM/语法；新增 Dependabot（npm + actions，月度）、concurrency/timeout。
+- 迁移测试：v4→v6（v5 结构 + v6 孤儿 shares 数据修复；origin 默认 user、索引含 origin、share_items 回填、新表存在、v4 数据不丢）。
+
+### 3. 生产只读事实（审计证据摘要）
+
+- Pi `antifield@169.254.77.10`，Node v26.11.1，app v0.3.2 active，schema v4，release `20261020T102328Z`，磁盘 58G/25G 用/31G 余。
+- 世界 4.1 GiB（压缩约 3.0 GiB）；旧 cron 每日 23:00 无 save-off，保留约 3 份/9 GiB；RCON 25575 loopback 可达。
+- `antifield` sudo NOPASSWD ALL、SSH 密码登录、22 全源；nftables 生产 22 全源、25565 限 link-local/校园 `/21`。
+- 应用数据 `/var/lib/antifieldcloud` 0750 antifieldcloud:antifield；`backups` 2770；`backup-pull.json` 正常，`secretsOk=true`；PC `D:\Backups\AntifieldCloud` 有 daily/weekly/secrets + `.sha256`。
+- Windows 任务 `AntifieldCloud-Backup-Pull` Ready，LastResult=0；备份日志含 09:21–09:23 UTF-8 解码失败记录（已在 v0.4.0 修复）。
+
+### 4. 残余风险（明确本轮不修/后续）
+
+1. **SSH/sudo 暴露面（OP-01）**：`antifield` NOPASSWD ALL + 密码登录 + 22 全源。用户选择仅文档披露；建议后续收敛 sudo allowlist、公钥登录、fail2ban。nftables 已收窄 22 与 25565 来源。
+2. **RCON 仍监听 0.0.0.0**：Paper 无 bind 配置，仅 nftables 阻断非 loopback。
+3. **备份增量时钟水位（DR-1）**：`created_at` 回拨/同毫秒可能漏备；依赖 NTP + 每周 full；未引入独立 backed_up 标记。
+4. **导入归档保留（DR-7）**：Web 导入归档无删除/自动保留策略，需人工清理；空间预算未纳入 imports。
+5. **告警未投递重试（DR-22）**：webhook 投递失败/进程崩溃后不自动重投，只有事件记录。
+6. **备份锁心跳（DR-23）**：长备份 >1h 的理论接管窗口，当前 Pi 上 5 GiB 备份通常低于阈值。
+7. **旧 release 回滚 v5 库（DR-19/DR-25）**：现在 schema 超前会拒绝启动；回滚必须用迁移前 DB 快照（deploy 已自动化）。
+8. **AI 代理 Origin 已校验，但 Cookie 仍为父域共享**；长期改 host-only Cookie / AI 签名票据。
+9. **单 SD 卡、无全盘加密、Cloudflare 可见明文、备份归档含 TOTP、限流内存态、http-proxy 弃用、scrypt N=2^15** 等既有风险保留。
+10. **本审计非第三方独立审计**；发布前建议保留各子审计原文并做一次外部复审。
+
+### 5. 结论
+
+- 第三轮范围内未发现未关闭的 P0；v0.4.0 修复了 2 个 P0（世界备份静默失败链、运维权限面记录/缓解）、多个 P1（备份 pending/增量、上传耐久性、env 重建、版本单源、回滚 DB、PS 编码）与大部分 P2。
+- 新增功能（指标/附件/版本/多文件分享/世界备份/演练）均有成功+失败路径测试与生产验收证据（见 `docs/ACCEPTANCE.md`）。
+- 后续轮次优先：DR-1 增量水位、导入归档保留、告警重投、listTrash 性能、SSH/sudo 收敛、独立第三方复审。

@@ -1,27 +1,32 @@
-# 备份与恢复（v0.3.x 两阶段协议）
+# 备份与恢复（v0.4.x）
 
-> 目标：SD 卡损坏、误删、升级失败时，能恢复 `/var/lib/antifieldcloud` 的文件与 SQLite 元数据。
-> 备份分两种：**数据归档**（DB 快照 + 文件内容，明文，含 TOTP/会话）与**密钥包**（age 加密的 env/云隧道/Minecraft 配置/opencode 数据）。
-> 归档与密钥包都只允许落在本机或离线介质，不上传公开网盘。
-> 本版覆盖 App 数据 + opencode 数据；Minecraft 世界尚未纳入（见 §10）。
+> 目标：SD 卡损坏、误删、升级失败或世界存档损坏时，能恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。
+> 备份分三条独立链路：**应用数据归档**（DB 快照 + 文件内容，明文，含 TOTP/会话）、**密钥包**（age 加密的
+> env/云隧道/Minecraft 配置/opencode 数据）与**世界备份**（Minecraft 世界一致性 gzip 归档）。
+> 归档与密钥包只允许落在 Pi 本机或离线介质，不上传公开网盘；恢复演练由 `scripts/drill.ps1` 自动校验。
 
 ## 1. 策略
 
-- **两阶段**：Pi 端 `--prepare` 生成归档并记为 `pending`；Windows 拉取并校验 SHA-256 后 `--ack` 才推进备份游标。
-  PC 未确认前 Pi 不删除 pending 归档，网络/PC 故障不会造成“归档已删但未备份”的数据丢失。
-- **频率**：每日一次；建议的“全量”条件为“无已确认全量或最近全量超过 7 天”，由 `--pending` 的
-  `needsFull/recommendedMode` 计算，Windows 任务按推荐模式执行（错过的周日会在下一轮补做全量）。
-- **增量依据**：文件内容不可变，只备份 `created_at > 上次已确认备份时间` 的新增文件；重命名/移动只改元数据，
-  由 DB 快照覆盖。存在未确认 pending 时，增量起点取最新 pending 时间，避免重复打包。
-- **保留**：Pi 上 pending 归档一直保留到确认；已确认归档最多 2 个（拉取成功后由 Windows 删除，CLI 兜底清理）。
-  PC 保留 30 个 daily 日期目录 + 8 个 weekly 日期目录；密钥包保留 90 天。
-- **空间保护**：生成前检查剩余空间（本次估算 + 现有 pending + 仍占盘的已确认归档 + 孤儿归档 + 2 GiB），不足则返回 JSON 错误且不生成归档。
-- **完整性**：归档 SHA-256 写入 DB 与 PC 的 `.sha256` 旁文件；`--ack` 会再次校验 Pi 上文件；PC 下载后校验后再原子改名。
-- **密钥**：归档包含 DB（TOTP secret、会话、恢复码哈希）与文件内容，落盘权限 0640；密钥包使用 age 加密，
-  私钥只保存在离线介质。
-- **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
+| 链路 | 频率/触发 | 保留 | 确认方式 |
+|---|---|---|---|
+| 应用数据归档 | 每日（Windows 任务触发 `--prepare`，或 Web 手动 prepare） | Pi pending 直到确认、已确认 2 个；PC daily 30 天、weekly 56 天 | PC 校验 SHA-256 后 `--ack` 才推进游标 |
+| 密钥包 | 每日随应用拉取任务执行 `backup-secrets.sh` | Pi `KEEP=2` 滚动；PC 90 天 | PC 拉取并校验 `.sha256` |
+| 世界备份 | 每周日 04:00（`antifieldcloud-world.timer`，Persistent） | Pi 最新 4 份；PC `world\` 最新 4 份 | PC `world-pull.ps1` 校验 SHA 后删除远端（ack） |
+| 恢复演练 | 季度/升级前手动运行 `drill.ps1` | 报告 180 天 | 报告通过 + `drill-status.json` |
 
-## 2. 归档结构与协议
+- **两阶段（应用归档）**：Pi 端 `--prepare` 生成归档并记为 `pending`；Windows 拉取并校验 SHA-256 后 `--ack` 才推进备份游标。
+  PC 未确认前 Pi 不删除 pending 归档，网络/PC 故障不会造成“归档已删但未备份”的数据丢失。
+- **应用归档频率**：每日一次；建议的“全量”条件为“无已确认全量或最近全量超过 7 天”，由 `--pending` 的
+  `needsFull/recommendedMode` 计算，Windows 任务按推荐模式执行（错过的周日会在下一轮补做全量）。
+- **增量依据**：文件内容不可变，只备份 `created_at > 上次已确认备份时间` 的新增文件；重命名/移动只改元数据，由 DB 快照覆盖。
+  存在未确认 pending 时，增量起点取最新 pending 时间，避免重复打包；上次缺失（`skippedMissing`）的文件即使早于水位也强制纳入下次选择。
+- **空间保护**：生成前检查剩余空间（本次估算 + 现有 pending + 仍占盘的已确认归档 + 孤儿归档 + 2 GiB），不足则返回 JSON 错误且不生成归档；
+  世界备份按 `1.5 × 世界目录体积` 预检。
+- **完整性**：归档 SHA-256 写入 DB 与 PC 的 `.sha256` 旁文件；`--ack` 会再次校验 Pi 上文件；PC 下载后校验再原子改名。
+- **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
+  旧世界归档命名 `world-<YYYYMMDD>.tar.gz` 不匹配新的 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 规则，永远不会被自动清理。
+
+## 2. 应用归档结构与协议
 
 ```text
 snapshot-20261019T100101239Z-full.tar.gz
@@ -30,30 +35,44 @@ snapshot-20261019T100101239Z-full.tar.gz
 └── files/<xx>/<id>                           # 本次新增/全量文件内容
 ```
 
-`manifest.json` 字段：`schema / createdAt / mode(full|inc) / since / database / files[] / fileCount / totalBytes`。
+`manifest.json` 字段：`schema / createdAt / mode(full|inc) / since / database / files[] / fileCount / totalBytes /
+skippedMissing[] / warnings[]`。`skippedMissing` 记录“DB 有行但磁盘文件缺失”的文件 id，恢复计划会据此剔除并报告；
+`warnings` 记录缺失/时钟回拨等告警。
 
-DB 表 `backup_archives`（迁移 2；v0.3 增加 `verified_at/origin/manifest_json/last_error`）记录：`name(PK) / mode / created_at / sha256 / size / file_count / pulled_at / acked_at / deleted_at / origin`。
-`backup_state.last_backup_at` 只在 `--ack` 后推进，兼容 v0.1 已有行；v0.2.0 首次拉取会因无已确认全量自动做全量。
-v0.3 文件级恢复计划表：`restore_plans`（归档链、选择、目标名、状态、操作者、过期）。
+DB 表 `backup_archives` 记录：`name(PK) / mode / created_at / sha256 / size / file_count / pulled_at / acked_at /
+deleted_at / origin / verified_at / manifest_json / last_error`；`origin` 区分 `pi`（Pi 生成，参与 pending/ack）与
+`import`（Web 导入，不参与 ack 游标）。`backup_state.last_backup_at` 只在 `--ack` 后推进。
+`restore_plans` 记录文件级恢复计划（归档链、选择、目标名、状态、操作者、过期、`skippedMissing`）。
+`meta.backup_missing_files` 记录上次缺失、等待恢复后补入增量的文件 id。
+
+`--prepare` 先写 `snapshot-*.tar.gz.part`，tar 成功后才原子改名为正式归档；失败/超时清理本次 `.part` 与陈旧锁。
+Web `prepare` 超时由 `BACKUP_PREPARE_TIMEOUT_SEC` 控制（默认 3300 秒，允许 60–7200），与 CLI/PC 侧 55 分钟对齐，避免大归档中途被杀。
+陈旧锁（`.backup.lock` 超过 1 小时）可被接管并记录 warn；ack 的归档行、游标、`meta.backup_missing_files` 与审计在同一事务内提交。
 
 ## 3. Pi 端命令（以 antifieldcloud 运行）
 
 ```bash
 CLI="sudo -u antifieldcloud -H /usr/local/bin/node /opt/antifieldcloud/current/scripts/backup.mjs"
 
-$CLI --pending                    # {"ok":true,"count":..,"pending":[..],"needsFull":..,"recommendedMode":"full|inc"}
+$CLI --pending                    # {"ok":true,"count":..,"pending":[..],"needsFull":..,"recommendedMode":"full|inc",
+                                  #  "orphans":[..],"partials":[..],"missingFiles":[..],"warnings":[..]}
 $CLI --prepare --full             # 生成全量 pending 归档（不推进游标）
 $CLI --prepare                    # 生成增量 pending 归档（无历史时自动全量）
-$CLI --ack <name> --sha256 <hex>  # 校验后确认拉取、推进游标并清理过旧已确认归档（幂等）
+$CLI --ack <name> --sha256 <hex>  # 校验后确认拉取、推进游标并清理过旧已确认归档（幂等、事务化）
 $CLI --snapshot-db                # 仅做一致性 DB 快照（部署/升级前用），输出 {"ok":true,"snapshot":...}
 ```
 
-- 成功输出单行 JSON；失败 `{ok:false,error}` 且退出码 1。归档权限 0640；DB 快照与清单 0600；`.backup.lock` 超过 1 小时视为陈旧。
-- `--ack` 只接受与 DB 记录一致的 SHA-256，且只允许游标前进（乱序 ack 安全）。
+- 成功输出单行 JSON；失败 `{ok:false,error}` 且退出码 1。归档权限 0640；DB 快照与清单 0600；`.backup.lock` 超过 1 小时视为陈旧并可接管（记 warn）。
+- `--prepare` 额外返回 `warnings[]` 与 `skippedMissing[]`；`--pending` 额外返回
+  `orphans/partials/missingFiles/missingFileCount/warnings`。Windows 脚本用 `--no-warnings` 抑制重复提示（仍保留关键字段）。
+- 上次缺失文件记录在 meta `backup_missing_files`：恢复物理文件后即使 `created_at` 早于增量水位，也会被强制纳入下一次增量并在 ack 时写回；
+  这样不会因水位越过而永久漏备。
+- `--ack` 只接受与 DB 记录一致的 SHA-256，且只允许游标前进（乱序 ack 安全）；ack 的归档行、游标、meta 与审计在同一事务内提交。
 - 兼容入口：必须显式 `$CLI --legacy` 才执行“prepare + 立即 ack”；普通无参数运行会报错，旧脚本/任务应改用 `--prepare`/`--ack`。输出会标记 deprecated。
-- `--pending`/`--prepare` 额外返回 `orphans[]/orphanBytes/warnings`；原生无参不再隐式确认。
+- 保护上限：归档内 DB 快照 ≤256 MiB、行数 ≤10 万；staging（解包临时目录）≤2 GiB 且不超过可用空间 20%；
+  归档内容浏览 `GET /api/backups/archives/:name/entries` 按 IP 限流 30 次/分钟。
 
-## 4. Windows 计划任务
+## 4. Windows 每日应用归档任务
 
 ```powershell
 # 管理员 PowerShell；-PiHost/-BackupRoot 会显式写入任务参数（不要再依赖脚本默认占位值）
@@ -61,18 +80,22 @@ cd "$env:USERPROFILE\projects\AntifieldCloud"
 .\scripts\install-backup-task.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
 ```
 
-- 任务名 `AntifieldCloud-Backup-Pull`；每日 `12:00` + 登录后 10 分钟补跑；电池供电时也运行；仅当前用户登录时运行。
+- 任务名 `AntifieldCloud-Backup-Pull`；每日 `12:00` + 登录后补跑；电池供电时也运行；仅当前用户登录时运行。
 - 安装脚本会：复制 `backup-pull.ps1` 到 `%LOCALAPPDATA%\AntifieldCloud\`；用 `icacls` 把备份目录 ACL 收紧为
-  **当前用户 + Administrators + SYSTEM**；安装前做 `PiHost:22` 可达性预检；`-DryRun` 只打印计划不注册任务。
+  **当前用户 + Administrators + SYSTEM**（逐项校验，非白名单主体即失败）；安装前做 `PiHost:22` 可达性预检；
+  回读校验任务参数并写安装标记 `backup-task.json`（版本/脚本 SHA/参数）；`-DryRun` 只打印计划不注册任务。
 - 拉取流程：`--pending` →（无 pending 才 `--prepare`）→ `.part` 下载 → SHA-256 校验 → 原子改名 → 写
-  `<archive>.sha256` → `--ack` → 删除 Pi 归档及 `.sha256`；失败保留 pending，下一轮重试同一归档，不重复生成。
-- 所有 SSH/SCP 有硬超时（`ssh -n` + job kill），secrets 拉取独立 try；`backup-pull.json` 分开记录
+  `<archive>.sha256` → `--ack` → 删除 Pi 归档及 `.sha256`；失败保留 pending，下一轮重试同一归档，不重复生成；
+  同轮已 ack 的归档跳过。
+- 所有 SSH/SCP 有硬超时（`Start-Process` + `taskkill /T /F`），secrets 拉取独立 try；`backup-pull.json` 分开记录
   `secretsAttempted/secretsOk/lastSecretsAt/secretsLastError/secretsArchiveName`，secrets 失败 `ok=false` 且退出码 1。
-- 日志：`%LOCALAPPDATA%\AntifieldCloud\backup.log`（超过 1 MiB 自动轮转为 `backup.log.1`）。
+- 状态 JSON 在重试循环外一次性写入：写失败只记错误、不触发再次 prepare（避免重复归档）。
+- PC 保留：`daily` 目录按时间保留 30 天、`weekly` 保留 56 天（8 周）、`secrets` 保留 90 天；日志
+  `%LOCALAPPDATA%\AntifieldCloud\backup.log`（超过 1 MiB 自动轮转为 `backup.log.1`）。
 - 状态：成功拉取后写 `/var/lib/antifieldcloud/backup-pull.json`，面板“备份”卡与告警读取；文件成功但密钥包失败会显示异常。
 - 旧任务 `PiBackUp-Nightly` 保持原样，不修改。
 
-## 5. 密钥包（age 加密）
+## 5. 密钥包（age 加密，KEEP=2）
 
 Pi 上安装 `age`，离线生成密钥对（私钥不要放 Pi/仓库）：
 
@@ -94,14 +117,133 @@ sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
 - 打包内容：`/etc/antifieldcloud/env`、`/etc/cloudflared/config.yml`、`/etc/cloudflared/cert.pem`、
   `/etc/cloudflared/<tunnel-uuid>.json`、`/home/antifield/minecraft-server/server.properties`、
   `/etc/opencode/opencode.env`、opencode `opencode.json`/`service.json` 及 opencode SQLite 一致性快照。
-- 脚本校验 age 公钥 root 属主/不可组写；明文只落 0700 临时目录并 trap 清理；不输出密码/密钥。
+- 明文只在 0700 临时目录：优先 `/run/antifieldcloud/secrets-tmp`（tmpfs，重启即清），不可用时回退 `/tmp`；
+  启动前清理上次残留，退出路径 trap 清理，不留下未加密产物。
+- opencode DB 快照失败只降级为 warning（`warnings:["opencode_snapshot_failed"]`，`includesOpencode=false`），
+  仍打包 env/cloudflared/server.properties；不会因单个快照失败丢失全部密钥备份。
+- 脚本校验 age 公钥 root 属主/不可组写；不输出密码/密钥。
 - 输出：`/var/lib/antifieldcloud/backups/secrets/secrets-<UTC>.tar.age` + `.sha256`；目录 root:antifield 2750，文件 0640。
-- Windows 任务会自动拉取到 `$BackupRoot\secrets\<日期>\` 并写 `.sha256`；Pi 保留最近 2 份，PC 保留 90 天。
+- **保留**：Pi 端 `SECRETS_KEEP`/默认 `KEEP=2` 滚动保留最新 2 份；Windows 任务拉到本地后**不再立即删除远端密钥包**
+  （PC 失败时可复用同一份）；PC 保留 90 天。
 - 未安装 age/未配置公钥时只记录警告，不影响文件归档备份；但 secrets 状态会显示失败/未尝试。
 
-## 6. 恢复（实际命令）
+## 6. 世界备份（Minecraft 世界一致性归档）
+
+Minecraft 世界不在应用数据归档内，由 root 定时器独立备份；旧 `minecraft-backups` cron 已在验收后停用。
+
+### 6.1 Pi 端定时器与脚本
+
+```bash
+# 安装/更新 unit 与 timer（root）
+sudo install -m 0644 deploy/antifieldcloud-world.service deploy/antifieldcloud-world.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now antifieldcloud-world.timer
+systemctl list-timers antifieldcloud-world.timer
+sudo systemctl start antifieldcloud-world.service    # 手动跑一次验证
+cat /var/lib/antifieldcloud/world-backup-status.json
+```
+
+- `scripts/backup-world.mjs`（root）读取 `/etc/antifieldcloud/env`、`server.properties` 的 RCON/路径配置；
+  预检世界目录、备份目录可写、磁盘余量（1.5× 世界体积）。
+- 一致性流程：RCON `save-off` → `save-all flush`（180s 超时、失败重试一次）→ `tar -czf .part`（排除 `session.lock`）
+  → gzip 完整性校验 → SHA-256 → 原子改名 `world-<UTC>.tar.gz`；**`save-on` 在 finally 中重试 3 次**，失败时状态 `ok=false`。
+- 权限：归档与 `.sha256` 为 0640，属主 `antifieldcloud:antifield`（PC 用户 `antifield` 同组可 scp）；目录 0770（脚本显式 chown，不使用 setgid，避免 systemd `RestrictSUIDSGID` 拒绝）。
+- 保留：最新 4 份（`WORLD_BACKUP_KEEP` 可调）；只删除匹配 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 的归档与旁文件，
+  旧 legacy 命名文件不动；崩溃遗留超过 6 小时的 `.part` 会被清理。
+- 状态：写 `/var/lib/antifieldcloud/world-backup-status.json`（0644，原子 rename），字段含
+  `lastRunAt/ok/archiveName/sizeBytes/sha256/durationMs/kept/error/message/errors/warnings/saveOffOk/saveOnOk/worldBytes`。
+- 失败模式：Minecraft 未运行/RCON 不可达时备份失败并写状态；服务器 `save-off` 期间脚本崩溃时，`save-on` 会重试，
+  仍失败则需手动在控制台执行 `save-on`（状态 JSON 会明确提示）。
+- 旧世界 cron：验收后从 `antifield` 的 `crontab` 移除 `minecraft-backups` 行；旧归档约 9 GiB 不自动删除，
+  按 §6.4 手动清理（清理前确认 PC 有副本）。
+
+### 6.2 Windows 周度世界拉取（用户手动安装任务）
+
+```powershell
+# 管理员 PowerShell；参数按实际直连地址/备份根目录填写（脚本在仓库 scripts/ 下，也可自行复制到固定路径）
+cd "$env:USERPROFILE\projects\AntifieldCloud"
+.\scripts\world-pull.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
+
+# 手动创建周任务（示例：每周日 06:00；路径按实际安装位置替换）
+$action = New-ScheduledTaskAction -Execute "powershell.exe" `
+  -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldCloud\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 06:00
+Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldCloud 世界备份周度拉取"
+```
+
+- `install-backup-task.ps1` **只安装每日应用归档任务**，不会创建世界拉取/演练任务；世界任务由用户手动安装（建议使用仓库路径或复制脚本后固定路径）。
+
+- 两阶段：查询远端 `world-backups` 与 `world-backup-status.json` → 逐个 scp 到 `.part` → 与远端 `.sha256` 比对
+  → 原子改名 → 写本地 `.sha256` → 删除远端归档/旁文件（ack）；**校验失败不 ack、不动远端**，退出码 1。
+- 本地保留最新 4 份（只删 `world-<UTC>.tar.gz` 匹配名及孤儿旁文件）；日志
+  `%LOCALAPPDATA%\AntifieldCloud\world-pull.log`（>1 MiB 轮转）。
+- 状态：写远端 `/var/lib/antifieldcloud/world-pull-status.json`（0644，`sudo install`），字段含
+  `lastPullAt/ok/archiveName/pulledCount/sizeBytes/kept/pendingRemaining/lastBackupAt/lastBackupOk/error/warnings`。
+- 所有 ssh/scp 有硬超时并杀进程树；UTF-8 输出编码统一；`-NoStatusWrite` 可跳过状态写入；失败也会尽量写 `ok=false`。
+
+### 6.3 磁盘与一致性注意
+
+- Pi 世界约 4.1 GiB；`save-off` 窗口内 Minecraft 不落盘，gzip 打包在 Pi 上可能持续数分钟——定时器放在周日 04:00，
+  不与玩家高峰重叠。脚本预检要求可用空间 ≥1.5× 世界体积，保留 4 份会持续占用更多磁盘，需定期 `df -h` 确认。
+- 世界归档是 tar.gz，恢复前必须停 Minecraft 或先 `save-off`，避免运行中的世界文件与归档混写。
+- 世界备份不包含 Paper 配置/插件数据；这些仍由密钥包与应用数据归档覆盖。
+
+### 6.4 旧 cron 迁移与旧归档手动清理
+
+```bash
+# 1) 查看并移除旧世界备份 cron 行（保留其它行）
+crontab -u antifield -l | grep -v 'minecraft-backups' | crontab -u antifield -
+crontab -u antifield -l        # 确认已无 minecraft-backups 行
+
+# 2) 确认 PC 上已有世界副本（world\ 下至少 1 份 world-*.tar.gz）后，清理旧归档
+du -sh /home/antifield/minecraft-backups 2>/dev/null || true
+sudo ls -lh /home/antifield/minecraft-backups | head
+# 确认无误后按日期/大小逐个删除（示例；不要在生产高峰操作）
+sudo rm -f /home/antifield/minecraft-backups/world-YYYYMMDD.tar.gz
+# 或清理整个旧目录（确认 PC 已有副本且无其它依赖后）
+sudo rm -rf /home/antifield/minecraft-backups
+```
+
+- 旧归档约 9 GiB，脚本与定时器都不会自动删除；删除前必须确认 PC 世界副本可解包（可用 `tar -tzf` 抽查）。
+- 不要删除 `/var/lib/antifieldcloud/world-backups` 下新命名归档（由保留策略管理）；legacy 文件可手工清理。
+
+## 7. 恢复演练（自动化 + 记录）
+
+演练校验 PC 上已拉取的真实归档，只读、不修改/删除归档；建议每季度或升级前执行一次。
+
+```powershell
+# 应用归档链 + DB + manifest + 可选世界归档
+cd "$env:USERPROFILE\projects\AntifieldCloud"
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 6
+# 需要解包验证世界（先确认临时盘 ≥3× 世界归档体积）
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 6 -IncludeWorld
+# 将 ASCII 状态回写 Pi（可选；默认不写）
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -PiHost 192.0.2.10
+```
+
+- 检查项：最新 full + 其后全部 inc、每份 `.sha256` 旁文件与 SHA-256、tar 条目安全（拒绝绝对路径/`..`/反斜杠/控制字符/
+  符号链接/设备/白名单前缀）、解包后最新 `db-*.sqlite` 的 `PRAGMA integrity_check`/`foreign_key_check`/`meta.schema_version`、
+  manifest `schema/mode/fileCount/totalBytes/since` 与实际内容一致；`-IncludeWorld` 额外校验世界归档 SHA/条目/`world/level.dat`。
+- 输出：`%BackupRoot%\drills\<UTC>\report.json` 与 `report.md`；日志 `%LOCALAPPDATA%\AntifieldCloud\drill.log`；
+  报告保留 180 天（`-KeepDays` 可调）；任何错误退出码 1。
+- 可选写回 `/var/lib/antifieldcloud/drill-status.json`（0644），字段
+  `lastRunAt/ok/report/fullArchive/incCount/latestDb/schemaVersion/worldArchive/worldChecked/error/warnings`；
+  Dashboard 与 `drill_stale` 告警读取。未安装/未运行时状态为 unknown，不误报“已通过”。
+- 手工演练记录表（每次演练后补充；自动化报告路径一并记录）：
+
+| 日期 | 操作人 | 全量归档 | 增量数量 | 最新 DB schema | 世界归档 | 结果 | 报告/备注 |
+|---|---|---|---|---|---|---|---|
+| 2026-10-19 | （首次部署验收） | snapshot-…-full.tar.gz | 2 | 2 | 未覆盖 | 通过 | v0.2.x 全量+增量+密钥包解包验证 |
+|  |  |  |  |  |  |  | （下一次演练填写） |
+
+- 未填写记录的“演练通过”声明无效；报告文件与 `.local/DR-DRILL.md` 作为证据保存。
+
+## 8. 恢复（实际命令）
 
 > 恢复前先停止应用；恢复期间不要上传文件。先在临时目录解压、校验，再替换生产数据。
+> 应用归档恢复需要约“选择字节 ×2 + 256 MiB”的额外空间（解包 + 落盘），并受 staging 2 GiB/20% 限制。
+
+### 8.1 应用数据（整库离线恢复）
 
 1. **在 PC 上校验归档完整性**（PowerShell）：
 
@@ -115,7 +257,6 @@ if ((Get-FileHash -Algorithm SHA256 $latest.FullName).Hash.ToLower() -ne $expect
 2. **把“最近一次全量 + 其后的全部增量”上传到 Pi**（按文件名时间排序）：
 
 ```powershell
-# PC 上（把 <full>、<inc...> 换成实际文件名）
 scp "$env:USERPROFILE\AntifieldCloudBackups\weekly\<日期>\<full>.tar.gz" antifield@192.0.2.10:/tmp/
 scp "$env:USERPROFILE\AntifieldCloudBackups\daily\<日期>\<inc>.tar.gz" antifield@192.0.2.10:/tmp/
 ```
@@ -152,7 +293,30 @@ sudo systemctl start antifieldcloud
 curl -fsS http://127.0.0.1:3000/healthz
 ```
 
-4. **恢复密钥包**（需要离线 age 私钥；解密在可信机器上做）：
+- `files/` 包含 `origin='note'` 的笔记附件物理内容；恢复整库时一并还原，DB 中的 `note_attachments` 决定其可见性。
+  Web 文件级恢复只把 `origin='user'` 的文件恢复到新目录，不会把笔记附件放进云盘。
+- 若归档 manifest 标记了 `skippedMissing`，对应文件内容不在归档中；恢复后这些文件仍缺失，下一次增量会尝试补入。
+
+### 8.2 世界数据（手动恢复）
+
+```bash
+# 1) 选择最新世界归档并校验（PC 或 Pi 上；PC 副本在 $BackupRoot\world\）
+sha256sum -c world-<UTC>.tar.gz.sha256
+# 2) 停服（或先 RCON save-off；推荐停服，避免运行中写世界）
+sudo systemctl stop minecraft
+# 3) 备份当前世界目录
+sudo mv /home/antifield/minecraft-server/world /home/antifield/minecraft-server/world.before-restore
+# 4) 解包（归档内为 world/ 目录）
+sudo tar -xzf world-<UTC>.tar.gz -C /home/antifield/minecraft-server
+sudo chown -R antifield:antifield /home/antifield/minecraft-server/world
+# 5) 启动并确认玩家/区块正常；确认无误后再删除 world.before-restore
+sudo systemctl start minecraft
+```
+
+- 世界归档一般含 `session.lock` 之外的完整世界；恢复后首次启动 Paper 会重建锁文件。
+- 旧 legacy `world-<YYYYMMDD>.tar.gz` 归档结构相同，可按同样步骤恢复（先校验 SHA/可解包）。
+
+### 8.3 密钥包（需要离线 age 私钥）
 
 ```powershell
 # PC 上
@@ -161,50 +325,24 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 # 核对 .sha256 后，把 /etc/antifieldcloud/env、/etc/cloudflared/*、server.properties、opencode env 按原权限放回
 ```
 
-5. **验证清单**：
-   1. `/healthz` 返回 `{"ok":true,...}`，服务 active；
-   2. 登录成功（TOTP 仍有效，因为 DB 快照含用户与 TOTP secret）；恢复码可用；
-   3. 文件列表数量、随机抽样文件的 SHA-256 与 API `GET /api/files/:id` 的 `sha256` 字段一致；
-   4. 图片/文本/PDF 预览正常，回收站内容与备份时一致；
-   5. 白名单列表与备份时一致（RCON 可用时）；
-   6. 备份 pending/状态正常（`backup.mjs --pending`、`/var/lib/antifieldcloud/backup-pull.json`）；
-   7. 确认无误后再删除 `/var/lib/antifieldcloud.before-restore`。
+- 解密在可信机器上做；恢复后检查 `/etc/antifieldcloud/env` 的域名/APP_ORIGIN/COOKIE_DOMAIN 与实际一致。
+- 密钥包不含普通文件内容；文件恢复走 §8.1，世界走 §8.2。
+
+### 8.4 验证清单
+
+1. `/healthz` 返回 `{"ok":true,"version":"0.4.0",...}`，服务 active；`/api/version` 登录后版本一致。
+2. 登录成功（TOTP 仍有效，因为 DB 快照含用户与 TOTP secret）；恢复码可用。
+3. 文件列表数量、随机抽样文件的 SHA-256 与 API `GET /api/files/:id` 的 `sha256` 字段一致；笔记附件可见。
+4. 图片/文本/PDF/预览正常，回收站内容与备份时一致；多文件分享/笔记版本可打开。
+5. 白名单列表与备份时一致（RCON 可用时）；世界恢复后玩家可进入。
+6. 备份 pending/状态正常（`backup.mjs --pending`、`backup-pull.json`、世界/拉取/演练状态文件）。
+7. 确认无误后再删除 `/var/lib/antifieldcloud.before-restore` 与 `world.before-restore`。
 
 > 数据库迁移只向上、无 down 迁移：若回滚到旧 release，务必同时恢复升级前的 `--snapshot-db` 快照
 > （部署脚本在切换前生成，路径 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`）。
+> schema v6 高于旧程序支持版本时旧程序会拒绝启动，必须先还原快照。
 
-## 7. 演练记录（每季度或升级前填写）
-
-| 日期 | 操作人 | 全量归档 | 增量数量 | 抽样 SHA-256 | 结果 | 备注 |
-|---|---|---|---|---|---|---|
-| 2026-10-19 | （首次部署验收） | snapshot-…-full.tar.gz | 2 | 与 DB/PC 一致 | 通过 | v0.2.x 两阶段协议；全量+增量+密钥包已按 §6 解包验证 |
-
-- 演练内容：按 §6 解包最新全量 + 增量到临时目录，核对 `manifest.fileCount` 与 `files/` 数量一致；
-  抽查 3 个文件 SHA-256；用 `age -d` 解密一次密钥包并核对 `.sha256`；记录到本表并同步 CHANGELOG。
-- 未填写记录的“演练通过”声明无效；当前 v0.2.x 记录见 `docs/ACCEPTANCE.md` 与 `.local/DR-DRILL.md`。
-
-## 8. 安全
-
-- 归档含 DB（用户、TOTP secret、会话、文件元数据）与文件内容；Pi 上 0640，PC 目录 ACL 收紧到当前用户 +
-  Administrators + SYSTEM，不要上传公开网盘。
-- `/etc/antifieldcloud/env` 不以明文形式进入普通归档；密钥包用 age 加密，私钥离线保存（丢失私钥=无法恢复密钥包）。
-- 恢复后建议：设置页“退出全部会话”、重新生成恢复码；怀疑泄露时按 docs/SECURITY.md §5 轮换 RCON/opencode 密码。
-- 备份 CLI/任务日志不得输出密码、TOTP、CSRF/Cookie；`--ack` 只记录归档名与 SHA。
-
-## 9. 故障排查
-
-| 现象 | 处理 |
-|---|---|
-| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移 2：重启一次服务或先升级部署，确认代码/DB 已是 v0.3.0（schema 3） |
-| pending 一直不减少 | PC 下载失败：看 `backup.log`；确认直连/SSH；保留 pending 是预期行为，不要手工删 DB 行 |
-| `--ack` 报 SHA 不匹配 | 归档损坏/被替换；对比 PC `.sha256`，从 PC 副本重新确认或重新 `--prepare --full` |
-| `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB |
-| 密钥备份报 `age 未安装/缺少公钥` | 按 §5 安装 age 并写公钥；文件归档仍可成功，但 `secretsOk` 会为 false，属预期可见状态 |
-| 备份面板超 48h 红色 | 检查计划任务 LastTaskResult、`backup.log`、Pi 直连与 pending 状态 |
-| 备份面板密钥状态异常/unknown | 看 `backup-pull.json` 的 `secretsAttempted/secretsOk/secretsLastError`；确认新脚本已安装、age 公钥权限正确 |
-| 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN/COOKIE_DOMAIN 一致；必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
-
-## 10. Web 文件级恢复（v0.3）
+## 9. Web 文件级恢复（不替换运行中的 DB）
 
 Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
@@ -212,14 +350,51 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 2. 校验归档（流式 SHA-256 + tar 安全扫描）；
 3. 恢复向导选择 full+inc 链和文件/目录 → TOTP + 输入 `RESTORE` → 计划 30 分钟有效；
 4. 执行后只新建“恢复-<时间>”文件夹，使用新文件 ID，不覆盖原数据；失败会清理未完成内容；
-5. 整库恢复仍走 §6 的离线 root 流程，Web 不提供。
+5. `skippedMissing` 文件会从选择中剔除：计划返回 `skippedMissing` 列表；若所选全部缺失返回 400 `invalid_selection`；
+   否则其余文件正常恢复，执行结果同样包含 `skippedMissing`（不整体失败）；
+6. 整库恢复仍走 §8.1 的离线 root 流程，Web 不提供。
 
-信任边界：归档含 TOTP/会话，导入需要管理员 TOTP；tar 仍按不可信输入处理，不提供归档下载。归档计划的 `restore_plans` 状态可查询；执行单并发。
+信任边界：归档含 TOTP/会话，导入需要管理员 TOTP；tar 仍按不可信输入处理，不提供归档下载；恢复计划单并发、30 分钟过期；
+归档链只在同来源（Pi / Web 导入）内解析，避免跨来源拼出错误父子关系；归档浏览/导入/计划/执行均有独立限流。
 
-## 11. 覆盖与限制（v0.3.0）
+## 10. 故障排查
 
-- 已覆盖：App 数据归档（DB + 文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照）。
-- 未覆盖：Minecraft 世界（体积/`save-off`/一致性要求，另立项）；VPS 远端归档/异地副本；对象存储。
-- v0.3.0 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入仍独立于文件分片上传。
-- 普通归档仍含 TOTP/会话明文；PC ACL/离线介质是最后防线。age 私钥丢失=密钥包不可恢复。
+| 现象 | 处理 |
+|---|---|
+| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.4.0/schema v6 |
+| pending 一直不减少 | PC 下载失败：看 `backup.log`；确认直连/SSH；保留 pending 是预期行为，不要手工删 DB 行 |
+| `--ack` 报 SHA 不匹配 | 归档损坏/被替换；对比 PC `.sha256`，从 PC 副本重新确认或重新 `--prepare --full` |
+| `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB；世界备份另需 1.5× 世界体积 |
+| `skippedMissing` 非空 | DB 有行但文件缺失（断电/误删）。备份继续、manifest 记录；恢复该文件后下一次增量自动补入；查 `warnings` |
+| 密钥备份报 `age 未安装/缺少公钥` | 按 §5 安装 age 并写公钥；文件归档仍可成功，但 `secretsOk` 会为 false，属预期可见状态 |
+| `opencode_snapshot_failed` 警告 | opencode 服务/权限异常：检查 `/var/lib/opencode` 与 opencode 用户；其它密钥仍会打包 |
+| 备份面板超 48h 红色 | 检查计划任务 LastTaskResult、`backup.log`、Pi 直连与 pending 状态 |
+| 世界备份状态 ok=false | 看 `/var/lib/antifieldcloud/world-backup-status.json` 的 `error/message`；常见为 RCON 不可达、磁盘不足、save-all 超时；修复后 `sudo systemctl start antifieldcloud-world.service` 重跑 |
+| 世界备份超 8 天告警 | timer 未启用/未安装/上次失败；`systemctl list-timers`、`journalctl -u antifieldcloud-world`、smoke 世界状态检查 |
+| 世界拉取状态超期/失败 | 检查 Windows 周任务、`world-pull.log`、直连与 Pi 上 `world-backups` 是否有归档；失败不会 ack，可重跑 |
+| 世界归档 SHA 不一致 | 归档损坏/下载不完整；删除本地 `.part`/坏归档后重跑 `world-pull.ps1`；不要删除远端归档 |
+| 恢复演练报告失败 | 看 `report.json` 的 `errors`：sidecar/链缺失、tar 不安全条目、DB integrity/FK/schema、manifest 不一致；先修备份再演练 |
+| 演练状态 unknown | 从未运行或未指定 `-PiHost` 回写；运行 `drill.ps1 -PiHost ...` 或接受 unknown（不误报通过） |
+| PC 有旧世界归档占空间 | 旧 cron 已停用；按 §6.4 手动清理，保留至少一份可解包副本 |
+| 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN/COOKIE_DOMAIN 一致；必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
+
+## 11. 覆盖、残余风险与限制
+
+- **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照）、
+  Minecraft 世界一致性归档（Pi 保留 4 + PC 拉取保留 4）、自动化恢复演练。
+- **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、VPS 远端/异地副本、对象存储、整包加密；
+  普通归档仍含 TOTP/会话明文，PC ACL/离线介质是最后防线；age 私钥丢失=密钥包不可恢复。
+- 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。
+- 世界备份依赖 Minecraft 运行与 RCON；Windows 世界拉取/演练任务需用户手动安装；未安装时状态 unknown、告警可能触发。
 - 恢复演练记录见 §7 与 `.local/DR-DRILL.md`；每次升级前重新演练。
+
+### 本轮明确不修 / 已知残留（DR 系列）
+
+- **DR-1（时钟回拨/同毫秒）**：增量依赖 `created_at > 上次水位`；系统时钟回拨或同一毫秒内的写入仍可能漏备。
+  `--prepare` 会对“文件 `created_at` 晚于当前时间/水位倒退”写 `warnings`，但不会自动修正；依赖 NTP 正常 + 每周全量兜底。
+- **DR-7（导入归档无删除/保留策略）**：Web 导入的 `origin='import'` 归档只登记、不参与 ack，也没有自动清理/保留期；
+  会持续占用磁盘，需要人工在 `DATA_DIR/backups/imports/` 与 DB 记录之间核对后处理。
+- **DR-22（告警跨周期不重投）**：告警只在状态变化（firing/resolved/unknown）时投递；同一状态跨评估周期不会重复发送 webhook，
+  持续故障不会每天提醒（面板状态仍在）。
+- **DR-23（锁心跳）**：`.backup.lock` 只有 mtime，没有心跳续租；超过 1 小时按陈旧锁接管。若单次 prepare 合法运行超过 1 小时，
+  另一进程可能误判并接管（CC 已检查 stale 只记 warn，CLI 仍会竞争），依赖定时任务不重叠 + 手动运行时避免并发。

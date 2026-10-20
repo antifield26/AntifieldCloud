@@ -1,7 +1,7 @@
 /** 分片上传服务：成功、幂等、哈希、配额、过期与并发上限。 */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { openDatabase } from '../src/db.ts'
 import { FileService } from '../src/files/service.ts'
@@ -62,6 +62,25 @@ test('重复分片同内容幂等，不同内容 409', async () => {
       ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abce')),
       (error: unknown) => (error as { code?: string }).code === 'chunk_conflict',
     )
+  } finally {
+    close(ctx)
+  }
+})
+
+test('parentId 目录：分片上传可落到目录，completed 状态返回 fileId', async () => {
+  const ctx = setup()
+  try {
+    const folder = ctx.files.createFolder(ctx.actor, null, '大文件')
+    const init = ctx.uploads.init(ctx.actor, { name: 'nested.bin', parentId: folder.id, size: 8 })
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd'))
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 1, Buffer.from('efgh'))
+    const result = await ctx.uploads.complete(ctx.actor, init.uploadId)
+    assert.equal(result.file.parentId, folder.id)
+    const status = ctx.uploads.status(ctx.actor, init.uploadId)
+    assert.equal(status.status, 'completed')
+    assert.equal(status.fileId, result.file.id, 'completed 会话返回已登记 fileId')
+    const again = await ctx.uploads.complete(ctx.actor, init.uploadId)
+    assert.equal(again.file.id, result.file.id)
   } finally {
     close(ctx)
   }
@@ -141,6 +160,72 @@ test('重启后重新预留并可继续会话', async () => {
     assert.deepEqual(status.received, [0])
     const result = await second.complete(ctx.actor, init.uploadId)
     assert.equal(result.file.size, 4)
+  } finally {
+    close(ctx)
+  }
+})
+
+test('过期会话懒失效：访问返回 410 并释放预留；assembling 期间清理不删块', async () => {
+  const ctx = setup({ chunkSessionTtlHours: 1 })
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'ttl.bin', parentId: null, size: 4 })
+    // 直接把 expires_at 拨到过去，模拟 TTL 到期但清理任务未运行。
+    ctx.db.prepare('UPDATE upload_sessions SET expires_at = ? WHERE id = ?').run('2000-01-01T00:00:00.000Z', init.uploadId)
+    assert.throws(
+      () => ctx.uploads.status(ctx.actor, init.uploadId),
+      (error: unknown) => (error as { code?: string }).code === 'upload_expired',
+    )
+    await assert.rejects(
+      ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd')),
+      (error: unknown) =>
+        (error as { code?: string }).code === 'upload_expired' || (error as { code?: string }).code === 'upload_not_found',
+    )
+
+    // assembling 状态：cleanup/abort 都不得破坏拼接。
+    const second = ctx.uploads.init(ctx.actor, { name: 'assembling.bin', parentId: null, size: 4 })
+    ctx.db.prepare("UPDATE upload_sessions SET status = 'assembling' WHERE id = ?").run(second.uploadId)
+    assert.equal(ctx.uploads.cleanupExpired(new Date(Date.now() + 86_400_000)), 0)
+    assert.throws(
+      () => ctx.uploads.abort(ctx.actor, second.uploadId),
+      (error: unknown) => (error as { code?: string }).code === 'upload_assembling',
+    )
+    assert.equal(existsSync(join(ctx.dir, 'tmp', 'chunks', second.uploadId)), true, 'assembling 会话目录保留')
+  } finally {
+    close(ctx)
+  }
+})
+
+test('缺块自愈：物理分块丢失后允许重传并正确计数', async () => {
+  const ctx = setup()
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'heal.bin', parentId: null, size: 8 })
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd'))
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 1, Buffer.from('efgh'))
+    rmSync(join(ctx.dir, 'tmp', 'chunks', init.uploadId, '0.part'), { force: true })
+    const statusBefore = ctx.uploads.status(ctx.actor, init.uploadId)
+    assert.deepEqual(statusBefore.missing, [0])
+    const reupload = await ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd'))
+    assert.equal(reupload.received, 2)
+    const result = await ctx.uploads.complete(ctx.actor, init.uploadId)
+    assert.equal(result.file.sha256, '9c56cc51b374c3ba189210d5b6d4bf57790d351c96c47c02190ecf1e430635ab')
+  } finally {
+    close(ctx)
+  }
+})
+
+test('孤儿分片目录/assembling 残片：维护清理只删除无会话的条目', () => {
+  const ctx = setup()
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'keep.bin', parentId: null, size: 4 })
+    const root = join(ctx.dir, 'tmp', 'chunks')
+    mkdirSync(join(root, 'orphan-session-dir'), { recursive: true })
+    writeFileSync(join(root, 'orphan-session-dir', '0.part'), 'x')
+    writeFileSync(join(root, 'dead-session.assembling'), 'x')
+    writeFileSync(join(root, 'keep.bin.assembling'), 'x') // 无对应会话 → 应清理
+    assert.equal(ctx.uploads.cleanupOrphanSessions(), 3)
+    assert.equal(existsSync(join(root, 'orphan-session-dir')), false)
+    assert.equal(existsSync(join(root, 'dead-session.assembling')), false)
+    assert.equal(existsSync(join(root, init.uploadId)), true, '仍活动的会话目录保留')
   } finally {
     close(ctx)
   }

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildApp } from '../src/app.ts'
+import { TOTP_GLOBAL_MAX } from '../src/auth/service.ts'
 import { hotp, currentStep } from '../src/auth/totp.ts'
 import { createSession } from '../src/auth/sessions.ts'
 import { cleanupDir, cookieHeader, parseSetCookies, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
@@ -212,7 +213,7 @@ test('H1：恢复码重生成需要密码+TOTP，成功返回 10 个一次性码
   }
 })
 
-test('TOTP 全局限流：跨来源累计 40 次失败后 429（防分布式爆破）', async () => {
+test(`TOTP 全局限流：跨来源累计 ${TOTP_GLOBAL_MAX} 次失败后 429（防分布式爆破）`, async () => {
   const fx = await fixture()
   try {
     const password = await fx.context.app.inject({
@@ -223,11 +224,11 @@ test('TOTP 全局限流：跨来源累计 40 次失败后 429（防分布式爆�
     })
     assert.equal(password.statusCode, 200)
     const challenge = password.json().challenge as string
-    for (let index = 0; index < 40; index += 1) {
+    for (let index = 0; index < TOTP_GLOBAL_MAX; index += 1) {
       const response = await fx.context.app.inject({
         method: 'POST',
         url: '/api/auth/totp',
-        headers: { host: 'app.test', 'cf-connecting-ip': `198.51.100.${index + 2}` },
+        headers: { host: 'app.test', 'cf-connecting-ip': `198.51.${Math.floor(index / 200)}.${(index % 200) + 2}` },
         payload: { challenge, code: '000000' },
       })
       assert.equal(response.statusCode, 401, `第 ${index + 1} 次应 401`)

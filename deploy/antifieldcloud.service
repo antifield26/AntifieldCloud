@@ -3,6 +3,8 @@ Description=AntifieldCloud personal workbench
 Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -18,16 +20,27 @@ Restart=on-failure
 RestartSec=3
 UMask=0027
 NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+PrivateDevices=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/antifieldcloud
 ProtectKernelTunables=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
 RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
 LockPersonality=true
+SystemCallArchitectures=native
 LimitNOFILE=65535
 MemoryMax=512M
 
 [Install]
 WantedBy=multi-user.target
+

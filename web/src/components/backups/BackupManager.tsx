@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { Archive, RefreshCw, ShieldCheck, Upload } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
-import type { BackupArchive, BackupImportResult } from '../../api/types'
+import type { BackupArchive, BackupImportResult, BackupStatus } from '../../api/types'
 import { useAppMeta } from '../../meta/MetaContext'
 import { useBackups } from '../../hooks/useBackups'
 import {
@@ -24,11 +24,17 @@ import { EmptyState } from '../EmptyState'
 import { InlineError } from '../InlineError'
 import { RelativeTime } from '../RelativeTime'
 import { useToast } from '../Toast'
+import { BackupStatusCard } from './BackupStatusCard'
 import { ImportArchiveDialog } from './ImportArchiveDialog'
 import { PrepareBackupDialog } from './PrepareBackupDialog'
 import { RestoreWizard } from './RestoreWizard'
 
-export function BackupManager() {
+export interface BackupManagerProps {
+  /** Settings 页一次性读取的 dashboard.backup（密钥包/世界备份/演练字段） */
+  backupStatus?: BackupStatus | null
+}
+
+export function BackupManager({ backupStatus = null }: BackupManagerProps) {
   const { meta } = useAppMeta()
   const toast = useToast()
   const { data, loading, error, errorStatus, refresh } = useBackups()
@@ -205,6 +211,18 @@ export function BackupManager() {
           </Button>
         </div>
       </div>
+
+      <BackupStatusCard
+        backup={backupStatus}
+        state={state}
+        world={data?.world ?? null}
+        worldPull={data?.worldPull ?? null}
+        drill={data?.drill ?? null}
+        archives={items}
+        loading={loading && !data}
+        error={notReady || !data ? null : error}
+        onRetry={() => void handleRefresh()}
+      />
 
       {notReady ? (
         <div className="notice notice-muted">

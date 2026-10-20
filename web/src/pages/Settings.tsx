@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, Download, KeyRound, LockKeyhole, LogOut, ShieldCheck, Webhook } from 'lucide-react'
 import { api, toErrorMessage } from '../api/client'
-import type { AlertsConfig } from '../api/types'
+import type { AlertsConfig, BackupStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { useAppMeta } from '../meta/MetaContext'
 import { PageHeader } from '../components/PageHeader'
@@ -54,6 +54,23 @@ export function Settings() {
   const [alertsError, setAlertsError] = useState<string | null>(null)
   const [alertTesting, setAlertTesting] = useState(false)
   const [alertsReloadKey, setAlertsReloadKey] = useState(0)
+  // 备份健康卡需要 dashboard.backup 的密钥包/世界备份/演练字段；设置页只取一次，不轮询
+  const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
+
+  useEffect(() => {
+    let active = true
+    api
+      .getDashboard()
+      .then((dashboard) => {
+        if (active) setBackupStatus(dashboard.backup)
+      })
+      .catch(() => {
+        // 备份卡缺数据时按“未知”降级展示，不影响设置页其它内容
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // 告警配置只读展示（阈值/Webhook 状态），不提供前端修改
   useEffect(() => {
@@ -425,7 +442,7 @@ export function Settings() {
           className="settings-card-wide"
         >
           <div id="backup" className="settings-anchor" aria-hidden="true" />
-          <BackupManager />
+          <BackupManager backupStatus={backupStatus} />
         </Card>
 
         <Card title="关于" description="AntifieldCloud · 个人工作台" className="settings-card">

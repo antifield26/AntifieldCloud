@@ -6,7 +6,7 @@
  * - 配额在 init 时预留，complete 仍由 FileService 事务复核；过期/放弃必须释放。
  */
 import { createHash } from 'node:crypto'
-import { createReadStream, createWriteStream, mkdirSync, rmSync, statSync } from 'node:fs'
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { once } from 'node:events'
@@ -15,7 +15,7 @@ import type { Config } from '../config.ts'
 import type { Actor, FileItem } from '../files/service.ts'
 import { nowIso } from '../util/time.ts'
 import { newId } from '../util/ids.ts'
-import { badRequest, conflict, notFound, tooLarge } from '../util/errors.ts'
+import { AppError, badRequest, conflict, notFound, tooLarge } from '../util/errors.ts'
 import type { FileService } from '../files/service.ts'
 import { sanitizeName } from '../files/mime.ts'
 
@@ -54,6 +54,8 @@ export interface UploadStatusResult {
   missing: number[]
   status: UploadStatus
   expiresAt: string
+  /** 仅在 status='completed' 时返回：已登记文件 id，供客户端在响应丢失后恢复而不重传。 */
+  fileId?: string
 }
 
 export interface UploadInitResult {
@@ -116,7 +118,7 @@ export class UploadService {
       const parent = this.db
         .prepare("SELECT kind FROM files WHERE id = ? AND deleted_at IS NULL")
         .get(parentId) as { kind: string } | undefined
-      if (!parent || parent.kind !== 'folder') throw badRequest('目标目录不存在', 'not_a_directory')
+      if (!parent || parent.kind !== 'dir') throw badRequest('目标目录不存在', 'not_a_directory')
     }
     if (input.sha256 !== undefined && !/^[0-9a-f]{64}$/i.test(input.sha256)) {
       throw badRequest('SHA-256 格式不正确', 'invalid_sha256')
@@ -157,6 +159,12 @@ export class UploadService {
       this.reservedSessions.add(id)
       mkdirSync(this.sessionDir(id), { recursive: true, mode: 0o700 })
     } catch (error) {
+      // DB 行已插入但目录创建失败时，必须删除会话行，避免留下无法继续的幽灵会话。
+      try {
+        this.db.prepare('DELETE FROM upload_sessions WHERE id = ?').run(id)
+      } catch {
+        // 忽略清理失败，由维护任务扫描。
+      }
       this.files.releaseUploadBytes(input.size)
       this.reservedSessions.delete(id)
       rmSync(this.sessionDir(id), { recursive: true, force: true })
@@ -170,7 +178,11 @@ export class UploadService {
     const chunks = this.db
       .prepare('SELECT idx FROM upload_chunks WHERE session_id = ? ORDER BY idx ASC')
       .all(id) as unknown as Array<{ idx: number }>
-    const received = chunks.map((row) => Number(row.idx)).slice(0, MAX_RECEIVED_LIST)
+    // 物理块缺失（断电/误删）视为未收到：putChunk 会自愈重写。
+    const received = chunks
+      .map((row) => Number(row.idx))
+      .filter((index) => existsSync(this.chunkPath(id, index)))
+      .slice(0, MAX_RECEIVED_LIST)
     const missing: number[] = []
     const set = new Set(received)
     for (let index = 0; index < session.total_chunks; index++) {
@@ -186,6 +198,7 @@ export class UploadService {
       missing,
       status: session.status,
       expiresAt: session.expires_at,
+      ...(session.status === 'completed' && session.file_id ? { fileId: session.file_id } : {}),
     }
   }
 
@@ -207,10 +220,17 @@ export class UploadService {
       .prepare('SELECT idx, size, sha256 FROM upload_chunks WHERE session_id = ? AND idx = ?')
       .get(id, index) as ChunkRow | undefined
     if (original) {
-      if (Number(original.size) === expectedSize && original.sha256 === sha256) {
-        return { index, received: Number(session.received) }
+      // 记录存在但物理块丢失（断电/误删）：删除行后按新块重写，避免 complete 时才因缺文件失败。
+      if (existsSync(this.chunkPath(id, index))) {
+        if (Number(original.size) === expectedSize && original.sha256 === sha256) {
+          return { index, received: Number(session.received) }
+        }
+        throw conflict('分片内容与已上传块不一致', 'chunk_conflict')
       }
-      throw conflict('分片内容与已上传块不一致', 'chunk_conflict')
+      this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ? AND idx = ?').run(id, index)
+      this.db
+        .prepare('UPDATE upload_sessions SET received = MAX(0, received - 1), updated_at = ? WHERE id = ?')
+        .run(nowIso(), id)
     }
     mkdirSync(this.sessionDir(id), { recursive: true, mode: 0o700 })
     const target = this.chunkPath(id, index)
@@ -239,7 +259,10 @@ export class UploadService {
       rmSync(target, { force: true })
       throw error
     }
-    return { index, received: Number(session.received) + 1 }
+    const current = this.db.prepare('SELECT received FROM upload_sessions WHERE id = ?').get(id) as
+      | { received: number }
+      | undefined
+    return { index, received: Number(current?.received ?? Number(session.received) + 1) }
   }
 
   async complete(actor: Actor, id: string, expectedSha256?: string): Promise<CompleteResult> {
@@ -252,6 +275,10 @@ export class UploadService {
       .prepare('SELECT COUNT(*) AS c FROM upload_chunks WHERE session_id = ?')
       .get(id) as { c: number }
     if (Number(count.c) !== Number(session.total_chunks)) throw badRequest('还有分片未上传', 'chunks_missing')
+    // 行存在但物理块缺失时不能拼接：让客户端重传缺失块（putChunk 会自愈）。
+    for (let index = 0; index < Number(session.total_chunks); index += 1) {
+      if (!existsSync(this.chunkPath(id, index))) throw badRequest('分片文件缺失，请重传', 'chunks_missing')
+    }
     if (expectedSha256 !== undefined && !/^[0-9a-f]{64}$/i.test(expectedSha256)) {
       throw badRequest('SHA-256 格式不正确', 'invalid_sha256')
     }
@@ -290,8 +317,8 @@ export class UploadService {
         sha256,
         reservedBytes: Number(session.size),
       })
-      this.files.releaseUploadBytes(Number(session.size))
-      this.reservedSessions.delete(id)
+      // 只释放本会话真实持有的预留，避免与过期/取消路径双重释放导致计数下溢。
+      this.release(session)
       this.db
         .prepare("UPDATE upload_sessions SET status = 'completed', file_id = ?, updated_at = ? WHERE id = ?")
         .run(file.id, nowIso(), id)
@@ -309,6 +336,8 @@ export class UploadService {
   abort(actor: Actor, id: string): { ok: true } {
     const session = this.ownedSession(actor, id)
     if (session.status === 'completed') throw conflict('已完成的会话不能取消', 'upload_completed')
+    // 拼接中的会话由 complete 独占；此时取消会删块并使恢复状态与文件登记不一致。
+    if (session.status === 'assembling') throw conflict('上传正在拼接，不能取消', 'upload_assembling')
     if (session.status !== 'aborted' && session.status !== 'expired') {
       this.release(session)
       this.db.prepare("UPDATE upload_sessions SET status = 'aborted', updated_at = ? WHERE id = ?").run(nowIso(), id)
@@ -319,26 +348,63 @@ export class UploadService {
   }
 
   cleanupExpired(now = new Date()): number {
+    // 只过期 uploading：assembling 由 complete 持有，清理不得删其分块。
     const rows = this.db
-      .prepare(
-        `SELECT * FROM upload_sessions WHERE status IN ${ACTIVE_STATUSES} AND expires_at <= ?`,
-      )
+      .prepare("SELECT * FROM upload_sessions WHERE status = 'uploading' AND expires_at <= ?")
       .all(now.toISOString()) as unknown as UploadSessionRow[]
     for (const row of rows) this.expireSession(row.id, false)
     return rows.length
   }
 
-  private expireSession(id: string, markExpired: boolean): void {
+  /**
+   * 维护清理：删除 tmp/chunks 下没有对应会话的孤儿目录与残留 assembling 临时文件。
+   * 返回清理条目数；上传块表没有外键，进程崩溃/旧版本可能留下目录。
+   */
+  cleanupOrphanSessions(): number {
+    let entries
     try {
-      this.files.releaseUploadBytes(this.sessionSize(id))
+      entries = readdirSync(this.rootDir, { withFileTypes: true })
     } catch {
-      // 仅释放本服务预留；失败不阻断过期。
+      return 0
     }
-    this.reservedSessions.delete(id)
+    let removed = 0
+    const known = new Set(
+      (this.db.prepare('SELECT id FROM upload_sessions').all() as unknown as { id: string }[]).map((row) => row.id),
+    )
+    for (const entry of entries) {
+      const full = join(this.rootDir, entry.name)
+      try {
+        if (entry.isDirectory()) {
+          if (known.has(entry.name)) continue
+          rmSync(full, { recursive: true, force: true })
+          removed += 1
+        } else if (entry.isFile() && entry.name.endsWith('.assembling')) {
+          const sessionId = entry.name.slice(0, -'.assembling'.length)
+          if (known.has(sessionId)) continue
+          rmSync(full, { force: true })
+          removed += 1
+        }
+      } catch {
+        // 单条目清理失败不影响其余。
+      }
+    }
+    return removed
+  }
+
+  private expireSession(id: string, markExpired: boolean): void {
+    // 只对本次进程真实持有的预留做释放；restoreReservations 失败的会话不在集合内，避免下溢。
+    if (this.reservedSessions.has(id)) {
+      try {
+        this.files.releaseUploadBytes(this.sessionSize(id))
+      } catch {
+        // 仅释放本服务预留；失败不阻断过期。
+      }
+      this.reservedSessions.delete(id)
+    }
     if (markExpired) {
       this.db.prepare("UPDATE upload_sessions SET status = 'expired', updated_at = ? WHERE id = ?").run(nowIso(), id)
     } else {
-      this.db.prepare("UPDATE upload_sessions SET status = 'expired', updated_at = ? WHERE id = ? AND status IN ('uploading', 'assembling')").run(nowIso(), id)
+      this.db.prepare("UPDATE upload_sessions SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'uploading'").run(nowIso(), id)
     }
     this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ?').run(id)
     this.removeSessionDir(id)
@@ -363,6 +429,11 @@ export class UploadService {
       | undefined
     if (!row || row.actor !== actor.username) throw notFound('上传会话不存在', 'upload_not_found')
     if (row.status === 'expired' || row.status === 'aborted') throw notFound('上传会话已结束', 'upload_not_found')
+    // 懒过期：TTL 已到但清理任务尚未跑到的会话，主动过期并拒绝，避免继续占配额/写块。
+    if (Date.parse(row.expires_at) <= Date.now() && row.status !== 'completed') {
+      this.expireSession(row.id, true)
+      throw new AppError(410, 'upload_expired', '上传会话已过期')
+    }
     return row
   }
 

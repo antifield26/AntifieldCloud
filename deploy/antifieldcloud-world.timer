@@ -1,0 +1,13 @@
+[Unit]
+Description=Weekly AntifieldCloud Minecraft world consistent backup
+Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
+
+[Timer]
+# 每周日 04:00（本地时区 Asia/Shanghai）；Persistent 让 Pi 关机错过的运行在下次启动后补做一次。
+OnCalendar=Sun 04:00
+Persistent=true
+AccuracySec=1min
+Unit=antifieldcloud-world.service
+
+[Install]
+WantedBy=timers.target

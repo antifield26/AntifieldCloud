@@ -1,7 +1,7 @@
 /** 认证与账号路由。 */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Config } from '../../config.ts'
-import type { AuthService } from '../../auth/service.ts'
+import { MAX_LOGIN_USERNAME_LENGTH, type AuthService } from '../../auth/service.ts'
 import { CSRF_COOKIE, clearAuthCookies, setAuthCookies, setCsrfCookie } from '../../auth/cookies.ts'
 import { badRequest } from '../../util/errors.ts'
 import { asRecord, clientIp, requireString } from '../util.ts'
@@ -24,6 +24,10 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
 
   app.post('/api/auth/password', async (request) => {
     const body = asRecord(request.body)
+    // 未认证输入：超长用户名直接拒绝，避免整串进入查找/审计（audit 层另有长度兜底）。
+    if (typeof body.username === 'string' && body.username.length > MAX_LOGIN_USERNAME_LENGTH) {
+      throw badRequest(`用户名不能超过 ${MAX_LOGIN_USERNAME_LENGTH} 个字符`, 'invalid_request')
+    }
     const username =
       typeof body.username === 'string' && body.username.trim() ? body.username.trim() : config.adminUsername
     const password = typeof body.password === 'string' ? body.password : ''

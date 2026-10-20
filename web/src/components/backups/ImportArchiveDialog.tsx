@@ -6,7 +6,8 @@ import type { FormEvent } from 'react'
 import { Upload } from 'lucide-react'
 import { toErrorMessage, uploadBackupArchive } from '../../api/client'
 import type { BackupImportResult } from '../../api/types'
-import { MAX_BACKUP_UPLOAD_BYTES, validateBackupFile } from '../../lib/backups'
+import { useAppMeta } from '../../meta/MetaContext'
+import { validateBackupFile } from '../../lib/backups'
 import { formatBytes } from '../../lib/format'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
@@ -22,6 +23,8 @@ export interface ImportArchiveDialogProps {
 const TOTP_PATTERN = /^\d{6}$/
 
 export function ImportArchiveDialog({ open, onClose, onImported }: ImportArchiveDialogProps) {
+  const { meta } = useAppMeta()
+  const maxImportBytes = meta.backupImportMaxBytes
   const [file, setFile] = useState<File | null>(null)
   const [totpCode, setTotpCode] = useState('')
   const [progress, setProgress] = useState(0)
@@ -59,7 +62,7 @@ export function ImportArchiveDialog({ open, onClose, onImported }: ImportArchive
       setError('请选择要导入的备份归档')
       return
     }
-    const fileError = validateBackupFile(file)
+    const fileError = validateBackupFile(file, maxImportBytes)
     if (fileError) {
       setError(fileError)
       return
@@ -97,7 +100,7 @@ export function ImportArchiveDialog({ open, onClose, onImported }: ImportArchive
     <Modal
       open={open}
       title="导入备份归档"
-      description={`选择 snapshot-*-[full|inc].tar.gz，单文件不超过 ${formatBytes(MAX_BACKUP_UPLOAD_BYTES, 0)}；导入需要 TOTP。`}
+      description={`选择 snapshot-*-[full|inc].tar.gz，单文件不超过 ${formatBytes(maxImportBytes, 0)}；导入需要 TOTP。`}
       size="md"
       onClose={busy ? () => undefined : onClose}
       busy={busy}
@@ -130,7 +133,7 @@ export function ImportArchiveDialog({ open, onClose, onImported }: ImportArchive
               setFile(selected)
               setError(null)
               if (selected) {
-                const fileError = validateBackupFile(selected)
+                const fileError = validateBackupFile(selected, maxImportBytes)
                 if (fileError) setError(fileError)
               }
             }}

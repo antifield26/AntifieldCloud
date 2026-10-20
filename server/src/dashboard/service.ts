@@ -1,21 +1,39 @@
 /** 仪表盘聚合：主机、存储、Minecraft、opencode、服务、备份、最近活动。 */
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import type { FileService } from '../files/service.ts'
 import type { MinecraftService } from '../mc/service.ts'
 import { listAudit, type AuditItem } from '../auth/audit.ts'
+import { readStatusFile, type StatusFileRecord } from '../util/status.ts'
 import { HostMonitor, ServiceMonitor, type HostMetrics } from './system.ts'
 
+/** 备份拉取超期阈值（小时）；与告警阈值独立，面板固定展示 48h。 */
+const BACKUP_OVERDUE_HOURS = 48
+
 export interface BackupStatus {
-  lastPullAt: string
-  ageHours: number
-  sizeBytes: number
-  ok: boolean
-  overdue: boolean
+  /** PC 拉取脚本写入的状态；缺失记录时为 null（字段保留，前端按无记录展示）。 */
+  lastPullAt: string | null
+  ageHours: number | null
+  sizeBytes: number | null
+  ok: boolean | null
+  overdue: boolean | null
   secretsOk: boolean | null
   lastSecretsAt: string | null
   secretsLastError: string | null
+  /** 待 Windows 拉取确认的 Pi 归档数与字节数（不含 Web 导入归档）。 */
+  pendingCount: number
+  pendingBytes: number
+  /** imports 目录中未登记进 DB 的孤儿归档数。 */
+  orphanCount: number
+  ackedBytes: number
+  /** 最近一个归档错误的简述（不含绝对路径）。 */
+  lastError: string | null
+  /** 世界备份/拉取/演练状态文件原样对象；文件缺失为 null。 */
+  world: StatusFileRecord | null
+  worldPull: StatusFileRecord | null
+  drill: StatusFileRecord | null
 }
 
 export interface OpenCodeStatus {
@@ -99,35 +117,120 @@ export class DashboardService {
     }
   }
 
-  private backupStatus(): BackupStatus | null {
+  /** 存储用量摘要：/api/dashboard 与 /api/storage 共用同一份语义。 */
+  storage(): DashboardData['storage'] {
+    const usage = this.files.usage()
+    return {
+      quotaBytes: usage.quotaBytes,
+      usedBytes: usage.usedBytes,
+      trashBytes: usage.trashBytes,
+      fileCount: usage.fileCount,
+      freeBytes: usage.freeBytes,
+    }
+  }
+
+  hostSnapshot(): HostMetrics {
+    return this.host.snapshot()
+  }
+
+  private archiveCounts(): { pendingCount: number; pendingBytes: number; ackedBytes: number; lastError: string | null } {
     try {
-      const raw = JSON.parse(readFileSync(this.config.backupPullFile, 'utf8')) as {
-        lastPullAt?: string
-        sizeBytes?: number
-        ok?: boolean
-        secretsOk?: boolean
-        lastSecretsAt?: string | null
-        secretsLastError?: string | null
-      }
-      if (!raw.lastPullAt) return null
-      const ageHours = (Date.now() - Date.parse(raw.lastPullAt)) / 3_600_000
+      const pending = this.db
+        .prepare(
+          `SELECT COUNT(*) AS c, COALESCE(SUM(size), 0) AS bytes FROM backup_archives
+           WHERE deleted_at IS NULL AND acked_at IS NULL AND origin != 'import'`,
+        )
+        .get() as { c: number; bytes: number }
+      const acked = this.db
+        .prepare(
+          `SELECT COALESCE(SUM(size), 0) AS bytes FROM backup_archives
+           WHERE deleted_at IS NULL AND acked_at IS NOT NULL AND origin != 'import'`,
+        )
+        .get() as { bytes: number }
+      const lastError = (
+        this.db
+          .prepare(
+            `SELECT last_error FROM backup_archives
+             WHERE deleted_at IS NULL AND last_error IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+          )
+          .get() as { last_error: string | null } | undefined
+      )?.last_error ?? null
       return {
-        lastPullAt: raw.lastPullAt,
-        ageHours: Math.round(ageHours * 10) / 10,
-        sizeBytes: Number(raw.sizeBytes ?? 0),
-        ok: raw.ok !== false,
-        overdue: ageHours > 48,
-        secretsOk: typeof raw.secretsOk === 'boolean' ? raw.secretsOk : null,
-        lastSecretsAt: raw.lastSecretsAt ?? null,
-        secretsLastError: raw.secretsLastError ?? null,
+        pendingCount: Number(pending.c),
+        pendingBytes: Number(pending.bytes),
+        ackedBytes: Number(acked.bytes),
+        lastError,
       }
     } catch {
-      return null
+      return { pendingCount: 0, pendingBytes: 0, ackedBytes: 0, lastError: null }
+    }
+  }
+
+  /** imports 目录里未登记进 DB 的文件视为孤儿归档；目录不存在时按 0 处理。 */
+  private orphanCount(): number {
+    try {
+      const known = new Set(
+        (
+          this.db.prepare("SELECT name FROM backup_archives WHERE origin = 'import'").all() as unknown as {
+            name: string
+          }[]
+        ).map((row) => row.name),
+      )
+      let count = 0
+      for (const entry of readdirSync(join(this.config.dataDir, 'backups', 'imports'), { withFileTypes: true })) {
+        if (!entry.isFile() || entry.name.startsWith('.part-')) continue
+        if (!known.has(entry.name)) count += 1
+      }
+      return count
+    } catch {
+      return 0
+    }
+  }
+
+  /**
+   * 备份面板状态：PC 拉取状态文件 + DB 归档统计 + 世界备份/拉取/演练只读状态。
+   * 任一来源缺失都不抛错（对应字段为 null），由前端展示降级态。
+   */
+  private backupStatus(): BackupStatus {
+    let raw: {
+      lastPullAt?: string
+      sizeBytes?: number
+      ok?: boolean
+      secretsOk?: boolean
+      lastSecretsAt?: string | null
+      secretsLastError?: string | null
+      lastError?: string | null
+    } = {}
+    try {
+      raw = JSON.parse(readFileSync(this.config.backupPullFile, 'utf8')) as typeof raw
+    } catch {
+      raw = {}
+    }
+    const hasPull = typeof raw.lastPullAt === 'string' && raw.lastPullAt.length > 0
+    const ageHours = hasPull ? (Date.now() - Date.parse(raw.lastPullAt!)) / 3_600_000 : null
+    const counts = this.archiveCounts()
+    return {
+      lastPullAt: hasPull ? raw.lastPullAt! : null,
+      ageHours: ageHours !== null && Number.isFinite(ageHours) ? Math.round(ageHours * 10) / 10 : null,
+      sizeBytes: typeof raw.sizeBytes === 'number' ? raw.sizeBytes : null,
+      ok: typeof raw.ok === 'boolean' ? raw.ok : null,
+      overdue:
+        ageHours !== null && Number.isFinite(ageHours) ? ageHours > BACKUP_OVERDUE_HOURS : null,
+      secretsOk: typeof raw.secretsOk === 'boolean' ? raw.secretsOk : null,
+      lastSecretsAt: raw.lastSecretsAt ?? null,
+      secretsLastError: raw.secretsLastError ?? null,
+      pendingCount: counts.pendingCount,
+      pendingBytes: counts.pendingBytes,
+      orphanCount: this.orphanCount(),
+      ackedBytes: counts.ackedBytes,
+      lastError: counts.lastError ?? raw.lastError ?? null,
+      world: readStatusFile(this.config.worldBackupStatusFile),
+      worldPull: readStatusFile(this.config.worldPullStatusFile),
+      drill: readStatusFile(this.config.drillStatusFile),
     }
   }
 
   async get(): Promise<DashboardData> {
-    const usage = this.files.usage()
     const [minecraft, opencode, services, activity] = await Promise.all([
       this.minecraft.status(),
       this.opencodeStatus(),
@@ -136,13 +239,7 @@ export class DashboardService {
     ])
     return {
       host: this.host.snapshot(),
-      storage: {
-        quotaBytes: usage.quotaBytes,
-        usedBytes: usage.usedBytes,
-        trashBytes: usage.trashBytes,
-        fileCount: usage.fileCount,
-        freeBytes: usage.freeBytes,
-      },
+      storage: this.storage(),
       minecraft,
       opencode,
       services,

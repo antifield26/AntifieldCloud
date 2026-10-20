@@ -98,13 +98,25 @@ export interface AlertConfigSummary {
   tempC: number
   memoryUsedPct: number
   backupMaxAgeHours: number
+  /** 世界备份/拉取超期阈值（小时）与世界恢复演练超期阈值（天）。 */
+  worldBackupMaxAgeHours: number
+  drillMaxAgeDays: number
   cooldownMinutes: number
   checkIntervalSeconds: number
   lastEvaluatedAt: string | null
 }
 
+export interface AlertListQuery {
+  limit?: number
+  offset?: number
+  event?: string | null
+  status?: string | null
+  severity?: string | null
+}
+
 export interface AlertListResult {
   items: AlertEventItem[]
+  total: number
   state: AlertStateItem[]
   config: AlertConfigSummary
 }
@@ -309,6 +321,9 @@ export class AlertService {
       this.backupOverdueCondition(),
       this.backupPendingCondition(),
       this.backupSecretsCondition(),
+      this.worldBackupCondition(),
+      this.worldPullCondition(),
+      this.drillCondition(),
       await this.minecraftCondition(),
       this.underVoltageCondition(health),
     ]
@@ -462,8 +477,11 @@ export class AlertService {
     const threshold = this.config.alertBackupMaxAgeHours
     let rows: { name: string; created_at: string }[]
     try {
+      // 只统计 Pi 生成的 pending 归档：Web 导入的 origin='import' 行永远不会 ack，不能计入待拉取。
       rows = this.db
-        .prepare('SELECT name, created_at FROM backup_archives WHERE acked_at IS NULL ORDER BY created_at ASC')
+        .prepare(
+          "SELECT name, created_at FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL AND origin = 'pi' ORDER BY created_at ASC",
+        )
         .all() as unknown as { name: string; created_at: string }[]
     } catch {
       return this.unknown('backup_pending', '备份待拉取', '无法读取备份归档')
@@ -535,6 +553,96 @@ export class AlertService {
         ? `最近一次密钥包备份在 ${round1(ageHours)} 小时前（阈值 ${threshold} 小时）`
         : '密钥包备份正常',
       details: { lastSecretsAt: raw.lastSecretsAt, ageHours: round1(ageHours), thresholdHours: threshold },
+    }
+  }
+
+  /** 读取 root 脚本写入的只读状态 JSON；不可读/不是对象返回 null。 */
+  private readStatusRecord(path: string): Record<string, unknown> | null {
+    try {
+      const parsed: unknown = JSON.parse(this.deps.readFile(path))
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+      return parsed as Record<string, unknown>
+    } catch {
+      return null
+    }
+  }
+
+  private statusTime(record: Record<string, unknown>, keys: string[]): string | null {
+    for (const key of keys) {
+      const value = record[key]
+      if (typeof value === 'string' && value.length > 0) return value
+    }
+    return null
+  }
+
+  private worldBackupCondition(): AlertCondition {
+    return this.statusFileCondition({
+      event: 'world_backup_stale',
+      title: '世界备份超期',
+      path: this.config.worldBackupStatusFile,
+      thresholdMs: this.config.alertWorldBackupMaxAgeHours * 3_600_000,
+      timeKeys: ['lastRunAt'],
+    })
+  }
+
+  private worldPullCondition(): AlertCondition {
+    return this.statusFileCondition({
+      event: 'world_pull_stale',
+      title: '世界备份未拉取',
+      path: this.config.worldPullStatusFile,
+      thresholdMs: this.config.alertWorldBackupMaxAgeHours * 3_600_000,
+      timeKeys: ['lastRunAt', 'lastPullAt'],
+    })
+  }
+
+  private drillCondition(): AlertCondition {
+    return this.statusFileCondition({
+      event: 'drill_stale',
+      title: '恢复演练超期',
+      path: this.config.drillStatusFile,
+      thresholdMs: this.config.alertDrillMaxAgeDays * 86_400_000,
+      timeKeys: ['lastRunAt'],
+    })
+  }
+
+  /**
+   * 世界备份/拉取/演练状态文件告警：
+   * 文件缺失或缺少时间字段视为 unknown（新功能尚未跑过/脚本未写状态）；
+   * ok=false 或最后成功时间超过阈值视为 firing；否则 ok。
+   */
+  private statusFileCondition(options: {
+    event: string
+    title: string
+    path: string
+    thresholdMs: number
+    timeKeys: string[]
+  }): AlertCondition {
+    const record = this.readStatusRecord(options.path)
+    if (!record) return this.unknown(options.event, options.title, '无法读取状态文件')
+    const lastAt = this.statusTime(record, options.timeKeys)
+    if (!lastAt) return this.unknown(options.event, options.title, '状态文件缺少时间字段')
+    const lastMs = Date.parse(lastAt)
+    if (!Number.isFinite(lastMs)) return this.unknown(options.event, options.title, '状态时间不可解析')
+    const ok = typeof record.ok === 'boolean' ? record.ok : null
+    const error = typeof record.error === 'string' && record.error.trim() ? record.error.trim().slice(0, 200) : null
+    const ageMs = Math.max(0, this.deps.now().getTime() - lastMs)
+    const ageHours = round1(ageMs / 3_600_000)
+    const thresholdHours = round1(options.thresholdMs / 3_600_000)
+    const firing = ok === false || ageMs > options.thresholdMs
+    const reason = ok === false ? `最近一次执行失败${error ? `：${error}` : ''}` : `最近一次成功在 ${ageHours} 小时前（阈值 ${thresholdHours} 小时）`
+    return {
+      event: options.event,
+      severity: ok === false ? 'critical' : 'warning',
+      status: firing ? 'firing' : 'ok',
+      title: options.title,
+      message: firing ? reason : `${options.title}正常`,
+      details: {
+        lastRunAt: lastAt,
+        ageHours,
+        thresholdHours,
+        ok,
+        ...(error ? { error } : {}),
+      },
     }
   }
 
@@ -879,17 +987,42 @@ export class AlertService {
       tempC: this.config.alertTempC,
       memoryUsedPct: this.memoryUsedPct,
       backupMaxAgeHours: this.config.alertBackupMaxAgeHours,
+      worldBackupMaxAgeHours: this.config.alertWorldBackupMaxAgeHours,
+      drillMaxAgeDays: this.config.alertDrillMaxAgeDays,
       cooldownMinutes: this.config.alertCooldownMinutes,
       checkIntervalSeconds: this.config.alertCheckIntervalSeconds,
       lastEvaluatedAt: this.lastEvaluatedAt,
     }
   }
 
-  list(limit = EVENT_LIMIT_DEFAULT): AlertListResult {
-    const safeLimit = Math.min(EVENT_LIMIT_MAX, Math.max(1, Math.floor(limit)))
+  /**
+   * 事件列表：可按 event/status/severity 过滤并分页，默认行为与旧版一致（最近 20 条）。
+   * 同时返回当前告警状态与只读阈值配置。
+   */
+  list(options: AlertListQuery = {}): AlertListResult {
+    const limit = Math.min(EVENT_LIMIT_MAX, Math.max(1, Math.floor(options.limit ?? EVENT_LIMIT_DEFAULT)))
+    const offset = Math.max(0, Math.floor(options.offset ?? 0))
+    const conditions: string[] = []
+    const params: (string | number)[] = []
+    if (options.event) {
+      conditions.push('event = ?')
+      params.push(options.event)
+    }
+    if (options.status) {
+      conditions.push('status = ?')
+      params.push(options.status)
+    }
+    if (options.severity) {
+      conditions.push('severity = ?')
+      params.push(options.severity)
+    }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+    const total = (
+      this.db.prepare(`SELECT COUNT(*) AS c FROM alert_events ${where}`).get(...params) as { c: number }
+    ).c
     const rows = this.db
-      .prepare('SELECT * FROM alert_events ORDER BY id DESC LIMIT ?')
-      .all(safeLimit) as unknown as AlertEventRow[]
+      .prepare(`SELECT * FROM alert_events ${where} ORDER BY id DESC LIMIT ? OFFSET ?`)
+      .all(...params, limit, offset) as unknown as AlertEventRow[]
     const states = this.db.prepare('SELECT * FROM alert_state ORDER BY event ASC').all() as unknown as AlertStateRow[]
     const stateItems: AlertStateItem[] = states.map((state) => {
       const last = this.db
@@ -908,7 +1041,12 @@ export class AlertService {
         lastEventAt: last?.created_at ?? null,
       }
     })
-    return { items: rows.map((row) => this.toEventItem(row)), state: stateItems, config: this.configSummary() }
+    return {
+      items: rows.map((row) => this.toEventItem(row)),
+      total: Number(total),
+      state: stateItems,
+      config: this.configSummary(),
+    }
   }
 
   /** 发送一条测试告警（不参与状态机）；返回是否成功投递。 */

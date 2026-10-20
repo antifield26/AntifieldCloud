@@ -3,6 +3,7 @@ import type { DragEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Camera,
+  CheckSquare,
   ChevronDown,
   ChevronRight,
   ChevronUp,
@@ -12,6 +13,7 @@ import {
   LayoutList,
   RefreshCw,
   Search,
+  Share2,
   Upload,
   X,
 } from 'lucide-react'
@@ -47,6 +49,13 @@ import { PreviewModal } from '../components/files/PreviewModal'
 import { ShareDialog } from '../components/files/ShareDialog'
 import { UploadPanel } from '../components/files/UploadPanel'
 import { formatBytes, formatPercent, percentOf } from '../lib/format'
+import {
+  areAllSelected,
+  pruneSelection,
+  selectedFiles,
+  setAllSelected,
+  toggleSelection,
+} from '../lib/selection'
 import { cx } from '../lib/classnames'
 
 const LIST_PAGE_SIZE = 200
@@ -129,7 +138,9 @@ export function Files() {
   const [moveTarget, setMoveTarget] = useState<FileItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<FileItem | null>(null)
   const [previewTarget, setPreviewTarget] = useState<FileItem | null>(null)
-  const [shareTarget, setShareTarget] = useState<FileItem | null>(null)
+  const [shareFiles, setShareFiles] = useState<FileItem[] | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<string[]>([])
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
@@ -143,8 +154,9 @@ export function Files() {
 
   const loadQuota = useCallback(async (): Promise<void> => {
     try {
-      const dashboard = await api.getDashboard()
-      setQuota(dashboard.storage)
+      // v0.4.0 轻量端点：避免为取配额触发 Dashboard 的 MC/opencode/systemctl 聚合
+      const storage = await api.getStorage()
+      setQuota(storage)
     } catch {
       // 配额只是辅助信息，读取失败不阻塞文件浏览
     }
@@ -268,11 +280,17 @@ export function Files() {
     [uploadQueue, parentId],
   )
 
-  const clearSearch = (): void => setSearchInput('')
+  const clearSearch = (): void => {
+    setSearchInput('')
+    setSelectMode(false)
+    setSelected([])
+  }
 
   const navigateToParent = (id: string | null): void => {
     setPage(1)
     setSearchInput('')
+    setSelectMode(false)
+    setSelected([])
     if (id) setSearchParams({ parent: id })
     else setSearchParams({})
   }
@@ -297,6 +315,11 @@ export function Files() {
   }
 
   const openFile = (file: FileItem): void => {
+    if (selectMode) {
+      // 多选模式下点击文件切换选择；目录不参与分享，保持不响应
+      if (file.kind === 'file') setSelected((previous) => toggleSelection(previous, file.id))
+      return
+    }
     if (file.kind === 'dir') {
       navigateToParent(file.id)
       return
@@ -382,7 +405,64 @@ export function Files() {
   const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE))
   const quotaPercent = quota ? percentOf(quota.usedBytes, quota.quotaBytes) : 0
 
+  // 多选分享：切换目录/进入搜索时退出多选，列表刷新后剔除已不可见的选择
+  useEffect(() => {
+    setSelectMode(false)
+    setSelected([])
+  }, [parentId, searching])
+
+  useEffect(() => {
+    setSelected((previous) => pruneSelection(previous, displayed))
+  }, [items, searchResult, sort, dir])
+
+  const selectedItems = selectedFiles(selected, displayed)
+  const allSelected = areAllSelected(selected, displayed)
+
+  const toggleSelectMode = (): void => {
+    setSelectMode((previous) => {
+      if (previous) setSelected([])
+      return !previous
+    })
+  }
+
+  const toggleSelectAll = (): void => {
+    setSelected((previous) => setAllSelected(previous, displayed, !areAllSelected(previous, displayed)))
+  }
+
+  const openShareForSelection = (): void => {
+    if (selectedItems.length === 0) return
+    setShareFiles(selectedItems)
+  }
+
+  const selectionColumn: Column<FileItem> = {
+    key: 'select',
+    header: (
+      <input
+        type="checkbox"
+        className="row-checkbox"
+        checked={allSelected}
+        onChange={toggleSelectAll}
+        aria-label={allSelected ? '取消全选当前列表文件' : '全选当前列表文件'}
+        title={allSelected ? '取消全选' : '全选'}
+      />
+    ),
+    className: 'cell-select',
+    render: (file) =>
+      file.kind === 'file' ? (
+        <input
+          type="checkbox"
+          className="row-checkbox"
+          checked={selected.includes(file.id)}
+          onChange={() => setSelected((previous) => toggleSelection(previous, file.id))}
+          aria-label={`选择 ${file.name}`}
+        />
+      ) : (
+        <span className="cell-select-placeholder" aria-hidden="true" />
+      ),
+  }
+
   const columns: Column<FileItem>[] = [
+    ...(selectMode ? [selectionColumn] : []),
     {
       key: 'name',
       header: <SortHeader label="名称" field="name" sort={sort} dir={dir} onSortChange={changeSort} />,
@@ -392,7 +472,16 @@ export function Files() {
           type="button"
           className="file-name-cell file-name-button"
           onClick={() => openFile(file)}
-          aria-label={file.kind === 'dir' ? `打开文件夹 ${file.name}` : `预览 ${file.name}`}
+          aria-label={
+            selectMode
+              ? file.kind === 'file'
+                ? `选择 ${file.name}`
+                : `${file.name} 是目录，不能分享`
+              : file.kind === 'dir'
+                ? `打开文件夹 ${file.name}`
+                : `预览 ${file.name}`
+          }
+          disabled={selectMode && file.kind === 'dir'}
         >
           <FileIcon name={file.name} mime={file.mime} kind={file.kind} size={20} />
           <div className="file-name-text">
@@ -432,7 +521,7 @@ export function Files() {
           onRename={() => setRenameTarget(file)}
           onMove={() => setMoveTarget(file)}
           onDelete={() => setDeleteTarget(file)}
-          onShare={meta.sharesEnabled && file.kind === 'file' ? () => setShareTarget(file) : undefined}
+          onShare={meta.sharesEnabled && file.kind === 'file' ? () => setShareFiles([file]) : undefined}
         />
       ),
     },
@@ -475,21 +564,40 @@ export function Files() {
         title="文件"
         description={quota ? `共 ${quota.fileCount} 个文件 · 回收站 ${formatBytes(quota.trashBytes)}` : '上传、预览与管理文件'}
         actions={
-          <>
-            <Button variant="secondary" icon={<FolderPlus size={16} />} onClick={() => setCreateOpen(true)}>
-              新建文件夹
-            </Button>
+          selectMode ? (
             <Button
-              variant="secondary"
-              icon={<Camera size={16} aria-hidden="true" />}
-              onClick={() => cameraInputRef.current?.click()}
+              variant="ghost"
+              icon={<X size={16} aria-hidden="true" />}
+              onClick={toggleSelectMode}
             >
-              拍照上传
+              退出选择
             </Button>
-            <Button variant="primary" icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
-              上传文件
-            </Button>
-          </>
+          ) : (
+            <>
+              <Button
+                variant="secondary"
+                icon={<CheckSquare size={16} aria-hidden="true" />}
+                onClick={toggleSelectMode}
+                disabled={displayed.length === 0}
+                title="多选文件并创建分享"
+              >
+                选择文件
+              </Button>
+              <Button variant="secondary" icon={<FolderPlus size={16} />} onClick={() => setCreateOpen(true)}>
+                新建文件夹
+              </Button>
+              <Button
+                variant="secondary"
+                icon={<Camera size={16} aria-hidden="true" />}
+                onClick={() => cameraInputRef.current?.click()}
+              >
+                拍照上传
+              </Button>
+              <Button variant="primary" icon={<Upload size={16} />} onClick={() => fileInputRef.current?.click()}>
+                上传文件
+              </Button>
+            </>
+          )
         }
       />
 
@@ -536,6 +644,37 @@ export function Files() {
               : `已用 ${formatPercent(quotaPercent, 1)} · 剩余 ${formatBytes(quota.freeBytes)}`}
           </div>
         </section>
+      ) : null}
+
+      {selectMode ? (
+        <div className="selection-bar" role="region" aria-label="多选分享操作">
+          <span className="selection-count" role="status">
+            已选 {selectedItems.length} 个文件
+            {selectedItems.length > 0
+              ? ` · ${formatBytes(selectedItems.reduce((sum, item) => sum + item.size, 0))}`
+              : ''}
+          </span>
+          <div className="selection-actions">
+            <Button variant="secondary" size="sm" onClick={toggleSelectAll} disabled={displayed.length === 0}>
+              {allSelected ? '取消全选' : '全选'}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={<Share2 size={15} aria-hidden="true" />}
+              disabled={selectedItems.length === 0 || selectedItems.length > meta.shareMaxItems}
+              onClick={openShareForSelection}
+              title={
+                selectedItems.length > meta.shareMaxItems
+                  ? `单次最多分享 ${meta.shareMaxItems} 个文件`
+                  : undefined
+              }
+            >
+              分享所选{selectedItems.length > 0 ? `（${selectedItems.length}）` : ''}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={toggleSelectMode}>退出</Button>
+          </div>
+        </div>
       ) : null}
 
       <section className="files-panel" aria-label="文件列表">
@@ -642,12 +781,38 @@ export function Files() {
                   </div>
                 ))
               : displayed.map((file) => (
-                  <div className="file-grid-card" key={file.id}>
+                  <div
+                    className={cx('file-grid-card', selected.includes(file.id) && 'file-grid-card-selected')}
+                    key={file.id}
+                  >
+                    {selectMode ? (
+                      <label className="file-grid-check">
+                        <input
+                          type="checkbox"
+                          className="row-checkbox"
+                          checked={selected.includes(file.id)}
+                          disabled={file.kind !== 'file'}
+                          onChange={() => {
+                            if (file.kind === 'file') setSelected((previous) => toggleSelection(previous, file.id))
+                          }}
+                          aria-label={`选择 ${file.name}`}
+                        />
+                      </label>
+                    ) : null}
                     <button
                       type="button"
                       className="file-grid-main"
                       onClick={() => openFile(file)}
-                      aria-label={file.kind === 'dir' ? `打开文件夹 ${file.name}` : `预览 ${file.name}`}
+                      disabled={selectMode && file.kind === 'dir'}
+                      aria-label={
+                        selectMode
+                          ? file.kind === 'file'
+                            ? `选择 ${file.name}`
+                            : `${file.name} 是目录，不能分享`
+                          : file.kind === 'dir'
+                            ? `打开文件夹 ${file.name}`
+                            : `预览 ${file.name}`
+                      }
                     >
                       <FileThumb file={file} size={26} />
                       <span className="file-grid-name" title={file.name}>{file.name}</span>
@@ -665,7 +830,7 @@ export function Files() {
                         onRename={() => setRenameTarget(file)}
                         onMove={() => setMoveTarget(file)}
                         onDelete={() => setDeleteTarget(file)}
-                        onShare={meta.sharesEnabled && file.kind === 'file' ? () => setShareTarget(file) : undefined}
+                        onShare={meta.sharesEnabled && file.kind === 'file' ? () => setShareFiles([file]) : undefined}
                       />
                     </div>
                   </div>
@@ -706,6 +871,7 @@ export function Files() {
         busy={uploadQueue.busy}
         onRetry={uploadQueue.retry}
         onCancel={uploadQueue.cancel}
+        onDiscard={(id) => void uploadQueue.discard(id)}
         onClear={uploadQueue.clear}
       />
 
@@ -742,7 +908,18 @@ export function Files() {
 
       <PreviewModal file={previewTarget} onClose={() => setPreviewTarget(null)} />
 
-      <ShareDialog file={shareTarget} onClose={() => setShareTarget(null)} />
+      <ShareDialog
+        files={shareFiles ?? undefined}
+        onClose={() => setShareFiles(null)}
+        onCreated={(created) => {
+          const count = created.share.itemCount ?? shareFiles?.length ?? 1
+          setSelectMode(false)
+          setSelected([])
+          toast.success(
+            count > 1 ? `已创建 ${count} 个文件的分享链接` : `已创建「${created.share.fileName}」的分享链接`,
+          )
+        }}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

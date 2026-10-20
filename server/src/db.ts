@@ -297,6 +297,67 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (session_id, idx)
   );
   `,
+  `
+  -- v0.4.0：笔记附件/版本、多文件分享、指标历史。仅追加表/列；
+  -- 重建 files 唯一索引以纳入 origin（历史行默认 user，行为不变）。
+  ALTER TABLE files ADD COLUMN origin TEXT NOT NULL DEFAULT 'user'
+    CHECK (origin IN ('user', 'note', 'system'));
+  DROP INDEX idx_files_unique_active_name;
+  CREATE UNIQUE INDEX idx_files_unique_active_name
+    ON files(COALESCE(parent_id, ''), name COLLATE NOCASE, origin)
+    WHERE deleted_at IS NULL;
+  CREATE INDEX idx_files_origin ON files(origin);
+
+  CREATE TABLE note_attachments (
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (note_id, file_id)
+  );
+  CREATE INDEX idx_note_attachments_file ON note_attachments(file_id);
+
+  CREATE TABLE note_versions (
+    id TEXT PRIMARY KEY,
+    note_id TEXT NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    body_md TEXT NOT NULL,
+    tags_json TEXT NOT NULL DEFAULT '[]',
+    actor TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX idx_note_versions_note ON note_versions(note_id, created_at DESC);
+
+  CREATE TABLE share_items (
+    share_id TEXT NOT NULL REFERENCES shares(id) ON DELETE CASCADE,
+    file_id TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    PRIMARY KEY (share_id, file_id)
+  );
+  CREATE INDEX idx_share_items_file ON share_items(file_id);
+  INSERT INTO share_items (share_id, file_id) SELECT id, file_id FROM shares;
+
+  CREATE TABLE metrics_samples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    ts_epoch INTEGER NOT NULL,
+    cpu_percent REAL NOT NULL,
+    mem_used INTEGER NOT NULL,
+    mem_total INTEGER NOT NULL,
+    temp_c REAL,
+    disk_free INTEGER NOT NULL,
+    disk_total INTEGER NOT NULL,
+    load1 REAL NOT NULL,
+    load5 REAL NOT NULL,
+    load15 REAL NOT NULL
+  );
+  CREATE INDEX idx_metrics_samples_ts ON metrics_samples(ts_epoch);
+  `,
+  `
+  -- v0.4.0 数据修复：v5 回填时若 shares 指向不存在的文件（旧库在 foreign_keys=OFF 时写入），
+  -- 会产生孤儿 rows / 错误 backfill。本迁移只做数据修复，不改变表结构。
+  DELETE FROM shares WHERE NOT EXISTS (SELECT 1 FROM files f WHERE f.id = shares.file_id);
+  INSERT OR IGNORE INTO share_items (share_id, file_id)
+    SELECT s.id, s.file_id FROM shares s JOIN files f ON f.id = s.file_id;
+  `,
 ]
 
 export interface OpenOptions {
@@ -305,6 +366,9 @@ export interface OpenOptions {
   /** 是否输出迁移日志，默认 false。 */
   verbose?: boolean
 }
+
+/** 当前程序支持的最新 schema 版本（等于迁移数量）。 */
+export const SUPPORTED_SCHEMA_VERSION = MIGRATIONS.length
 
 function migrate(db: DatabaseSync, verbose: boolean): void {
   db.exec(`
@@ -316,6 +380,13 @@ function migrate(db: DatabaseSync, verbose: boolean): void {
   const row = db.prepare('SELECT value FROM meta WHERE key = ?').get('schema_version') as { value: string } | undefined
   let current = row ? Number(row.value) : 0
   if (!Number.isInteger(current) || current < 0) current = 0
+  // 旧 release 跑过更新 schema 的库：静默跳过会让缺失列/新表语义错乱（例如附件泄露到普通树），
+  // 因此明确拒绝启动，要求升级应用或从备份恢复。
+  if (current > MIGRATIONS.length) {
+    throw new Error(
+      `数据库 schema 版本 v${current} 高于当前程序支持的 v${MIGRATIONS.length}：请升级应用或从备份恢复，禁止降级运行`,
+    )
+  }
   while (current < MIGRATIONS.length) {
     const sql = MIGRATIONS[current]!
     db.exec('BEGIN IMMEDIATE')
@@ -343,8 +414,29 @@ export function openDatabase(options: OpenOptions): DatabaseSync {
     db.exec('PRAGMA journal_mode = WAL')
     db.exec('PRAGMA synchronous = NORMAL')
   }
+  // 迁移前修复历史孤儿：旧库可能关闭 foreign_keys 写入过 shares.file_id 指向已消失文件的行，
+  // 直接迁移会因 share_items 外键失败。只删除这类不可达分享行（无任何可恢复内容）。
+  repairOrphanShares(db, options.verbose ?? false)
+  // 迁移前外键一致性检查：其它损坏数据先暴露，避免迁移中才失败或写入更混乱的数据。
+  const violations = db.prepare('PRAGMA foreign_key_check').all() as unknown as { table?: string }[]
+  if (violations.length > 0) {
+    const sample = violations[0] as Record<string, unknown>
+    throw new Error(`数据库外键一致性检查失败（${violations.length} 条），请从备份恢复：${JSON.stringify(sample)}`)
+  }
   migrate(db, options.verbose ?? false)
   return db
+}
+
+/** 迁移前清理不可达的 shares 行（file_id 指向不存在文件）；表不存在时跳过。 */
+function repairOrphanShares(db: DatabaseSync, verbose: boolean): void {
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('shares', 'files')")
+    .all() as unknown as { name: string }[]
+  if (tables.length < 2) return
+  const result = db.prepare('DELETE FROM shares WHERE NOT EXISTS (SELECT 1 FROM files f WHERE f.id = shares.file_id)').run()
+  if (Number(result.changes) > 0 && verbose) {
+    console.warn(`[db] 已清理 ${Number(result.changes)} 条指向不存在文件的孤儿分享`)
+  }
 }
 
 /** 简单事务封装；fn 抛错自动回滚。 */

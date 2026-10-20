@@ -54,6 +54,7 @@ async function main(): Promise<void> {
 
   await context.app.listen({ host: config.host, port: config.port })
   context.alerts.start()
+  context.startMetrics()
   context.app.log.info(
     {
       address: `http://${config.host}:${config.port}`,

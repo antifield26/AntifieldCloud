@@ -83,6 +83,8 @@ export interface SnapshotFixtureRow {
   size?: number
   sha256?: string | null
   mime?: string | null
+  /** 可见性来源；缺省 user（模拟旧快照）。 */
+  origin?: 'user' | 'note' | 'system'
 }
 
 /** 生成一个可被归档携带的 SQLite 快照（仅 files 表内容有意义）。 */
@@ -91,12 +93,23 @@ export function buildSnapshotDb(workDir: string, rows: SnapshotFixtureRow[]): Bu
   const db = openDatabase({ path })
   try {
     const insert = db.prepare(
-      `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL)`,
+      `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id, origin)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL, NULL, ?)`,
     )
     const now = '2026-01-01T00:00:00.000Z'
     for (const row of rows) {
-      insert.run(row.id, row.parentId ?? null, row.name, row.kind ?? 'file', row.size ?? 0, row.mime ?? null, row.sha256 ?? null, now, now)
+      insert.run(
+        row.id,
+        row.parentId ?? null,
+        row.name,
+        row.kind ?? 'file',
+        row.size ?? 0,
+        row.mime ?? null,
+        row.sha256 ?? null,
+        now,
+        now,
+        row.origin ?? 'user',
+      )
     }
   } finally {
     db.close()
@@ -179,8 +192,12 @@ export interface BackupsFixture {
 
 export interface BackupsFixtureOptions {
   config?: Partial<Config>
+  /** BackupService 专属配置（如 backupSnapshotMaxRows），不属于 Config。 */
+  serviceConfig?: Partial<import('../src/backups/service.ts').BackupServiceConfig>
   runner?: BackupRunner
   clockStart?: string
+  /** 测试注入可用空间（字节）；用于 507 磁盘预检用例。 */
+  freeBytes?: () => number | null
 }
 
 export function backupsFixture(options: BackupsFixtureOptions = {}): BackupsFixture {
@@ -204,10 +221,11 @@ export function backupsFixture(options: BackupsFixtureOptions = {}): BackupsFixt
       current = new Date(current.getTime() + ms)
     },
   }
-  const service = new BackupService(db, config, {
+  const service = new BackupService(db, { ...config, ...(options.serviceConfig ?? {}) }, {
     files,
     now: clock.now,
     ...(options.runner ? { runner: options.runner } : {}),
+    ...(options.freeBytes ? { freeBytes: options.freeBytes } : {}),
   })
   return {
     dir,
@@ -229,7 +247,11 @@ export async function importBuffer(fx: BackupsFixture, name: string, buffer: Buf
   return fx.service.importArchive(fx.actor, { filename: name, stream: Readable.from(buffer) })
 }
 
-export function buildAndImport(fx: BackupsFixture, options: ArchiveFixtureOptions, verify = true) {
+export function buildAndImport(
+  fx: BackupsFixture,
+  options: Omit<ArchiveFixtureOptions, 'workDir'>,
+  verify = true,
+) {
   const archive = buildArchive({ ...options, workDir: fx.dir })
   return fx.service
     .importArchive(fx.actor, { filename: archive.name, stream: Readable.from(archive.buffer) })

@@ -46,6 +46,8 @@ export interface FileRow {
   updated_at: string
   deleted_at: string | null
   deleted_parent_id: string | null
+  /** 可见性来源：user=普通云盘；note=笔记附件；system=系统保留。 */
+  origin: 'user' | 'note' | 'system'
 }
 
 export interface AuditRow {

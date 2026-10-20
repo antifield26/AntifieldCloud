@@ -3,7 +3,7 @@
 // 安全边界：单文件大小上限由调用方传入（来自 /api/version 的 maxUploadBytes），前端只做预检。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { isApiError, toErrorMessage, uploadFileChunked, uploadFiles } from '../api/client'
+import { abandonChunkedUpload, isApiError, toErrorMessage, uploadFileChunked, uploadFiles } from '../api/client'
 import type { FileItem } from '../api/types'
 import { DEFAULT_CHUNK_MAX_BYTES, DEFAULT_CHUNK_SIZE_BYTES, shouldUseChunked } from '../lib/chunked'
 
@@ -46,6 +46,8 @@ export interface UploadQueueApi {
   enqueue: (files: File[], parentId: string | null) => void
   retry: (id: number) => void
   cancel: (id: number) => void
+  /** 放弃并清理：中止上传、DELETE 服务端分片会话、清除 localStorage 断点 */
+  discard: (id: number) => Promise<void>
   clear: () => void
 }
 
@@ -185,6 +187,25 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
     }
   }, [])
 
+  /**
+   * 放弃并清理：分片上传取消时仅 abort 会在服务端留下会话，连续放弃 3 个会触发
+   * 409 too_many_uploads。这里显式 DELETE 会话并清除断点，避免占用并发额度。
+   */
+  const discard = useCallback(async (id: number): Promise<void> => {
+    const task = tasksRef.current.find((item) => item.id === id)
+    if (!task) return
+    controllersRef.current.get(id)?.abort()
+    patchTask(id, { status: 'cancelled', error: '已放弃上传' })
+    reportedRef.current = true
+    try {
+      await abandonChunkedUpload(task.file, task.parentId)
+      patchTask(id, { status: 'cancelled', error: '已放弃上传并清理断点' })
+    } catch (error) {
+      patchTask(id, { status: 'error', error: toErrorMessage(error, '清理服务端上传会话失败') })
+      throw error
+    }
+  }, [])
+
   const clear = useCallback((): void => {
     const hasActive = tasksRef.current.some(
       (task) => task.status === 'waiting' || task.status === 'uploading',
@@ -209,6 +230,7 @@ export function useUploadQueue(options: UseUploadQueueOptions = {}): UploadQueue
     enqueue,
     retry,
     cancel,
+    discard,
     clear,
   }
 }

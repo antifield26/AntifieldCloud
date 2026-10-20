@@ -32,10 +32,22 @@ import { Avatar } from '../components/Avatar'
 import { RelativeTime } from '../components/RelativeTime'
 import { AuditEntry } from '../components/AuditEntry'
 import { AlertsCard } from '../components/alerts/AlertsCard'
+import { BackupStatusCard } from '../components/backups/BackupStatusCard'
+import { MetricsCharts } from '../components/dashboard/MetricsCharts'
 import { SkeletonText } from '../components/Skeleton'
 import { useAppMeta } from '../meta/MetaContext'
-import { formatBytes, formatClock, formatDateTime, formatPercent, formatRelative, formatUptime, percentOf } from '../lib/format'
+import { formatBytes, formatClock, formatDateTime, formatPercent, formatUptime, percentOf } from '../lib/format'
 import { cx } from '../lib/classnames'
+
+/** 时钟叶子组件：只有它按秒重渲染，避免整个工作台每秒重算。 */
+function DashboardClock() {
+  const now = useNow(1000)
+  return (
+    <span className="dashboard-clock" title="Asia/Shanghai">
+      {formatClock(new Date(now))}
+    </span>
+  )
+}
 
 const SERVICE_LABELS: Record<keyof ServicesStatus, string> = {
   minecraft: 'Minecraft',
@@ -65,7 +77,6 @@ export function Dashboard() {
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const dataRef = useRef<DashboardData | null>(null)
-  const now = useNow(1000)
 
   const load = useCallback(async (mode: 'initial' | 'refresh'): Promise<void> => {
     if (mode === 'initial') setLoading(true)
@@ -145,7 +156,7 @@ export function Dashboard() {
         description={data ? `主机 ${host.hostname} · 数据生成于 ${formatDateTime(data.generatedAt)}` : undefined}
         actions={
           <div className="dashboard-actions">
-            <span className="dashboard-clock" title="Asia/Shanghai">{formatClock(new Date(now))}</span>
+            <DashboardClock />
             <Button
               variant="secondary"
               size="md"
@@ -236,7 +247,7 @@ export function Dashboard() {
         <Stat
           label="备份"
           icon={<CloudUpload size={16} />}
-          value={backup?.lastPullAt ? formatRelative(backup.lastPullAt, now) : '无记录'}
+          value={backup?.lastPullAt ? <RelativeTime ts={backup.lastPullAt} /> : '无记录'}
           tone={backupStale ? 'danger' : 'default'}
           badge={
             backupStale ? (
@@ -269,6 +280,30 @@ export function Dashboard() {
             </>
           }
         />
+      </div>
+
+      <div className="dashboard-row dashboard-row-metrics">
+        <MetricsCharts />
+      </div>
+
+      <div className="dashboard-row dashboard-row-backup">
+        <Card
+          title="备份状态"
+          description="应用归档、密钥包、世界备份与恢复演练；异常项会高亮。"
+          actions={<Link className="text-link" to="/settings#backup">管理备份<ChevronRight size={14} aria-hidden="true" /></Link>}
+        >
+          <BackupStatusCard
+            backup={backup}
+            state={backups.data?.state ?? null}
+            world={backup?.world ?? backups.data?.world ?? null}
+            worldPull={backup?.worldPull ?? backups.data?.worldPull ?? null}
+            drill={backup?.drill ?? backups.data?.drill ?? null}
+            archives={backups.data?.items ?? []}
+            loading={backups.loading && !backups.data}
+            error={backups.errorStatus === 404 ? null : backups.error}
+            onRetry={() => void backups.refresh()}
+          />
+        </Card>
       </div>
 
       <div className="dashboard-row dashboard-row-alerts">

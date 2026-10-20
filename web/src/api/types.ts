@@ -110,16 +110,60 @@ export interface OpencodeStatus {
   error?: string | null
 }
 
+/** 世界一致性备份状态（只读文件，由 root 备份脚本写入；文件缺失时服务端返回 null）。 */
+export interface WorldBackupStatus {
+  lastRunAt?: string | null
+  ok?: boolean | null
+  archiveName?: string | null
+  sizeBytes?: number | null
+  sha256?: string | null
+  durationMs?: number | null
+  kept?: number | null
+  error?: string | null
+}
+
+/** PC 周度拉取状态（只读文件；契约见 docs/API.md §12）。 */
+export interface WorldPullStatus {
+  /** 契约字段为 lastPullAt；兼容脚本可能写入 lastRunAt */
+  lastPullAt?: string | null
+  lastRunAt?: string | null
+  ok?: boolean | null
+  archiveName?: string | null
+  pulledCount?: number | null
+  ackedCount?: number | null
+  kept?: number | null
+  error?: string | null
+}
+
+/** 恢复演练状态（只读文件；报告路径由脚本写入，不在 Web 端下载）。 */
+export interface DrillStatus {
+  lastRunAt?: string | null
+  ok?: boolean | null
+  reportPath?: string | null
+  dbIntegrity?: string | null
+  error?: string | null
+}
+
 export interface BackupStatus {
   lastPullAt: string | null
   ageHours: number | null
   sizeBytes: number | null
   ok: boolean | null
   overdue: boolean | null
-  /** v0.3 可选扩展：待确认归档/孤儿归档数与最近错误 */
+  /** 密钥包（secrets）状态；旧服务端可能不下发 */
+  secretsOk?: boolean | null
+  lastSecretsAt?: string | null
+  secretsLastError?: string | null
+  /** v0.3/v0.4 可选扩展：待确认/孤儿/已确认归档统计与最近错误 */
   pendingCount?: number | null
+  pendingBytes?: number | null
   orphanCount?: number | null
+  ackedBytes?: number | null
   lastError?: string | null
+  /** v0.4.0：世界备份、PC 拉取与恢复演练状态（文件缺失时为 null） */
+  world?: WorldBackupStatus | null
+  worldPull?: WorldPullStatus | null
+  drill?: DrillStatus | null
 }
 
 export interface ServicesStatus {
@@ -152,6 +196,16 @@ export interface DashboardData {
 export interface AuditPage {
   items: AuditItem[]
   total: number
+}
+
+/** v0.4.0 审计查询：q 对 action/target/ip 做 LIKE 搜索；from/to 为 ISO 时间。 */
+export interface AuditQuery {
+  limit?: number
+  offset?: number
+  action?: string
+  q?: string
+  from?: string
+  to?: string
 }
 
 export type FileKind = 'file' | 'dir'
@@ -284,6 +338,17 @@ export interface VersionResult {
   chunkedUploadEnabled?: boolean
   chunkSizeBytes?: number
   chunkMaxFileBytes?: number
+  /** v0.4.0 限额与功能开关（旧服务端不下发时使用前端安全回退值） */
+  noteAttachmentMaxBytes?: number
+  noteMaxAttachments?: number
+  noteVersionsKeep?: number
+  shareMaxItems?: number
+  metricsEnabled?: boolean
+  metricsSampleSeconds?: number
+  metricsRetentionDays?: number
+  /** 归档导入单请求上限与恢复文件数上限（v0.3 已下发，前端用于预检提示） */
+  backupImportMaxBytes?: number
+  backupRestoreMaxEntries?: number
 }
 
 /** 前端运行期需要的站点元数据（由 /api/version 推导 + 安全回退）。 */
@@ -300,6 +365,21 @@ export interface AppMeta {
   chunkedUploadEnabled: boolean
   chunkSizeBytes: number
   chunkMaxFileBytes: number
+  /** 笔记附件单文件上限（默认 25 MiB） */
+  noteAttachmentMaxBytes: number
+  /** 每篇笔记附件数量上限（默认 100） */
+  noteMaxAttachments: number
+  /** 每篇笔记保留的历史版本数（默认 20） */
+  noteVersionsKeep: number
+  /** 单个分享最多包含的文件数（默认 50） */
+  shareMaxItems: number
+  /** 指标历史是否启用；旧服务端不下发时按启用处理（404 时组件自动降级） */
+  metricsEnabled: boolean
+  metricsSampleSeconds: number
+  metricsRetentionDays: number
+  /** 归档导入单请求上限（默认 100 MiB）与恢复向导文件数上限（默认 5000） */
+  backupImportMaxBytes: number
+  backupRestoreMaxEntries: number
 }
 
 /* ---------- 知识库：笔记与书签 ---------- */
@@ -312,6 +392,51 @@ export interface Note {
   pinned: boolean
   createdAt: string
   updatedAt: string
+  /** v0.4.0：笔记附件（计入总配额，不出现在普通文件列表/搜索/回收站） */
+  attachments?: NoteAttachment[]
+}
+
+/** 笔记附件：url 为 /api/files/<fileId>/content?inline=1，仅登录态可访问。 */
+export interface NoteAttachment {
+  fileId: string
+  name: string
+  size: number
+  mime: string | null
+  url: string
+}
+
+export interface NoteAttachmentListResult {
+  items: NoteAttachment[]
+}
+
+/** 历史版本摘要（不含正文，避免列表响应过大）。 */
+export interface NoteVersionSummary {
+  id: string
+  title: string
+  createdAt: string
+}
+
+export interface NoteVersionListResult {
+  items: NoteVersionSummary[]
+  total: number
+}
+
+export interface NoteVersion {
+  id: string
+  noteId: string
+  title: string
+  bodyMd: string
+  tags: string[]
+  createdAt: string
+}
+
+export interface NoteVersionResult {
+  version: NoteVersion
+}
+
+export interface NoteVersionQuery {
+  limit?: number
+  offset?: number
 }
 
 export interface NoteListResult {
@@ -381,6 +506,10 @@ export interface Share {
   id: string
   fileId: string
   fileName: string
+  /** v0.4.0 多文件分享的条目数；旧服务端不下发时视为 1 */
+  itemCount?: number
+  /** v0.4.0 多文件分享的总大小；旧服务端不下发时用首个文件大小回退 */
+  totalSizeBytes?: number
   expiresAt: string | null
   /** null 表示不限下载次数 */
   maxDownloads: number | null
@@ -400,6 +529,11 @@ export interface CreateShareInput {
   note?: string
 }
 
+/** v0.4.0 多文件分享入口：POST /api/shares，fileIds 1–50 且全部为活动普通文件。 */
+export interface CreateShareBundleInput extends CreateShareInput {
+  fileIds: string[]
+}
+
 export interface CreateShareResult {
   share: Share
   url: string
@@ -407,6 +541,9 @@ export interface CreateShareResult {
 
 export interface ShareListResult {
   items: Share[]
+  total?: number
+  page?: number
+  pageSize?: number
 }
 
 export interface RevokeShareResult {
@@ -416,10 +553,24 @@ export interface RevokeShareResult {
 
 export type PublicShareState = 'active' | 'expired' | 'exhausted' | 'revoked'
 
+/** 公开分享中的单个文件；仅在无需密码或已解锁时返回。 */
+export interface PublicShareItem {
+  id: string
+  name: string
+  size: number
+  mime: string | null
+}
+
 export interface PublicShareMeta {
   fileName: string
   size: number
   mime: string | null
+  /** v0.4.0 多文件分享条目数；旧服务端不下发时按 1 处理 */
+  itemCount?: number
+  /** v0.4.0 多文件总大小；缺失时由 items 求和或首个文件大小回退 */
+  totalSizeBytes?: number
+  /** 多文件列表；有密码且未解锁时服务端省略该字段 */
+  items?: PublicShareItem[]
   expiresAt: string | null
   hasPassword: boolean
   /** null 表示不限下载次数 */
@@ -437,7 +588,10 @@ export interface PublicShareInfo {
 
 export interface PublicShareUnlockResult {
   ok: boolean
+  state?: PublicShareState
   share?: PublicShareMeta
+  requiresPassword?: boolean
+  expiresAt?: string | null
 }
 
 /* ---------- 告警 ---------- */
@@ -475,6 +629,20 @@ export interface AlertsResult {
   items: AlertEvent[]
   state: AlertState[]
   config: AlertsConfig
+  /** v0.4.0：筛选后的总数；旧服务端不下发时前端按当前页条数回退 */
+  total?: number
+}
+
+/** 告警历史筛选（全部可选，默认行为与旧版一致：最近 20 条）。 */
+export interface AlertListQuery {
+  limit?: number
+  offset?: number
+  /** 条件名，如 disk_low/backup_age */
+  event?: string
+  /** firing|resolved|unknown */
+  status?: string
+  /** critical|warning|info */
+  severity?: string
 }
 
 export interface AlertTestResult {
@@ -531,6 +699,9 @@ export interface BackupState {
   orphanCount: number
   lastError: string | null
   dataDirFreeBytes: number
+  /** v0.4.0：待确认/已确认归档占用（旧服务端可能不下发） */
+  pendingBytes?: number | null
+  ackedBytes?: number | null
 }
 
 export interface BackupListResult {
@@ -538,6 +709,10 @@ export interface BackupListResult {
   inbox: BackupInboxItem[]
   orphans: BackupInboxItem[]
   state: BackupState
+  /** v0.4.0：世界一致性备份、PC 拉取与恢复演练只读状态；文件缺失时为 null */
+  world?: WorldBackupStatus | null
+  worldPull?: WorldPullStatus | null
+  drill?: DrillStatus | null
 }
 
 export interface BackupImportVerify {
@@ -620,3 +795,31 @@ export interface FileListQuery {
 
 export type FileSortField = NonNullable<FileListQuery['sort']>
 export type FileSortDirection = NonNullable<FileListQuery['dir']>
+
+/* ---------- 指标历史（v0.4.0，GET /api/metrics） ---------- */
+
+export type MetricsRange = '1h' | '6h' | '24h' | '7d' | '30d'
+
+/** 单个聚合桶：CPU/内存/温度/负载为桶内平均，磁盘剩余取桶内最小值。 */
+export interface MetricsPoint {
+  ts: string
+  cpuPercent: number
+  memUsedBytes: number
+  memTotalBytes: number
+  memUsedPct: number
+  /** 非 Linux 或无法读取温度时为 null */
+  tempC: number | null
+  diskFreeBytes: number
+  diskTotalBytes: number
+  diskFreePct: number
+  load1: number
+}
+
+export interface MetricsResult {
+  range: MetricsRange
+  from: string
+  to: string
+  bucketSeconds: number
+  sampleCount: number
+  series: MetricsPoint[]
+}

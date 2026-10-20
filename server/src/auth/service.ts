@@ -31,8 +31,10 @@ import {
 
 /** 生产环境再认证失败的恒定延迟（测试环境为 0，避免拖慢用例）。 */
 const REAUTH_FAILURE_DELAY_MS = 300
+/** 登录用户名最大长度：避免未认证输入整串进入查找/审计（audit 层另有兜底）。 */
+export const MAX_LOGIN_USERNAME_LENGTH = 64
 /** TOTP 全局限流：登录/再认证的所有第二因素尝试共享，防分布式爆破。 */
-const TOTP_GLOBAL_MAX = 40
+export const TOTP_GLOBAL_MAX = 120
 /** 再认证全局限流：防止多来源同时猜当前密码。 */
 const REAUTH_GLOBAL_MAX = 30
 
@@ -73,10 +75,19 @@ export interface LoginResult {
   expiresAt: string
 }
 
+/** 判断来源 IP 是否为 loopback（本机开发/运维，免占全局限流桶）。 */
+export function isLoopbackAddress(ip: string): boolean {
+  const value = ip.trim().toLowerCase()
+  if (!value) return false
+  if (value === '::1' || value === 'localhost' || value === '::ffff:127.0.0.1') return true
+  return value === '127.0.0.1' || value.startsWith('127.')
+}
+
 export class AuthService {
   readonly passwordLimiter = new SlidingWindowLimiter(15 * 60_000, 5)
   readonly totpLimiter = new SlidingWindowLimiter(15 * 60_000, 10)
-  readonly globalLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
+  /** 全局桶提高阈值：避免单个 IP 打满后管理员会话过期也无法登录；loopback 不占全局桶。 */
+  readonly globalLimiter = new SlidingWindowLimiter(60 * 60_000, 60)
   readonly totpGlobalLimiter = new SlidingWindowLimiter(60 * 60_000, TOTP_GLOBAL_MAX)
   readonly reauthLimiter = new SlidingWindowLimiter(15 * 60_000, 5)
   readonly reauthGlobalLimiter = new SlidingWindowLimiter(60 * 60_000, REAUTH_GLOBAL_MAX)
@@ -102,15 +113,20 @@ export class AuthService {
   async beginPasswordLogin(input: LoginInput): Promise<{ challenge: string; expiresIn: number }> {
     const retry = this.passwordLimiter.hit(input.ip)
     if (retry > 0) throw rateLimited(retry)
-    const globalRetry = this.globalLimiter.hit('global')
-    if (globalRetry > 0) throw rateLimited(globalRetry)
+    // loopback（本机开发/运维）不占全局桶，避免本机调试把全局配额耗尽。
+    if (!isLoopbackAddress(input.ip)) {
+      const globalRetry = this.globalLimiter.hit('global')
+      if (globalRetry > 0) throw rateLimited(globalRetry)
+    }
+    // 防御性截断：路由已限制长度，服务层再兜底一次，避免超长输入进入查找/审计。
+    const username = input.username.slice(0, MAX_LOGIN_USERNAME_LENGTH)
 
-    const user = findUserByUsername(this.db, input.username)
+    const user = findUserByUsername(this.db, username)
     if (!user) {
       const dummy = await dummyPasswordHash()
       await verifyPassword(input.password, dummy.hash, dummy.salt)
       this.recordAttempt(input.ip, false)
-      audit(this.db, input.username || '(unknown)', 'login_failed', null, { reason: 'unknown_user' }, input.ip)
+      audit(this.db, username || '(unknown)', 'login_failed', null, { reason: 'unknown_user' }, input.ip)
       throw invalidCredentials()
     }
     const valid = await verifyPassword(input.password, user.password_hash, user.password_salt)
@@ -132,8 +148,10 @@ export class AuthService {
   async completeTotpLogin(input: TotpInput): Promise<LoginResult> {
     const retry = this.totpLimiter.hit(input.ip)
     if (retry > 0) throw rateLimited(retry)
-    const globalRetry = this.totpGlobalLimiter.hit('global')
-    if (globalRetry > 0) throw rateLimited(globalRetry)
+    if (!isLoopbackAddress(input.ip)) {
+      const globalRetry = this.totpGlobalLimiter.hit('global')
+      if (globalRetry > 0) throw rateLimited(globalRetry)
+    }
 
     const row = this.db
       .prepare(

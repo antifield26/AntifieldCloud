@@ -16,6 +16,9 @@ NODE_BIN=${NODE_BIN:-/usr/local/bin/node}
 OPENCODE_HOME=${OPENCODE_HOME:-/var/lib/opencode}
 OPENCODE_DB=${OPENCODE_DB:-$OPENCODE_HOME/.local/share/opencode/opencode.db}
 OPENCODE_CONFIG_DIR=${OPENCODE_CONFIG_DIR:-$OPENCODE_HOME/.config/opencode}
+# 明文临时目录优先放 /run（tmpfs，重启即清）；不可用时回退 /tmp 并保持 0700（OP-10）。
+SECRETS_TMP_DIR=${SECRETS_TMP_DIR:-/run/antifieldcloud/secrets-tmp}
+opencode_warning=""
 
 json_error() {
   printf '{"ok":false,"error":"%s"}\n' "$1"
@@ -54,7 +57,15 @@ fi
 chmod 2750 "$BACKUP_DIR" 2>/dev/null || chmod 0750 "$BACKUP_DIR"
 
 # 所有明文只允许出现在 0700 临时目录；任何退出路径都清理，失败不留下未加密产物。
-work=$(mktemp -d)
+# 优先使用 tmpfs（/run/antifieldcloud），避免明文短暂落盘；启动前清理上次残留。
+tmp_parent="$SECRETS_TMP_DIR"
+if ! mkdir -p "$tmp_parent" 2>/dev/null; then
+  tmp_parent="${TMPDIR:-/tmp}/antifieldcloud-secrets-tmp"
+  mkdir -p "$tmp_parent"
+fi
+chmod 0700 "$tmp_parent"
+find "$tmp_parent" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+work=$(mktemp -d "$tmp_parent/work.XXXXXX")
 chmod 0700 "$work"
 # opencode 快照需要以 opencode 用户写入；独立目录避免 0700 的 work 阻断其遍历。
 snapshot_root=""
@@ -110,9 +121,10 @@ if [[ ${#root_files[@]} -eq 0 ]]; then
 fi
 
 # opencode 数据库一致性快照：以 opencode 用户执行固定 node:sqlite backup，不修改 opencode 服务。
+# OP-10：快照失败降级为警告，仍打包 env/cloudflared/server.properties；状态 includesOpencode=false。
 opencode_included=false
 if [[ -f "$OPENCODE_DB" ]] && getent passwd opencode >/dev/null 2>&1 && [[ -x "$NODE_BIN" ]]; then
-  snapshot_root=$(mktemp -d /tmp/antifieldcloud-opencode.XXXXXX)
+  snapshot_root=$(mktemp -d "$tmp_parent/opencode.XXXXXX")
   snapshot_dir="$snapshot_root/opencode"
   mkdir -p "$snapshot_dir"
   chown opencode:opencode "$snapshot_root" "$snapshot_dir"
@@ -131,7 +143,11 @@ if [[ -f "$OPENCODE_DB" ]] && getent passwd opencode >/dev/null 2>&1 && [[ -x "$
     chmod 0600 "$snapshot_db" 2>/dev/null || true
     opencode_included=true
   else
-    json_error "opencode 数据库快照失败（请检查 opencode 服务/权限）"
+    # 不中断整个密钥包：先记录警告，env/cloudflared/server.properties 仍然备份。
+    opencode_warning="opencode_snapshot_failed"
+    rm -rf "$snapshot_root"
+    snapshot_root=""
+    echo "警告：opencode 数据库快照失败（继续打包其它密钥文件）" >&2
   fi
 fi
 
@@ -171,5 +187,9 @@ if [[ "$opencode_included" == "true" ]]; then
   extra_files=1
 fi
 file_count=$(( ${#root_files[@]} + extra_files ))
-printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"includesOpencode":%s,"createdAt":"%s","keep":%s}\n' \
-  "$archive" "$name" "$sha256" "$size" "$file_count" "$opencode_included" "$created_at" "$KEEP"
+warnings_json="[]"
+if [[ -n "$opencode_warning" ]]; then
+  warnings_json="[\"$opencode_warning\"]"
+fi
+printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"includesOpencode":%s,"createdAt":"%s","keep":%s,"warnings":%s}\n' \
+  "$archive" "$name" "$sha256" "$size" "$file_count" "$opencode_included" "$created_at" "$KEEP" "$warnings_json"

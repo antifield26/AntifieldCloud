@@ -1,9 +1,10 @@
 // 工作台告警卡片：当前活跃告警 + 最近历史 + webhook 配置状态。
 // 数据来自 GET /api/alerts，不提供修改能力；阈值与配置在设置页只读展示。
+// v0.4.0：历史记录支持状态/事件筛选与服务端分页；默认视图（无筛选、第一页）与旧版一致。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Bell, BellRing, RefreshCw } from 'lucide-react'
+import { Bell, BellRing, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react'
 import { api, isAbortError, toErrorMessage } from '../../api/client'
 import type { AlertEvent, AlertsResult } from '../../api/types'
 import { useAppMeta } from '../../meta/MetaContext'
@@ -18,20 +19,35 @@ import { RelativeTime } from '../RelativeTime'
 import { SkeletonText } from '../Skeleton'
 import { cx } from '../../lib/classnames'
 
+const PAGE_SIZE = 5
+
 const EVENT_LABELS: Record<string, string> = {
   disk: '磁盘空间',
   disk_free: '磁盘空间',
+  disk_low: '磁盘空间',
   temp: '温度',
   temperature: '温度',
+  temp_high: '温度',
   memory: '内存',
   mem: '内存',
+  memory_high: '内存',
+  mem_high: '内存',
   service: '服务状态',
+  service_down: '服务状态',
   backup: '备份超期',
   backup_age: '备份超期',
+  backup_overdue: '备份超期',
+  pending_backup: '待确认备份',
+  secrets: '密钥包',
+  secrets_error: '密钥包',
   minecraft: 'Minecraft 状态',
   mc: 'Minecraft 状态',
+  mc_offline: 'Minecraft 状态',
   undervoltage: '电源欠压',
   throttle: '电源欠压',
+  world_backup_stale: '世界备份过期',
+  world_pull_stale: '世界备份未拉取',
+  drill_stale: '恢复演练过期',
 }
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -51,7 +67,32 @@ const STATUS_LABELS: Record<string, string> = {
   recovered: '已恢复',
   normal: '正常',
   ok: '正常',
+  unknown: '未知',
 }
+
+/** 服务端支持的状态筛选值（docs/API.md §12）。 */
+const STATUS_FILTERS = [
+  { value: '', label: '全部状态' },
+  { value: 'firing', label: '触发中' },
+  { value: 'resolved', label: '已恢复' },
+  { value: 'unknown', label: '未知' },
+]
+
+/** 已知告警条件；服务端新增但前端未映射的条件会从实际数据中补充。 */
+const KNOWN_EVENTS = [
+  'disk_low',
+  'temp_high',
+  'memory_high',
+  'service_down',
+  'backup_age',
+  'pending_backup',
+  'secrets_error',
+  'mc_offline',
+  'undervoltage',
+  'world_backup_stale',
+  'world_pull_stale',
+  'drill_stale',
+]
 
 function severityLabel(severity: string): string {
   return SEVERITY_LABELS[severity.toLowerCase()] ?? severity
@@ -85,6 +126,17 @@ function eventLabel(event: string): string {
   return EVENT_LABELS[event] ?? event
 }
 
+/** 合并已知条件与实际出现的条件，避免服务端新增条件无法筛选。 */
+function buildEventOptions(data: AlertsResult | null): { value: string; label: string }[] {
+  const seen = new Set<string>(KNOWN_EVENTS)
+  for (const state of data?.state ?? []) seen.add(state.event)
+  for (const item of data?.items ?? []) seen.add(item.event)
+  const options = [...seen]
+    .map((value) => ({ value, label: eventLabel(value) }))
+    .sort((left, right) => left.label.localeCompare(right.label, 'zh-CN'))
+  return [{ value: '', label: '全部事件' }, ...options]
+}
+
 function EventRow({ item }: { item: AlertEvent }) {
   return (
     <li className="alert-event">
@@ -111,6 +163,10 @@ export function AlertsCard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [statusFilter, setStatusFilter] = useState('')
+  const [eventFilter, setEventFilter] = useState('')
   const dataRef = useRef<AlertsResult | null>(null)
   const requestIdRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
@@ -126,25 +182,48 @@ export function AlertsCard() {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
     try {
-      const result = await api.alerts.list(20)
+      const result = await api.alerts.list(
+        PAGE_SIZE,
+        {
+          offset: (page - 1) * PAGE_SIZE,
+          event: eventFilter || undefined,
+          status: statusFilter || undefined,
+        },
+        controller.signal,
+      )
       if (requestId !== requestIdRef.current) return
-      dataRef.current = result
-      setData(result)
+      const rawItems = Array.isArray(result.items) ? result.items : []
+      const serverTotal = typeof result.total === 'number' ? result.total : null
+      // 旧服务端不支持分页/筛选：只取首页 5 条，避免翻页出现重复内容
+      const normalized: AlertsResult = serverTotal === null
+        ? { ...result, items: rawItems.slice(0, PAGE_SIZE) }
+        : result
+      dataRef.current = normalized
+      setData(normalized)
+      setTotal(serverTotal ?? Math.min(rawItems.length, PAGE_SIZE))
       setError(null)
     } catch (loadError) {
       if (isAbortError(loadError) || requestId !== requestIdRef.current) return
-      const message = toErrorMessage(loadError, '加载告警失败')
-      if (dataRef.current) setError(message)
-      else setError(message)
+      setError(toErrorMessage(loadError, '加载告警失败'))
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }
-  }, [meta.alertsEnabled])
+  }, [meta.alertsEnabled, page, eventFilter, statusFilter])
 
   useEffect(() => {
     void load()
     return () => abortRef.current?.abort()
   }, [load])
+
+  useEffect(() => {
+    setPage(1)
+  }, [eventFilter, statusFilter])
+
+  // 筛选后总数变少时回到最后一页
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+    if (page > totalPages) setPage(totalPages)
+  }, [total, page])
 
   usePolling(() => load(), 60_000, meta.alertsEnabled)
 
@@ -155,7 +234,9 @@ export function AlertsCard() {
   }
 
   const activeStates = data?.state.filter((state) => !isResolvedStatus(state.status)) ?? []
-  const recentItems = data?.items.slice(0, 5) ?? []
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const hasFilters = Boolean(statusFilter || eventFilter)
+  const eventOptions = buildEventOptions(data)
 
   return (
     <Card
@@ -217,15 +298,80 @@ export function AlertsCard() {
             </ul>
           ) : null}
 
-          {recentItems.length > 0 ? (
+          <div className="alerts-filters" role="group" aria-label="告警历史筛选">
+            <div className="select-field">
+              <label className="sr-only" htmlFor="alerts-status-filter">按状态筛选告警历史</label>
+              <select
+                id="alerts-status-filter"
+                className="select alerts-filter-select"
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+              >
+                {STATUS_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="select-field">
+              <label className="sr-only" htmlFor="alerts-event-filter">按事件筛选告警历史</label>
+              <select
+                id="alerts-event-filter"
+                className="select alerts-filter-select"
+                value={eventFilter}
+                onChange={(event) => setEventFilter(event.target.value)}
+              >
+                {eventOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+            <span className="alerts-filter-count">
+              共 {total} 条{hasFilters ? '匹配记录' : '记录'}
+            </span>
+          </div>
+
+          {data.items.length > 0 ? (
             <ul className="alert-event-list">
-              {recentItems.map((item) => (
+              {data.items.map((item) => (
                 <EventRow key={item.id} item={item} />
               ))}
             </ul>
           ) : (
-            <EmptyState compact icon={<Bell size={22} />} title="暂无告警历史" description="触发告警后会在这里显示最近记录。" />
+            <EmptyState
+              compact
+              icon={<Bell size={22} />}
+              title={hasFilters ? '没有匹配的告警历史' : '暂无告警历史'}
+              description={
+                hasFilters
+                  ? '调整状态或事件筛选后再试。'
+                  : '触发告警后会在这里显示最近记录。'
+              }
+            />
           )}
+
+          {total > PAGE_SIZE ? (
+            <div className="alerts-pager">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="上一页告警历史"
+                title="上一页"
+                disabled={page <= 1}
+                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                icon={<ChevronLeft size={16} aria-hidden="true" />}
+              />
+              <span className="alerts-pager-info">第 {page} / {totalPages} 页</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="下一页告警历史"
+                title="下一页"
+                disabled={page >= totalPages}
+                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+                icon={<ChevronRight size={16} aria-hidden="true" />}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Card>

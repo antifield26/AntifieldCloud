@@ -224,17 +224,18 @@ test('孤儿归档：--pending/--prepare 报告但不删除，且计入 orphanBy
 test('空间不足：prepare 失败且不生成 pending/归档', () => {
   const dir = tempDataDir()
   try {
-    // 先初始化 DB（不生成归档），再插入一个超大文件元数据行触发空间预算失败（不实际写大文件）。
+    // 先初始化 DB（不生成归档），再插入一个超大 pending Pi 归档行让空间预算失败
+    // （pendingBytes 计入预算，无需真的写大文件）。
     const init = runBackup(dir, ['--pending'])
     assert.equal(init.status, 0)
     const dbPath = join(dir, 'db.sqlite')
     const rw = new DatabaseSync(dbPath)
-    const now = new Date().toISOString()
     try {
+      const now = new Date().toISOString()
       rw.prepare(
-        `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
-         VALUES (?, NULL, ?, 'file', ?, ?, ?, ?, ?, ?, NULL, NULL)`,
-      ).run('space-test-file', 'huge.bin', 1_000_000_000_000_000, 'application/octet-stream', '0'.repeat(64), 'space-test-file', now, now)
+        `INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at, origin)
+         VALUES ('snapshot-huge-full.tar.gz', 'full', ?, ?, 1000000000000000, 1, NULL, NULL, NULL, 'pi')`,
+      ).run(now, '0'.repeat(64))
     } finally {
       rw.close()
     }
@@ -243,11 +244,112 @@ test('空间不足：prepare 失败且不生成 pending/归档', () => {
     assert.notEqual(failed.status, 0)
     assert.equal(failed.json.ok, false)
     assert.match(String(failed.json.error), /磁盘空间不足/)
-    assert.equal(countPending(dir), 0)
+    assert.equal(countPending(dir), 1, '失败不新增 pending（仅保留测试插入的超大行）')
     const archiveCount = existsSync(join(dir, 'backups'))
       ? readdirSync(join(dir, 'backups')).filter((name) => name.endsWith('.tar.gz')).length
       : 0
     assert.equal(archiveCount, 0)
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('Web 导入归档不计入 pending，也不影响增量 since', () => {
+  const dir = tempDataDir()
+  try {
+    // 先做一次全量并 ack，建立游标。
+    const full = runBackup(dir, ['--legacy', '--full'])
+    assert.equal(full.status, 0)
+    const lastBackupAt = readBackupState(dir)?.last_backup_at
+    assert.ok(lastBackupAt)
+
+    // 游标之后新增一个文件（含物理内容），并插入一条未来的 Web 导入归档行。
+    const now = new Date(Date.now() + 1000).toISOString()
+    const fileId = 'imported-after-file'
+    const physical = join(dir, 'files', fileId.slice(0, 2), fileId)
+    mkdirSync(join(dir, 'files', fileId.slice(0, 2)), { recursive: true })
+    writeFileSync(physical, 'new-content')
+    const rw = new DatabaseSync(join(dir, 'db.sqlite'))
+    try {
+      rw.prepare(
+        `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
+         VALUES (?, NULL, 'new.txt', 'file', 11, 'text/plain', ?, ?, ?, ?, NULL, NULL)`,
+      ).run(fileId, '0'.repeat(64), fileId, now, now)
+      rw.prepare(
+        `INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at, origin)
+         VALUES ('snapshot-IMPORT-full.tar.gz', 'full', '2030-01-01T00:00:00.000Z', ?, 10, 1, NULL, NULL, NULL, 'import')`,
+      ).run('1'.repeat(64))
+    } finally {
+      rw.close()
+    }
+
+    // 导入归档仍 pending=0；建议模式为 inc（已 ack 过全量）。
+    const pending = runBackup(dir, ['--pending'])
+    assert.equal(pending.status, 0)
+    assert.equal(pending.json.count, 0, 'origin=import 不计入 pending')
+    assert.equal(pending.json.recommendedMode, 'inc')
+
+    const prepared = runBackup(dir, ['--prepare'])
+    assert.equal(prepared.status, 0)
+    assert.equal(prepared.json.mode, 'inc')
+    const archive = String(prepared.json.archive)
+    const listing = spawnSync('tar', ['-tzf', archive], { encoding: 'utf8' })
+    const manifestName = listing.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^backups\/manifest-.*\.json$/.test(line))
+    assert.ok(manifestName)
+    const manifestText = spawnSync('tar', ['-xOzf', archive, manifestName], { encoding: 'utf8' }).stdout
+    const manifest = JSON.parse(manifestText) as {
+      since: string | null
+      files: { id: string }[]
+      fileCount: number
+    }
+    assert.equal(manifest.since, lastBackupAt, 'since 取已确认游标，不受导入归档时间影响')
+    assert.equal(manifest.fileCount, 1)
+    assert.equal(manifest.files[0]?.id, fileId)
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('缺失物理文件的预检：跳过并记录 skippedMissing/warnings，不整体失败', () => {
+  const dir = tempDataDir()
+  try {
+    assert.equal(runBackup(dir, ['--pending']).status, 0)
+    const now = new Date().toISOString()
+    const rw = new DatabaseSync(join(dir, 'db.sqlite'))
+    try {
+      // 只插 DB 行、不写物理文件（模拟断电后“有行无文件”）。
+      rw.prepare(
+        `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id)
+         VALUES ('missing-physical-file', NULL, 'gone.bin', 'file', 5, 'application/octet-stream', ?, 'missing-physical-file', ?, ?, NULL, NULL)`,
+      ).run('2'.repeat(64), now, now)
+    } finally {
+      rw.close()
+    }
+
+    const prepared = runBackup(dir, ['--prepare', '--full'])
+    assert.equal(prepared.status, 0, prepared.stderr)
+    assert.equal(prepared.json.ok, true)
+    assert.deepEqual(prepared.json.skippedMissing, ['missing-physical-file'])
+    assert.equal((prepared.json.warnings as unknown[]).length, 1)
+    assert.equal(prepared.json.fileCount, 0)
+
+    const archive = String(prepared.json.archive)
+    const listing = spawnSync('tar', ['-tzf', archive], { encoding: 'utf8' })
+    assert.equal(listing.status, 0)
+    const manifestName = listing.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^backups\/manifest-.*\.json$/.test(line))
+    assert.ok(manifestName)
+    const manifest = JSON.parse(
+      spawnSync('tar', ['-xOzf', archive, manifestName], { encoding: 'utf8' }).stdout,
+    ) as { skippedMissing: string[]; warnings: string[]; fileCount: number }
+    assert.deepEqual(manifest.skippedMissing, ['missing-physical-file'])
+    assert.equal(manifest.fileCount, 0)
+    assert.equal(manifest.warnings.length, 1)
   } finally {
     cleanupDir(dir)
   }

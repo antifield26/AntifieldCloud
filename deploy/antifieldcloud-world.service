@@ -1,0 +1,51 @@
+[Unit]
+Description=AntifieldCloud Minecraft world consistent backup
+Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
+# 只做时序排序，不拉起 Minecraft；服务器未运行时脚本会因 RCON 不可达而失败并在状态 JSON 中可见。
+After=minecraft.service network-online.target
+Wants=network-online.target
+# 防止异常情况下被 timer 反复拉起刷屏；每周一次的任务 1 小时内 3 次足够。
+StartLimitIntervalSec=1h
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+# 世界归档属 root：需要 RCON loopback、读取 /home/antifield/minecraft-server、写 /var/lib/antifieldcloud。
+User=root
+Group=root
+SyslogIdentifier=antifieldcloud-world
+# flock 串行化：同一定时器/手工并发运行只允许一个；600s 内拿不到锁以退出码 75 结束（journal 可见）。
+# /run/antifieldcloud-world 由 RuntimeDirectory 创建，随本次运行结束删除。
+RuntimeDirectory=antifieldcloud-world
+RuntimeDirectoryMode=0750
+ExecStart=/usr/bin/flock -w 600 -E 75 /run/antifieldcloud-world/backup.lock /usr/local/bin/node /opt/antifieldcloud/current/scripts/backup-world.mjs
+# 打包 4 GiB 世界（gzip）在 Pi 上可能超过默认 90s；保留充足余量但不无限挂起。
+TimeoutStartSec=4h
+# 降低对 Minecraft/应用 I/O 的干扰。
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+UMask=0027
+# 沙箱：整机只读，仅数据目录可写；Minecraft 目录显式只读（tar 只读世界，不允许写入）。
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/antifield/minecraft-server
+ReadWritePaths=/var/lib/antifieldcloud
+ProtectKernelTunables=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+# 只保留 root 备份必需的权限：读世界/数据、chown/chmod 归档；其余能力丢弃。
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH CAP_FOWNER CAP_FSETID CAP_SETGID CAP_SETUID

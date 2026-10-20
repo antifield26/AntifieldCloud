@@ -4,8 +4,17 @@ import type { Config } from '../../config.ts'
 import type { DashboardService } from '../../dashboard/service.ts'
 import type { DatabaseSync } from 'node:sqlite'
 import { listAudit } from '../../auth/audit.ts'
+import { badRequest } from '../../util/errors.ts'
 import { asRecord, parsePositiveInt } from '../util.ts'
 import { requireAuth } from '../guards.ts'
+
+/** 时间过滤参数：空值忽略；非法 ISO 时间返回 400，避免静默变全量查询。 */
+function timeParam(value: unknown, field: string): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  const text = value.trim()
+  if (!Number.isFinite(Date.parse(text))) throw badRequest(`参数 ${field} 必须是 ISO 时间`, 'invalid_request')
+  return new Date(Date.parse(text)).toISOString()
+}
 
 export function registerDashboardRoutes(
   app: FastifyInstance,
@@ -15,12 +24,19 @@ export function registerDashboardRoutes(
 ): void {
   app.get('/api/dashboard', { preHandler: [requireAuth] }, async () => dashboard.get())
 
+  // 轻量存储用量：Files/Trash 页面轮询使用，语义与 dashboard.storage 完全一致。
+  app.get('/api/storage', { preHandler: [requireAuth] }, async () => dashboard.storage())
+
   app.get('/api/audit', { preHandler: [requireAuth] }, async (request) => {
     const query = asRecord(request.query)
-    const limit = parsePositiveInt(query.limit, 50, 1, 200)
-    const offset = parsePositiveInt(query.offset, 0, 0, 100_000)
-    const action = typeof query.action === 'string' && query.action ? query.action : null
-    return listAudit(db, { limit, offset, action })
+    return listAudit(db, {
+      limit: parsePositiveInt(query.limit, 50, 1, 200),
+      offset: parsePositiveInt(query.offset, 0, 0, 100_000),
+      action: typeof query.action === 'string' && query.action ? query.action : null,
+      q: typeof query.q === 'string' && query.q.trim() ? query.q.trim().slice(0, 200) : null,
+      from: timeParam(query.from, 'from'),
+      to: timeParam(query.to, 'to'),
+    })
   })
 
   app.get('/api/version', { preHandler: [requireAuth] }, async () => ({
@@ -37,5 +53,12 @@ export function registerDashboardRoutes(
     chunkedUploadEnabled: config.chunkedUploadEnabled,
     chunkSizeBytes: config.chunkSizeBytes,
     chunkMaxFileBytes: config.chunkMaxFileBytes,
+    noteAttachmentMaxBytes: config.noteAttachmentMaxBytes,
+    noteMaxAttachments: config.noteMaxAttachments,
+    noteVersionsKeep: config.noteVersionsKeep,
+    shareMaxItems: config.shareMaxItems,
+    metricsEnabled: config.metricsEnabled,
+    metricsSampleSeconds: config.metricsSampleSeconds,
+    metricsRetentionDays: config.metricsRetentionDays,
   }))
 }
