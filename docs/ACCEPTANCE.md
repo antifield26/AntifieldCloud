@@ -30,7 +30,7 @@
 | 公开入口 | `https://ai.antifield.work/` 401（未登录）；`https://app.antifield.work/healthz` 200 |
 | 密码轮换 | env(两份) 一致、Basic 200、应用 healthz 200、代理与 dashboard 探测路径不变 |
 | 旧归档清理 | `/home/antifield/minecraft-backups` 已删除；`df /` 可用 40 GiB；新 `world-backups` 与 PC 副本保留 |
-| 应用部署 | release `/opt/antifieldcloud/releases/20261020T144708Z`；healthz `0.4.1`；部署后只读 smoke 15/15 |
+| 应用部署 | release `/opt/antifieldcloud/releases/20261020T150609Z`；healthz `0.4.1`；迁移前快照 `db-predeploy-20261020T150659110Z.sqlite`；部署后只读 smoke 15/15 |
 | `smoke.ps1` | **22 通过 / 0 失败 / 0 警告**（含公网/CSP/PWA/分享/告警/服务/版本/cgroup/nftables/备份/世界/演练/脚本 hash/本地 SHA）；直连 SSH/TCP 偶发瞬时超时，重试后通过 |
 
 ### 3. 部署
@@ -39,8 +39,10 @@
 OpenCode: v2.1.1（/var/lib/opencode/.opencode/bin/opencode）
 备份: /var/backups/opencode/opencode-v2.0.32-bin-*.tar.gz、opencode-data-*.tar.gz
 Pi: 旧 legacy 世界归档已清理；旧 cron 停用
-应用: v0.4.1（release 20261020T144708Z；迁移前快照 db-predeploy-20261020T144754562Z.sqlite）
+应用: v0.4.1（release 20261020T150609Z；迁移前快照 db-predeploy-20261020T150659110Z.sqlite）
 nftables: 22 限速调整为 20/min burst 40（兼容 smoke/备份的多次 SSH）
+tag: v0.4.1
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.4.1
 ```
 
 ### 4. 未决
