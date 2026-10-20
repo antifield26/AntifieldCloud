@@ -29,7 +29,7 @@
 | 备份 | 手动 prepare 生成 full pending；PC 新脚本拉取 + ack + secrets=ok；PC secrets 含 opencode（约 1.3 MB）；`--no-warnings` 修复 PowerShell 5.1 JSON 解析 |
 | 媒体 | 生产上传 mp3 → `previewKind=audio`、`inlineAllowed=true`；`?inline=1` 为 inline，Range 返回 206；测试文件已删除 |
 | 文件列表 | 名称列点击修复保留（v0.2.1） |
-| OpenCode | 生产仍默认 shim（无可见按钮）；`attributes`/`passthrough` 模式及测试已加入；无垫片浏览器矩阵待 Cloudflare 设置后执行 |
+| OpenCode | Cloudflare Configuration Rule 已生效：passthrough HTML 的 `type="module"` 未被改写；attributes/passthrough 无 JS 时选择器资源可加载，但原生“新建会话”按钮仍无 `POST`（上游缺陷）。已回退 shim，隐藏 click/pointerup 接管可用，页面无可见自定义按钮 |
 | 临时数据 | 临时 app session、媒体测试文件已清理；pending 备份已拉取/确认 |
 
 ### 3. 部署
@@ -44,7 +44,7 @@ release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.3.0
 
 ### 4. 未决
 
-- Cloudflare `ai` 的 Rocket Loader/自动注入关闭后，执行 `attributes`/`passthrough` 无垫片矩阵；失败保留最小隐藏 click 接管（已确认）。
+- OpenCode 无垫片尝试：Cloudflare 关闭 Rocket Loader 后，无 JS 的 attributes/passthrough 仍无法触发原生新建会话（上游按钮缺陷）；按约定保留最小隐藏 click 接管，无可见按钮。后续上游修复/升级再复测。
 - 系统级加固（journald persistent/RTC、cloudflared 升级、nft 收窄/rpcbind/RCON bind）逐项确认后执行。
 - Minecraft 世界未纳入备份；大文件 5 GB 分片在 v0.3.1。
 - age 私钥仍需用户移到离线介质并删除本地明文副本。

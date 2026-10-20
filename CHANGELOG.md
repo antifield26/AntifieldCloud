@@ -17,6 +17,7 @@
 - 告警 unknown 降级与恢复、事件+状态事务化、90 天保留；备份密钥包告警。
 - legacy 无参备份改为显式 `--legacy`；孤儿归档可观测并计入空间预算；sidecar 清理。
 - 前端分享备注/一次性 URL/PWA 缓存/审计映射；媒体与备份向导测试。
+- OpenCode 无垫片尝试：Cloudflare 关闭 `ai` 的 Rocket Loader 后，passthrough HTML 的模块脚本未被改写；但无 JS 的 attributes/passthrough 仍无法触发原生新建会话（上游按钮缺陷），按约定保留最小隐藏 click 接管，无可见按钮。
 - 文档与 API/UI/ARCH/SECURITY/DEPLOY/BACKUP 同步。
 
 ## [0.2.2] - 2026-10-19
