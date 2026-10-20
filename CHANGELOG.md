@@ -9,6 +9,10 @@
 - 前端大文件自动分片：>100 MiB 走分片，并发 2 块，localStorage 只保存 uploadId/已收块号；刷新/断线自动补缺块；取消后重试可续传。
 - 审计/运维：persistent journald（log2ram 64 MiB 上限）、cloudflared 2026.10.1 + systemd 加固、nftables WiFi 源收窄到 `/21`、rpcbind 禁用、unattended-upgrades dry-run 验证。
 
+### Docs
+
+- 补档第二轮审计记录 `docs/AUDIT.md`（A2-01～A2-10、执行边界、回归证据与残留）；工作区临时测试产物清理。
+
 ## [0.3.0] - 2026-10-20
 
 ### Added
