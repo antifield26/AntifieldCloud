@@ -9,6 +9,8 @@
 - `docs/API.md`：HTTP 契约（服务端/前端共同遵守）
 - `docs/UI-SPEC.md`：界面与交互
 - `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`
+- `docs/AUDIT.md`：第一轮 v0.2.0 + 第二轮 v0.3.x 审计与残留
+- `docs/ACCEPTANCE.md`：当前版本验收与历史记录
 
 ## 1. 语言与注释
 
