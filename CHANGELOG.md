@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.4.1] - 2026-10-20
+
+### Changed
+
+- **OpenCode 升级**：生产从 v2.0.32 升级到 **v2.1.1**（`opencode upgrade --method curl`）；升级前把二进制、配置、数据备份到 `/var/backups/opencode/`（93 MB 二进制 + 2 MB 数据快照 + env/service 副本）。
+- **兼容性复核**：Basic `/api/session`、`POST /api/session`（垫片新建会话路径）、`/api/config|agent|provider`、真实 HTML 垫片注入（`data-cfasync` + `__af/oc-help.js`）、公开 `ai.*` 401、app healthz 均正常；Web 包仍含“新建会话/New session”标记，垫片选择器继续匹配。
+- **凭据卫生**：轮换 OpenCode Basic 密码，同步 `/etc/opencode/opencode.env`、`/etc/antifieldcloud/env` 与两个 `service.json`；重启 opencode/antifieldcloud 后 Basic 与代理验证通过。
+- **运维清理**：删除 Pi 旧世界归档 `/home/antifield/minecraft-backups`（3×约 3 GiB，释放约 9 GiB）；新世界备份与 PC 副本保留，旧 cron 保持停用。
+
+### Dependencies
+
+- 合并 Dependabot：`actions/checkout` 4→7、`actions/setup-node` 4→7、`gitleaks/gitleaks-action` 2→3（CI 全绿）。
+
+### Docs
+
+- `docs/DEPLOY.md` 增加 OpenCode v2.1.1 升级/兼容检查/回滚；`docs/ACCEPTANCE.md` 增加 v0.4.1；`docs/SECURITY.md` 更新 OpenCode 版本行为与凭据轮换说明；版本号升至 v0.4.1。
+
 ## [0.4.0] - 2026-10-20
 
 ### Added

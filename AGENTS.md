@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.4.0，数据库 schema v6（迁移 5 为结构变更，迁移 6 为孤儿分享数据修复，不改变表结构）。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.4.1，数据库 schema v6（迁移 5 为结构变更，迁移 6 为孤儿分享数据修复，不改变表结构）；OpenCode 服务端 v2.1.1。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -114,7 +114,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 - Pi：`antifield@192.0.2.10` 直连；WiFi 198.51.100.10 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.11.1，世界可执行）；npm 指向 `/home/antifield/.nvm`，部署时以 root 使用。
-- opencode：`127.0.0.1:4096`，Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`。
+- opencode：`127.0.0.1:4096`，服务端 **v2.1.1**（2026-10-20 由 v2.0.32 升级；升级/回滚见 `docs/DEPLOY.md`），Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 opencode 与 antifieldcloud）。
 - Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（v0.2.0 已轮换为 32 位随机），
   服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。
 - Pi 已启用 memory cgroup（`cgroup.controllers` 含 `memory`）；`antifieldcloud-health.timer` 每 60s 写
@@ -123,13 +123,13 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   密钥包 Pi 端 `KEEP=2` 滚动保留，PC 不再立即删除远端密钥包。
 - 世界备份：`antifieldcloud-world.timer` 每周日 04:00（`Persistent=true`）以 root 执行 `scripts/backup-world.mjs`，
   归档到 `/var/lib/antifieldcloud/world-backups`、保留 4 份；Minecraft 世界约 4.1 GiB，周备份耗时与磁盘余量需按 1.5× 世界体积预留。
-  旧的 `minecraft-backups` cron 已在验收后停用；旧 9 GiB 归档不自动删除，按 `docs/DEPLOY.md` 手动清理。
+  旧的 `minecraft-backups` cron 已停用；旧约 9 GiB legacy 归档已于 v0.4.1 清理（`/home/antifield/minecraft-backups` 已删除），新归档由 PC 侧 `world` 目录保留。
 - 备份/灾备状态文件由脚本写入、应用只读：`/var/lib/antifieldcloud/world-backup-status.json`、
   `world-pull-status.json`、`drill-status.json`（0644）；Dashboard/Settings 与告警读取。
 - systemd 加固：`antifieldcloud.service` 已加 `CapabilityBoundingSet=`（空）、`RestrictAddressFamilies`、
   `PrivateDevices`、`ProtectClock/Hostname/KernelLogs`、`RestrictSUIDSGID/Realtime` 等；`antifieldcloud-world.service`
   同样加固并有 `flock`、4h 超时。
-- nftables：默认拒绝入站；22 仅 `169.254.77.0/24` + `172.23.88.0/21` 且新建连接限速 5/min；
+- nftables：默认拒绝入站；22 仅 `169.254.77.0/24` + `172.23.88.0/21` 且新建连接限速 20/min；
   25565 仅同网段；25575 仅 loopback；DHCP 仅 `eth0`/`wlan0`。**改 22 网段前先确认当前 SSH 来源在允许集合内**。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；
   `install-backup-task.ps1` 只安装每日应用归档拉取任务。
@@ -148,5 +148,5 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
    （`scripts/drill.ps1`，建议季度或升级前）；确认直连网线可通。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在 `169.254.77.0/24` 或 `172.23.88.0/21` 内（否则会锁死）；
    保留物理键鼠/已建立 SSH 作为回滚通道。
-7. 确认 `crontab` 已无旧 `minecraft-backups` 行（如仍存在则按 `docs/DEPLOY.md` 移除）；按 `docs/DEPLOY.md` 手动清理旧 9 GiB 世界归档。
+7. 旧 `minecraft-backups` cron 已停用、legacy 归档已清理；如后续手工重建 cron 或旧目录，按 `docs/DEPLOY.md` 处理并再次确认迁移。
 8. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/BACKUP.md` §7 与 `docs/ACCEPTANCE.md`。

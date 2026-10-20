@@ -38,7 +38,7 @@
 
 - 应用绑定 127.0.0.1；公网唯一入口为 Cloudflare Tunnel（出站）。
 - nftables（`deploy/nftables.conf`）：默认 drop 入站；loopback/established/ICMP 放行；
-  **22 仅 `169.254.77.0/24` + `172.23.88.0/21`，且 `ct state new` 限速 5/minute burst 10**；
+  **22 仅 `169.254.77.0/24` + `172.23.88.0/21`，且 `ct state new` 限速 20/minute burst 40**；
   **25565 仅同网段**（IPv6 仅 `fe80::/10`）；25575 显式 drop；DHCP 续租仅 `eth0`/`wlan0`；80 不再放行。
 - 不在 Pi 上开 3000/4096 的任何外部监听；credentialed 服务（RCON/opencode）仅 loopback。
 
@@ -112,9 +112,10 @@
 7. **普通备份归档仍含 TOTP secret 与文件内容**：PC 端 ACL 与物理安全是最后防线；密钥包已用 age 加密，
    后续可评估整包加密（restic/age）与异地副本。age 私钥丢失将无法恢复密钥包。
 8. **世界备份依赖 RCON 与 Minecraft 运行**：服务器未运行时备份失败（状态 JSON 可见）；`save-off` 期间若进程崩溃，
-   `save-on` 会重试/需人工恢复保存。旧 `minecraft-backups` 9 GiB 归档不自动删除，需手动清理。
-9. **opencode 自身认证/UI 行为随版本变化**：当前通过注入 Basic 实现 SSO；升级后需复测。原生新建按钮在上游部分版本有缺陷，
-   失败时保留最小隐藏点击接管（无可见 UI）。
+   `save-on` 会重试/需人工恢复保存。旧 `minecraft-backups` legacy 归档已于 v0.4.1 清理，旧 cron 保持停用。
+9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.1.1**（2026-10-20 由 v2.0.32 升级），通过注入 Basic 实现 SSO；
+   升级后按 `docs/DEPLOY.md` §3.2 复验 Basic/session/垫片注入/公开入口。原生新建按钮在部分版本仍有缺陷，
+   失败时保留最小隐藏点击接管（无可见 UI）；UI/WS 实时事件需浏览器复测。
 10. **无 WAF/DDoS 防护**：Cloudflare 默认防护有限；大文件上传/登录仍可能消耗资源（有配额/限流）。
 11. **SD 卡无加密**：设备丢失即数据泄露；可后续迁移 SSD + LUKS。
 12. **限流在内存中**：应用重启清零；对分布式攻击效果有限。
@@ -140,7 +141,8 @@
 - 怀疑泄露时：
   1. 登录设置页“退出全部会话”；
   2. CLI 重置密码/TOTP；
-  3. 轮换 RCON/opencode 密码（`bootstrap-env.sh --force` 后重启应用；非敏感配置会沿用现有值）；
+  3. 轮换 RCON/opencode 密码（opencode 需同步 `/etc/opencode/opencode.env`、`/etc/antifieldcloud/env` 与两个 `service.json`，
+     然后重启 opencode 与 antifieldcloud；`bootstrap-env.sh --force` 后也需重启应用，非敏感配置会沿用现有值）；
   4. 重新生成 age 密钥包并离线保管私钥；
   5. 检查审计日志、`journalctl`、备份 pending 与世界/演练状态文件；
   6. 从备份恢复可疑文件。

@@ -153,7 +153,7 @@ SQLite（WAL）核心表（schema v6）：
 - 前端在 PC 构建；Pi 只安装生产依赖（`npm ci --omit=dev --ignore-scripts`）。
 - 部署脚本：构建 → 打包 → 上传并校验 tar SHA-256 → 解包/npm ci → 迁移前 DB 快照 → 注入 `APP_VERSION` → 切换 current/重启
   → `/healthz` 断言版本；失败先停服、还原迁移前 DB 快照、切回 previous、启动、复检（无快照则拒绝自动回滚）。
-- nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 5/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
+- nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
 

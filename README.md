@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.4.0（schema v6；新增指标历史与趋势卡、笔记附件/版本、多文件分享、世界一致性备份/PC 拉取/恢复演练、systemd 与 nftables 加固）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.4.1（维护版：OpenCode 升级 v2.1.1 并完成兼容性复核、Dependabot CI action 更新、旧世界归档清理；schema v6）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -89,7 +89,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.4.0`。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.4.1`。
 
 ## 目录
 

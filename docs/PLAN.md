@@ -2,6 +2,12 @@
 
 本文件是 v0.4.x 的权威范围/决策摘要；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。
 
+## v0.4.1 补充
+
+- 维护版：OpenCode 服务端 v2.0.32 → v2.1.1 升级与兼容性复核（Basic/session/垫片/公开入口）；OpenCode Basic 密码轮换并同步 env/service.json。
+- 处理 Dependabot PR（actions/checkout 4→7、actions/setup-node 4→7、gitleaks-action 2→3）；关闭不兼容的 TypeScript 7 major。
+- 清理 Pi legacy 世界归档（约 9 GiB），旧 cron 保持停用；应用版本 0.4.1，schema 仍为 v6。
+
 ## 目标
 
 在 v0.3.x 已交付的云盘/知识库/分享/告警/备份/分片上传基础上，完成 v0.4.0：**可观测性与备份可视化、笔记附件与版本、多文件分享、Minecraft 世界一致性备份与 PC 拉取、恢复演练自动化、系统与网络安全加固**，并把文档与审计发现的漂移全部收敛到当前行为。
@@ -35,7 +41,7 @@
 ### 系统与网络加固
 
 - `antifieldcloud.service` capability/设备/时钟/主机名/内核日志/特殊权限收紧；世界备份 unit 独立加固。
-- nftables 收窄：22 与 25565 仅实际直连/校园网段（22 新建连接限速 5/min），25575 仅 loopback，DHCP 绑物理网卡；80 不再放行。
+- nftables 收窄：22 与 25565 仅实际直连/校园网段（22 新建连接限速 20/min），25575 仅 loopback，DHCP 绑物理网卡；80 不再放行。
 - 登录/TOTP 全局限流调整（loopback 免占全局桶）；审计字段截断；opencode HTTP/WS Origin 校验。
 - 部署脚本：APP_VERSION 注入与 `/healthz` 版本断言、磁盘/tar SHA/npm 预检、回滚先还原迁移前 DB 快照、部署后只读 smoke。
 

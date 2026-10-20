@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.4.0）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.4.1）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -45,7 +45,7 @@ sudo install -m 0644 deploy/antifieldcloud.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
 
-nftables 默认策略与网段（详见 §9）：默认 drop 入站；22 仅 `169.254.77.0/24` + `172.23.88.0/21` 且新建连接限速 5/min；
+nftables 默认策略与网段（详见 §9）：默认 drop 入站；22 仅 `169.254.77.0/24` + `172.23.88.0/21` 且新建连接限速 20/min；
 25565 仅同网段；25575 仅 loopback；DHCP 仅 `eth0`/`wlan0`；80 不再放行。
 
 ## 2. 非敏感部署值与环境文件
@@ -123,19 +123,49 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.1 v0.4.0 部署步骤（在本机版本升级时执行）
+### 3.1 v0.4.1 应用部署步骤（版本升级时执行）
 
-1. 本地：`npm run check`、`npm run build`，确认版本 0.4.0、schema 相关测试通过。
+1. 本地：`npm run check`、`npm run build`，确认 `package.json` 版本 0.4.1（schema 仍为 v6，无新迁移）。
 2. 执行 `.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本会完成迁移前快照、APP_VERSION 注入、切换与版本健康检查。
-   schema 从 v4 升级到 v6（迁移 5 结构 + 迁移 6 数据修复），迁移前快照是唯一回滚依据。
-3. 首次部署 v0.4.0 后如有新 env 键缺失，运行 `sudo bash /opt/antifieldcloud/current/scripts/bootstrap-env.sh --dry-run`
+3. 如新 env 键缺失，运行 `sudo bash /opt/antifieldcloud/current/scripts/bootstrap-env.sh --dry-run`
    预览，再 `--force` 写入（保留现有非敏感值），然后 `sudo systemctl restart antifieldcloud`。
-4. 应用 nftables 新规则（§9，先确认 SSH 来源网段）、systemd 加固 unit（本文件 §1）与世界备份 timer（§9.2）。
-5. 运行 `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.4.0`；确认 `antifieldcloud-world.timer` 下次触发时间。
-6. Windows 侧重装每日应用备份任务（`install-backup-task.ps1`），并手动安装周度世界拉取/演练任务（§9.2）。
-7. 手动触发一次世界备份 `sudo systemctl start antifieldcloud-world.service`，确认 `world-backup-status.json` 为 `ok=true`；
-   然后在 PC 跑一次 `world-pull.ps1` 与 `drill.ps1`。
-8. 登录面板确认趋势卡/备份健康卡/笔记附件/多文件分享/活动筛选用例；公网手机/PWA 验收后记录到 `docs/ACCEPTANCE.md`。
+4. 运行 `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.4.1`；确认 `antifieldcloud-world.timer` 下次触发时间。
+5. OpenCode 升级/兼容检查见 §3.2（应用部署与 OpenCode 升级相互独立，建议先应用后升级并分别验收）。
+
+### 3.2 OpenCode v2.1.1 升级与兼容性复核（本机执行）
+
+当前生产 OpenCode 为 v2.1.1（2026-10-20 由 v2.0.32 升级）。升级/回滚步骤：
+
+```bash
+# 1) 备份（root）：二进制、数据、env、unit
+TS=$(date -u +%Y%m%dT%H%M%SZ); BK=/var/backups/opencode
+sudo install -d -o root -g root -m 0700 "$BK"
+sudo tar -C /var/lib/opencode -czf "$BK/opencode-bin-$TS.tar.gz" .opencode/bin/opencode
+sudo tar -C /var/lib/opencode --exclude='.opencode/bin' -czf "$BK/opencode-data-$TS.tar.gz" .
+sudo cp -a /etc/opencode/opencode.env "$BK/opencode.env.$TS"
+sudo cp -a /etc/systemd/system/opencode.service "$BK/opencode.service.$TS"
+
+# 2) 升级（opencode 用户；curl 安装器）
+sudo -u opencode env HOME=/var/lib/opencode \
+  /var/lib/opencode/.opencode/bin/opencode upgrade --method curl
+
+# 3) 重启并验证
+sudo systemctl restart opencode
+sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version
+# Basic API / 代理兼容（密码从 env 读取，不打印）
+PASS=$(sudo grep '^OPENCODE_PASSWORD=' /etc/opencode/opencode.env | cut -d= -f2-)
+curl -sS -o /dev/null -w '%{http_code}\n' -u "opencode:$PASS" http://127.0.0.1:4096/api/session
+curl -sS -o /dev/null -w '%{http_code}\n' -u "opencode:$PASS" -H 'content-type: application/json' \
+  -d '{}' http://127.0.0.1:4096/api/session      # 垫片新建会话路径；会创建测试 session，可 DELETE /api/session/<id> 清理
+curl -sS -o /dev/null -w '%{http_code}\n' https://app.<域名>/healthz
+```
+
+兼容性判据：`/api/session` 200 且 `data` 为数组；`POST /api/session` 返回 `data.id`；upstream HTML 可被
+`injectOpenCodeShim` 注入（`__af/oc-help.js` + `data-cfasync`）；前端 bundle 仍含“新建会话/New session”标记；
+公开 `ai.<域名>` 未登录 401/302；应用 healthz 200。任一不满足先保持 `OPENCODE_HTML_MODE=shim` 并回滚 OpenCode。
+
+回滚：`sudo systemctl stop opencode` → 用备份的 `.opencode/bin/opencode` 覆盖 → 恢复 data tar（如需）→
+`sudo systemctl start opencode` → 按上面判据复验；应用侧无需回滚。OpenCode 原生按钮/WS 实时事件仍建议用户浏览器复测。
 
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 
@@ -259,8 +289,9 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 世界拉取/演练：Windows 周度 `world-pull.ps1` 与季度 `drill.ps1` 由用户手动安装任务（§9.2）；未安装时状态 unknown。
 - Web 恢复：只允许导入/校验/文件级恢复到新目录（`skippedMissing` 会剔除并在结果报告）；整库恢复仍按 `docs/BACKUP.md` §8 离线执行。
 - 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载。
-- 验收：`npm run check`（234/129）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、`smoke.ps1 -ExpectedVersion 0.4.0`、
-  Android/桌面原生新建按钮矩阵、备份导入/校验/恢复（临时 DATA_DIR）、世界备份首次执行与 PC 拉取、`drill.ps1` 演练通过。
+- 验收：`npm run check`（234/129）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、`smoke.ps1 -ExpectedVersion 0.4.1`、
+  Android/桌面原生新建按钮矩阵、备份导入/校验/恢复（临时 DATA_DIR）、世界备份首次执行与 PC 拉取、`drill.ps1` 演练通过；
+  OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -300,7 +331,7 @@ sudo systemctl show antifieldcloud -p MemoryCurrent -p MemoryMax
 ### 9.1 nftables 新规则（v0.4.0）
 
 当前 `deploy/nftables.conf`：默认 `policy drop`；loopback/established/ICMP 放行；DHCP 仅 `eth0`/`wlan0`；
-**22 仅 `169.254.77.0/24` + `172.23.88.0/21`，且 `ct state new` 限速 `5/minute burst 10 packets`**；
+**22 仅 `169.254.77.0/24` + `172.23.88.0/21`，且 `ct state new` 限速 `20/minute burst 40 packets`**；
 **25565 仅同网段**（IPv6 仅 `fe80::/10`）；**25575 显式 drop**；80 不再放行；出站不限制。
 
 ```bash
@@ -504,7 +535,7 @@ Windows PowerShell job 覆盖**全部** `scripts/*.ps1` 的 PS 5.1 解析 + UTF-
 - 开发缓存需确认：`~/.local/share/pnpm/store`、`~/.nvm` 旧 Node、`~/.rustup` 非 active toolchain、`~/.cargo/registry`、`~/.npm/_cacache`；清理前确认无其他项目依赖，联网可重建。
 - **不要清理**：`/var/lib/antifieldcloud`（DB/files/backups/world-backups/secrets 与状态文件）、`/var/lib/opencode`、当前与 previous release、`/var/swap`、`minecraft-server/world`、新的 `world-backups` 归档。
 - **世界备份保留**：Pi `world-backups` 保留最新 4 份（脚本自动滚动）；PC `world\` 保留最新 4 份；不要手动删除 `world-<UTC>.tar.gz` 或 `.sha256`，需要释放空间时先确认更旧的 PC 副本可解包。
-- **旧世界归档（已停用 cron）**：`/home/antifield/minecraft-backups` 约 9 GiB，不自动删除；确认 PC 已有世界副本后按 `docs/BACKUP.md` §6.4 手动清理。清理前 `du -sh`/`ls -lh` 确认目标，逐个删除，不要在生产高峰操作。
+- **旧世界归档**：`/home/antifield/minecraft-backups` 的 3 个 legacy 归档（约 9 GiB）已于 v0.4.1 清理，旧 cron 停用；如未来再次手工生成 legacy 归档，按 `docs/BACKUP.md` §6.4 在确认 PC 副本后手动清理。
 - **应用备份保留**：Pi pending 不自动删、已确认 2 份；PC `daily` 30 天、`weekly` 56 天、`secrets` 90 天；孤儿归档只报告不删除，人工核对后再清理。
 - 旧内核 `/opt/jdk` 等系统组件先在 `/boot`/Java 依赖确认后再处理；保留至少一个可回退内核。
 - 清理后运行 `smoke.ps1`，并记录释放量；不要清理 `preflight/age-key`。

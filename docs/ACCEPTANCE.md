@@ -1,8 +1,55 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.4.0；v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.4.1；v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 
-## v0.4.0（当前）
+## v0.4.1（当前）
+
+- 日期：2026-10-20（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
+- 版本：`v0.4.1`
+- 范围：OpenCode 服务端 v2.0.32 → v2.1.1 升级与兼容性复核；Dependabot CI action 更新；Pi legacy 世界归档清理；OpenCode Basic 密码轮换；应用版本发布。
+
+### 1. 交付
+
+- OpenCode 升级：`opencode upgrade --method curl`（v2.0.32 → v2.1.1）；升级前备份二进制、配置、数据到 `/var/backups/opencode/`（93 MB 二进制 tar + 2 MB 数据 tar + env/service 副本）。
+- 兼容性：Basic `/api/session`、`POST /api/session`（垫片新建会话路径）、`/api/config|agent|provider`、真实 HTML 垫片注入（`data-cfasync` + `__af/oc-help.js`）、公开 `ai.*` 401、app healthz 全部正常；Web 包仍含“新建会话/New session”标记，垫片选择器匹配。
+- 凭据：轮换 OpenCode Basic 密码，同步 `/etc/opencode/opencode.env`、`/etc/antifieldcloud/env`、两个 `service.json`；重启 opencode/antifieldcloud 后 Basic 200、应用 healthz 200。
+- 依赖：合并 Dependabot `actions/checkout` 4→7、`actions/setup-node` 4→7、`gitleaks/gitleaks-action` 2→3；main CI 全绿；不兼容的 TypeScript 7 major PR 已关闭。
+- 清理：删除 Pi `/home/antifield/minecraft-backups` 3 个 legacy 世界归档（约 9 GiB），磁盘可用从 31 GiB 增至 **40 GiB**；新世界备份与 PC `world` 副本保留，旧 cron 保持停用。
+- 应用：版本升至 0.4.1 并部署（代码无功能变更，仅版本/文档与运行环境变更）。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm run check` | 通过：服务端/脚本 234、前端 129（与 v0.4.0 相同基线） |
+| CI（main/tag） | 通过（含 PR 合并后的最新 main） |
+| OpenCode 版本 | `opencode v2.1.1`；`opencode.service` active，监听 127.0.0.1:4096 |
+| 兼容性 API | Basic `/api/session` 200；`POST /api/session` 200（`data.id` 形状不变）；`/api/config|agent|provider` 均 200 |
+| HTML/垫片 | 真实首页 6,962 B、1 个 module script；`injectOpenCodeShim` 插入 `__af/oc-help.js` + 3 个 `data-cfasync="false"`；bundle 含“新建会话/New session/新会话” |
+| 公开入口 | `https://ai.antifield.work/` 401（未登录）；`https://app.antifield.work/healthz` 200 |
+| 密码轮换 | env(两份) 一致、Basic 200、应用 healthz 200、代理与 dashboard 探测路径不变 |
+| 旧归档清理 | `/home/antifield/minecraft-backups` 已删除；`df /` 可用 40 GiB；新 `world-backups` 与 PC 副本保留 |
+| 应用部署 | release `/opt/antifieldcloud/releases/20261020T144708Z`；healthz `0.4.1`；部署后只读 smoke 15/15 |
+| `smoke.ps1` | **22 通过 / 0 失败 / 0 警告**（含公网/CSP/PWA/分享/告警/服务/版本/cgroup/nftables/备份/世界/演练/脚本 hash/本地 SHA）；直连 SSH/TCP 偶发瞬时超时，重试后通过 |
+
+### 3. 部署
+
+```text
+OpenCode: v2.1.1（/var/lib/opencode/.opencode/bin/opencode）
+备份: /var/backups/opencode/opencode-v2.0.32-bin-*.tar.gz、opencode-data-*.tar.gz
+Pi: 旧 legacy 世界归档已清理；旧 cron 停用
+应用: v0.4.1（release 20261020T144708Z；迁移前快照 db-predeploy-20261020T144754562Z.sqlite）
+nftables: 22 限速调整为 20/min burst 40（兼容 smoke/备份的多次 SSH）
+```
+
+### 4. 未决
+
+- OpenCode UI 原生“新建会话”按钮/WS 实时事件需用户浏览器最终复测（垫片与 API 路径已验证，但无登录凭据做端到端浏览器验收）。
+- OpenCode 2.1.1 发布说明未取到（GitHub API 该版本 notes 不可用），兼容性以实际接口/HTML 验证为准。
+- 后续升级建议按 `docs/DEPLOY.md` 的备份/验证/回滚流程执行，并复测本表兼容项。
+
+## v0.4.0（历史）
 
 - 日期：2026-10-20（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境
