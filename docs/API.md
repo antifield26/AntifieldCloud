@@ -566,7 +566,7 @@ BotMetrics: { "hours": 24, "deliveries": { "total": 10, "sent": 8, "failed": 1, 
 - `GET /api/bots` → `{ "items": [BotSummary] }`；`GET /api/bots/:id` → `{ "bot": BotSummary }`；不存在/已删除 `404 not_found`。
   功能未启用时列表/详情返回 `503 bot_disabled|bot_key_missing`（前端应先用 `/api/bots/status` 判断）。
 - `GET /api/bots/:id/metrics?hours=24` → `{ "metrics": BotMetrics }`；`hours` 默认 24、范围 1–720，非法/越界值回退 24；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`。
-- `GET /api/bots/:id/inbound-targets?limit=50` → `{ "items": [BotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50，超出回退）。只记录最近命令/Chat/按钮事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `BOT_EVENT_RETENTION_DAYS` 清理。`/bots` 目标分区用该接口做“最近入站目标”登记。
+- `GET /api/bots/:id/inbound-targets?limit=50` → `{ "items": [BotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50；越界按边界截断）。只记录最近命令/Chat/按钮事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `BOT_EVENT_RETENTION_DAYS` 清理。`/bots` 目标分区用该接口做“最近入站目标”登记。
 - `POST /api/bots` body `{platform,name,token,config?,webhookSecret?,publicKey?,signingSecret?}` → `200 { "bot": BotSummary }`。
   - `platform` 必须为 `telegram|discord|slack|qq`；`name` ≤80；最多 `BOT_MAX_BOTS`（默认 10）个。
   - Telegram 需 `token`（≥20）与 `webhookSecret`（≥16）；Discord 需 `token`、`applicationId`（5–32 位数字）、`publicKey`（64 位 hex，可放 `config.publicKey` 或顶层 `publicKey`）；Slack 需 `token` 与 `signingSecret`（≥16）。

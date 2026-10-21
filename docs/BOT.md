@@ -44,7 +44,8 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 ### Telegram
 
 1. BotFather 创建 Bot，取得 Token；`setWebhook` 指向
-   `https://app.example.com/api/bot/webhook/<botId>`，并设置随机 `secret_token`（≥16 字符）。
+   `https://app.example.com/api/bot/webhook/<botId>`，并设置随机 `secret_token`（≥16 字符）；
+   `allowed_updates` 至少包含 `message` 与 `callback_query`（按钮回调）。
 2. 在 `/bots` 填写 Token 与 `Webhook Secret`；平台消息需在允许的私聊/群组/频道中。
 3. 命令：`/help`、`/status`、`/backup`、`/world`、`/mc`、`/files [关键词]`、`/ask <问题>`。
 4. Chat：私聊普通消息直接进入；群/频道需 @Bot 或回复 Bot（需关闭 BotFather privacy mode，或让用户回复 Bot 消息）。
