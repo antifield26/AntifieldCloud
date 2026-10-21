@@ -284,7 +284,7 @@ describe('Bots 机器人管理', () => {
     const select = (await screen.findByLabelText(/发布目标/)) as HTMLSelectElement
     await waitFor(() => expect(select.value).toBe('target-1'))
     await userEvent.type(screen.getByLabelText(/发布内容/), '发布内容测试')
-    await userEvent.type(screen.getByLabelText(/媒体文件 ID/), 'file-1')
+    await userEvent.type(screen.getByLabelText(/媒体文件/), 'file-1')
     await userEvent.type(screen.getByLabelText(/TOTP 验证码/), '123456')
     await userEvent.click(screen.getByRole('button', { name: '创建发布任务' }))
 

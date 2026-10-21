@@ -154,8 +154,20 @@ export function Layout() {
 
   useEffect(() => {
     setDrawerOpen(false)
+    if (location.hash) {
+      const id = decodeURIComponent(location.hash.slice(1))
+      let timer = 0
+      const scroll = (): void => {
+        const target = document.getElementById(id)
+        if (target) target.scrollIntoView({ block: 'start', behavior: 'auto' })
+      }
+      scroll()
+      // 设置页卡片/告警可能异步渲染，补一次滚动；路由切换时清理。
+      timer = window.setTimeout(scroll, 250)
+      return () => window.clearTimeout(timer)
+    }
     window.scrollTo({ top: 0, behavior: 'auto' })
-  }, [location.pathname])
+  }, [location.pathname, location.hash])
 
   // 移动端抽屉：滚动锁、Esc 关闭、Tab 焦点陷阱与焦点恢复
   useEffect(() => {

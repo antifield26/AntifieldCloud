@@ -47,6 +47,11 @@ const NOTE_BODY_MAX = 200_000
 const ATTACHMENT_BATCH_MAX = 5
 const ATTACHMENT_CONCURRENCY = 2
 
+/** 服务端按 UTF-8 字节限制正文，前端用同一单位校验，避免中文正文被 400 拒绝。 */
+function utf8ByteLength(value: string): number {
+  return new TextEncoder().encode(value).length
+}
+
 type AttachmentTaskStatus = 'waiting' | 'uploading' | 'success' | 'error'
 
 interface AttachmentTask {
@@ -93,6 +98,8 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
   const [bodyMd, setBodyMd] = useState('')
   const [tagInput, setTagInput] = useState('')
   const [pinned, setPinned] = useState(false)
+  const [baseline, setBaseline] = useState({ title: '', bodyMd: '', tagInput: '', pinned: false })
+  const [discardOpen, setDiscardOpen] = useState(false)
   const [tab, setTab] = useState<'edit' | 'preview'>('edit')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -177,6 +184,13 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
     setBodyMd(note?.bodyMd ?? '')
     setTagInput(note ? joinTags(note.tags) : '')
     setPinned(note?.pinned ?? false)
+    setBaseline({
+      title: note?.title ?? '',
+      bodyMd: note?.bodyMd ?? '',
+      tagInput: note ? joinTags(note.tags) : '',
+      pinned: note?.pinned ?? false,
+    })
+    setDiscardOpen(false)
     setTab('edit')
     setBusy(false)
     setError(null)
@@ -404,8 +418,8 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
       setError(`标题不能超过 ${NOTE_TITLE_MAX} 个字符`)
       return
     }
-    if (bodyMd.length > NOTE_BODY_MAX) {
-      setError('正文超过 200 KB 限制')
+    if (utf8ByteLength(bodyMd) > NOTE_BODY_MAX) {
+      setError('正文超过 200 KB（UTF-8）限制')
       return
     }
     setBusy(true)
@@ -424,6 +438,13 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
 
   const pendingUploads = uploadTasks.filter((task) => task.status === 'waiting' || task.status === 'uploading').length
   const hasHistory = Boolean(note?.id)
+  const dirty =
+    title !== baseline.title || bodyMd !== baseline.bodyMd || tagInput !== baseline.tagInput || pinned !== baseline.pinned
+  const requestClose = (): void => {
+    if (busy) return
+    if (dirty) setDiscardOpen(true)
+    else onClose()
+  }
   const attachmentUrlFor = (attachment: NoteAttachment): string =>
     absoluteShareUrl(attachment.url, meta.appOrigin)
 
@@ -434,11 +455,11 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
         title={note ? '编辑笔记' : '新建笔记'}
         description="Markdown 正文，支持标签、置顶、附件与历史版本。"
         size="xl"
-        onClose={busy ? () => undefined : onClose}
+        onClose={busy ? () => undefined : requestClose}
         busy={busy}
         footer={
           <>
-            <Button variant="ghost" onClick={onClose} disabled={busy}>取消</Button>
+            <Button variant="ghost" onClick={requestClose} disabled={busy}>取消</Button>
             <Button variant="primary" type="submit" form={formId} loading={busy}>保存</Button>
           </>
         }
@@ -498,7 +519,7 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
               >
                 历史版本
               </Button>
-              <span className="field-hint">{bodyMd.length} 字符</span>
+              <span className="field-hint">{utf8ByteLength(bodyMd)} / {NOTE_BODY_MAX} 字节</span>
             </div>
           </div>
 
@@ -796,6 +817,20 @@ export function NoteEditor({ open, note, onClose, onSaved, onRestored }: NoteEdi
           {error ? <p className="field-error" role="alert">{error}</p> : null}
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={discardOpen}
+        title="放弃未保存的修改"
+        message="当前笔记有未保存的标题、正文、标签或置顶修改，关闭后将丢失。"
+        details="选择“继续编辑”可返回保存；只有确认放弃才会关闭编辑器。"
+        confirmText="放弃修改"
+        cancelText="继续编辑"
+        onConfirm={() => {
+          setDiscardOpen(false)
+          onClose()
+        }}
+        onClose={() => setDiscardOpen(false)}
+      />
 
       <ConfirmDialog
         open={restoreTarget !== null}

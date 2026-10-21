@@ -447,6 +447,7 @@ export function Files() {
       />
     ),
     className: 'cell-select',
+    cardLabelHidden: true,
     render: (file) =>
       file.kind === 'file' ? (
         <input

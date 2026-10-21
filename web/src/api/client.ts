@@ -80,6 +80,7 @@ const CSRF_COOKIE = 'af_csrf'
 const CSRF_HEADER = 'X-CSRF-Token'
 const JSON_HEADERS = { Accept: 'application/json' }
 const DEFAULT_UPLOAD_TIMEOUT_MS = 15 * 60 * 1000
+const DEFAULT_REQUEST_TIMEOUT_MS = 20_000
 
 /** 常见错误码的中文兜底文案；服务端返回的 message 优先。 */
 const ERROR_MESSAGES: Record<string, string> = {
@@ -305,14 +306,19 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   let response: Response
   try {
+    const timeoutSignal = AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS)
+    const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal
     response = await fetch(path, {
       method,
       headers,
       body,
       credentials: 'include',
-      signal: options.signal,
+      signal,
     })
   } catch (error) {
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      throw new ApiError(0, 'timeout', ERROR_MESSAGES.timeout ?? '请求超时，请检查网络后重试')
+    }
     if (isAbortError(error)) throw error
     throw new ApiError(0, 'network_error', ERROR_MESSAGES.network_error ?? '网络连接失败')
   }

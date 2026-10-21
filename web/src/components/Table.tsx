@@ -12,6 +12,8 @@ export interface Column<T> {
   className?: string
   primary?: boolean
   hideOnMobile?: boolean
+  /** 卡片模式下只显示值、不显示表头标签（例如多选勾选框）。 */
+  cardLabelHidden?: boolean
 }
 
 export interface TableProps<T> {
@@ -98,7 +100,7 @@ export function Table<T>({
                     .filter((column) => !column.hideOnMobile)
                     .map((column) => (
                       <div className="table-card-row" key={column.key}>
-                        {column.primary ? null : (
+                        {column.primary || column.cardLabelHidden ? null : (
                           <span className="table-card-label">{column.mobileHeader ?? column.header}</span>
                         )}
                         <span

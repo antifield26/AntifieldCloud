@@ -11,6 +11,7 @@ import type {
   BotSummary,
   BotTarget,
 } from '../../api/types'
+import type { FileItem } from '../../api/types'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
@@ -18,6 +19,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 import { FormField } from '../FormField'
 import { useToast } from '../Toast'
+import { BotMediaPicker } from './BotMediaPicker'
 import {
   BOT_DELIVERY_KIND_LABELS,
   BOT_DELIVERY_STATUS_META,
@@ -26,7 +28,7 @@ import {
   publishableTargets,
   targetLabel,
 } from '../../lib/bots'
-import { formatDateTime, truncateText } from '../../lib/format'
+import { formatBytes, formatDateTime, truncateText } from '../../lib/format'
 
 interface BotDeliveryPanelProps {
   bot: BotSummary | null
@@ -55,6 +57,8 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
   const [publishTargetId, setPublishTargetId] = useState('')
   const [text, setText] = useState('')
   const [mediaId, setMediaId] = useState('')
+  const [mediaFile, setMediaFile] = useState<FileItem | null>(null)
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
   const [scheduledAt, setScheduledAt] = useState('')
   const [totpCode, setTotpCode] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
@@ -155,6 +159,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       })
       setText('')
       setMediaId('')
+      setMediaFile(null)
       setScheduledAt('')
       setTotpCode('')
       toast.success(created.scheduledAt ? '发布任务已排期' : '发布任务已创建')
@@ -312,21 +317,39 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
 
           <div className="bot-publish-row">
             <FormField
-              label="媒体文件 ID（可选）"
+              label="媒体文件（可选）"
               htmlFor="bot-publish-media"
-              hint="v0.5.0 单次最多 1 个；填写文件页中的文件 ID。"
+              hint="从云端普通文件选择 1 个（≤10 MiB）；也可粘贴文件 ID。"
             >
-              <input
-                id="bot-publish-media"
-                className="input mono"
-                value={mediaId}
-                onChange={(event) => setMediaId(event.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="例如：f_123456"
-                maxLength={64}
-                disabled={publishing}
-              />
+              <div className="bot-media-input">
+                <input
+                  id="bot-publish-media"
+                  className="input mono"
+                  value={mediaId}
+                  onChange={(event) => {
+                    setMediaId(event.target.value)
+                    setMediaFile(null)
+                  }}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="选择文件或粘贴文件 ID"
+                  maxLength={64}
+                  disabled={publishing}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setMediaPickerOpen(true)}
+                  disabled={publishing}
+                >
+                  选择文件
+                </Button>
+              </div>
+              {mediaFile ? (
+                <p className="bot-picker-selected">
+                  已选：{mediaFile.name}（{formatBytes(mediaFile.size)}）
+                </p>
+              ) : null}
             </FormField>
             <FormField
               label="定时时间（可选）"
@@ -433,6 +456,15 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
           </ul>
         )}
       </Card>
+
+      <BotMediaPicker
+        open={mediaPickerOpen}
+        onClose={() => setMediaPickerOpen(false)}
+        onSelect={(file) => {
+          setMediaId(file.id)
+          setMediaFile(file)
+        }}
+      />
 
       <ConfirmDialog
         open={cancelTarget !== null}
