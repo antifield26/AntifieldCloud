@@ -96,7 +96,7 @@ npm run test:coverage    # 服务端/脚本测试 + 覆盖率门禁
 npm run test:web         # 前端 Vitest
 npm run test:web:coverage # 前端 + 覆盖率门禁
 npm run check            # typecheck + lint + 服务端测试 + 前端测试
-node scripts/check-version.mjs # 版本一致性（package.json / README / CHANGELOG / ACCEPTANCE / AGENTS）
+node scripts/check-version.mjs # 版本一致性（package.json / README / CHANGELOG / ACCEPTANCE / AGENTS / env.example / DEPLOY 标题 / lock）
 npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldcloud 运行）
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
