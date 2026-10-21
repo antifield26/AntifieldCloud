@@ -9,7 +9,7 @@
 - **Discord Gateway**：Node 内置 WebSocket；`intents=37377`（含 `MESSAGE_CONTENT`）；需 Developer Portal 开启 intent；HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭；状态显示。
 - **数据/管理面**：schema v9（迁移 9：`allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；目标 `allowChat`、最近入站目标 `GET /api/bots/:id/inbound-targets` 与 `/bots` 登记、发布媒体多选、Gateway 状态。
 - **env**：`BOT_CHAT_RATE_PER_MINUTE=6`、`BOT_AI_MEMORY_MAX_CHARS=4096`、`BOT_AI_SYSTEM_PROMPT=`、`BOT_DISCORD_GATEWAY_ENABLED=false`、`BOT_PUBLISH_MAX_MEDIA_FILES=5`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`；已有 `BOT_AI_RATE_PER_HOUR=10`。
-- **状态**：本地 `npm test` 293（服务端 277 + 脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`），带 Access token 的完整 smoke 24/24；Discord Gateway 真实长连接与各平台 Chat/多附件/按钮待开启目标/Intent 后验收。
+- **状态**：本地 `npm test` 293（服务端 277 + 脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`），带 Access token 的完整 smoke 24/24，Discord Gateway 已连接，QQ C2C/Discord #general 已开 `allow_chat`；真实 Chat/多附件/按钮待用户实发验证。
 
 ### v0.5.2 部署后待办
 
@@ -94,7 +94,7 @@
 
 ## 已知限制
 
-- v0.5.2 已部署；Chat/记忆/多附件/按钮/Gateway 代码已上线，生产目标 `allow_chat` 默认 0、`BOT_DISCORD_GATEWAY_ENABLED=false`，真实长连接与各平台 Chat/多附件需开启后联调；Discord 需 Developer Portal 开启 Message Content Intent。
+- v0.5.2 已部署，Discord Gateway 已连接，QQ C2C/Discord #general 已开 `allow_chat`；真实 Chat/多附件/按钮需用户实发验证，Telegram/Slack/QQ 群/频道待目标开启后联调。
 - v0.5.2 多附件部分成功不自动重试（标记 `partial_media_sent`），需人工确认并重建；单次最多 5 个、单 10 MiB、总 50 MiB。
 - 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。
 - 企业微信/钉钉/飞书未实现（v0.5.3）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。

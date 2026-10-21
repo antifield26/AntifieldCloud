@@ -12,7 +12,7 @@
 - **管理面**：目标 `allowChat`、最近入站目标 `GET /api/bots/:id/inbound-targets` 与 `/bots` 登记；发布媒体多选；Discord/Telegram/QQ 配置提示。
 - **数据**：schema v9（迁移 9：`bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；迁移 5–8 保留。
 - **env**：`BOT_CHAT_RATE_PER_MINUTE=6`、`BOT_AI_MEMORY_MAX_CHARS=4096`、`BOT_AI_SYSTEM_PROMPT=`、`BOT_DISCORD_GATEWAY_ENABLED=false`、`BOT_PUBLISH_MAX_MEDIA_FILES=5`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`；已有 `BOT_AI_RATE_PER_HOUR=10`。
-- **状态**：版本 0.5.2；本地测试基线 `npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件），`npm run check` 本地通过；生产已部署 v0.5.2/schema v9，带 Access token 的完整 smoke 24/24；Discord Gateway 真实长连接与各平台 Chat/多附件联调待在生产目标开启 `allow_chat`/Gateway 后执行。
+- **状态**：版本 0.5.2；本地测试基线 `npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件），`npm run check` 本地通过；生产已部署 v0.5.2/schema v9，带 Access token 的完整 smoke 24/24，Discord Gateway 已连接，QQ C2C 与 Discord #general 已开 `allow_chat`；真实 Chat/多附件/按钮行为待用户实发验证。
 
 ## v0.5.1 补充（历史）
 
@@ -128,7 +128,7 @@
 7. 安全：Chat 双限流、记忆路径/权限、入站目标不存正文、Gateway Token 不落日志；T/D/S/QQ 原有签名/去重/双白名单/发布 TOTP + `PUBLISH` 不退化。
 8. 关闭态：`BOT_ENABLED=false` 时 Webhook 404、写接口 503、队列不启动；`/api/bots/status` 可读；`BOT_DISCORD_GATEWAY_ENABLED=false` 时不建立连接。
 9. 备份：应用归档两阶段/密钥包（含 `BOT_*`/`BOT_SECRET_KEY`）/导入恢复；世界备份保留 4 份；PC 拉取失败不 ack；演练 `-ExpectedSchemaVersion 9` 在部署后按计划执行。
-10. 生产部署、迁移 v9、smoke 已完成；Discord Gateway 真实长连接、各平台 Chat/多附件/按钮与记忆真实模型行为待在生产目标开启 `allow_chat`/Gateway 后联调；用户完成公网/手机/PWA 与 Cloudflare Access 复跑后记录到 `docs/ACCEPTANCE.md`。
+10. 生产部署、迁移 v9、smoke 已完成；Discord Gateway 已连接，QQ C2C/Discord #general 已开 `allow_chat`；真实 Chat/记忆/多附件/按钮行为待用户实发验证并记录到 `docs/ACCEPTANCE.md`。
 
 ## 关键决策
 

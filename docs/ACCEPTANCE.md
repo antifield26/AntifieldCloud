@@ -4,7 +4,7 @@
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
-> **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。Chat/记忆/多附件/按钮/Gateway 代码已上线，但生产目标暂未开启 `allow_chat`、`BOT_DISCORD_GATEWAY_ENABLED` 默认 false，真实平台 Chat/Gateway 联调仍待开启后验收。
+> **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`），QQ C2C 与 Discord #general 目标已开 `allow_chat`；仍需用户实发普通消息验证 AI Chat/记忆，其他目标保持关闭。
 
 ## v0.5.2（当前，已部署）
 
@@ -35,8 +35,8 @@
 | schema | 生产 **v8→v9 迁移通过**：`/healthz.schemaVersion=9`；迁移前快照 `db-predeploy-20261021T114936153Z.sqlite`（sha256 `5dc7855f…`） |
 | 应用部署 / `/healthz` | **通过**：`{"ok":true,"version":"0.5.2","schemaVersion":9}`；release `20261021T114908Z`，commit `abeabc7` |
 | `smoke.ps1 -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9` | **24 通过 / 0 失败 / 0 警告**（公网 Access token/CSP/PWA/分享/告警/备份/世界/演练/脚本 SHA） |
-| Discord Gateway 真实长连接 | **未开启**：`BOT_DISCORD_GATEWAY_ENABLED=false`；需 Developer Portal 开启 Message Content Intent 后联调 |
-| 各平台 Chat/多附件真实外发 | **未开启**：生产目标 `allow_chat` 均为 0；代码与进程内 mock/夹具测试已通过 |
+| Discord Gateway 真实长连接 | **已连接**：生产 `BOT_DISCORD_GATEWAY_ENABLED=true`，日志 `Discord Gateway 已连接`；MESSAGE_CONTENT 负路径与断线重连待补充观察 |
+| 各平台 Chat/多附件真实外发 | **部分开启**：QQ C2C 与 Discord #general `allow_chat=1`；用户实发普通消息/多附件发布仍待验收，其余目标默认关闭 |
 | `node scripts/check-version.mjs` | **通过**：`packageVersion=0.5.2`；README/CHANGELOG/ACCEPTANCE/env.example/DEPLOY/AGENTS 与 lock 根版本一致（2026-10-21） |
 
 ### 3. 部署
@@ -44,19 +44,19 @@
 ```text
 应用: v0.5.2（生产 release 20261021T114908Z；发布 commit abeabc7）
 schema: v9（迁移 9：allow_chat/bot_ai_memories/bot_inbound_targets；迁移前快照 db-predeploy-20261021T114936153Z.sqlite）
-env: 生产 env 保留原有 BOT_ENABLED/BOT_AI_ENABLED；6 个 v0.5.2 BOT_* 键未写入，使用默认值（Gateway=false、媒体 5/50MiB）
-数据: 8 张 bot* 表存在；bots 2 个（Discord/QQ）启用；bot_targets.allow_chat 均为 0
-平台: Discord Message Content Intent、Telegram/QQ Chat 目标、QQ 群/频道目标与各平台多附件联调待开启后执行
+env: 生产 env 保留原有 BOT_ENABLED/BOT_AI_ENABLED；新增 BOT_DISCORD_GATEWAY_ENABLED=true；其余 5 个 v0.5.2 键使用默认值（媒体 5/50MiB、Chat 6/min、记忆 4096）
+数据: 8 张 bot* 表存在；bots 2 个（Discord/QQ）启用；QQ C2C 与 Discord #general 的 allow_chat=1，其余目标 0
+平台: Discord Message Content Intent 已开启；Telegram/QQ 群/频道目标与各平台多附件联调待执行
 smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access service token）
 备份: 部署后 inc 已拉取/ack（snapshot-20261021T115245394Z-inc.tar.gz，69139 bytes）；密钥包 secrets-20261021T115246Z.tar.age（secrets=ok）
 ```
 
 ### 4. 未决
 
-- 生产目标 `allow_chat` 尚未开启，Chat 真实模型/记忆行为未在生产端到端验证；需在 `/bots` 目标分区开启后测试。
-- Discord Gateway 未做真实 Discord 长连接/`MESSAGE_CONTENT` 负路径验收；需 Developer Portal 开启 intent、设置 `BOT_DISCORD_GATEWAY_ENABLED=true` 后测。
-- Telegram/Slack/Discord/QQ 的真实 Chat、多附件（含 partial）与只读按钮未做平台联调；现有测试均为进程内 mock。
-- 记忆的真实模型多轮摘要、重启后读取与文件清理（删除 Bot 后镜像文件无自动清理）待开启 Chat 后核对。
+- 生产已开启 Gateway 与 QQ C2C/Discord #general `allow_chat`；普通消息 Chat 的真实模型回复、记忆写入与按钮点击仍待用户实发验证。
+- Discord Gateway 已建立长连接；断线重连、MESSAGE_CONTENT 负路径与多附件真实平台外发待补充观察。
+- Telegram/Slack/Discord/QQ 的真实 Chat、多附件（含 partial）与只读按钮未做完整平台联调；现有测试均为进程内 mock。
+- 记忆的真实模型多轮摘要、重启后读取与文件清理（删除 Bot 后镜像文件无自动清理）待 Chat 实发后核对。
 
 ## v0.5.1（历史）
 

@@ -38,11 +38,11 @@
 ### Known limitations（v0.5.2 明确不做）
 
 - 企业微信/钉钉/飞书留 v0.5.3；多管理员/审批流不做；QQ 媒体不做；Slack 按钮不做。
-- Discord Gateway 仅有进程内假 WebSocket 测试，未做真实 Discord 长连接/MESSAGE_CONTENT 负路径验收；上线前需在 Developer Portal 开启 intent 并联调。
-- Telegram/Slack/Discord/QQ 的真实 Chat 与多附件仅覆盖 mock 契约测试；上线前按 `docs/DEPLOY.md` §9.8 手工联调。
+- Discord Gateway 已有进程内假 WebSocket 测试；生产已开启并记录 `Gateway 已连接`，MESSAGE_CONTENT 负路径/断线重连仍待观察。
+- Telegram/Slack/Discord/QQ 的真实 Chat 与多附件仅覆盖 mock 契约测试；生产 QQ C2C 与 Discord #general 已开 `allow_chat`，需按 `docs/DEPLOY.md` §9.8 实发联调。
 - 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。
 - 多附件部分成功后不自动重试；失败任务需人工确认并重建，避免重复外发。
-- 生产已部署 v0.5.2/schema v9；生产目标 `allow_chat` 默认 0、`BOT_DISCORD_GATEWAY_ENABLED=false`，真实平台 Chat/多附件/Gateway 需在 `/bots` 开启后验收。
+- 生产已部署 v0.5.2/schema v9，Gateway 已连接、QQ C2C/Discord #general 已开 `allow_chat`；真实 Chat/多附件行为待用户实发验证，其余目标默认关闭。
 
 ## [v0.5.1] - 2026-10-21
 
