@@ -2,7 +2,7 @@
 
 > 当前版本 v0.5.0；v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
-> v0.5.0 的部署、`npm run check`、CI、smoke 与 Bot 平台联调证据尚未产生，相关行以「待部署后补」占位；主代理完成部署后填写，**不得提前声明通过**。
+> v0.5.0 已于 2026-10-21 部署到生产 Pi（release `20261021T060807Z`，schema v7，smoke 23/23）；Bot 三平台真实联调与 Cloudflare Access 策略由用户在各自后台完成。
 
 ## v0.5.0（当前）
 
@@ -32,7 +32,7 @@
 | `npm run check` | 通过（245 服务端/脚本 + 139 前端；2026-10-21 部署前最终工作树） |
 | `npm run build` | 通过（部署时构建 `web/dist`，v0.5.0） |
 | 覆盖率（`test:coverage` / `test:web:coverage`） | 服务端覆盖率门禁通过；前端门禁通过（Lines 约 39%） |
-| CI（main/tag） | 待 tag/Release 后补（`main` 已推送 `af89b1e`） |
+| CI（main/tag） | **success**：main run `39554286586`、v0.5.0 tag run `39554290976`（8 job 全绿，2026-10-21） |
 | schema | **v7**（`/healthz.schemaVersion=7`；迁移 6 保留 + 迁移 7 五张 Bot 表；`bot-migration` 测试通过） |
 | 应用部署 / `/healthz` | release `20261021T060807Z`；`version=0.5.0`、`schemaVersion=7`；迁移前快照 `db-predeploy-20261021T060832328Z.sqlite`（sha256 `36ab1dd4…`） |
 | `smoke.ps1 -ExpectedVersion 0.5.0 -ExpectedSchemaVersion 7` | **23 通过 / 0 失败 / 0 警告**（部署后只读 smoke 16/16；完整 smoke 含公网/CSP/PWA/备份/世界/演练） |
@@ -50,7 +50,7 @@ BOT_SECRET_KEY: bootstrap-env.sh --force 生成（32 字节 base64，不回显�
 Cloudflare Access: 待用户后台配置 app 策略 + webhook/health/分享 bypass
 SSH: 仅公钥（00-antifield-hardening.conf，2026-10-21 13:49 CST 切换；24h 回滚窗口至 10-22 13:49）；fail2ban sshd jail 已启用
 tag: v0.5.0
-release: 待 tag/Release 后补（main 已推送 af89b1e）
+release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.5.0
 ```
 
 ### 4. 未决
