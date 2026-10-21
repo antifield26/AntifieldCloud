@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.1，数据库 schema v8（迁移 5/6/7 保留，迁移 8 重建 Bot 表扩展 QQ 平台、增加静默分钟列与 `bot_ai_sessions`）；生产仍为 v0.5.0/schema v7，待部署。OpenCode 服务端 v2.1.1。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.1，数据库 schema v8（迁移 5/6/7 保留，迁移 8 重建 Bot 表扩展 QQ 平台、增加静默分钟列与 `bot_ai_sessions`）；生产已部署 v0.5.1/schema v8（release `20261021T091001Z`）。OpenCode 服务端 v2.1.1。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -157,7 +157,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
-  v0.5.1 的 QQ 真实回调、OpenCode `/ask` 真实模型回复与 Cloudflare Access service token 同样待用户配置/部署后验证。
+  v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access service token 仍待用户配置。
 - 测试证据边界：Bot 适配器（含 QQ）、AI 对话、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），未做真实平台/真实模型/真实网络的负路径验收；
   发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；

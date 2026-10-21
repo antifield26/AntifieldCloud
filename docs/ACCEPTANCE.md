@@ -2,12 +2,12 @@
 
 > 当前版本 v0.5.1；v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
-> v0.5.1 为本地/待部署状态：生产仍为 v0.5.0（release `20261021T060807Z`，schema v7）；v0.5.1 部署、迁移 v8、QQ 真实回调、AI 真实模型与 Cloudflare Access 待后续验收。
+> v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 23/23）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复已验证。Cloudflare Access 策略/bypass/service token 仍待用户后台配置。
 
 ## v0.5.1（当前）
 
 - 日期：2026-10-21（Asia/Shanghai）
-- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产待部署）+ Windows 本地工作区
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产，release `20261021T091001Z`）+ Windows 本地工作区
 - 版本：`v0.5.1`
 - 范围：QQ 官方 Bot、OpenCode `/ask` AI、Bot 24h 指标/静默时段/发布 `PUBLISH` 双确认、schema v8、fail2ban 封禁持久化与 smoke Access service token。
 
@@ -28,36 +28,37 @@
 | `npm test` | **265/265 通过**（服务端 249 + 运维脚本 16；本地实测 2026-10-21） |
 | `npm run test:web` | **139/139 通过**（28 个测试文件；本地实测 2026-10-21） |
 | `npm run check` | **通过**（typecheck + lint + 265 + 139；本地 2026-10-21） |
-| `npm run build` | 待部署前执行（本轮未运行，不声明通过） |
-| 覆盖率/CI | 待部署前/CI 执行（本地未跑 `test:coverage`、`test:web:coverage`；不声明通过） |
-| schema | 本地迁移测试 **v6→v8 通过**（含 `qq` CHECK、静默列、`bot_ai_sessions`）；生产仍为 **v7**，待部署迁移 |
-| 应用部署 / `/healthz` | **待部署验收**（生产仍 v0.5.0/schema v7） |
-| `smoke.ps1 -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8` | **待部署验收**（未执行） |
-| QQ 真实回调 | **待用户在 QQ 开放平台配置**（op=13 回调地址、事件订阅、测试群/频道）；本地仅 8 项进程内契约测试 |
-| AI 真实模型 | **待部署后验证**（provider/model、超时、限流、真实回复质量）；本地 9 项假 OpenCode 测试 |
-| Cloudflare Access | **待用户后台配置**（app 策略、webhook/health/分享 bypass、service token） |
-| fail2ban 封禁持久化 | 生产已安装 dbfile 与 nftables drop-in，并实测 nftables restart 后封禁恢复；**不构成完整安全验收**（Access 等仍待完成） |
-| Bot 关闭态 | 本地测试覆盖：`BOT_ENABLED=false` Webhook 404、写接口 503、队列不启动；生产 v0.5.1 待复验 |
+| `npm run build` | **通过**（部署脚本执行；Vite 2026 modules，产物 `web/dist`） |
+| 覆盖率/CI | 本地 `npm run test:coverage` **265/265** 与 `npm run test:web:coverage` **139/139** 通过；CI 以最新 main 提交为准 |
+| schema | 生产迁移 **v7→v8 通过**：`/healthz` schemaVersion=8，迁移前快照 `db-predeploy-20261021T091026904Z.sqlite`；本地 v6→v8 迁移测试通过 |
+| 应用部署 / `/healthz` | **通过**：`{"ok":true,"version":"0.5.1","schemaVersion":8}`；发布 commit `5122ad5` |
+| `smoke.ps1 -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8` | **23 通过 / 0 失败 / 0 警告**（公网+CSP/PWA/分享/告警/备份/世界/演练/脚本 SHA） |
+| QQ 真实回调 | **通过**：回调地址 op=13 校验通过；C2C `C2C_MESSAGE_CREATE` 事件到达，登记 openid 后 `/help` 收到回复；仅文本，媒体未支持 |
+| AI 真实模型 | **通过**：OpenCode provider/model `opencode-go/deepseek-v4.1-flash`，真实回复 `MODEL_OK`；Discord `/ask` 正常响应；默认关闭已显式开启 |
+| Bot 指标/静默/二次确认 | 生产 API/BotService 实测指标：Discord 24h deliveries sent=2、successRate=100、events=1；发布 confirmText 服务端/前端测试覆盖；静默时段单测覆盖 |
+| Cloudflare Access | **待用户后台配置**（app 策略、webhook/health/分享 bypass、service token）；冒烟脚本已支持 `-AccessClientId/-AccessClientSecret` |
+| fail2ban 封禁持久化 | **生产实测通过**：nftables restart 后 15s 内 fail2ban 恢复封禁 set；drop-in 已安装；手工 `systemctl reload nftables` 仍需手动 `systemctl restart fail2ban` |
+| Bot 关闭态 | 本地测试覆盖：`BOT_ENABLED=false` Webhook 404、写接口 503、队列不启动；生产保持启用 |
 
 ### 3. 部署
 
 ```text
-应用: v0.5.1（待部署；生产仍 v0.5.0 / release 20261021T060807Z）
-schema: v8（迁移 8：QQ/静默/AI 会话；生产待迁移）
-env: 新增 BOT_AI_*（默认关闭）；BOT_SECRET_KEY 不轮换；bootstrap-env.sh --force 复用旧值
-QQ: 待用户后台配置回调地址与事件订阅
-AI: 待部署后设 BOT_AI_ENABLED=true 并验证真实模型
+应用: v0.5.1（生产 release 20261021T091001Z；发布 commit 5122ad5）
+schema: v8（迁移 8：QQ/静默/AI 会话；迁移前快照 db-predeploy-20261021T091026904Z.sqlite）
+env: BOT_AI_ENABLED=true、BOT_AI_PROVIDER=opencode-go、BOT_AI_MODEL=deepseek-v4.1-flash；BOT_SECRET_KEY 未轮换
+QQ: Bot 2456ea90-7fed-42ec-81d0-9c478d2a9d47；回调地址已配置；C2C 目标 openid 已登记并收到 /help 回复
+AI: OpenCode 真实模型 deepseek-v4.1-flash；Discord /ask 正常响应
 Cloudflare Access: 待用户后台配置策略/bypass/service token
-fail2ban: dbfile + nftables drop-in 已在生产安装并实测恢复封禁
+fail2ban: dbfile + nftables drop-in 已安装；nftables restart 后封禁 set 恢复实测通过
 ```
 
 ### 4. 未决
 
-- `npm run build`、覆盖率、CI 与生产部署/迁移 v8/smoke 未执行；本文件不构成 v0.5.1 验收通过。
-- QQ 真实回调与 AI 真实模型未验证；本地仅进程内契约测试。
+- `npm run build`、覆盖率、CI 与生产部署/迁移 v8/smoke 已执行并通过本文件记录；CI 以最新 main 提交为准。
 - Cloudflare Access 策略、bypass 与 service token 未配置；应用侧无法自证。
-- fail2ban 封禁恢复已实测，但完整安全验收仍待 Access 等项；手工 `systemctl reload nftables` 仍需手动 `systemctl restart fail2ban`。
-- 企业微信/钉钉/飞书、多管理员审批、QQ 媒体未实现；`typescript-eslint` 仍不支持 TS7 API，双 alias 保留。
+- QQ 仅文本已验证；媒体、群/频道目标与通知需后续真实场景补充；企业微信/钉钉/飞书、多管理员审批未实现。
+- `typescript-eslint` 仍不支持 TS7 API，双 alias 保留；`http-proxy` Node 27 替代继续跟踪。
+- 发布 `confirmText` 二次确认与 TOTP 双门禁已覆盖；真实发布外发未在本轮执行（避免向平台发送测试内容）。
 
 ## v0.5.0（历史）
 

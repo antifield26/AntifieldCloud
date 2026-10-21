@@ -1,23 +1,22 @@
 # 路线图
 
-## v0.5.1（当前/交付中）
+## v0.5.1（已交付）
 
-- **QQ 官方 Bot**：`server/src/bot/adapters/qq.ts`；AppID + AppSecret（密文）；op=13 Ed25519 回调地址校验、op=0 事件验签、`{opcode:12}` 确认；C2C/群@/频道文本命令与通知；仅文本（≤2000 字符），不支持媒体。真实回调待用户在 QQ 开放平台后台配置。
-- **OpenCode AI `/ask`**：`server/src/bot/ai.ts`；`BOT_AI_*` 默认关闭；仅命令白名单用户；按用户每小时限流；会话复用（`bot_ai_sessions`）；新建会话 deny-all 工具权限（OpenCode 明确 400 拒绝时才降级并标注“未隔离”）；真实模型待部署后验证。
+- **QQ 官方 Bot**：`server/src/bot/adapters/qq.ts`；AppID + AppSecret（密文）；op=13 Ed25519 回调地址校验、op=0 事件验签、`{opcode:12}` 确认；C2C/群@/频道文本命令与通知；仅文本（≤2000 字符），不支持媒体。生产回调已配置，C2C `/help` 回复已实测。
+- **OpenCode AI `/ask`**：`server/src/bot/ai.ts`；`BOT_AI_*` 默认关闭；仅命令白名单用户；按用户每小时限流；会话复用（`bot_ai_sessions`）；新建会话 deny-all 工具权限（OpenCode 明确 400 拒绝时才降级并标注“未隔离”）；生产已启用 `opencode-go/deepseek-v4.1-flash` 并验证真实回复。
 - **Bot 运维**：`GET /api/bots/:id/metrics?hours=24` 指标卡；目标静默时段（0–1439，成对设置，通知延后）；发布 `confirmText:'PUBLISH'` 二次确认（TOTP 仍必填）。
 - **数据**：schema v8（迁移 8 重建 Bot 表扩展 `qq`、增加静默列、新增 `bot_ai_sessions`；迁移 6/7 保留）。
 - **安全收口**：fail2ban dbfile 持久化（`/var/lib/fail2ban/fail2ban.sqlite3`）；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set；`smoke.ps1` 支持 `-AccessClientId/-AccessClientSecret`。
 - **工具链**：typescript-eslint 8.x 仍不支持 TS7 API，本轮结论为暂不升级、保留双 alias。
-- **状态**：本地 `npm test` 265（服务端 249 + 脚本 16）、`npm run test:web` 139、`npm run check` 通过；生产仍 v0.5.0/schema v7，部署/QQ 回调/AI 真实模型/Cloudflare Access 待后续。
+- **状态**：本地 `npm test` 265（服务端 249 + 脚本 16）、`npm run test:web` 139、`npm run check` 通过；生产已部署 v0.5.1/schema v8（release `20261021T091001Z`），smoke 23/23；Discord + QQ 命令、AI 真实模型、fail2ban 持久化已验证。
 
-### 剩余（v0.5.1 未完成）
+### 剩余（v0.5.x 后续）
 
 1. **企业微信/钉钉/飞书**：未做；QQ 已接入但仅文本。
 2. **多管理员/审批流**：未做；当前仍是单管理员。
-3. **QQ 真实回调**：待用户在 QQ 开放平台配置回调地址、事件订阅与测试群/频道。
-4. **AI 真实模型**：待部署后在 OpenCode 侧验证 provider/model、超时、限流与真实回复质量。
-5. **Cloudflare Access**：策略、bypass 与 service token 待用户后台配置；应用侧无法自证。
-6. **生产部署与完整验收**：fail2ban drop-in 已在生产安装并实测封禁恢复，但 v0.5.1 部署、smoke、QQ/AI 联调尚未执行。
+3. **QQ 群/频道目标与通知**：当前只登记 C2C openid；群/频道目标与主动通知需真实场景补充。
+4. **Cloudflare Access**：策略、bypass 与 service token 待用户后台配置；应用侧无法自证。
+5. **完整验收**：发布外发、平台敌对负路径与季度恢复演练按 `docs/DEPLOY.md`/`docs/BACKUP.md` 持续执行。
 
 ## v0.5.0（已交付）
 
@@ -76,7 +75,7 @@
 ## 已知限制
 
 - QQ 官方 Bot 仅文本、不支持媒体；真实回调待用户后台配置；企业微信/钉钉/飞书未实现。
-- `/ask` 依赖 OpenCode 本地 API 与已配置模型；默认关闭，真实模型回复待部署后验证；deny-all 工具在 OpenCode 明确拒绝 `permissions` 时会降级并在日志标注未隔离。
+- `/ask` 依赖 OpenCode 本地 API 与已配置模型；默认关闭，生产已启用 `opencode-go/deepseek-v4.1-flash` 并验证；deny-all 工具在 OpenCode 明确拒绝 `permissions` 时会降级并在日志标注未隔离。
 - Cloudflare Access 策略/bypass 与 service token 需用户后台配置，应用无法自证；smoke 的 Access token 仅用于测试，不替代应用认证。
 - `fail2ban` 封禁已由 dbfile 持久化，nftables 启动后由 drop-in 异步重启恢复；手工 `systemctl reload nftables` 不触发，需手动 `systemctl restart fail2ban`。完整安全验收仍待 Cloudflare Access 等项。
 - SSH 已仅公钥（`00-` drop-in，24h 回滚窗口），`fail2ban` sshd jail（nftables 后端、24h ban）；Pi 登录用户 `antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择），待收紧。

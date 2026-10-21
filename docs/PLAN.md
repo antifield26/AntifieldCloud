@@ -1,11 +1,11 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.1**（schema v8）；生产仍为 v0.5.0/schema v7，待部署。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.1**（schema v8）；生产已部署 v0.5.1/schema v8（release `20261021T091001Z`）。
 
 ## v0.5.1 补充（当前）
 
 - **QQ 官方 Bot**：新增 `server/src/bot/adapters/qq.ts` 与 `bots.platform='qq'`；op=13 Ed25519 回调地址校验、op=0 事件验签、`{opcode:12}` 确认体；C2C/群@/频道文本命令与通知；仅文本、单条 ≤2000 字符，不支持媒体。
-- **OpenCode AI `/ask`**：`server/src/bot/ai.ts` 通过本地 OpenCode API 提供 AI 对话；`BOT_AI_*` 默认关闭、按用户每小时限流、仅命令白名单用户、`bot_ai_sessions` 会话复用、新建会话 deny-all 工具权限；真实模型待部署后验证。
+- **OpenCode AI `/ask`**：`server/src/bot/ai.ts` 通过本地 OpenCode API 提供 AI 对话；`BOT_AI_*` 默认关闭、按用户每小时限流、仅命令白名单用户、`bot_ai_sessions` 会话复用、新建会话 deny-all 工具权限；生产已启用 `opencode-go/deepseek-v4.1-flash` 并验证真实回复。
 - **Bot 运维**：`GET /api/bots/:id/metrics?hours=24` 24 小时指标卡；目标静默时段 `quietStartMinute`/`quietEndMinute`（0–1439，成对设置、不能相同），通知延后到窗口结束；发布新增 `confirmText:'PUBLISH'` 二次确认，TOTP 仍必填。
 - **数据**：schema v8（迁移 8 重建 `bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events` 以扩展 `bots.platform` CHECK 到 `qq`，`bot_targets` 增加静默分钟列，新增 `bot_ai_sessions`）；迁移 6/7 保留。
 - **安全收口**：fail2ban dbfile 持久化（`/var/lib/fail2ban/fail2ban.sqlite3`）；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set；`smoke.ps1` 新增 `-AccessClientId/-AccessClientSecret` Access service token 头，未配置 Access 时仍可跑。
@@ -97,9 +97,9 @@
 ## 验收摘要
 
 1. `npm run check` 全绿（本地：服务端/脚本 265 = 249 + 16，前端 139；2026-10-21 已通过）；`npm run build`、覆盖率/audit/secret-scan 按部署前/CI 证据补。
-2. 版本一致：`/healthz`、`/api/version`、`package.json`、README、CHANGELOG、AGENTS、`deploy/env.example`、DEPLOY 标题均为 0.5.1；schema v8（生产待部署仍为 v7）。
+2. 版本一致：`/healthz`、`/api/version`、`package.json`、README、CHANGELOG、AGENTS、`deploy/env.example`、DEPLOY 标题均为 0.5.1；schema v8（生产已迁移）。
 3. QQ：`/api/version.botPlatforms` 含 `qq`；op=13 校验返回签名；C2C/群@/频道文本命令与通知可达；媒体被明确拒绝；真实回调待用户在 QQ 后台配置。
-4. AI：`BOT_AI_ENABLED=false` 时 `/ask` 返回未启用提示；开启后仅白名单用户可调用、按小时限流、会话复用、deny-all 工具；真实模型回复待部署后验证。
+4. AI：`BOT_AI_ENABLED=false` 时 `/ask` 返回未启用提示；开启后仅白名单用户可调用、按小时限流、会话复用、deny-all 工具；生产真实模型回复已验证。
 5. Bot 回归：T/D/S 签名/时间戳/去重、双白名单、通知、TOTP 发布不退化；发布新增 `confirmText` 校验。
 6. 指标/静默：`GET /api/bots/:id/metrics` 需会话且统计正确；静默时段成对校验、通知延后、跨午夜正确。
 7. 安全：fail2ban dbfile 持久化，nftables restart 后 drop-in 异步恢复封禁 set；手工 reload 仍需手动 restart fail2ban；smoke Access token 不泄漏。
