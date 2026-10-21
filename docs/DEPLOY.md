@@ -147,7 +147,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 ### 3.1 v0.5.1 应用部署步骤（版本升级时执行）
 
 顺序固定为：**先备份/校验 → 环境预检 → 部署（自动迁移前快照 + 迁移 v8）→ 生成/校验 `BOT_SECRET_KEY` 与 `BOT_AI_*` → Bot 保持默认关闭 → 显式启用（先 Bot，后 AI）**。
-v8 迁移会重建 Bot 表，必须先确认迁移前 DB 快照成功；这 4 步完成前不要打开 `BOT_ENABLED`/`BOT_AI_ENABLED`，也不要配置平台 Webhook。
+v8 迁移会重建 Bot 表，必须先确认迁移前 DB 快照成功；在这些步骤完成前不要打开 `BOT_ENABLED`/`BOT_AI_ENABLED`，也不要配置平台 Webhook。
 
 1. **本地与发布前校验**（PC）：
    - `npm run check`、`npm run build`；确认 `package.json` 版本 `0.5.1`，`node scripts/check-version.mjs` 通过（含 env.example/DEPLOY 标题/lock 根版本）。
