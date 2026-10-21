@@ -93,7 +93,9 @@ function Invoke-Remote {
 # 复杂远端脚本经 base64 传输，避免 Windows→PowerShell→ssh→bash 多层引号问题。
 function Invoke-RemoteScript {
   param([string]$Script, [int]$Attempts = 3, [int]$TimeoutSeconds = $CommandTimeoutSec)
-  $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Script))
+  # 远端 bash 只接受 LF：PowerShell 字符串可能含 CRLF，先归一化。
+  $normalized = $Script -replace "`r`n", "`n"
+  $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($normalized))
   return Invoke-Remote "echo $b64 | base64 -d | sudo bash" -Attempts $Attempts -TimeoutSeconds $TimeoutSeconds
 }
 
