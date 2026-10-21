@@ -919,9 +919,7 @@ export class BotService {
       .prepare('INSERT OR IGNORE INTO bot_events (bot_id, platform_event_id, received_at) VALUES (?, ?, ?)')
       .run(bot.id, event.eventId, nowIso())
     if (Number(inserted.changes) === 0) return
-    const target = this.db
-      .prepare('SELECT * FROM bot_targets WHERE bot_id = ? AND external_id = ?')
-      .get(bot.id, event.targetExternalId) as unknown as BotTargetRow | undefined
+    const target = this.inboundTarget(bot.id, event)
     this.recordInbound(bot, {
       kind: 'chat',
       eventId: event.eventId,
@@ -995,9 +993,7 @@ export class BotService {
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): Promise<{ status: number; body: unknown }> {
-    const target = this.db
-      .prepare('SELECT * FROM bot_targets WHERE bot_id = ? AND external_id = ?')
-      .get(bot.id, result.targetExternalId) as unknown as BotTargetRow | undefined
+    const target = this.inboundTarget(bot.id, result)
     if (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId)) {
       this.deps.audit('bot.command.denied', bot.id, { target: result.targetExternalId, user: result.userId.slice(0, 64) })
       return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
@@ -1019,9 +1015,7 @@ export class BotService {
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'chat' }>,
   ): Promise<{ status: number; body: unknown }> {
-    const target = this.db
-      .prepare('SELECT * FROM bot_targets WHERE bot_id = ? AND external_id = ?')
-      .get(bot.id, result.targetExternalId) as unknown as BotTargetRow | undefined
+    const target = this.inboundTarget(bot.id, result)
     if (!target || target.allow_chat !== 1) {
       this.deps.audit('bot.chat.denied', bot.id, { target: result.targetExternalId })
       return { status: 200, body: result.ackBody ?? { ok: true } }
@@ -1062,9 +1056,7 @@ export class BotService {
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'action' }>,
   ): Promise<{ status: number; body: unknown }> {
-    const target = this.db
-      .prepare('SELECT * FROM bot_targets WHERE bot_id = ? AND external_id = ?')
-      .get(bot.id, result.targetExternalId) as unknown as BotTargetRow | undefined
+    const target = this.inboundTarget(bot.id, result)
     if (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId)) {
       this.deps.audit('bot.action.denied', bot.id, { target: result.targetExternalId, action: result.action })
       return { status: 200, body: result.immediateResponse ?? result.ackBody ?? { ok: true } }
@@ -1355,6 +1347,24 @@ export class BotService {
       .get(targetId, botId) as unknown as BotTargetRow | undefined
     if (!row) throw notFound('目标不存在')
     return row
+  }
+
+  /**
+   * 入站目标解析：优先按平台目标 ID；私聊没有独立频道目标时回退到 user 目标（Discord DM）。
+   * 只改变授权/回复目标，不自动创建目标，也不放开未登记用户。
+   */
+  private inboundTarget(
+    botId: string,
+    input: { targetExternalId: string; userId: string; isDirect: boolean },
+  ): BotTargetRow | undefined {
+    const direct = this.db
+      .prepare('SELECT * FROM bot_targets WHERE bot_id = ? AND external_id = ?')
+      .get(botId, input.targetExternalId) as unknown as BotTargetRow | undefined
+    if (direct) return direct
+    if (!input.isDirect) return undefined
+    return this.db
+      .prepare("SELECT * FROM bot_targets WHERE bot_id = ? AND kind = 'user' AND external_id = ?")
+      .get(botId, input.userId) as unknown as BotTargetRow | undefined
   }
 
   private firstTarget(botId: string): BotTargetRow | null {

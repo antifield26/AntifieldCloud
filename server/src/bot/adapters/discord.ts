@@ -215,10 +215,26 @@ export class DiscordAdapter implements BotAdapter {
 
   async send(target: BotTargetRow, content: OutboundContent): Promise<SendResult> {
     const auth = { authorization: `Bot ${this.secret.token}` }
+    let channelId = target.external_id
+    if (target.kind === 'user') {
+      // DM 目标存用户 ID；先打开 DM 频道，再发送。普通频道目标不受影响。
+      const { body } = await fetchJson(
+        `${DISCORD_API}/users/@me/channels`,
+        {
+          method: 'POST',
+          headers: { ...auth, 'content-type': 'application/json' },
+          body: JSON.stringify({ recipient_id: target.external_id }),
+        },
+        { fetch: this.fetchImpl },
+      )
+      const opened = asRecord(body)
+      if (typeof opened?.id !== 'string' || !opened.id) throw new BotPlatformError(200, 'discord_dm_channel_missing')
+      channelId = opened.id
+    }
     const media = content.media ?? []
     if (media.length === 0) {
       const { body } = await fetchJson(
-        `${DISCORD_API}/channels/${encodeURIComponent(target.external_id)}/messages`,
+        `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`,
         {
           method: 'POST',
           headers: { ...auth, 'content-type': 'application/json' },
@@ -235,7 +251,7 @@ export class DiscordAdapter implements BotAdapter {
       form.set(`files[${index}]`, new Blob([item.data as unknown as ArrayBuffer], { type: item.mime }), item.filename)
     })
     const { body } = await fetchJson(
-      `${DISCORD_API}/channels/${encodeURIComponent(target.external_id)}/messages`,
+      `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`,
       { method: 'POST', headers: auth, body: form },
       { fetch: this.fetchImpl },
     )

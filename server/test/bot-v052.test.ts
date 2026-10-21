@@ -171,6 +171,39 @@ test('v0.5.2：Chat 未开启时普通消息不调用 AI；管理员命令仍走
   }
 })
 
+test('v0.5.2：Discord 私聊无频道目标时回退 user 目标，允许 Chat', async () => {
+  const { dir, db, service, created, aiCalls } = setup({ platform: 'discord' })
+  try {
+    service.createTarget(created.id, {
+      externalId: 'discord-user-dm',
+      label: 'DM 用户',
+      kind: 'user',
+      allowCommands: false,
+      allowNotifications: false,
+      allowChat: true,
+    })
+    await service.handleGatewayMessage(created.id, {
+      eventId: 'gw-dm-1',
+      targetExternalId: 'dm-channel-1',
+      targetKind: 'channel',
+      userId: 'discord-user-dm',
+      userName: 'DM 用户',
+      text: '私聊测试',
+      isDirect: true,
+      chatTrigger: 'direct',
+    })
+    await service.waitForIdle()
+    assert.equal(aiCalls.length, 1)
+    assert.match(aiCalls[0] ?? '', /私聊测试/)
+    const inbound = service.listInboundTargets(created.id)
+    assert.equal(inbound[0]?.targetKind, 'channel')
+    assert.equal(inbound[0]?.isDirect, true)
+  } finally {
+    db.close()
+    cleanupDir(dir)
+  }
+})
+
 test('v0.5.2：Telegram 按钮回调仅管理员可刷新，并返回带按钮的消息', async () => {
   const { dir, db, service, created, calls } = setup()
   try {
