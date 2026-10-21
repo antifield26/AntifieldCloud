@@ -38,7 +38,7 @@
 | 应用部署 / `/healthz` | release `20261021T060807Z`；`version=0.5.0`、`schemaVersion=7`；迁移前快照 `db-predeploy-20261021T060832328Z.sqlite`（sha256 `36ab1dd4…`） |
 | `smoke.ps1 -ExpectedVersion 0.5.0 -ExpectedSchemaVersion 7` | **23 通过 / 0 失败 / 0 警告**（部署后只读 smoke 16/16；完整 smoke 含公网/CSP/PWA/备份/世界/演练） |
 | Bot 关闭态 | 部署后未设 key 时 Webhook POST 返回 404、`/api/bots/status` 未登录 401；生成 32 字节 `BOT_SECRET_KEY` 后显式 `BOT_ENABLED=true` |
-| Bot 三平台联调 | **待用户在平台后台录入 Token/签名密钥后完成**（Telegram/Discord/Slack 各一条命令/通知/发布；本机只验证到 mock/契约与路由） |
+| Bot 三平台联调 | **Discord 真实联调通过（2026-10-21）**：Bot `853f85e6…` 加入测试服务器，Interactions Endpoint 验证通过，6 个斜杠命令注册，`/status` 收到回复；`#general` 收到测试通知（DB 证据：`bot.command=1`、`test sent=1`）。Telegram/Slack 仍为 mock 契约；QQ 官方 Bot 留 v0.5.1 |
 | 备份/世界拉取/演练 | 新全量归档 `snapshot-20261021T061911104Z-full.tar.gz`（v7，PC 校验并 ack）；密钥包 `secrets-20261021T061917Z.tar.age`（含 env/BOT key，secrets=ok）；`drill.ps1 -ExpectedSchemaVersion 7` **通过**（报告 `20261021T061932Z`）；世界备份/拉取 smoke 通过 |
 | SSH 仅公钥 / Access bypass | `sshd -T` 为 `passwordauthentication no`/`permitrootlogin no`；公钥新会话与密码拒绝均实测；fail2ban sshd jail active。Cloudflare Access 策略/bypass **待用户后台配置** |
 
@@ -47,7 +47,8 @@
 ```text
 应用: v0.5.0（release /opt/antifieldcloud/releases/20261021T060807Z；迁移前快照 db-predeploy-20261021T060832328Z.sqlite）
 schema: v7（迁移 6 保留 + 迁移 7 新增 5 张 bot* 表）
-BOT_SECRET_KEY: bootstrap-env.sh --force 生成（32 字节 base64，不回显）；密钥包 secrets-20261021T061307Z.tar.age 已包含 env
+BOT_SECRET_KEY: bootstrap-env.sh --force 生成（32 字节 base64，不回显）；密钥包 secrets-20261021T061917Z.tar.age 已包含 env
+Bot 出站: Pi 直连 Discord/Telegram 被阻断；经 PC 127.0.0.1:10090 的 SSH 反向隧道（Pi 127.0.0.1:18090）+ `NODE_USE_ENV_PROXY=1` 验证 Discord 出站 200，PC 用户级启动项负责重连
 Cloudflare Access: 待用户后台配置 app 策略 + webhook/health/分享 bypass
 SSH: 仅公钥（00-antifield-hardening.conf，2026-10-21 13:49 CST 切换；24h 回滚窗口至 10-22 13:49）；fail2ban sshd jail 已启用
 tag: v0.5.0

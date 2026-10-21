@@ -85,9 +85,31 @@ v0.5.0 支持 **Telegram、Discord、Slack**；企业微信/钉钉/飞书、QQ �
 
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 Token 无法解密；必须重新录入所有 Bot Token。不要把它写入仓库/前端/日志。
 
-## 6. 测试与验收边界
+## 6. 网络出站（Discord/Telegram）
+
+Pi 所在网络可能无法直连 `discord.com` / `api.telegram.org`（Slack 通常可达）。应用使用 Node 全局 `fetch`，支持 Node 26 的环境代理：
+
+```bash
+# /etc/antifieldcloud/env（可选；代理必须从 Pi 可达）
+HTTPS_PROXY=http://127.0.0.1:18090
+HTTP_PROXY=http://127.0.0.1:18090
+NO_PROXY=127.0.0.1,localhost,::1
+NODE_USE_ENV_PROXY=1
+```
+
+`127.0.0.1:18090` 可由 SSH 反向隧道或本机代理提供。修改后重启 `antifieldcloud` 并验证：
+
+```bash
+curl -sS -m 10 -x "$HTTPS_PROXY" -o /dev/null -w '%{http_code}\n' https://discord.com/api/v10/gateway
+sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
+```
+
+没有可用出站代理时，Discord/Telegram 的回复、通知和发布都会失败（Webhook 入站仍可到达）；Slack 不受影响。不要把代理凭据写入仓库；本机部署信息放在 gitignored 的 `.local/DEPLOYMENT.md`。
+
+## 7. 测试与验收边界
 
 - 适配器/验签/队列/命令白名单/发布 TOTP 均有进程内测试（不访问真实平台）。
 - Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；真实平台联调由用户在各自后台完成。
+- Discord 真实联调（2026-10-21）：Bot 加入测试服务器、Interactions Endpoint 验证通过、6 个斜杠命令注册，`/status` 收到回复，测试通知送达 `#general`。
 - 手工验收：创建 Bot → 测试连接 → 添加目标 → 允许命令 + 用户白名单 → 发 `/status` → 创建发布任务并输入 TOTP → 平台收到消息。
 - 发布前请确认 Cloudflare Access 对 `/api/bot/webhook/*` 做 bypass，见 `docs/DEPLOY.md` §5.2。
