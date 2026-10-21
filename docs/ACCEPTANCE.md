@@ -54,6 +54,7 @@ release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.4.2
 - 验证：`systemctl list-timers antifieldcloud-world.timer` 显示下次 `Sun 2026-10-25 12:00:00 CST`；timer active、`Persistent=yes`；健康探针仍约每 60s 触发。
 - 例外：健康探针保持 60s（改为每日会失去监控/告警意义）；OS 维护 timer（apt-daily、logrotate、fstrim、log2ram、e2scrub、systemd-tmpfiles 等）保持发行版默认，不属于项目任务。
 - Windows：`AntifieldCloud-Backup-Pull` 已是每日 12:00（另有登录后补跑）；周度 world-pull/drill 任务未安装。
+- 时区/周期确认：**用户 2026-10-21 确认不改系统维护 timer、维持健康探针周期**；仅世界备份 timer 在周日 12:00。
 - 回滚：`/etc/systemd/system/antifieldcloud-world.timer.bak-v042` + `systemctl daemon-reload && systemctl restart antifieldcloud-world.timer`。
 - 文档：`deploy/antifieldcloud-world.timer`、README/AGENTS/ARCHITECTURE/BACKUP/DEPLOY/PLAN 已同步；CHANGELOG 记入 Unreleased。
 

@@ -397,6 +397,8 @@ ls -lh /var/lib/antifieldcloud/world-backups/
 - 回滚/停用：`sudo systemctl disable --now antifieldcloud-world.timer`；需要时删除 `/etc/systemd/system/antifieldcloud-world.{service,timer}` 后
   `daemon-reload`。不要删除既有归档；确需清理按 `docs/BACKUP.md` §6.4。
 - 旧世界 cron 已在验收后停用；不要同时保留 cron 与 timer，避免重复打包（见 §14）。
+- 定时策略（用户 2026-10-21 确认）：仅项目世界备份 timer 统一到周日 12:00；`antifieldcloud-health.timer` 保持每 60s；
+  apt-daily/logrotate/fstrim 等系统维护 timer 保持发行版默认，不纳入统一调整。
 
 ### 9.4 世界拉取（Windows 周任务，用户手动安装）
 
