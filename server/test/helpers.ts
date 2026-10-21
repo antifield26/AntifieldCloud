@@ -105,6 +105,12 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     botAiMaxPromptChars: 2000,
     botAiRatePerHour: 10,
     botAiSessionRetentionDays: 7,
+    botChatRatePerMinute: 6,
+    botAiMemoryMaxChars: 4096,
+    botAiSystemPrompt: '',
+    botDiscordGatewayEnabled: false,
+    botPublishMaxMediaFiles: 5,
+    botPublishMaxMediaTotalBytes: 50 * 1024 * 1024,
     ...overrides,
   }
 }

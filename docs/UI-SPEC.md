@@ -1,4 +1,4 @@
-# AntifieldCloud UI 规范（v4，2026-10-21）
+# AntifieldCloud UI 规范（v5，2026-10-21）
 
 ## 1. 定位与基调
 
@@ -189,7 +189,8 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 上传进度（含分片整文件总进度/放弃并清理）、预览三种类型、搜索、多选分享、回收站恢复可完成。
 - Dashboard 数据/降级状态/刷新正常；趋势卡范围切换与空数据降级正常；备份状态卡四类状态可读；白名单增删有反馈。
 - 笔记附件上传/删除/插入、版本查看/恢复可用；Activity 关键词/时间范围筛选与 Alerts 筛选分页可用（详见 §14）。
-- Bot 页：未启用时配置指引、启用后四分区（概览/配置/目标/投递与发布）可键盘切换；Token 不回显；发布表单含 TOTP 且单媒体（详见 §15）。
+- Bot 页：未启用时配置指引、启用后四分区（概览/配置/目标/投递与发布）可键盘切换；Token 不回显；目标含 `allowChat` 与最近入站目标登记；
+  发布表单含 TOTP + `PUBLISH` 且媒体最多 5 个；Discord 概览显示 Gateway 状态（详见 §15）。
 - 键盘可完成登录、打开弹窗、关闭弹窗。
 
 ## 10. v0.2.x 新增界面
@@ -299,11 +300,13 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 单请求仍受 100 MiB/Cloudflare 代理限制；分片块 8 MiB 远低于限制，5 GiB 文件约 640 块。
 
-## 15. v0.5.1 机器人页
+## 15. v0.5.2 机器人页
+
+> v0.5.1 引入机器人页；v0.5.2 增加目标 Chat、最近入站目标、发布多选媒体与 Discord Gateway 状态。
 
 ### 入口与布局
 
-- 侧栏新增“机器人”（`Bot` 图标，路由 `/bots`），页面标题“机器人”，副标题“Telegram / Discord / Slack / QQ 通知、只读命令与 AI 问答、消息发布”。
+- 侧栏新增“机器人”（`Bot` 图标，路由 `/bots`），页面标题“机器人”，副标题“Telegram / Discord / Slack / QQ 通知、Chat/只读命令、AI 问答与消息发布”。
 - 顶部工具栏：左侧“当前 Bot”下拉（`label` 关联 select；无 Bot 时显示“暂无 Bot”并禁用），右侧“新建 Bot”主按钮 + “刷新”。
 - 标签页（`role=tablist`，“概览/配置/目标/投递与发布”）：左右方向键/Home/End 切换，`aria-selected`/`aria-controls` 与面板联动；面板可聚焦。
 - 未启用（`BOT_ENABLED=false` 或 `bot_key_missing/bot_key_invalid`）：不请求 Bot 列表，展示 `Card` 指引：
@@ -313,8 +316,8 @@ CSS 变量（`web/src/styles/tokens.css`）：
 ### 概览
 
 - 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示）。
-- 概览提示：命令为只读（含 `/ask`），发布需 TOTP + `PUBLISH` 双确认。
-- Bot 列表/选择：名称、平台、启用徽章、目标数、最近检查时间；点击切换到该 Bot（并进入配置分区）。
+- 概览提示：命令与 Chat 均为只读（含 `/ask`），发布需 TOTP + `PUBLISH` 双确认。
+- Bot 列表/选择：名称、平台、启用徽章、目标数、密钥版本、最近检查时间；Discord Bot 额外显示 `Gateway 已连接/连接中/重连中/错误/未启用`；点击切换到该 Bot（并进入配置分区）。
 - 空态：“还没有机器人” + “新建 Bot”（平台含 QQ）；加载中 `SkeletonText`；错误 `InlineError` + 重试。
 
 ### 配置
@@ -326,17 +329,22 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 开关“启用 Bot”（默认关）；保存/删除（`ConfirmDialog`，危险按钮默认焦点“取消”）。
 - 右列接入信息：`webhookUrl` + 复制按钮、`setupSteps` 有序列表（平台后台步骤）、`keyVersion`/时间等只读元数据；
   提示“URL 只用于平台后台，Token 不会显示”。
+- 平台提示：Discord 显示“普通消息 Chat 需 Developer Portal 开启 Message Content Intent 并设 `BOT_DISCORD_GATEWAY_ENABLED=true`”及当前 Gateway 状态；
+  Telegram 显示群/频道需关闭 privacy mode 或回复 Bot；QQ 显示先把 Bot 拉群并 @Bot 触发，再到目标分区从“最近入站目标”登记；Slack 无 Gateway/按钮提示。
 - 校验：必填/长度/hex/数字规则在前端即时提示，服务端 `invalid_bot_config` 错误映射到表单顶部。
 
 ### 目标
 
-- 表单：平台目标 ID、名称、类型（频道/用户/群组）、两个开关“允许命令”“接收通知”（命令默认关、通知默认开）、
+- 表单：平台目标 ID、名称、类型（频道/用户/群组）、三个开关“允许命令”“接收通知”“允许 Chat”（命令默认关、通知默认开、Chat 默认关）、
   静默时段两个 `time` 输入（可选，`HH:mm`，Asia/Shanghai；起止需同时填写且不能相同，窗口内通知延后到结束）。
-- 列表：目标名、外部 ID（等宽截断）、类型徽章、两个开关（可直接 PATCH）、删除按钮（确认）；配置静默时段的目标显示
+- 最近入站目标：表单下方列出最近的命令/Chat/按钮目标（用户名或用户 ID 尾号、类型徽章、私聊徽章、平台外部 ID），最多展示 8 条；
+  “登记”按钮把外部 ID/类型/建议名称填入上方表单，由管理员确认后添加；不展示消息正文。
+- 列表：目标名、外部 ID（等宽截断）、类型徽章、三个开关（可直接 PATCH）、删除按钮（确认）；配置静默时段的目标显示
   “静默 HH:mm–HH:mm”徽章。
-- 说明：命令需“目标允许命令 + 用户白名单（类型=用户且允许命令）”同时满足；发布只支持频道/群组；QQ 目标填
-  `user_openid`/`group_openid`/`channel_id`。
-- 空态/错误/保存中禁用重复提交；每 Bot 最多 100 个目标，重复 `409` 提示；静默起止缺失、格式错误或相同均在前端拦截。
+- 说明：命令需“目标允许命令 + 用户白名单（类型=用户且允许命令）”同时满足；`允许 Chat` 只授权普通消息 AI 对话，
+  不授予斜杠命令；发布只支持频道/群组；QQ 目标填 `user_openid`/`group_openid`/`channel_id`。
+- 空态/错误/保存中禁用重复提交；每 Bot 最多 100 个目标，重复 `409` 提示；静默起止缺失、格式错误或相同均在前端拦截；
+  最近入站目标读取失败不影响已配置目标列表。
 
 ### 投递与发布
 
@@ -345,12 +353,15 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要；
   `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）。
 - 发布表单：目标（仅频道/群组）、文本（显示平台上限；QQ 2000、Discord 2000、Slack 4000、Telegram 4096）、
-  可选单个媒体（填写云端普通文件 ID，≤10 MiB，单次 1 个；QQ 平台在说明中标明仅文本，提交媒体由服务端拒绝）、
+  可选媒体多选（打开云端普通文件选择器，最多 5 个、单个 ≤10 MiB、总计 ≤50 MiB；已选显示文件名/大小/移除；
+  QQ 平台禁用选择并提示仅文本，提交媒体由服务端拒绝）、
   定时时间（可空；≤30 天）、**TOTP 验证码**（6 位、`autocomplete=one-time-code`，必填）、
   **二次确认输入**（必须输入 `PUBLISH`，与 TOTP 共同构成双确认）；提交后进入列表。
+- 媒体选择器：只列活动普通文件（`origin='user'`），按名称搜索；单文件 >10 MiB 不展示/不可选；达到 5 个后其余行显示“已达上限”；
+  选择器只读列表/元数据，不读取文件内容，不提供外部 URL。
 - 发布列表：状态、目标、文本摘要、媒体标记、定时/发送时间、错误；`queued/draft` 可“取消”（确认）。
-- 提交中禁用按钮；`totp_required`、`invalid_code`、`publish_confirm_required`、`rate_limited` 用字段错误/Toast 明确提示；
-  不展示 Token/Secret/AppSecret/完整平台 URL。
+- 提交中禁用按钮；`totp_required`、`invalid_code`、`publish_confirm_required`、`too_many_media`、`media_too_large`、
+  `media_total_too_large`、`qq_media_unsupported`、`rate_limited` 用字段错误/Toast 明确提示；不展示 Token/Secret/AppSecret/完整平台 URL。
 
 ### 响应式与可访问性
 

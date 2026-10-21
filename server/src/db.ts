@@ -549,6 +549,35 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_bot_ai_sessions_updated ON bot_ai_sessions(updated_at);
   `,
+  `
+  -- v0.5.2：目标 Chat 权限、AI 长期记忆、入站身份发现。
+  -- allow_chat 与 allow_commands 分离：群/频道成员可 Chat，但斜杠命令仍只认命令用户白名单。
+  ALTER TABLE bot_targets ADD COLUMN allow_chat INTEGER NOT NULL DEFAULT 0 CHECK (allow_chat IN (0, 1));
+
+  CREATE TABLE bot_ai_memories (
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    memory_id TEXT NOT NULL UNIQUE,
+    summary TEXT NOT NULL DEFAULT '',
+    summary_session_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, user_id)
+  );
+  CREATE INDEX idx_bot_ai_memories_updated ON bot_ai_memories(updated_at);
+
+  CREATE TABLE bot_inbound_targets (
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    target_external_id TEXT NOT NULL,
+    target_kind TEXT NOT NULL CHECK (target_kind IN ('channel', 'user', 'group')),
+    user_id TEXT NOT NULL,
+    user_name TEXT,
+    is_direct INTEGER NOT NULL DEFAULT 0 CHECK (is_direct IN (0, 1)),
+    last_seen_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, target_external_id, user_id)
+  );
+  CREATE INDEX idx_bot_inbound_targets_seen ON bot_inbound_targets(bot_id, last_seen_at DESC);
+  `,
 ]
 
 export interface OpenOptions {

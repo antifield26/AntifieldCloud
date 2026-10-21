@@ -104,6 +104,13 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
     return { ok: true }
   })
 
+  app.get('/api/bots/:id/inbound-targets', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const query = asRecord(request.query) ?? {}
+    const limit = Number(query.limit ?? 50)
+    return { items: bots.listInboundTargets(requiredId(params.id, 'id'), Number.isFinite(limit) ? limit : 50) }
+  })
+
   app.get('/api/bots/:id/targets', { preHandler: [requireAuth] }, async (request) => {
     const params = request.params as Record<string, string>
     return { items: bots.listTargets(requiredId(params.id, 'id')) }
@@ -121,6 +128,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         kind,
         allowCommands: boolean(body.allowCommands),
         allowNotifications: boolean(body.allowNotifications, true),
+        allowChat: boolean(body.allowChat),
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),
@@ -137,6 +145,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         kind: kind === 'channel' || kind === 'user' || kind === 'group' ? kind : undefined,
         allowCommands: typeof body.allowCommands === 'boolean' ? body.allowCommands : undefined,
         allowNotifications: typeof body.allowNotifications === 'boolean' ? body.allowNotifications : undefined,
+        allowChat: typeof body.allowChat === 'boolean' ? body.allowChat : undefined,
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),

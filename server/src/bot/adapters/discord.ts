@@ -1,14 +1,31 @@
 /**
- * Discord 适配器：Interactions Endpoint（Ed25519）、deferred 响应与频道消息/媒体发送。
- * 安全边界：验证原始 body 签名与时间戳；Bot Token 仅用于 Authorization，不记录。
+ * Discord 适配器：Interactions Endpoint（Ed25519）、命令与消息组件交互、deferred 响应、频道文本/多附件发送。
+ * 安全边界：验证原始 body 签名与时间戳；Bot Token 仅用于 Authorization，不记录；交互 follow-up 只用 interaction token。
+ * 普通频道消息的 Gateway 入站由独立模块处理，本适配器只覆盖 HTTP Interactions。
  */
 import { createPublicKey, verify as verifySignature } from 'node:crypto'
-import type { BotAdapter, BotSecret, BotTargetRow, InboundVerification, OutboundContent, SendResult } from '../types.ts'
+import type {
+  BotAction,
+  BotAdapter,
+  BotButton,
+  BotReplyOptions,
+  BotSecret,
+  BotTargetRow,
+  InboundVerification,
+  OutboundContent,
+  SendResult,
+} from '../types.ts'
 import { BotPlatformError, fetchJson, headerValue, parseJsonBody } from './http.ts'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const TEXT_LIMIT = 2000
+const MAX_MEDIA_FILES = 5
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
 
 function publicKeyFromHex(hex: string) {
   if (!/^[0-9a-f]{64}$/i.test(hex)) throw new BotPlatformError(400, 'invalid_public_key')
@@ -29,6 +46,35 @@ function optionsText(options: unknown): string {
     })
     .filter(Boolean)
     .join(' ')
+}
+
+function actionFromCustomId(customId: string): BotAction | null {
+  return customId === 'refresh_status' || customId === 'help' ? customId : null
+}
+
+function messageId(body: unknown): string | null {
+  const record = asRecord(body)
+  if (!record) return null
+  const id = record.id
+  if (typeof id === 'string') return id
+  return null
+}
+
+/** 多附件消息的 externalIds 优先取附件 ID，夹具未返回时退化为消息 ID。 */
+function attachmentIds(body: unknown, count: number, fallback: string | null): string[] {
+  const record = asRecord(body)
+  const attachments = record?.attachments
+  if (Array.isArray(attachments)) {
+    const ids = attachments
+      .map((item) => {
+        const entry = asRecord(item)
+        return entry && typeof entry.id === 'string' ? entry.id : ''
+      })
+      .filter((id) => id.length > 0)
+    if (ids.length > 0) return ids
+  }
+  if (!fallback) return []
+  return Array.from({ length: count }, () => fallback)
 }
 
 export class DiscordAdapter implements BotAdapter {
@@ -101,45 +147,76 @@ export class DiscordAdapter implements BotAdapter {
     if (!payload) return { kind: 'rejected', status: 400, code: 'invalid_payload' }
     const type = payload.type
     if (type === 1) return { kind: 'challenge', body: { type: 1 } }
-    if (type !== 2) return { kind: 'ignored' }
-    const data = payload.data as Record<string, unknown> | undefined
-    const member = payload.member as Record<string, unknown> | undefined
-    const user = payload.user as Record<string, unknown> | undefined
-    const author = user ?? (member?.user as Record<string, unknown> | undefined)
+    if (type === 2) return this.parseCommand(payload)
+    if (type === 3) return this.parseComponent(payload)
+    return { kind: 'ignored' }
+  }
+
+  private parseCommand(payload: Record<string, unknown>): InboundVerification {
+    const data = asRecord(payload.data)
+    const member = asRecord(payload.member)
+    const user = asRecord(payload.user)
+    const author = user ?? (member ? asRecord(member.user) : null)
     const command = typeof data?.name === 'string' ? data.name.toLowerCase() : ''
+    const options = optionsText(data?.options)
     if (!command || !author || typeof payload.channel_id !== 'string' || typeof payload.id !== 'string') {
       return { kind: 'rejected', status: 400, code: 'missing_fields' }
     }
     const applicationId = String(this.config.applicationId ?? '')
     const interactionToken = typeof payload.token === 'string' ? payload.token : ''
-    const text = `/${command}${optionsText(data?.options) ? ` ${optionsText(data?.options)}` : ''}`.slice(0, 512)
     return {
       kind: 'command',
       eventId: `dc:${payload.id}`,
       targetExternalId: payload.channel_id,
+      targetKind: 'channel',
       userId: String(author.id ?? ''),
       userName: typeof author.username === 'string' ? author.username : null,
-      text,
+      text: `/${command}${options ? ` ${options}` : ''}`.slice(0, 512),
       isDirect: false,
       immediateResponse: { type: 5 },
-      reply: async (replyText: string) => {
-        if (!applicationId || !interactionToken) return
-        await fetchJson(
-          `${DISCORD_API}/webhooks/${applicationId}/${interactionToken}`,
-          {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ content: replyText.slice(0, TEXT_LIMIT) }),
-          },
-          { fetch: this.fetchImpl },
-        )
+      reply: async (replyText: string, replyOptions?: BotReplyOptions) => {
+        await this.interactionFollowUp(applicationId, interactionToken, replyText, replyOptions)
+      },
+    }
+  }
+
+  /** 消息组件（按钮）交互：返回 deferred update，随后通过 interaction token 发送 follow-up。 */
+  private parseComponent(payload: Record<string, unknown>): InboundVerification {
+    const data = asRecord(payload.data)
+    const member = asRecord(payload.member)
+    const user = asRecord(payload.user)
+    const author = user ?? (member ? asRecord(member.user) : null)
+    const customId = data && typeof data.custom_id === 'string' ? data.custom_id : ''
+    const action = actionFromCustomId(customId)
+    if (!action) return { kind: 'ignored' }
+    if (!author || typeof payload.channel_id !== 'string' || typeof payload.id !== 'string') {
+      return { kind: 'rejected', status: 400, code: 'missing_fields' }
+    }
+    const applicationId = String(this.config.applicationId ?? '')
+    const interactionToken = typeof payload.token === 'string' ? payload.token : ''
+    const channel = asRecord(payload.channel)
+    const isDirect =
+      channel !== null ? channel.type === 1 || channel.type === 3 : typeof payload.guild_id !== 'string'
+    return {
+      kind: 'action',
+      eventId: `dc:${payload.id}`,
+      targetExternalId: payload.channel_id,
+      targetKind: 'channel',
+      userId: String(author.id ?? ''),
+      userName: typeof author.username === 'string' ? author.username : null,
+      action,
+      isDirect,
+      immediateResponse: { type: 6 },
+      reply: async (replyText: string, replyOptions?: BotReplyOptions) => {
+        await this.interactionFollowUp(applicationId, interactionToken, replyText, replyOptions)
       },
     }
   }
 
   async send(target: BotTargetRow, content: OutboundContent): Promise<SendResult> {
     const auth = { authorization: `Bot ${this.secret.token}` }
-    if (!content.media) {
+    const media = content.media ?? []
+    if (media.length === 0) {
       const { body } = await fetchJson(
         `${DISCORD_API}/channels/${encodeURIComponent(target.external_id)}/messages`,
         {
@@ -151,22 +228,56 @@ export class DiscordAdapter implements BotAdapter {
       )
       return { externalId: messageId(body) }
     }
+    if (media.length > MAX_MEDIA_FILES) throw new BotPlatformError(400, 'too_many_media')
     const form = new FormData()
     form.set('payload_json', JSON.stringify({ content: content.text.slice(0, TEXT_LIMIT) }))
-    form.set('files[0]', new Blob([content.media.data as unknown as ArrayBuffer], { type: content.media.mime }), content.media.filename)
+    media.forEach((item, index) => {
+      form.set(`files[${index}]`, new Blob([item.data as unknown as ArrayBuffer], { type: item.mime }), item.filename)
+    })
     const { body } = await fetchJson(
       `${DISCORD_API}/channels/${encodeURIComponent(target.external_id)}/messages`,
       { method: 'POST', headers: auth, body: form },
       { fetch: this.fetchImpl },
     )
-    return { externalId: messageId(body) }
+    const externalId = messageId(body)
+    if (media.length === 1) return { externalId }
+    return { externalId, externalIds: attachmentIds(body, media.length, externalId) }
   }
-}
 
-function messageId(body: unknown): string | null {
-  if (body && typeof body === 'object' && !Array.isArray(body)) {
-    const id = (body as Record<string, unknown>).id
-    if (typeof id === 'string') return id
+  /** 按钮编码为 Discord action row（type 1），按钮为 secondary（style 2）。 */
+  private buttonComponents(buttons?: BotButton[]): Array<Record<string, unknown>> | null {
+    if (!buttons || buttons.length === 0) return null
+    const row = buttons
+      .filter((button) => typeof button.id === 'string' && typeof button.label === 'string')
+      .slice(0, 5)
+      .map((button) => ({
+        type: 2,
+        style: 2,
+        label: button.label.slice(0, 80) || button.id,
+        custom_id: button.id.slice(0, 100),
+      }))
+    if (row.length === 0) return null
+    return [{ type: 1, components: row }]
   }
-  return null
+
+  private async interactionFollowUp(
+    applicationId: string,
+    interactionToken: string,
+    text: string,
+    options?: BotReplyOptions,
+  ): Promise<void> {
+    if (!applicationId || !interactionToken) return
+    const payload: Record<string, unknown> = { content: text.slice(0, TEXT_LIMIT) }
+    const components = this.buttonComponents(options?.buttons)
+    if (components) payload.components = components
+    await fetchJson(
+      `${DISCORD_API}/webhooks/${applicationId}/${interactionToken}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+      { fetch: this.fetchImpl },
+    )
+  }
 }

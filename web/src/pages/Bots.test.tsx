@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   remove: vi.fn(),
   test: vi.fn(),
   targetList: vi.fn(),
+  targetInbound: vi.fn(),
   targetCreate: vi.fn(),
   targetUpdate: vi.fn(),
   targetRemove: vi.fn(),
@@ -29,6 +30,8 @@ const mocks = vi.hoisted(() => ({
   publishList: vi.fn(),
   publishCreate: vi.fn(),
   publishCancel: vi.fn(),
+  filesList: vi.fn(),
+  filesSearch: vi.fn(),
 }))
 
 vi.mock('../api/client', () => ({
@@ -44,6 +47,7 @@ vi.mock('../api/client', () => ({
       metrics: mocks.metrics,
       targets: {
         list: mocks.targetList,
+        listInbound: mocks.targetInbound,
         create: mocks.targetCreate,
         update: mocks.targetUpdate,
         remove: mocks.targetRemove,
@@ -57,6 +61,10 @@ vi.mock('../api/client', () => ({
         create: mocks.publishCreate,
         cancel: mocks.publishCancel,
       },
+    },
+    files: {
+      list: mocks.filesList,
+      search: mocks.filesSearch,
     },
   },
   // 测试用错误只需带 code，页面通过 isApiError 判断 503 功能开关。
@@ -101,6 +109,7 @@ function bot(overrides: Partial<BotSummary> = {}): BotSummary {
     createdAt: '2026-10-20T00:00:00.000Z',
     updatedAt: '2026-10-21T00:00:00.000Z',
     keyVersion: 1,
+    gateway: { state: 'disabled', lastError: null },
     ...overrides,
   }
 }
@@ -114,6 +123,7 @@ function target(overrides: Partial<BotTarget> = {}): BotTarget {
     kind: 'channel',
     allowCommands: false,
     allowNotifications: true,
+    allowChat: false,
     quietStartMinute: null,
     quietEndMinute: null,
     createdAt: '2026-10-20T00:00:00.000Z',
@@ -172,6 +182,7 @@ beforeEach(() => {
   mocks.remove.mockResolvedValue({ ok: true })
   mocks.test.mockResolvedValue({ ok: true })
   mocks.targetList.mockResolvedValue([target()])
+  mocks.targetInbound.mockResolvedValue([])
   mocks.targetCreate.mockResolvedValue(target({ id: 'target-2', label: '新目标' }))
   mocks.targetUpdate.mockResolvedValue(target({ allowCommands: true }))
   mocks.targetRemove.mockResolvedValue({ ok: true })
@@ -188,6 +199,14 @@ beforeEach(() => {
   mocks.publishList.mockResolvedValue([])
   mocks.publishCreate.mockResolvedValue(job())
   mocks.publishCancel.mockResolvedValue({ ok: true })
+  mocks.filesList.mockResolvedValue({
+    items: [{ id: 'file-1', name: 'media.png', kind: 'file', size: 1024, mime: 'image/png' }],
+    total: 1,
+  })
+  mocks.filesSearch.mockResolvedValue({
+    items: [{ id: 'file-1', name: 'media.png', kind: 'file', size: 1024, mime: 'image/png' }],
+    total: 1,
+  })
 })
 
 afterEach(() => {
@@ -287,6 +306,36 @@ describe('Bots 机器人管理', () => {
     await waitFor(() => expect(checkbox).toBeChecked())
   })
 
+  it('目标分区可创建允许 Chat 的目标，并展示最近入站目标', async () => {
+    mocks.targetInbound.mockResolvedValue([
+      {
+        botId: 'bot-1',
+        targetExternalId: 'new-group',
+        targetKind: 'group',
+        userId: 'user-9',
+        userName: '测试成员',
+        isDirect: false,
+        lastSeenAt: '2026-10-21T00:00:00.000Z',
+      },
+    ])
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await userEvent.click(screen.getByRole('tab', { name: '目标' }))
+    expect(await screen.findByText('测试成员')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '登记' }))
+    expect((screen.getByLabelText(/平台目标 ID/) as HTMLInputElement).value).toBe('new-group')
+
+    await userEvent.type(screen.getByLabelText(/^名称/), '聊天目标')
+    await userEvent.click(screen.getByRole('checkbox', { name: '允许 Chat' }))
+    await userEvent.click(screen.getByRole('button', { name: '添加目标' }))
+    await waitFor(() =>
+      expect(mocks.targetCreate).toHaveBeenCalledWith(
+        'bot-1',
+        expect.objectContaining({ externalId: 'new-group', allowChat: true }),
+      ),
+    )
+  })
+
   it('发布表单提交目标、文本、单媒体与无排期', async () => {
     mocks.publishCreate.mockResolvedValue(job())
     renderPage()
@@ -296,7 +345,9 @@ describe('Bots 机器人管理', () => {
     const select = (await screen.findByLabelText(/发布目标/)) as HTMLSelectElement
     await waitFor(() => expect(select.value).toBe('target-1'))
     await userEvent.type(screen.getByLabelText(/发布内容/), '发布内容测试')
-    await userEvent.type(screen.getByLabelText(/媒体文件/), 'file-1')
+    await userEvent.click(screen.getByRole('button', { name: '选择文件' }))
+    await userEvent.click(await screen.findByRole('button', { name: '选择' }))
+    await userEvent.click(screen.getByRole('button', { name: '关闭对话框' }))
     await userEvent.type(screen.getByLabelText(/TOTP 验证码/), '123456')
     await userEvent.type(screen.getByLabelText(/二次确认/), 'PUBLISH')
     await userEvent.click(screen.getByRole('button', { name: '创建发布任务' }))

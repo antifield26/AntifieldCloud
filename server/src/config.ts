@@ -111,6 +111,13 @@ export interface Config {
   botAiMaxPromptChars: number
   botAiRatePerHour: number
   botAiSessionRetentionDays: number
+  /** v0.5.2 Chat/记忆/多附件/Gateway。 */
+  botChatRatePerMinute: number
+  botAiMemoryMaxChars: number
+  botAiSystemPrompt: string
+  botDiscordGatewayEnabled: boolean
+  botPublishMaxMediaFiles: number
+  botPublishMaxMediaTotalBytes: number
 }
 
 const DEFAULT_ENV_FILE = '/etc/antifieldcloud/env'
@@ -262,7 +269,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.5.1'),
+    appVersion: str(merged, 'APP_VERSION', '0.5.2'),
     botEnabled: bool(merged, 'BOT_ENABLED', false),
     botSecretKey: str(merged, 'BOT_SECRET_KEY', ''),
     botWebhookMaxBodyBytes: int(merged, 'BOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
@@ -280,6 +287,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiMaxPromptChars: int(merged, 'BOT_AI_MAX_PROMPT_CHARS', 2000, 100, 8000),
     botAiRatePerHour: int(merged, 'BOT_AI_RATE_PER_HOUR', 10, 1, 120),
     botAiSessionRetentionDays: int(merged, 'BOT_AI_SESSION_RETENTION_DAYS', 7, 1, 90),
+    botChatRatePerMinute: int(merged, 'BOT_CHAT_RATE_PER_MINUTE', 6, 1, 60),
+    botAiMemoryMaxChars: int(merged, 'BOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
+    botAiSystemPrompt: str(merged, 'BOT_AI_SYSTEM_PROMPT', '').slice(0, 2000),
+    botDiscordGatewayEnabled: bool(merged, 'BOT_DISCORD_GATEWAY_ENABLED', false),
+    botPublishMaxMediaFiles: int(merged, 'BOT_PUBLISH_MAX_MEDIA_FILES', 5, 1, 10),
+    botPublishMaxMediaTotalBytes: int(
+      merged,
+      'BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES',
+      50 * MIB,
+      1 * MIB,
+      200 * MIB,
+    ),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')

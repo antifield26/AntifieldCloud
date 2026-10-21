@@ -21,6 +21,7 @@ import type {
   BookmarkPatch,
   BotCreateInput,
   BotDelivery,
+  BotInboundTarget,
   BotMetrics,
   BotPublishInput,
   BotPublishJob,
@@ -1091,6 +1092,13 @@ export const api = {
     targets: {
       async list(botId: string, signal?: AbortSignal): Promise<BotTarget[]> {
         const result = await get<{ items: BotTarget[] }>(`/api/bots/${encodeId(botId)}/targets`, { signal })
+        return result.items
+      },
+      async listInbound(botId: string, limit = 50, signal?: AbortSignal): Promise<BotInboundTarget[]> {
+        const result = await get<{ items: BotInboundTarget[] }>(
+          `/api/bots/${encodeId(botId)}/inbound-targets${buildQuery({ limit })}`,
+          { signal },
+        )
         return result.items
       },
       async create(botId: string, input: BotTargetInput): Promise<BotTarget> {

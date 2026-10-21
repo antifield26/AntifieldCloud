@@ -515,6 +515,23 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
                 <li key={step}>{step}</li>
               ))}
             </ol>
+            {bot.platform === 'discord' ? (
+              <div className="notice notice-info">
+                普通消息 Chat 需要 Discord Gateway：在 Developer Portal 开启 <strong>Message Content Intent</strong>，
+                并在服务端设置 <code>BOT_DISCORD_GATEWAY_ENABLED=true</code>。当前 Gateway 状态：
+                {bot.gateway.state === 'connected' ? '已连接' : bot.gateway.state === 'error' ? `错误（${bot.gateway.lastError ?? '未知'}）` : '未连接'}。
+              </div>
+            ) : null}
+            {bot.platform === 'telegram' ? (
+              <div className="notice notice-info">
+                群/频道 Chat 需在 BotFather 关闭 privacy mode（或回复 Bot 消息）；私聊普通消息直接进入 Chat。
+              </div>
+            ) : null}
+            {bot.platform === 'qq' ? (
+              <div className="notice notice-info">
+                QQ 群/频道需先把 Bot 加入群并 @Bot 发送一条消息，再到目标分区从“最近入站目标”一键登记；QQ 仅文本。
+              </div>
+            ) : null}
           </Card>
         ) : (
           <Card title="接入信息" description="创建 Bot 后这里会显示 Webhook URL 与平台后台配置步骤。">

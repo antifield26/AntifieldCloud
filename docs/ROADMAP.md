@@ -1,5 +1,32 @@
 # 路线图
 
+## v0.5.2（已实现，待部署/待验收）
+
+- **Bot Chat**：普通消息（非斜杠）在目标 `allow_chat=1` 时进入 AI Chat；群/频道仅 @Bot 或回复 Bot，私聊全部；Telegram/Slack/QQ Webhook 与 Discord Gateway 支持；非管理员只能 Chat，管理员斜杠命令仍由 `allow_commands` 目标 + user 白名单双校验；Chat 只读，不占写操作。
+- **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 摘要为权威（`summary_session_id`）+ `DATA_DIR/bot-memory/memory-<uuid>.md` 镜像（0700/0600）；每轮滚动摘要；摘要失败保留旧摘要；不通过 API/UI 暴露；系统提示内置，`BOT_AI_SYSTEM_PROMPT` 覆盖；不额外占对话轮次或 AI 每小时配额。
+- **多附件发布**：最多 5 个、单 10 MiB、总 50 MiB；Telegram 全图片 media group/混合逐文件、Discord 单次 multipart、Slack 逐文件；QQ 仅文本；`partial_media_sent` 不自动重试。
+- **只读按钮**：Telegram/Discord `/status`、`/help` 刷新/帮助按钮；需目标 `allow_commands` + user 白名单；无写操作；Slack/QQ 不做。
+- **Discord Gateway**：Node 内置 WebSocket；`intents=37377`（含 `MESSAGE_CONTENT`）；需 Developer Portal 开启 intent；HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭；状态显示。
+- **数据/管理面**：schema v9（迁移 9：`allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；目标 `allowChat`、最近入站目标 `GET /api/bots/:id/inbound-targets` 与 `/bots` 登记、发布媒体多选、Gateway 状态。
+- **env**：`BOT_CHAT_RATE_PER_MINUTE=6`、`BOT_AI_MEMORY_MAX_CHARS=4096`、`BOT_AI_SYSTEM_PROMPT=`、`BOT_DISCORD_GATEWAY_ENABLED=false`、`BOT_PUBLISH_MAX_MEDIA_FILES=5`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`；已有 `BOT_AI_RATE_PER_HOUR=10`。
+- **状态**：本地 `npm test` 293（服务端 277 + 脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过；生产仍为 v0.5.1/schema v8，v0.5.2 部署、迁移 v9、Discord Gateway 真实长连接与各平台 Chat/多附件/按钮**待验收**。
+
+### v0.5.2 部署后待办
+
+1. PC 部署前生成迁移前 DB 快照，迁移 v8→v9；`/healthz` 断言 `version=0.5.2`、`schemaVersion=9`；smoke 用 `-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9`。
+2. Discord Developer Portal 开启 **Message Content Intent**；按需设 `BOT_DISCORD_GATEWAY_ENABLED=true`，确认 `BotSummary.gateway.state=connected`，验证私聊/@/回复进入 Chat、普通频道消息不消费。
+3. Telegram 群关闭 privacy mode（或只回复 Bot）；Slack/QQ 真实 Chat 联调；在 `/bots` 给目标勾选 `allow_chat` 并从“最近入站目标”登记。
+4. 多附件真实平台外发（5 个/10 MiB/50 MiB）与失败/partial 场景；确认不自动重试导致重复外发。
+5. 记忆文件权限/位置与摘要失败保留旧摘要；验证 `DATA_DIR/bot-memory` 不通过 Web 暴露、重启后仍能读取；真实模型多轮对话。
+6. 按 `docs/ACCEPTANCE.md` v0.5.2 填写证据后再标记通过；生产部署前不得宣称已验收。
+
+## v0.5.3（规划）
+
+- **企业微信/钉钉/飞书**：新增平台适配器、回调验签/加解密、目标与消息发送；仍需各平台后台注册与真实联调。
+- **QQ 媒体**：等 QQ 官方 Bot 媒体能力明确后再评估，不在本版承诺。
+- **多管理员/审批流**：仍保持单管理员；如做需先定义权限模型与审计边界。
+- **Slack 按钮**：Slack 交互回调与 `response_url`/`trigger_id` 语义需单独设计，v0.5.2 不做。
+
 ## v0.5.1（已交付）
 
 - **QQ 官方 Bot**：`server/src/bot/adapters/qq.ts`；AppID + AppSecret（密文）；op=13 Ed25519 回调地址校验、op=0 事件验签、`{opcode:12}` 确认；C2C/群@/频道文本命令与通知；仅文本（≤2000 字符），不支持媒体。生产回调已配置，C2C `/help` 回复已实测。
@@ -9,14 +36,6 @@
 - **安全收口**：fail2ban dbfile 持久化（`/var/lib/fail2ban/fail2ban.sqlite3`）；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set；`smoke.ps1` 支持 `-AccessClientId/-AccessClientSecret`。
 - **工具链**：typescript-eslint 8.x 仍不支持 TS7 API，本轮结论为暂不升级、保留双 alias。
 - **状态**：本地 `npm test` 265（服务端 249 + 脚本 16）、`npm run test:web` 139、`npm run check` 通过；生产已部署 v0.5.1/schema v8（release `20261021T091001Z`），smoke 23/23；Discord + QQ 命令、AI 真实模型、fail2ban 持久化已验证。
-
-### 剩余（v0.5.x 后续）
-
-1. **企业微信/钉钉/飞书**：未做；QQ 已接入但仅文本。
-2. **多管理员/审批流**：未做；当前仍是单管理员。
-3. **QQ 群/频道目标与通知**：当前只登记 C2C openid；群/频道目标与主动通知需真实场景补充。
-4. **Cloudflare Access**：主应用、4 个 bypass 与 service token 已配置；后续仅需按周期轮换 service token 与高权限 API Token。
-5. **完整验收**：发布外发、平台敌对负路径与季度恢复演练按 `docs/DEPLOY.md`/`docs/BACKUP.md` 持续执行。
 
 ## v0.5.0（已交付）
 
@@ -52,16 +71,17 @@
 
 ## 下一批候选（按价值排序）
 
-1. **更多 Bot 平台**：企业微信/钉钉/飞书（需各自回调签名与媒体模型）；QQ 媒体能力待平台开放后再评估。
-2. **Bot 多人审批/发布复核**：在单管理员 TOTP + `PUBLISH` 之外增加第二人复核或延时窗口。
-3. **整包加密 + 异地副本**：普通归档仍含 TOTP/会话明文；优先评估 age/restic 整包加密、VPS/对象存储异地副本与生命周期。
-4. **目录/打包分享**：目录选择、流式 zip（不落盘）、分享内相对路径；需处理配额、次数与 tar 安全。
-5. **笔记公开分享**：只读 token + 密码/过期，沿用分享限流与 noindex；需先定义 Markdown/附件外链的泄漏边界。
-6. **WebDAV / rclone（只读优先）**：读写需处理锁/并发/配额；复用现有 DB id 与不可变语义。
-7. **可观测性扩展**：更多告警通道（企业微信/钉钉/邮件）、日志聚合/检索、外部 uptime 监控；指标长期降采样。
-8. **Minecraft 启停/日志**：窄权限 helper、固定命令白名单、二次确认与审计；需系统级改动与用户授权。
-9. **SSD 迁移 + LUKS**：USB/NVMe HAT，迁移数据/备份临时目录并做全盘加密。
-10. **SSH/sudo 加固收尾**：SSH 已仅公钥 + `fail2ban` sshd jail（24h ban，已持久化）；后续收紧 `antifield` 的 `NOPASSWD ALL`，需用户确认后执行。
+1. **更多 Bot 平台**：企业微信/钉钉/飞书（v0.5.3；需各自回调签名/加解密与媒体模型）；QQ 媒体能力待平台开放后再评估。
+2. **Bot 多人审批/发布复核**：在单管理员 TOTP + `PUBLISH` 之外增加第二人复核或延时窗口；需先定义多管理员模型。
+3. **Slack 按钮**：Slack interactivity 与 `response_url`/`trigger_id` 语义，补齐与 Telegram/Discord 一致的只读按钮。
+4. **整包加密 + 异地副本**：普通归档仍含 TOTP/会话明文；优先评估 age/restic 整包加密、VPS/对象存储异地副本与生命周期。
+5. **目录/打包分享**：目录选择、流式 zip（不落盘）、分享内相对路径；需处理配额、次数与 tar 安全。
+6. **笔记公开分享**：只读 token + 密码/过期，沿用分享限流与 noindex；需先定义 Markdown/附件外链的泄漏边界。
+7. **WebDAV / rclone（只读优先）**：读写需处理锁/并发/配额；复用现有 DB id 与不可变语义。
+8. **可观测性扩展**：更多告警通道（企业微信/钉钉/邮件）、日志聚合/检索、外部 uptime 监控；指标长期降采样。
+9. **Minecraft 启停/日志**：窄权限 helper、固定命令白名单、二次确认与审计；需系统级改动与用户授权。
+10. **SSD 迁移 + LUKS**：USB/NVMe HAT，迁移数据/备份临时目录并做全盘加密。
+11. **SSH/sudo 加固收尾**：SSH 已仅公钥 + `fail2ban` sshd jail（24h ban，已持久化）；后续收紧 `antifield` 的 `NOPASSWD ALL`，需用户确认后执行。
 
 ## 明确不做（至少近期）
 
@@ -71,18 +91,24 @@
 - 服务端媒体转码/大模型推理。
 - 替换现有 Minecraft/SakuraFRP/opencode 服务。
 - 为分享生成服务端 zip 包（多文件逐项下载已够用）。
+- Slack/QQ 按钮（v0.5.2 明确不做）。
+- QQ 媒体与多管理员审批（v0.5.2 明确不做）。
 
 ## 已知限制
 
-- QQ 官方 Bot 仅文本、不支持媒体；真实回调待用户后台配置；企业微信/钉钉/飞书未实现。
-- `/ask` 依赖 OpenCode 本地 API 与已配置模型；默认关闭，生产已启用 `opencode-go/deepseek-v4.1-flash` 并验证；deny-all 工具在 OpenCode 明确拒绝 `permissions` 时会降级并在日志标注未隔离。
+- v0.5.2 的 Chat/记忆/多附件/按钮/Gateway 仅有进程内 mock/假 WebSocket 测试；生产未部署 v0.5.2，Discord Gateway 真实长连接与各平台 Chat/多附件需部署后联调；Discord 需 Developer Portal 开启 Message Content Intent。
+- v0.5.2 多附件部分成功不自动重试（标记 `partial_media_sent`），需人工确认并重建；单次最多 5 个、单 10 MiB、总 50 MiB。
+- 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。
+- 企业微信/钉钉/飞书未实现（v0.5.3）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。
+- QQ 官方 Bot 仅文本、不支持媒体；真实回调需用户后台配置；群/频道目标仍需真实场景补充。
+- `/ask` 与 Chat 依赖 OpenCode 本地 API 与已配置模型；默认关闭，v0.5.1 生产已验证 `/ask`；v0.5.2 Chat/记忆真实模型行为待验收；deny-all 工具在 OpenCode 明确拒绝 `permissions` 时会降级并在日志标注未隔离。
 - Cloudflare Access 策略/bypass 与 service token 需用户后台配置，应用无法自证；smoke 的 Access token 仅用于测试，不替代应用认证。
-- `fail2ban` 封禁已由 dbfile 持久化，nftables 启动后由 drop-in 异步重启恢复；手工 `systemctl reload nftables` 不触发，需手动 `systemctl restart fail2ban`。完整安全验收仍待 Cloudflare Access 等项。
+- `fail2ban` 封禁已由 dbfile 持久化，nftables 启动后由 drop-in 异步重启恢复；手工 `systemctl reload nftables` 不触发，需手动 `systemctl restart fail2ban`。
 - SSH 已仅公钥（`00-` drop-in，24h 回滚窗口），`fail2ban` sshd jail（nftables 后端、24h ban）；Pi 登录用户 `antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择），待收紧。
 - RCON 仍监听所有接口，仅由 nftables 限制为 loopback；Cloudflare 终止 TLS，可见明文；Cloudflare 约 100 MiB/100s 请求限制约束单请求上传（大文件走分片）。
 - 限流为内存态，重启清零；`http-proxy` 在 Node 26 有弃用警告；scrypt 仍为 N=2^15；`typescript-eslint` 尚不支持 TS7 API，保留双 alias。
 - 分享下载次数为会话级近似限制；无目录打包/公开笔记分享；多文件分享逐项下载。
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练任务需用户手动安装；无异地世界副本。
 - 备份无整包加密与异地副本；普通归档含 TOTP/会话明文与 Bot 密文，PC ACL 与离线介质是最后防线。
-- Bot：单次发布最多 1 个媒体文件（QQ 无媒体）、命令严格只读、无平台主动拉取/长连接；适配器/AI 测试为进程内 mock，上线前需平台沙箱/真实模型联调。
+- Bot：命令严格只读、无平台主动拉取（Discord Gateway 除外）；适配器/AI 测试为进程内 mock，上线前需平台沙箱/真实模型联调。
 - 旧世界 cron 已停用、旧 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。

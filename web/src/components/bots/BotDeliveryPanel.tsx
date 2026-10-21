@@ -1,5 +1,6 @@
 // 投递与发布分区：投递状态/重试，发布表单、定时任务与取消。
-// 安全边界：只展示队列状态，不执行 Bot 命令；发布只允许管理员手动创建，媒体最多 1 个。
+// 安全边界：只展示队列状态，不执行 Bot 命令；发布只允许管理员手动创建，媒体最多 5 个。
+import { X } from 'lucide-react'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -32,6 +33,10 @@ import {
 } from '../../lib/bots'
 import { formatBytes, formatDateTime, truncateText } from '../../lib/format'
 
+const MEDIA_MAX_FILES = 5
+const MEDIA_MAX_BYTES_PER_FILE = 10 * 1024 * 1024
+const MEDIA_MAX_TOTAL_BYTES = 50 * 1024 * 1024
+
 interface BotDeliveryPanelProps {
   bot: BotSummary | null
   /** 页面级刷新令牌变化时重新拉取目标、投递与发布任务。 */
@@ -59,8 +64,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [publishTargetId, setPublishTargetId] = useState('')
   const [text, setText] = useState('')
-  const [mediaId, setMediaId] = useState('')
-  const [mediaFile, setMediaFile] = useState<FileItem | null>(null)
+  const [mediaFiles, setMediaFiles] = useState<FileItem[]>([])
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
   const [scheduledAt, setScheduledAt] = useState('')
   const [totpCode, setTotpCode] = useState('')
@@ -145,6 +149,23 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       setFormError(`内容超过 ${textLimit} 字符上限`)
       return
     }
+    if (mediaFiles.length > MEDIA_MAX_FILES) {
+      setFormError(`最多选择 ${MEDIA_MAX_FILES} 个媒体文件`)
+      return
+    }
+    if (bot.platform === 'qq' && mediaFiles.length > 0) {
+      setFormError('QQ 官方 Bot 暂不支持媒体发布')
+      return
+    }
+    const mediaTotal = mediaFiles.reduce((sum, file) => sum + file.size, 0)
+    if (mediaFiles.some((file) => file.size > MEDIA_MAX_BYTES_PER_FILE)) {
+      setFormError(`单个媒体文件不能超过 ${formatBytes(MEDIA_MAX_BYTES_PER_FILE)}`)
+      return
+    }
+    if (mediaTotal > MEDIA_MAX_TOTAL_BYTES) {
+      setFormError(`媒体文件总大小不能超过 ${formatBytes(MEDIA_MAX_TOTAL_BYTES)}`)
+      return
+    }
     const schedule = scheduleIso(scheduledAt)
     if (schedule.error) {
       setFormError(schedule.error)
@@ -163,14 +184,13 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       const created = await api.bots.publish.create(bot.id, {
         targetId: publishTargetId,
         text: text.trim(),
-        mediaFileIds: mediaId.trim() ? [mediaId.trim()] : [],
+        mediaFileIds: mediaFiles.map((file) => file.id),
         scheduledAt: schedule.iso,
         totpCode,
         confirmText: 'PUBLISH',
       })
       setText('')
-      setMediaId('')
-      setMediaFile(null)
+      setMediaFiles([])
       setScheduledAt('')
       setTotpCode('')
       setConfirmText('')
@@ -315,7 +335,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
 
       <Card
         title="发布消息"
-        description={`向频道/群组发布文本或单个媒体文件；${bot.platform === 'discord' ? 'Discord' : bot.platform === 'slack' ? 'Slack' : bot.platform === 'qq' ? 'QQ（仅文本）' : 'Telegram'} 文本上限 ${textLimit} 字符。`}
+        description={`向频道/群组发布文本或最多 ${MEDIA_MAX_FILES} 个媒体文件；${bot.platform === 'discord' ? 'Discord' : bot.platform === 'slack' ? 'Slack' : bot.platform === 'qq' ? 'QQ（仅文本）' : 'Telegram'} 文本上限 ${textLimit} 字符。`}
         actions={<Badge tone="accent"><Send size={13} aria-hidden="true" /> 手动发布</Badge>}
         error={error}
         onRetry={() => void load()}
@@ -371,37 +391,39 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
             <FormField
               label="媒体文件（可选）"
               htmlFor="bot-publish-media"
-              hint="从云端普通文件选择 1 个（≤10 MiB）；也可粘贴文件 ID。"
+              hint={`从云端普通文件选择，最多 ${MEDIA_MAX_FILES} 个、单个 ≤${formatBytes(MEDIA_MAX_BYTES_PER_FILE)}、总计 ≤${formatBytes(MEDIA_MAX_TOTAL_BYTES)}；QQ 不支持媒体。`}
             >
               <div className="bot-media-input">
-                <input
-                  id="bot-publish-media"
-                  className="input mono"
-                  value={mediaId}
-                  onChange={(event) => {
-                    setMediaId(event.target.value)
-                    setMediaFile(null)
-                  }}
-                  autoComplete="off"
-                  spellCheck={false}
-                  placeholder="选择文件或粘贴文件 ID"
-                  maxLength={64}
-                  disabled={publishing}
-                />
+                <div className="bot-media-selected" id="bot-publish-media">
+                  {mediaFiles.length === 0 ? (
+                    <span className="field-hint">未选择媒体</span>
+                  ) : (
+                    mediaFiles.map((file) => (
+                      <span className="bot-media-chip" key={file.id}>
+                        <span title={file.name}>{truncateText(file.name, 28)}</span>
+                        <span className="muted"> {formatBytes(file.size)}</span>
+                        <button
+                          type="button"
+                          className="bot-media-chip-remove"
+                          aria-label={`移除媒体 ${file.name}`}
+                          onClick={() => setMediaFiles((previous) => previous.filter((item) => item.id !== file.id))}
+                          disabled={publishing}
+                        >
+                          <X size={13} aria-hidden="true" />
+                        </button>
+                      </span>
+                    ))
+                  )}
+                </div>
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => setMediaPickerOpen(true)}
-                  disabled={publishing}
+                  disabled={publishing || bot.platform === 'qq' || mediaFiles.length >= MEDIA_MAX_FILES}
                 >
                   选择文件
                 </Button>
               </div>
-              {mediaFile ? (
-                <p className="bot-picker-selected">
-                  已选：{mediaFile.name}（{formatBytes(mediaFile.size)}）
-                </p>
-              ) : null}
             </FormField>
             <FormField
               label="定时时间（可选）"
@@ -528,10 +550,13 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
 
       <BotMediaPicker
         open={mediaPickerOpen}
+        selectedIds={mediaFiles.map((file) => file.id)}
+        maxFiles={MEDIA_MAX_FILES}
         onClose={() => setMediaPickerOpen(false)}
         onSelect={(file) => {
-          setMediaId(file.id)
-          setMediaFile(file)
+          setMediaFiles((previous) =>
+            previous.some((item) => item.id === file.id) || previous.length >= MEDIA_MAX_FILES ? previous : [...previous, file],
+          )
         }}
       />
 

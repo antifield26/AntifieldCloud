@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.5.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.5.2）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -12,9 +12,10 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema v8（迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话）；迁移前会执行 `PRAGMA foreign_key_check`，
+- 当前 schema v9（迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
+  迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：v0.5.1/schema v8（release `20261021T091001Z`）；QQ 回调、AI 真实模型与 Cloudflare Access 均已配置并验收。
+- 生产现状：v0.5.1/schema v8（release `20261021T091001Z`）；v0.5.2 代码已就绪，**尚未部署/迁移 v9**。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -108,15 +109,22 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `BOT_DELIVERY_INTERVAL_SECONDS=30`（5–300）、`BOT_DELIVERY_MAX_ATTEMPTS=5`（1–20）：队列扫描与最大尝试次数。
   - `BOT_EVENT_RETENTION_DAYS=7`（1–90）：事件去重记录保留；已发送投递/发布固定 30 天清理。
   - `BOT_COMMAND_RATE_PER_MINUTE=20`（1–600）：每 Bot × 用户命令限流。
-  - `BOT_PUBLISH_MAX_MEDIA_BYTES=10485760`（1–50 MiB）：单次发布媒体上限；单次最多 1 个媒体。
+  - `BOT_PUBLISH_MAX_MEDIA_BYTES=10485760`（1–50 MiB）：单个发布媒体上限；单次数量/总量见 v0.5.2 的 `BOT_PUBLISH_MAX_MEDIA_FILES`/`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES`。
   - `BOT_PUBLISH_MAX_SCHEDULED_DAYS=30`（1–365）、`BOT_MAX_BOTS=10`（1–50）。
 - v0.5.1 新增 Bot AI env（`bootstrap-env.sh` 已纳管，`--force` 不会重置已有非空值；默认关闭）：
   - `BOT_AI_ENABLED=false`：`/ask` 总开关；关闭时命令只返回“AI 对话未启用”。
   - `BOT_AI_PROVIDER=`、`BOT_AI_MODEL=`：可选 OpenCode provider/model，二者同时设置才指定模型；为空用 OpenCode 默认模型。
   - `BOT_AI_TIMEOUT_SECONDS=60`（10–180）：单次 AI 请求/等待超时。
   - `BOT_AI_MAX_PROMPT_CHARS=2000`（100–8000）：提示词截断。
-  - `BOT_AI_RATE_PER_HOUR=10`（1–120）：每 Bot×用户每小时调用上限。
+  - `BOT_AI_RATE_PER_HOUR=10`（1–120）：每 Bot×用户每小时调用上限（v0.5.2 起 Chat 与 `/ask` 共用）。
   - `BOT_AI_SESSION_RETENTION_DAYS=7`（1–90）：`bot_ai_sessions` 映射保留，不删除 OpenCode 远端会话。
+- v0.5.2 新增 Bot Chat/记忆/多附件/Gateway env（`bootstrap-env.sh` 已纳管，`--force` 不会重置已有非空值）：
+  - `BOT_CHAT_RATE_PER_MINUTE=6`（1–60）：普通消息 Chat 每 Bot×用户每分钟上限；与 `/ask` 共用 `BOT_AI_RATE_PER_HOUR`。
+  - `BOT_AI_MEMORY_MAX_CHARS=4096`（512–16384）：每 Bot×用户长期记忆摘要上限。
+  - `BOT_AI_SYSTEM_PROMPT=`（空）：覆盖内置系统提示，最长 2000；空则使用内置文本。
+  - `BOT_DISCORD_GATEWAY_ENABLED=false`：Discord Gateway 长连接开关；默认关闭，启用前先在 Developer Portal 开启 Message Content Intent。
+  - `BOT_PUBLISH_MAX_MEDIA_FILES=5`（1–10）：单次发布媒体文件数量上限。
+  - `BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`（1–200 MiB）：单次发布媒体总大小上限。
 
 ## 3. 从 PC 部署（带迁移前 DB 快照与自动回滚）
 
@@ -144,27 +152,28 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.1 v0.5.1 应用部署步骤（版本升级时执行）
+### 3.1 v0.5.2 应用部署步骤（版本升级时执行）
 
-顺序固定为：**先备份/校验 → 环境预检 → 部署（自动迁移前快照 + 迁移 v8）→ 生成/校验 `BOT_SECRET_KEY` 与 `BOT_AI_*` → Bot 保持默认关闭 → 显式启用（先 Bot，后 AI）**。
-v8 迁移会重建 Bot 表，必须先确认迁移前 DB 快照成功；在这些步骤完成前不要打开 `BOT_ENABLED`/`BOT_AI_ENABLED`，也不要配置平台 Webhook。
+顺序固定为：**先备份/校验 → 环境预检 → 部署（自动迁移前快照 + 迁移 v9）→ 生成/校验 `BOT_SECRET_KEY` 与 `BOT_*` → Bot 保持默认关闭 → 显式启用（先 Bot，后 AI/Chat/Gateway）**。
+迁移 9 为加列/建表（`bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`），不重建既有 Bot 表，但仍必须先确认迁移前 DB 快照成功；
+在这些步骤完成前不要打开 `BOT_ENABLED`/`BOT_AI_ENABLED`/`BOT_DISCORD_GATEWAY_ENABLED`，也不要配置平台 Webhook。
 
 1. **本地与发布前校验**（PC）：
-   - `npm run check`、`npm run build`；确认 `package.json` 版本 `0.5.1`，`node scripts/check-version.mjs` 通过（含 env.example/DEPLOY 标题/lock 根版本）。
-   - 本地已知基线：`npm test` 265（服务端 249 + 脚本 16）、`npm run test:web` 139；`npm run check` 已通过（2026-10-21）。
+   - `npm run check`、`npm run build`；确认 `package.json` 版本 `0.5.2`，`node scripts/check-version.mjs` 通过（含 env.example/DEPLOY 标题/lock 根版本）。
+   - 本地已知基线：`npm test` 293（服务端 277 + 脚本 16）、`npm run test:web` 140（28 文件）；`npm run check` 已通过（2026-10-21）。
    - 确认工作树干净；`git rev-parse --short HEAD` 记入发布记录（脏发布只允许 `-AllowDirty`，并在 `docs/ACCEPTANCE.md` 标注）。
-   - 记录当前 `APP_VERSION` 与 `/healthz.version`（生产应为 0.5.0/schema 7），便于回滚对照。
+   - 记录当前 `APP_VERSION` 与 `/healthz.version`（生产应为 0.5.1/schema 8），便于回滚对照。
 2. **备份与校验**（Pi，只读优先）：
    - `sudo -u antifieldcloud -H /usr/local/bin/node /opt/antifieldcloud/current/scripts/backup.mjs --pending`：确认无异常 pending/孤儿；
      如 pending 未拉取，先在 PC 跑一次 `backup-pull.ps1` 完成 ack。
    - 确认 PC 最新应用归档 `.sha256` 可校验、密钥包 `secretsOk=true`（含 `/etc/antifieldcloud/env`）、世界备份/拉取状态新鲜；
-     必要时手跑 `.\scripts\drill.ps1 -ExpectedSchemaVersion 7`（升级前基线）并保存报告。
-   - 记录磁盘余量：`df -hT /`；v8 迁移会重建 Bot 表（复制数据 + 删旧表），仍建议 ≥2 GiB；迁移前确认 `db.sqlite` 与快照可读。
-3. **部署（自动快照 + 迁移 v8）**：
+     必要时手跑 `.\scripts\drill.ps1 -ExpectedSchemaVersion 8`（升级前基线）并保存报告。
+   - 记录磁盘余量：`df -hT /`；迁移 9 为加列/建表，建议 ≥2 GiB；迁移前确认 `db.sqlite` 与快照可读。
+3. **部署（自动快照 + 迁移 v9）**：
    - `.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本完成迁移前 DB 快照（`db-predeploy-*.sqlite`）、APP_VERSION 注入、切换与健康检查。
-   - 健康检查通过后应用启动时执行迁移 8：重建 `bots/bot_targets/bot_deliveries/bot_publish_jobs/bot_events`、扩展 `platform` CHECK 到 `qq`、
-     增加 `quiet_start_minute`/`quiet_end_minute`、创建 `bot_ai_sessions`；迁移 6/7 保留。
-   - Bot 因 `BOT_ENABLED=false` 不启动队列，Webhook 返回 404；`/ask` 因 `BOT_AI_ENABLED=false` 不可用。
+   - 健康检查通过后应用启动时执行迁移 9：`bot_targets` 增加 `allow_chat`（默认 0）、创建 `bot_ai_memories` 与 `bot_inbound_targets`；
+     迁移 5–8 保留，既有 Bot 数据不重建。
+   - Bot 因 `BOT_ENABLED=false` 不启动队列，Webhook 返回 404；`/ask`/Chat 因 `BOT_AI_ENABLED=false` 不可用；Gateway 因 `BOT_DISCORD_GATEWAY_ENABLED=false` 不建连。
 4. **生成/校验 Bot env**：
    ```bash
    sudo bash /opt/antifieldcloud/current/scripts/bootstrap-env.sh --dry-run   # 预览，不回显密钥
@@ -173,41 +182,52 @@ v8 迁移会重建 Bot 表，必须先确认迁移前 DB 快照成功；在这�
    sudo grep -c '^BOT_ENABLED=false' /etc/antifieldcloud/env                  # 1（保持关闭）
    sudo grep -c '^BOT_AI_ENABLED=false' /etc/antifieldcloud/env               # 1（保持关闭）
    sudo grep -c '^BOT_AI_RATE_PER_HOUR=' /etc/antifieldcloud/env              # 1
+   sudo grep -c '^BOT_CHAT_RATE_PER_MINUTE=' /etc/antifieldcloud/env          # 1
+   sudo grep -c '^BOT_AI_MEMORY_MAX_CHARS=' /etc/antifieldcloud/env           # 1
+   sudo grep -c '^BOT_DISCORD_GATEWAY_ENABLED=false' /etc/antifieldcloud/env  # 1（保持关闭）
+   sudo grep -c '^BOT_PUBLISH_MAX_MEDIA_FILES=' /etc/antifieldcloud/env       # 1
+   sudo grep -c '^BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=' /etc/antifieldcloud/env # 1
    sudo systemctl restart antifieldcloud
    ```
    - 校验 `stat -c '%a %U %G' /etc/antifieldcloud/env` 为 `640 root antifieldcloud`；不要把密钥值打印到终端/日志。
    - 立即把 env 纳入下一次密钥包（`scripts/backup-secrets.sh`）并确认 PC 拉取成功；`BOT_SECRET_KEY` 丢失 = 所有已存 Token/AppSecret 需重录。
 5. **验证迁移与关闭态**：
    ```bash
-   curl -fsS http://127.0.0.1:3000/healthz                       # {"ok":true,"version":"0.5.1","schemaVersion":8,...}
+   curl -fsS http://127.0.0.1:3000/healthz                       # {"ok":true,"version":"0.5.2","schemaVersion":9,...}
    curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:3000/api/bot/webhook/x   # 404
-   sudo -u antifieldcloud /usr/local/bin/node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/var/lib/antifieldcloud/db.sqlite');console.log(db.prepare(\"select value from meta where key='schema_version'\").get(),db.prepare(\"select name from sqlite_master where type='table' and name like 'bot%'\").all(),db.prepare('PRAGMA table_info(bot_targets)').all().map(c=>c.name).filter(n=>n.startsWith('quiet_')))"
+   sudo -u antifieldcloud /usr/local/bin/node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/var/lib/antifieldcloud/db.sqlite');console.log(db.prepare(\"select value from meta where key='schema_version'\").get(),db.prepare(\"select name from sqlite_master where type='table' and name like 'bot%'\").all(),db.prepare('PRAGMA table_info(bot_targets)').all().map(c=>c.name).filter(n=>n.startsWith('allow_')||n.startsWith('quiet_')))"
    ```
-   期望 `schemaVersion=8`、6 张 `bot*` 表（含 `bot_ai_sessions`）、`bot_targets` 含两个 `quiet_*` 列；`/api/bots` 未登录 401；
-   登录后 `/api/version` 的 `botsEnabled=false`、`botPlatforms` 含 `qq`。
+   期望 `schemaVersion=9`、8 张 `bot*` 表（含 `bot_ai_memories`/`bot_inbound_targets`）、`bot_targets` 含 `allow_chat` 与两个 `quiet_*` 列；
+   `/api/bots` 未登录 401；登录后 `/api/version` 的 `botsEnabled=false`、`botPlatforms` 含 `qq`。
 6. **显式启用 Bot（平台联调后）**：
    - 先在 Cloudflare 配置 Access 与 bypass（§5.2），再在平台后台登记 Webhook/命令（§9.8）；QQ 需先完成 op=13 回调校验。
    - 在 `/bots` 新建 Bot（默认 `enabled=false`）、录入 Token/AppSecret/签名密钥、加目标（可设静默时段）并勾选 `allow_commands`/`allow_notifications`；
      仅给可信 user 目标勾选 `allow_commands`。
    - 将 `/etc/antifieldcloud/env` 的 `BOT_ENABLED=false` 改为 `true`（或在 `deploy.conf` 覆盖后 `bootstrap-env.sh --force`），
      `sudo systemctl restart antifieldcloud`；验证 `/api/bots/status` 的 `enabled/keyConfigured=true`、Webhook 返回 200/401（不再 404）。
-7. **启用 AI（可选，Bot 稳定后）**：
+7. **启用 AI、Chat 与 Gateway（可选，Bot 稳定后）**：
    - 确认 OpenCode `127.0.0.1:4096` 可达、应用 env 的 `OPENCODE_PASSWORD` 与 `/etc/opencode/opencode.env` 一致。
    - 设 `BOT_AI_ENABLED=true`；如需固定模型再设 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`（两者同时设置），重启应用。
    - 由管理员在白名单私聊发 `/ask 今天状态如何`，确认有文本回复、限流与审计 `bot.ai.ask`；真实模型质量与超时按实际记录，
      若 OpenCode 拒绝 `permissions`，日志会出现“未隔离”警告，需在验收中注明。
+   - Chat：给目标勾选 `allow_chat`；Telegram 群关闭 privacy mode 或让用户回复 Bot；QQ 群/频道先 @Bot 后从“最近入站目标”登记；
+     私聊/群 @Bot 发普通消息确认 AI 回复、`bot.chat`/`bot.ai.chat` 审计与限流。
+   - 记忆：多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory/memory-<uuid>.md` 存在（不打印内容），确认目录 0700/文件 0600；
+     摘要失败时旧摘要保留。
+   - Discord Gateway：Developer Portal 开启 **Message Content Intent**，设 `BOT_DISCORD_GATEWAY_ENABLED=true` 并重启；
+     确认 `/api/bots/:id` 的 `gateway.state` 从 `connecting` 变为 `connected`，私聊/@/回复进入 Chat，普通频道消息不消费。
 8. **部署后**：
-   - `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8`；配置 Cloudflare Access 后可加
+   - `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9`；配置 Cloudflare Access 后可加
      `-AccessClientId/-AccessClientSecret`（service token，不写入仓库/日志）。公网/手机/PWA 与 Bot 平台联调按 `docs/ACCEPTANCE.md` 记录。
    - PC 重装每日任务：`.\scripts\install-backup-task.ps1 -PiHost <直连 IP> -BackupRoot <目录>`，确认 `backup-task.json` 脚本 SHA 更新；
-     手跑一次确认 `secrets=ok`（含 `BOT_AI_*`）。
-   - 世界拉取/演练：任务参数不变；演练改用 `-ExpectedSchemaVersion 8`。
-   - 按 `docs/ACCEPTANCE.md` v0.5.1 填写部署/测试证据（不要提前声明通过）。
+     手跑一次确认 `secrets=ok`（含 `BOT_*`）。
+   - 世界拉取/演练：任务参数不变；演练改用 `-ExpectedSchemaVersion 9`。
+   - 按 `docs/ACCEPTANCE.md` v0.5.2 填写部署/测试证据（不要提前声明通过）。
 
 **回滚**：`deploy.ps1` 自动回滚会 stop → 还原迁移前 DB 快照 → 把 `APP_VERSION` 改回上一 release 版本 → 切回 previous → start → 健康检查；
-手工顺序见 §11。**不要用未还原 `APP_VERSION` 的旧 release 通过 `/healthz` 判断成功**。v8 重建过 Bot 表，不能只回退代码；回滚前保留
-`db-predeploy-*.sqlite` 与当前 `bots`/`bot_ai_sessions` 数据；`BOT_SECRET_KEY` 不要轮换（轮换等于重录全部 Token/AppSecret）。
-回滚窗口内 `BOT_ENABLED`/`BOT_AI_ENABLED` 保持 false。fail2ban 的 nftables drop-in 与业务版本无关，回滚应用时无需删除；如需回滚该安全项见 §9.7。
+手工顺序见 §11。**不要用未还原 `APP_VERSION` 的旧 release 通过 `/healthz` 判断成功**。v9 高于旧代码支持版本，不能只回退代码；回滚前保留
+`db-predeploy-*.sqlite` 与当前 `bots`/`bot_ai_sessions`/`bot_ai_memories`/`bot_inbound_targets` 数据；`BOT_SECRET_KEY` 不要轮换（轮换等于重录全部 Token/AppSecret）。
+回滚窗口内 `BOT_ENABLED`/`BOT_AI_ENABLED`/`BOT_DISCORD_GATEWAY_ENABLED` 保持 false。fail2ban 的 nftables drop-in 与业务版本无关，回滚应用时无需删除；如需回滚该安全项见 §9.7。
 
 ### 3.2 OpenCode v2.1.1 升级与兼容性复核（本机执行）
 
@@ -317,7 +337,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 
 注意：opencode 上游原生新建按钮在部分版本/空项目状态有缺陷；若关闭注入后仍无响应，按验收记录保留最小隐藏 click/pointerup 接管（无可见按钮），不重新引入 v0.2.1 的浮动按钮。
 
-### 5.2 Cloudflare Access 策略与 bypass（v0.5.1，已配置）
+### 5.2 Cloudflare Access 策略与 bypass（v0.5.1 引入，仍有效）
 
 目标：在 Cloudflare 边缘给 `app.antifield.work` 增加第二层身份校验（应用 TOTP 仍是最终认证），同时保证 Bot 回调、健康检查与公开分享不被 Access 拦截。
 **Access 配置不在仓库内；未配置/漏配时表现为 Webhook 404/302、`/healthz` 302、公开分享被重定向。**
@@ -359,7 +379,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 6. **service token（供 smoke/CI）**：Zero Trust → Access → Service Auth → Create Service Token，绑定到主应用 `Service Auth` 策略；
    把 Client ID/Secret 通过命令行传给 smoke：
    ```powershell
-   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8 `
+   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9 `
      -AccessClientId "<id>" -AccessClientSecret "<secret>"
    ```
    两者必须同时提供，否则脚本直接报错；凭据只用于请求头，不打印/不写仓库。建议专用、最小范围、定期轮换；
@@ -378,7 +398,7 @@ curl -H 'Host: app.example.com' -fsS http://127.0.0.1:3000/healthz
 
 ```powershell
 .\scripts\smoke.ps1 -PiHost 192.0.2.10 -AppUrl https://app.example.com -AiUrl https://ai.example.com `
-  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8
+  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9
 ```
 
 配置 Cloudflare Access 后，可在同一命令追加 `-AccessClientId/-AccessClientSecret`：脚本会给公网请求附加
@@ -402,27 +422,32 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 `https://ai.example.com` 登录后进入 opencode。若 opencode 仍要求输入自身密码，属于其 UI 行为，
 从 Pi `sudo grep OPENCODE_PASSWORD /etc/opencode/opencode.env` 获取后输入一次（不写入前端）。
 
-### 6.1 v0.5.1 备份/灾备/迁移
+### 6.1 v0.5.2 备份/灾备/迁移
 
-- 迁移：v0.5.1 为 schema v8（迁移 8 重建 Bot 表扩展 `qq`、增加静默分钟列、新增 `bot_ai_sessions`；迁移 6/7 保留）。部署脚本切换前自动 `--snapshot-db`；
-  回滚必须先恢复该快照，并同时还原 `APP_VERSION`（deploy.ps1 已自动化）。v8 重建表，不能只回退代码。
-- Bot 密钥：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*`；env 由密钥包覆盖。**`BOT_SECRET_KEY` 必须与 DB 一起恢复**，
-  否则 `bots` 行不可解密、Token/AppSecret 需重录。首次部署后立即跑一次 `backup-secrets.sh` 并确认 PC 拉取成功。
+- 迁移：v0.5.2 为 schema v9（迁移 9 增加 `bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`；迁移 5–8 保留）。部署脚本切换前自动 `--snapshot-db`；
+  回滚必须先恢复该快照，并同时还原 `APP_VERSION`（deploy.ps1 已自动化）。v9 高于旧代码支持版本，不能只回退代码。
+- Bot 密钥：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*` 与 v0.5.2 的 Chat/记忆/多附件/Gateway 键；env 由密钥包覆盖。
+  **`BOT_SECRET_KEY` 必须与 DB 一起恢复**，否则 `bots` 行不可解密、Token/AppSecret 需重录。首次部署后立即跑一次 `backup-secrets.sh` 并确认 PC 拉取成功。
 - 启用 Bot 后：`/api/version` 返回 `botsEnabled:true` 与 `botPlatforms`（含 `qq`）；`/api/bots/status` 的 `keyConfigured/enabled` 均为 true；
-  `smoke.ps1 -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8` 通过（公网 Webhook 路径不应被 Access 302）。
-- 指标/静默/确认：`GET /api/bots/:id/metrics?hours=24` 可读；目标静默起止成对校验；发布请求必须带 `confirmText:'PUBLISH'`。
+  `smoke.ps1 -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9` 通过（公网 Webhook 路径不应被 Access 302）。
+- Chat/记忆：目标 `allow_chat` 与 `allow_commands` 独立；Chat 6/min 且与 `/ask` 共用 10/h；`bot_ai_memories` 为 DB 权威，
+  `DATA_DIR/bot-memory` 为镜像（0700/0600，不通过 Web 暴露）；摘要失败保留旧摘要；记忆不进入任何 API 响应。
+- 多附件/Gateway：发布最多 5 个、单 10 MiB、总 50 MiB；QQ 无媒体；部分成功 `partial_media_sent` 不自动重试。
+  Discord Gateway 需 Developer Portal 开启 Message Content Intent，`BOT_DISCORD_GATEWAY_ENABLED=true` 后确认 `gateway.state=connected`。
+- 指标/静默/确认：`GET /api/bots/:id/metrics?hours=24` 可读；`GET /api/bots/:id/inbound-targets` 需登录；目标静默起止成对校验；
+  发布请求必须带 `confirmText:'PUBLISH'`。
 - Windows 应用备份脚本：更新仓库后**重新运行 `install-backup-task.ps1`**（管理员），刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记；
-  手跑一次核对 `backup.log` 出现 `secrets=ok`，Pi `backup-pull.json` 含 `secretsOk=true`（env 内含 `BOT_SECRET_KEY`/`BOT_AI_*`，不打印值）。
+  手跑一次核对 `backup.log` 出现 `secrets=ok`，Pi `backup-pull.json` 含 `secretsOk=true`（env 内含 `BOT_SECRET_KEY`/`BOT_*`，不打印值）。
 - 世界备份/拉取：`antifieldcloud-world.timer` 时刻不变（周日 12:00）；`world-pull.ps1` 参数不变，更新仓库后手跑一次确认仍能校验/ack；
   `backup-world.mjs` 信号时优先 `save-on`，失败仍写 `world-backup-status.json`。
-- 恢复演练：`drill.ps1 -ExpectedSchemaVersion 8`（v0.5.0 为 7，v0.4.2 及以前为 6）；旧报告保留，不改写。
+- 恢复演练：`drill.ps1 -ExpectedSchemaVersion 9`（v0.5.1 为 8，v0.5.0 为 7，v0.4.2 及以前为 6）；旧报告保留，不改写。
 - Web 恢复：只允许导入/校验/文件级恢复到新目录（`skippedMissing` 会剔除并在结果报告）；整库恢复仍按 `docs/BACKUP.md` §8 离线执行。
 - 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载。
-- Bot 媒体：发布只接受 `origin='user'` 的活动普通文件，单文件 ≤10 MiB、单次 1 个；笔记附件/回收站文件不可发布；QQ 无媒体。
-- 验收：`npm run check`（本地 265/139）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
-  `smoke.ps1 -ExpectedVersion 0.5.1`、Bot 四平台联调（§9.8；QQ 真实回调已验证）、备份导入/校验/恢复（临时 DATA_DIR）、
-  世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 8` 演练通过；OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
-  `/ask` 真实模型回复待部署后验证。
+- Bot 媒体：发布只接受 `origin='user'` 的活动普通文件，最多 5 个、单 ≤10 MiB、总 ≤50 MiB；笔记附件/回收站文件不可发布；QQ 无媒体。
+- 验收：`npm run check`（本地 293/140）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
+  `smoke.ps1 -ExpectedVersion 0.5.2`、Bot 四平台联调（§9.8；v0.5.1 QQ 真实回调已验证，v0.5.2 Chat/多附件/Gateway 待联调）、备份导入/校验/恢复（临时 DATA_DIR）、
+  世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 9` 演练通过；OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
+  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.2 Chat/记忆真实模型待部署后验证。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -553,9 +578,9 @@ Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Tr
 
 ```powershell
 cd "$env:USERPROFILE\projects\AntifieldCloud"
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 8
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 9
 # 需要验证世界解包时（先确认临时盘 ≥3× 世界归档体积）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 8 -IncludeWorld
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 9 -IncludeWorld
 # 回写 Pi 状态（可选）
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -PiHost 192.0.2.10
 ```
@@ -652,27 +677,34 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 ### 9.8 Bot 平台接入（用户后台 + 应用配置）
 
 1. **Telegram**：BotFather 建 Bot → `/bots` 新建 Telegram（Token + ≥16 位 Webhook Secret）→ 用页面 `setupSteps` 的 `setWebhook`
-   命令设置 `url=https://app.example.com/api/bot/webhook/<id>`、`secret_token=<secret>`、`allowed_updates=["message"]` →
-   私聊/群组发 `/help`；目标填 chat id，命令用户需另建 `kind=user` 目标并勾选允许命令。
+   命令设置 `url=https://app.example.com/api/bot/webhook/<id>`、`secret_token=<secret>`、`allowed_updates=["message","callback_query"]` →
+   私聊/群组发 `/help`；目标填 chat id，命令用户需另建 `kind=user` 目标并勾选允许命令。Chat 需目标勾选 `allow_chat`；
+   群/频道还需关闭 BotFather privacy mode，或让用户回复 Bot 消息。
 2. **Discord**：Developer Portal 建 Application/Bot → 填 Interactions Endpoint URL（页面生成）→ 保存时 Discord 发 PING，
    应用返回 `{"type":1}` → 邀请 Bot 到测试服务器（发送消息/附件权限）→ 登记频道 ID；如需斜杠命令，在 Portal/API 注册
    `/help` `/status` `/backup` `/world` `/mc` `/files` `/ask`。Public Key 必须是 64 位 hex。
+   普通消息 Chat 还需开启 **Message Content Intent**，并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；确认 `BotSummary.gateway.state=connected`。
 3. **Slack**：api.slack.com/apps 建 App → 取 Bot Token（`xoxb-`）与 Signing Secret → Event Subscriptions 填同一 URL，
-   订阅 `message.channels`/`message.im`（按需）→ Slash Commands 的 Request URL 填同一 URL 并创建同名命令 → 安装到 workspace、
-   邀请 Bot 进测试频道 → 登记频道 ID。
+   订阅 `message.channels`/`message.im`/`app_mention`（按需）→ Slash Commands 的 Request URL 填同一 URL 并创建同名命令 → 安装到 workspace、
+   邀请 Bot 进测试频道 → 登记频道 ID。Chat：DM 直接进入；频道用 `app_mention` 或显式 `<@BOTID>`；Slack 本轮无按钮。
 4. **QQ 官方 Bot**：QQ 开放平台（q.qq.com）创建机器人 → 取 AppID/AppSecret → `/bots` 新建 QQ（AppID 填公开配置，
    AppSecret 填 Token/AppSecret 字段）→ “开发设置 → 回调地址”填 `https://app.example.com/api/bot/webhook/<id>`，
    平台发 `op=13` 时应用返回 `plain_token` 签名 → 订阅 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE` →
    目标填 `user_openid`/`group_openid`/`channel_id`，命令用户另建 `kind=user` 且允许命令的目标 → 发 `/help` 验证。
-   QQ 仅文本（≤2000 字符）、无媒体；真实回调必须在 QQ 后台完成，未配置前不能验收。
+   QQ 仅文本（≤2000 字符）、无媒体；Chat 先 @Bot 发一条消息，再从“最近入站目标”登记并勾选 `allow_chat`。
+   真实回调必须在 QQ 后台完成，未配置前不能验收。
 5. **应用侧**：`/bots` 中 Bot 默认 `enabled=false`；先保存配置与目标（可设静默时段），再开启 `BOT_ENABLED=true` 并重启，
    最后逐个 `PATCH enabled=true`。用“测试连接”发一条测试消息（20 次/小时）；发布用 `/bots` → 投递与发布 →
-   填文本/可选单媒体（QQ 无媒体）+ TOTP + `PUBLISH` 二次确认。
+   填文本/可选最多 5 个媒体（单 ≤10 MiB、总 ≤50 MiB；QQ 无媒体）+ TOTP + `PUBLISH` 二次确认。
 6. **AI（可选）**：Bot 稳定后设 `BOT_AI_ENABLED=true`（可同时设 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`）并重启；由白名单用户在私聊发
    `/ask <问题>`，确认有文本回复且审计 `bot.ai.ask`；真实模型/工具行为按 `docs/SECURITY.md` §4 第 21 条记录。
-7. **验收证据**：Telegram/Discord/Slack 至少各一条命令回复 + 一条测试通知 + 一条发布（含媒体）+ 一次定时/取消 + 一次失败重试；
-   QQ 至少一条 C2C/群@/频道文本命令与一条通知（无媒体）；AI 至少一条真实 `/ask` 回复。记录 `bot_deliveries` 状态与平台消息 id
-   （不记录 Token/Secret/AppSecret）。未完成联调前保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`；QQ/AI 未配置时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
+   再给目标勾选 `allow_chat`，用私聊/@Bot/回复 Bot 发普通消息验证 Chat、`bot.chat`/`bot.ai.chat` 审计与 6/min/10h 限流；
+   多轮后检查 `bot_ai_memories` 与 `DATA_DIR/bot-memory`（不打印内容）。
+7. **验收证据**：Telegram/Discord/Slack 至少各一条命令回复 + 一条 Chat 回复 + 一条测试通知 + 一条发布（含多附件）+ 一次定时/取消 + 一次失败重试；
+   QQ 至少一条 C2C/群@/频道文本命令、一条 Chat 与一条通知（无媒体）；AI 至少一条真实 `/ask` 回复；
+   Discord Gateway 至少一次 `connected` 与一次断线重连/关闭。记录 `bot_deliveries` 状态与平台消息 id
+   （不记录 Token/Secret/AppSecret/记忆正文）。未完成联调前保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`/`BOT_DISCORD_GATEWAY_ENABLED=false`；
+   QQ/AI/Chat/Gateway 未配置时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
 
 ### 9.9 Bot 队列/发布故障排查
 
@@ -684,7 +716,13 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 | 命令无回复 | 目标未勾选 `allow_commands`、用户未登记为 `kind=user` 且允许命令、命令限流、平台 API 失败；看 `bot.command.denied`、`bot_deliveries.last_error` |
 | `/ask` 提示未启用/频繁 | `BOT_AI_ENABLED=false`、用户不在白名单、超过 `BOT_AI_RATE_PER_HOUR`；看 `bot.ai.ask` 审计与 `BOT_AI_*` env |
 | `/ask` 超时/502/504 | OpenCode 不可达、Basic 密码不一致、模型未配置或超时；`curl -u` 探测 4096，检查 `OPENCODE_PASSWORD` 与 `BOT_AI_TIMEOUT_SECONDS`；不要打印密码 |
-| 发布 400/401 | 缺 `totpCode` 或 `confirmText:'PUBLISH'`、TOTP 过期/重放、目标是 user、文本超平台上限、媒体 >10 MiB 或 ≥2 个、QQ 带媒体、定时超 30 天 |
+| 发布 400/401 | 缺 `totpCode` 或 `confirmText:'PUBLISH'`、TOTP 过期/重放、目标是 user、文本超平台上限、媒体 >5 个/单 >10 MiB/总 >50 MiB（`too_many_media`/`media_too_large`/`media_total_too_large`）、QQ 带媒体、定时超 30 天 |
+| 发布 `partial_media_sent` | 部分附件已外发后失败；任务标记 `failed` 且不自动重试，避免重复外发。核对平台消息后人工重建任务 |
+| Chat 无回复 | 目标未勾选 `allow_chat`、`BOT_AI_ENABLED=false`、群/频道未 @Bot 或回复 Bot、普通频道消息被忽略、限流（6/min 或 10/h）；看 `bot.chat.denied`/`bot.chat`/`bot.ai.chat` 审计 |
+| 记忆未更新 | 摘要失败只记日志并保留旧摘要；看 `Bot 记忆摘要失败` 日志、OpenCode 是否可达、`BOT_AI_MEMORY_MAX_CHARS`；不要打印记忆正文 |
+| Discord Gateway 未连接 | `BOT_DISCORD_GATEWAY_ENABLED=false`、Developer Portal 未开 Message Content Intent（close 4014）、Token 错（4004）、Pi 到 `gateway.discord.gg` 出站/代理不可达；看 `BotSummary.gateway.state/lastError` 与 journald（不含 Token） |
+| Discord 普通消息不触发 | Gateway `connected` 但消息未 @/回复 Bot；普通频道消息设计上不消费；确认目标 `allow_chat` 与 platform 目标 ID（channel_id） |
+| 按钮无响应 | 目标未 `allow_commands`、用户未登记 `kind=user` 且允许命令、Slack/QQ 不支持按钮、平台回调地址未含 `callback_query`（Telegram） |
 | 通知被延后 | 目标配置了静默时段且在窗口内；属预期，`next_attempt_at` 为窗口结束；如非预期检查 `quietStartMinute/quietEndMinute` |
 | 指标卡为空/0 | 窗口内无投递或 Bot 关闭；直接查 `GET /api/bots/:id/metrics?hours=24`、`bot_deliveries`/`bot_publish_jobs`；成功率只统计已尝试投递 |
 | 投递 `dead` | 平台 Token 失效/权限不足/被限流；修复后 `POST /deliveries/:id/retry`；必要时轮换 Token；QQ 检查 `access_token` 换取失败/AppID |
@@ -719,7 +757,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cloudflared
 
 ```bash
 ls -1dt /opt/antifieldcloud/releases/*
-# 优先使用 deploy.ps1 的自动回滚；手工回滚按以下顺序（schema v8 只向上）
+# 优先使用 deploy.ps1 的自动回滚；手工回滚按以下顺序（schema v9 只向上）
 sudo systemctl stop antifieldcloud
 sudo cp -a /var/lib/antifieldcloud/backups/db-predeploy-<最新>.sqlite /var/lib/antifieldcloud/db.sqlite
 sudo rm -f /var/lib/antifieldcloud/db.sqlite-wal /var/lib/antifieldcloud/db.sqlite-shm
@@ -733,12 +771,14 @@ curl -fsS http://127.0.0.1:3000/healthz
 ```
 
 - 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，保留最新 10 个）。
-- **schema v8**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
+- **schema v9**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话、
+  迁移 9 `allow_chat`/`bot_ai_memories`/`bot_inbound_targets`）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
   其它外键不一致会拒绝启动；旧代码遇到更高 schema 会拒绝启动。回滚旧 release 前必须恢复对应迁移前快照
   （`stop → 复制快照为 db.sqlite → 删除 -wal/-shm → 还原 APP_VERSION → 切 release → start`）。
-- Bot 数据回滚：`bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events`/`bot_ai_sessions` 随 DB 快照恢复；`BOT_SECRET_KEY` 不在 DB 中，
-  必须保持与快照生成时一致的 env（否则 Token/AppSecret 不可解密）。
-  回滚窗口内保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`，确认稳定后再重新启用。
+- Bot 数据回滚：`bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_inbound_targets` 随 DB 快照恢复；
+  `BOT_SECRET_KEY` 不在 DB 中，必须保持与快照生成时一致的 env（否则 Token/AppSecret 不可解密）。`DATA_DIR/bot-memory` 镜像文件不由快照恢复，
+  如需与 DB 摘要一致，可保留现有镜像或按保留期/人工清理；不通过 API 暴露。
+  回滚窗口内保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`/`BOT_DISCORD_GATEWAY_ENABLED=false`，确认稳定后再重新启用。
 - fail2ban drop-in 回滚：删除 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` → `sudo systemctl daemon-reload`；
   不影响应用数据；回滚后 nftables restart 需手工 `systemctl restart fail2ban`。
 - 部署后 smoke 失败的门禁：`deploy.ps1` 默认失败；若已用 `-AllowSmokeFailure` 保留部署，必须在 `docs/ACCEPTANCE.md` 记录未通过项。
@@ -802,7 +842,9 @@ Windows PowerShell job 覆盖**全部** `scripts/*.ps1` 的 PS 5.1 解析 + UTF-
 | smoke Access token 无效 | 同时提供 `-AccessClientId/-AccessClientSecret`、确认 token 未过期且策略绑定 `app`；不要使用全局/宽范围 token |
 | nftables restart 后封禁丢失 | drop-in 未安装/未 `daemon-reload`/dbfile 不可写；手工 reload 不触发，需 `systemctl restart fail2ban`（§9.7） |
 | Bot 管理页提示缺少密钥 | `BOT_SECRET_KEY` 未写入或不是 base64 32 字节；用 `bootstrap-env.sh --force` 生成/复用后重启（不要手工替换旧 key） |
-| Bot 发布 400/401 | 缺 `totpCode`、TOTP 过期/重放、目标是 user、文本超平台上限、媒体 ≥2 或 >10 MiB、定时超 30 天；见 API §14 |
+| Bot 发布 400/401 | 缺 `totpCode`、TOTP 过期/重放、目标是 user、文本超平台上限、媒体 >5 个/单 >10 MiB/总 >50 MiB、QQ 带媒体、定时超 30 天；见 API §14 |
+| Bot Chat 无回复 | `BOT_AI_ENABLED=false`、目标未 `allow_chat`、群/频道未 @/回复、普通频道消息被忽略、6/min 或 10/h 限流；看 `bot.chat.denied` 与审计 |
+| Discord Gateway 报错/未连接 | 检查 `BOT_DISCORD_GATEWAY_ENABLED`、Developer Portal 的 Message Content Intent、Bot Token、`gateway.discord.gg` 出站/代理；`gateway.lastError` 不含 Token |
 | Bot 投递 dead/不重试 | 平台 Token 失效/权限不足/被限流；修 Token 后 `POST /api/bots/:id/deliveries/:id/retry`；`bot_deliveries.last_error` 有短错误码 |
 | SSH 仅公钥后无法登录 | 24h 回滚窗口内删除 `/etc/ssh/sshd_config.d/00-antifield-hardening.conf` → `sshd -t` → `systemctl reload ssh`；用已建立会话/物理键鼠操作（§9.7） |
 | fail2ban 未封禁/启动失败 | `fail2ban-client -t` 校验配置；`journalctl -u fail2ban -n 50`；确认 nftables 后端与 `sshd` jail 已启用、`bantime=86400`；日志后端（log2ram/journald）可读 |
@@ -810,7 +852,8 @@ Windows PowerShell job 覆盖**全部** `scripts/*.ps1` 的 PS 5.1 解析 + UTF-
 
 ## 14. 磁盘清理与保留策略
 
-> v0.5.1 清理只允许 **孤儿归档 / 保留期到期 / 旧 release / 过期备份** 四类；任何操作先只读确认 + 二次确认，**不删除用户文件**。
+> v0.5.2 清理只允许 **孤儿归档 / 保留期到期 / 旧 release / 过期备份** 四类；任何操作先只读确认 + 二次确认，**不删除用户文件**。
+> `DATA_DIR/bot-memory` 不属于上述四类，仅在确认无对应 Bot 记忆或 `bot_ai_memories` 时按保留期/人工清理，不得借“清理”删除活跃记忆。
 > 不执行 `rm -rf /var/lib/antifieldcloud`、`/home/antifield/minecraft-server`、`/var/lib/opencode` 或 `data/` 下用户内容。
 
 ### 14.1 只读盘点（先做）

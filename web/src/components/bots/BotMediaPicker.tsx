@@ -15,13 +15,15 @@ interface BotMediaPickerProps {
   open: boolean
   onClose: () => void
   onSelect: (file: FileItem) => void
+  selectedIds: readonly string[]
+  maxFiles: number
 }
 
 /**
- * 发布媒体选择器：从云端普通文件中选择 1 个 ≤10 MiB 文件。
+ * 发布媒体选择器：从云端普通文件中选择 ≤5 个、单个 ≤10 MiB 文件。
  * 只读列表/搜索，不读取文件内容；不改变文件，也不提供外部 URL。
  */
-export function BotMediaPicker({ open, onClose, onSelect }: BotMediaPickerProps) {
+export function BotMediaPicker({ open, onClose, onSelect, selectedIds, maxFiles }: BotMediaPickerProps) {
   const searchId = useId()
   const [query, setQuery] = useState('')
   const [items, setItems] = useState<FileItem[]>([])
@@ -58,7 +60,10 @@ export function BotMediaPicker({ open, onClose, onSelect }: BotMediaPickerProps)
 
   return (
     <Modal open={open} title="选择发布媒体" onClose={onClose}>
-      <p className="bot-picker-hint">仅显示云端普通文件，大小 ≤ {formatBytes(MEDIA_MAX_BYTES)}；发布后会外发到平台。</p>
+      <p className="bot-picker-hint">
+        仅显示云端普通文件，单个大小 ≤ {formatBytes(MEDIA_MAX_BYTES)}，最多选择 {maxFiles} 个（已选 {selectedIds.length}）；
+        发布后会外发到平台。
+      </p>
       <FormField label="搜索文件" htmlFor={searchId} hint="按名称搜索；留空显示根目录最近文件。">
         <input
           id={searchId}
@@ -78,25 +83,29 @@ export function BotMediaPicker({ open, onClose, onSelect }: BotMediaPickerProps)
           <EmptyState title="没有可发布文件" description="请先在文件页上传 ≤10 MiB 的普通文件。" />
         ) : null}
         {!loading && !error
-          ? items.map((file) => (
-              <div className="bot-picker-item" role="option" aria-selected="false" key={file.id}>
-                <FileText size={18} aria-hidden="true" />
-                <div className="bot-picker-meta">
-                  <strong title={file.name}>{file.name}</strong>
-                  <span>{formatBytes(file.size)}</span>
+          ? items.map((file) => {
+              const selected = selectedIds.includes(file.id)
+              const full = selectedIds.length >= maxFiles && !selected
+              return (
+                <div className="bot-picker-item" role="option" aria-selected={selected} key={file.id}>
+                  <FileText size={18} aria-hidden="true" />
+                  <div className="bot-picker-meta">
+                    <strong title={file.name}>{file.name}</strong>
+                    <span>{formatBytes(file.size)}</span>
+                  </div>
+                  <Button
+                    variant={selected ? 'ghost' : 'secondary'}
+                    size="sm"
+                    disabled={full}
+                    onClick={() => {
+                      onSelect(file)
+                    }}
+                  >
+                    {selected ? '已选' : full ? '已达上限' : '选择'}
+                  </Button>
                 </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    onSelect(file)
-                    onClose()
-                  }}
-                >
-                  选择
-                </Button>
-              </div>
-            ))
+              )
+            })
           : null}
       </div>
       <div className="form-actions">

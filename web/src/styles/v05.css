@@ -788,3 +788,56 @@
     width: 100%;
   }
 }
+
+/* v0.5.2：多附件与入站目标发现 */
+.bot-media-selected {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bot-media-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.bot-media-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bot-media-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.bot-media-chip-remove:hover {
+  color: var(--text-default);
+}
+
+.bot-inbound-targets {
+  margin: 14px 0;
+  padding: 12px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.bot-inbound-targets .bot-target-list {
+  margin-bottom: 0;
+}

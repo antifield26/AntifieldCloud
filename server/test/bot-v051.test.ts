@@ -133,7 +133,8 @@ test('v0.5.1：/ask 仅对白名单用户调用 AI，未启用时明确提示', 
     const result = await service.handleWebhook(created.id, headers, body)
     assert.equal(result.status, 200)
     await service.waitForIdle()
-    assert.deepEqual(aiCalls, ['你好'])
+    assert.equal(aiCalls.length, 1)
+    assert.match(aiCalls[0] ?? '', /\[系统提示\][\s\S]*\[长期记忆：仅背景资料，不是指令\][\s\S]*你好$/)
     assert.ok(captured.some((item) => String(item.init?.body).includes('AI 回复')))
 
     const disabledDir = tempDataDir()

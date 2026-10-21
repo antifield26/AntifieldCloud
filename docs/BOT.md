@@ -1,20 +1,27 @@
-# Bot 集成（v0.5.1）
+# Bot 集成（v0.5.2）
 
-AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答和手动/定时内容发布接到社交平台。
-v0.5.1 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；OpenCode `/ask` AI 默认关闭。企业微信/钉钉/飞书与多管理员审批仍未实现。
+AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
+v0.5.2 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat。
+企业微信/钉钉/飞书（v0.5.3）与多管理员审批仍未实现。生产仍为 v0.5.1/schema v8，v0.5.2 **待部署/待验收**。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
-> 命令需要目标 + 用户双重白名单；发布必须 TOTP + `PUBLISH` 二次确认；通知/命令输出不包含内部路径或 URL；
-> `/ask` 只对白名单用户开放且默认关闭。Bot 默认关闭（`BOT_ENABLED=false`），Webhook 关闭时返回 404。
+> 斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
+> 通知/命令/Chat 输出不包含内部路径或 URL；记忆不通过 API/UI 暴露；Bot 默认关闭（`BOT_ENABLED=false`），Webhook 关闭时返回 404。
 
 ## 1. 架构
 
 ```text
 平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
                          │ 验签/时间戳/去重 + IP 限流
-                         ├─ 命令 → 用户白名单 → 只读状态 provider / OpenCode AI → 平台回复
-                         ├─ 事件 → bot_events 去重
+                         ├─ 斜杠命令 → 目标 allow_commands + 用户白名单 → 只读 provider / OpenCode AI → 平台回复（可带只读按钮）
+                         ├─ 普通消息 → 目标 allow_chat → AI Chat → 平台回复
+                         ├─ 按钮回调 → 目标 allow_commands + 用户白名单 → 只读刷新/帮助
+                         ├─ 事件 → bot_events 去重 + bot_inbound_targets 记录目标/用户
                          └─ 入站错误 → 401/404/429（不执行业务）
+
+Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
+                         │ HELLO/IDENTIFY/RESUME、心跳、重连、MESSAGE_CREATE
+                         └─ 私聊/@Bot/回复 Bot → BotService.handleGatewayMessage → Chat 授权/限流 → AI
 
 告警/管理 API ──▶ BotService ──▶ bot_deliveries / bot_publish_jobs
                                    │ 每 30s 队列 tick、静默延后、指数退避、死信
@@ -24,11 +31,13 @@ v0.5.1 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Op
 服务端模块：
 
 - `server/src/bot/crypto.ts`：`BOT_SECRET_KEY`（32 字节 base64）加密/解密平台凭据，按 `key_version` 保存。
-- `server/src/bot/adapters/{telegram,discord,slack,qq}.ts`：平台签名、命令解析、文本/媒体发送（QQ 仅文本）。
-- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 `/ask` 会话复用、deny-all 工具与超时/截断。
-- `server/src/bot/service.ts`：CRUD、Webhook、命令、指标、静默时段、通知/发布队列、重试、清理、限流。
+- `server/src/bot/adapters/{telegram,discord,slack,qq}.ts`：平台签名、命令/Chat/按钮解析、文本/多附件发送（QQ 仅文本）。
+- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 `/ask` 与 Chat 的会话复用、deny-all 工具、超时/截断与记忆摘要。
+- `server/src/bot/memory.ts`：每 Bot×用户长期记忆；DB 摘要为权威，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像。
+- `server/src/bot/discord-gateway.ts`：Discord Gateway 长连接、intents、心跳、RESUME/重连与致命关闭码。
+- `server/src/bot/service.ts`：CRUD、Webhook、Chat/命令/按钮分发、记忆、指标、静默时段、通知/发布队列、重试、清理、限流。
 - `server/src/http/routes/bots.ts`：管理 API；`bot-webhook.ts`：公开回调入口。
-- web `/bots`：概览、配置、目标、投递与发布四个分区；投递与发布分区含近 24 小时指标卡。
+- web `/bots`：概览、配置、目标、投递与发布四个分区；目标含 `allowChat`/最近入站目标，投递与发布含多选媒体与近 24 小时指标卡，Discord 显示 Gateway 状态。
 
 ## 2. 平台接入
 
@@ -38,19 +47,28 @@ v0.5.1 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Op
    `https://app.example.com/api/bot/webhook/<botId>`，并设置随机 `secret_token`（≥16 字符）。
 2. 在 `/bots` 填写 Token 与 `Webhook Secret`；平台消息需在允许的私聊/群组/频道中。
 3. 命令：`/help`、`/status`、`/backup`、`/world`、`/mc`、`/files [关键词]`、`/ask <问题>`。
+4. Chat：私聊普通消息直接进入；群/频道需 @Bot 或回复 Bot（需关闭 BotFather privacy mode，或让用户回复 Bot 消息）。
+5. 按钮：`/status`、`/help` 回复带“刷新状态/帮助”inline keyboard；回调走 `callback_query`，仍需命令目标 + 用户白名单。
 
 ### Discord
 
 1. Developer Portal 创建 Application/Bot，取得 Bot Token、Application ID、Public Key。
 2. Interactions Endpoint URL 填 `https://app.example.com/api/bot/webhook/<botId>`；Discord 会以 Ed25519 签名验证。
-3. `/bots` 填写 Application ID、Public Key、Token；命令通过斜杠命令注册（`/status` 等）。
-4. 首次命令使用 deferred response（type 5），随后通过 interaction follow-up webhook 回复。
+3. `/bots` 填写 Application ID、Public Key、Token；斜杠命令通过平台注册（`/status` 等）。
+4. 首次命令使用 deferred response（type 5），按钮使用 deferred update（type 6），随后通过 interaction follow-up webhook 回复。
+5. **普通消息 Chat**：在 Developer Portal 开启 **Message Content Intent**，并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；
+   Gateway 使用 Node 内置 WebSocket 连接 `wss://gateway.discord.gg/?v=10&encoding=json`，`intents=37377`
+   （GUILDS + GUILD_MESSAGES + DIRECT_MESSAGES + MESSAGE_CONTENT）。私聊、@Bot、回复 Bot 的消息进入 Chat；
+   普通频道消息不消费；忽略 bot/webhook 消息。未开启 intent 时 Discord 会以 close 4014 拒绝。
+6. Gateway 状态显示在 `/bots` 概览与配置分区：`未启用/连接中/已连接/重连中/错误`；错误含脱敏关闭原因（如 Token 无效、intent 未开启）。
 
 ### Slack
 
 1. Slack App 启用 Event Subscriptions / Slash Commands，Request URL 指向同一 Webhook；填写 Signing Secret。
-2. 订阅 `message.channels`、`message.im`、`app_mention` 等事件（按需）；斜杠命令响应 URL 必须为 `hooks.slack.com`。
+2. 订阅 `message.channels`、`message.im`、`app_mention` 等事件（按需）；Slash Command 响应 URL 必须为 `hooks.slack.com`。
 3. `/bots` 填写 Bot Token 与 Signing Secret；`chat.postMessage` 发文本，媒体走 `files.getUploadURLExternal` 流程。
+4. Chat：DM 普通消息直接进入；频道通过 `app_mention` 或消息内显式 `<@BOTID>` 进入；其它频道消息忽略。
+5. Slack 本轮不返回按钮；发布媒体逐文件上传后一次完成。
 
 ### QQ 官方 Bot
 
@@ -59,29 +77,41 @@ v0.5.1 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Op
 3. 事件订阅按场景勾选 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）。
 4. 目标登记：C2C 填 `user_openid`，群聊填 `group_openid`，频道填 `channel_id`；命令用户另建 `kind=user` 且允许命令的目标。
 5. 仅文本：单条 ≤2000 字符；被动回复带入站 `msg_id`，主动通知/发布不带 `msg_id`；**不支持媒体**（发布带媒体返回 400）。
-6. QQ 真实回调需用户后台配置；未配置前只能做进程内契约测试。
+6. Chat：C2C 普通文本直接进入；群/频道需 @Bot（平台事件本身即 @ 消息）。可先 @Bot 发一条消息，再从 `/bots` 目标的“最近入站目标”登记。
+7. QQ 真实回调需用户后台配置；未配置前只能做进程内契约测试。
 
 ## 3. 权限模型
 
 - **命令目标**：`bot_targets` 中 `allow_commands=1` 的频道/群组/私聊。
 - **用户白名单**：发送者必须是 `kind='user'` 且 `allow_commands=1` 的目标；频道里的普通成员即使目标开启命令也无法执行。
+- **Chat 目标**：`allow_chat=1` 的目标内普通消息可进入 AI Chat；与 `allow_commands` 独立，不授予斜杠命令权限。
+  非管理员只能 Chat；群/频道需 @Bot 或回复 Bot，私聊全部；Chat 不执行写操作。
 - 只有管理员能在 `/bots` 添加目标/开启权限；Bot 命令本身不提供 RCON、启停、封禁、OP 或任意 shell。
+- **按钮**：Telegram inline keyboard / Discord message components 的“刷新状态/帮助”动作沿用命令授权
+  （目标 `allow_commands=1` + user 白名单），只调用只读 provider，无写操作；Slack/QQ 不做按钮。
 - **发布**：仅管理员手动/定时创建；必须提供 6 位 TOTP（`totpCode`）与 `confirmText: "PUBLISH"`，不能仅靠会话 + CSRF 外发文件。
-- 发布媒体仅限活动、`origin='user'`、≤10 MiB 的单个文件；不含外部 URL 抓取；QQ 平台无媒体。
-- **AI `/ask`**：需 `BOT_AI_ENABLED=true`；仅命令白名单用户；提示词 ≤`BOT_AI_MAX_PROMPT_CHARS`；按 `botId:userId` 每小时限流；新建 OpenCode 会话使用 deny-all 工具权限；若 OpenCode 明确 400 拒绝 `permissions`，降级为默认权限并在日志标注“未隔离”。
+- 发布媒体仅限活动、`origin='user'` 的普通文件：最多 5 个、单文件 ≤10 MiB、总计 ≤50 MiB；不含外部 URL 抓取；QQ 平台无媒体。
+- **AI `/ask` / Chat**：需 `BOT_AI_ENABLED=true`；`/ask` 仅命令白名单用户；Chat 仅 `allow_chat` 目标；提示词 ≤`BOT_AI_MAX_PROMPT_CHARS`；
+  Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6），Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）；
+  新建 OpenCode 会话使用 deny-all 工具权限；若 OpenCode 明确 400 拒绝 `permissions`，降级为默认权限并在日志标注“未隔离”。
+- **长期记忆**：每 Bot×用户一份摘要；DB 为权威，镜像到 `DATA_DIR/bot-memory`；不通过 API/UI 暴露；系统提示内置，
+  `BOT_AI_SYSTEM_PROMPT` 覆盖；摘要失败保留旧摘要；摘要不额外占对话轮次或每小时 AI 配额。
 
 ## 4. 队列与失败处理
 
 - 通知/命令回复/发布统一入队，`dedupe_key` 保证同一事件/目标只投递一次。
 - 静默时段：目标设置 `quiet_start_minute`/`quiet_end_minute`（Asia/Shanghai 本地分钟 0–1439，成对设置、不能相同）后，窗口内新通知的 `next_attempt_at` 延后到窗口结束；跨午夜按 start > end 处理；通知不丢弃。
 - 30 秒 tick，指数退避（30s 起，≤1h），达到 `BOT_DELIVERY_MAX_ATTEMPTS`（默认 5）进入 `failed/dead`。
+- 多附件部分成功后失败不自动重试：任务标记 `failed`，`last_error` 含 `partial_media_sent` 与已发送数量，需人工确认后重建，避免重复外发。
 - 进程重启后，`sending` 超过 10 分钟的记录自动回队；`assembling` 等异常由各模块维护清理。
-- 事件保留 `BOT_EVENT_RETENTION_DAYS`（默认 7 天）；AI 会话映射按 `BOT_AI_SESSION_RETENTION_DAYS`（默认 7 天）清理；已发送投递/发布 30 天后清理；`failed/dead` 保留供人工重投，不自动删除。
+- 事件保留 `BOT_EVENT_RETENTION_DAYS`（默认 7 天）；AI 会话映射按 `BOT_AI_SESSION_RETENTION_DAYS`（默认 7 天）清理；
+  记忆摘要按同一保留期清理（DB 行 + 镜像文件）；入站目标记录按事件保留期清理、每 Bot 最多 500 条；
+  已发送投递/发布 30 天后清理；`failed/dead` 保留供人工重投，不自动删除。
 - 指标：`GET /api/bots/:id/metrics?hours=24`（1–720 小时）返回投递/发布/事件统计、成功率、最近错误与最近发送；`/bots` 页面展示近 24 小时卡。
 
 ## 5. 配置
 
-见 `deploy/env.example` 的 `BOT_*` 段与 `docs/DEPLOY.md` §3.1：
+见 `deploy/env.example` 的 `BOT_*` 段与 `docs/DEPLOY.md` §2/§3.1：
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
@@ -90,25 +120,33 @@ v0.5.1 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Op
 | `BOT_WEBHOOK_MAX_BODY_BYTES` | `262144` | Webhook body 上限 |
 | `BOT_DELIVERY_INTERVAL_SECONDS` | `30` | 队列轮询间隔 |
 | `BOT_DELIVERY_MAX_ATTEMPTS` | `5` | 最大尝试次数 |
-| `BOT_EVENT_RETENTION_DAYS` | `7` | 入站事件保留 |
+| `BOT_EVENT_RETENTION_DAYS` | `7` | 入站事件/入站目标保留 |
 | `BOT_COMMAND_RATE_PER_MINUTE` | `20` | 每用户命令限流 |
-| `BOT_PUBLISH_MAX_MEDIA_BYTES` | `10485760` | 发布媒体上限 |
+| `BOT_PUBLISH_MAX_MEDIA_BYTES` | `10485760` | 单个发布媒体上限 |
+| `BOT_PUBLISH_MAX_MEDIA_FILES` | `5` | 单次发布媒体数量上限（1–10） |
+| `BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES` | `52428800` | 单次发布媒体总大小上限 |
 | `BOT_PUBLISH_MAX_SCHEDULED_DAYS` | `30` | 定时发布最远天数 |
 | `BOT_MAX_BOTS` | `10` | Bot 数量上限 |
-| `BOT_AI_ENABLED` | `false` | `/ask` 总开关；默认关闭 |
+| `BOT_AI_ENABLED` | `false` | `/ask` 与 Chat 的 AI 总开关；默认关闭 |
 | `BOT_AI_PROVIDER` | 空 | 可选 OpenCode provider；与 `BOT_AI_MODEL` 同时设置才指定模型 |
 | `BOT_AI_MODEL` | 空 | 可选模型 ID；为空使用 OpenCode 默认模型 |
 | `BOT_AI_TIMEOUT_SECONDS` | `60` | AI 超时（10–180 秒） |
 | `BOT_AI_MAX_PROMPT_CHARS` | `2000` | 提示词截断（100–8000） |
-| `BOT_AI_RATE_PER_HOUR` | `10` | 每 Bot×用户每小时 AI 调用上限（1–120） |
-| `BOT_AI_SESSION_RETENTION_DAYS` | `7` | AI 会话映射保留天数（1–90） |
+| `BOT_AI_RATE_PER_HOUR` | `10` | 每 Bot×用户每小时 AI 调用上限（1–120；Chat 与 `/ask` 共用） |
+| `BOT_AI_SESSION_RETENTION_DAYS` | `7` | AI 会话/记忆映射保留天数（1–90） |
+| `BOT_CHAT_RATE_PER_MINUTE` | `6` | Chat 每 Bot×用户每分钟上限（1–60） |
+| `BOT_AI_MEMORY_MAX_CHARS` | `4096` | 长期记忆摘要上限（512–16384） |
+| `BOT_AI_SYSTEM_PROMPT` | 空 | 覆盖内置系统提示；空则用内置文本，最长 2000 |
+| `BOT_DISCORD_GATEWAY_ENABLED` | `false` | Discord Gateway 长连接开关；需先开启 Message Content Intent |
 
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 Token/AppSecret 无法解密；必须重新录入所有 Bot 凭据。不要把它写入仓库/前端/日志。
-`bootstrap-env.sh` 已纳管 7 项 `BOT_AI_*`；`--force` 不会重置已有非空值。
+`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*` 与 v0.5.2 的 6 项新键；`--force` 不会重置已有非空值。
 
 ## 6. 网络出站（Discord/Telegram/QQ/OpenCode）
 
-Pi 所在网络可能无法直连 `discord.com` / `api.telegram.org` / `bots.qq.com` / `api.sgroup.qq.com`（Slack 通常可达）。应用使用 Node 全局 `fetch`，支持 Node 26 的环境代理：
+Pi 所在网络可能无法直连 `discord.com` / `api.telegram.org` / `bots.qq.com` / `api.sgroup.qq.com`（Slack 通常可达）。
+应用使用 Node 全局 `fetch`，支持 Node 26 的环境代理；Discord Gateway 是到 `gateway.discord.gg` 的出站 WSS 长连接，
+同样需要网络/代理可达。Telegram/Discord/QQ 的回复、通知和发布同样走固定平台 API。
 
 ```bash
 # /etc/antifieldcloud/env（可选；代理必须从 Pi 可达）
@@ -127,13 +165,30 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 ```
 
 没有可用出站代理时，Discord/Telegram/QQ 的回复、通知和发布都会失败（Webhook 入站仍可到达）；Slack 不受影响。
-`/ask` 只访问 `OPENCODE_URL`（默认 `http://127.0.0.1:4096`），不走外部代理；不要修改固定上游。不要把代理凭据写入仓库；本机部署信息放在 gitignored 的 `.local/DEPLOYMENT.md`。
+Discord Gateway 启用后若无法连接，`BotSummary.gateway.state` 会显示 `error` 并在配置页展示脱敏原因（Token/intent/网络）。
+`/ask` 与 Chat 只访问 `OPENCODE_URL`（默认 `http://127.0.0.1:4096`），不走外部代理；不要修改固定上游。不要把代理凭据写入仓库；本机部署信息放在 gitignored 的 `.local/DEPLOYMENT.md`。
 
-## 7. 测试与验收边界
+## 7. 记忆存储与运维
 
-- 适配器/验签/队列/命令白名单/发布 TOTP+PUBLISH/AI 均有进程内测试（不访问真实平台/模型）。
-- v0.5.1 新增：`bot-qq.test.ts`（8）、`bot-ai.test.ts`（9）、`bot-v051.test.ts`（3，含静默/指标/QQ/`/ask`）；`bot-migration.test.ts` 覆盖 v6→v8（含 `qq` CHECK、静默列与 `bot_ai_sessions`）。
-- Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；QQ 使用固定 AppSecret 派生密钥对；AI 使用假 OpenCode HTTP 服务。
-- 真实平台：Discord 联调已于 2026-10-21 通过（Interactions Endpoint、6 个斜杠命令、`/status`、测试通知）；Telegram/Slack 仍为 mock 契约；QQ 真实回调待用户后台配置；AI 真实模型待部署后验证。
-- 手工验收：创建 Bot → 测试连接 → 添加目标（可设静默）→ 允许命令 + 用户白名单 → 发 `/status`/`/ask` → 创建发布任务并输入 TOTP + `PUBLISH` → 平台收到消息。
+- DB `bot_ai_memories`：`(bot_id, user_id)` 主键、`memory_id` 唯一、`summary`、`summary_session_id`、时间戳；DB 是权威来源。
+- 镜像：`DATA_DIR/bot-memory/memory-<uuid>.md`；目录 0700、文件 0600；临时文件 + 原子 rename；读取上限 32 KiB。
+- 每轮 Chat/`/ask` 后滚动摘要；摘要失败只记日志、保留旧摘要，不影响本轮 AI 回复。
+- 记忆正文不经过任何 HTTP API/前端；`/bots` 不展示摘要；Web 静态目录不包含该目录。
+- 删除 Bot 时 `bot_ai_memories`/`bot_inbound_targets` 随 DB 级联删除；`DATA_DIR/bot-memory` 镜像文件不由删除路径自动清理，
+  需按保留期/人工清理（部署与安全评审需知悉）。
+- 备份：DB 快照包含权威摘要；镜像目录不是恢复必需项，缺失时可在下次读取时重建。
+
+## 8. 测试与验收边界
+
+- 适配器/验签/队列/命令白名单/发布 TOTP+`PUBLISH`/AI/Chat/记忆/多附件/按钮/Gateway 均有进程内测试（不访问真实平台/模型）。
+- v0.5.2 新增：`bot-chat-adapters.test.ts`（12）、`bot-discord-gateway.test.ts`（10）、`bot-v052.test.ts`（5）；
+  `bot-migration.test.ts` 覆盖 v6→v9（`allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）。
+- Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；QQ 使用固定 AppSecret 派生密钥对；AI 使用假 OpenCode HTTP 服务；
+  Discord Gateway 使用假 WebSocket（HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码）。
+- 本地基线：`npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过（2026-10-21）。
+- 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 尚未部署，
+  Discord Gateway 真实长连接、各平台 Chat/多附件/按钮/记忆真实模型均待联调。
+- 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→
+  私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发布 1/5 个媒体（含 partial 失败场景）→
+  多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→ Discord 开启 intent 后确认 Gateway `connected`。
 - 发布前请确认 Cloudflare Access 对 `/api/bot/webhook/*` 做 bypass，见 `docs/DEPLOY.md` §5.2。

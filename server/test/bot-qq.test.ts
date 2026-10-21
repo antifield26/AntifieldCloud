@@ -77,6 +77,7 @@ function targetRow(kind: 'channel' | 'user' | 'group', externalId: string): BotT
     kind,
     allow_commands: 1,
     allow_notifications: 1,
+    allow_chat: 1,
     quiet_start_minute: null,
     quiet_end_minute: null,
     created_at: '2026-01-01T00:00:00.000Z',
@@ -161,6 +162,7 @@ test('QQ：C2C/群事件签名解析出命令、字段与确认体', async () =>
   if (c2c.kind !== 'command') throw new Error('expected command')
   assert.equal(c2c.eventId, 'c2c-msg-1')
   assert.equal(c2c.targetExternalId, 'user-openid-1')
+  assert.equal(c2c.targetKind, 'user')
   assert.equal(c2c.userId, 'user-openid-1')
   assert.equal(c2c.text, '/status')
   assert.equal(c2c.isDirect, true)
@@ -188,6 +190,7 @@ test('QQ：C2C/群事件签名解析出命令、字段与确认体', async () =>
   if (group.kind !== 'command') throw new Error('expected command')
   assert.equal(group.eventId, 'group-msg-1')
   assert.equal(group.targetExternalId, 'group-openid-1')
+  assert.equal(group.targetKind, 'group')
   assert.equal(group.userId, 'member-openid-1')
   assert.equal(group.text, '/files 报告')
   assert.equal(group.isDirect, false)
@@ -218,12 +221,13 @@ test('QQ：C2C/群事件签名解析出命令、字段与确认体', async () =>
   if (channel.kind !== 'command') throw new Error('expected command')
   assert.equal(channel.eventId, 'channel-msg-1')
   assert.equal(channel.targetExternalId, 'channel-openid-1')
+  assert.equal(channel.targetKind, 'channel')
   assert.equal(channel.userId, 'guild-user-1')
   assert.equal(channel.userName, '测试用户')
   assert.equal(channel.isDirect, false)
   assert.deepEqual(channel.ackBody, { opcode: 12 })
 
-  // 非命令消息返回 ignored，但仍需 ack 避免平台重推。
+  // 非斜杠文本在 C2C 中进入 chat(direct)，仍需返回 opcode 12 确认。
   const plainBody = Buffer.from(
     JSON.stringify({
       op: 0,
@@ -231,14 +235,20 @@ test('QQ：C2C/群事件签名解析出命令、字段与确认体', async () =>
       d: { id: 'c2c-msg-2', content: ' 你好 ', author: { user_openid: 'user-openid-1' } },
     }),
   )
-  const ignored = await adapter.verifyInbound({
+  const chat = await adapter.verifyInbound({
     botId: 'bot-1',
     headers: signHeaders(privateKey, timestamp, plainBody),
     body: plainBody,
   })
-  assert.equal(ignored.kind, 'ignored')
-  if (ignored.kind !== 'ignored') throw new Error('expected ignored')
-  assert.deepEqual(ignored.ackBody, { opcode: 12 })
+  assert.equal(chat.kind, 'chat')
+  if (chat.kind !== 'chat') throw new Error('expected chat')
+  assert.equal(chat.eventId, 'c2c-msg-2')
+  assert.equal(chat.targetExternalId, 'user-openid-1')
+  assert.equal(chat.targetKind, 'user')
+  assert.equal(chat.text, '你好')
+  assert.equal(chat.isDirect, true)
+  assert.equal(chat.chatTrigger, 'direct')
+  assert.deepEqual(chat.ackBody, { opcode: 12 })
 
   // 缺少 d.id 时使用稳定回退事件 ID。
   const fallbackBody = Buffer.from(
@@ -466,6 +476,97 @@ test('QQ：access_token 提前 60 秒过期并重新换取', async () => {
   assert.equal((last.init?.headers as Record<string, string>).authorization, 'QQBot qq-token-2')
 })
 
+test('QQ：群/频道非命令文本进入 chat(mention)，剥离 mention 前缀并确认', async () => {
+  const appSecret = 'qq-chat-app-secret-fixed-0009'
+  const now = new Date('2026-10-21T08:00:00.000Z')
+  const timestamp = String(Math.floor(now.getTime() / 1000))
+  const { privateKey } = deriveKeyPair(appSecret)
+  const { fetchImpl, captured } = makeFetch((url) => {
+    if (url === TOKEN_URL) return jsonResponse({ access_token: 'qq-chat-token', expires_in: 7200 })
+    if (url.includes('/v2/groups/')) return jsonResponse({ id: 'group-chat-out-1' })
+    if (url.includes('/channels/')) return jsonResponse({ message_id: 'channel-chat-out-1' })
+    return jsonResponse({ message: 'unexpected url' }, 500)
+  })
+  const adapter = new QqAdapter({ appId: '102345009' }, { token: appSecret }, { fetch: fetchImpl, now: () => now })
+
+  const groupBody = Buffer.from(
+    JSON.stringify({
+      op: 0,
+      t: 'GROUP_AT_MESSAGE_CREATE',
+      d: {
+        id: 'group-chat-msg-1',
+        content: '<@!102345009> 你好',
+        group_openid: 'group-openid-9',
+        author: { member_openid: 'member-openid-9' },
+      },
+    }),
+  )
+  const group = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: signHeaders(privateKey, timestamp, groupBody),
+    body: groupBody,
+  })
+  assert.equal(group.kind, 'chat')
+  if (group.kind !== 'chat') throw new Error('expected chat')
+  assert.equal(group.targetExternalId, 'group-openid-9')
+  assert.equal(group.targetKind, 'group')
+  assert.equal(group.text, '你好')
+  assert.equal(group.isDirect, false)
+  assert.equal(group.chatTrigger, 'mention')
+  assert.deepEqual(group.ackBody, { opcode: 12 })
+  await group.reply('收到')
+  const groupReply = captured.find((item) => item.url.includes('/v2/groups/'))
+  assert.ok(groupReply)
+  const groupPayload = JSON.parse(String(groupReply.init?.body)) as Record<string, unknown>
+  assert.equal(groupPayload.content, '收到')
+  assert.equal(groupPayload.msg_id, 'group-chat-msg-1')
+
+  const channelBody = Buffer.from(
+    JSON.stringify({
+      op: 0,
+      t: 'AT_MESSAGE_CREATE',
+      d: {
+        id: 'channel-chat-msg-1',
+        content: '@测试机器人 状态',
+        channel_id: 'channel-openid-9',
+        author: { id: 'guild-user-9', username: '测试用户' },
+      },
+    }),
+  )
+  const channel = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: signHeaders(privateKey, timestamp, channelBody),
+    body: channelBody,
+  })
+  assert.equal(channel.kind, 'chat')
+  if (channel.kind !== 'chat') throw new Error('expected chat')
+  assert.equal(channel.targetKind, 'channel')
+  assert.equal(channel.text, '状态')
+  assert.equal(channel.chatTrigger, 'mention')
+  assert.equal(channel.userName, '测试用户')
+
+  const emptyBody = Buffer.from(
+    JSON.stringify({
+      op: 0,
+      t: 'GROUP_AT_MESSAGE_CREATE',
+      d: {
+        id: 'group-chat-msg-2',
+        content: '<@!102345009>',
+        group_openid: 'group-openid-9',
+        author: { member_openid: 'member-openid-9' },
+      },
+    }),
+  )
+  const empty = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: signHeaders(privateKey, timestamp, emptyBody),
+    body: emptyBody,
+  })
+  assert.equal(empty.kind, 'ignored')
+  if (empty.kind !== 'ignored') throw new Error('expected ignored')
+  assert.deepEqual(empty.ackBody, { opcode: 12 })
+})
+
 test('QQ：validate 与 setup 输出平台配置要求', () => {
   const adapter = new QqAdapter({}, { token: '' })
   const invalid = adapter.validate({ appId: 'abc' }, { token: '' })
@@ -494,7 +595,7 @@ test('QQ：仅支持文本，媒体内容明确拒绝', async () => {
     () =>
       adapter.send(targetRow('group', 'group-openid-8'), {
         text: '带附件',
-        media: { filename: 'a.txt', mime: 'text/plain', data: Buffer.from('x') },
+        media: [{ filename: 'a.txt', mime: 'text/plain', data: Buffer.from('x') }],
       }),
     (error: unknown) => error instanceof BotPlatformError && error.code === 'qq_media_unsupported',
   )

@@ -831,6 +831,11 @@ export interface MetricsResult {
 
 export type BotPlatform = 'telegram' | 'discord' | 'slack' | 'qq'
 export type BotTargetKind = 'channel' | 'user' | 'group'
+export type BotGatewayState = 'disabled' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+export interface BotGatewayStatus {
+  state: BotGatewayState
+  lastError: string | null
+}
 export type BotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'test'
 export type BotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
 export type BotPublishStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled'
@@ -863,6 +868,17 @@ export interface BotSummary {
   createdAt: string
   updatedAt: string
   keyVersion: number
+  gateway: BotGatewayStatus
+}
+
+export interface BotInboundTarget {
+  botId: string
+  targetExternalId: string
+  targetKind: BotTargetKind
+  userId: string
+  userName: string | null
+  isDirect: boolean
+  lastSeenAt: string
 }
 
 export interface BotTarget {
@@ -873,6 +889,8 @@ export interface BotTarget {
   kind: BotTargetKind
   allowCommands: boolean
   allowNotifications: boolean
+  /** 是否允许该目标内成员普通消息 Chat；不授予斜杠命令权限。 */
+  allowChat: boolean
   /** 静默时段（本地分钟 0-1439，Asia/Shanghai）；两者同时为空表示不静默。 */
   quietStartMinute: number | null
   quietEndMinute: number | null
@@ -935,13 +953,14 @@ export interface BotTargetInput {
   kind: BotTargetKind
   allowCommands: boolean
   allowNotifications: boolean
+  allowChat?: boolean
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
 
 export type BotTargetPatch = Partial<Omit<BotTargetInput, 'externalId'>>
 
-/** 发布任务：v0.5.0 单次最多 1 个媒体文件；发布属数据外发，必须 TOTP 再认证。 */
+/** 发布任务：v0.5.2 单次最多 5 个媒体文件；发布属数据外发，必须 TOTP 再认证。 */
 export interface BotPublishInput {
   targetId: string
   text: string

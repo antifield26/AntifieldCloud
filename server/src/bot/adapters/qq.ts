@@ -1,5 +1,5 @@
 /**
- * QQ 官方 Bot 适配器：Webhook Ed25519 验签、op=13 回调地址校验、文本消息发送与被动回复。
+ * QQ 官方 Bot 适配器：Webhook Ed25519 验签、op=13 回调地址校验、命令/普通消息解析、文本发送与被动回复。
  * 安全边界：AppSecret 只用于本地派生 Ed25519 私钥与换取 access_token，不进入 URL、日志或错误信息；
  * 仅支持文本，发送与回复统一截断到 QQ 的 2000 字符上限。
  */
@@ -78,6 +78,14 @@ function signatureHeader(
     return typeof value === 'string' ? value : null
   }
   return null
+}
+
+/** 去掉群/频道消息开头的 <@!id> 或 @昵称 mention 前缀，保留正文。 */
+function stripMentionPrefix(text: string): string {
+  let value = text.trim()
+  value = value.replace(/^(?:<@!?[^>\s]+>\s*)+/u, '')
+  value = value.replace(/^@[^\s]+\s+/u, '')
+  return value.trim()
 }
 
 function messageUrl(target: QqTarget): string {
@@ -241,35 +249,57 @@ export class QqAdapter implements BotAdapter {
       return { kind: 'rejected', status: 400, code: 'missing_fields' }
     }
 
-    const content = typeof d.content === 'string' ? d.content.trim() : ''
-    // 非命令消息也必须确认，避免 QQ 反复重推同一事件。
-    if (!content.startsWith('/')) return { kind: 'ignored', ackBody: QQ_ACK_BODY }
+    const rawContent = typeof d.content === 'string' ? d.content.trim() : ''
+    // C2C 不包含平台 mention 前缀；群/频道先剥离开头的 @Bot 再判断命令或 Chat。
+    const content = isDirect ? rawContent : stripMentionPrefix(rawContent)
+    // 空消息也必须确认，避免 QQ 反复重推同一事件。
+    if (!content) return { kind: 'ignored', ackBody: QQ_ACK_BODY }
 
     const messageId = textValue(d.id)
     const eventTs = textValue(d.timestamp) || String(Math.floor(this.now().getTime() / 1000))
+    const eventId = messageId || `qq:${targetExternalId}:${eventTs}`
     const replyTarget: QqTarget = { external_id: targetExternalId, kind }
+    const userName =
+      author && typeof author.username === 'string'
+        ? author.username
+        : author && typeof author.nickname === 'string'
+          ? author.nickname
+          : null
+    // QQ 不支持交互按钮；reply 的第二个参数由上层传入，这里只发送文本。
+    const reply = async (replyText: string): Promise<void> => {
+      await this.sendMessage(replyTarget, replyText, messageId || null)
+    }
+    if (!content.startsWith('/')) {
+      return {
+        kind: 'chat',
+        eventId,
+        targetExternalId,
+        targetKind: kind,
+        userId,
+        userName,
+        text: content,
+        isDirect,
+        chatTrigger: isDirect ? 'direct' : 'mention',
+        ackBody: QQ_ACK_BODY,
+        reply,
+      }
+    }
     return {
       kind: 'command',
-      eventId: messageId || `qq:${targetExternalId}:${eventTs}`,
+      eventId,
       targetExternalId,
+      targetKind: kind,
       userId,
-      userName:
-        author && typeof author.username === 'string'
-          ? author.username
-          : author && typeof author.nickname === 'string'
-            ? author.nickname
-            : null,
+      userName,
       text: content,
       isDirect,
       ackBody: QQ_ACK_BODY,
-      reply: async (replyText: string) => {
-        await this.sendMessage(replyTarget, replyText, messageId || null)
-      },
+      reply,
     }
   }
 
   async send(target: BotTargetRow, content: OutboundContent): Promise<SendResult> {
-    if (content.media) throw new BotPlatformError(400, 'qq_media_unsupported')
+    if ((content.media ?? []).length > 0) throw new BotPlatformError(400, 'qq_media_unsupported')
     return this.sendMessage({ external_id: target.external_id, kind: target.kind }, content.text)
   }
 

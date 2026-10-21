@@ -2,16 +2,16 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.1（已部署生产，release `20261021T091001Z`/schema v8；QQ 官方 Bot + OpenCode `/ask` AI、Bot 24h 指标卡/静默时段/发布 `PUBLISH` 双确认、fail2ban 封禁持久化）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.2 代码已完成（schema v9；Bot Chat/长期记忆/多附件/只读按钮/Discord Gateway），生产仍运行 v0.5.1/schema v8，**v0.5.2 待部署/待验收**。v0.5.1 已部署生产（release `20261021T091001Z`）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
 - 服务端：Node.js >= 26（原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论为**暂不升级、保留双 alias**
-- Bot：Telegram Bot API、Discord Interactions（Ed25519）、Slack Events API/Slash Command（HMAC）、QQ 官方 Bot（op=13 Ed25519 回调校验 + op=0 事件回调）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用平台 API；OpenCode `/ask` 默认关闭、仅命令白名单用户可用
+- Bot：Telegram Bot API、Discord Interactions（Ed25519）+ Gateway 长连接、Slack Events API/Slash Command（HMAC）、QQ 官方 Bot（op=13 Ed25519 回调校验 + op=0 事件回调）；普通消息 Chat 与 `/ask` 共用本地 OpenCode AI，长期记忆落 DB + `DATA_DIR/bot-memory` 镜像；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用平台 API
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 249 + 运维脚本 16 = 265）+ Vitest/jsdom（前端 139），ESLint，`tsc --noEmit`，覆盖率门禁
+- 测试：`node --test`（服务端 277 + 运维脚本 16 = 293）+ Vitest/jsdom（前端 140），ESLint，`tsc --noEmit`，覆盖率门禁
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -53,14 +53,19 @@
 - HTTP 与 WebSocket 均校验 `Origin`（仅 app/ai 正式 origin；WS 必须带合法 Origin），拒绝时 403 + 审计。
 - `OPENCODE_HTML_MODE=shim|attributes|passthrough` 兼容 Rocket Loader/自动注入差异，不添加可见 UI。
 
-### 机器人（v0.5.1）
+### 机器人（v0.5.2）
 
 - Telegram、Discord、Slack、QQ 官方 Bot 四个适配器：Telegram 用 `X-Telegram-Bot-Api-Secret-Token`，Discord 用 Ed25519 + 时间戳，Slack 用 HMAC-SHA256 + 时间戳，QQ 用 AppSecret 派生 Ed25519（op=13 回调地址校验、op=0 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。QQ 仅支持文本（C2C/群@/频道，单条 ≤2000 字符），不支持媒体。
-- 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布四个分区；Token/Webhook Secret/Signing Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
+- **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话（Telegram/Slack/QQ Webhook 与 Discord Gateway）；群/频道仅 @Bot 或回复 Bot，私聊直接进入；非管理员只能 Chat，管理员斜杠命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读，不执行写操作。每 Bot×用户每分钟默认 6 次，并与 `/ask` 共用每小时 10 次 AI 配额。
+- **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮对话后滚动摘要，失败保留旧摘要；记忆不通过 API/UI 暴露。系统提示内置，`BOT_AI_SYSTEM_PROMPT` 可覆盖；摘要不额外占用对话轮次或 AI 每小时配额。
+- **多附件**：单次最多 5 个、单文件 ≤10 MiB、总 ≤50 MiB；Telegram 全图片走 media group、混合类型逐文件，Discord 单次 multipart，Slack 逐文件上传后一次完成；QQ 仅文本。部分成功不自动重试（标记 `failed`/`partial_media_sent`，需人工重建）。
+- **只读按钮**：Telegram inline keyboard 与 Discord message components 支持 `/status`、`/help` 的“刷新状态/帮助”按钮；按钮动作需目标 `allow_commands` + user 白名单，只调用只读 provider，无写操作；Slack/QQ 本轮不做按钮。
+- **Discord Gateway**：`server/src/bot/discord-gateway.ts` 使用 Node 内置 WebSocket 建立长连接，`intents=37377`（含 `MESSAGE_CONTENT`）；需在 Developer Portal 开启 Message Content Intent；支持 HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避重连与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭，`BotSummary.gateway` 展示连接状态。
+- 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布四个分区；目标支持 `allowChat` 与“最近入站目标”登记；发布表单多选媒体；Token/Webhook Secret/Signing Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
 - 只读命令 `/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`，以及 AI 命令 `/ask <问题>`：必须同时命中目标的 `allow_commands` 与显式 user 白名单（`kind='user'` 且 `allow_commands=1`）；`/ask` 仅在 `BOT_AI_ENABLED=true` 时可用，按用户每小时限流（默认 10 次），复用 OpenCode 会话，新建会话使用 deny-all 工具权限；不返回文件内容或密钥。
 - 告警通知：告警事件写入后按目标 `allow_notifications` 入队，按告警事件去重；目标可配置 `quietStartMinute`/`quietEndMinute`（Asia/Shanghai 本地分钟，0–1439），静默窗口内的通知延后到结束时刻；通知文本清洗内部路径/URL 后外发。
-- 发布：文本 + 最多 1 个云端普通文件媒体（默认 ≤10 MiB），目标必须是频道/群组；每次发布要求管理员 TOTP 再认证（`totpCode`）且请求体必须带 `confirmText: 'PUBLISH'`，缺失返回 `publish_confirm_required`；可定时（≤30 天）、取消 queued/draft、失败指数退避重试与手动重投；QQ 仅文本、拒绝媒体。
-- 运维：`GET /api/bots/:id/metrics?hours=24` 返回投递/发布/事件统计与最近错误；`/bots` 投递与发布分区展示近 24 小时指标卡。
+- 发布：文本 + 最多 5 个云端普通文件媒体（单文件 ≤10 MiB、总 ≤50 MiB），目标必须是频道/群组；每次发布要求管理员 TOTP 再认证（`totpCode`）且请求体必须带 `confirmText: 'PUBLISH'`，缺失返回 `publish_confirm_required`；可定时（≤30 天）、取消 queued/draft、失败指数退避重试与手动重投；QQ 仅文本、拒绝媒体。
+- 运维：`GET /api/bots/status`、`GET /api/bots/:id/metrics?hours=24`、`GET /api/bots/:id/inbound-targets` 返回运行/投递/发布/事件统计与最近入站目标；`/bots` 展示近 24 小时指标卡与 Discord Gateway 状态。
 - 默认 `BOT_ENABLED=false`：关闭时 Webhook 与写接口返回 404/503；`BOT_SECRET_KEY` 丢失后已存 Token 无法解密，只能重新录入。Bot 不可用时不影响应用主功能。
 
 ### 可观测性与告警
@@ -101,7 +106,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
 
 ## 目录
 
@@ -123,7 +128,8 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - opencode 仅通过 `ai.example.com` 反代访问，端口 4096 不对外；代理覆写客户端 Authorization/Cookie，并校验 HTTP/WS Origin。
 - 分享 token 只存 SHA-256，密码 scrypt；过期/吊销/次数用尽返回 410；公开页 `noindex`；公开写请求校验 Origin 并限流。
 - Bot 平台 Token/签名密钥/QQ AppSecret 只写不读，数据库仅存 AES-256-GCM 密文；Webhook 以平台签名/时间戳鉴权并按事件 ID 去重；QQ 额外校验 op=13 Ed25519 回调地址；命令要求目标授权 + 显式用户白名单；发布要求 TOTP + `PUBLISH` 双确认；通知/命令输出清洗路径与 URL。
-- `/ask` 仅对命令白名单用户开放，默认关闭且按用户每小时限流；AI 会话新建时使用 deny-all 工具权限，若 OpenCode 明确拒绝该字段才降级并在日志标注“未隔离”；AI 仅把文本回复交给 Bot，不上传文件、不返回 OpenCode 凭据。
+- Chat 目标级 `allow_chat` 与命令 `allow_commands` 分离：非管理员只能 Chat，群/频道需 @Bot 或回复 Bot；记忆只存摘要（DB 权威 + `DATA_DIR/bot-memory` 镜像，0700/0600），不通过 API/UI 暴露；Discord Gateway 只建立出站 WSS，Token 只出现在 IDENTIFY/RESUME，MESSAGE_CONTENT 仅消费私聊/@/回复消息。
+- `/ask` 与 Chat 仅对已授权用户/目标开放，默认关闭且按用户每小时限流；AI 会话新建时使用 deny-all 工具权限，若 OpenCode 明确拒绝该字段才降级并在日志标注“未隔离”；AI 仅把文本回复交给 Bot，不上传文件、不返回 OpenCode 凭据。
 - 备份归档校验 SHA-256 与 tar 安全（拒绝路径穿越/链接/设备/超大条目）；Web 恢复只到新目录、不覆盖，整库恢复仅离线 root 流程。
 - 指标与审计只记录元数据/主机数值，不含文件内容；审计字段截断（actor≤64、target≤256、detail≤4 KiB）。
 - systemd 沙箱（空 capability、只读系统、仅数据目录可写、MemoryMax 512M）+ 世界备份 unit 加固；nftables 默认拒绝入站；SSH 仅公钥（`00-` drop-in，保留 24h 回滚窗口）；`fail2ban` 以 nftables 后端启用 `sshd` jail（24h ban），dbfile 持久化封禁，`nftables.service` 的 drop-in 在启动后异步重启 fail2ban 恢复封禁 set。
@@ -140,8 +146,9 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
-- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 1 个媒体文件（非 QQ）；命令严格只读；不支持平台侧主动拉取/长连接；企业微信/钉钉/飞书与多管理员审批未实现；QQ C2C 回调与 `/help` 已验证，群/频道目标待补充。
-- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；适配器/AI 单测使用进程内 mock；新增平台仍需在各平台后台注册 Webhook/命令。
+- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书留 v0.5.3，多管理员审批未实现；QQ 群/频道目标仍待真实场景补充。
+- v0.5.2 的 Chat/记忆/多附件/按钮/Gateway 仅通过进程内 mock 与假 WebSocket 测试；Discord Gateway 需在 Developer Portal 开启 Message Content Intent，真实长连接与各平台 Chat 需部署后按 `docs/DEPLOY.md` §9.8 联调；生产仍为 v0.5.1/schema v8。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.2 Chat/记忆的真实模型行为、多附件真实平台外发与 Discord Gateway 长连接待部署后验收。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。

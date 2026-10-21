@@ -5,7 +5,7 @@ import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Radio, Trash2, Users } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
-import type { BotSummary, BotTarget, BotTargetKind } from '../../api/types'
+import type { BotInboundTarget, BotSummary, BotTarget, BotTargetKind } from '../../api/types'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
@@ -49,6 +49,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const toast = useToast()
   const fieldId = useId()
   const [targets, setTargets] = useState<BotTarget[]>([])
+  const [inboundTargets, setInboundTargets] = useState<BotInboundTarget[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -57,6 +58,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [kind, setKind] = useState<BotTargetKind>('channel')
   const [allowCommands, setAllowCommands] = useState(false)
   const [allowNotifications, setAllowNotifications] = useState(true)
+  const [allowChat, setAllowChat] = useState(false)
   const [quietStart, setQuietStart] = useState('')
   const [quietEnd, setQuietEnd] = useState('')
   const [fieldErrors, setFieldErrors] = useState<{ externalId?: string; label?: string; quiet?: string }>({})
@@ -70,16 +72,19 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   useEffect(() => {
     if (!botId) {
       setTargets([])
+      setInboundTargets([])
       setLoading(false)
       return
     }
     let active = true
     setLoading(true)
     setError(null)
-    api.bots.targets
-      .list(botId)
-      .then((items) => {
-        if (active) setTargets(items)
+    Promise.all([api.bots.targets.list(botId), api.bots.targets.listInbound(botId)])
+      .then(([items, inbound]) => {
+        if (active) {
+          setTargets(items)
+          setInboundTargets(inbound)
+        }
       })
       .catch((loadError: unknown) => {
         if (active) setError(toErrorMessage(loadError, '读取目标列表失败'))
@@ -122,6 +127,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         kind,
         allowCommands,
         allowNotifications,
+        allowChat,
         ...(startMinute !== null && endMinute !== null
           ? { quietStartMinute: startMinute, quietEndMinute: endMinute }
           : {}),
@@ -132,6 +138,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       setKind('channel')
       setAllowCommands(false)
       setAllowNotifications(true)
+      setAllowChat(false)
       setQuietStart('')
       setQuietEnd('')
       toast.success(`已添加目标「${created.label}」`)
@@ -145,9 +152,8 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
 
   const handleToggle = async (
     target: BotTarget,
-    patch: { allowCommands?: boolean; allowNotifications?: boolean },
-  ): Promise<void> => {
-    if (!bot || busyIds.has(target.id)) return
+    patch: { allowCommands?: boolean; allowNotifications?: boolean; allowChat?: boolean },
+  ): Promise<void> => {    if (!bot || busyIds.has(target.id)) return
     markBusy(target.id, true)
     try {
       const updated = await api.bots.targets.update(bot.id, target.id, patch)
@@ -160,8 +166,14 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
     }
   }
 
-  const handleRemove = async (): Promise<void> => {
-    if (!bot || !removeTarget) return
+  const handlePrefillInbound = (item: BotInboundTarget): void => {
+    setExternalId(item.targetExternalId)
+    setKind(item.targetKind)
+    setLabel(item.userName ? `${item.userName}（${targetKindLabel(item.targetKind)}）` : `${targetKindLabel(item.targetKind)} ${item.targetExternalId.slice(-6)}`)
+    toast.info('已填入最近入站目标，请确认后添加')
+  }
+
+  const handleRemove = async (): Promise<void> => {    if (!bot || !removeTarget) return
     setRemoving(true)
     try {
       await api.bots.targets.remove(bot.id, removeTarget.id)
@@ -311,6 +323,15 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
               />
               <span>接收通知</span>
             </label>
+            <label className="checkbox-field" title="群/频道内成员无需逐个登记即可与 AI 对话；斜杠命令仍只限命令白名单用户">
+              <input
+                type="checkbox"
+                checked={allowChat}
+                onChange={(event) => setAllowChat(event.target.checked)}
+                disabled={adding}
+              />
+              <span>允许 Chat</span>
+            </label>
             <Button
               type="submit"
               variant="primary"
@@ -321,6 +342,35 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
             </Button>
           </div>
         </form>
+
+        {inboundTargets.length > 0 ? (
+          <div className="bot-inbound-targets">
+            <h3 className="subsection-title">最近入站目标</h3>
+            <p className="field-hint">来自最近的命令或 Chat 事件，只显示平台 ID 与用户；点击「登记」填入上方表单。</p>
+            <ul className="bot-target-list">
+              {inboundTargets.slice(0, 8).map((item) => (
+                <li
+                  key={`${item.targetExternalId}:${item.userId}`}
+                  className="bot-target-item"
+                >
+                  <div className="bot-target-main">
+                    <div className="bot-target-title-row">
+                      <span className="bot-target-name">
+                        {item.userName || item.userId.slice(-8)}
+                      </span>
+                      <Badge tone="muted">{targetKindLabel(item.targetKind)}</Badge>
+                      {item.isDirect ? <Badge tone="info">私聊</Badge> : null}
+                    </div>
+                    <code className="bot-target-id">{item.targetExternalId}</code>
+                  </div>
+                  <Button size="sm" variant="secondary" onClick={() => handlePrefillInbound(item)}>
+                    登记
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <h3 className="subsection-title bot-target-list-title">已配置目标</h3>
         {targets.length === 0 ? (
@@ -369,6 +419,16 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                       />
                       <span>接收通知</span>
                     </label>
+                    <label className="checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={target.allowChat}
+                        onChange={(event) => void handleToggle(target, { allowChat: event.target.checked })}
+                        disabled={busy}
+                        aria-label={`${target.label} 允许 Chat`}
+                      />
+                      <span>允许 Chat</span>
+                    </label>
                     <Button
                       size="sm"
                       variant="ghost"
@@ -387,8 +447,9 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
           </ul>
         )}
         <p className="field-hint">
-          命令只读：/help、/status、/backup、/world、/mc、/files。执行命令需同时满足：当前目标开启“允许命令”，
-          且发送者已登记为“用户”类型并开启“允许命令”（显式用户白名单）。
+          命令只读：/help、/status、/backup、/world、/mc、/files、/ask。执行命令需同时满足：当前目标开启“允许命令”，
+          且发送者已登记为“用户”类型并开启“允许命令”（管理员白名单）。开启“允许 Chat”后，目标内成员可发送普通消息
+          与 AI 对话（群/频道需 @Bot 或回复 Bot），不能执行斜杠命令；每 Bot×用户默认每分钟 6 次、每小时 10 次 AI 调用。
         </p>
       </Card>
 

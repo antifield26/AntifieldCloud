@@ -59,6 +59,8 @@ export interface BotTargetRow {
   kind: 'channel' | 'user' | 'group'
   allow_commands: number
   allow_notifications: number
+  /** 是否允许该目标内成员进行普通消息 Chat；与 allow_commands 独立。 */
+  allow_chat: number
   /** 静默时段（本地分钟 0-1439）；两者都非空时生效。 */
   quiet_start_minute: number | null
   quiet_end_minute: number | null
@@ -73,6 +75,7 @@ export interface BotTarget {
   kind: 'channel' | 'user' | 'group'
   allowCommands: boolean
   allowNotifications: boolean
+  allowChat: boolean
   quietStartMinute: number | null
   quietEndMinute: number | null
   createdAt: string
@@ -146,12 +149,30 @@ export interface OutboundMedia {
 
 export interface OutboundContent {
   text: string
-  media?: OutboundMedia
+  /** 单次最多 5 个；QQ 适配器只接受文本。 */
+  media?: OutboundMedia[]
+}
+
+/** 只读交互按钮；平台适配器负责编码，Service 只认动作 ID。 */
+export type BotAction = 'refresh_status' | 'help'
+
+export interface BotButton {
+  id: BotAction
+  label: string
+}
+
+export interface BotReplyOptions {
+  buttons?: BotButton[]
 }
 
 export interface SendResult {
   externalId: string | null
+  externalIds?: string[]
+  /** 多附件部分发送失败；队列不得自动重试，避免重复外发。 */
+  partial?: boolean
 }
+
+export type ChatTrigger = 'direct' | 'mention' | 'reply'
 
 export type InboundVerification =
   | { kind: 'ignored'; ackBody?: unknown }
@@ -161,6 +182,7 @@ export type InboundVerification =
       kind: 'command'
       eventId: string
       targetExternalId: string
+      targetKind: BotTargetRow['kind']
       userId: string
       userName: string | null
       text: string
@@ -169,7 +191,33 @@ export type InboundVerification =
       immediateResponse?: unknown
       /** 平台事件回调必须返回的确认体（QQ `{opcode:12}`）。 */
       ackBody?: unknown
-      reply: (text: string) => Promise<void>
+      reply: (text: string, options?: BotReplyOptions) => Promise<void>
+    }
+  | {
+      kind: 'chat'
+      eventId: string
+      targetExternalId: string
+      targetKind: BotTargetRow['kind']
+      userId: string
+      userName: string | null
+      text: string
+      isDirect: boolean
+      chatTrigger: ChatTrigger
+      ackBody?: unknown
+      reply: (text: string, options?: BotReplyOptions) => Promise<void>
+    }
+  | {
+      kind: 'action'
+      eventId: string
+      targetExternalId: string
+      targetKind: BotTargetRow['kind']
+      userId: string
+      userName: string | null
+      action: BotAction
+      isDirect: boolean
+      immediateResponse?: unknown
+      ackBody?: unknown
+      reply: (text: string, options?: BotReplyOptions) => Promise<void>
     }
 
 export interface BotAdapter {
@@ -209,8 +257,56 @@ export interface BotAi {
     userId: string
     prompt: string
   }): Promise<string>
+  /** 每轮对话后滚动摘要长期记忆；未实现时服务端保留旧摘要。 */
+  summarizeMemory?(input: {
+    botId: string
+    userId: string
+    memoryId: string
+    sessionId: string | null
+    existing: string
+    userText: string
+    assistantText: string
+    maxChars: number
+  }): Promise<{ summary: string; sessionId: string | null }>
   /** 清理过期会话映射；未实现时服务端跳过。 */
   cleanup?(): number
+}
+
+export interface BotMemoryRow {
+  bot_id: string
+  user_id: string
+  memory_id: string
+  summary: string
+  summary_session_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface BotInboundTargetRow {
+  bot_id: string
+  target_external_id: string
+  target_kind: BotTargetRow['kind']
+  user_id: string
+  user_name: string | null
+  is_direct: number
+  last_seen_at: string
+}
+
+export interface BotInboundTarget {
+  botId: string
+  targetExternalId: string
+  targetKind: BotTargetRow['kind']
+  userId: string
+  userName: string | null
+  isDirect: boolean
+  lastSeenAt: string
+}
+
+export type GatewayState = 'disabled' | 'connecting' | 'connected' | 'reconnecting' | 'error'
+
+export interface BotGatewayStatus {
+  state: GatewayState
+  lastError: string | null
 }
 
 export interface BotMetrics {
@@ -260,6 +356,8 @@ export interface BotSummary {
   createdAt: string
   updatedAt: string
   keyVersion: number
+  /** Discord Gateway 状态；非 Discord 或无 Gateway 时为 disabled。 */
+  gateway: BotGatewayStatus
 }
 
 export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask'] as const

@@ -12,6 +12,21 @@ import { botPlatformLabel } from '../../lib/bots'
 
 export type BotSelectTab = 'config' | 'targets' | 'queue'
 
+function gatewayStateLabel(state: BotSummary['gateway']['state']): string {
+  switch (state) {
+    case 'connected':
+      return '已连接'
+    case 'connecting':
+      return '连接中'
+    case 'reconnecting':
+      return '重连中'
+    case 'error':
+      return '错误'
+    default:
+      return '未启用'
+  }
+}
+
 interface BotOverviewProps {
   status: BotStatus
   bots: BotSummary[]
@@ -122,6 +137,7 @@ export function BotOverview({
                       <h3 className="bot-list-title">{bot.name}</h3>
                       <p className="bot-list-meta">
                         {botPlatformLabel(bot.platform)} · {bot.targetsCount} 个目标 · 密钥版本 v{bot.keyVersion}
+                        {bot.platform === 'discord' ? ` · Gateway ${gatewayStateLabel(bot.gateway.state)}` : ''}
                       </p>
                     </div>
                     <Badge tone={bot.enabled ? 'success' : 'muted'} dot>
