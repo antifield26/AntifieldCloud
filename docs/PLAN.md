@@ -1,6 +1,6 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.2**（schema v9）；生产仍为 v0.5.1/schema v8（release `20261021T091001Z`），v0.5.2 **待部署/待验收**。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.2**（schema v9）；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`）。
 
 ## v0.5.2 补充（当前）
 
@@ -12,7 +12,7 @@
 - **管理面**：目标 `allowChat`、最近入站目标 `GET /api/bots/:id/inbound-targets` 与 `/bots` 登记；发布媒体多选；Discord/Telegram/QQ 配置提示。
 - **数据**：schema v9（迁移 9：`bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；迁移 5–8 保留。
 - **env**：`BOT_CHAT_RATE_PER_MINUTE=6`、`BOT_AI_MEMORY_MAX_CHARS=4096`、`BOT_AI_SYSTEM_PROMPT=`、`BOT_DISCORD_GATEWAY_ENABLED=false`、`BOT_PUBLISH_MAX_MEDIA_FILES=5`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`；已有 `BOT_AI_RATE_PER_HOUR=10`。
-- **状态**：版本 0.5.2；本地测试基线 `npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件），`npm run check` 本地通过；生产部署、迁移 v9、Discord Gateway 真实长连接与各平台 Chat/多附件联调均**待部署/待验收**。
+- **状态**：版本 0.5.2；本地测试基线 `npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件），`npm run check` 本地通过；生产已部署 v0.5.2/schema v9，带 Access token 的完整 smoke 24/24；Discord Gateway 真实长连接与各平台 Chat/多附件联调待在生产目标开启 `allow_chat`/Gateway 后执行。
 
 ## v0.5.1 补充（历史）
 
@@ -127,8 +127,8 @@
 6. 按钮/Gateway：Telegram/Discord 按钮需目标 + 用户双授权且只读；Discord Gateway intents=37377、HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码有假 WebSocket 单测；真实 Discord 长连接待 Developer Portal 开启 intent 后验收。
 7. 安全：Chat 双限流、记忆路径/权限、入站目标不存正文、Gateway Token 不落日志；T/D/S/QQ 原有签名/去重/双白名单/发布 TOTP + `PUBLISH` 不退化。
 8. 关闭态：`BOT_ENABLED=false` 时 Webhook 404、写接口 503、队列不启动；`/api/bots/status` 可读；`BOT_DISCORD_GATEWAY_ENABLED=false` 时不建立连接。
-9. 备份：应用归档两阶段/密钥包（含 `BOT_*`/`BOT_SECRET_KEY`）/导入恢复；世界备份保留 4 份；PC 拉取失败不 ack；演练 `-ExpectedSchemaVersion 9` 待部署后执行。
-10. 生产部署、迁移 v9、smoke、Discord Gateway 真实长连接、各平台 Chat/多附件/按钮与记忆真实模型行为均**待部署/待验收**；用户完成公网/手机/PWA 与 Cloudflare Access 复跑后记录到 `docs/ACCEPTANCE.md`。
+9. 备份：应用归档两阶段/密钥包（含 `BOT_*`/`BOT_SECRET_KEY`）/导入恢复；世界备份保留 4 份；PC 拉取失败不 ack；演练 `-ExpectedSchemaVersion 9` 在部署后按计划执行。
+10. 生产部署、迁移 v9、smoke 已完成；Discord Gateway 真实长连接、各平台 Chat/多附件/按钮与记忆真实模型行为待在生产目标开启 `allow_chat`/Gateway 后联调；用户完成公网/手机/PWA 与 Cloudflare Access 复跑后记录到 `docs/ACCEPTANCE.md`。
 
 ## 关键决策
 
@@ -139,7 +139,7 @@
 | 记忆 | 每 Bot×用户一份摘要；DB 权威 + `DATA_DIR/bot-memory` 镜像；每轮滚动摘要；失败保留旧摘要；不暴露 API/UI；摘要不额外占 AI 配额 |
 | Gateway | Discord Gateway 默认关闭；`intents=37377` 含 `MESSAGE_CONTENT`；需 Developer Portal 开启 intent；Token 只进 IDENTIFY/RESUME |
 | QQ 平台 | AppSecret 写入 Token 字段并加密；Ed25519 op=13/op=0；仅文本、≤2000 字符、不支持媒体；目标用 openid/channel_id |
-| AI | OpenCode 本地 API；默认关闭；仅白名单用户；每小时限流；会话复用；deny-all 工具（明确 400 时才降级并标注未隔离） |
+| AI | OpenCode 本地 API；默认关闭；`/ask` 仅命令白名单用户、Chat 仅 `allow_chat` 目标；每小时限流；会话复用；deny-all 工具（明确 400 时才降级并标注未隔离） |
 | Bot 开关 | `BOT_ENABLED` 默认 false；`BOT_SECRET_KEY` 由 bootstrap 生成/复用；关闭时 Webhook 404/写接口 503 |
 | Bot 凭据 | AES-256-GCM（32 字节 base64 key，12 字节 IV，key_version=1）；API/日志只写不读 |
 | Bot 命令 | 固定只读命令 + `/ask`；目标 `allow_commands` + 显式 user 白名单；输出清洗路径/URL，≤10 条文件元数据 |

@@ -2,7 +2,7 @@
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
 v0.5.2 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat。
-企业微信/钉钉/飞书（v0.5.3）与多管理员审批仍未实现。生产仍为 v0.5.1/schema v8，v0.5.2 **待部署/待验收**。
+企业微信/钉钉/飞书（v0.5.3）与多管理员审批仍未实现。生产已部署 v0.5.2/schema v9；Chat/多附件/Gateway 的真实平台联调待开启目标与 Intent。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
@@ -97,6 +97,8 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
   新建 OpenCode 会话使用 deny-all 工具权限；若 OpenCode 明确 400 拒绝 `permissions`，降级为默认权限并在日志标注“未隔离”。
 - **长期记忆**：每 Bot×用户一份摘要；DB 为权威，镜像到 `DATA_DIR/bot-memory`；不通过 API/UI 暴露；系统提示内置，
   `BOT_AI_SYSTEM_PROMPT` 覆盖；摘要失败保留旧摘要；摘要不额外占对话轮次或每小时 AI 配额。
+- **管理面**：`GET /api/bots/:id/inbound-targets?limit=50`（需登录）返回最近命令/Chat/按钮的目标与用户（不含正文），
+  `/bots` 目标分区可一键填入表单；`BotSummary.gateway` 返回 Discord Gateway 状态。
 
 ## 4. 队列与失败处理
 
@@ -124,7 +126,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 | `BOT_EVENT_RETENTION_DAYS` | `7` | 入站事件/入站目标保留 |
 | `BOT_COMMAND_RATE_PER_MINUTE` | `20` | 每用户命令限流 |
 | `BOT_PUBLISH_MAX_MEDIA_BYTES` | `10485760` | 单个发布媒体上限 |
-| `BOT_PUBLISH_MAX_MEDIA_FILES` | `5` | 单次发布媒体数量上限（1–10） |
+| `BOT_PUBLISH_MAX_MEDIA_FILES` | `5` | 单次发布媒体数量上限（默认 5；UI 与 Telegram/Discord 适配器按 5 控制） |
 | `BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES` | `52428800` | 单次发布媒体总大小上限 |
 | `BOT_PUBLISH_MAX_SCHEDULED_DAYS` | `30` | 定时发布最远天数 |
 | `BOT_MAX_BOTS` | `10` | Bot 数量上限 |
@@ -187,8 +189,8 @@ Discord Gateway 启用后若无法连接，`BotSummary.gateway.state` 会显示 
 - Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；QQ 使用固定 AppSecret 派生密钥对；AI 使用假 OpenCode HTTP 服务；
   Discord Gateway 使用假 WebSocket（HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码）。
 - 本地基线：`npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过（2026-10-21）。
-- 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 尚未部署，
-  Discord Gateway 真实长连接、各平台 Chat/多附件/按钮/记忆真实模型均待联调。
+- 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，
+  Discord Gateway 真实长连接、各平台 Chat/多附件/按钮/记忆真实模型待在生产目标开启 `allow_chat`/Gateway 后联调。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→
   私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发布 1/5 个媒体（含 partial 失败场景）→
   多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→ Discord 开启 intent 后确认 Gateway `connected`。

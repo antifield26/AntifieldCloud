@@ -4,18 +4,18 @@
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
-> **v0.5.2 尚未部署**：生产仍为 v0.5.1/schema v8。本文件 v0.5.2 章节只记录本地代码/测试基线；生产部署、迁移 v9、smoke、Discord Gateway 真实长连接与各平台 Chat/多附件/按钮**待部署/待验收**。
+> **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。Chat/记忆/多附件/按钮/Gateway 代码已上线，但生产目标暂未开启 `allow_chat`、`BOT_DISCORD_GATEWAY_ENABLED` 默认 false，真实平台 Chat/Gateway 联调仍待开启后验收。
 
-## v0.5.2（当前，未部署）
+## v0.5.2（当前，已部署）
 
-- 日期：2026-10-21（Asia/Shanghai；本地）
-- 目标环境：Windows 本地工作区；生产 Raspberry Pi 5 仍为 v0.5.1/schema v8（本版未部署）
+- 日期：2026-10-21（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产 release `20261021T114908Z`）+ Windows 本地工作区
 - 版本：`v0.5.2`
 - 范围：Bot Chat 与长期记忆、多附件发布、Telegram/Discord 只读按钮、Discord Gateway、目标 `allow_chat`/最近入站目标、schema v9。
 
 ### 1. 交付
 
-- **Bot Chat**：`server/src/bot/service.ts` 与四适配器支持普通消息 Chat；目标 `allow_chat`（默认 0）；群/频道仅 @Bot 或回复 Bot，私聊全部；非管理员只能 Chat，斜杠命令仍走 `allow_commands` + user 白名单；Chat 每 Bot×用户 6 次/分钟（`BOT_CHAT_RATE_PER_MINUTE`），与 `/ask` 共用 10 次/小时（`BOT_AI_RATE_PER_HOUR`）。
+- **Bot Chat**：`server/src/bot/service.ts`、Telegram/Slack/QQ 适配器与 Discord Gateway 支持普通消息 Chat；目标 `allow_chat`（默认 0）；群/频道仅 @Bot 或回复 Bot，私聊全部；非管理员只能 Chat，斜杠命令仍走 `allow_commands` + user 白名单；Chat 每 Bot×用户 6 次/分钟（`BOT_CHAT_RATE_PER_MINUTE`），与 `/ask` 共用 10 次/小时（`BOT_AI_RATE_PER_HOUR`）。
 - **长期记忆**：`server/src/bot/memory.ts` + `bot_ai_memories`；DB 摘要权威 + `DATA_DIR/bot-memory/memory-<uuid>.md` 镜像（0700/0600、原子写）；每轮摘要；失败保留旧摘要；不通过 API/UI 暴露；系统提示内置，`BOT_AI_SYSTEM_PROMPT` 覆盖；摘要不额外占 AI 配额。
 - **多附件**：最多 5 个、单 10 MiB、总 50 MiB；Telegram 全图片 media group/混合逐文件、Discord 单次 multipart、Slack 逐文件；QQ 仅文本；partial 不自动重试。
 - **只读按钮**：Telegram inline keyboard / Discord components 的 `/status`、`/help` 刷新/帮助；需目标 `allow_commands` + user 白名单；无写操作；Slack/QQ 不做。
@@ -32,30 +32,31 @@
 | `npm run check` | **通过**（typecheck + lint + 293 + 140；本地 2026-10-21） |
 | v0.5.2 新增服务端测试 | `bot-chat-adapters.test.ts`（12）、`bot-discord-gateway.test.ts`（10）、`bot-v052.test.ts`（5）；`bot-migration.test.ts` 覆盖 v6→v9 |
 | 前端新增用例 | `web/src/pages/Bots.test.tsx` 增加目标 `allow_chat`/最近入站目标用例（9 项，总计 140） |
-| schema | 本地迁移 v6→v9 测试通过；生产仍 v8，**未迁移 v9** |
-| 应用部署 / `/healthz` | **未执行**；本地无生产部署 |
-| `smoke.ps1 -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9` | **未执行**（待部署后） |
-| Discord Gateway 真实长连接 | **未执行**；仅有进程内假 WebSocket 测试 |
-| 各平台 Chat/多附件真实外发 | **未执行**；仅有进程内 mock/夹具测试 |
+| schema | 生产 **v8→v9 迁移通过**：`/healthz.schemaVersion=9`；迁移前快照 `db-predeploy-20261021T114936153Z.sqlite`（sha256 `5dc7855f…`） |
+| 应用部署 / `/healthz` | **通过**：`{"ok":true,"version":"0.5.2","schemaVersion":9}`；release `20261021T114908Z`，commit `abeabc7` |
+| `smoke.ps1 -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9` | **24 通过 / 0 失败 / 0 警告**（公网 Access token/CSP/PWA/分享/告警/备份/世界/演练/脚本 SHA） |
+| Discord Gateway 真实长连接 | **未开启**：`BOT_DISCORD_GATEWAY_ENABLED=false`；需 Developer Portal 开启 Message Content Intent 后联调 |
+| 各平台 Chat/多附件真实外发 | **未开启**：生产目标 `allow_chat` 均为 0；代码与进程内 mock/夹具测试已通过 |
 | `node scripts/check-version.mjs` | **通过**：`packageVersion=0.5.2`；README/CHANGELOG/ACCEPTANCE/env.example/DEPLOY/AGENTS 与 lock 根版本一致（2026-10-21） |
 
-### 3. 部署（待执行）
+### 3. 部署
 
 ```text
-应用: v0.5.2（本地代码；生产仍 v0.5.1/schema v8）
-schema: v9（迁移 9：allow_chat/bot_ai_memories/bot_inbound_targets；迁移前快照待生成）
-env: 6 个 v0.5.2 BOT_* 键待写入；BOT_DISCORD_GATEWAY_ENABLED 默认 false
-平台: Discord Message Content Intent、Telegram/QQ Chat 目标、QQ 回调与各平台多附件联调待执行
-smoke: 待用 -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9
+应用: v0.5.2（生产 release 20261021T114908Z；发布 commit abeabc7）
+schema: v9（迁移 9：allow_chat/bot_ai_memories/bot_inbound_targets；迁移前快照 db-predeploy-20261021T114936153Z.sqlite）
+env: 生产 env 保留原有 BOT_ENABLED/BOT_AI_ENABLED；6 个 v0.5.2 BOT_* 键未写入，使用默认值（Gateway=false、媒体 5/50MiB）
+数据: 8 张 bot* 表存在；bots 2 个（Discord/QQ）启用；bot_targets.allow_chat 均为 0
+平台: Discord Message Content Intent、Telegram/QQ Chat 目标、QQ 群/频道目标与各平台多附件联调待开启后执行
+smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access service token）
+备份: 部署后 inc 已拉取/ack（snapshot-20261021T115245394Z-inc.tar.gz，69139 bytes）；密钥包 secrets-20261021T115246Z.tar.age（secrets=ok）
 ```
 
 ### 4. 未决
 
-- 生产部署、迁移 v9、`/healthz.schemaVersion=9`、smoke 与真实平台联调均未执行，本文件不构成 v0.5.2 验收通过。
-- Discord Gateway 未做真实 Discord 长连接/`MESSAGE_CONTENT` 负路径验收；需 Developer Portal 开启 intent 后再测。
+- 生产目标 `allow_chat` 尚未开启，Chat 真实模型/记忆行为未在生产端到端验证；需在 `/bots` 目标分区开启后测试。
+- Discord Gateway 未做真实 Discord 长连接/`MESSAGE_CONTENT` 负路径验收；需 Developer Portal 开启 intent、设置 `BOT_DISCORD_GATEWAY_ENABLED=true` 后测。
 - Telegram/Slack/Discord/QQ 的真实 Chat、多附件（含 partial）与只读按钮未做平台联调；现有测试均为进程内 mock。
-- 记忆的真实模型多轮摘要、重启后读取与文件清理（删除 Bot 后镜像文件无自动清理）待部署后核对。
-- 生产仍为 v0.5.1/schema v8；v0.5.2 部署前不得宣称已完成迁移或冒烟。
+- 记忆的真实模型多轮摘要、重启后读取与文件清理（删除 Bot 后镜像文件无自动清理）待开启 Chat 后核对。
 
 ## v0.5.1（历史）
 

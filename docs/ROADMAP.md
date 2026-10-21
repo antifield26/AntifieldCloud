@@ -1,6 +1,6 @@
 # 路线图
 
-## v0.5.2（已实现，待部署/待验收）
+## v0.5.2（已部署，真实平台联调待开启）
 
 - **Bot Chat**：普通消息（非斜杠）在目标 `allow_chat=1` 时进入 AI Chat；群/频道仅 @Bot 或回复 Bot，私聊全部；Telegram/Slack/QQ Webhook 与 Discord Gateway 支持；非管理员只能 Chat，管理员斜杠命令仍由 `allow_commands` 目标 + user 白名单双校验；Chat 只读，不占写操作。
 - **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 摘要为权威（`summary_session_id`）+ `DATA_DIR/bot-memory/memory-<uuid>.md` 镜像（0700/0600）；每轮滚动摘要；摘要失败保留旧摘要；不通过 API/UI 暴露；系统提示内置，`BOT_AI_SYSTEM_PROMPT` 覆盖；不额外占对话轮次或 AI 每小时配额。
@@ -9,7 +9,7 @@
 - **Discord Gateway**：Node 内置 WebSocket；`intents=37377`（含 `MESSAGE_CONTENT`）；需 Developer Portal 开启 intent；HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭；状态显示。
 - **数据/管理面**：schema v9（迁移 9：`allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；目标 `allowChat`、最近入站目标 `GET /api/bots/:id/inbound-targets` 与 `/bots` 登记、发布媒体多选、Gateway 状态。
 - **env**：`BOT_CHAT_RATE_PER_MINUTE=6`、`BOT_AI_MEMORY_MAX_CHARS=4096`、`BOT_AI_SYSTEM_PROMPT=`、`BOT_DISCORD_GATEWAY_ENABLED=false`、`BOT_PUBLISH_MAX_MEDIA_FILES=5`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`；已有 `BOT_AI_RATE_PER_HOUR=10`。
-- **状态**：本地 `npm test` 293（服务端 277 + 脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过；生产仍为 v0.5.1/schema v8，v0.5.2 部署、迁移 v9、Discord Gateway 真实长连接与各平台 Chat/多附件/按钮**待验收**。
+- **状态**：本地 `npm test` 293（服务端 277 + 脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`），带 Access token 的完整 smoke 24/24；Discord Gateway 真实长连接与各平台 Chat/多附件/按钮待开启目标/Intent 后验收。
 
 ### v0.5.2 部署后待办
 
@@ -94,7 +94,7 @@
 
 ## 已知限制
 
-- v0.5.2 的 Chat/记忆/多附件/按钮/Gateway 仅有进程内 mock/假 WebSocket 测试；生产未部署 v0.5.2，Discord Gateway 真实长连接与各平台 Chat/多附件需部署后联调；Discord 需 Developer Portal 开启 Message Content Intent。
+- v0.5.2 已部署；Chat/记忆/多附件/按钮/Gateway 代码已上线，生产目标 `allow_chat` 默认 0、`BOT_DISCORD_GATEWAY_ENABLED=false`，真实长连接与各平台 Chat/多附件需开启后联调；Discord 需 Developer Portal 开启 Message Content Intent。
 - v0.5.2 多附件部分成功不自动重试（标记 `partial_media_sent`），需人工确认并重建；单次最多 5 个、单 10 MiB、总 50 MiB。
 - 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。
 - 企业微信/钉钉/飞书未实现（v0.5.3）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。

@@ -544,7 +544,7 @@ Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` �
 
 平台：`telegram`、`discord`、`slack`、`qq`。QQ 官方 Bot 仅文本（≤2000 字符），不支持媒体；`/ask` AI 仅在 `BOT_AI_ENABLED=true` 且用户命中命令白名单时可用。
 
-v0.5.2 新增普通消息 Chat：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat（Telegram/Slack/QQ Webhook；Discord 普通消息经 Gateway）；群/频道仅 @Bot 或回复 Bot，私聊直接进入；非管理员只能 Chat，不能执行斜杠命令。Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6）次，并与 `/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）次。Chat 是只读 AI 对话，不产生写操作。Discord Gateway 的普通消息不经过 `POST /api/bot/webhook/:botId`，由服务端长连接消费；`BotSummary.gateway` 暴露状态。
+v0.5.2 新增普通消息 Chat：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat（Telegram/Slack/QQ Webhook；Discord 普通消息经 Gateway）；群/频道仅 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊直接进入；非管理员只能 Chat，不能执行斜杠命令。Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6）次，并与 `/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）次。Chat 是只读 AI 对话，不产生写操作。Discord Gateway 的普通消息不经过 `POST /api/bot/webhook/:botId`，由服务端长连接消费；`BotSummary.gateway` 暴露状态。
 
 ### 对象
 

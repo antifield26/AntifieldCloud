@@ -15,7 +15,7 @@
 - 当前 schema v9（迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：v0.5.1/schema v8（release `20261021T091001Z`）；v0.5.2 代码已就绪，**尚未部署/迁移 v9**。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收。
+- 生产现状：v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`，迁移前快照 `db-predeploy-20261021T114936153Z.sqlite`；带 Access token 的 smoke 24/24）。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；v0.5.2 Chat/Gateway 真实平台联调待开启目标/Intent。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -123,7 +123,7 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `BOT_AI_MEMORY_MAX_CHARS=4096`（512–16384）：每 Bot×用户长期记忆摘要上限。
   - `BOT_AI_SYSTEM_PROMPT=`（空）：覆盖内置系统提示，最长 2000；空则使用内置文本。
   - `BOT_DISCORD_GATEWAY_ENABLED=false`：Discord Gateway 长连接开关；默认关闭，启用前先在 Developer Portal 开启 Message Content Intent。
-  - `BOT_PUBLISH_MAX_MEDIA_FILES=5`（1–10）：单次发布媒体文件数量上限。
+  - `BOT_PUBLISH_MAX_MEDIA_FILES=5`：单次发布媒体文件数量上限（默认 5；UI 与 Telegram/Discord 适配器按 5 控制）。
   - `BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`（1–200 MiB）：单次发布媒体总大小上限。
 
 ## 3. 从 PC 部署（带迁移前 DB 快照与自动回滚）
@@ -447,7 +447,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 验收：`npm run check`（本地 293/140）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
   `smoke.ps1 -ExpectedVersion 0.5.2`、Bot 四平台联调（§9.8；v0.5.1 QQ 真实回调已验证，v0.5.2 Chat/多附件/Gateway 待联调）、备份导入/校验/恢复（临时 DATA_DIR）、
   世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 9` 演练通过；OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
-  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.2 Chat/记忆真实模型待部署后验证。
+  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.2 已部署/迁移 v9/smoke 24/24，Chat/记忆真实模型与 Discord Gateway 长连接待开启生产目标与 Intent 后验证。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -683,7 +683,8 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 2. **Discord**：Developer Portal 建 Application/Bot → 填 Interactions Endpoint URL（页面生成）→ 保存时 Discord 发 PING，
    应用返回 `{"type":1}` → 邀请 Bot 到测试服务器（发送消息/附件权限）→ 登记频道 ID；如需斜杠命令，在 Portal/API 注册
    `/help` `/status` `/backup` `/world` `/mc` `/files` `/ask`。Public Key 必须是 64 位 hex。
-   普通消息 Chat 还需开启 **Message Content Intent**，并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；确认 `BotSummary.gateway.state=connected`。
+   普通消息 Chat 还需开启 **Message Content Intent**，并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；Gateway 使用
+   `intents=37377`（含 `MESSAGE_CONTENT`），确认 `BotSummary.gateway.state=connected`。
 3. **Slack**：api.slack.com/apps 建 App → 取 Bot Token（`xoxb-`）与 Signing Secret → Event Subscriptions 填同一 URL，
    订阅 `message.channels`/`message.im`/`app_mention`（按需）→ Slash Commands 的 Request URL 填同一 URL 并创建同名命令 → 安装到 workspace、
    邀请 Bot 进测试频道 → 登记频道 ID。Chat：DM 直接进入；频道用 `app_mention` 或显式 `<@BOTID>`；Slack 本轮无按钮。

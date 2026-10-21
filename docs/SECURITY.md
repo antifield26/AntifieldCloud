@@ -86,7 +86,7 @@
   `bot_inbound_targets` 只记录目标/用户/类型/是否私聊/时间，不记录消息正文；每 Bot 最多 500 条，按事件保留期清理。
 - 授权：命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；命令白名单固定为
   `/help` `/status` `/backup` `/world` `/mc` `/files`，以及需 `BOT_AI_ENABLED=true` 的 `/ask`；未知命令只返回帮助；`/files` 只返回名称/大小，不含内容/路径。
-  Chat 使用独立的 `allow_chat=1`：非管理员只能 Chat，不能执行斜杠命令；群/频道需 @Bot 或回复 Bot，私聊全部；未开启 `allow_chat` 的普通消息不调用 AI。
+  Chat 使用独立的 `allow_chat=1`：非管理员只能 Chat，不能执行斜杠命令；群/频道需 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊全部；未开启 `allow_chat` 的普通消息不调用 AI。
 - 按钮：Telegram inline keyboard 与 Discord message components 只承载 `refresh_status`/`help`；回调仍要求目标 `allow_commands=1` + user 白名单，
   执行 `providers.status()`/帮助文本，无写操作；Slack/QQ 不返回按钮。
 - AI：`/ask` 仅白名单用户，Chat 仅 `allow_chat` 目标；Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6），Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）；
@@ -181,7 +181,7 @@
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
 18. **Bot 测试为 mock-only**：适配器/队列/发布/Chat/记忆/按钮/Gateway 仅用进程内假平台、夹具与假 WebSocket，未对真实 Telegram/Discord/Slack/QQ 做限流、签名漂移、平台故障的负路径验收；
-    上线前必须在各平台后台完成 Webhook/命令注册并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.2 生产尚未部署，Discord Gateway 真实长连接与各平台 Chat/多附件待部署后验证。
+    上线前必须在各平台后台完成 Webhook/命令注册并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.2 已部署/迁移 v9/smoke 24/24，但生产目标 `allow_chat` 默认 0、Discord Gateway 默认关闭，真实长连接与各平台 Chat/多附件需开启后验证。
 19. **Bot 多附件与只读边界**：单次发布最多 5 个媒体（单 ≤10 MiB、总 ≤50 MiB；QQ 无媒体），命令/Chat 严格只读；Discord Gateway 是唯一长连接，其它平台仍不支持主动拉取；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
     多附件部分成功不自动重试，需人工重建。
 20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 Bot 凭据将不可解密，必须重新录入 Token/AppSecret；轮换需先备份 DB + 旧密钥并接受一次性重录，

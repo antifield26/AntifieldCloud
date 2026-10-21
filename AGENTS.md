@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.2，数据库 schema v9（迁移 5/6/7/8 保留，迁移 9 增加 `bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；生产仍为 v0.5.1/schema v8（release `20261021T091001Z`），v0.5.2 **待部署/待验收**。OpenCode 服务端 v2.1.1。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.2，数据库 schema v9（迁移 5/6/7/8 保留，迁移 9 增加 `bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`）。OpenCode 服务端 v2.1.1。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -152,19 +152,19 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   **手工 `systemctl reload nftables` 不触发该 drop-in，仍需 `systemctl restart fail2ban`**。
 - Bot 环境变量：`BOT_ENABLED`（默认 **false**）、`BOT_SECRET_KEY`（32 字节 base64，`bootstrap-env.sh` 仅在缺失时生成，`--force` 复用旧值）；
   `BOT_WEBHOOK_MAX_BODY_BYTES=262144`、`BOT_DELIVERY_INTERVAL_SECONDS=30`、`BOT_DELIVERY_MAX_ATTEMPTS=5`、`BOT_EVENT_RETENTION_DAYS=7`、
-  `BOT_COMMAND_RATE_PER_MINUTE=20`、`BOT_PUBLISH_MAX_MEDIA_BYTES=10485760`、`BOT_PUBLISH_MAX_SCHEDULED_DAYS=30`、`BOT_MAX_BOTS=10`。
+  `BOT_COMMAND_RATE_PER_MINUTE=20`、`BOT_PUBLISH_MAX_MEDIA_BYTES=10485760`（单文件）、`BOT_PUBLISH_MAX_SCHEDULED_DAYS=30`、`BOT_MAX_BOTS=10`。
   v0.5.1 新增 AI（OpenCode 本地 API，默认关闭）：`BOT_AI_ENABLED=false`、`BOT_AI_PROVIDER=`、`BOT_AI_MODEL=`、`BOT_AI_TIMEOUT_SECONDS=60`、
   `BOT_AI_MAX_PROMPT_CHARS=2000`、`BOT_AI_RATE_PER_HOUR=10`、`BOT_AI_SESSION_RETENTION_DAYS=7`；`bootstrap-env.sh` 已纳管这 7 项。
   v0.5.2 新增：`BOT_CHAT_RATE_PER_MINUTE=6`（Chat 每 Bot×用户每分钟）、`BOT_AI_MEMORY_MAX_CHARS=4096`（记忆摘要上限 512–16384）、
   `BOT_AI_SYSTEM_PROMPT=`（空则使用内置提示，最长 2000）、`BOT_DISCORD_GATEWAY_ENABLED=false`（Discord Gateway 默认关闭）、
-  `BOT_PUBLISH_MAX_MEDIA_FILES=5`（1–10）、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`（总媒体上限）；`bootstrap-env.sh` 已纳管这 6 项。
+  `BOT_PUBLISH_MAX_MEDIA_FILES=5`（默认 5；UI 与 Telegram/Discord 适配器按 5 控制）、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`（总媒体上限）；`bootstrap-env.sh` 已纳管这 6 项。
   `BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 Token/AppSecret 只能重新录入。
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对
   `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
   v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并通过带 token 的 smoke。
-  v0.5.2 的 Chat/记忆/多附件/按钮/Gateway 尚未部署；Discord 需在 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记。
+  v0.5.2 已部署 v0.5.2/schema v9；Chat/记忆/多附件/按钮代码已上线，但生产目标暂未开启 `allow_chat`、`BOT_DISCORD_GATEWAY_ENABLED` 默认 false，真实平台 Chat/多附件/Gateway 联调仍待在 `/bots` 开启后验收；Discord 需在 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记。
 - 测试证据边界：Bot 适配器（含 QQ）、Chat/记忆、AI 对话、多附件、按钮、Discord Gateway（假 WebSocket）、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），
   未做真实平台/真实模型/真实网络的负路径验收；发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；
