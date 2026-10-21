@@ -11,12 +11,13 @@ import type {
 } from '../api/types'
 import type { BadgeTone } from '../components/Badge'
 
-export const BOT_PLATFORMS: readonly BotPlatform[] = ['telegram', 'discord', 'slack']
+export const BOT_PLATFORMS: readonly BotPlatform[] = ['telegram', 'discord', 'slack', 'qq']
 
 export const BOT_PLATFORM_LABELS: Record<BotPlatform, string> = {
   telegram: 'Telegram',
   discord: 'Discord',
   slack: 'Slack',
+  qq: 'QQ 官方',
 }
 
 export const BOT_TARGET_KIND_LABELS: Record<BotTargetKind, string> = {
@@ -59,6 +60,7 @@ export const BOT_TEXT_LIMITS: Record<BotPlatform, number> = {
   telegram: 4096,
   discord: 2000,
   slack: 4000,
+  qq: 2000,
 }
 
 export function botPlatformLabel(platform: BotPlatform): string {

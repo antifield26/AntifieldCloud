@@ -98,6 +98,13 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     botPublishMaxMediaBytes: 10 * 1024 * 1024,
     botPublishMaxScheduledDays: 30,
     botMaxBots: 10,
+    botAiEnabled: false,
+    botAiProvider: '',
+    botAiModel: '',
+    botAiTimeoutSeconds: 60,
+    botAiMaxPromptChars: 2000,
+    botAiRatePerHour: 10,
+    botAiSessionRetentionDays: 7,
     ...overrides,
   }
 }

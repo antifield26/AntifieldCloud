@@ -81,7 +81,7 @@ export function BotOverview({
           </div>
         ) : null}
         <p className="field-hint">
-          Bot 命令为只读（/help、/status、/backup、/world、/mc、/files），本页不提供命令执行入口；发布任务由管理员手动创建。
+          Bot 命令为只读（/help、/status、/backup、/world、/mc、/files、/ask），本页不提供命令执行入口；发布任务由管理员手动创建并需 TOTP + PUBLISH 双确认。
         </p>
       </Card>
 
@@ -102,7 +102,7 @@ export function BotOverview({
           <EmptyState
             icon={<BotIcon size={24} />}
             title="还没有配置 Bot"
-            description="创建 Telegram、Discord 或 Slack Bot 后，可登记目标、接收告警通知并发布消息。"
+            description="创建 Telegram、Discord、Slack 或 QQ 官方 Bot 后，可登记目标、接收告警通知并发布消息。"
             action={
               <Button variant="primary" icon={<Plus size={16} aria-hidden="true" />} onClick={onCreate}>
                 创建第一个 Bot

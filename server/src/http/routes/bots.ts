@@ -24,6 +24,13 @@ function boolean(value: unknown, fallback = false): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
 
+/** 静默时段分钟：null 表示清空；非法值交给 service 统一校验。 */
+function optionalMinute(value: unknown): number | null | undefined {
+  if (value === null) return null
+  if (typeof value !== 'number') return undefined
+  return value
+}
+
 function requiredId(value: unknown, name: string): string {
   const id = text(value, 64)
   if (!id) throw badRequest(`${name} 不能为空`)
@@ -58,6 +65,12 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
   app.get('/api/bots/:id', { preHandler: [requireAuth] }, async (request) => {
     const params = request.params as Record<string, string>
     return { bot: bots.getBot(requiredId(params.id, 'id')) }
+  })
+
+  app.get('/api/bots/:id/metrics', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const query = asRecord(request.query) ?? {}
+    return { metrics: bots.metrics(requiredId(params.id, 'id'), parsePositiveInt(query.hours, 24, 1, 720)) }
   })
 
   app.patch('/api/bots/:id', { preHandler: [requireAuth, csrf] }, async (request) => {
@@ -108,6 +121,8 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         kind,
         allowCommands: boolean(body.allowCommands),
         allowNotifications: boolean(body.allowNotifications, true),
+        quietStartMinute: optionalMinute(body.quietStartMinute),
+        quietEndMinute: optionalMinute(body.quietEndMinute),
       }),
     }
   })
@@ -122,6 +137,8 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         kind: kind === 'channel' || kind === 'user' || kind === 'group' ? kind : undefined,
         allowCommands: typeof body.allowCommands === 'boolean' ? body.allowCommands : undefined,
         allowNotifications: typeof body.allowNotifications === 'boolean' ? body.allowNotifications : undefined,
+        quietStartMinute: optionalMinute(body.quietStartMinute),
+        quietEndMinute: optionalMinute(body.quietEndMinute),
       }),
     }
   })
@@ -173,6 +190,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         text: text(body.text, 4096),
         mediaFileIds: media,
         scheduledAt: optionalText(body.scheduledAt, 40) ?? null,
+        confirmText: text(body.confirmText, 20),
       }),
     }
   })

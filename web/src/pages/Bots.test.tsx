@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   targetRemove: vi.fn(),
   deliveryList: vi.fn(),
   deliveryRetry: vi.fn(),
+  metrics: vi.fn(),
   publishList: vi.fn(),
   publishCreate: vi.fn(),
   publishCancel: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../api/client', () => ({
       update: mocks.update,
       remove: mocks.remove,
       test: mocks.test,
+      metrics: mocks.metrics,
       targets: {
         list: mocks.targetList,
         create: mocks.targetCreate,
@@ -112,6 +114,8 @@ function target(overrides: Partial<BotTarget> = {}): BotTarget {
     kind: 'channel',
     allowCommands: false,
     allowNotifications: true,
+    quietStartMinute: null,
+    quietEndMinute: null,
     createdAt: '2026-10-20T00:00:00.000Z',
     ...overrides,
   }
@@ -172,6 +176,14 @@ beforeEach(() => {
   mocks.targetUpdate.mockResolvedValue(target({ allowCommands: true }))
   mocks.targetRemove.mockResolvedValue({ ok: true })
   mocks.deliveryList.mockResolvedValue([])
+  mocks.metrics.mockResolvedValue({
+    hours: 24,
+    deliveries: { total: 0, sent: 0, failed: 0, dead: 0, successRate: 0 },
+    publishes: { total: 0, sent: 0, failed: 0 },
+    events: 0,
+    lastError: null,
+    lastSentAt: null,
+  })
   mocks.deliveryRetry.mockResolvedValue({ ok: true })
   mocks.publishList.mockResolvedValue([])
   mocks.publishCreate.mockResolvedValue(job())
@@ -286,6 +298,7 @@ describe('Bots 机器人管理', () => {
     await userEvent.type(screen.getByLabelText(/发布内容/), '发布内容测试')
     await userEvent.type(screen.getByLabelText(/媒体文件/), 'file-1')
     await userEvent.type(screen.getByLabelText(/TOTP 验证码/), '123456')
+    await userEvent.type(screen.getByLabelText(/二次确认/), 'PUBLISH')
     await userEvent.click(screen.getByRole('button', { name: '创建发布任务' }))
 
     await waitFor(() =>
@@ -295,6 +308,7 @@ describe('Bots 机器人管理', () => {
         mediaFileIds: ['file-1'],
         scheduledAt: null,
         totpCode: '123456',
+        confirmText: 'PUBLISH',
       }),
     )
   })

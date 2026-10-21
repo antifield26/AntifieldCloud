@@ -129,7 +129,8 @@ test('Telegram：secret 校验、命令回复、事件去重与通知/发布队�
     assert.ok(captured.some((item) => /sendMessage/.test(item.url) && String(item.init?.body).includes('磁盘不足')))
     assert.ok(captured.some((item) => !String(item.init?.body).includes('/home/antifield/secret.txt')))
 
-    const job = service.createPublish(created.id, { targetId: target.id, text: '发布测试' })
+    assert.throws(() => service.createPublish(created.id, { targetId: target.id, text: '无确认' }), /二次确认/)
+    const job = service.createPublish(created.id, { targetId: target.id, text: '发布测试', confirmText: 'PUBLISH' })
     await service.processPublishJobs()
     const sent = service.listPublishJobs(created.id).find((item) => item.id === job.id)
     assert.equal(sent?.status, 'sent')

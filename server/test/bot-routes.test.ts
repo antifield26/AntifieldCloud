@@ -67,6 +67,7 @@ test('Bot 发布路由：无 TOTP 400，带有效 TOTP 才创建外发任务', a
         targetId: target.id,
         text: '外发测试',
         totpCode: nextCode,
+        confirmText: 'PUBLISH',
         scheduledAt: new Date(Date.now() + 3600_000).toISOString(),
       },
     })

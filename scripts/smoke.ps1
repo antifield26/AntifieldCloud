@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$PiHost = "192.0.2.10",
   [string]$PiUser = "antifield",
   [string]$AppUrl = "https://app.example.com",
@@ -8,7 +8,9 @@
   [switch]$SkipLocalBackup,
   [switch]$SkipScriptHash,
   [string]$ExpectedVersion = "",
-  [int]$ExpectedSchemaVersion = 0
+  [int]$ExpectedSchemaVersion = 0,
+  [string]$AccessClientId = "",
+  [string]$AccessClientSecret = ""
 )
 
 # 部署后冒烟（只读）：公网 HTTPS、PWA/分享/告警端点、Pi 本机服务/版本、内存 cgroup、nftables、
@@ -97,13 +99,26 @@ function Invoke-PiSsh {
 }
 
 function Get-HttpStatus {
-  param([string]$Url)
-  return (& curl.exe -sS -o NUL -w "%{http_code}" --max-time 20 $Url 2>&1 | Out-String).Trim()
+  param([string]$Url, [string[]]$ExtraArgs = @())
+  return (& curl.exe -sS -o NUL -w "%{http_code}" --max-time 20 @ExtraArgs $Url 2>&1 | Out-String).Trim()
 }
 
 function Get-HttpHeaders {
-  param([string]$Url)
-  return (& curl.exe -sS -D - -o NUL --max-time 20 $Url 2>&1 | Out-String)
+  param([string]$Url, [string[]]$ExtraArgs = @())
+  return (& curl.exe -sS -D - -o NUL --max-time 20 @ExtraArgs $Url 2>&1 | Out-String)
+}
+
+# Cloudflare Access service token（可选）：仅当 Id/Secret 同时提供时附加请求头；
+# 不输出凭据本身，避免 CI/日志泄漏。未配置 Access 时传了也无害（边缘忽略）。
+function Get-AccessCurlArgs {
+  if ($AccessClientId -and $AccessClientSecret) {
+    return @('-H', "CF-Access-Client-Id: $AccessClientId", '-H', "CF-Access-Client-Secret: $AccessClientSecret")
+  }
+  return @()
+}
+
+if ($AccessClientId -xor $AccessClientSecret) {
+  throw 'Access 凭据必须同时提供 -AccessClientId 与 -AccessClientSecret'
 }
 
 # 解析 JSON：忽略日志/提示行；失败时剥离非 ASCII 再试一次（OP-06）。
@@ -140,18 +155,26 @@ function Get-StampAgeHours {
 }
 
 if (-not $SkipPublic) {
+  $accessArgs = Get-AccessCurlArgs
   Check "公网 app 健康检查" {
-    $code = Get-HttpStatus "$AppUrl/healthz"
+    $code = Get-HttpStatus "$AppUrl/healthz" -ExtraArgs $accessArgs
     if ($code -ne "200") { throw "HTTP $code" }
     "HTTP 200"
   }
+  if ($accessArgs.Count -gt 0) {
+    Check "Cloudflare Access service token" {
+      $code = Get-HttpStatus "$AppUrl/api/bots/status" -ExtraArgs $accessArgs
+      if ($code -ne "401") { throw "HTTP $code（预期 401：带 Access token 后到达应用但未登录）" }
+      "HTTP 401（Access 通过、应用鉴权生效）"
+    }
+  }
   Check "公网 ai 登录跳转/401" {
-    $code = Get-HttpStatus "$AiUrl/"
+    $code = Get-HttpStatus "$AiUrl/" -ExtraArgs $accessArgs
     if ($code -ne "302" -and $code -ne "401") { throw "HTTP $code" }
     "HTTP $code"
   }
   Check "公网安全响应头" {
-    $headers = Get-HttpHeaders "$AppUrl/"
+    $headers = Get-HttpHeaders "$AppUrl/" -ExtraArgs $accessArgs
     $required = @(
       @{ Name = "content-security-policy"; Pattern = "default-src" },
       @{ Name = "x-content-type-options"; Pattern = "nosniff" },
@@ -167,18 +190,18 @@ if (-not $SkipPublic) {
   }
   Check "PWA manifest/sw/offline" {
     foreach ($path in @("/manifest.webmanifest", "/sw.js", "/offline.html")) {
-      $code = Get-HttpStatus "$AppUrl$path"
+      $code = Get-HttpStatus "$AppUrl$path" -ExtraArgs $accessArgs
       if ($code -ne "200") { throw "$path HTTP $code" }
     }
     "manifest+sw+offline 200"
   }
   Check "公开分享页 404/410" {
-    $code = Get-HttpStatus "$AppUrl/s/antifieldcloud-smoke-invalid-token"
+    $code = Get-HttpStatus "$AppUrl/s/antifieldcloud-smoke-invalid-token" -ExtraArgs $accessArgs
     if ($code -ne "404" -and $code -ne "410") { throw "HTTP $code（预期 404/410）" }
     "HTTP $code"
   }
   Check "告警 API 未登录 401" {
-    $code = Get-HttpStatus "$AppUrl/api/alerts"
+    $code = Get-HttpStatus "$AppUrl/api/alerts" -ExtraArgs $accessArgs
     if ($code -ne "401") { throw "HTTP $code" }
     "HTTP 401"
   }

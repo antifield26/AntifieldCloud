@@ -1,5 +1,61 @@
 # Changelog
 
+## [v0.5.1] - 2026-10-21
+
+### Added
+
+- **QQ 官方 Bot**：`server/src/bot/adapters/qq.ts` 与 schema v8 的 `bots.platform='qq'`。
+  - Webhook 使用 AppSecret 派生 Ed25519 密钥：`op=13` 回调地址校验返回 `{plain_token, signature}`；`op=0` 事件校验 `X-Signature-Ed25519` + `X-Signature-Timestamp`（±300 秒），成功/忽略/重复事件统一回 `{opcode:12}`。
+  - 事件：`C2C_MESSAGE_CREATE`、`GROUP_AT_MESSAGE_CREATE`、`AT_MESSAGE_CREATE`；目标填 `user_openid`/`group_openid`/`channel_id`。
+  - 发送：被动回复带 `msg_id` 与随机 `msg_seq`，主动通知走 `v2/users|groups` 或 `channels` 消息接口；AppSecret 只用于本地派生密钥与换取 `access_token`（进程内缓存、提前 60 秒过期）。
+  - **仅文本**：单条 ≤2000 字符；发布媒体对 QQ 直接返回 400（`qq_media_unsupported`/“QQ 官方 Bot 暂不支持媒体发布”）。
+- **OpenCode AI `/ask`**（`server/src/bot/ai.ts`）：新增 `/ask <问题>` 命令与 `BOT_AI_*` 环境变量；通过 `OPENCODE_URL`（默认 `http://127.0.0.1:4096`）Basic Auth 调用 OpenCode 本地 API。
+  - 默认关闭；仅对已登记的目标 + user 白名单开放，按 `botId:userId` 每小时限流（默认 10 次），提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`（默认 2000），超时由 `BOT_AI_TIMEOUT_SECONDS`（默认 60）控制。
+  - 会话复用：`bot_ai_sessions` 按 `(bot_id, target_external_id, user_id)` 映射 `session_id`，过期映射按 `BOT_AI_SESSION_RETENTION_DAYS`（默认 7）清理。
+  - 新建会话传入 deny-all 的 OpenCode Permission.Ruleset 关闭工具；仅当服务端明确 400 拒绝 `permissions` 时降级为默认权限，并在日志标注“未隔离”，不宣称已隔离。
+  - 只返回 assistant 文本段，单次回复截断 4000 字符；错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体。
+- **Bot 运维增强**：
+  - `GET /api/bots/:id/metrics?hours=24`（1–720 小时）：返回投递总数/成功/失败/死信/成功率、发布总数/成功/失败、事件数、最近错误与最近发送时间；`/bots` 投递与发布分区新增“近 24 小时指标”卡。
+  - `bot_targets` 新增 `quiet_start_minute`/`quiet_end_minute`（Asia/Shanghai 本地 0–1439）；目标创建/更新接受 `quietStartMinute`/`quietEndMinute`，必须同时设置或同时留空、不能相同；静默窗口内的告警通知延后到窗口结束时刻。
+  - 发布新增 `confirmText: 'PUBLISH'` 二次确认；缺失返回 400 `publish_confirm_required`，即使有 TOTP 也不能省略。
+- **schema v8（迁移 8）**：重建 `bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events` 以把 `bots.platform` CHECK 扩到 `qq`；`bot_targets` 增加静默分钟列；新增 `bot_ai_sessions` 会话映射。迁移 6/7 保留。
+- **env**：`BOT_AI_ENABLED=false`、`BOT_AI_PROVIDER=`、`BOT_AI_MODEL=`、`BOT_AI_TIMEOUT_SECONDS=60`、`BOT_AI_MAX_PROMPT_CHARS=2000`、`BOT_AI_RATE_PER_HOUR=10`、`BOT_AI_SESSION_RETENTION_DAYS=7`；`bootstrap-env.sh` 已纳管这 7 项。
+- **安全收口**：
+  - fail2ban dbfile 持久化已启用（`/var/lib/fail2ban/fail2ban.sqlite3`）；新增 `deploy/systemd/nftables.service.d/10-fail2ban-restore.conf`，nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复封禁 set，避免同步 restart 的 ordering 死锁。
+  - `smoke.ps1` 新增 `-AccessClientId/-AccessClientSecret`：两者同时提供时附加 `CF-Access-Client-Id`/`CF-Access-Client-Secret` 请求头，并新增“Access token 到达应用但未登录 → 401”检查；凭据不打印。
+- **测试**：新增 `server/test/bot-qq.test.ts`（8）、`bot-ai.test.ts`（9）、`bot-v051.test.ts`（3）；`bot-migration.test.ts` 覆盖 v6→v8（含 qq CHECK 与静默列）。本地基线 `npm test` 265（服务端 249 + 运维脚本 16）、`npm run test:web` 139；`npm run check` 本地通过。
+
+### Changed
+
+- **发布 API**：`POST /api/bots/:id/publish` 的请求体新增必填 `confirmText: 'PUBLISH'`；TOTP 仍为必填，两者缺一不可。
+- **Bot 平台枚举**：`/api/version` 的 `botPlatforms` 变为 `["telegram","discord","slack","qq"]`；`BotSummary.platform`、`BotTarget` 响应同步增加 `qq` 与静默字段。
+- **`bootstrap-env.sh`**：纳入 7 个 `BOT_AI_*` 键，默认值来自 `deploy/env.example`；`--force` 沿用已有非空值。
+- **版本/数据库**：应用 `0.5.1`，schema v8；生产仍为 v0.5.0/schema v7，待部署。
+- **工具链评估**：typescript-eslint 8.x 仍不支持 TS7 API，v0.5.1 结论为**暂不升级**，保留 `@typescript/native` + `@typescript/typescript6@6.0.2` 双 alias。
+
+### Security
+
+- QQ AppSecret 与其它平台 Token 一样只写不读、AES-256-GCM 落库；错误/日志/审计不含 AppSecret、`access_token` 或签名原文。
+- QQ Webhook 只接受 Ed25519 签名与 ±300 秒时间戳；非命令/未知事件也返回确认体，避免平台重推；重复事件由 `bot_events` 去重。
+- `/ask` 不向 Bot 用户暴露 OpenCode 工具执行能力（deny-all）；未启用、超限或越权均只返回提示文本，不执行业务。
+- 静默时段只延后通知，不丢弃；通知仍按告警事件去重。
+- 发布双确认：会话 + CSRF + TOTP + `PUBLISH` 文本，降低误发/会话劫持外发风险。
+- `smoke.ps1` 的 Access service token 仅从命令行读取，不写入日志/仓库；建议专用 token、最小范围与定期轮换。
+
+### Docs
+
+- 同步 README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/`docs/BOT.md` 与 `deploy/env.example`：QQ 配置、AI 边界、metrics/quiet/confirm、schema v8、迁移 8、fail2ban drop-in、smoke Access token、v0.5.1 测试基线与待部署状态。
+- ACCEPTANCE 新增 v0.5.1 当前章节；生产部署/QQ 真实回调/AI 真实模型/Cloudflare Access 标为待验收，不提前声明通过。
+
+### Known limitations（v0.5.1 明确不做）
+
+- QQ 官方 Bot 仅文本、不支持媒体；企业微信/钉钉/飞书未实现；多管理员审批流未实现。
+- QQ 真实回调需用户在 QQ 开放平台后台配置；AI 真实模型回复需部署后在 OpenCode 侧验证；两者当前只有进程内测试。
+- Cloudflare Access 策略、bypass 与 service token 仍需用户后台配置；应用侧无法自证边缘策略。
+- `fail2ban` drop-in 已在生产安装并实测 nftables restart 后封禁恢复，但完整安全验收仍待 Cloudflare Access 等项完成。
+- Bot 单次发布最多 1 个媒体文件（QQ 为 0）；命令严格只读；无平台主动拉取/长连接。
+- `typescript-eslint` 仍不支持 TS7 API，双 alias 保留到其支持 TS7.1。
+
 ## [0.5.0] - 2026-10-21
 
 ### Added

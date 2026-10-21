@@ -39,6 +39,7 @@ import { registerBackupRoutes } from './http/routes/backups.ts'
 import { registerUploadRoutes } from './http/routes/uploads.ts'
 import { registerMetricsRoutes } from './http/routes/metrics.ts'
 import { BotService } from './bot/service.ts'
+import { OpenCodeBotAi } from './bot/ai.ts'
 import type { BotMediaStore } from './bot/types.ts'
 import { registerBotRoutes } from './http/routes/bots.ts'
 import { registerBotWebhookRoutes } from './http/routes/bot-webhook.ts'
@@ -147,6 +148,16 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     },
     audit: (action, target, detail) => audit(db, 'bot', action, target, detail, null),
     media: botMedia,
+    ai: new OpenCodeBotAi({
+      db,
+      config,
+      log: (level, message, detail) => {
+        const payload = detail ? { detail } : {}
+        if (level === 'error') app.log.error(payload, message)
+        else if (level === 'warn') app.log.warn(payload, message)
+        else app.log.info(payload, message)
+      },
+    }),
     providers: {
       status: async () => {
         const data = await dashboard.get()

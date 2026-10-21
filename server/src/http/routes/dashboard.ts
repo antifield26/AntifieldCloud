@@ -7,6 +7,7 @@ import { listAudit } from '../../auth/audit.ts'
 import { badRequest } from '../../util/errors.ts'
 import { asRecord, parsePositiveInt } from '../util.ts'
 import { requireAuth } from '../guards.ts'
+import { BOT_PLATFORMS } from '../../bot/types.ts'
 
 /** 时间过滤参数：空值忽略；非法 ISO 时间返回 400，避免静默变全量查询。 */
 function timeParam(value: unknown, field: string): string | null {
@@ -61,6 +62,6 @@ export function registerDashboardRoutes(
     metricsSampleSeconds: config.metricsSampleSeconds,
     metricsRetentionDays: config.metricsRetentionDays,
     botsEnabled: config.botEnabled && config.botSecretKey.length > 0,
-    botPlatforms: ['telegram', 'discord', 'slack'],
+    botPlatforms: [...BOT_PLATFORMS],
   }))
 }

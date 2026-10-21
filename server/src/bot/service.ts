@@ -14,6 +14,7 @@ import {
   isBotPlatform,
   type BotDelivery,
   type BotDeliveryRow,
+  type BotMetrics,
   type BotPlatform,
   type BotPublishJob,
   type BotPublishRow,
@@ -29,6 +30,7 @@ import {
 } from './types.ts'
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { DiscordAdapter } from './adapters/discord.ts'
+import { QqAdapter } from './adapters/qq.ts'
 import { SlackAdapter } from './adapters/slack.ts'
 import { TelegramAdapter } from './adapters/telegram.ts'
 import { commandDenied, commandFailed, formatFileList, formatPairs, helpText } from './templates.ts'
@@ -64,6 +66,8 @@ export interface CreateTargetInput {
   kind: 'channel' | 'user' | 'group'
   allowCommands: boolean
   allowNotifications: boolean
+  quietStartMinute?: number | null
+  quietEndMinute?: number | null
 }
 
 export interface UpdateTargetInput {
@@ -71,6 +75,8 @@ export interface UpdateTargetInput {
   kind?: 'channel' | 'user' | 'group'
   allowCommands?: boolean
   allowNotifications?: boolean
+  quietStartMinute?: number | null
+  quietEndMinute?: number | null
 }
 
 export interface CreatePublishInput {
@@ -78,6 +84,8 @@ export interface CreatePublishInput {
   text: string
   mediaFileIds?: string[]
   scheduledAt?: string | null
+  /** 二次确认文本，必须为 PUBLISH（服务端校验）。 */
+  confirmText?: string
 }
 
 export interface BotAlertEvent {
@@ -116,6 +124,37 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
+/** 目标静默时段：Asia/Shanghai 本地分钟；起止相等视为未配置。 */
+function localMinute(now: Date): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Shanghai',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(now)
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0')
+  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0')
+  return hour * 60 + minute
+}
+
+function inQuietWindow(now: Date, target: BotTargetRow): boolean {
+  const start = target.quiet_start_minute
+  const end = target.quiet_end_minute
+  if (start === null || end === null || start === end) return false
+  const minute = localMinute(now)
+  return start < end ? minute >= start && minute < end : minute >= start || minute < end
+}
+
+/** 静默窗口结束时刻（最多向后找 24 小时，按上海本地分钟匹配）。 */
+function quietUntil(now: Date, target: BotTargetRow): Date {
+  const end = target.quiet_end_minute ?? 0
+  for (let offset = 1; offset <= 24 * 60; offset += 1) {
+    const candidate = new Date(now.getTime() + offset * 60_000)
+    if (localMinute(candidate) === end) return candidate
+  }
+  return new Date(now.getTime() + 24 * 3_600_000)
+}
+
 function parseConfig(text: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(text) as unknown
@@ -132,6 +171,7 @@ export class BotService {
   private readonly key: Buffer | null
   private readonly limiter: SlidingWindowLimiter
   private readonly webhookLimiter: SlidingWindowLimiter
+  private readonly aiLimiter: SlidingWindowLimiter
   private timer: NodeJS.Timeout | null = null
   private stopped = false
   private ticking = false
@@ -143,6 +183,7 @@ export class BotService {
     this.deps = deps
     this.limiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botCommandRatePerMinute))
     this.webhookLimiter = new SlidingWindowLimiter(60_000, 300)
+    this.aiLimiter = new SlidingWindowLimiter(3_600_000, Math.max(1, deps.config.botAiRatePerHour))
     try {
       this.key = decodeBotKey(deps.config.botSecretKey)
     } catch {
@@ -181,6 +222,72 @@ export class BotService {
       queuedDeliveries: deliveries.c,
       queuedPublishes: publishes.c,
       lastError: lastError?.last_error ?? null,
+    }
+  }
+
+  metrics(botId: string, hours = 24): BotMetrics {
+    this.requireEnabled()
+    this.botRow(botId)
+    const windowHours = Math.max(1, Math.min(24 * 30, Math.floor(hours)))
+    const cutoff = new Date(Date.now() - windowHours * 3_600_000).toISOString()
+    const deliveries = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total,
+           SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+           SUM(CASE WHEN status IN ('failed','dead') THEN 1 ELSE 0 END) AS failed,
+           SUM(CASE WHEN status = 'dead' THEN 1 ELSE 0 END) AS dead
+         FROM bot_deliveries WHERE bot_id = ? AND created_at >= ?`,
+      )
+      .get(botId, cutoff) as { total: number; sent: number | null; failed: number | null; dead: number | null }
+    const publishes = this.db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total,
+           SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
+           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+         FROM bot_publish_jobs WHERE bot_id = ? AND created_at >= ?`,
+      )
+      .get(botId, cutoff) as { total: number; sent: number | null; failed: number | null }
+    const events = this.db
+      .prepare('SELECT COUNT(*) AS c FROM bot_events WHERE bot_id = ? AND received_at >= ?')
+      .get(botId, cutoff) as { c: number }
+    const lastError = this.db
+      .prepare(
+        `SELECT last_error FROM (
+           SELECT last_error, updated_at FROM bot_deliveries WHERE bot_id = ? AND last_error IS NOT NULL
+           UNION ALL
+           SELECT last_error, updated_at FROM bot_publish_jobs WHERE bot_id = ? AND last_error IS NOT NULL
+         ) ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(botId, botId) as { last_error: string } | undefined
+    const lastSent = this.db
+      .prepare(
+        `SELECT sent_at FROM (
+           SELECT sent_at FROM bot_deliveries WHERE bot_id = ? AND sent_at IS NOT NULL
+           UNION ALL
+           SELECT sent_at FROM bot_publish_jobs WHERE bot_id = ? AND sent_at IS NOT NULL
+         ) ORDER BY sent_at DESC LIMIT 1`,
+      )
+      .get(botId, botId) as { sent_at: string } | undefined
+    const attempted = Number(deliveries.sent ?? 0) + Number(deliveries.failed ?? 0)
+    return {
+      hours: windowHours,
+      deliveries: {
+        total: deliveries.total,
+        sent: Number(deliveries.sent ?? 0),
+        failed: Number(deliveries.failed ?? 0),
+        dead: Number(deliveries.dead ?? 0),
+        successRate: attempted === 0 ? 0 : Math.round((Number(deliveries.sent ?? 0) / attempted) * 1000) / 10,
+      },
+      publishes: {
+        total: publishes.total,
+        sent: Number(publishes.sent ?? 0),
+        failed: Number(publishes.failed ?? 0),
+      },
+      events: events.c,
+      lastError: lastError?.last_error ?? null,
+      lastSentAt: lastSent?.sent_at ?? null,
     }
   }
 
@@ -290,14 +397,27 @@ export class BotService {
     if (!externalId || !label) throw badRequest('目标 ID 与名称不能为空')
     const count = this.db.prepare('SELECT COUNT(*) AS c FROM bot_targets WHERE bot_id = ?').get(botId) as { c: number }
     if (count.c >= MAX_TARGETS_PER_BOT) throw badRequest('目标数量过多')
+    const quiet = this.normalizeQuiet(input.quietStartMinute, input.quietEndMinute)
     const id = newId()
     try {
       this.db
         .prepare(
-          `INSERT INTO bot_targets (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO bot_targets
+           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, quiet_start_minute, quiet_end_minute, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(id, botId, externalId, label, input.kind, input.allowCommands ? 1 : 0, input.allowNotifications ? 1 : 0, nowIso())
+        .run(
+          id,
+          botId,
+          externalId,
+          label,
+          input.kind,
+          input.allowCommands ? 1 : 0,
+          input.allowNotifications ? 1 : 0,
+          quiet.start,
+          quiet.end,
+          nowIso(),
+        )
     } catch {
       throw new AppError(409, 'conflict', '该目标已存在')
     }
@@ -311,13 +431,23 @@ export class BotService {
     const row = this.targetRowForBot(botId, targetId)
     const label = input.label !== undefined ? cleanText(input.label, NAME_MAX) : row.label
     if (!label) throw badRequest('目标名称不能为空')
+    const quiet = this.normalizeQuiet(
+      input.quietStartMinute === undefined ? row.quiet_start_minute : input.quietStartMinute,
+      input.quietEndMinute === undefined ? row.quiet_end_minute : input.quietEndMinute,
+    )
     this.db
-      .prepare('UPDATE bot_targets SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ? WHERE id = ?')
+      .prepare(
+        `UPDATE bot_targets
+         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, quiet_start_minute = ?, quiet_end_minute = ?
+         WHERE id = ?`,
+      )
       .run(
         label,
         input.kind ?? row.kind,
         input.allowCommands === undefined ? row.allow_commands : input.allowCommands ? 1 : 0,
         input.allowNotifications === undefined ? row.allow_notifications : input.allowNotifications ? 1 : 0,
+        quiet.start,
+        quiet.end,
         targetId,
       )
     this.deps.audit('bot.target.update', `${botId}:${targetId}`)
@@ -362,15 +492,18 @@ export class BotService {
 
   createPublish(botId: string, input: CreatePublishInput): BotPublishJob {
     this.requireEnabled()
+    if (input.confirmText !== 'PUBLISH') throw badRequest('发布需要输入 PUBLISH 二次确认', 'publish_confirm_required')
     const bot = this.botRow(botId)
     const target = this.targetRowForBot(botId, input.targetId)
     if (target.kind === 'user') throw badRequest('发布目标必须是频道/群组')
     const text = cleanText(input.text, TEXT_MAX)
     if (!text) throw badRequest('发布内容不能为空')
-    const platformLimit = bot.platform === 'discord' ? 2000 : bot.platform === 'slack' ? 4000 : 4096
+    const platformLimit =
+      bot.platform === 'discord' ? 2000 : bot.platform === 'slack' ? 4000 : bot.platform === 'qq' ? 2000 : 4096
     if (text.length > platformLimit) throw badRequest(`内容超过 ${platformLimit} 字符`)
     const mediaIds = Array.isArray(input.mediaFileIds) ? input.mediaFileIds.map((id) => cleanText(id, 64)).filter(Boolean) : []
     if (mediaIds.length > 1) throw badRequest('v0.5.0 单次发布最多选择 1 个媒体文件')
+    if (mediaIds.length > 0 && bot.platform === 'qq') throw badRequest('QQ 官方 Bot 暂不支持媒体发布')
     if (mediaIds.length === 1) {
       const stat = this.deps.media.stat(mediaIds[0]!)
       if (!stat) throw badRequest('媒体文件不存在或不可发布')
@@ -478,7 +611,9 @@ export class BotService {
           `事件：${event.event}（${event.status}）`,
           `时间：${event.createdAt}`,
         ].join('\n')
-        this.enqueueDelivery(bot.id, target.id, 'notification', { text }, `alert:${event.id}:${bot.id}:${target.id}`)
+        const now = this.deps.now?.() ?? new Date()
+        const notBefore = inQuietWindow(now, target) ? quietUntil(now, target) : undefined
+        this.enqueueDelivery(bot.id, target.id, 'notification', { text }, `alert:${event.id}:${bot.id}:${target.id}`, notBefore)
       }
     }
   }
@@ -631,29 +766,29 @@ export class BotService {
       return { status: result.status, body: { error: { code: result.code } } }
     }
     if (result.kind === 'challenge') return { status: 200, body: result.body }
-    if (result.kind === 'ignored') return { status: 200, body: { ok: true } }
+    if (result.kind === 'ignored') return { status: 200, body: result.ackBody ?? { ok: true } }
     const inserted = this.db
       .prepare('INSERT OR IGNORE INTO bot_events (bot_id, platform_event_id, received_at) VALUES (?, ?, ?)')
       .run(bot.id, result.eventId, nowIso())
-    if (Number(inserted.changes) === 0) return { status: 200, body: { ok: true, duplicate: true } }
+    if (Number(inserted.changes) === 0) return { status: 200, body: result.ackBody ?? { ok: true, duplicate: true } }
     const target = this.db
       .prepare('SELECT * FROM bot_targets WHERE bot_id = ? AND external_id = ?')
       .get(bot.id, result.targetExternalId) as unknown as BotTargetRow | undefined
     if (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId)) {
       this.deps.audit('bot.command.denied', bot.id, { target: result.targetExternalId, user: result.userId.slice(0, 64) })
-      return { status: 200, body: result.immediateResponse ?? { ok: true } }
+      return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
     }
     const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
     if (retry > 0) {
       void result.reply('命令过于频繁，请稍后再试。').catch(() => undefined)
-      return { status: 200, body: result.immediateResponse ?? { ok: true } }
+      return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
     }
     const task = this.executeCommand(bot, result).catch((error: unknown) => {
       this.deps.log('warn', 'Bot 命令执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
     })
     this.pending.add(task)
     void task.finally(() => this.pending.delete(task))
-    return { status: 200, body: result.immediateResponse ?? { ok: true } }
+    return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
   }
 
   private async executeCommand(bot: BotRow, result: Extract<InboundVerification, { kind: 'command' }>): Promise<void> {
@@ -695,6 +830,34 @@ export class BotService {
           text = formatFileList(args, await this.deps.providers.files(args))
           break
         }
+        case 'ask': {
+          if (!this.config.botAiEnabled || !this.deps.ai) {
+            text = 'AI 对话未启用，请联系管理员开启 BOT_AI_ENABLED。'
+            break
+          }
+          if (!args) {
+            text = '用法：/ask <问题>'
+            break
+          }
+          const prompt = args.slice(0, this.config.botAiMaxPromptChars)
+          const retry = this.aiLimiter.hit(`${bot.id}:${result.userId}`)
+          if (retry > 0) {
+            text = `AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`
+            break
+          }
+          this.deps.audit('bot.ai.ask', `${bot.platform}:${result.targetExternalId}`, {
+            bot: bot.id,
+            user: result.userId.slice(0, 64),
+            chars: prompt.length,
+          })
+          text = await this.deps.ai.chat({
+            botId: bot.id,
+            targetExternalId: result.targetExternalId,
+            userId: result.userId,
+            prompt,
+          })
+          break
+        }
         default:
           text = commandDenied()
       }
@@ -710,16 +873,27 @@ export class BotService {
     kind: BotDeliveryRow['kind'],
     payload: Record<string, unknown>,
     dedupeKey: string | null,
+    notBefore?: Date,
   ): void {
     const now = nowIso()
     try {
       this.db
         .prepare(
           `INSERT OR IGNORE INTO bot_deliveries
-           (id, bot_id, target_id, kind, dedupe_key, payload_json, status, attempts, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?)`,
+           (id, bot_id, target_id, kind, dedupe_key, payload_json, status, attempts, next_attempt_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`,
         )
-        .run(newId(), botId, targetId, kind, dedupeKey, JSON.stringify(payload), now, now)
+        .run(
+          newId(),
+          botId,
+          targetId,
+          kind,
+          dedupeKey,
+          JSON.stringify(payload),
+          notBefore ? notBefore.toISOString() : null,
+          now,
+          now,
+        )
     } catch {
       // 队列写入失败不应影响告警/请求主路径。
     }
@@ -744,6 +918,7 @@ export class BotService {
       this.db.prepare('DELETE FROM bot_events WHERE received_at < ?').run(cutoff)
       this.db.prepare("DELETE FROM bot_deliveries WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
       this.db.prepare("DELETE FROM bot_publish_jobs WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
+      this.deps.ai?.cleanup?.()
       // 永久失败/死信也需要 TTL，避免 Bot 长期运行后队列无限增长。
       this.db.prepare("DELETE FROM bot_deliveries WHERE status IN ('dead','failed') AND updated_at < ?").run(deliveryCutoff)
       this.db.prepare("DELETE FROM bot_publish_jobs WHERE status = 'failed' AND updated_at < ?").run(deliveryCutoff)
@@ -812,6 +987,8 @@ export class BotService {
         return new DiscordAdapter(config, secret, { fetch: this.deps.fetch })
       case 'slack':
         return new SlackAdapter(secret, { fetch: this.deps.fetch })
+      case 'qq':
+        return new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
       default:
         throw new AppError(500, 'bot_platform_invalid', 'Bot 平台无效')
     }
@@ -853,6 +1030,10 @@ export class BotService {
     raw: Record<string, unknown> | undefined,
     publicKey?: string,
   ): Record<string, unknown> {
+    if (platform === 'qq') {
+      const source = raw ?? {}
+      return { appId: cleanText(source.appId ?? source.applicationId, 64) }
+    }
     if (platform !== 'discord') return {}
     const source = raw ?? {}
     return {
@@ -867,13 +1048,30 @@ export class BotService {
         ? new TelegramAdapter(secret, { fetch: this.deps.fetch })
         : platform === 'discord'
           ? new DiscordAdapter(config, secret, { fetch: this.deps.fetch })
-          : new SlackAdapter(secret, { fetch: this.deps.fetch })
+          : platform === 'qq'
+            ? new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
+            : new SlackAdapter(secret, { fetch: this.deps.fetch })
     const errors = adapter.validate(config, secret)
     if (errors.length > 0) throw badRequest(`Bot 配置无效：${errors.join(', ')}`, 'invalid_bot_config')
   }
 
-  private parseSchedule(scheduledAt: string | null | undefined): string | null {
-    if (!scheduledAt) return null
+  private normalizeQuiet(start: number | null | undefined, end: number | null | undefined): {
+    start: number | null
+    end: number | null
+  } {
+    const clean = (value: number | null | undefined): number | null => {
+      if (value === null || value === undefined) return null
+      if (!Number.isInteger(value) || value < 0 || value > 1439) throw badRequest('静默时段必须是 0-1439 分钟')
+      return value
+    }
+    const cleanStart = clean(start)
+    const cleanEnd = clean(end)
+    if ((cleanStart === null) !== (cleanEnd === null)) throw badRequest('静默时段起止必须同时设置或同时留空')
+    if (cleanStart !== null && cleanStart === cleanEnd) throw badRequest('静默时段起止不能相同')
+    return { start: cleanStart, end: cleanEnd }
+  }
+
+  private parseSchedule(scheduledAt: string | null | undefined): string | null {    if (!scheduledAt) return null
     const time = Date.parse(scheduledAt)
     if (!Number.isFinite(time)) throw badRequest('定时时间格式无效')
     if (time < Date.now() - 30_000) throw badRequest('定时时间必须晚于当前时间')
@@ -893,6 +1091,8 @@ function toTarget(row: BotTargetRow): BotTarget {
     kind: row.kind,
     allowCommands: row.allow_commands === 1,
     allowNotifications: row.allow_notifications === 1,
+    quietStartMinute: row.quiet_start_minute,
+    quietEndMinute: row.quiet_end_minute,
     createdAt: row.created_at,
   }
 }

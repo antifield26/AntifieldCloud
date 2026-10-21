@@ -299,11 +299,11 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 单请求仍受 100 MiB/Cloudflare 代理限制；分片块 8 MiB 远低于限制，5 GiB 文件约 640 块。
 
-## 15. v0.5.0 机器人页
+## 15. v0.5.1 机器人页
 
 ### 入口与布局
 
-- 侧栏新增“机器人”（`Bot` 图标，路由 `/bots`），页面标题“机器人”，副标题“Telegram / Discord / Slack 通知、只读命令回复与消息发布”。
+- 侧栏新增“机器人”（`Bot` 图标，路由 `/bots`），页面标题“机器人”，副标题“Telegram / Discord / Slack / QQ 通知、只读命令与 AI 问答、消息发布”。
 - 顶部工具栏：左侧“当前 Bot”下拉（`label` 关联 select；无 Bot 时显示“暂无 Bot”并禁用），右侧“新建 Bot”主按钮 + “刷新”。
 - 标签页（`role=tablist`，“概览/配置/目标/投递与发布”）：左右方向键/Home/End 切换，`aria-selected`/`aria-controls` 与面板联动；面板可聚焦。
 - 未启用（`BOT_ENABLED=false` 或 `bot_key_missing/bot_key_invalid`）：不请求 Bot 列表，展示 `Card` 指引：
@@ -313,13 +313,15 @@ CSS 变量（`web/src/styles/tokens.css`）：
 ### 概览
 
 - 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示）。
+- 概览提示：命令为只读（含 `/ask`），发布需 TOTP + `PUBLISH` 双确认。
 - Bot 列表/选择：名称、平台、启用徽章、目标数、最近检查时间；点击切换到该 Bot（并进入配置分区）。
-- 空态：“还没有机器人” + “新建 Bot”；加载中 `SkeletonText`；错误 `InlineError` + 重试。
+- 空态：“还没有机器人” + “新建 Bot”（平台含 QQ）；加载中 `SkeletonText`；错误 `InlineError` + 重试。
 
 ### 配置
 
-- 左列表单：名称、平台（新建可选 `telegram/discord/slack`，编辑只读）、Token、平台专属字段：
-  Telegram Webhook Secret（≥16）；Discord Application ID（5–32 位数字）+ Public Key（64 位 hex）；Slack Signing Secret（≥16）。
+- 左列表单：名称、平台（新建可选 `telegram/discord/slack/qq`，编辑只读）、Token/AppSecret、平台专属字段：
+  Telegram Webhook Secret（≥16）；Discord Application ID（5–32 位数字）+ Public Key（64 位 hex）；Slack Signing Secret（≥16）；
+  QQ AppID（5–32 位数字，公开配置）+ AppSecret（写在“Token”字段，只提交不回显）。
 - 密钥输入 `type=password`、`autocomplete=new-password`，编辑时留空表示保持原值，**永不回显**；不写入 localStorage/DOM 默认值。
 - 开关“启用 Bot”（默认关）；保存/删除（`ConfirmDialog`，危险按钮默认焦点“取消”）。
 - 右列接入信息：`webhookUrl` + 复制按钮、`setupSteps` 有序列表（平台后台步骤）、`keyVersion`/时间等只读元数据；
@@ -328,19 +330,27 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 目标
 
-- 表单：平台目标 ID、名称、类型（频道/用户/群组）、两个开关“允许命令”“接收通知”（命令默认关、通知默认开）。
-- 列表：目标名、外部 ID（等宽截断）、类型徽章、两个开关（可直接 PATCH）、删除按钮（确认）。
-- 说明：命令需“目标允许命令 + 用户白名单（类型=用户且允许命令）”同时满足；发布只支持频道/群组。
-- 空态/错误/保存中禁用重复提交；每 Bot 最多 100 个目标，重复 `409` 提示。
+- 表单：平台目标 ID、名称、类型（频道/用户/群组）、两个开关“允许命令”“接收通知”（命令默认关、通知默认开）、
+  静默时段两个 `time` 输入（可选，`HH:mm`，Asia/Shanghai；起止需同时填写且不能相同，窗口内通知延后到结束）。
+- 列表：目标名、外部 ID（等宽截断）、类型徽章、两个开关（可直接 PATCH）、删除按钮（确认）；配置静默时段的目标显示
+  “静默 HH:mm–HH:mm”徽章。
+- 说明：命令需“目标允许命令 + 用户白名单（类型=用户且允许命令）”同时满足；发布只支持频道/群组；QQ 目标填
+  `user_openid`/`group_openid`/`channel_id`。
+- 空态/错误/保存中禁用重复提交；每 Bot 最多 100 个目标，重复 `409` 提示；静默起止缺失、格式错误或相同均在前端拦截。
 
 ### 投递与发布
 
+- 顶部“近 24 小时指标”卡：投递成功数、成功率（sent/(sent+failed)）、失败/死信、发布 sent/失败、最近发送时间、事件数；
+  有 `lastError` 时显示脱敏错误条；数据来自 `GET /api/bots/:id/metrics?hours=24`。
 - 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要；
   `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）。
-- 发布表单：目标（仅频道/群组）、文本（显示平台上限）、可选单个媒体（填写云端普通文件 ID，≤10 MiB，单次 1 个）、
-  定时时间（可空；≤30 天）、**TOTP 验证码**（6 位、`autocomplete=one-time-code`，必填）；提交后进入列表。
+- 发布表单：目标（仅频道/群组）、文本（显示平台上限；QQ 2000、Discord 2000、Slack 4000、Telegram 4096）、
+  可选单个媒体（填写云端普通文件 ID，≤10 MiB，单次 1 个；QQ 平台在说明中标明仅文本，提交媒体由服务端拒绝）、
+  定时时间（可空；≤30 天）、**TOTP 验证码**（6 位、`autocomplete=one-time-code`，必填）、
+  **二次确认输入**（必须输入 `PUBLISH`，与 TOTP 共同构成双确认）；提交后进入列表。
 - 发布列表：状态、目标、文本摘要、媒体标记、定时/发送时间、错误；`queued/draft` 可“取消”（确认）。
-- 提交中禁用按钮；`totp_required`/`invalid_code`/`rate_limited` 用字段错误/Toast 明确提示；不展示 Token/Secret/完整平台 URL。
+- 提交中禁用按钮；`totp_required`、`invalid_code`、`publish_confirm_required`、`rate_limited` 用字段错误/Toast 明确提示；
+  不展示 Token/Secret/AppSecret/完整平台 URL。
 
 ### 响应式与可访问性
 

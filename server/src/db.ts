@@ -433,6 +433,122 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_bot_events_received ON bot_events(received_at);
   `,
+  `
+  -- v0.5.1：QQ 官方 Bot、目标静默时段、AI 会话映射。
+  -- SQLite 不能修改 CHECK，重建全部 Bot 表以扩展 platform 枚举。
+  CREATE TABLE bots_v8 (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL CHECK (platform IN ('telegram', 'discord', 'slack', 'qq')),
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    config_json TEXT NOT NULL DEFAULT '{}',
+    secret_ciphertext TEXT NOT NULL,
+    secret_iv TEXT NOT NULL,
+    secret_tag TEXT NOT NULL,
+    key_version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_error TEXT,
+    last_checked_at TEXT
+  );
+  INSERT INTO bots_v8
+    (id, platform, name, enabled, config_json, secret_ciphertext, secret_iv, secret_tag, key_version, created_at, updated_at, last_error, last_checked_at)
+    SELECT id, platform, name, enabled, config_json, secret_ciphertext, secret_iv, secret_tag, key_version, created_at, updated_at, last_error, last_checked_at FROM bots;
+
+  CREATE TABLE bot_targets_v8 (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL REFERENCES bots_v8(id) ON DELETE CASCADE,
+    external_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('channel', 'user', 'group')),
+    allow_commands INTEGER NOT NULL DEFAULT 0 CHECK (allow_commands IN (0, 1)),
+    allow_notifications INTEGER NOT NULL DEFAULT 1 CHECK (allow_notifications IN (0, 1)),
+    quiet_start_minute INTEGER CHECK (quiet_start_minute BETWEEN 0 AND 1439),
+    quiet_end_minute INTEGER CHECK (quiet_end_minute BETWEEN 0 AND 1439),
+    created_at TEXT NOT NULL,
+    UNIQUE (bot_id, external_id)
+  );
+  INSERT INTO bot_targets_v8
+    (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, quiet_start_minute, quiet_end_minute, created_at)
+    SELECT id, bot_id, external_id, label, kind, allow_commands, allow_notifications, NULL, NULL, created_at FROM bot_targets;
+
+  CREATE TABLE bot_deliveries_v8 (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL REFERENCES bots_v8(id) ON DELETE CASCADE,
+    target_id TEXT REFERENCES bot_targets_v8(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('notification', 'command_reply', 'publish', 'test')),
+    dedupe_key TEXT,
+    payload_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'sending', 'sent', 'failed', 'dead')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    external_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    sent_at TEXT
+  );
+  INSERT INTO bot_deliveries_v8
+    (id, bot_id, target_id, kind, dedupe_key, payload_json, status, attempts, next_attempt_at, last_error, external_id, created_at, updated_at, sent_at)
+    SELECT id, bot_id, target_id, kind, dedupe_key, payload_json, status, attempts, next_attempt_at, last_error, external_id, created_at, updated_at, sent_at FROM bot_deliveries;
+
+  CREATE TABLE bot_publish_jobs_v8 (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL REFERENCES bots_v8(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL REFERENCES bot_targets_v8(id) ON DELETE CASCADE,
+    content_json TEXT NOT NULL,
+    media_file_ids_json TEXT NOT NULL DEFAULT '[]',
+    scheduled_at TEXT,
+    status TEXT NOT NULL CHECK (status IN ('draft', 'queued', 'sending', 'sent', 'failed', 'canceled')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    sent_at TEXT
+  );
+  INSERT INTO bot_publish_jobs_v8
+    (id, bot_id, target_id, content_json, media_file_ids_json, scheduled_at, status, attempts, last_error, created_at, updated_at, sent_at)
+    SELECT id, bot_id, target_id, content_json, media_file_ids_json, scheduled_at, status, attempts, last_error, created_at, updated_at, sent_at FROM bot_publish_jobs;
+
+  CREATE TABLE bot_events_v8 (
+    bot_id TEXT NOT NULL REFERENCES bots_v8(id) ON DELETE CASCADE,
+    platform_event_id TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, platform_event_id)
+  );
+  INSERT INTO bot_events_v8 (bot_id, platform_event_id, received_at)
+    SELECT bot_id, platform_event_id, received_at FROM bot_events;
+
+  DROP TABLE bot_events;
+  DROP TABLE bot_publish_jobs;
+  DROP TABLE bot_deliveries;
+  DROP TABLE bot_targets;
+  DROP TABLE bots;
+  ALTER TABLE bots_v8 RENAME TO bots;
+  ALTER TABLE bot_targets_v8 RENAME TO bot_targets;
+  ALTER TABLE bot_deliveries_v8 RENAME TO bot_deliveries;
+  ALTER TABLE bot_publish_jobs_v8 RENAME TO bot_publish_jobs;
+  ALTER TABLE bot_events_v8 RENAME TO bot_events;
+
+  CREATE INDEX idx_bot_targets_bot ON bot_targets(bot_id);
+  CREATE INDEX idx_bot_deliveries_queue ON bot_deliveries(status, next_attempt_at);
+  CREATE INDEX idx_bot_deliveries_bot ON bot_deliveries(bot_id, created_at DESC);
+  CREATE UNIQUE INDEX idx_bot_deliveries_dedupe ON bot_deliveries(bot_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+  CREATE INDEX idx_bot_publish_jobs_schedule ON bot_publish_jobs(status, scheduled_at);
+  CREATE INDEX idx_bot_events_received ON bot_events(received_at);
+
+  CREATE TABLE bot_ai_sessions (
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    target_external_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    model TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, target_external_id, user_id)
+  );
+  CREATE INDEX idx_bot_ai_sessions_updated ON bot_ai_sessions(updated_at);
+  `,
 ]
 
 export interface OpenOptions {

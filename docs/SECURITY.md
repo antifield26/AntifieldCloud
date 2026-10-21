@@ -73,22 +73,29 @@
   限流（创建 30/min、metadata 120/min、unlock 8/15min、content 240/min）；`af_share` 5 分钟 HttpOnly Cookie，Path 限定单 token；
   下载次数按会话计且仅在内容流完整读完后 +1；文件删除/回收站吊销整个分享（含作为条目之一的分享）。
 
-### Bot（v0.5.0）
+### Bot（v0.5.1）
 
 - 凭据：`crypto.ts` 使用 AES-256-GCM（随机 12 字节 IV、认证 tag、`key_version=1`）；`BOT_SECRET_KEY` 必须是 32 字节 base64，启动时校验，格式错误拒绝启动/服务初始化。
-  管理 API 只返回 `BotSummary`（无 Token/Secret）；`PATCH` 的 Token 空值保持、其它密钥省略保持（显式空串清空）；Bot 删除级联清理目标/投递/发布/事件。
+  管理 API 只返回 `BotSummary`（无 Token/Secret/AppSecret）；`PATCH` 的 Token 空值保持、其它密钥省略保持（显式空串清空）；Bot 删除级联清理目标/投递/发布/事件/AI 会话。
 - 入站：`POST /api/bot/webhook/:botId` 无会话/CSRF，仅平台签名鉴权；Telegram 恒定时间比较 secret token，Discord 校验 `timestamp+body` 的 Ed25519 签名，
-  Slack 校验 `v0:<timestamp>:<body>` HMAC；时间戳允许 ±300 秒；`bot_events` 以 `(bot_id, platform_event_id)` 主键去重；Body 上限 256 KiB。
+  Slack 校验 `v0:<timestamp>:<body>` HMAC，QQ 用 AppSecret 派生 Ed25519 私钥校验 `X-Signature-Ed25519` + 时间戳（op=13 回调校验返回 `plain_token` 签名，
+  op=0 事件验签后回 `{opcode:12}`）；时间戳允许 ±300 秒；`bot_events` 以 `(bot_id, platform_event_id)` 主键去重；Body 上限 256 KiB。
 - 授权：命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；命令白名单固定为
-  `/help` `/status` `/backup` `/world` `/mc` `/files`，未知命令只返回帮助；`/files` 只返回名称/大小，不含内容/路径。
+  `/help` `/status` `/backup` `/world` `/mc` `/files`，以及需 `BOT_AI_ENABLED=true` 的 `/ask`；未知命令只返回帮助；`/files` 只返回名称/大小，不含内容/路径。
+- AI：`/ask` 仅白名单用户；按 `botId:userId` 每小时限流（`BOT_AI_RATE_PER_HOUR`，默认 10）；提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`（默认 2000）；
+  新建 OpenCode 会话传入 deny-all Permission.Ruleset 关闭工具；仅当 OpenCode 明确 400 拒绝 `permissions` 时降级为默认权限，并在日志标注“未隔离”，不宣称已隔离；
+  AI 只返回 assistant text 并截断 4000 字符，错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体；`bot_ai_sessions` 只存会话映射，不存对话内容。
 - 输出：`sanitizeExternalText` 将路径（`/home|/var|/etc|…`、盘符）与 `ssh://`/`http(s)://` 替换为 `[path]`/`[url]`，去控制字符并截断；
   模板只输出白名单字段，不拼接 HTML/原始平台对象。
-- 发布：`POST /api/bots/:id/publish` 必须带 `totpCode`，复用 `reauthLimiter`/`reauthGlobalLimiter`/`totpGlobalLimiter` 与失败审计；
-  目标限频道/群组；媒体最多 1 个、必须是 `origin='user'` 且未删除的普通文件、≤10 MiB；文本按平台上限截断/拒绝。
-- 出站：只调用固定平台 API（`api.telegram.org`、`discord.com/api/v10`、`slack.com/api`），15 秒超时、禁止重定向、响应 ≤1 MiB；
+- 发布：`POST /api/bots/:id/publish` 必须带 `totpCode` 与 `confirmText:'PUBLISH'`，复用 `reauthLimiter`/`reauthGlobalLimiter`/`totpGlobalLimiter` 与失败审计；
+  目标限频道/群组；媒体最多 1 个、必须是 `origin='user'` 且未删除的普通文件、≤10 MiB；QQ 平台无媒体；文本按平台上限截断/拒绝。
+- 出站：只调用固定平台 API（`api.telegram.org`、`discord.com/api/v10`、`slack.com/api`、`bots.qq.com`、`api.sgroup.qq.com`），15 秒超时、禁止重定向、响应 ≤1 MiB；
   Slack `response_url` 只允许 `https://hooks.slack.com/services|commands/…`；平台错误只保留状态/短错误码，不含完整 URL（可能含 token）。
-- 关闭语义：`BOT_ENABLED=false`、无密钥、Bot 不存在或 `enabled=false` 时 Webhook 一律 404；管理写接口 503；投递/发布队列不启动。
-- 保留：`bot_events` 按 `BOT_EVENT_RETENTION_DAYS`（7 天）清理；已发送投递/发布 30 天后清理；失败/死信保留供人工重投。
+- 静默：`quiet_start_minute`/`quiet_end_minute` 为 Asia/Shanghai 本地分钟 0–1439，成对设置且不能相同；窗口内通知的 `next_attempt_at` 延后到结束，不丢弃、不改变告警状态；
+  跨午夜按 start > end 处理。
+- 指标：`GET /api/bots/:id/metrics` 需会话；只聚合投递/发布/事件计数与清洗后的 `lastError`，不返回 Token/Secret/收件人敏感信息。
+- 关闭语义：`BOT_ENABLED=false`、无密钥、Bot 不存在或 `enabled=false` 时 Webhook 一律 404；管理写接口 503；投递/发布队列不启动；`/ask` 即使配置 AI 也不可用。
+- 保留：`bot_events` 按 `BOT_EVENT_RETENTION_DAYS`（7 天）清理；AI 会话映射按 `BOT_AI_SESSION_RETENTION_DAYS`（7 天）清理；已发送投递/发布 30 天后清理；失败/死信保留供人工重投。
 - 前端：`/bots` 页密钥输入只提交不回显，不写入 DOM value/localStorage；未启用时只展示配置指引，不请求 Bot 列表。
 
 ### HTTP
@@ -134,8 +141,9 @@
    `antifieldcloud` 服务用户本身无 sudo。建议后续按用户确认收紧 sudoers。
 3. **RCON 已轮换为 32 位随机密码，但仍监听 0.0.0.0（Paper 无 bind 配置）**：nftables 仅放行 loopback；
    本机被攻破仍可控制 RCON。世界备份脚本以 root 使用固定命令，扩大了 RCON 凭据的暴露面（仅 root 可读）。
-4. **Cloudflare Access 依赖用户后台配置**：v0.5.0 文档给出 `app` 策略与 `/api/bot/webhook/*`、`/healthz`、`/s/*`、
-   `/api/public/shares/*` 的 bypass，但应用无法验证边缘策略是否生效；未配置/漏配时 Webhook、健康检查或公开分享会被拦截。
+4. **Cloudflare Access 依赖用户后台配置**：v0.5.1 文档给出 `app` 策略与 `/api/bot/webhook/*`、`/healthz`、`/s/*`、
+   `/api/public/shares/*` 的 bypass，并支持 smoke 用 Access service token（`-AccessClientId/-AccessClientSecret`）访问受保护端点；
+   但应用无法验证边缘策略是否生效，未配置/漏配时 Webhook、健康检查或公开分享会被拦截。service token 只从命令行读取，不写入日志/仓库，应使用专用/最小范围并定期轮换。
    仍建议给 Cloudflare 账号开启 2FA；Access 只作为应用 TOTP 之外的第二层，不替代应用认证。
 5. **Cloudflare 可见明文**：文件内容与登录流量对 Cloudflare 可见；敏感数据可考虑后续应用层加密。
 6. **单管理员、无多用户/权限分离**：审计日志可被管理员删除；适合个人使用。
@@ -155,11 +163,15 @@
 15. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
-18. **Bot 测试为 mock-only**：适配器/队列/发布仅用进程内假平台与夹具，未对真实 Telegram/Discord/Slack 做限流、签名漂移、平台故障的负路径验收；
-    上线前必须在各平台后台完成 Webhook/命令注册并联调（`docs/DEPLOY.md` §9.8）。
-19. **Bot 单媒体与只读边界**：单次发布最多 1 个媒体文件，命令严格只读，不支持平台侧主动拉取/长连接；无多管理员审批流。
-20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 Bot 凭据将不可解密，必须重新录入 Token；轮换需先备份 DB + 旧密钥并接受一次性重录，
+18. **Bot 测试为 mock-only**：适配器/队列/发布仅用进程内假平台与夹具，未对真实 Telegram/Discord/Slack/QQ 做限流、签名漂移、平台故障的负路径验收；
+    上线前必须在各平台后台完成 Webhook/命令注册并联调（`docs/DEPLOY.md` §9.8）。QQ 真实回调、AI 真实模型均待部署后验证。
+19. **Bot 单媒体与只读边界**：单次发布最多 1 个媒体文件（QQ 无媒体），命令严格只读（仅 `/ask` 调用 AI），不支持平台侧主动拉取/长连接；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
+20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 Bot 凭据将不可解密，必须重新录入 Token/AppSecret；轮换需先备份 DB + 旧密钥并接受一次性重录，
     不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
+21. **AI 工具隔离依赖 OpenCode 版本**：`/ask` 新建会话传 deny-all 的 `permissions`；若 OpenCode 以 400 拒绝该字段，会降级为默认工具权限并在日志标注“未隔离”。
+    当前生产 OpenCode v2.1.1 的 OpenAPI 声明支持该字段，但真实模型/工具调用需部署后验证；降级状态下不应把 `/ask` 当作强隔离沙箱。
+22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
+    生产已安装并实测封禁恢复，但完整安全验收仍受 Cloudflare Access 等未完成项约束。
 
 ## 5. 运维安全清单
 
@@ -168,16 +180,17 @@
   世界备份/世界拉取状态是否新鲜（`world-backup-status.json`/`world-pull-status.json`）、计划任务 `LastTaskResult`；
   日志 `%LOCALAPPDATA%\AntifieldCloud\backup.log`、`world-pull.log`。
 - 每周/启用 Bot 后检查：`GET /api/bots/status` 是否 `enabled=true`、`queuedDeliveries/queuedPublishes` 是否堆积、
-  `bot_deliveries` 死信（`status='dead'`）与 `bots.last_error`；平台后台 Webhook/命令是否仍指向正确 URL；
-  确认 Token 未出现在 `journalctl -u antifieldcloud`。
+  `/api/bots/:id/metrics` 的成功率/失败/死信、`bot_deliveries` 死信（`status='dead'`）与 `bots.last_error`；平台后台 Webhook/命令是否仍指向正确 URL；
+  确认 Token/AppSecret 未出现在 `journalctl -u antifieldcloud`。启用 `/ask` 后检查 `BOT_AI_ENABLED`、`bot_ai_sessions` 保留与每小时限流是否合理。
 - 每月检查：`systemctl --failed`、`journalctl -u antifieldcloud -p warning`、`nft list ruleset`（确认 22 来源网段）、
   `/sys/fs/cgroup/cgroup.controllers` 含 `memory`、`vcgencmd get_throttled`、`vcgencmd measure_temp`、磁盘/内存余量、
   `crontab -l` 不含旧 `minecraft-backups` 行。
 - 每月检查 SSH/fail2ban：`sshd -T` 仍为仅公钥、`fail2ban-client status sshd` 有 jail 统计、`fail2ban-client get sshd bantime=86400`、
+  `ls -l /var/lib/fail2ban/fail2ban.sqlite3`（dbfile 持久化）、`systemctl cat nftables.service | grep -A2 fail2ban`（drop-in 生效）；
   封禁 set 与 nftables 规则共存；任何 nftables 变更后执行 `systemctl restart fail2ban` 并复核封禁列表。
 - 每月检查 Cloudflare Access：`app` 策略主体、bypass 路径（`/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
-  是否被后续规则覆盖；用未登录浏览器验证公开分享仍可用、平台回调仍 200。
-- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 7` 或按 docs/BACKUP.md §7 手动执行并记录）、
+  是否被后续规则覆盖；service token 是否仍有效且未过期；用未登录浏览器验证公开分享仍可用、平台回调仍 200。
+- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 8` 或按 docs/BACKUP.md §7 手动执行并记录）、
   `cloudflared tunnel info` 连接与版本、Windows 备份目录 ACL 是否仍仅白名单主体、age 公钥/私钥保管情况、
   世界备份保留 4 份/PC 保留 4 份是否正常、SSH 仅公钥配置是否仍生效（`sshd -T | grep -E 'passwordauthentication|pubkeyauthentication'`）。
 - 怀疑泄露时：
@@ -205,6 +218,10 @@
 - 超配额上传拒绝；回收站/附件占配额；普通单请求受 `MAX_UPLOAD_BYTES`（默认 100 MiB）限制；分片上传受 5 GiB 上限、8 MiB 块、会话过期/并发限制与配额预留约束。
 - Bot：`BOT_ENABLED=false` 时 Webhook 404、写接口 503；无签名/错误签名 401、时间戳过期 401、重复事件 200 duplicate；
   未授权目标/用户不执行命令并审计；发布缺 `totpCode` 400、错误 TOTP 401；Token 不出现在 API/日志；媒体 >10 MiB 或 ≥2 个被拒。
+- v0.5.1 Bot：QQ op=13 校验签名可验、op=0 篡改签名/过期时间戳 401、QQ 媒体 400；`/ask` 未启用/越权/超限不调用 AI；deny-all 会话创建与 400 降级日志；
+  静默起止成对/相同/越界校验；发布缺 `confirmText` 400 `publish_confirm_required`；metrics 未登录 401。
+- v0.5.1 安全：fail2ban dbfile 存在、`nftables.service.d/10-fail2ban-restore.conf` 已安装、nftables restart 后封禁恢复；手工 reload 后手动 restart fail2ban；
+  smoke Access service token 仅在同时提供时附加请求头且不打印。
 - 外部 25575 阻断；22/25565 仅允许网段；`sshd -T` 显示 `passwordauthentication no`、`pubkeyauthentication yes`；`fail2ban-client status sshd`
   显示 jail 与封禁统计（nftables 后端、24h ban）；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。
 - Cloudflare Access：bypass 生效时公网 Webhook 可达（200/401 而非 Access 302）、`/healthz` 200、公开分享页正常；主应用仍要求 Access 登录。

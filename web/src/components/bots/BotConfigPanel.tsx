@@ -99,6 +99,9 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
         next.publicKey = 'Public Key 应为 64 位十六进制字符串'
       }
     }
+    if (platform === 'qq' && !DISCORD_APPLICATION_ID_PATTERN.test(resolvedApplicationId)) {
+      next.applicationId = 'QQ AppID 应为 5–32 位数字'
+    }
     if (platform === 'slack') {
       if (!editing && !signingSecret.trim()) {
         next.signingSecret = '请输入 Slack Signing Secret'
@@ -125,6 +128,7 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
       input.publicKey = resolvedPublicKey
     }
     if (platform === 'slack') input.signingSecret = signingSecret.trim()
+    if (platform === 'qq') input.config = { appId: resolvedApplicationId }
     return input
   }
 
@@ -143,6 +147,7 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
       }
       if (publicKey.trim()) input.publicKey = publicKey.trim()
     }
+    if (platform === 'qq') input.config = { appId: resolvedApplicationId }
     return input
   }
 
@@ -202,7 +207,9 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
       ? '从 BotFather 获取 Token，并生成至少 16 位的 Webhook Secret。'
       : platform === 'discord'
         ? '从 Discord Developer Portal 获取 Bot Token、Application ID 与 Public Key。'
-        : '从 Slack App 管理页获取 Bot Token 与 Signing Secret。'
+        : platform === 'qq'
+          ? '从 QQ 开放平台（q.qq.com）获取 AppID 与 AppSecret；回调地址会校验 op=13 签名。'
+          : '从 Slack App 管理页获取 Bot Token 与 Signing Secret。'
 
   return (
     <div className="bot-config-grid">
@@ -258,14 +265,16 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
           </FormField>
 
           <FormField
-            label="Bot Token"
+            label={platform === 'qq' ? 'AppSecret' : 'Bot Token'}
             htmlFor="bot-token"
             required={!editing}
             error={errors.token}
             hint={
               editing
-                ? '留空表示不修改；仅在更换平台 Token 时填写。'
-                : `平台后台生成的 Token，至少 ${TOKEN_MIN_LENGTH} 个字符；只保存在服务端。`
+                ? '留空表示不修改；仅在轮换平台凭据时填写。'
+                : platform === 'qq'
+                  ? 'QQ 开放平台机器人 AppSecret（写在服务端，只用于换 token 与验签）。'
+                  : `平台后台生成的 Token，至少 ${TOKEN_MIN_LENGTH} 个字符；只保存在服务端。`
             }
           >
             <input
@@ -363,6 +372,31 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
                 />
               </FormField>
             </>
+          ) : null}
+
+          {platform === 'qq' ? (
+            <FormField
+              label="AppID"
+              htmlFor="bot-qq-app-id"
+              required
+              error={errors.applicationId}
+              hint="QQ 开放平台机器人 AppID，5–32 位数字；AppSecret 填在上面的凭据字段。"
+            >
+              <input
+                id="bot-qq-app-id"
+                className="input"
+                value={applicationId}
+                onChange={(event) => {
+                  setApplicationId(event.target.value)
+                  setErrors((previous) => ({ ...previous, applicationId: undefined }))
+                }}
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="例如：102123456"
+                maxLength={32}
+                disabled={saving}
+              />
+            </FormField>
           ) : null}
 
           {platform === 'slack' ? (

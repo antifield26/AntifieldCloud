@@ -5,7 +5,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 
-export const BOT_PLATFORMS = ['telegram', 'discord', 'slack'] as const
+export const BOT_PLATFORMS = ['telegram', 'discord', 'slack', 'qq'] as const
 export type BotPlatform = (typeof BOT_PLATFORMS)[number]
 
 export function isBotPlatform(value: unknown): value is BotPlatform {
@@ -21,6 +21,8 @@ export interface BotSecret {
   publicKey?: string
   /** Slack signing secret。 */
   signingSecret?: string
+  /** QQ 官方 Bot AppSecret（与 AppSecret 对应；token 字段承载）。 */
+  appSecret?: string
 }
 
 export interface BotRuntimeConfig {
@@ -57,6 +59,9 @@ export interface BotTargetRow {
   kind: 'channel' | 'user' | 'group'
   allow_commands: number
   allow_notifications: number
+  /** 静默时段（本地分钟 0-1439）；两者都非空时生效。 */
+  quiet_start_minute: number | null
+  quiet_end_minute: number | null
   created_at: string
 }
 
@@ -68,6 +73,8 @@ export interface BotTarget {
   kind: 'channel' | 'user' | 'group'
   allowCommands: boolean
   allowNotifications: boolean
+  quietStartMinute: number | null
+  quietEndMinute: number | null
   createdAt: string
 }
 
@@ -147,7 +154,7 @@ export interface SendResult {
 }
 
 export type InboundVerification =
-  | { kind: 'ignored' }
+  | { kind: 'ignored'; ackBody?: unknown }
   | { kind: 'challenge'; body: unknown }
   | { kind: 'rejected'; status: number; code: string }
   | {
@@ -158,8 +165,10 @@ export type InboundVerification =
       userName: string | null
       text: string
       isDirect: boolean
-      /** 平台要求立即返回的响应体（如 Discord deferred）。 */
+      /** 平台要求立即返回的响应体（如 Discord deferred / QQ opcode 12）。 */
       immediateResponse?: unknown
+      /** 平台事件回调必须返回的确认体（QQ `{opcode:12}`）。 */
+      ackBody?: unknown
       reply: (text: string) => Promise<void>
     }
 
@@ -192,6 +201,27 @@ export interface BotMediaStore {
   load(fileId: string): Promise<OutboundMedia>
 }
 
+/** AI 对话提供方（v0.5.1 通过 OpenCode 本地 HTTP API）。 */
+export interface BotAi {
+  chat(input: {
+    botId: string
+    targetExternalId: string
+    userId: string
+    prompt: string
+  }): Promise<string>
+  /** 清理过期会话映射；未实现时服务端跳过。 */
+  cleanup?(): number
+}
+
+export interface BotMetrics {
+  hours: number
+  deliveries: { total: number; sent: number; failed: number; dead: number; successRate: number }
+  publishes: { total: number; sent: number; failed: number }
+  events: number
+  lastError: string | null
+  lastSentAt: string | null
+}
+
 export interface BotServiceDeps {
   db: DatabaseSync
   config: Config
@@ -199,6 +229,8 @@ export interface BotServiceDeps {
   audit: (action: string, target: string | null, detail?: Record<string, unknown> | null) => void
   providers: BotCommandProviders
   media: BotMediaStore
+  /** 可选 AI 对话；未配置时 /ask 返回不可用提示。 */
+  ai?: BotAi
   fetch?: typeof fetch
   now?: () => Date
 }
@@ -230,5 +262,5 @@ export interface BotSummary {
   keyVersion: number
 }
 
-export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files'] as const
+export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask'] as const
 export type BotCommandName = (typeof BOT_COMMANDS)[number]

@@ -829,7 +829,7 @@ export interface MetricsResult {
 
 /* ---------- 机器人管理（v0.5.0，GET/POST /api/bots*） ---------- */
 
-export type BotPlatform = 'telegram' | 'discord' | 'slack'
+export type BotPlatform = 'telegram' | 'discord' | 'slack' | 'qq'
 export type BotTargetKind = 'channel' | 'user' | 'group'
 export type BotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'test'
 export type BotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
@@ -873,6 +873,9 @@ export interface BotTarget {
   kind: BotTargetKind
   allowCommands: boolean
   allowNotifications: boolean
+  /** 静默时段（本地分钟 0-1439，Asia/Shanghai）；两者同时为空表示不静默。 */
+  quietStartMinute: number | null
+  quietEndMinute: number | null
   createdAt: string
 }
 
@@ -932,6 +935,8 @@ export interface BotTargetInput {
   kind: BotTargetKind
   allowCommands: boolean
   allowNotifications: boolean
+  quietStartMinute?: number | null
+  quietEndMinute?: number | null
 }
 
 export type BotTargetPatch = Partial<Omit<BotTargetInput, 'externalId'>>
@@ -944,4 +949,16 @@ export interface BotPublishInput {
   totpCode: string
   mediaFileIds?: string[]
   scheduledAt?: string | null
+  /** 二次确认文本，必须为 PUBLISH。 */
+  confirmText: 'PUBLISH'
+}
+
+/** Bot 运维指标（v0.5.1）。 */
+export interface BotMetrics {
+  hours: number
+  deliveries: { total: number; sent: number; failed: number; dead: number; successRate: number }
+  publishes: { total: number; sent: number; failed: number }
+  events: number
+  lastError: string | null
+  lastSentAt: string | null
 }

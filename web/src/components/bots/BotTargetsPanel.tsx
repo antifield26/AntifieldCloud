@@ -25,9 +25,22 @@ interface BotTargetsPanelProps {
 
 const TARGET_KINDS: readonly BotTargetKind[] = ['channel', 'user', 'group']
 
+function timeToMinute(value: string): number | null {
+  if (!/^\d{2}:\d{2}$/.test(value)) return null
+  const [hour, minute] = value.split(':').map(Number)
+  if (hour === undefined || minute === undefined || hour > 23 || minute > 59) return null
+  return hour * 60 + minute
+}
+
+function minuteToTime(value: number | null): string {
+  if (value === null) return ''
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`
+}
+
 function externalIdHint(bot: BotSummary): string {
   if (bot.platform === 'telegram') return '频道/群组使用负数 chat id（如 -1001234567890），用户使用数字 ID。'
   if (bot.platform === 'discord') return 'Discord 频道/用户 ID 为数字 Snowflake，可在开发者模式右键复制。'
+  if (bot.platform === 'qq') return 'C2C 用户填 user_openid，群聊填 group_openid，频道填 channel_id。'
   return 'Slack 频道 ID 形如 C01234567，用户 ID 形如 U01234567。'
 }
 
@@ -44,7 +57,9 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [kind, setKind] = useState<BotTargetKind>('channel')
   const [allowCommands, setAllowCommands] = useState(false)
   const [allowNotifications, setAllowNotifications] = useState(true)
-  const [fieldErrors, setFieldErrors] = useState<{ externalId?: string; label?: string }>({})
+  const [quietStart, setQuietStart] = useState('')
+  const [quietEnd, setQuietEnd] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<{ externalId?: string; label?: string; quiet?: string }>({})
   const [adding, setAdding] = useState(false)
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set())
   const [removeTarget, setRemoveTarget] = useState<BotTarget | null>(null)
@@ -89,9 +104,14 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const handleAdd = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (!bot || adding) return
-    const nextErrors: { externalId?: string; label?: string } = {}
+    const nextErrors: { externalId?: string; label?: string; quiet?: string } = {}
     if (!externalId.trim()) nextErrors.externalId = '请输入平台目标 ID'
     if (!label.trim()) nextErrors.label = '请输入目标名称'
+    const startMinute = timeToMinute(quietStart)
+    const endMinute = timeToMinute(quietEnd)
+    if ((quietStart && !quietEnd) || (!quietStart && quietEnd)) nextErrors.quiet = '静默时段起止必须同时填写'
+    else if (quietStart && quietEnd && (startMinute === null || endMinute === null)) nextErrors.quiet = '静默时段格式应为 HH:mm'
+    else if (startMinute !== null && startMinute === endMinute) nextErrors.quiet = '静默时段起止不能相同'
     setFieldErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
     setAdding(true)
@@ -102,6 +122,9 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         kind,
         allowCommands,
         allowNotifications,
+        ...(startMinute !== null && endMinute !== null
+          ? { quietStartMinute: startMinute, quietEndMinute: endMinute }
+          : {}),
       })
       setTargets((previous) => [...previous, created])
       setExternalId('')
@@ -109,6 +132,8 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       setKind('channel')
       setAllowCommands(false)
       setAllowNotifications(true)
+      setQuietStart('')
+      setQuietEnd('')
       toast.success(`已添加目标「${created.label}」`)
       onChanged(targets.length + 1)
     } catch (addError) {
@@ -235,6 +260,37 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                 </select>
               </div>
             </FormField>
+            <FormField
+              label="静默开始（可选）"
+              htmlFor={`${fieldId}-quiet-start`}
+              error={fieldErrors.quiet}
+              hint="Asia/Shanghai；通知在窗口内延后到结束时刻，起止需同时填写。"
+            >
+              <input
+                id={`${fieldId}-quiet-start`}
+                className="input"
+                type="time"
+                value={quietStart}
+                onChange={(event) => {
+                  setQuietStart(event.target.value)
+                  setFieldErrors((previous) => ({ ...previous, quiet: undefined }))
+                }}
+                disabled={adding}
+              />
+            </FormField>
+            <FormField label="静默结束（可选）" htmlFor={`${fieldId}-quiet-end`} hint="与开始时间相同则不静默。">
+              <input
+                id={`${fieldId}-quiet-end`}
+                className="input"
+                type="time"
+                value={quietEnd}
+                onChange={(event) => {
+                  setQuietEnd(event.target.value)
+                  setFieldErrors((previous) => ({ ...previous, quiet: undefined }))
+                }}
+                disabled={adding}
+              />
+            </FormField>
           </div>
           <div className="bot-target-form-flags">
             <label className="checkbox-field">
@@ -284,6 +340,11 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                     <div className="bot-target-title-row">
                       <span className="bot-target-name">{target.label}</span>
                       <Badge tone="muted">{targetKindLabel(target.kind)}</Badge>
+                      {target.quietStartMinute !== null && target.quietEndMinute !== null ? (
+                        <Badge tone="info">
+                          静默 {minuteToTime(target.quietStartMinute)}–{minuteToTime(target.quietEndMinute)}
+                        </Badge>
+                      ) : null}
                     </div>
                     <code className="bot-target-id">{target.externalId}</code>
                   </div>

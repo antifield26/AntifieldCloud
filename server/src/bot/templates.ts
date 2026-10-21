@@ -54,6 +54,7 @@ export function helpText(platform: string): string {
       '/world 世界备份/拉取/演练状态',
       '/mc Minecraft 状态',
       '/files <关键词> 文件元数据（最多 10 条）',
+      '/ask <问题> AI 对话（需管理员启用并限流）',
       '命令仅限已登记目标；不会返回文件内容或密钥。',
     ].join('\n'),
   )

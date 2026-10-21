@@ -102,6 +102,15 @@ export interface Config {
   botPublishMaxScheduledDays: number
   /** 最多配置的 Bot 数。 */
   botMaxBots: number
+  /** AI 对话（v0.5.1，通过 OpenCode 本地 HTTP API）；默认关闭。 */
+  botAiEnabled: boolean
+  /** 可选模型 provider/model；为空使用 OpenCode 默认模型。 */
+  botAiProvider: string
+  botAiModel: string
+  botAiTimeoutSeconds: number
+  botAiMaxPromptChars: number
+  botAiRatePerHour: number
+  botAiSessionRetentionDays: number
 }
 
 const DEFAULT_ENV_FILE = '/etc/antifieldcloud/env'
@@ -253,7 +262,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.5.0'),
+    appVersion: str(merged, 'APP_VERSION', '0.5.1'),
     botEnabled: bool(merged, 'BOT_ENABLED', false),
     botSecretKey: str(merged, 'BOT_SECRET_KEY', ''),
     botWebhookMaxBodyBytes: int(merged, 'BOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
@@ -264,6 +273,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botPublishMaxMediaBytes: int(merged, 'BOT_PUBLISH_MAX_MEDIA_BYTES', 10 * MIB, 1 * MIB, 50 * MIB),
     botPublishMaxScheduledDays: int(merged, 'BOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),
     botMaxBots: int(merged, 'BOT_MAX_BOTS', 10, 1, 50),
+    botAiEnabled: bool(merged, 'BOT_AI_ENABLED', false),
+    botAiProvider: str(merged, 'BOT_AI_PROVIDER', ''),
+    botAiModel: str(merged, 'BOT_AI_MODEL', ''),
+    botAiTimeoutSeconds: int(merged, 'BOT_AI_TIMEOUT_SECONDS', 60, 10, 180),
+    botAiMaxPromptChars: int(merged, 'BOT_AI_MAX_PROMPT_CHARS', 2000, 100, 8000),
+    botAiRatePerHour: int(merged, 'BOT_AI_RATE_PER_HOUR', 10, 1, 120),
+    botAiSessionRetentionDays: int(merged, 'BOT_AI_SESSION_RETENTION_DAYS', 7, 1, 90),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')

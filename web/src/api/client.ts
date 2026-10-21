@@ -21,6 +21,7 @@ import type {
   BookmarkPatch,
   BotCreateInput,
   BotDelivery,
+  BotMetrics,
   BotPublishInput,
   BotPublishJob,
   BotStatus,
@@ -1061,6 +1062,13 @@ export const api = {
     async get(id: string, signal?: AbortSignal): Promise<BotSummary> {
       const result = await get<{ bot: BotSummary }>(`/api/bots/${encodeId(id)}`, { signal })
       return result.bot
+    },
+    async metrics(id: string, hours = 24, signal?: AbortSignal): Promise<BotMetrics> {
+      const result = await get<{ metrics: BotMetrics }>(
+        `/api/bots/${encodeId(id)}/metrics${buildQuery({ hours })}`,
+        { signal },
+      )
+      return result.metrics
     },
     async create(input: BotCreateInput): Promise<BotSummary> {
       const result = await post<{ bot: BotSummary }>('/api/bots', input)

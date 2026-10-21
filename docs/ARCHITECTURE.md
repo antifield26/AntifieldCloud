@@ -12,9 +12,10 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  ├─ antifieldcloud.service (User=antifieldcloud, 127.0.0.1:3000)
  │   ├─ Host app.* → React SPA + /api（含 /api/metrics、/api/shares、/api/storage、/api/bots）
  │   ├─ Host ai.*  → 会话校验 + Origin 校验 + 反向代理 → 127.0.0.1:4096 (opencode)
- │   ├─ 公开 Bot Webhook /api/bot/webhook/:botId → 平台签名验签 + 去重 + 命令（只读）/入队
- │   ├─ Bot 出站 → api.telegram.org / discord.com/api/v10 / slack.com/api（固定上游，15s 超时）
- │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v7）
+ │   ├─ 公开 Bot Webhook /api/bot/webhook/:botId → 平台签名验签 + 去重 + 命令（只读/AI）/入队
+ │   ├─ Bot 出站 → api.telegram.org / discord.com/api/v10 / slack.com/api / bots.qq.com / api.sgroup.qq.com（固定上游，15s 超时）
+ │   ├─ Bot AI → 127.0.0.1:4096 OpenCode 本地 API（仅 /ask，默认关闭）
+ │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v8）
  │   ├─ 文件   /var/lib/antifieldcloud/files/<xx>/<id>（files.origin=user|note|system）
  │   ├─ 应用备份 /var/lib/antifieldcloud/backups（pending/acked/imports/secrets/db-predeploy-*）
  │   ├─ 世界备份 /var/lib/antifieldcloud/world-backups（world-<UTC>.tar.gz，保留 4 份）
@@ -42,27 +43,31 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 指标采样：`metrics/sampler.ts` 每 `METRICS_SAMPLE_SECONDS`（默认 60）读取 HostMonitor 与配额用量写入 `metrics_samples`；维护任务按 `METRICS_RETENTION_DAYS`（默认 30）清理。
 - 公开分享：`/api/public/shares/:token/*` 不挂会话，但 POST 校验 Origin、按 IP/用户限流；内容支持 Range/HEAD/ETag，多文件走 `items/:itemId/content`。
 
-### 2.1 Bot 请求与队列路径（v0.5.0）
+### 2.1 Bot 请求与队列路径（v0.5.1）
 
 - 入站：`POST /api/bot/webhook/:botId` 在独立 Fastify scope 中以 raw body 解析（JSON 或 form，≤256 KiB），
   按 `CF-Connecting-IP` 做 120 次/分钟 IP 限流 → `BotService.handleWebhook` 校验 `BOT_ENABLED`/密钥/Bot 启用（否则 404）
-  → 按 Bot 300 次/分钟限流 → 适配器验签（Telegram secret token / Discord Ed25519+timestamp / Slack HMAC+timestamp）
-  → `bot_events` 去重（重复直接 200）→ 目标 `allow_commands` + 用户白名单 → 命令限流 → 异步执行只读命令并用平台 API 回复。
+  → 按 Bot 300 次/分钟限流 → 适配器验签（Telegram secret token / Discord Ed25519+timestamp / Slack HMAC+timestamp / QQ Ed25519+timestamp）
+  → `bot_events` 去重（重复直接 200）→ 目标 `allow_commands` + 用户白名单 → 命令限流 → 异步执行只读命令/AI 并用平台 API 回复。
+  QQ 的 `op=13` 回调地址校验在验签前直接返回签名体；成功/忽略/重复事件统一返回 `{opcode:12}`。
 - 告警通知：`AlertService` 事件落库后调用 `BotService.notifyAlert`，按启用 Bot × `allow_notifications` 目标写 `bot_deliveries`
-  （`dedupe_key=alert:<event>:<bot>:<target>`）；通知失败只记日志，不影响告警状态机。
+  （`dedupe_key=alert:<event>:<bot>:<target>`）；目标有静默时段且当前命中时，`next_attempt_at` 设为窗口结束；通知失败只记日志，不影响告警状态机。
 - 队列：`startBots()` 在 listen 后按 `BOT_DELIVERY_INTERVAL_SECONDS`（30s）`tick`：恢复 >10 分钟卡在 `sending` 的记录 →
-  处理 `queued/failed` 投递（每次 ≤20）→ 处理到期的 `bot_publish_jobs`（每次 ≤10）→ 清理过期事件/已发送记录。
+  处理 `queued/failed` 投递（每次 ≤20，`next_attempt_at` 未到期的跳过）→ 处理到期的 `bot_publish_jobs`（每次 ≤10）→ 清理过期事件/已发送记录/AI 会话映射。
   失败按 `30s × 2^n`（≤1h）退避，达到 `BOT_DELIVERY_MAX_ATTEMPTS`（5）标记死信；进程退出时 `stop()` 停表。
-- 发布：`POST /api/bots/:id/publish` 先做管理员 TOTP 再认证与 20 次/小时限流，再写 `bot_publish_jobs`（`draft→queued`）；
-  队列加载 `origin='user'` 的媒体（≤10 MiB、单文件）并通过平台适配器发送；支持 `DELETE` 取消 `draft/queued`。
-- 配置/密钥：Bot 配置只存公开字段；Token/Secret 经 `crypto.ts` AES-256-GCM 加密后存 `bots` 三个密文字段；任何读取都只在服务端短生命周期解密。
+- 发布：`POST /api/bots/:id/publish` 先做管理员 TOTP 再认证、`confirmText='PUBLISH'` 校验与 20 次/小时限流，再写 `bot_publish_jobs`（`draft→queued`）；
+  队列加载 `origin='user'` 的媒体（≤10 MiB、单文件；QQ 无媒体）并通过平台适配器发送；支持 `DELETE` 取消 `draft/queued`。
+- 指标：`GET /api/bots/:id/metrics?hours=24` 聚合 `bot_deliveries`/`bot_publish_jobs`/`bot_events` 的窗口统计，供 `/bots` 指标卡使用；不返回 Token/Secret。
+- AI：`/ask` 仅在 `BOT_AI_ENABLED=true` 时调用 `OpenCodeBotAi`；按 `(bot,target,user)` 复用 `bot_ai_sessions.session_id`，新建会话传 deny-all Permission.Ruleset；
+  只读取 assistant text，回复清洗/截断到 1500 字符；超时/HTTP 错误只返回短码，不泄漏 OpenCode 密码/URL。
+- 配置/密钥：Bot 配置只存公开字段；Token/Secret/AppSecret 经 `crypto.ts` AES-256-GCM 加密后存 `bots` 三个密文字段；任何读取都只在服务端短生命周期解密。
 
 ## 3. 模块
 
 | 模块 | 职责 |
 |---|---|
-| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键与 v0.5.0 `BOT_*`） |
-| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v7）、事务；迁移前外键一致性检查与孤儿 shares 修复 |
+| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*` 与 v0.5.1 `BOT_AI_*`） |
+| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v8）、事务；迁移前外键一致性检查与孤儿 shares 修复 |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性 |
 | `uploads/` | 分片上传会话/块索引、配额预留、断点状态、拼接与过期清理 |
@@ -73,7 +78,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | `metrics/` | 采样器（60s）、范围聚合查询（1h/6h/24h/7d/30d，最多 240 点）、保留期清理 |
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索；附件（`origin=note`）与版本历史 |
 | `shares/` | 单文件/多文件分享 token/密码/过期/次数/吊销、公开元数据与逐项内容 |
-| `bot/` | Telegram/Discord/Slack 适配器、AES-256-GCM 凭据、Webhook 验签/去重、只读命令、告警通知与发布队列/重试 |
+| `bot/` | Telegram/Discord/Slack/QQ 适配器、OpenCode `/ask` AI、AES-256-GCM 凭据、Webhook 验签/去重、只读命令、指标/静默、告警通知与发布队列/重试 |
 | `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期；Bot 通知入队 |
 | `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口 |
 | `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db） |
@@ -86,7 +91,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 
 ## 4. 数据模型
 
-SQLite（WAL）核心表（schema v7）：
+SQLite（WAL）核心表（schema v8）：
 
 - `users`：单管理员；scrypt 哈希 + salt；TOTP secret；`totp_last_step` 防重放；恢复码哈希 JSON。
 - `auth_challenges`：密码通过后的 5 分钟一次性挑战（只存 token 哈希）。
@@ -104,11 +109,12 @@ SQLite（WAL）核心表（schema v7）：
 - `shares`、`share_items`、`share_sessions`：分享 token 哈希、密码、过期/次数；`share_items` 保存多文件条目（旧行为回退到 `shares.file_id`）；解锁会话。
 - `alert_events`、`alert_state`：告警历史/去重冷却；`alert_events` 保留 90 天。
 - `metrics_samples`：60s 主机指标样本（`ts/ts_epoch/cpu/mem/temp/disk/load`），按 `ts_epoch` 索引，30 天保留。
-- `bots`：平台/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`（AES-256-GCM）；`last_error/last_checked_at`。
-- `bot_targets`：每 Bot 的频道/用户/群组目标，`(bot_id, external_id)` 唯一；`allow_commands` 默认 0、`allow_notifications` 默认 1。
-- `bot_deliveries`：通知/回复/发布/测试投递队列，状态 `queued|sending|sent|failed|dead`；`dedupe_key` 唯一（通知按告警事件去重）。
+- `bots`：平台（`telegram|discord|slack|qq`）/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`（AES-256-GCM）；`last_error/last_checked_at`。
+- `bot_targets`：每 Bot 的频道/用户/群组目标，`(bot_id, external_id)` 唯一；`allow_commands` 默认 0、`allow_notifications` 默认 1；`quiet_start_minute`/`quiet_end_minute`（0–1439，可空）。
+- `bot_deliveries`：通知/回复/发布/测试投递队列，状态 `queued|sending|sent|failed|dead`；`dedupe_key` 唯一（通知按告警事件去重）；`next_attempt_at` 承载静默延后。
 - `bot_publish_jobs`：发布任务（文本 + 媒体文件 id 列表 + `scheduled_at`），状态 `draft|queued|sending|sent|failed|canceled`。
 - `bot_events`：`(bot_id, platform_event_id)` 主键，用于 Webhook 重放去重；按 `received_at` 保留 7 天。
+- `bot_ai_sessions`：`(bot_id, target_external_id, user_id)` 主键，映射 OpenCode `session_id`、模型标签与更新时间；按保留期清理，不删除远端会话。
 
 世界备份/拉取/演练状态不在 SQLite：由 root/PC 脚本写 `/var/lib/antifieldcloud/{world-backup,world-pull,drill}-status.json`（0644，应用只读解析）。
 
@@ -179,8 +185,9 @@ SQLite（WAL）核心表（schema v7）：
   → `/healthz` 断言版本；失败先停服、还原迁移前 DB 快照、切回 previous、启动、复检（无快照则拒绝自动回滚）。
 - nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。SSH 为仅公钥（`00-` drop-in，保留 24h 回滚窗口）。
-- Bot 部署：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY`，`BOT_ENABLED` 默认 false；迁移 v7 只新增表，回滚需迁移前 DB 快照；
-  Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）。
+- Bot 部署：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*`，`BOT_ENABLED` 默认 false；迁移 7/8 从 v6 起依次建表/重建，回滚需迁移前 DB 快照；
+  Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
+- fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
 
 ## 10. 信任边界与失败隔离
@@ -190,8 +197,10 @@ SQLite（WAL）核心表（schema v7）：
 - Minecraft RCON 已轮换强密码但仍监听所有接口，仅 nftables 限制为 loopback；世界备份脚本是唯一可发固定保存命令的组件，以 root 运行且沙箱化。
 - 文件预览按类型白名单；HTML/SVG 不内联；音视频只播放白名单容器；文本预览由 React 转义。
 - 笔记附件与普通文件用 `origin` 隔离；分享只接受活动普通文件，跨分享 itemId 一律 404。
-- Bot 是外部平台的信任边界：Webhook 只凭平台签名/时间戳，命令必须目标+用户双白名单，发布必须管理员 TOTP；Token 只以密文落库，
+- Bot 是外部平台的信任边界：Webhook 只凭平台签名/时间戳，命令必须目标+用户双白名单，发布必须管理员 TOTP + `PUBLISH`；Token/AppSecret 只以密文落库，
   出站只允许固定平台 API，输出文本清洗路径/URL；Bot 关闭时入口 404，不向调用方泄露 Bot 是否存在。
+- `/ask` 是 Bot 内的次级信任边界：默认关闭、仅白名单用户、按用户每小时限流；AI 会话只允许文本输出，新建会话关闭工具；OpenCode 明确拒绝 `permissions` 时降级并在日志标注“未隔离”，不声称已隔离。
+- 静默时段只影响通知投递时间，不改变告警状态机；指标只读聚合，`lastError` 为平台短错误码/清洗文本，不含 Token。
 - 备份归档导入是受 TOTP 门禁的管理员输入，但仍按不可信 tar 校验；不提供归档下载；Web 永不执行整库替换。
 - 状态文件由 root/PC 脚本写、应用只读；文件缺失/损坏时面板与告警降级为 unknown，不影响主服务。
 - 指标与审计只含元数据/主机数值；应用故障不影响 Minecraft/opencode/桌面；cloudflared 故障只影响公网入口。

@@ -7,6 +7,7 @@ import { Inbox, ListChecks, RotateCcw, Send, XCircle } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type {
   BotDelivery,
+  BotMetrics,
   BotPublishJob,
   BotSummary,
   BotTarget,
@@ -18,6 +19,7 @@ import { Card } from '../Card'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 import { FormField } from '../FormField'
+import { RelativeTime } from '../RelativeTime'
 import { useToast } from '../Toast'
 import { BotMediaPicker } from './BotMediaPicker'
 import {
@@ -51,6 +53,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
   const [targets, setTargets] = useState<BotTarget[]>([])
   const [deliveries, setDeliveries] = useState<BotDelivery[]>([])
   const [jobs, setJobs] = useState<BotPublishJob[]>([])
+  const [metrics, setMetrics] = useState<BotMetrics | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryingId, setRetryingId] = useState<string | null>(null)
@@ -61,6 +64,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
   const [scheduledAt, setScheduledAt] = useState('')
   const [totpCode, setTotpCode] = useState('')
+  const [confirmText, setConfirmText] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [cancelTarget, setCancelTarget] = useState<BotPublishJob | null>(null)
@@ -76,15 +80,17 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       if (!silent) setLoading(true)
       setError(null)
       try {
-        const [targetItems, deliveryItems, jobItems] = await Promise.all([
+        const [targetItems, deliveryItems, jobItems, metricData] = await Promise.all([
           api.bots.targets.list(botId),
           api.bots.deliveries.list(botId),
           api.bots.publish.list(botId),
+          api.bots.metrics(botId, 24),
         ])
         if (requestSeq.current !== seq) return
         setTargets(targetItems)
         setDeliveries(deliveryItems)
         setJobs(jobItems)
+        setMetrics(metricData)
         setPublishTargetId((previous) => {
           const eligible = publishableTargets(targetItems)
           if (previous && eligible.some((target) => target.id === previous)) return previous
@@ -148,6 +154,10 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       setFormError('请输入 6 位 TOTP 验证码（发布需要再认证）')
       return
     }
+    if (confirmText.trim().toUpperCase() !== 'PUBLISH') {
+      setFormError('请输入 PUBLISH 完成二次确认')
+      return
+    }
     setPublishing(true)
     try {
       const created = await api.bots.publish.create(bot.id, {
@@ -156,12 +166,14 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
         mediaFileIds: mediaId.trim() ? [mediaId.trim()] : [],
         scheduledAt: schedule.iso,
         totpCode,
+        confirmText: 'PUBLISH',
       })
       setText('')
       setMediaId('')
       setMediaFile(null)
       setScheduledAt('')
       setTotpCode('')
+      setConfirmText('')
       toast.success(created.scheduledAt ? '发布任务已排期' : '发布任务已创建')
       await load(true)
       onChanged()
@@ -202,6 +214,46 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
 
   return (
     <div className="bot-delivery-grid">
+      {metrics ? (
+        <Card
+          title="近 24 小时指标"
+          description="成功率为已尝试投递中 sent 占比；死信与最近错误用于快速定位退避/Token 问题。"
+          actions={<Badge tone="muted">事件 {metrics.events} 条</Badge>}
+        >
+          <div className="bot-status-grid">
+            <div className="bot-status-item">
+              <span className="bot-status-label">投递成功</span>
+              <span className="bot-status-value">{metrics.deliveries.sent}</span>
+            </div>
+            <div className="bot-status-item">
+              <span className="bot-status-label">成功率</span>
+              <span className="bot-status-value">{metrics.deliveries.successRate}%</span>
+            </div>
+            <div className="bot-status-item">
+              <span className="bot-status-label">失败/死信</span>
+              <span className="bot-status-value">
+                {metrics.deliveries.failed}/{metrics.deliveries.dead}
+              </span>
+            </div>
+            <div className="bot-status-item">
+              <span className="bot-status-label">发布 sent/失败</span>
+              <span className="bot-status-value">
+                {metrics.publishes.sent}/{metrics.publishes.failed}
+              </span>
+            </div>
+            <div className="bot-status-item">
+              <span className="bot-status-label">最近发送</span>
+              <span className="bot-status-value">
+                {metrics.lastSentAt ? <RelativeTime ts={metrics.lastSentAt} /> : '—'}
+              </span>
+            </div>
+          </div>
+          {metrics.lastError ? (
+            <div className="notice notice-danger" role="alert">最近错误：{metrics.lastError}</div>
+          ) : null}
+        </Card>
+      ) : null}
+
       <Card
         title="投递记录"
         description="通知、命令回复、发布与测试消息的发送状态；失败任务可重新排队。"
@@ -263,7 +315,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
 
       <Card
         title="发布消息"
-        description={`向频道/群组发布文本或单个媒体文件；${bot.platform === 'discord' ? 'Discord' : bot.platform === 'slack' ? 'Slack' : 'Telegram'} 文本上限 ${textLimit} 字符。`}
+        description={`向频道/群组发布文本或单个媒体文件；${bot.platform === 'discord' ? 'Discord' : bot.platform === 'slack' ? 'Slack' : bot.platform === 'qq' ? 'QQ（仅文本）' : 'Telegram'} 文本上限 ${textLimit} 字符。`}
         actions={<Badge tone="accent"><Send size={13} aria-hidden="true" /> 手动发布</Badge>}
         error={error}
         onRetry={() => void load()}
@@ -382,6 +434,23 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
               autoComplete="one-time-code"
               placeholder="000000"
               maxLength={6}
+              disabled={publishing}
+            />
+          </FormField>
+
+          <FormField
+            label="二次确认"
+            htmlFor="bot-publish-confirm"
+            required
+            hint="输入 PUBLISH 表示确认将内容发送到外部平台；与 TOTP 共同构成双确认。"
+          >
+            <input
+              id="bot-publish-confirm"
+              className="input mono"
+              value={confirmText}
+              onChange={(event) => setConfirmText(event.target.value.slice(0, 20))}
+              autoComplete="off"
+              placeholder="PUBLISH"
               disabled={publishing}
             />
           </FormField>
