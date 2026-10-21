@@ -42,7 +42,7 @@
 - Telegram/Slack/Discord/QQ 的真实 Chat 与多附件仅覆盖 mock 契约测试；生产 QQ C2C 与 Discord #general 已开 `allow_chat`，需按 `docs/DEPLOY.md` §9.8 实发联调。
 - 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。
 - 多附件部分成功后不自动重试；失败任务需人工确认并重建，避免重复外发。
-- 生产已部署 v0.5.2/schema v9，Gateway 已连接、QQ C2C/Discord #general 已开 `allow_chat`；真实 Chat/多附件行为待用户实发验证，其余目标默认关闭。
+- 生产已部署 v0.5.2/schema v9，Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已由用户实发确认；多附件与按钮真实平台验收待补充，其余目标默认关闭。
 
 ## [v0.5.1] - 2026-10-21
 

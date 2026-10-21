@@ -2,7 +2,7 @@
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
 v0.5.2 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat。
-企业微信/钉钉/飞书（v0.5.3）与多管理员审批仍未实现。生产已部署 v0.5.2/schema v9，Discord Gateway 已连接，QQ C2C 与 Discord #general 已开 `allow_chat`；真实 Chat/记忆/多附件联调待用户实发验证。
+企业微信/钉钉/飞书（v0.5.3）与多管理员审批仍未实现。生产已部署 v0.5.2/schema v9，Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认，多附件/按钮待补充。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
@@ -190,7 +190,7 @@ Discord Gateway 启用后若无法连接，`BotSummary.gateway.state` 会显示 
   Discord Gateway 使用假 WebSocket（HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码）。
 - 本地基线：`npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过（2026-10-21）。
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接，QQ C2C 与 Discord #general 已开 `allow_chat`；
-  真实 Chat/记忆/多附件/按钮行为待用户实发验证，Telegram/Slack/QQ 群/频道待目标开启后联调。
+  生产 Discord DM、Discord #general @Bot 与 QQ C2C 普通消息 Chat 已实发确认；多附件/按钮/记忆多轮行为待补充验证，Telegram/Slack/QQ 群/频道待目标开启后联调。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→
   私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发布 1/5 个媒体（含 partial 失败场景）→
   多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→ Discord 开启 intent 后确认 Gateway `connected`。

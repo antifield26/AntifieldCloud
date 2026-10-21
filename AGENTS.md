@@ -164,7 +164,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
   v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并通过带 token 的 smoke。
-  v0.5.2 已部署 v0.5.2/schema v9；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，QQ C2C 与 Discord #general 目标已开 `allow_chat`；仍需用户实发普通消息确认 AI Chat/记忆，其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记。
+  v0.5.2 已部署 v0.5.2/schema v9；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，QQ C2C、Discord #general 与 Discord DM 普通消息 Chat 已由用户实发确认收到 AI 回复；其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记。
 - 测试证据边界：Bot 适配器（含 QQ）、Chat/记忆、AI 对话、多附件、按钮、Discord Gateway（假 WebSocket）、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），
   未做真实平台/真实模型/真实网络的负路径验收；发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；

@@ -4,7 +4,7 @@
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
-> **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`），QQ C2C 与 Discord #general 目标已开 `allow_chat`；仍需用户实发普通消息验证 AI Chat/记忆，其他目标保持关闭。
+> **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`）；Discord DM、Discord #general @Bot、QQ C2C 的普通消息 Chat 已由用户实发确认收到 AI 回复，`bot_ai_sessions`/`bot_ai_memories` 已写入；其他目标仍默认关闭。
 
 ## v0.5.2（当前，已部署）
 
@@ -36,7 +36,7 @@
 | 应用部署 / `/healthz` | **通过**：`{"ok":true,"version":"0.5.2","schemaVersion":9}`；release `20261021T114908Z`，commit `abeabc7` |
 | `smoke.ps1 -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9` | **24 通过 / 0 失败 / 0 警告**（公网 Access token/CSP/PWA/分享/告警/备份/世界/演练/脚本 SHA） |
 | Discord Gateway 真实长连接 | **已连接**：生产 `BOT_DISCORD_GATEWAY_ENABLED=true`，日志 `Discord Gateway 已连接`；MESSAGE_CONTENT 负路径与断线重连待补充观察 |
-| 各平台 Chat/多附件真实外发 | **部分开启**：QQ C2C 与 Discord #general `allow_chat=1`；用户实发普通消息/多附件发布仍待验收，其余目标默认关闭 |
+| 各平台 Chat 真实外发 | **已确认**：Discord DM、Discord #general @Bot、QQ C2C 普通消息均收到 AI 回复；DM 频道目标已登记、`allow_chat=1`；多附件发布与按钮仍待验收 |
 | `node scripts/check-version.mjs` | **通过**：`packageVersion=0.5.2`；README/CHANGELOG/ACCEPTANCE/env.example/DEPLOY/AGENTS 与 lock 根版本一致（2026-10-21） |
 
 ### 3. 部署
@@ -53,10 +53,10 @@ smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access serv
 
 ### 4. 未决
 
-- 生产已开启 Gateway 与 QQ C2C/Discord #general `allow_chat`；普通消息 Chat 的真实模型回复、记忆写入与按钮点击仍待用户实发验证。
-- Discord Gateway 已建立长连接；断线重连、MESSAGE_CONTENT 负路径与多附件真实平台外发待补充观察。
-- Telegram/Slack/Discord/QQ 的真实 Chat、多附件（含 partial）与只读按钮未做完整平台联调；现有测试均为进程内 mock。
-- 记忆的真实模型多轮摘要、重启后读取与文件清理（删除 Bot 后镜像文件无自动清理）待 Chat 实发后核对。
+- **Chat**：已确认 Discord DM、Discord #general @Bot、QQ C2C 普通消息收到 AI 回复；审计 `bot.chat`/`bot.ai.chat`、`bot_ai_sessions` 与 `bot_ai_memories` 均写入。其他目标保持 `allow_chat=0`。
+- **按钮/多附件**：`/status` 按钮刷新、多附件真实发布、Telegram/Slack/QQ 群/频道 Chat 与记忆多轮行为仍待补充验收。
+- **DM 目标**：生产为 Discord DM 登记了独立频道目标（`allow_chat=1`）；代码侧 DM user-target 回退修复已提交但未部署，留待下一版本统一发版。
+- **记忆清理**：删除 Bot 后 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件无自动清理路径，列为已知残留。
 
 ## v0.5.1（历史）
 
