@@ -14,7 +14,7 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema v8（迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：仍为 v0.5.0/schema v7；v0.5.1 部署、迁移 v8、QQ 回调、AI 真实模型与 Cloudflare Access 验收待执行。
+- 生产现状：v0.5.1/schema v8（release `20261021T091001Z`）；QQ 回调、AI 真实模型与 Cloudflare Access 均已配置并验收。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -317,41 +317,47 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 
 注意：opencode 上游原生新建按钮在部分版本/空项目状态有缺陷；若关闭注入后仍无响应，按验收记录保留最小隐藏 click/pointerup 接管（无可见按钮），不重新引入 v0.2.1 的浮动按钮。
 
-### 5.2 Cloudflare Access 策略与 bypass（v0.5.1，用户后台操作）
+### 5.2 Cloudflare Access 策略与 bypass（v0.5.1，已配置）
 
-目标：在 Cloudflare 边缘给 `app.example.com` 增加第二层身份校验（应用 TOTP 仍是最终认证），同时保证 Bot 回调、健康检查与公开分享不被 Access 拦截。
-**Access 配置不在仓库内，应用无法自证；未配置/漏配时表现为 Webhook 404/302、`/healthz` 302、公开分享被重定向。**
+目标：在 Cloudflare 边缘给 `app.antifield.work` 增加第二层身份校验（应用 TOTP 仍是最终认证），同时保证 Bot 回调、健康检查与公开分享不被 Access 拦截。
+**Access 配置不在仓库内；未配置/漏配时表现为 Webhook 404/302、`/healthz` 302、公开分享被重定向。**
+
+生产当前配置（2026-10-21，API 创建）：
+- 主应用 `AntifieldCloud`：`app.antifield.work`，One-time PIN IdP，策略 `Owner allow`（指定邮箱）+ `Smoke service token`（`non_identity`，指定 service token）。
+- 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`。
+- service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库。
+- 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/bots/status` 为 401；smoke 24/24。
+
+手工重建/迁移时按以下步骤：
 
 1. Zero Trust → Access → Applications → Add an application → Self-hosted：
-   - Application name：`AntifieldCloud app`；Session duration：建议 8–24h。
-   - Public hostname：`app.example.com`（路径留空）。
+   - Application name：`AntifieldCloud`；Session duration：建议 8–24h。
+   - Public hostname：`app.antifield.work`（路径留空）。
    - Policy：`Allow`，Include 选择本人邮箱（One-time PIN）或已配置的身份提供商；不要添加 `Everyone`/`Bypass` 到整站。
-2. 同一应用下新增 **Bypass** 策略（按路径，优先级高于 Allow）：
-   - `/api/bot/webhook/*`：Telegram/Discord/Slack/QQ 回调必须直接到达应用，由应用验签。
-   - `/healthz`：内部/公网健康检查与 `smoke.ps1` 版本断言。
-   - `/s/*`：公开分享页（token 本身是凭证）。
-   - `/api/public/shares/*`：公开分享 metadata/unlock/content（密码/次数/Origin 限流仍由应用执行）。
-   - 如 PWA 冷启动/离线壳在 Access 登录前就需要加载，可再 bypass `/assets/*`、`/manifest.webmanifest`、`/sw.js`、`/offline.html`、`/icons/*`；
-     这些是静态资源，不含用户数据。不要把 `/api/*` 整体 bypass。
+2. **先创建 4 个独立的 path 应用**（路径应用的优先级高于整站主应用）：
+   - 每个应用 Domain 填 `app.antifield.work/healthz`（或对应路径），Policy 选 **Bypass + Everyone**；
+   - 路径分别为：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`。
+   - `/api/bot/webhook` 覆盖 Telegram/Discord/Slack/QQ 回调；`/s` 与 `/api/public/shares` 覆盖公开分享；`/healthz` 供 smoke/健康检查。
+   - 如 PWA 冷启动/离线壳在 Access 登录前就需要加载，可再按需 bypass `/assets`、`/manifest.webmanifest`、`/sw.js`、`/offline.html`、`/icons`；
+     不要把 `/api` 整体 bypass。
 3. 验证（未登录浏览器/命令行）：
    ```bash
    # Webhook：应为应用的 404（BOT_ENABLED=false）或 401（验签失败），不能是 Cloudflare Access 302
-   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://app.example.com/api/bot/webhook/x
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://app.antifield.work/api/bot/webhook/x
    # 健康检查：200 JSON
-   curl -sS https://app.example.com/healthz
+   curl -sS https://app.antifield.work/healthz
    # 公开分享：未知 token 应为应用 404，而不是 Access 登录页
-   curl -s -o /dev/null -w '%{http_code}\n' https://app.example.com/s/not-a-token
+   curl -s -o /dev/null -w '%{http_code}\n' https://app.antifield.work/s/not-a-token
    # 主应用：未登录应 302 到 <team>.cloudflareaccess.com（或 Access 登录页）
-   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://app.example.com/
+   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' https://app.antifield.work/
    ```
-   `smoke.ps1` 的公网 app HTML 检查若因 Access 302 失败，先确认上述 bypass 生效，再人工在浏览器完成 Access 登录后验收首页/PWA；
-   `/healthz` 版本断言应保持可用。
-4. 回滚：删除 Bypass 策略或整个 Access Application；清理浏览器 Access Cookie 后重试。回滚后 Webhook/health/分享恢复无边缘身份层，
+   带 service token 访问受保护 API 应返回应用 401（不是 302），并据此跑完整 smoke。
+4. 回滚：删除 path Bypass 应用或整个主 Access Application；清理浏览器 Access Cookie 后重试。回滚后 Webhook/health/分享恢复无边缘身份层，
    应用侧签名/限流仍生效。
 5. 注意：Access 的 `Bypass` 只影响边缘身份校验，不改变应用会话/CSRF/签名；不要把 Access 当作应用认证替代品。
    Cloudflare 账号本身必须开启 2FA（Access 配置权限等同于入口控制权）。
-6. **service token（可选，供 smoke/CI）**：Zero Trust → Access → Service Auth → Create Service Token，绑定到 `app` 应用策略
-   （或单独 `Allow` 策略）；把 Client ID/Secret 通过命令行传给 smoke：
+6. **service token（供 smoke/CI）**：Zero Trust → Access → Service Auth → Create Service Token，绑定到主应用 `Service Auth` 策略；
+   把 Client ID/Secret 通过命令行传给 smoke：
    ```powershell
    .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8 `
      -AccessClientId "<id>" -AccessClientSecret "<secret>"
@@ -414,7 +420,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载。
 - Bot 媒体：发布只接受 `origin='user'` 的活动普通文件，单文件 ≤10 MiB、单次 1 个；笔记附件/回收站文件不可发布；QQ 无媒体。
 - 验收：`npm run check`（本地 265/139）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
-  `smoke.ps1 -ExpectedVersion 0.5.1`、Bot 四平台联调（§9.8；QQ 真实回调待用户配置）、备份导入/校验/恢复（临时 DATA_DIR）、
+  `smoke.ps1 -ExpectedVersion 0.5.1`、Bot 四平台联调（§9.8；QQ 真实回调已验证）、备份导入/校验/恢复（临时 DATA_DIR）、
   世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 8` 演练通过；OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
   `/ask` 真实模型回复待部署后验证。
 
@@ -640,7 +646,7 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
     不能同步 restart fail2ban：systemd job 会等待 nftables 自身启动作业，形成 ordering 死锁。
   - 手工 `systemctl reload nftables` 不执行 `ExecStartPost`；重载后仍需 `sudo systemctl restart fail2ban` 并复核封禁列表。
   - 回滚 drop-in：删除 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` → `sudo systemctl daemon-reload`；
-    不影响 nftables 规则与 fail2ban 现有封禁。生产已安装并实测 nftables restart 后封禁恢复，但完整安全验收仍待 Cloudflare Access 等项。
+    不影响 nftables 规则与 fail2ban 现有封禁。生产已安装并实测 nftables restart 后封禁恢复；Cloudflare Access 也已配置并通过带 token 的 smoke。
 - 回滚窗口结束后的验收：`sshd -T` 仍为仅公钥、`smoke.ps1`/备份/部署均通过、旧密码登录失败（可用被测主机/临时用户验证，不要锁死主账号）。
 
 ### 9.8 Bot 平台接入（用户后台 + 应用配置）

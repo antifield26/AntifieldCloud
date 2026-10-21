@@ -157,14 +157,14 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
-  v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access service token 仍待用户配置。
+  v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并通过带 token 的 smoke。
 - 测试证据边界：Bot 适配器（含 QQ）、AI 对话、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），未做真实平台/真实模型/真实网络的负路径验收；
   发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；
   `install-backup-task.ps1` 只安装每日应用归档拉取任务。
 - Cloudflare：zone `example.com`；tunnel 名称 `pi`；`mc.example.com` CNAME 到 SakuraFRP，**不要改**；
-  `app/ai` 的 DNS 由用户手动添加；Cloudflare Access 策略与 bypass 路径由用户在后台配置（见 `docs/DEPLOY.md` §5.2）；
-  严格 CSP 会拦截 Web Analytics/Challenge 注入，需后台关闭自动注入或接受报错。
+  `app/ai` 的 DNS 由用户手动添加；Access 主应用 + 4 个 bypass + service token 已在生产配置（见 `docs/DEPLOY.md` §5.2），
+  service token 只保存在 gitignored 的 `.local/cf-access.env`；严格 CSP 会拦截 Web Analytics/Challenge 注入，需后台关闭自动注入或接受报错。
 - 旧项目 PiForge 的残留（sudoers 注释、禁用的计划任务）保持原样，不继承、不清理。
 - 公开仓库中的域名/IP/备份路径均为示例值；本机实际部署信息见 `.local/DEPLOYMENT.md`（gitignored，不提交）。
 
@@ -181,9 +181,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
    保留物理键鼠/已建立 SSH 作为回滚通道。
 7. 旧 `minecraft-backups` cron 已停用、legacy 归档已清理；如后续手工重建 cron 或旧目录，按 `docs/DEPLOY.md` 处理并再次确认迁移。
 8. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/BACKUP.md` §7 与 `docs/ACCEPTANCE.md`。
-9. Cloudflare 后台配置 Access：对 `app.example.com` 建策略（本人邮箱/身份提供商），并对 `/api/bot/webhook/*`、`/healthz`、
-   `/s/*`、`/api/public/shares/*` 建 bypass；确认后跑 smoke，见 `docs/DEPLOY.md` §5.2。
-   如需让 smoke/CI 读取受 Access 保护的页面，另建 **service token**，通过 `-AccessClientId/-AccessClientSecret` 传入，不写入仓库。
+9. Cloudflare Access：已通过 API 配置主应用（One-time PIN + Owner allow + Service Auth）与 4 个 bypass（`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`）；service token 存放在 PC `.local/cf-access.env`（gitignored）。后续轮换 service token 后同步该文件，并用 `smoke.ps1 -AccessClientId/-AccessClientSecret` 重跑；配置用高权限 API Token 完成后应 Revoke。
 10. Bot 平台后台注册：BotFather 设置 Telegram Webhook（含 `secret_token`）、Discord Interactions Endpoint、
     Slack Event Subscriptions/Slash Commands、QQ 开放平台回调地址与事件订阅；然后在 `/bots` 录入 Token/签名密钥/AppSecret、
     登记目标、开启 `BOT_ENABLED=true` 并重启。QQ 回调需先让应用可达并处理 `op=13` 校验；`/ask` 另需在部署后配置

@@ -10,7 +10,7 @@
 - **数据**：schema v8（迁移 8 重建 `bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events` 以扩展 `bots.platform` CHECK 到 `qq`，`bot_targets` 增加静默分钟列，新增 `bot_ai_sessions`）；迁移 6/7 保留。
 - **安全收口**：fail2ban dbfile 持久化（`/var/lib/fail2ban/fail2ban.sqlite3`）；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set；`smoke.ps1` 新增 `-AccessClientId/-AccessClientSecret` Access service token 头，未配置 Access 时仍可跑。
 - **工具链评估**：typescript-eslint 8.x 仍不支持 TS7 API，v0.5.1 结论为暂不升级、保留双 alias。
-- **状态**：版本 0.5.1；本地测试基线 `npm test` 265（服务端 249 + 运维脚本 16）、`npm run test:web` 139，`npm run check` 本地通过；生产部署、QQ 真实回调、AI 真实模型与 Cloudflare Access 待后续验收。
+- **状态**：版本 0.5.1；本地测试基线 `npm test` 265（服务端 249 + 运维脚本 16）、`npm run test:web` 139，`npm run check` 本地通过；生产部署、QQ 真实回调、AI 真实模型与 Cloudflare Access（含 service token）均已完成验收。
 
 ## v0.5.0 补充（历史）
 
@@ -92,20 +92,20 @@
 4. 运维：`bootstrap-env` 纳管 `BOT_AI_*`；fail2ban dbfile + nftables drop-in；smoke Access token；部署前快照/回滚与迁移 v8 流程。
 5. 文档与版本一致性：全量文档同步、`node scripts/check-version.mjs`、CHANGELOG v0.5.1。
 6. 本地验证：`npm run check`、`npm test`、`npm run test:web`、`npm run build`（按实际执行记录；本地已通过 check）。
-7. 部署与验收：PC 部署、迁移前快照、v8 迁移、`BOT_AI_*` 写入、冒烟、QQ 真实回调、AI 真实模型、公网/手机/PWA、世界备份/拉取/恢复演练（schema 8）、Cloudflare Access 与 service token（待执行）。
+7. 部署与验收：PC 部署、迁移前快照、v8 迁移、`BOT_AI_*` 写入、冒烟、QQ 真实回调、AI 真实模型、公网/手机/PWA、世界备份/拉取/恢复演练（schema 8）、Cloudflare Access 与 service token 均已完成。
 
 ## 验收摘要
 
-1. `npm run check` 全绿（本地：服务端/脚本 265 = 249 + 16，前端 139；2026-10-21 已通过）；`npm run build`、覆盖率/audit/secret-scan 按部署前/CI 证据补。
+1. `npm run check` 全绿（本地：服务端/脚本 265 = 249 + 16，前端 139；2026-10-21 已通过）；`npm run build`、覆盖率已通过，CI 以最新 main 为准。
 2. 版本一致：`/healthz`、`/api/version`、`package.json`、README、CHANGELOG、AGENTS、`deploy/env.example`、DEPLOY 标题均为 0.5.1；schema v8（生产已迁移）。
-3. QQ：`/api/version.botPlatforms` 含 `qq`；op=13 校验返回签名；C2C/群@/频道文本命令与通知可达；媒体被明确拒绝；真实回调待用户在 QQ 后台配置。
+3. QQ：`/api/version.botPlatforms` 含 `qq`；op=13 校验返回签名；C2C 真实回调与 `/help` 回复已验证；媒体被明确拒绝；群/频道目标待补充。
 4. AI：`BOT_AI_ENABLED=false` 时 `/ask` 返回未启用提示；开启后仅白名单用户可调用、按小时限流、会话复用、deny-all 工具；生产真实模型回复已验证。
 5. Bot 回归：T/D/S 签名/时间戳/去重、双白名单、通知、TOTP 发布不退化；发布新增 `confirmText` 校验。
 6. 指标/静默：`GET /api/bots/:id/metrics` 需会话且统计正确；静默时段成对校验、通知延后、跨午夜正确。
 7. 安全：fail2ban dbfile 持久化，nftables restart 后 drop-in 异步恢复封禁 set；手工 reload 仍需手动 restart fail2ban；smoke Access token 不泄漏。
 8. 关闭态：`BOT_ENABLED=false` 时 Webhook 404、写接口 503、队列不启动；`/api/bots/status` 可读。
 9. 备份：应用归档两阶段/密钥包（含 `BOT_AI_*` 与 `BOT_SECRET_KEY`）/导入恢复；世界备份保留 4 份；PC 拉取失败不 ack；演练 `-ExpectedSchemaVersion 8` 通过。
-10. 用户完成公网/手机/PWA、QQ 回调、AI 真实模型、Cloudflare Access 与正式演练，并记录到 `docs/ACCEPTANCE.md`；未完成前不得声明通过。
+10. 用户完成公网/手机/PWA 与 Cloudflare Access OTP 登录验收；QQ C2C、AI 真实模型与 Access 已记录到 `docs/ACCEPTANCE.md`。
 
 ## 关键决策
 

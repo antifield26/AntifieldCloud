@@ -141,9 +141,9 @@
    `antifieldcloud` 服务用户本身无 sudo。建议后续按用户确认收紧 sudoers。
 3. **RCON 已轮换为 32 位随机密码，但仍监听 0.0.0.0（Paper 无 bind 配置）**：nftables 仅放行 loopback；
    本机被攻破仍可控制 RCON。世界备份脚本以 root 使用固定命令，扩大了 RCON 凭据的暴露面（仅 root 可读）。
-4. **Cloudflare Access 依赖用户后台配置**：v0.5.1 文档给出 `app` 策略与 `/api/bot/webhook/*`、`/healthz`、`/s/*`、
-   `/api/public/shares/*` 的 bypass，并支持 smoke 用 Access service token（`-AccessClientId/-AccessClientSecret`）访问受保护端点；
-   但应用无法验证边缘策略是否生效，未配置/漏配时 Webhook、健康检查或公开分享会被拦截。service token 只从命令行读取，不写入日志/仓库，应使用专用/最小范围并定期轮换。
+4. **Cloudflare Access 已在生产配置**：主应用 `app.antifield.work`（One-time PIN + Owner allow + Service Auth）与 4 个 Bypass 路径
+   （`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`）已通过 API 创建并验证；smoke 支持 `-AccessClientId/-AccessClientSecret`。
+   service token 只保存在 PC gitignored `.local/cf-access.env`，应使用专用/最小范围并定期轮换；配置用高权限 API Token 完成后应 Revoke。
    仍建议给 Cloudflare 账号开启 2FA；Access 只作为应用 TOTP 之外的第二层，不替代应用认证。
 5. **Cloudflare 可见明文**：文件内容与登录流量对 Cloudflare 可见；敏感数据可考虑后续应用层加密。
 6. **单管理员、无多用户/权限分离**：审计日志可被管理员删除；适合个人使用。
@@ -171,7 +171,7 @@
 21. **AI 工具隔离依赖 OpenCode 版本**：`/ask` 新建会话传 deny-all 的 `permissions`；若 OpenCode 以 400 拒绝该字段，会降级为默认工具权限并在日志标注“未隔离”。
     当前生产 OpenCode v2.1.1 的 OpenAPI 声明支持该字段，但真实模型/工具调用需部署后验证；降级状态下不应把 `/ask` 当作强隔离沙箱。
 22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
-    生产已安装并实测封禁恢复，但完整安全验收仍受 Cloudflare Access 等未完成项约束。
+    生产已安装并实测封禁恢复；Cloudflare Access 也已配置并纳入带 token 的 smoke，剩余为 service token/API Token 轮换与季度演练。
 
 ## 5. 运维安全清单
 

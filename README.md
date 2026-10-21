@@ -133,16 +133,16 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 ## 已知限制
 
 - SSH 密码登录已在 v0.5.0 关闭（仅公钥，`00-` drop-in，24h 回滚窗口）；`antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择保留）；`fail2ban` 已启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化与 nftables 启动后恢复 drop-in 已安装。
-- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 策略与 Webhook/健康检查/公开分享 bypass 需在 Cloudflare 后台由用户配置，应用侧无法自证；smoke 的 Access service token 仅用于 CI/本机读取受 Access 保护的公网端点。
+- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并验证，service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。
 - Cloudflare 终止 TLS，可见明文；单 SD 卡、无全盘加密；普通归档仍含 TOTP/会话明文，age 私钥丢失则密钥包不可恢复。
 - 限流状态在内存中，应用重启清零；`http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换；scrypt 仍为 N=2^15。
 - 分享不支持目录打包，多文件分享不提供服务端 zip；下载次数为会话级近似限制；无公开笔记分享。
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
-- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 1 个媒体文件（非 QQ）；命令严格只读；不支持平台侧主动拉取/长连接；企业微信/钉钉/飞书与多管理员审批未实现；QQ 真实回调待用户在 QQ 后台配置。
-- `/ask` 真实模型回复依赖部署后在生产验证；适配器/AI 测试使用进程内 mock（不依赖真实平台/模型网络），上线前需在各平台后台完成 Webhook/命令注册。
-- Cloudflare Access 策略、service token 与 QQ 回调配置仍需用户在各自后台完成；未完成前不得声明安全/QQ 验收通过。
+- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 1 个媒体文件（非 QQ）；命令严格只读；不支持平台侧主动拉取/长连接；企业微信/钉钉/飞书与多管理员审批未实现；QQ C2C 回调与 `/help` 已验证，群/频道目标待补充。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；适配器/AI 单测使用进程内 mock；新增平台仍需在各平台后台注册 Webhook/命令。
+- Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。
 

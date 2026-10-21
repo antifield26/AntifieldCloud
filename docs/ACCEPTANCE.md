@@ -2,7 +2,7 @@
 
 > 当前版本 v0.5.1；v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
-> v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 23/23）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复已验证。Cloudflare Access 策略/bypass/service token 仍待用户后台配置。
+> v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 
 ## v0.5.1（当前）
 
@@ -36,7 +36,7 @@
 | QQ 真实回调 | **通过**：回调地址 op=13 校验通过；C2C `C2C_MESSAGE_CREATE` 事件到达，登记 openid 后 `/help` 收到回复；仅文本，媒体未支持 |
 | AI 真实模型 | **通过**：OpenCode provider/model `opencode-go/deepseek-v4.1-flash`，真实回复 `MODEL_OK`；Discord `/ask` 正常响应；默认关闭已显式开启 |
 | Bot 指标/静默/二次确认 | 生产 API/BotService 实测指标：Discord 24h deliveries sent=2、successRate=100、events=1；发布 confirmText 服务端/前端测试覆盖；静默时段单测覆盖 |
-| Cloudflare Access | **待用户后台配置**（app 策略、webhook/health/分享 bypass、service token）；冒烟脚本已支持 `-AccessClientId/-AccessClientSecret` |
+| Cloudflare Access | **通过**：主应用 `app.antifield.work`（One-time PIN + Owner allow + Service Auth）；4 个 Bypass：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`；未登录 `/` 302 到 `*.cloudflareaccess.com`，service token 访问应用返回 401；完整 smoke **24/24**（含 Access token 检查） |
 | fail2ban 封禁持久化 | **生产实测通过**：nftables restart 后 15s 内 fail2ban 恢复封禁 set；drop-in 已安装；手工 `systemctl reload nftables` 仍需手动 `systemctl restart fail2ban` |
 | Bot 关闭态 | 本地测试覆盖：`BOT_ENABLED=false` Webhook 404、写接口 503、队列不启动；生产保持启用 |
 
@@ -48,14 +48,14 @@ schema: v8（迁移 8：QQ/静默/AI 会话；迁移前快照 db-predeploy-20261
 env: BOT_AI_ENABLED=true、BOT_AI_PROVIDER=opencode-go、BOT_AI_MODEL=deepseek-v4.1-flash；BOT_SECRET_KEY 未轮换
 QQ: Bot 2456ea90-7fed-42ec-81d0-9c478d2a9d47；回调地址已配置；C2C 目标 openid 已登记并收到 /help 回复
 AI: OpenCode 真实模型 deepseek-v4.1-flash；Discord /ask 正常响应
-Cloudflare Access: 待用户后台配置策略/bypass/service token
+Cloudflare Access: 已启用主应用（Owner OTP + service token）；4 个 bypass 路径已创建；service token 保存在 PC `.local/cf-access.env`（gitignored），smoke 已带 token 通过
 fail2ban: dbfile + nftables drop-in 已安装；nftables restart 后封禁 set 恢复实测通过
 ```
 
 ### 4. 未决
 
 - `npm run build`、覆盖率、CI 与生产部署/迁移 v8/smoke 已执行并通过本文件记录；CI 以最新 main 提交为准。
-- Cloudflare Access 策略、bypass 与 service token 未配置；应用侧无法自证。
+- Cloudflare Access 已配置；高权限配置用 API Token 应轮换/Revoke，service token（有效期 1 年）轮换需同步 PC `.local/cf-access.env` 与 smoke 参数。
 - QQ 仅文本已验证；媒体、群/频道目标与通知需后续真实场景补充；企业微信/钉钉/飞书、多管理员审批未实现。
 - `typescript-eslint` 仍不支持 TS7 API，双 alias 保留；`http-proxy` Node 27 替代继续跟踪。
 - 发布 `confirmText` 二次确认与 TOTP 双门禁已覆盖；真实发布外发未在本轮执行（避免向平台发送测试内容）。

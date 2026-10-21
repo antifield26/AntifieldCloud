@@ -15,7 +15,7 @@
 1. **企业微信/钉钉/飞书**：未做；QQ 已接入但仅文本。
 2. **多管理员/审批流**：未做；当前仍是单管理员。
 3. **QQ 群/频道目标与通知**：当前只登记 C2C openid；群/频道目标与主动通知需真实场景补充。
-4. **Cloudflare Access**：策略、bypass 与 service token 待用户后台配置；应用侧无法自证。
+4. **Cloudflare Access**：主应用、4 个 bypass 与 service token 已配置；后续仅需按周期轮换 service token 与高权限 API Token。
 5. **完整验收**：发布外发、平台敌对负路径与季度恢复演练按 `docs/DEPLOY.md`/`docs/BACKUP.md` 持续执行。
 
 ## v0.5.0（已交付）
