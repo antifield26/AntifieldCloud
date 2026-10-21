@@ -28,29 +28,29 @@
 |---|---|
 | `npm test` | **245/245 通过**（服务端 229 + 运维脚本 16；本地工作树实测，2026-10-21） |
 | `npm run test:web` | **137/137 通过**（27 个测试文件；本地工作树实测） |
-| `npm run typecheck` / `lint` | 待部署后补（主代理执行 `npm run check`） |
-| `npm run check` | 待部署后补（本地尚未执行 typecheck/lint 组合） |
-| `npm run build` | 待部署后补 |
-| 覆盖率（`test:coverage` / `test:web:coverage`） | 待部署后补 |
-| CI（main/tag） | 待部署后补 |
-| schema | 待部署后补（期望 v7；`bot-migration` 测试已覆盖 v6→v7 与迁移 6 保留） |
-| 应用部署 / `/healthz` | 待部署后补（期望 `0.5.0`；迁移前快照 + `BOT_SECRET_KEY`） |
-| `smoke.ps1 -ExpectedVersion 0.5.0 -ExpectedSchemaVersion 7` | 待部署后补 |
-| Bot 关闭态 | 待部署后补（Webhook 404、写接口 503、队列不启动） |
-| Bot 三平台联调 | 待部署后补（各一条命令/测试通知/发布/定时/重试；记录 message id，不记录 Token） |
-| 备份/世界拉取/演练 | 待部署后补（密钥包含 `BOT_SECRET_KEY`；演练 `-ExpectedSchemaVersion 7`） |
-| SSH 仅公钥 / Access bypass | 待部署后补（`sshd -T`、Webhook/health/分享不被 302） |
+| `npm run typecheck` / `lint` | 通过（2026-10-21 本地工作树；TS7 native + ESLint 0 警告） |
+| `npm run check` | 通过（245 服务端/脚本 + 139 前端；2026-10-21 部署前最终工作树） |
+| `npm run build` | 通过（部署时构建 `web/dist`，v0.5.0） |
+| 覆盖率（`test:coverage` / `test:web:coverage`） | 服务端覆盖率门禁通过；前端门禁通过（Lines 约 39%） |
+| CI（main/tag） | 待 tag/Release 后补（`main` 已推送 `af89b1e`） |
+| schema | **v7**（`/healthz.schemaVersion=7`；迁移 6 保留 + 迁移 7 五张 Bot 表；`bot-migration` 测试通过） |
+| 应用部署 / `/healthz` | release `20261021T060807Z`；`version=0.5.0`、`schemaVersion=7`；迁移前快照 `db-predeploy-20261021T060832328Z.sqlite`（sha256 `36ab1dd4…`） |
+| `smoke.ps1 -ExpectedVersion 0.5.0 -ExpectedSchemaVersion 7` | **23 通过 / 0 失败 / 0 警告**（部署后只读 smoke 16/16；完整 smoke 含公网/CSP/PWA/备份/世界/演练） |
+| Bot 关闭态 | 部署后未设 key 时 Webhook POST 返回 404、`/api/bots/status` 未登录 401；生成 32 字节 `BOT_SECRET_KEY` 后显式 `BOT_ENABLED=true` |
+| Bot 三平台联调 | **待用户在平台后台录入 Token/签名密钥后完成**（Telegram/Discord/Slack 各一条命令/通知/发布；本机只验证到 mock/契约与路由） |
+| 备份/世界拉取/演练 | 新密钥包 `secrets-20261021T061307Z.tar.age`（8 文件，含 env/BOT key；opencode 快照告警）；世界备份/拉取/演练状态 smoke 通过 |
+| SSH 仅公钥 / Access bypass | `sshd -T` 为 `passwordauthentication no`/`permitrootlogin no`；公钥新会话与密码拒绝均实测；fail2ban sshd jail active。Cloudflare Access 策略/bypass **待用户后台配置** |
 
 ### 3. 部署
 
 ```text
-应用: 待部署后补（期望 v0.5.0；迁移前快照 db-predeploy-<UTC>.sqlite；APP_VERSION=0.5.0）
-schema: 待部署后补（期望 v7；迁移 7 新增 5 张 bot* 表）
-BOT_SECRET_KEY: 待部署后补（bootstrap 生成/复用，不回显；与 DB 一起备份）
-Cloudflare Access: 待部署后补（app 策略 + webhook/health/分享 bypass）
-SSH: 待部署后补（仅公钥；24h 回滚窗口起止时间）
+应用: v0.5.0（release /opt/antifieldcloud/releases/20261021T060807Z；迁移前快照 db-predeploy-20261021T060832328Z.sqlite）
+schema: v7（迁移 6 保留 + 迁移 7 新增 5 张 bot* 表）
+BOT_SECRET_KEY: bootstrap-env.sh --force 生成（32 字节 base64，不回显）；密钥包 secrets-20261021T061307Z.tar.age 已包含 env
+Cloudflare Access: 待用户后台配置 app 策略 + webhook/health/分享 bypass
+SSH: 仅公钥（00-antifield-hardening.conf，2026-10-21 13:49 CST 切换；24h 回滚窗口至 10-22 13:49）；fail2ban sshd jail 已启用
 tag: v0.5.0
-release: 待部署后补
+release: 待 tag/Release 后补（main 已推送 af89b1e）
 ```
 
 ### 4. 未决
