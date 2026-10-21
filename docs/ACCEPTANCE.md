@@ -38,7 +38,7 @@
 | `smoke.ps1 -ExpectedVersion 0.5.0 -ExpectedSchemaVersion 7` | **23 通过 / 0 失败 / 0 警告**（部署后只读 smoke 16/16；完整 smoke 含公网/CSP/PWA/备份/世界/演练） |
 | Bot 关闭态 | 部署后未设 key 时 Webhook POST 返回 404、`/api/bots/status` 未登录 401；生成 32 字节 `BOT_SECRET_KEY` 后显式 `BOT_ENABLED=true` |
 | Bot 三平台联调 | **待用户在平台后台录入 Token/签名密钥后完成**（Telegram/Discord/Slack 各一条命令/通知/发布；本机只验证到 mock/契约与路由） |
-| 备份/世界拉取/演练 | 新密钥包 `secrets-20261021T061307Z.tar.age`（8 文件，含 env/BOT key；opencode 快照告警）；世界备份/拉取/演练状态 smoke 通过 |
+| 备份/世界拉取/演练 | 新全量归档 `snapshot-20261021T061911104Z-full.tar.gz`（v7，PC 校验并 ack）；密钥包 `secrets-20261021T061917Z.tar.age`（含 env/BOT key，secrets=ok）；`drill.ps1 -ExpectedSchemaVersion 7` **通过**（报告 `20261021T061932Z`）；世界备份/拉取 smoke 通过 |
 | SSH 仅公钥 / Access bypass | `sshd -T` 为 `passwordauthentication no`/`permitrootlogin no`；公钥新会话与密码拒绝均实测；fail2ban sshd jail active。Cloudflare Access 策略/bypass **待用户后台配置** |
 
 ### 3. 部署
