@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$PiHost = "192.0.2.10",
   [string]$PiUser = "antifield",
   [switch]$SkipChecks,
