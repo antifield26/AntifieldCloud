@@ -5,8 +5,10 @@
 - **公网入口**：`app.example.com`、`ai.example.com` 经 Cloudflare Tunnel（名称 `pi`，出站）；Cloudflare 终止 TLS，可见明文。
 - **Pi 本机**：应用只监听 `127.0.0.1:3000`；cloudflared 出站连接；opencode `127.0.0.1:4096`；nginx/certbot 旧入口已移除。
 - **现有服务**：Minecraft（Paper 26.1.2，在线模式关闭、白名单开启）、SakuraFRP、RDP/桌面、opencode。
-- **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码、APP_VERSION）、SQLite（TOTP secret、会话哈希、恢复码哈希）、
-  备份归档（普通归档含 TOTP/会话，密钥包 age 加密）、离线 age 私钥。
+- **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码、`BOT_SECRET_KEY`、APP_VERSION）、SQLite（TOTP secret、会话哈希、恢复码哈希、
+  Bot 凭据密文）、备份归档（普通归档含 TOTP/会话，密钥包 age 加密）、离线 age 私钥。
+- **Bot 凭据**：平台 Token、Telegram Webhook Secret、Slack Signing Secret、Discord Public Key 由 `BOT_SECRET_KEY`（AES-256-GCM）加密后落库；
+  `BOT_SECRET_KEY` 只存在于 env 与加密备份中，丢失后已存 Token 不可解密（只能重新录入）。
 - **数据与状态**：`/var/lib/antifieldcloud`（DB/files/backups/world-backups/secrets）、只读状态文件
   `{world-backup,world-pull,drill}-status.json`（0644，由 root/PC 脚本写入，应用只读）。
 
@@ -29,7 +31,12 @@
 | 备份解包耗尽磁盘/内存 | 服务不可用 | staging 上限 2 GiB 且 ≤可用空间 20%；恢复按选择字节 ×2 预检；快照最多 10 万行、DB 快照 ≤256 MiB；归档浏览 30 次/分钟 |
 | 世界备份期间丢数据 | 世界存档损坏 | `save-on` 放 finally 并重试；gzip 完整性 + SHA 校验后才原子改名；保留 4 份；失败状态 JSON 可见 |
 | 物理 SD 丢失 | 数据泄露/丢失 | 无全盘加密（当前限制）；建议后续 LUKS/加密备份；应用归档 + 世界备份到 PC |
-| 校园网扫描 | RCON/Minecraft 暴露 | nftables 默认拒绝入站；25575 仅 loopback；25565 仅直连/校园网段 |
+| 校园网扫描 | RCON/Minecraft 暴露 | nftables 默认拒绝入站；25575 仅 loopback；25565 仅直连/校园网段；SSH 仅公钥 |
+| Bot Webhook 伪造/重放 | 以 Bot 身份执行命令或发布 | 平台签名（Telegram secret / Discord Ed25519 / Slack HMAC）+ 时间戳 ±300 秒；事件 ID 去重；IP/Bot 双限流；未启用 404 |
+| Bot 命令越权 | 任意成员在已加入频道执行只读命令或探测状态 | 目标 `allow_commands` + 显式 user 白名单双重校验；命令只读；未授权不执行并审计 `bot.command.denied` |
+| Bot 发布数据外发 | 登录会话被盗后把云端文件发到第三方平台 | 发布需 TOTP 再认证；仅频道/群组、单媒体、普通文件、大小上限；发布/测试限流；审计 |
+| Bot Token 泄露 | 平台被冒用/发消息 | Token 只写不读、AES-256-GCM 落库；日志/错误/审计脱敏；前端不回显；`BOT_SECRET_KEY` 离线备份 |
+| Bot 平台回调洪泛 | CPU/DB/限流资源耗尽 | Webhook scope 120/min/IP、Bot 300/min、命令 20/min/用户；事件保留 7 天并定期清理；队列重试上限/死信 |
 | 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建；CI `npm audit --omit=dev`、gitleaks、Dependabot |
 
 ## 3. 已实现控制
@@ -41,6 +48,8 @@
   **22 仅 `169.254.77.0/24` + `172.23.88.0/21`，且 `ct state new` 限速 20/minute burst 40**；
   **25565 仅同网段**（IPv6 仅 `fe80::/10`）；25575 显式 drop；DHCP 续租仅 `eth0`/`wlan0`；80 不再放行。
 - 不在 Pi 上开 3000/4096 的任何外部监听；credentialed 服务（RCON/opencode）仅 loopback。
+- SSH：`/etc/ssh/sshd_config.d/00-` drop-in 仅公钥（密码/键盘交互关闭，`PermitRootLogin no`），旧配置保留 24h 回滚窗口；
+  `fail2ban` 启用 `sshd` jail（nftables 后端、24h ban），`nft -f`/重启 nftables 后需重启 fail2ban 恢复封禁 set。
 
 ### 认证
 
@@ -63,6 +72,24 @@
 - 分享：token 只存 SHA-256；新建密码 ≥8 位（旧短密码分享仍可解锁）；公开 POST 校验 Origin；
   限流（创建 30/min、metadata 120/min、unlock 8/15min、content 240/min）；`af_share` 5 分钟 HttpOnly Cookie，Path 限定单 token；
   下载次数按会话计且仅在内容流完整读完后 +1；文件删除/回收站吊销整个分享（含作为条目之一的分享）。
+
+### Bot（v0.5.0）
+
+- 凭据：`crypto.ts` 使用 AES-256-GCM（随机 12 字节 IV、认证 tag、`key_version=1`）；`BOT_SECRET_KEY` 必须是 32 字节 base64，启动时校验，格式错误拒绝启动/服务初始化。
+  管理 API 只返回 `BotSummary`（无 Token/Secret）；`PATCH` 的 Token 空值保持、其它密钥省略保持（显式空串清空）；Bot 删除级联清理目标/投递/发布/事件。
+- 入站：`POST /api/bot/webhook/:botId` 无会话/CSRF，仅平台签名鉴权；Telegram 恒定时间比较 secret token，Discord 校验 `timestamp+body` 的 Ed25519 签名，
+  Slack 校验 `v0:<timestamp>:<body>` HMAC；时间戳允许 ±300 秒；`bot_events` 以 `(bot_id, platform_event_id)` 主键去重；Body 上限 256 KiB。
+- 授权：命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；命令白名单固定为
+  `/help` `/status` `/backup` `/world` `/mc` `/files`，未知命令只返回帮助；`/files` 只返回名称/大小，不含内容/路径。
+- 输出：`sanitizeExternalText` 将路径（`/home|/var|/etc|…`、盘符）与 `ssh://`/`http(s)://` 替换为 `[path]`/`[url]`，去控制字符并截断；
+  模板只输出白名单字段，不拼接 HTML/原始平台对象。
+- 发布：`POST /api/bots/:id/publish` 必须带 `totpCode`，复用 `reauthLimiter`/`reauthGlobalLimiter`/`totpGlobalLimiter` 与失败审计；
+  目标限频道/群组；媒体最多 1 个、必须是 `origin='user'` 且未删除的普通文件、≤10 MiB；文本按平台上限截断/拒绝。
+- 出站：只调用固定平台 API（`api.telegram.org`、`discord.com/api/v10`、`slack.com/api`），15 秒超时、禁止重定向、响应 ≤1 MiB；
+  Slack `response_url` 只允许 `https://hooks.slack.com/services|commands/…`；平台错误只保留状态/短错误码，不含完整 URL（可能含 token）。
+- 关闭语义：`BOT_ENABLED=false`、无密钥、Bot 不存在或 `enabled=false` 时 Webhook 一律 404；管理写接口 503；投递/发布队列不启动。
+- 保留：`bot_events` 按 `BOT_EVENT_RETENTION_DAYS`（7 天）清理；已发送投递/发布 30 天后清理；失败/死信保留供人工重投。
+- 前端：`/bots` 页密钥输入只提交不回显，不写入 DOM value/localStorage；未启用时只展示配置指引，不请求 Bot 列表。
 
 ### HTTP
 
@@ -99,14 +126,17 @@
 
 ## 4. 残留风险（按用户选择保留）
 
-1. **SSH 密码登录保留、无 fail2ban**：公网未转发 22，只在直连/校园网段可达；新 nftables 已把 22 限制到
-   `169.254.77.0/24` + `172.23.88.0/21` 并限制新建连接速率，但仍建议改仅公钥 + fail2ban。
-   **注意：若管理员当前来源不在允许网段内，应用新规则会锁死 SSH；须先确认来源网段并保留物理键鼠/已建立连接。**
+1. **SSH 已改仅公钥，但仍保留 24h 回滚窗口**：`/etc/ssh/sshd_config.d/00-` drop-in 禁用密码/键盘交互，
+   旧配置备份在 24h 内可恢复（见 `docs/DEPLOY.md` §9.7）；回滚窗口结束后删除备份。`fail2ban` 已启用 `sshd` jail
+   （nftables 后端、24h ban），但封禁 set 依赖 nftables，`nft -f`/重启 nftables 后必须重启 fail2ban 恢复已有封禁。
+   **注意：若管理员当前来源不在允许网段内，应用 nftables 规则会锁死 SSH；须先确认来源网段并保留物理键鼠/已建立连接。**
 2. **Pi 登录用户 `antifield` 拥有 `NOPASSWD ALL` sudo（既有残留，未修改）**：任何拿到 `antifield` 账号的人可提权为 root；
    `antifieldcloud` 服务用户本身无 sudo。建议后续按用户确认收紧 sudoers。
 3. **RCON 已轮换为 32 位随机密码，但仍监听 0.0.0.0（Paper 无 bind 配置）**：nftables 仅放行 loopback；
    本机被攻破仍可控制 RCON。世界备份脚本以 root 使用固定命令，扩大了 RCON 凭据的暴露面（仅 root 可读）。
-4. **无 Cloudflare Access**：Cloudflare 边缘只有 TLS，账号安全完全依赖应用 TOTP；建议给 Cloudflare 账号开启 2FA。
+4. **Cloudflare Access 依赖用户后台配置**：v0.5.0 文档给出 `app` 策略与 `/api/bot/webhook/*`、`/healthz`、`/s/*`、
+   `/api/public/shares/*` 的 bypass，但应用无法验证边缘策略是否生效；未配置/漏配时 Webhook、健康检查或公开分享会被拦截。
+   仍建议给 Cloudflare 账号开启 2FA；Access 只作为应用 TOTP 之外的第二层，不替代应用认证。
 5. **Cloudflare 可见明文**：文件内容与登录流量对 Cloudflare 可见；敏感数据可考虑后续应用层加密。
 6. **单管理员、无多用户/权限分离**：审计日志可被管理员删除；适合个人使用。
 7. **普通备份归档仍含 TOTP secret 与文件内容**：PC 端 ACL 与物理安全是最后防线；密钥包已用 age 加密，
@@ -125,6 +155,11 @@
 15. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
+18. **Bot 测试为 mock-only**：适配器/队列/发布仅用进程内假平台与夹具，未对真实 Telegram/Discord/Slack 做限流、签名漂移、平台故障的负路径验收；
+    上线前必须在各平台后台完成 Webhook/命令注册并联调（`docs/DEPLOY.md` §9.8）。
+19. **Bot 单媒体与只读边界**：单次发布最多 1 个媒体文件，命令严格只读，不支持平台侧主动拉取/长连接；无多管理员审批流。
+20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 Bot 凭据将不可解密，必须重新录入 Token；轮换需先备份 DB + 旧密钥并接受一次性重录，
+    不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
 
 ## 5. 运维安全清单
 
@@ -132,21 +167,30 @@
 - 每周检查：应用备份 pending 是否堆积、`backup-pull.json` 是否超过 48h、PC 归档 `.sha256`、
   世界备份/世界拉取状态是否新鲜（`world-backup-status.json`/`world-pull-status.json`）、计划任务 `LastTaskResult`；
   日志 `%LOCALAPPDATA%\AntifieldCloud\backup.log`、`world-pull.log`。
+- 每周/启用 Bot 后检查：`GET /api/bots/status` 是否 `enabled=true`、`queuedDeliveries/queuedPublishes` 是否堆积、
+  `bot_deliveries` 死信（`status='dead'`）与 `bots.last_error`；平台后台 Webhook/命令是否仍指向正确 URL；
+  确认 Token 未出现在 `journalctl -u antifieldcloud`。
 - 每月检查：`systemctl --failed`、`journalctl -u antifieldcloud -p warning`、`nft list ruleset`（确认 22 来源网段）、
   `/sys/fs/cgroup/cgroup.controllers` 含 `memory`、`vcgencmd get_throttled`、`vcgencmd measure_temp`、磁盘/内存余量、
   `crontab -l` 不含旧 `minecraft-backups` 行。
-- 每季度检查：恢复演练（`scripts/drill.ps1` 或按 docs/BACKUP.md §7 手动执行并记录）、
+- 每月检查 SSH/fail2ban：`sshd -T` 仍为仅公钥、`fail2ban-client status sshd` 有 jail 统计、`fail2ban-client get sshd bantime=86400`、
+  封禁 set 与 nftables 规则共存；任何 nftables 变更后执行 `systemctl restart fail2ban` 并复核封禁列表。
+- 每月检查 Cloudflare Access：`app` 策略主体、bypass 路径（`/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
+  是否被后续规则覆盖；用未登录浏览器验证公开分享仍可用、平台回调仍 200。
+- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 7` 或按 docs/BACKUP.md §7 手动执行并记录）、
   `cloudflared tunnel info` 连接与版本、Windows 备份目录 ACL 是否仍仅白名单主体、age 公钥/私钥保管情况、
-  世界备份保留 4 份/PC 保留 4 份是否正常。
+  世界备份保留 4 份/PC 保留 4 份是否正常、SSH 仅公钥配置是否仍生效（`sshd -T | grep -E 'passwordauthentication|pubkeyauthentication'`）。
 - 怀疑泄露时：
   1. 登录设置页“退出全部会话”；
   2. CLI 重置密码/TOTP；
   3. 轮换 RCON/opencode 密码（opencode 需同步 `/etc/opencode/opencode.env`、`/etc/antifieldcloud/env` 与两个 `service.json`，
      然后重启 opencode 与 antifieldcloud；`bootstrap-env.sh --force` 后也需重启应用，非敏感配置会沿用现有值）；
   4. 重新生成 age 密钥包并离线保管私钥；
-  5. 检查审计日志、`journalctl`、备份 pending 与世界/演练状态文件；
-  6. 从备份恢复可疑文件。
-- 不要在聊天、截图、issue 中粘贴密码、TOTP 密钥、恢复码、隧道 token、age 私钥。
+  5. 若 Bot 凭据可能泄露：在平台后台吊销/重建 Bot Token，重新录入 `/bots`（DB 旧密文随更新覆盖）；必要时轮换 `BOT_SECRET_KEY`
+     并接受所有 Bot Token 重录；
+  6. 检查审计日志、`journalctl`、备份 pending 与世界/演练状态文件；Bot 额外检查 `bot_webhook_rejected`/`bot_command` 审计；
+  7. 从备份恢复可疑文件。
+- 不要在聊天、截图、issue 中粘贴密码、TOTP 密钥、恢复码、隧道 token、age 私钥、Bot Token/Webhook Secret/Signing Secret。
 
 ## 6. 安全验收（已覆盖）
 
@@ -159,6 +203,10 @@
 - 备份管理：导入需 TOTP、tar 安全校验、恢复仅新目录、计划过期/单并发；整库恢复不暴露 Web；
   归档浏览限流；`skippedMissing` 不整体失败。
 - 超配额上传拒绝；回收站/附件占配额；普通单请求受 `MAX_UPLOAD_BYTES`（默认 100 MiB）限制；分片上传受 5 GiB 上限、8 MiB 块、会话过期/并发限制与配额预留约束。
-- 外部 25575 阻断；22/25565 仅允许网段；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。
+- Bot：`BOT_ENABLED=false` 时 Webhook 404、写接口 503；无签名/错误签名 401、时间戳过期 401、重复事件 200 duplicate；
+  未授权目标/用户不执行命令并审计；发布缺 `totpCode` 400、错误 TOTP 401；Token 不出现在 API/日志；媒体 >10 MiB 或 ≥2 个被拒。
+- 外部 25575 阻断；22/25565 仅允许网段；`sshd -T` 显示 `passwordauthentication no`、`pubkeyauthentication yes`；`fail2ban-client status sshd`
+  显示 jail 与封禁统计（nftables 后端、24h ban）；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。
+- Cloudflare Access：bypass 生效时公网 Webhook 可达（200/401 而非 Access 302）、`/healthz` 200、公开分享页正常；主应用仍要求 Access 登录。
 - 世界备份/拉取/演练状态文件存在且新鲜（smoke 对缺失 WARN、失败/超期 FAIL）；世界备份归档 SHA/旁文件可校验。
 - 仓库 `git grep` 不出现真实密钥；gitleaks CI 通过。

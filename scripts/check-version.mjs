@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * 版本一致性检查脚本（CI 辅助，未接入 CI；由维护者手动或后续流水线调用）。
+ * 版本一致性检查脚本（已接入 CI check job）。
  *
- * 比对 package.json 的 version 与 README / CHANGELOG / docs/ACCEPTANCE.md 中声明的“当前版本”，
- * 并额外检查 AGENTS.md（缺失时只警告）。输出单行 JSON；任一必需文件不一致时退出码 1。
+ * 比对 package.json 的 version 与 README / CHANGELOG / docs/ACCEPTANCE.md / AGENTS.md（缺失只警告），
+ * 以及 lock 根版本、deploy/env.example 的 APP_VERSION、docs/DEPLOY.md 标题；输出单行 JSON，
+ * 任一必需项不一致时退出码 1。
  *
  * 用法：`node scripts/check-version.mjs [--json] [--quiet] [--help]`
  * - 只读仓库文件，不修改任何内容；
@@ -83,9 +84,28 @@ export function checkVersions(root = process.cwd()) {
     checkFile(resolve(resolvedRoot, 'README.md'), /状态[：:]\s*v?(\d+\.\d+\.\d+)/, packageVersion),
     checkFile(resolve(resolvedRoot, 'CHANGELOG.md'), /^##\s*\[?v?(\d+\.\d+\.\d+)\]?/m, packageVersion),
     checkFile(resolve(resolvedRoot, 'docs/ACCEPTANCE.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion),
+    checkFile(resolve(resolvedRoot, 'deploy/env.example'), /APP_VERSION=(\d+\.\d+\.\d+)/, packageVersion),
+    checkFile(resolve(resolvedRoot, 'docs/DEPLOY.md'), /^# 部署手册[^\n]*v(\d+\.\d+\.\d+)/m, packageVersion),
     // AGENTS.md 不是严格必需项：缺失/未声明只记警告。
     checkFile(resolve(resolvedRoot, 'AGENTS.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion, false),
   ]
+  // lock 根版本：npm ci 不校验它，但 SBOM/审计会误读（OPS4-10）。
+  const lockText = readText(resolve(resolvedRoot, 'package-lock.json'))
+  if (lockText === null) {
+    errors.push({ code: 'lock_missing', message: 'package-lock.json 不存在' })
+  } else {
+    try {
+      const lock = JSON.parse(lockText)
+      const versions = [lock.version, lock.packages?.['']?.version].filter(Boolean)
+      for (const version of versions) {
+        if (version !== packageVersion) {
+          errors.push({ code: 'lock_version_mismatch', message: `package-lock.json: expected ${packageVersion}, found ${version}` })
+        }
+      }
+    } catch {
+      errors.push({ code: 'lock_invalid', message: 'package-lock.json 不是合法 JSON' })
+    }
+  }
   for (const check of checks) {
     if (!check.ok) {
       if (check.required) {

@@ -1,11 +1,12 @@
-# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x）
+# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0）
 
-> 本文件补齐 2026-10-20 未落档的第二轮审计记录；第一轮 v0.2.0 记录保留在下方。
+> 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
-- 日期：2026-10-19（第一轮）、2026-10-20（第二轮）
-- 范围：v0.1.0 全部代码、部署脚本、备份、Pi/Cloudflare、前端与测试；第二轮覆盖 v0.2.2 基线与 v0.3.0/v0.3.1 增量
+- 日期：2026-10-19（第一轮）、2026-10-20（第二/三轮）、2026-10-21（第四轮）
+- 范围：v0.1.0 全部代码、部署脚本、备份、Pi/Cloudflare、前端与测试；第二轮覆盖 v0.2.2 基线与 v0.3.0/v0.3.1 增量；
+  第三轮覆盖 v0.3.2 基线与 v0.4.0；第四轮覆盖 v0.4.2 基线与 v0.5.0 Bot 增量。
 - 方法：只读静态审查 + 进程内 PoC + 只读线上检查 + 回归测试；审计阶段未修改生产。
-- 结果：第一轮 P0/P1 已修复；第二轮审计范围内无未关闭 P0/P1，残留见各节“延后/残留”。
+- 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12；Bot WIP P1=2、P2=4 均已修复；残余见各节“延后/残留”。
 
 ## 第一轮（v0.2.0，2026-10-19）
 
@@ -232,3 +233,114 @@
 - 第三轮范围内未发现未关闭的 P0；v0.4.0 修复了 2 个 P0（世界备份静默失败链、运维权限面记录/缓解）、多个 P1（备份 pending/增量、上传耐久性、env 重建、版本单源、回滚 DB、PS 编码）与大部分 P2。
 - 新增功能（指标/附件/版本/多文件分享/世界备份/演练）均有成功+失败路径测试与生产验收证据（见 `docs/ACCEPTANCE.md`）。
 - 后续轮次优先：DR-1 增量水位、导入归档保留、告警重投、listTrash 性能、SSH/sudo 收敛、独立第三方复审。
+
+## 第四轮（v0.4.2 基线 + v0.5.0 Bot WIP，2026-10-21）
+
+### 0. 执行方式与记录边界
+
+- 范围：v0.4.2 发布基线（TS7 工具链、Android 趋势布局、文档/版本基线）+ v0.5.0 Bot 增量（迁移 7、`bot/`、Webhook/管理 API、命令/通知/发布、前端 `/bots`、部署/环境/版本脚本）。
+- 方式：只读静态审查（服务端/前端/运维脚本）+ 进程内 PoC（加解密、Webhook 验签/去重、未授权目标、队列状态机）+ 本地回归测试；审计期间未修改生产、未部署。
+- 证据边界：Bot 适配器/队列以进程内假平台与夹具为主（无真实 Telegram/Discord/Slack 网络）；本地仅执行 `npm test` 与 `npm run test:web`，
+  `npm run check`/`npm run build`/CI/部署/smoke 由主代理后续执行；本记录不替代独立第三方审计或真实平台联调。
+- 记录方式：v0.4.2 与 Bot WIP 分开计数；已修复项注明「v0.5.0 修复」并给出测试/命令；未能本地复现或仅文档层面的项归入 P3。
+
+### 1. 结论与计数
+
+| 对象 | P0 | P1 | P2 | P3 | 状态 |
+|---|---:|---:|---:|---:|---|
+| v0.4.2 发布基线 | 0 | 0 | 3 | 12 | 已处置/记录；无未关闭 P0/P1 |
+| v0.5.0 Bot WIP | 0 | 2 | 4 | 0 | **全部 v0.5.0 修复**（P1 2、P2 4） |
+
+- v0.4.2 的 3 个 P2：自动回滚版本假阳性（OPS4-03）、脏工作树发布门禁缺失（OPS4-04）、测试证据 mock-only（T/S）；均在 v0.5.0 处置或明确残余。
+- Bot WIP 的 2 个 P1：发布缺 TOTP 再认证（BOT-02）、通知/命令输出泄露内部路径（BOT-04）；4 个 P2：命令缺用户白名单、Webhook 重放/去重、
+  关闭态入口语义、Token 暴露面（BOT-01/03/05/06）；均在 v0.5.0 修复并有回归/命令证据。
+
+### 2. 评分卡（1–5）
+
+| 维度 | v0.4.2 基线 | v0.5.0 修复后 | 主要依据 |
+|---|---|---|---|
+| 架构设计 | 4 | 4 | Bot 独立 `bot/` 模块、Webhook 独立 raw body scope、队列状态机；`http/` 路由仍偏大，module split 列后续 |
+| 功能完整度 | 3 | 4 | 三平台、只读命令、通知、单媒体发布/定时/重试补齐；多附件/审批/长连接仍缺 |
+| 安全设计 | 4 | 4 | AES-256-GCM、只写 Token、签名+时间戳+去重、双白名单、TOTP 发布、输出清洗、限流；Access 依赖用户后台，fail2ban 已启用 sshd jail |
+| 可靠性/数据完整性 | 3 | 4 | Bot 队列重试/死信/陈旧恢复、发布取消、迁移 v7、回滚版本还原；mock-only 与平台故障未实测 |
+| 测试与 CI | 4 | 4 | 245/137 本地通过，新增 Bot 单测/迁移/路由/前端；`check`/CI/覆盖率待主代理执行 |
+| 可维护性/运维 | 4 | 4 | 部署/回滚/版本一致性/SSH/Access/备份任务文档收口；sudo 仍残余，fail2ban 封禁依赖 nftables set |
+
+**综合：v0.4.2 约 3.7/5 → v0.5.0 约 4.0/5**（功能与可靠性提升；安全维度的外部依赖项未计入加分）。
+
+### 3. v0.4.2 基线发现与处置
+
+#### 3.1 P2（3 项，均已处置/明确残余）
+
+| ID | 问题/影响 | 处置 | 证据 |
+|---|---|---|---|
+| OPS4-03 | 自动回滚只切 release/还原 DB，未还原 `/etc/antifieldcloud/env` 的 `APP_VERSION`；旧 release 可能以新版本号通过 `/healthz`，造成回滚假成功 | **v0.5.0 修复**：`deploy.ps1` 回滚前从上一 release `package.json` 读取版本，写入 env；读不到直接拒绝自动回滚 | `scripts/deploy.ps1`（Invoke-Rollback）；`docs/DEPLOY.md` §3/§11 |
+| OPS4-04 | 部署未绑定 commit，脏工作树可把未完成的 v0.5.0 半成品当旧版本发布 | **v0.5.0 修复**：默认 `git status --porcelain` 非空即中止；`-AllowDirty` 显式放行并记录 | `scripts/deploy.ps1`；本机 `npm test` 245/245 |
+| T/S-01 | Bot/备份 tar/告警投递等测试为进程内 mock/夹具（T/S mock-only），无真实平台/网络负路径；风险为“测试全绿但平台侧失败” | 记录为**明确残余**；文档要求部署后平台联调并保留证据，不把 mock 结果当线上通过 | `docs/ACCEPTANCE.md` v0.5.0 未决；`docs/DEPLOY.md` §9.8 |
+
+#### 3.2 P3（12 项，均为低风险一致性/文档/CI）
+
+| ID | 问题 | 处置 |
+|---|---|---|
+| OPS4-10 | `package-lock.json` 根版本未纳入版本一致性检查，SBOM/审计可能误读 | **v0.5.0 修复**：`check-version.mjs` 校验 `lock.version` 与 `packages[""].version` |
+| DOC4-01 | `docs/AUDIT.md` 标题/权威文档索引只列第一、二轮，第三轮未进索引 | 已更新标题/索引（本轮） |
+| DOC4-02 | `docs/API.md` `/healthz` 示例仍为 0.3.2，与当前版本漂移 | 已改为 0.5.0 并加版本一致性检查 |
+| DOC4-03 | `docs/PLAN.md` 验收摘要停留在 0.4.0/234/129，与 v0.4.2 不符 | 已整体重写为 v0.5.x |
+| DOC4-04 | `README`/`AGENTS` 测试基线 234/129，未含 Bot 新增用例 | 已更新为 245/137 |
+| DOC4-05 | `docs/UI-SPEC.md` 标题 v3/2026-10-20，且缺 Bot 页面 | 已升 v4 并新增 §15 |
+| DOC4-06 | `docs/ROADMAP.md` 仍把 Cloudflare Access/SSH 加固列为候选，未反映 v0.5.0 部分落地 | 已更新为 v0.5.0 当前 + v0.5.1 规划 |
+| DOC4-07 | `docs/DEPLOY.md` §9.6 仍写“SSH/sudo 未改”，与仅公钥切换冲突 | 已更新并新增 §9.7 |
+| DOC4-08 | `README` 部署/冒烟示例 `-ExpectedVersion 0.4.2` | 已改为 0.5.0 |
+| DOC4-09 | `docs/BACKUP.md` 验证清单 0.4.2、`schema v6` 与演练命令 6 | 已改为 0.5.0/schema v7/`-ExpectedSchemaVersion 7` |
+| DOC4-10 | `docs/SECURITY.md` 残留仍写“无 Cloudflare Access/SSH 密码登录保留” | 已改为 Access 需后台配置 + 仅公钥/24h 回滚 + fail2ban sshd jail |
+| DOC4-11 | `deploy/env.example` 头部与 `APP_VERSION` 停留在 0.4.0，且 `check-version` 未覆盖 | **v0.5.0 修复**：env.example 升 0.5.0 并纳入 check-version（env.example/DEPLOY 标题） |
+
+补充：`scripts/check-version.mjs` 顶部注释曾写“未接入 CI”，与 CI 实际接入不一致，已随 v0.5.0 修正并覆盖更多文件。
+
+### 4. Bot WIP 发现与处置（v0.5.0 修复）
+
+#### 4.1 P1（2 项）
+
+| ID | 问题/影响 | v0.5.0 修复 | 测试/命令 |
+|---|---|---|---|
+| BOT-02 | 发布接口只要求会话 + CSRF，登录会话（或 XSS/CSRF 绕过）即可把云端文件外发到第三方平台；数据外发门禁缺失 | 发布必须带 `totpCode`，路由调用 `auth.confirmTotp`（复用再认证/TOTP 限流、失败审计 `reauth_bot_publish`）；缺码 `400 totp_required`、错误 `401 invalid_code`；发布/测试各 20 次/小时 | `server/test/bot-routes.test.ts`（无 TOTP 400、有效 TOTP 才建任务）、`bot-core.test.ts`；`node --test server/test/bot-routes.test.ts`；手工：不带/带 `totpCode` 调 `POST /api/bots/:id/publish` 对比 |
+| BOT-04 | 通知/命令回复直接拼接 provider 数据，可能输出内部路径、SSH/HTTP URL，帮助外部推断主机布局 | `sanitizeExternalText` 将 `C:\`/`/home|/var|/etc|…` 与 `ssh://`/`http(s)://` 替换为 `[path]`/`[url]`，去控制字符、≤1500 字符；模板只输出白名单字段 | `server/test/bot-core.test.ts`（通知/命令文本）；`node --test server/test/bot-core.test.ts` |
+
+#### 4.2 P2（4 项）
+
+| ID | 问题/影响 | v0.5.0 修复 | 测试/命令 |
+|---|---|---|---|
+| BOT-01 | 命令只校验目标 `allow_commands`，频道内任意成员（含被邀请的第三方）都能执行只读命令/探测状态 | 增加显式 user 白名单：发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；未授权不执行并审计 `bot.command.denied` | `server/test/bot-core.test.ts`（未授权目标/用户不执行）；`node --test server/test/bot-core.test.ts` |
+| BOT-03 | Webhook 无时间戳窗口/事件去重，合法回调可被重放；重复事件会重复执行命令 | Discord/Slack 校验 ±300 秒时间戳；`bot_events` 以 `(bot_id, platform_event_id)` 主键 `INSERT OR IGNORE`，重复返回 `{ok:true,duplicate:true}`；Bot/命令/IP 分层限流 | `server/test/bot-core.test.ts`（去重/验签）、`server/test/bot-webhook-route.test.ts`；`node --test server/test/bot-core.test.ts server/test/bot-webhook-route.test.ts` |
+| BOT-05 | Bot 关闭/未启用/不存在时入口语义不一致，可能暴露 Bot 是否存在或返回 5xx | `BOT_ENABLED=false`/无密钥/Bot 不存在/`enabled=false` 统一 404；管理写接口 503 `bot_disabled`/`bot_key_missing`；队列不启动 | `server/test/bot-webhook-route.test.ts`（未知 bot 404）；`node --test server/test/bot-webhook-route.test.ts` |
+| BOT-06 | Token/Secret 可能进入 API 响应、日志、错误对象（含平台 URL token） | 凭据 AES-256-GCM 落库；API 只返回 `BotSummary`（无密钥）；`PATCH` Token 空值保持、其它密钥省略保持；平台错误只保留状态/短错误码、禁止重定向、响应 ≤1 MiB；日志/审计不含 Token | `server/test/bot-core.test.ts`（加解密/篡改失败、Token 不回显）；`node --test server/test/bot-core.test.ts`；`git grep -n 'BOT_SECRET_KEY' server/src` 人工复核 |
+
+说明：本轮只记录 Bot WIP 的 6 项；Bot 功能本身的多媒体/审批/长连接等为产品边界，不计为缺陷。
+
+### 5. 回归测试与证据
+
+- 本地（2026-10-21，工作树）：`npm test` **245/245**（服务端 229 + 运维脚本 16）；`npm run test:web` **137/137**（27 文件）。
+- Bot 专项：`node --test server/test/bot-core.test.ts server/test/bot-routes.test.ts server/test/bot-webhook-route.test.ts server/test/bot-migration.test.ts`；
+  迁移覆盖 v6→v7 建表并保留迁移 6 的孤儿 shares 修复。
+- 未执行/待主代理：`npm run typecheck`、`npm run lint`、`npm run check`、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、CI、部署、`smoke.ps1`、真实平台联调。
+- 证据边界：Bot 测试不访问真实平台；备份/告警/系统脚本测试仍以夹具为主；Windows systemd 用例 `t.skip` 留 Linux 执行。
+
+### 6. 残余风险（明确）
+
+1. **typescript-eslint TS7 alias（残余）**：`typescript` 仍为 `@typescript/typescript6@6.0.2` 别名，仅供 typescript-eslint 8.x；在其支持 TS7.1 API 前不能移除，升级时需重跑 typecheck/lint。
+2. **T/S mock-only（残余）**：Bot 适配器、备份 tar、告警投递等以进程内 mock/夹具验证，真实平台/真实网络的签名漂移、限流、5xx 未覆盖；上线前必须平台联调。
+3. **Cloudflare Access（用户后台）**：`app` 策略与 `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` bypass 需用户配置；应用无法自证，漏配会导致 Webhook/health/分享被 302。
+4. **SSH 24h 回滚窗口（残余）**：仅公钥已切换，旧配置备份保留 24h；窗口内回滚可恢复密码登录；窗口结束前不要删除唯一可用会话。
+5. **fail2ban（已启用，依赖 nftables）**：`sshd` jail 使用 nftables 后端、24h ban；`nft -f`/重启 nftables 会清空 set，
+   必须随后 `systemctl restart fail2ban` 恢复已有封禁。日志后端为 log2ram/journald，需在维护窗口复核 `fail2ban-client status sshd`。
+6. **BOT_SECRET_KEY 轮换（设计边界）**：轮换等于所有 Bot Token 重录；`bootstrap-env.sh --force` 复用旧值，避免误轮换。
+7. **Bot 产品边界**：单次 1 个媒体、命令只读、无平台主动拉取/长连接、无多管理员审批；Access 未覆盖 `ai`。
+8. **前几轮残余延续**：DR-1 增量时钟水位、DR-7 导入归档保留、DR-22 告警跨周期不重投、DR-23 锁心跳、RCON 监听 0.0.0.0、
+   `antifield` `NOPASSWD ALL` sudo、单 SD/LUKS、Cloudflare 明文、限流内存态、scrypt N=2^15 等仍按 `docs/SECURITY.md` §4 管理。
+
+### 7. 结论
+
+- 第四轮在 v0.4.2 基线未发现 P0/P1；3 个 P2 中 2 个（回滚版本、脏发布）已在 v0.5.0 代码修复，1 个（mock-only）明确为测试证据残余；12 个 P3 已随文档/CI 收口。
+- Bot WIP 的 2 个 P1、4 个 P2 全部在 v0.5.0 修复：发布 TOTP、双白名单、时间戳/去重、关闭态 404、AES-256-GCM/只写 Token、输出清洗；均有本地测试或命令证据。
+- v0.5.0 的部署/CI/smoke/真实平台联调证据尚未产生；`docs/ACCEPTANCE.md` 已留「待部署后补」占位。完成前不得声明验收通过。
+- 下一轮优先：真实平台联调与负路径、`typescript-eslint` TS7 迁移、fail2ban 封禁持久化/观测、sudo 收口、Access 策略自动核验、独立第三方复审。

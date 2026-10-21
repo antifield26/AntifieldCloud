@@ -3,6 +3,8 @@
   [string]$PiUser = "antifield",
   [switch]$SkipChecks,
   [switch]$SkipBuild,
+  [switch]$AllowDirty,
+  [switch]$AllowSmokeFailure,
   [int]$CommandTimeoutSec = 120,
   [int]$InstallTimeoutSec = 1800
 )
@@ -175,6 +177,15 @@ function Invoke-Rollback {
     return $false
   }
   Write-Warning "开始回滚到：$previousTarget（先还原迁移前 DB 快照：$($snapshotJson.snapshot)）"
+  # 回滚必须同时还原 APP_VERSION；否则旧 release 会以新版本号通过 /healthz（OPS4-03）。
+  $prevVersion = ""
+  try {
+    $prevVersion = (Invoke-Remote "sudo /usr/local/bin/node -p \"require('$previousTarget/package.json').version\"" -Attempts 2 | Out-String).Trim()
+  } catch { }
+  if ($prevVersion -notmatch '^\d+\.\d+\.\d+$') {
+    Write-Warning "无法读取上一 release 版本号，拒绝自动回滚以免健康检查假阳性。"
+    return $false
+  }
   $rollbackScript = @"
 set -e
 sudo systemctl stop antifieldcloud
@@ -182,6 +193,11 @@ sudo cp -a '$($snapshotJson.snapshot)' /var/lib/antifieldcloud/db.sqlite
 sudo rm -f /var/lib/antifieldcloud/db.sqlite-wal /var/lib/antifieldcloud/db.sqlite-shm
 sudo chown antifieldcloud:antifieldcloud /var/lib/antifieldcloud/db.sqlite
 sudo chmod 0640 /var/lib/antifieldcloud/db.sqlite
+if grep -q '^APP_VERSION=' /etc/antifieldcloud/env; then
+  sudo sed -i 's/^APP_VERSION=.*/APP_VERSION=$prevVersion/' /etc/antifieldcloud/env
+else
+  printf 'APP_VERSION=%s\n' '$prevVersion' | sudo tee -a /etc/antifieldcloud/env >/dev/null
+fi
 sudo ln -sfn $previousTarget $currentLink
 sudo systemctl start antifieldcloud
 "@
@@ -204,6 +220,16 @@ sudo systemctl start antifieldcloud
 Push-Location $root
 try {
   if (-not (Test-Path (Join-Path $root "LICENSE"))) { throw "LICENSE 不存在（发布包必须包含 MIT 许可）" }
+
+  # 发布必须绑定干净的 commit（OPS4-04）：避免把未提交的 v0.5.0 半成品当成旧版本发布。
+  if (Test-Path (Join-Path $root ".git")) {
+    $dirty = @(& git -C $root status --porcelain 2>$null)
+    if ($dirty.Count -gt 0 -and -not $AllowDirty) {
+      throw "工作树不干净（$($dirty.Count) 个文件）；请先提交或使用 -AllowDirty 明确允许脏发布"
+    }
+    $headSha = (& git -C $root rev-parse --short HEAD 2>$null | Out-String).Trim()
+    Write-Host "发布 commit：$headSha$(if ($dirty.Count -gt 0) { '（含未提交改动）' })"
+  }
 
   # 期望版本来自本地 package.json（发布包内同一份文件）；上传后还会与远端副本比对。
   $packagePath = Join-Path $root "package.json"
@@ -357,9 +383,13 @@ fi
   $smokePath = Join-Path $PSScriptRoot "smoke.ps1"
   if (Test-Path $smokePath) {
     Write-Host "== 部署后只读 smoke =="
-    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -ExpectedVersion $expectedVersion
+    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -ExpectedVersion $expectedVersion -ExpectedSchemaVersion 7
     if ($LASTEXITCODE -ne 0) {
-      Write-Warning "部署后 smoke 失败（部署已完成，请根据上方 FAIL 项排查）"
+      if ($AllowSmokeFailure) {
+        Write-Warning "部署后 smoke 失败（已使用 -AllowSmokeFailure，部署保留；请根据上方 FAIL 项排查）"
+      } else {
+        throw "部署后 smoke 失败；发布门禁未通过（可用 -AllowSmokeFailure 仅告警）"
+      }
     }
   }
 } catch {

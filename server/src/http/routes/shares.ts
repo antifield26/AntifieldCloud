@@ -84,6 +84,7 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
   const createLimiter = new SlidingWindowLimiter(60_000, 30)
   const metadataLimiter = new SlidingWindowLimiter(60_000, 120)
   const unlockLimiter = new SlidingWindowLimiter(15 * 60_000, 8)
+  const unlockGlobalLimiter = new SlidingWindowLimiter(15 * 60_000, 100)
   const contentLimiter = new SlidingWindowLimiter(60_000, 240)
 
   function limit(limiter: SlidingWindowLimiter, key: string): void {
@@ -141,6 +142,7 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
     const token = tokenParam(request)
     const ip = clientIp(request)
     limit(metadataLimiter, ip)
+    limit(unlockGlobalLimiter, 'global')
     limit(unlockLimiter, `${ip}|${sha256Hex(token)}`)
     const body = asRecord(request.body)
     const password = typeof body.password === 'string' ? body.password : ''

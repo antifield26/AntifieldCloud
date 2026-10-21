@@ -1,11 +1,65 @@
 # Changelog
 
-## [Unreleased] - 2026-10-21
+## [0.5.0] - 2026-10-21
+
+### Added
+
+- **Bot 平台（Telegram / Discord / Slack）**：新增 `server/src/bot/`（适配器、`crypto.ts`、`service.ts`、`templates.ts`）与 `server/src/http/routes/bots.ts`、`bot-webhook.ts`。
+  - 公开入口 `POST /api/bot/webhook/:botId`（raw body，独立限流）：Telegram `X-Telegram-Bot-Api-Secret-Token`、Discord Ed25519 + 300s 时间戳、Slack HMAC-SHA256 + 300s 时间戳；按 `(bot_id, platform_event_id)` 去重。
+  - 管理 API `/api/bots*`：状态、Bot CRUD/启停/测试、目标 CRUD、投递列表/重投、发布列表/创建/取消；Token 与签名密钥只写不读。
+  - 只读命令 `/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`；必须同时命中目标 `allow_commands` 与显式 user 白名单（`kind='user'` 且 `allow_commands=1`）。
+  - 告警通知：告警事件写入后按目标 `allow_notifications` 入队（`dedupe_key=alert:<event>:<bot>:<target>`）。
+  - 发布：文本 + 最多 1 个云端普通文件媒体（默认 ≤10 MiB），目标限频道/群组；支持定时（≤30 天）、取消、指数退避重试、死信重投。
+  - 前端 `/bots` 页：概览、配置、目标、投递与发布四个分区；未启用时展示服务端配置指引且不请求列表。
+- **schema v7**：迁移 7 新增 `bots`、`bot_targets`、`bot_deliveries`、`bot_publish_jobs`、`bot_events`；迁移 6（孤儿 shares 数据修复）保持原样。
+- **Bot 凭据加密**：AES-256-GCM（12 字节 IV、32 字节 `BOT_SECRET_KEY`），只存 `secret_ciphertext/secret_iv/secret_tag/key_version`；解密失败只返回 `BotSecretError`，不含明文/密钥。
+- **env**：`BOT_ENABLED`（默认 `false`）、`BOT_SECRET_KEY`、`BOT_WEBHOOK_MAX_BODY_BYTES`、`BOT_DELIVERY_INTERVAL_SECONDS`、`BOT_DELIVERY_MAX_ATTEMPTS`、`BOT_EVENT_RETENTION_DAYS`、`BOT_COMMAND_RATE_PER_MINUTE`、`BOT_PUBLISH_MAX_MEDIA_BYTES`、`BOT_PUBLISH_MAX_SCHEDULED_DAYS`、`BOT_MAX_BOTS`；`/api/version` 增加 `botsEnabled`/`botPlatforms`。
+- **运维可见性**：`/healthz` 增加 `schemaVersion`；`smoke.ps1` 支持 `-ExpectedSchemaVersion`（v0.5.0 用 7）并校验版本+迁移。
+- **测试**：新增 `bot-core`、`bot-routes`、`bot-migration`、`bot-webhook-route` 与前端 `Bots.test.tsx`；基线 `npm test` 245（服务端 229 + 脚本 16）、`npm run test:web` 137。
 
 ### Changed
 
-- **Pi 定时任务统一到正午 12:00**：`antifieldcloud-world.timer` 从「周日 04:00」改为「**周日 12:00 Asia/Shanghai**」（显式时区，`Persistent=true` 保留）；Pi 无其他 cron/at/用户 timer。健康探针 `antifieldcloud-health.timer` 仍每 60s（不属于可日调节的任务，改为每日会失去监控意义）；系统维护 timer（apt/logrotate/fstrim 等）保持发行版默认。
-- 文档同步：README/AGENTS/ARCHITECTURE/BACKUP/DEPLOY/PLAN 的世界备份时刻与 Windows 周任务示例统一为 12:00；本地回滚备份 `/etc/systemd/system/antifieldcloud-world.timer.bak-v042`。用户 2026-10-21 确认：系统维护 timer 不动、健康探针维持 60s。
+- **Bot 默认关闭**：`BOT_ENABLED=false` 或缺少 `BOT_SECRET_KEY` 时不启动投递/发布队列，Webhook 返回 404、管理写接口返回 503，不影响应用主功能。
+- **`bootstrap-env.sh`**：新增 Bot 键；`BOT_SECRET_KEY` 只在缺失时生成（32 字节 base64），`--force` 复用旧值并校验长度，避免轮换导致已存 Token 不可解密。
+- **`deploy.ps1`**：发布前要求工作树干净（`-AllowDirty` 显式放行）；自动回滚同时从上一 release 读取并还原 `APP_VERSION`（读不到则拒绝自动回滚，避免旧版本以新版本号通过 `/healthz`）；部署后 smoke 失败默认中止（`-AllowSmokeFailure` 仅告警）。
+- **`check-version.mjs`**：纳入 `deploy/env.example` 的 `APP_VERSION`、`docs/DEPLOY.md` 标题与 `package-lock.json` 根版本。
+- **告警**：`AlertService` 在事件落库后触发 Bot 通知，通知失败不影响告警主流程。
+- **认证**：新增 `AuthService.confirmTotp`（只验 TOTP，复用再认证/TOTP 限流与审计，`reauth_bot_publish`），用于发布再认证。
+- **分享**：解锁增加全局 100 次/15 分钟桶，避免单 IP 轮换 token 放大 scrypt 开销。
+- **世界备份**：`backup-world.mjs` 增加 SIGTERM/SIGINT 处理，信号到达时优先 `save-on`，减少长期 `save-off` 风险。
+- **Pi 定时任务统一到正午 12:00**：`antifieldcloud-world.timer` 从「周日 04:00」改为「**周日 12:00 Asia/Shanghai**」（显式时区，`Persistent=true` 保留）；健康探针仍 60s；系统维护 timer（apt/logrotate/fstrim 等）保持发行版默认。用户 2026-10-21 确认。
+
+### Fixed
+
+- **BOT-02（P1）**：发布曾只依赖会话 + CSRF，登录会话即可把云端文件外发到第三方平台；v0.5.0 修复为必须 `totpCode` + `auth.confirmTotp`，缺码返回 400 `totp_required`，失败计入 TOTP/再认证限流与审计。验证：`server/test/bot-routes.test.ts`（无 TOTP 400、有效 TOTP 才建任务）、`server/test/bot-core.test.ts`。
+- **BOT-04（P1）**：通知/命令回复可能拼接内部路径、SSH/HTTP URL；v0.5.0 修复为 `sanitizeExternalText`（路径/URL 替换为 `[path]`/`[url]`，去控制字符，≤1500 字符）。验证：`server/test/bot-core.test.ts`（通知/命令文本）。
+- **BOT-01/03/05/06（P2）**：命令仅校验目标、缺少显式用户白名单；Webhook 无时间戳/去重；Bot 关闭时入口语义不一致；Token 可能进入 API/日志。v0.5.0 修复为双白名单、300s 时间戳 + `bot_events` 去重、`BOT_ENABLED=false` 一律 404、AES-256-GCM + 只写字段 + 日志/响应脱敏。验证：`node --test server/test/bot-core.test.ts server/test/bot-webhook-route.test.ts`、`node --test server/test/bot-migration.test.ts`。
+- **OPS4-03（P2）**：自动回滚未还原 `APP_VERSION`，旧 release 可能以新版本号通过健康检查；v0.5.0 修复（见 Changed）。
+- **OPS4-04（P2）**：脏工作树可被当作旧版本发布；v0.5.0 修复为默认拒绝（`-AllowDirty` 显式放行）。
+- **OPS4-10（P3）**：`package-lock.json` 根版本未纳入版本一致性检查；v0.5.0 修复。
+- 其它 P3：`docs/AUDIT.md` 标题/索引只覆盖前两轮、`docs/PLAN.md` 验收摘要停留在 0.4.0、`API.md` `/healthz` 示例 0.3.2、`README`/`AGENTS` 测试基线 234/129、`deploy/env.example` 版本、`UI-SPEC` 标题等文档漂移，本轮一并修正。
+
+### Security
+
+- Bot 凭据 AES-256-GCM 加密、API 只写不读；错误/日志/审计不含 Token、签名密钥或 `BOT_SECRET_KEY`。
+- Webhook 签名 + 时间戳 + 事件去重；IP 120 次/分钟（Webhook scope）、Bot 300 次/分钟、命令每用户 20 次/分钟、发布/测试各 20 次/小时。
+- 命令输出与通知文本清洗内部路径/URL；`/files` 只返回文件名/大小（≤10 条），不返回内容。
+- 发布仅允许频道/群组、单媒体、普通文件（`origin='user'` 且未删除）、媒体大小上限；Slack `response_url` 只允许 `https://hooks.slack.com/`，平台请求禁止重定向、响应体 ≤1 MiB。
+- SSH 改为仅公钥：`/etc/ssh/sshd_config.d/00-` drop-in 禁用密码/键盘交互，旧配置保留 24h 回滚窗口。
+- `fail2ban` 启用 `sshd` jail（nftables 后端，24h ban）；nftables 重载后需重启 fail2ban 恢复已有封禁。Cloudflare Access：文档补充 `app` 策略与 `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` bypass；需用户在后台配置。
+
+### Docs
+
+- 同步 README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BACKUP/ACCEPTANCE/AUDIT/`docs/BOT.md` 与 `deploy/env.example`：schema v7、Bot API/命令/通知/发布、BOT_* 环境变量、Cloudflare Access、SSH 仅公钥与 24h 回滚、fail2ban sshd jail、v0.5.0 部署/回滚顺序与清理清单。
+- 新增 `docs/AUDIT.md` 第四轮（v0.4.2 基线 P0=0/P1=0/P2=3/P3=12；Bot WIP P1=2/P2=4）与 `docs/ACCEPTANCE.md` v0.5.0 占位（部署/测试证据待部署后补）。
+
+### Known limitations（v0.5.0 明确不修）
+
+- Bot 单次发布最多 1 个媒体文件；不支持平台主动拉取/长连接；命令严格只读；无多管理员审批流。
+- Bot 适配器/队列测试为进程内 mock（T/S mock-only），未做真实 Telegram/Discord/Slack 网络与限流负路径验收。
+- Cloudflare Access 策略与 bypass 必须由用户在后台配置，应用侧无法自证；未配置时 Webhook/health/公开分享可能被边缘拦截。
+- `fail2ban` 已启用但封禁依赖 nftables set；`nft -f`/重启 nftables 后需重启 fail2ban 恢复已有封禁。SSH 仍为 24h 回滚观察窗口，`antifield` 的 `NOPASSWD ALL` sudo 未改。
+- `typescript-eslint` 尚不支持 TS7 API，`@typescript/typescript6` alias 继续保留。
 
 ## [0.4.2] - 2026-10-20
 

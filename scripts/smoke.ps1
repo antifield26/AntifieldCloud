@@ -7,7 +7,8 @@
   [switch]$SkipPublic,
   [switch]$SkipLocalBackup,
   [switch]$SkipScriptHash,
-  [string]$ExpectedVersion = ""
+  [string]$ExpectedVersion = "",
+  [int]$ExpectedSchemaVersion = 0
 )
 
 # 部署后冒烟（只读）：公网 HTTPS、PWA/分享/告警端点、Pi 本机服务/版本、内存 cgroup、nftables、
@@ -219,6 +220,18 @@ if ($ExpectedVersion) {
       throw "version=$($health.version)，期望 $ExpectedVersion（检查 /etc/antifieldcloud/env 的 APP_VERSION 并重启）"
     }
     "version=$($health.version)"
+  }
+}
+
+if ($ExpectedSchemaVersion -gt 0) {
+  Check "数据库 schema 版本与预期一致（$ExpectedSchemaVersion）" {
+    $raw = (Invoke-PiSsh "curl -fsS --max-time 5 http://127.0.0.1:3000/healthz" | Out-String)
+    $health = ConvertFrom-JsonText $raw
+    if (-not $health) { throw "无法解析 /healthz：$raw" }
+    if ([int]$health.schemaVersion -ne $ExpectedSchemaVersion) {
+      throw "schemaVersion=$($health.schemaVersion)，期望 $ExpectedSchemaVersion（迁移失败或回滚未还原 DB）"
+    }
+    "schemaVersion=$($health.schemaVersion)"
   }
 }
 

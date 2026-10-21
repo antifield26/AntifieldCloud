@@ -16,6 +16,7 @@ import { Trash } from './pages/Trash'
 import { Minecraft } from './pages/Minecraft'
 import { Activity } from './pages/Activity'
 import { Settings } from './pages/Settings'
+import { Bots } from './pages/Bots'
 import { usePageTitle } from './hooks/usePageTitle'
 import { isExternalUrl, sanitizeNext } from './lib/next-url'
 
@@ -81,6 +82,7 @@ export function App() {
                 <Route path="/shares" element={<Shares />} />
                 <Route path="/trash" element={<Trash />} />
                 <Route path="/minecraft" element={<Minecraft />} />
+                <Route path="/bots" element={<Bots />} />
                 <Route path="/activity" element={<Activity />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<NotFound />} />

@@ -19,6 +19,16 @@ import type {
   BookmarkInput,
   BookmarkListResult,
   BookmarkPatch,
+  BotCreateInput,
+  BotDelivery,
+  BotPublishInput,
+  BotPublishJob,
+  BotStatus,
+  BotSummary,
+  BotTarget,
+  BotTargetInput,
+  BotTargetPatch,
+  BotUpdateInput,
   ClearTrashResult,
   ChunkUploadInit,
   ChunkUploadStatus,
@@ -128,6 +138,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   upload_completed: '上传会话已完成，无法取消',
   invalid_chunk_index: '分片序号不合法',
   invalid_chunk_size: '分片大小不合法',
+  // v0.5.0：Bot 配置与队列
+  bot_disabled: 'Bot 功能未启用',
+  bot_key_missing: '未配置 BOT_SECRET_KEY，Bot 功能暂不可用',
+  bot_key_invalid: 'BOT_SECRET_KEY 配置无效',
+  totp_required: '发布需要 TOTP 验证码',
+  invalid_bot_config: 'Bot 配置不合法，请检查 Token 与密钥',
+  target_missing: '投递目标不存在或已被删除',
+  media_missing: '媒体文件不存在或不可发布',
+  empty_payload: '投递内容为空',
 }
 
 export class ApiError extends Error {
@@ -1019,6 +1038,91 @@ export const api = {
     },
     removeWhitelist(name: string): Promise<WhitelistMutationResult> {
       return del<WhitelistMutationResult>(`/api/mc/whitelist/${encodeId(name)}`)
+    },
+  },
+  /**
+   * 机器人管理（v0.5.0）：所有接口要求登录；配置接口在功能未启用时返回
+   * 503 bot_disabled / bot_key_missing。密钥只写不读，响应中不含密钥。
+   */
+  bots: {
+    status(signal?: AbortSignal): Promise<BotStatus> {
+      return get<BotStatus>('/api/bots/status', { signal })
+    },
+    async list(signal?: AbortSignal): Promise<BotSummary[]> {
+      const result = await get<{ items: BotSummary[] }>('/api/bots', { signal })
+      return result.items
+    },
+    async get(id: string, signal?: AbortSignal): Promise<BotSummary> {
+      const result = await get<{ bot: BotSummary }>(`/api/bots/${encodeId(id)}`, { signal })
+      return result.bot
+    },
+    async create(input: BotCreateInput): Promise<BotSummary> {
+      const result = await post<{ bot: BotSummary }>('/api/bots', input)
+      return result.bot
+    },
+    async update(id: string, input: BotUpdateInput): Promise<BotSummary> {
+      const result = await patch<{ bot: BotSummary }>(`/api/bots/${encodeId(id)}`, input)
+      return result.bot
+    },
+    remove(id: string): Promise<OkResult> {
+      return del<OkResult>(`/api/bots/${encodeId(id)}`)
+    },
+    /** 发送测试消息；省略 targetId 时服务端使用该 Bot 的第一个目标。 */
+    test(id: string, targetId?: string): Promise<OkResult> {
+      return post<OkResult>(
+        `/api/bots/${encodeId(id)}/test`,
+        targetId ? { targetId } : {},
+      )
+    },
+    targets: {
+      async list(botId: string, signal?: AbortSignal): Promise<BotTarget[]> {
+        const result = await get<{ items: BotTarget[] }>(`/api/bots/${encodeId(botId)}/targets`, { signal })
+        return result.items
+      },
+      async create(botId: string, input: BotTargetInput): Promise<BotTarget> {
+        const result = await post<{ target: BotTarget }>(`/api/bots/${encodeId(botId)}/targets`, input)
+        return result.target
+      },
+      async update(botId: string, targetId: string, patchBody: BotTargetPatch): Promise<BotTarget> {
+        const result = await patch<{ target: BotTarget }>(
+          `/api/bots/${encodeId(botId)}/targets/${encodeId(targetId)}`,
+          patchBody,
+        )
+        return result.target
+      },
+      remove(botId: string, targetId: string): Promise<OkResult> {
+        return del<OkResult>(`/api/bots/${encodeId(botId)}/targets/${encodeId(targetId)}`)
+      },
+    },
+    deliveries: {
+      async list(botId: string, limit = 50, signal?: AbortSignal): Promise<BotDelivery[]> {
+        const result = await get<{ items: BotDelivery[] }>(
+          `/api/bots/${encodeId(botId)}/deliveries${buildQuery({ limit })}`,
+          { signal },
+        )
+        return result.items
+      },
+      /** 仅 failed/dead 可重试；服务端返回 404 表示不可重试。 */
+      retry(botId: string, deliveryId: string): Promise<OkResult> {
+        return post<OkResult>(`/api/bots/${encodeId(botId)}/deliveries/${encodeId(deliveryId)}/retry`)
+      },
+    },
+    publish: {
+      async list(botId: string, limit = 50, signal?: AbortSignal): Promise<BotPublishJob[]> {
+        const result = await get<{ items: BotPublishJob[] }>(
+          `/api/bots/${encodeId(botId)}/publish${buildQuery({ limit })}`,
+          { signal },
+        )
+        return result.items
+      },
+      async create(botId: string, input: BotPublishInput): Promise<BotPublishJob> {
+        const result = await post<{ job: BotPublishJob }>(`/api/bots/${encodeId(botId)}/publish`, input)
+        return result.job
+      },
+      /** 取消 queued/draft 任务；已进入发送流程的任务返回 404。 */
+      cancel(botId: string, jobId: string): Promise<OkResult> {
+        return del<OkResult>(`/api/bots/${encodeId(botId)}/publish/${encodeId(jobId)}`)
+      },
     },
   },
   notes: {

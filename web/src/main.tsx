@@ -11,6 +11,7 @@ import './styles/pages.css'
 import './styles/v02.css'
 import './styles/v03.css'
 import './styles/v04.css'
+import './styles/v05.css'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('找不到 #root 挂载节点')

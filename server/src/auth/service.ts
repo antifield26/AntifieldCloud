@@ -270,6 +270,29 @@ export class AuthService {
     })
   }
 
+  /**
+   * Bot 发布等敏感外发操作的 TOTP 再认证（只验 TOTP，不要求密码）。
+   * 失败计入 reauth/TOTP 限流与审计；成功后推进 last_step 防重放。
+   */
+  async confirmTotp(context: AuthContext, totpCode: string, ip: string, action = 'reauth_bot_publish'): Promise<void> {
+    const retry = this.reauthLimiter.hit(ip)
+    if (retry > 0) throw rateLimited(retry)
+    const globalRetry = this.reauthGlobalLimiter.hit('global')
+    if (globalRetry > 0) throw rateLimited(globalRetry)
+    const totpRetry = this.totpGlobalLimiter.hit('global')
+    if (totpRetry > 0) throw rateLimited(totpRetry)
+    const row = this.db.prepare('SELECT * FROM users WHERE id = ?').get(context.user.id) as UserRow | undefined
+    if (!row) throw unauthorized()
+    const step = verifyTotpForReauth(row.totp_secret, totpCode, row.totp_last_step)
+    if (step === null) {
+      audit(this.db, row.username, action, null, { reason: 'bad_totp' }, ip)
+      await this.delayReauthFailure()
+      throw invalidCode()
+    }
+    if (step > row.totp_last_step) updateTotpLastStep(this.db, row.id, step)
+    audit(this.db, row.username, action, null, null, ip)
+  }
+
   async changePassword(context: AuthContext, input: ChangePasswordInput): Promise<void> {
     const row = await this.requireReauth(
       context,

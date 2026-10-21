@@ -725,6 +725,17 @@ export async function runBackup(options = {}) {
     return message
   }
 
+  // SIGTERM/SIGKILL/超时不能保证进入 finally：信号到达时优先尝试 save-on，避免长期 save-off。
+  let shuttingDown = false
+  const onSignal = (signal) => {
+    if (shuttingDown) return
+    shuttingDown = true
+    logger(`收到 ${signal}：尝试恢复服务器保存（save-on）后退出`)
+    void saveOn().finally(() => process.exit(0))
+  }
+  process.once('SIGTERM', onSignal)
+  process.once('SIGINT', onSignal)
+
   try {
     if (!allowNonRoot && !isRoot()) {
       fail('not_root', 'backup-world.mjs must run as root (systemd runs it as root; tests may pass allowNonRoot)')
@@ -866,6 +877,8 @@ export async function runBackup(options = {}) {
       recordError(result, 'unexpected_error', errorMessage(error))
     }
   } finally {
+    process.removeListener('SIGTERM', onSignal)
+    process.removeListener('SIGINT', onSignal)
     const saveOnError = await saveOn()
     if (saveOnError) {
       // save-on 失败属于严重状态：即使归档成功也标记失败，避免“保存被关闭”无人发现。

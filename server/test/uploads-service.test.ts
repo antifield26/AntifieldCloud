@@ -184,12 +184,50 @@ test('过期会话懒失效：访问返回 410 并释放预留；assembling 期�
     // assembling 状态：cleanup/abort 都不得破坏拼接。
     const second = ctx.uploads.init(ctx.actor, { name: 'assembling.bin', parentId: null, size: 4 })
     ctx.db.prepare("UPDATE upload_sessions SET status = 'assembling' WHERE id = ?").run(second.uploadId)
-    assert.equal(ctx.uploads.cleanupExpired(new Date(Date.now() + 86_400_000)), 0)
+    assert.equal(ctx.uploads.cleanupExpired(new Date()), 0)
     assert.throws(
       () => ctx.uploads.abort(ctx.actor, second.uploadId),
       (error: unknown) => (error as { code?: string }).code === 'upload_assembling',
     )
     assert.equal(existsSync(join(ctx.dir, 'tmp', 'chunks', second.uploadId)), true, 'assembling 会话目录保留')
+  } finally {
+    close(ctx)
+  }
+})
+
+test('断电截断分片：complete 拒绝并要求重传，重传后可完成（DR2-02）', async () => {
+  const ctx = setup()
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'truncated.bin', parentId: null, size: 4 })
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd'))
+    // 模拟断电导致物理块被截断但 DB 行仍在。
+    writeFileSync(join(ctx.dir, 'tmp', 'chunks', init.uploadId, '0.part'), Buffer.from('ab'))
+    await assert.rejects(
+      ctx.uploads.complete(ctx.actor, init.uploadId),
+      (error: unknown) => (error as { code?: string }).code === 'chunks_missing',
+    )
+    assert.equal(
+      (ctx.db.prepare('SELECT COUNT(*) AS c FROM upload_chunks WHERE session_id = ?').get(init.uploadId) as { c: number }).c,
+      0,
+    )
+    await ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd'))
+    const result = await ctx.uploads.complete(ctx.actor, init.uploadId)
+    assert.equal(result.file.size, 4)
+  } finally {
+    close(ctx)
+  }
+})
+
+test('assembling 崩溃超过 2 小时：释放配额并标记过期（DR2-03）', () => {
+  const ctx = setup()
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'stale-assembling.bin', parentId: null, size: 4 })
+    ctx.db
+      .prepare("UPDATE upload_sessions SET status = 'assembling', updated_at = ? WHERE id = ?")
+      .run('2000-01-01T00:00:00.000Z', init.uploadId)
+    assert.equal(ctx.uploads.cleanupExpired(new Date()), 1)
+    const row = ctx.db.prepare('SELECT status FROM upload_sessions WHERE id = ?').get(init.uploadId) as { status: string }
+    assert.equal(row.status, 'expired')
   } finally {
     close(ctx)
   }

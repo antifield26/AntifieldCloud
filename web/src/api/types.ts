@@ -349,6 +349,9 @@ export interface VersionResult {
   /** 归档导入单请求上限与恢复文件数上限（v0.3 已下发，前端用于预检提示） */
   backupImportMaxBytes?: number
   backupRestoreMaxEntries?: number
+  /** v0.5.0：Bot 功能是否可用与支持的平台（旧服务端不下发） */
+  botsEnabled?: boolean
+  botPlatforms?: string[]
 }
 
 /** 前端运行期需要的站点元数据（由 /api/version 推导 + 安全回退）。 */
@@ -822,4 +825,123 @@ export interface MetricsResult {
   bucketSeconds: number
   sampleCount: number
   series: MetricsPoint[]
+}
+
+/* ---------- 机器人管理（v0.5.0，GET/POST /api/bots*） ---------- */
+
+export type BotPlatform = 'telegram' | 'discord' | 'slack'
+export type BotTargetKind = 'channel' | 'user' | 'group'
+export type BotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'test'
+export type BotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
+export type BotPublishStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled'
+
+/** 运行状态：即使 Bot 功能未启用，status 接口仍可用于判断具体原因。 */
+export interface BotStatus {
+  enabled: boolean
+  keyConfigured: boolean
+  bots: number
+  enabledBots: number
+  targets: number
+  queuedDeliveries: number
+  queuedPublishes: number
+  lastError: string | null
+}
+
+/** Bot 摘要：不包含 Token/Webhook Secret/Signing Secret 等密钥字段。 */
+export interface BotSummary {
+  id: string
+  platform: BotPlatform
+  name: string
+  enabled: boolean
+  /** 平台公开配置（如 Discord applicationId/publicKey），绝不包含密钥。 */
+  config: Record<string, unknown>
+  webhookUrl: string
+  setupSteps: string[]
+  targetsCount: number
+  lastError: string | null
+  lastCheckedAt: string | null
+  createdAt: string
+  updatedAt: string
+  keyVersion: number
+}
+
+export interface BotTarget {
+  id: string
+  botId: string
+  externalId: string
+  label: string
+  kind: BotTargetKind
+  allowCommands: boolean
+  allowNotifications: boolean
+  createdAt: string
+}
+
+export interface BotDelivery {
+  id: string
+  botId: string
+  targetId: string | null
+  kind: BotDeliveryKind
+  status: BotDeliveryStatus
+  attempts: number
+  nextAttemptAt: string | null
+  lastError: string | null
+  externalId: string | null
+  createdAt: string
+  sentAt: string | null
+}
+
+export interface BotPublishJob {
+  id: string
+  botId: string
+  targetId: string
+  text: string
+  mediaFileIds: string[]
+  scheduledAt: string | null
+  status: BotPublishStatus
+  attempts: number
+  lastError: string | null
+  createdAt: string
+  sentAt: string | null
+}
+
+/** 创建 Bot：密钥字段只提交、不回显。Discord 的 applicationId 放 config。 */
+export interface BotCreateInput {
+  platform: BotPlatform
+  name: string
+  token: string
+  config?: Record<string, unknown>
+  webhookSecret?: string
+  publicKey?: string
+  signingSecret?: string
+}
+
+/** 更新 Bot：省略/留空密钥表示保持原值；platform 不可修改。 */
+export interface BotUpdateInput {
+  name?: string
+  enabled?: boolean
+  config?: Record<string, unknown>
+  token?: string
+  webhookSecret?: string
+  publicKey?: string
+  signingSecret?: string
+}
+
+export interface BotTargetInput {
+  externalId: string
+  label: string
+  kind: BotTargetKind
+  allowCommands: boolean
+  allowNotifications: boolean
+}
+
+export type BotTargetPatch = Partial<Omit<BotTargetInput, 'externalId'>>
+
+/** 发布任务：v0.5.0 单次最多 1 个媒体文件；发布属数据外发，必须 TOTP 再认证。 */
+export interface BotPublishInput {
+  targetId: string
+  text: string
+  /** 6 位 TOTP 验证码，服务端校验后立即丢弃，不写入队列。 */
+  totpCode: string
+  mediaFileIds?: string[]
+  scheduledAt?: string | null
 }

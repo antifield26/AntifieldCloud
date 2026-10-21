@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   Activity,
+  Bot,
   BookOpen,
   FolderOpen,
   Gamepad2,
@@ -38,6 +39,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/shares', label: '分享', icon: Share2, requiresShares: true },
   { to: '/trash', label: '回收站', icon: Trash },
   { to: '/minecraft', label: 'Minecraft', icon: Gamepad2 },
+  { to: '/bots', label: '机器人', icon: Bot },
   { to: '/activity', label: '活动', icon: Activity },
 ]
 
@@ -48,6 +50,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/shares': '分享管理',
   '/trash': '回收站',
   '/minecraft': 'Minecraft',
+  '/bots': '机器人',
   '/activity': '活动',
   '/settings': '设置',
 }

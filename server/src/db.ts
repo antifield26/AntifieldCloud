@@ -358,6 +358,81 @@ const MIGRATIONS: string[] = [
   INSERT OR IGNORE INTO share_items (share_id, file_id)
     SELECT s.id, s.file_id FROM shares s JOIN files f ON f.id = s.file_id;
   `,
+  `
+  -- v0.5.0：Bot 平台核心。令牌只存 AES-256-GCM 密文；事件表用于回调去重。
+  CREATE TABLE bots (
+    id TEXT PRIMARY KEY,
+    platform TEXT NOT NULL CHECK (platform IN ('telegram', 'discord', 'slack')),
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+    config_json TEXT NOT NULL DEFAULT '{}',
+    secret_ciphertext TEXT NOT NULL,
+    secret_iv TEXT NOT NULL,
+    secret_tag TEXT NOT NULL,
+    key_version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_error TEXT,
+    last_checked_at TEXT
+  );
+
+  CREATE TABLE bot_targets (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    external_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('channel', 'user', 'group')),
+    allow_commands INTEGER NOT NULL DEFAULT 0 CHECK (allow_commands IN (0, 1)),
+    allow_notifications INTEGER NOT NULL DEFAULT 1 CHECK (allow_notifications IN (0, 1)),
+    created_at TEXT NOT NULL,
+    UNIQUE (bot_id, external_id)
+  );
+  CREATE INDEX idx_bot_targets_bot ON bot_targets(bot_id);
+
+  CREATE TABLE bot_deliveries (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    target_id TEXT REFERENCES bot_targets(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('notification', 'command_reply', 'publish', 'test')),
+    dedupe_key TEXT,
+    payload_json TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('queued', 'sending', 'sent', 'failed', 'dead')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TEXT,
+    last_error TEXT,
+    external_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    sent_at TEXT
+  );
+  CREATE INDEX idx_bot_deliveries_queue ON bot_deliveries(status, next_attempt_at);
+  CREATE INDEX idx_bot_deliveries_bot ON bot_deliveries(bot_id, created_at DESC);
+  CREATE UNIQUE INDEX idx_bot_deliveries_dedupe ON bot_deliveries(bot_id, dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+  CREATE TABLE bot_publish_jobs (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    target_id TEXT NOT NULL REFERENCES bot_targets(id) ON DELETE CASCADE,
+    content_json TEXT NOT NULL,
+    media_file_ids_json TEXT NOT NULL DEFAULT '[]',
+    scheduled_at TEXT,
+    status TEXT NOT NULL CHECK (status IN ('draft', 'queued', 'sending', 'sent', 'failed', 'canceled')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    sent_at TEXT
+  );
+  CREATE INDEX idx_bot_publish_jobs_schedule ON bot_publish_jobs(status, scheduled_at);
+
+  CREATE TABLE bot_events (
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    platform_event_id TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, platform_event_id)
+  );
+  CREATE INDEX idx_bot_events_received ON bot_events(received_at);
+  `,
 ]
 
 export interface OpenOptions {

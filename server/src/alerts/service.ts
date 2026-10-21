@@ -64,6 +64,16 @@ export interface AlertDeps {
   serviceUnits?: Record<string, string>
   /** unknown 连续评估阈值（默认 3，测试可调小）。 */
   unknownThreshold?: number
+  /** 事件落库后通知 Bot 平台（不阻塞/不影响告警主流程）。 */
+  notifyEvent?: (event: {
+    id: number
+    event: string
+    severity: string
+    status: string
+    title: string
+    message: string
+    createdAt: string
+  }) => void
 }
 
 export interface AlertEventItem {
@@ -704,6 +714,19 @@ export class AlertService {
       let delivered = 0
       for (const event of events) {
         if (await this.deliver(event)) delivered += 1
+        try {
+          this.deps.notifyEvent?.({
+            id: event.id,
+            event: event.event,
+            severity: event.severity,
+            status: event.status,
+            title: event.title,
+            message: event.message,
+            createdAt: event.created_at,
+          })
+        } catch (error) {
+          this.deps.log('warn', 'Bot 告警通知入队失败', { error: this.sanitizeError(error) })
+        }
       }
       try {
         this.pruneEventsIfDue()

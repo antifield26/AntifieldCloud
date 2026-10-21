@@ -60,6 +60,9 @@ const MAX_SNAPSHOT_ROWS = 100_000
 const MAX_SNAPSHOT_DB_BYTES = 256 * 1024 * 1024
 /** staging 目录总占用上限（同时受可用空间 20% 约束）。 */
 const MAX_STAGING_BYTES = 2 * 1024 * 1024 * 1024
+/** 恢复/校验解包预算：低于 tar 默认 32 GiB，避免恶意归档写满磁盘（安全审计 S4-02）。 */
+const MAX_RESTORE_UNPACKED_BYTES = 8 * 1024 * 1024 * 1024
+const MAX_RESTORE_ENTRY_BYTES = 2 * 1024 * 1024 * 1024
 const STAGING_FREE_RATIO = 0.2
 
 export interface BackupServiceConfig {
@@ -897,6 +900,9 @@ export class BackupService {
         return { kind: 'extract', dest: target }
       }
       return { kind: 'skip' }
+    }, {
+      maxEntryBytes: MAX_RESTORE_ENTRY_BYTES,
+      maxUnpackedBytes: MAX_RESTORE_UNPACKED_BYTES,
     })
     if (count === 0) throw invalidArchive('归档缺少数据库快照')
     return target
@@ -1368,6 +1374,9 @@ export class BackupService {
         const dest = join(contentDir, id)
         extracted.set(id, dest)
         return { kind: 'extract', dest }
+      }, {
+        maxEntryBytes: MAX_RESTORE_ENTRY_BYTES,
+        maxUnpackedBytes: MAX_RESTORE_UNPACKED_BYTES,
       })
     }
     const missing = neededIds.filter((id) => !extracted.has(id))

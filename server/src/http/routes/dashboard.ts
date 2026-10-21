@@ -60,5 +60,7 @@ export function registerDashboardRoutes(
     metricsEnabled: config.metricsEnabled,
     metricsSampleSeconds: config.metricsSampleSeconds,
     metricsRetentionDays: config.metricsRetentionDays,
+    botsEnabled: config.botEnabled && config.botSecretKey.length > 0,
+    botPlatforms: ['telegram', 'discord', 'slack'],
   }))
 }

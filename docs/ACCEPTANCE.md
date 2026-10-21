@@ -1,8 +1,68 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.4.2；v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.0；v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+>
+> v0.5.0 的部署、`npm run check`、CI、smoke 与 Bot 平台联调证据尚未产生，相关行以「待部署后补」占位；主代理完成部署后填写，**不得提前声明通过**。
 
-## v0.4.2（当前）
+## v0.5.0（当前）
+
+- 日期：2026-10-21（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境 + Windows 本地工作区
+- 版本：`v0.5.0`
+- 范围：Bot 平台（Telegram/Discord/Slack）、schema v7、Bot 凭据加密与 Webhook/命令/通知/发布安全边界、部署/回滚/SSH/Cloudflare Access/备份任务运维收口、第四轮审计与文档同步。
+
+### 1. 交付
+
+- **Bot 平台**：`server/src/bot/`（`crypto.ts` AES-256-GCM、`service.ts` 配置/验签/命令/通知/发布队列、三平台适配器、模板）与 `server/src/http/routes/bots.ts`、`bot-webhook.ts`；Web `/bots` 四分区页面。
+- **命令**：`/help` `/status` `/backup` `/world` `/mc` `/files <关键词>`；目标 `allow_commands` + 显式 user 白名单双校验；输出清洗路径/URL、文件元数据 ≤10 条。
+- **通知/发布**：告警事件按目标 `allow_notifications` 入队（`dedupe_key` 去重）；发布 TXT + 最多 1 个云端普通文件媒体（≤10 MiB）、频道/群组、TOTP 再认证、定时 ≤30 天、取消、指数退避重试/死信重投。
+- **数据**：schema v7（迁移 7 新增 `bots/bot_targets/bot_deliveries/bot_publish_jobs/bot_events`；迁移 6 孤儿 shares 修复保留）；Bot 凭据只存密文；`bot_events` 7 天、已发送投递/发布 30 天清理。
+- **安全**：Token 只写不读；签名 + 时间戳（±300 秒）+ 事件去重；IP 120/min、Bot 300/min、命令 20/min、发布/测试 20/h；未授权命令不执行并审计；`BOT_ENABLED=false` 时 Webhook 404、写接口 503。
+- **运维**：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY`（`--force` 不轮换）；`deploy.ps1` 干净工作树门禁、回滚还原 `APP_VERSION`、smoke 失败门禁；`check-version` 覆盖 env.example/DEPLOY 标题/lock；SSH 仅公钥 `00-` drop-in + 24h 回滚 + `fail2ban` sshd jail；Cloudflare Access 策略与 bypass 文档；`backup-world.mjs` 信号时优先 `save-on`。
+- **审计/文档**：`docs/AUDIT.md` 第四轮（v0.4.2 基线 P0=0/P1=0/P2=3/P3=12；Bot WIP P1=2/P2=4，已修复项带测试/命令）；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BACKUP/ACCEPTANCE/AUDIT 与 `docs/BOT.md`、`deploy/env.example` 全量同步到 0.5.0。
+- **测试**：新增 `server/test/bot-core.test.ts`（6）、`bot-routes.test.ts`（1）、`bot-webhook-route.test.ts`（1）、`bot-migration.test.ts`（1）与 `web/src/pages/Bots.test.tsx`（8）。
+
+### 2. 验证
+
+| 项目 | 结果 |
+|---|---|
+| `npm test` | **245/245 通过**（服务端 229 + 运维脚本 16；本地工作树实测，2026-10-21） |
+| `npm run test:web` | **137/137 通过**（27 个测试文件；本地工作树实测） |
+| `npm run typecheck` / `lint` | 待部署后补（主代理执行 `npm run check`） |
+| `npm run check` | 待部署后补（本地尚未执行 typecheck/lint 组合） |
+| `npm run build` | 待部署后补 |
+| 覆盖率（`test:coverage` / `test:web:coverage`） | 待部署后补 |
+| CI（main/tag） | 待部署后补 |
+| schema | 待部署后补（期望 v7；`bot-migration` 测试已覆盖 v6→v7 与迁移 6 保留） |
+| 应用部署 / `/healthz` | 待部署后补（期望 `0.5.0`；迁移前快照 + `BOT_SECRET_KEY`） |
+| `smoke.ps1 -ExpectedVersion 0.5.0 -ExpectedSchemaVersion 7` | 待部署后补 |
+| Bot 关闭态 | 待部署后补（Webhook 404、写接口 503、队列不启动） |
+| Bot 三平台联调 | 待部署后补（各一条命令/测试通知/发布/定时/重试；记录 message id，不记录 Token） |
+| 备份/世界拉取/演练 | 待部署后补（密钥包含 `BOT_SECRET_KEY`；演练 `-ExpectedSchemaVersion 7`） |
+| SSH 仅公钥 / Access bypass | 待部署后补（`sshd -T`、Webhook/health/分享不被 302） |
+
+### 3. 部署
+
+```text
+应用: 待部署后补（期望 v0.5.0；迁移前快照 db-predeploy-<UTC>.sqlite；APP_VERSION=0.5.0）
+schema: 待部署后补（期望 v7；迁移 7 新增 5 张 bot* 表）
+BOT_SECRET_KEY: 待部署后补（bootstrap 生成/复用，不回显；与 DB 一起备份）
+Cloudflare Access: 待部署后补（app 策略 + webhook/health/分享 bypass）
+SSH: 待部署后补（仅公钥；24h 回滚窗口起止时间）
+tag: v0.5.0
+release: 待部署后补
+```
+
+### 4. 未决
+
+- `npm run check`、`npm run build`、CI、smoke、Bot 平台联调与部署证据由主代理在部署后补齐；在此之前本文件不构成 v0.5.0 验收通过。
+- Bot 适配器/队列测试为进程内 mock（T/S mock-only）；真实平台限流、签名漂移、平台 5xx 的负路径需沙箱联调。
+- Cloudflare Access 策略/bypass 需用户在后台配置，应用侧无法自证；未配置时 Webhook/health/公开分享会被边缘拦截。
+- SSH 24h 回滚窗口内保留旧 drop-in 备份；`fail2ban` sshd jail 已启用（nftables 后端），但 nftables 重载后需重启 fail2ban 恢复封禁；`antifield` 的 `NOPASSWD ALL` sudo 未改（残余）。
+- `typescript-eslint` 仍不支持 TS7 API，`@typescript/typescript6` 双 alias 保留到其支持 TS7.1。
+- Bot 单次发布最多 1 个媒体文件、命令严格只读、无平台主动拉取/长连接；`BOT_SECRET_KEY` 轮换需重录全部 Token。
+
+## v0.4.2（历史）
 
 - 日期：2026-10-20（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64，生产环境 + Windows 本地工作区

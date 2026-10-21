@@ -2,7 +2,7 @@
  * Fastify 应用装配：插件、Host 分流、认证上下文、安全头、路由、静态资源与 SPA 回退。
  * 所有安全边界在 app 层显式建立，路由只处理业务。
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import Fastify from 'fastify'
@@ -12,6 +12,7 @@ import multipart from '@fastify/multipart'
 import fastifyStatic from '@fastify/static'
 import type { Config } from './config.ts'
 import { loggerOptions } from './logger.ts'
+import { SUPPORTED_SCHEMA_VERSION } from './db.ts'
 import { AuthService } from './auth/service.ts'
 import { FileService } from './files/service.ts'
 import { MinecraftService } from './mc/service.ts'
@@ -37,6 +38,10 @@ import { registerAlertRoutes } from './http/routes/alerts.ts'
 import { registerBackupRoutes } from './http/routes/backups.ts'
 import { registerUploadRoutes } from './http/routes/uploads.ts'
 import { registerMetricsRoutes } from './http/routes/metrics.ts'
+import { BotService } from './bot/service.ts'
+import type { BotMediaStore } from './bot/types.ts'
+import { registerBotRoutes } from './http/routes/bots.ts'
+import { registerBotWebhookRoutes } from './http/routes/bot-webhook.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -54,9 +59,12 @@ export interface AppContext {
   backups: BackupService
   uploads: UploadService
   metrics: MetricsService
+  bots: BotService
   proxy: OpenCodeProxy
   /** listen 成功后启动指标采样（metricsEnabled=false 时空操作；重复调用幂等）。 */
   startMetrics(): void
+  /** listen 成功后启动 Bot 投递/发布队列（Bot 未启用时为空操作；重复调用幂等）。 */
+  startBots(): void
   runMaintenance(): void
 }
 
@@ -111,6 +119,77 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     files,
     log: (level, message, detail) => app.log[level](detail ?? {}, message),
   })
+  const botMedia: BotMediaStore = {
+    stat(fileId: string) {
+      try {
+        const row = files.contentInfo(fileId)
+        if (row.kind !== 'file' || row.origin !== 'user' || row.deleted_at) return null
+        return { filename: row.name, mime: row.mime ?? 'application/octet-stream', size: row.size }
+      } catch {
+        return null
+      }
+    },
+    async load(fileId: string) {
+      const row = files.contentInfo(fileId)
+      if (row.kind !== 'file' || row.origin !== 'user' || row.deleted_at) throw new Error('媒体文件不可发布')
+      const data = readFileSync(files.storage.finalPath(row.id))
+      return { filename: row.name, mime: row.mime ?? 'application/octet-stream', data }
+    },
+  }
+  const bots = new BotService({
+    db,
+    config,
+    log: (level, message, detail) => {
+      const payload = detail ? { detail } : {}
+      if (level === 'error') app.log.error(payload, message)
+      else if (level === 'warn') app.log.warn(payload, message)
+      else app.log.info(payload, message)
+    },
+    audit: (action, target, detail) => audit(db, 'bot', action, target, detail, null),
+    media: botMedia,
+    providers: {
+      status: async () => {
+        const data = await dashboard.get()
+        return {
+          应用版本: config.appVersion,
+          Minecraft: data.minecraft.online ? '在线' : '离线',
+          玩家: `${data.minecraft.players.online}/${data.minecraft.players.max}`,
+          服务: `${data.services.minecraft}/${data.services.cloudflared}/${data.services.opencode}`,
+          备份待确认: data.backup?.pendingCount ?? null,
+          生成时间: data.generatedAt,
+        }
+      },
+      backup: async () => {
+        const backup = (await dashboard.get()).backup
+        if (!backup) return { 状态: '未知' }
+        return {
+          ok: backup.ok,
+          最近拉取: backup.lastPullAt,
+          待确认: backup.pendingCount,
+          密钥包: backup.secretsOk,
+          错误: backup.lastError,
+        }
+      },
+      world: async () => {
+        const backup = (await dashboard.get()).backup
+        return { 世界备份: backup?.world ?? null, 拉取: backup?.worldPull ?? null, 演练: backup?.drill ?? null }
+      },
+      minecraft: async () => {
+        const status = await mc.status()
+        return {
+          online: status.online,
+          玩家: `${status.players.online}/${status.players.max}`,
+          version: status.version,
+          error: status.error,
+        }
+      },
+      files: async (query: string) =>
+        files.search(query, 10).items.map((item) => ({
+          name: item.name,
+          sizeLabel: item.size >= 1024 * 1024 ? `${Math.round(item.size / 1024 / 1024)} MB` : `${Math.max(1, Math.round(item.size / 1024))} KB`,
+        })),
+    },
+  })
   const alerts = new AlertService(db, config, {
     log: (level, message, detail) => {
       const payload = detail ? { detail } : {}
@@ -122,6 +201,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       const status = await mc.status()
       return { online: status.online, error: status.error }
     },
+    notifyEvent: (event) => bots.notifyAlert(event),
   })
   const proxy = new OpenCodeProxy(config, auth, app.log, {
     audit: (action, target, detail, ip) => audit(db, 'anonymous', action, target, detail, ip),
@@ -226,7 +306,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
 
   app.get('/healthz', async () => {
     db.prepare('SELECT 1').get()
-    return { ok: true, version: config.appVersion, uptimeSec: Math.floor(process.uptime()) }
+    return { ok: true, version: config.appVersion, schemaVersion: SUPPORTED_SCHEMA_VERSION, uptimeSec: Math.floor(process.uptime()) }
   })
 
   registerAuthRoutes(app, config, auth)
@@ -239,6 +319,8 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerBackupRoutes(app, config, backups)
   registerUploadRoutes(app, config, uploads)
   registerMetricsRoutes(app, metrics)
+  registerBotRoutes(app, config, bots, auth)
+  registerBotWebhookRoutes(app, config, bots)
 
   registerErrorHandler(app)
 
@@ -269,12 +351,17 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   app.addHook('onClose', async () => {
     alerts.stop()
     metricsSampler.stop()
+    bots.stop()
     proxy.close()
   })
 
   function startMetrics(): void {
     if (!config.metricsEnabled) return
     metricsSampler.start()
+  }
+
+  function startBots(): void {
+    bots.start()
   }
 
   function runMaintenance(): void {
@@ -314,8 +401,10 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     backups,
     uploads,
     metrics,
+    bots,
     proxy,
     startMetrics,
+    startBots,
     runMaintenance,
   }
 }

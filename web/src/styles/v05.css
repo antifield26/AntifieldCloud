@@ -1,0 +1,714 @@
+/* v0.5.0 新增样式：机器人管理页（概览、配置、目标、投递与发布）。
+   约束：窄屏 390px 不横向滚动；长 Webhook URL / 目标 ID / 错误信息使用 overflow-wrap 换行。 */
+
+/* ================= 页面骨架与标签 ================= */
+
+.bots-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bots-page > .page-header {
+  margin-bottom: 0;
+}
+
+.bots-page .page-inline-error {
+  margin-bottom: 0;
+}
+
+.bots-page .notice {
+  overflow-wrap: anywhere;
+}
+
+.bots-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bots-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bot-picker {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  max-width: 360px;
+}
+
+.bot-picker .select-field,
+.bot-picker .select {
+  width: 100%;
+}
+
+.bots-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bots-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 4px;
+  padding: 4px;
+}
+
+.bots-tabs .segmented-button {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.bots-panel {
+  min-width: 0;
+}
+
+.bots-panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+.bot-page-footnote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* ================= 概览：状态与 Bot 列表 ================= */
+
+.bot-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.bot-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.bot-status-label {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.bot-status-value {
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+}
+
+.bot-status-value .badge {
+  font-size: 11.5px;
+}
+
+.bot-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.bot-list-item:last-child {
+  border-bottom: none;
+}
+
+.bot-list-item-active {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.bot-list-main {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.bot-list-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.bot-list-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.bot-list-title-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.bot-list-title {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.bot-list-meta {
+  margin: 3px 0 0;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bot-list-error {
+  margin: 6px 0 0;
+  color: #fca5a5;
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bot-list-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.bot-list-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bot-list-skeleton-row {
+  display: block;
+  width: 100%;
+  height: 48px;
+}
+
+/* ================= 配置 ================= */
+
+.bot-config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bot-config-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bot-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.bot-field-select,
+.bot-field-select .select {
+  width: 100%;
+}
+
+.bot-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+  cursor: pointer;
+}
+
+.bot-switch input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  accent-color: var(--accent-strong);
+}
+
+.bot-switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.bot-switch-text .field-hint {
+  margin: 0;
+}
+
+.bot-config-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bot-form-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.bot-webhook-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.bot-webhook-url {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.bot-setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.bot-setup-steps li {
+  overflow-wrap: anywhere;
+}
+
+.bot-guide-intro {
+  margin: 12px 0 8px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.bot-placeholder-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--accent);
+}
+
+.bot-placeholder-info > div {
+  min-width: 0;
+}
+
+.bot-placeholder-info p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.bot-placeholder-info .field-hint {
+  margin-top: 4px;
+}
+
+.bot-security-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.bot-code {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.24);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+/* ================= 目标 ================= */
+
+.bot-target-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bot-target-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 0.7fr);
+  gap: 12px;
+}
+
+.bot-target-form-flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+.bot-target-form-flags .checkbox-field {
+  padding-bottom: 0;
+}
+
+.bot-target-form-flags .btn {
+  margin-left: auto;
+}
+
+.bot-target-list-title {
+  margin-top: 4px;
+}
+
+.bot-target-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-target-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.bot-target-item:last-child {
+  border-bottom: none;
+}
+
+.bot-target-main {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.bot-target-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.bot-target-name {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.bot-target-id {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.bot-target-flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.bot-target-flags .checkbox-field {
+  padding-bottom: 0;
+}
+
+/* ================= 投递与发布 ================= */
+
+.bot-delivery-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.bot-delivery-grid > .card {
+  min-width: 0;
+}
+
+.bot-queue-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bot-queue-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.bot-queue-item:last-child {
+  border-bottom: none;
+}
+
+.bot-queue-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+
+.bot-queue-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.bot-queue-kind {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.bot-queue-text {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.bot-queue-summary {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.bot-queue-meta {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.bot-queue-error {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+  color: #fca5a5;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.bot-publish-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bot-publish-warning {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.24);
+  border-radius: 8px;
+  background: var(--warning-soft);
+  color: #fcd34d;
+  font-size: 11.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bot-textarea {
+  height: auto;
+  min-height: 104px;
+  padding: 10px 12px;
+  font-family: var(--font);
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.bot-publish-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.bot-publish-jobs-title {
+  margin-top: 4px;
+}
+
+/* ================= 响应式 ================= */
+
+@media (max-width: 1100px) {
+  .bot-config-grid,
+  .bot-delivery-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .bot-target-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bot-target-form-grid > .field:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .bots-tabs .segmented-button {
+    flex: 1 1 42%;
+  }
+
+  .bot-picker {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .bots-toolbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .bot-list-item {
+    padding: 10px 0;
+  }
+
+  .bot-list-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .bot-list-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .bot-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .bot-target-form-grid,
+  .bot-publish-row {
+    grid-template-columns: 1fr;
+  }
+
+  .bot-target-form-grid > .field:last-child {
+    grid-column: auto;
+  }
+
+  .bot-target-form-flags {
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .bot-target-form-flags .btn {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .bot-target-flags {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .bot-form-actions {
+    flex-wrap: wrap;
+  }
+
+  .bot-form-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .bot-webhook-box .copy-button {
+    width: 100%;
+  }
+}

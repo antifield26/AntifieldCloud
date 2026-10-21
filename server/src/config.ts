@@ -82,6 +82,26 @@ export interface Config {
   alertCheckIntervalSeconds: number
   piHealthFile: string
   appVersion: string
+  /** Bot 平台总开关；关闭后所有 Bot API/队列/入站均不可用。 */
+  botEnabled: boolean
+  /** 32 字节 base64 AES-256-GCM 密钥；为空时 Bot 功能降级禁用。 */
+  botSecretKey: string
+  /** 入站 Webhook 原始请求体上限。 */
+  botWebhookMaxBodyBytes: number
+  /** 出站队列扫描间隔（秒）。 */
+  botDeliveryIntervalSeconds: number
+  /** 单条投递最大尝试次数。 */
+  botDeliveryMaxAttempts: number
+  /** 入站事件去重/投递记录保留天数。 */
+  botEventRetentionDays: number
+  /** 每个用户/目标每分钟命令上限。 */
+  botCommandRatePerMinute: number
+  /** 发布媒体单文件上限。 */
+  botPublishMaxMediaBytes: number
+  /** 定时发布最长提前天数。 */
+  botPublishMaxScheduledDays: number
+  /** 最多配置的 Bot 数。 */
+  botMaxBots: number
 }
 
 const DEFAULT_ENV_FILE = '/etc/antifieldcloud/env'
@@ -234,6 +254,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
     appVersion: str(merged, 'APP_VERSION', '0.4.0'),
+    botEnabled: bool(merged, 'BOT_ENABLED', false),
+    botSecretKey: str(merged, 'BOT_SECRET_KEY', ''),
+    botWebhookMaxBodyBytes: int(merged, 'BOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
+    botDeliveryIntervalSeconds: int(merged, 'BOT_DELIVERY_INTERVAL_SECONDS', 30, 5, 300),
+    botDeliveryMaxAttempts: int(merged, 'BOT_DELIVERY_MAX_ATTEMPTS', 5, 1, 20),
+    botEventRetentionDays: int(merged, 'BOT_EVENT_RETENTION_DAYS', 7, 1, 90),
+    botCommandRatePerMinute: int(merged, 'BOT_COMMAND_RATE_PER_MINUTE', 20, 1, 600),
+    botPublishMaxMediaBytes: int(merged, 'BOT_PUBLISH_MAX_MEDIA_BYTES', 10 * MIB, 1 * MIB, 50 * MIB),
+    botPublishMaxScheduledDays: int(merged, 'BOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),
+    botMaxBots: int(merged, 'BOT_MAX_BOTS', 10, 1, 50),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')
@@ -250,6 +280,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('COOKIE_DOMAIN 必须是以 . 开头的域名')
   }
   if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
+  if (config.botSecretKey) {
+    let key: Buffer
+    try {
+      key = Buffer.from(config.botSecretKey, 'base64')
+    } catch {
+      throw new Error('BOT_SECRET_KEY 必须是 base64 编码的 32 字节密钥')
+    }
+    if (key.length !== 32) throw new Error('BOT_SECRET_KEY 必须是 base64 编码的 32 字节密钥')
+  }
   if (config.nodeEnv === 'production' && !['127.0.0.1', 'localhost', '::1'].includes(config.host)) {
     throw new Error('生产环境 HOST 必须是 loopback（应用只允许本地反代访问）')
   }

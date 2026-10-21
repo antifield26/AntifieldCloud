@@ -88,6 +88,16 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     alertCheckIntervalSeconds: 300,
     piHealthFile: join(dataDir, 'pi-health.json'),
     appVersion: '0.2.0-test',
+    botEnabled: true,
+    botSecretKey: '',
+    botWebhookMaxBodyBytes: 256 * 1024,
+    botDeliveryIntervalSeconds: 30,
+    botDeliveryMaxAttempts: 5,
+    botEventRetentionDays: 7,
+    botCommandRatePerMinute: 20,
+    botPublishMaxMediaBytes: 10 * 1024 * 1024,
+    botPublishMaxScheduledDays: 30,
+    botMaxBots: 10,
     ...overrides,
   }
 }

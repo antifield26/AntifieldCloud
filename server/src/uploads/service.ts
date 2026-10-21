@@ -275,6 +275,30 @@ export class UploadService {
       .prepare('SELECT COUNT(*) AS c FROM upload_chunks WHERE session_id = ?')
       .get(id) as { c: number }
     if (Number(count.c) !== Number(session.total_chunks)) throw badRequest('还有分片未上传', 'chunks_missing')
+    // 行存在但物理块缺失/截断时不能拼接：删除异常行，让客户端重传（DR2-02）。
+    const chunkRows = this.db
+      .prepare('SELECT idx, size FROM upload_chunks WHERE session_id = ? ORDER BY idx ASC')
+      .all(id) as unknown as { idx: number; size: number }[]
+    for (const chunk of chunkRows) {
+      const expected =
+        chunk.idx === Number(session.total_chunks) - 1
+          ? Number(session.size) - Number(session.chunk_size) * (Number(session.total_chunks) - 1)
+          : Number(session.chunk_size)
+      const actual = (() => {
+        try {
+          return statSync(this.chunkPath(id, chunk.idx)).size
+        } catch {
+          return -1
+        }
+      })()
+      if (actual !== expected || Number(chunk.size) !== expected) {
+        this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ? AND idx = ?').run(id, chunk.idx)
+        this.db
+          .prepare('UPDATE upload_sessions SET received = MAX(0, received - 1), updated_at = ? WHERE id = ?')
+          .run(nowIso(), id)
+        throw badRequest('分片大小异常，请重传', 'chunks_missing')
+      }
+    }
     // 行存在但物理块缺失时不能拼接：让客户端重传缺失块（putChunk 会自愈）。
     for (let index = 0; index < Number(session.total_chunks); index += 1) {
       if (!existsSync(this.chunkPath(id, index))) throw badRequest('分片文件缺失，请重传', 'chunks_missing')
@@ -353,7 +377,25 @@ export class UploadService {
       .prepare("SELECT * FROM upload_sessions WHERE status = 'uploading' AND expires_at <= ?")
       .all(now.toISOString()) as unknown as UploadSessionRow[]
     for (const row of rows) this.expireSession(row.id, false)
-    return rows.length
+    // 进程在 assembling 阶段崩溃会永久占用配额（DR2-03）：2 小时无更新视为崩溃，释放预留并清理。
+    const staleCutoff = new Date(now.getTime() - 2 * 3_600_000).toISOString()
+    const stale = this.db
+      .prepare("SELECT * FROM upload_sessions WHERE status = 'assembling' AND updated_at < ?")
+      .all(staleCutoff) as unknown as UploadSessionRow[]
+    for (const row of stale) this.expireStaleAssembling(row)
+    return rows.length + stale.length
+  }
+
+  private expireStaleAssembling(session: UploadSessionRow): void {
+    this.release(session)
+    this.db.prepare("UPDATE upload_sessions SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'assembling'").run(nowIso(), session.id)
+    this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ?').run(session.id)
+    this.removeSessionDir(session.id)
+    try {
+      rmSync(join(this.rootDir, `${session.id}.assembling`), { force: true })
+    } catch {
+      // 残留文件清理失败不影响会话状态。
+    }
   }
 
   /**

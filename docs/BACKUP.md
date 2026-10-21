@@ -1,4 +1,4 @@
-# 备份与恢复（v0.4.x）
+# 备份与恢复（v0.5.x）
 
 > 目标：SD 卡损坏、误删、升级失败或世界存档损坏时，能恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。
 > 备份分三条独立链路：**应用数据归档**（DB 快照 + 文件内容，明文，含 TOTP/会话）、**密钥包**（age 加密的
@@ -25,6 +25,9 @@
 - **完整性**：归档 SHA-256 写入 DB 与 PC 的 `.sha256` 旁文件；`--ack` 会再次校验 Pi 上文件；PC 下载后校验再原子改名。
 - **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
   旧世界归档命名 `world-<YYYYMMDD>.tar.gz` 不匹配新的 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 规则，永远不会被自动清理。
+- **Bot 密钥（v0.5.0）**：`/etc/antifieldcloud/env` 含 `BOT_SECRET_KEY`，已随密钥包加密备份；该 key 与 DB 中的 `bots` 密文必须成对恢复，
+  否则 Bot Token 不可解密（只能重新录入）。`BOT_SECRET_KEY` 不在普通应用归档内，必须用密钥包（或离线副本）恢复。
+  普通归档含 TOTP/会话与 Bot 密文，仍按敏感数据处理；发布媒体不会进入备份之外的新位置。
 
 ## 2. 应用归档结构与协议
 
@@ -81,6 +84,9 @@ cd "$env:USERPROFILE\projects\AntifieldCloud"
 ```
 
 - 任务名 `AntifieldCloud-Backup-Pull`；每日 `12:00` + 登录后补跑；电池供电时也运行；仅当前用户登录时运行。
+- **v0.5.0 更新仓库后必须重装任务**：`install-backup-task.ps1` 会把最新 `backup-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\` 并更新
+  `backup-task.json` 的脚本 SHA/参数；重装后手跑一次，确认日志 `secrets=ok`、Pi `backup-pull.json` 的 `secretsOk=true`
+  （密钥包内含 `BOT_SECRET_KEY`，脚本不打印值），且 archive/SHA 校验通过。
 - 安装脚本会：复制 `backup-pull.ps1` 到 `%LOCALAPPDATA%\AntifieldCloud\`；用 `icacls` 把备份目录 ACL 收紧为
   **当前用户 + Administrators + SYSTEM**（逐项校验，非白名单主体即失败）；安装前做 `PiHost:22` 可达性预检；
   回读校验任务参数并写安装标记 `backup-task.json`（版本/脚本 SHA/参数）；`-DryRun` 只打印计划不注册任务。
@@ -114,7 +120,7 @@ EOF
 sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
 ```
 
-- 打包内容：`/etc/antifieldcloud/env`、`/etc/cloudflared/config.yml`、`/etc/cloudflared/cert.pem`、
+- 打包内容：`/etc/antifieldcloud/env`（含 v0.5.0 `BOT_SECRET_KEY`）、`/etc/cloudflared/config.yml`、`/etc/cloudflared/cert.pem`、
   `/etc/cloudflared/<tunnel-uuid>.json`、`/home/antifield/minecraft-server/server.properties`、
   `/etc/opencode/opencode.env`、opencode `opencode.json`/`service.json` 及 opencode SQLite 一致性快照。
 - 明文只在 0700 临时目录：优先 `/run/antifieldcloud/secrets-tmp`（tmpfs，重启即清），不可用时回退 `/tmp`；
@@ -214,9 +220,9 @@ sudo rm -rf /home/antifield/minecraft-backups
 ```powershell
 # 应用归档链 + DB + manifest + 可选世界归档
 cd "$env:USERPROFILE\projects\AntifieldCloud"
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 6
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 7
 # 需要解包验证世界（先确认临时盘 ≥3× 世界归档体积）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 6 -IncludeWorld
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 7 -IncludeWorld
 # 将 ASCII 状态回写 Pi（可选；默认不写）
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -PiHost 192.0.2.10
 ```
@@ -330,17 +336,19 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 
 ### 8.4 验证清单
 
-1. `/healthz` 返回 `{"ok":true,"version":"0.4.2",...}`，服务 active；`/api/version` 登录后版本一致。
+1. `/healthz` 返回 `{"ok":true,"version":"0.5.0",...}`，服务 active；`/api/version` 登录后版本一致且 `botsEnabled` 与 env 一致。
 2. 登录成功（TOTP 仍有效，因为 DB 快照含用户与 TOTP secret）；恢复码可用。
 3. 文件列表数量、随机抽样文件的 SHA-256 与 API `GET /api/files/:id` 的 `sha256` 字段一致；笔记附件可见。
 4. 图片/文本/PDF/预览正常，回收站内容与备份时一致；多文件分享/笔记版本可打开。
 5. 白名单列表与备份时一致（RCON 可用时）；世界恢复后玩家可进入。
 6. 备份 pending/状态正常（`backup.mjs --pending`、`backup-pull.json`、世界/拉取/演练状态文件）。
-7. 确认无误后再删除 `/var/lib/antifieldcloud.before-restore` 与 `world.before-restore`。
+7. Bot：`/api/bots/status` 可读；若恢复了 Bot，确认 `BOT_SECRET_KEY` 与 DB 快照成对、`/api/bots` 能解密显示 Bot（不显示 Token）；
+   `BOT_ENABLED=false` 时 Webhook 仍 404。
+8. 确认无误后再删除 `/var/lib/antifieldcloud.before-restore` 与 `world.before-restore`。
 
 > 数据库迁移只向上、无 down 迁移：若回滚到旧 release，务必同时恢复升级前的 `--snapshot-db` 快照
 > （部署脚本在切换前生成，路径 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`）。
-> schema v6 高于旧程序支持版本时旧程序会拒绝启动，必须先还原快照。
+> schema v7 高于旧程序支持版本时旧程序会拒绝启动，必须先还原快照。
 
 ## 9. Web 文件级恢复（不替换运行中的 DB）
 
@@ -361,7 +369,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
 | 现象 | 处理 |
 |---|---|
-| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.4.x/schema v6 |
+| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.5.x/schema v7 |
 | pending 一直不减少 | PC 下载失败：看 `backup.log`；确认直连/SSH；保留 pending 是预期行为，不要手工删 DB 行 |
 | `--ack` 报 SHA 不匹配 | 归档损坏/被替换；对比 PC `.sha256`，从 PC 副本重新确认或重新 `--prepare --full` |
 | `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB；世界备份另需 1.5× 世界体积 |
@@ -377,13 +385,15 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 | 演练状态 unknown | 从未运行或未指定 `-PiHost` 回写；运行 `drill.ps1 -PiHost ...` 或接受 unknown（不误报通过） |
 | PC 有旧世界归档占空间 | 旧 cron 已停用；按 §6.4 手动清理，保留至少一份可解包副本 |
 | 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN/COOKIE_DOMAIN 一致；必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
+| 恢复后 Bot 显示 `bot_key_missing`/密文不可解密 | `BOT_SECRET_KEY` 与 DB 快照不匹配：从同批密钥包恢复 env，或接受重新录入 Bot Token；不要重置 key 后保留旧 `bots` 行 |
+| 密钥包过大/失败但文件归档成功 | 看 `secretsLastError`；`BOT_SECRET_KEY` 在 env 内，env 不可读会导致密钥包失败；修复 `/etc/antifieldcloud/env` 权限 0640 root:antifieldcloud |
 
 ## 11. 覆盖、残余风险与限制
 
-- **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照）、
-  Minecraft 世界一致性归档（Pi 保留 4 + PC 拉取保留 4）、自动化恢复演练。
+- **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照，
+  v0.5.0 起 env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 保留 4 + PC 拉取保留 4）、自动化恢复演练。
 - **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、VPS 远端/异地副本、对象存储、整包加密；
-  普通归档仍含 TOTP/会话明文，PC ACL/离线介质是最后防线；age 私钥丢失=密钥包不可恢复。
+  普通归档仍含 TOTP/会话明文与 Bot 凭据密文，PC ACL/离线介质是最后防线；age 私钥或 `BOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
 - 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。
 - 世界备份依赖 Minecraft 运行与 RCON；Windows 世界拉取/演练任务需用户手动安装；未安装时状态 unknown、告警可能触发。
 - 恢复演练记录见 §7 与 `.local/DR-DRILL.md`；每次升级前重新演练。
