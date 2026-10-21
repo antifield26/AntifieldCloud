@@ -48,7 +48,7 @@ env: 生产 env 保留原有 BOT_ENABLED/BOT_AI_ENABLED；新增 BOT_DISCORD_GAT
 数据: 8 张 bot* 表存在；bots 2 个（Discord/QQ）启用；QQ C2C 与 Discord #general 的 allow_chat=1，其余目标 0
 平台: Discord Message Content Intent 已开启；Telegram/QQ 群/频道目标与各平台多附件联调待执行
 smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access service token）
-备份: 部署后 inc 已拉取/ack（snapshot-20261021T115245394Z-inc.tar.gz，69139 bytes）；密钥包 secrets-20261021T115246Z.tar.age（secrets=ok）
+备份: 部署后 inc 已拉取/ack（snapshot-20261021T115245394Z-inc.tar.gz，69139 bytes；开启 Gateway/Chat 后再拉取 snapshot-20261021T123559613Z-inc.tar.gz，72641 bytes）；密钥包 secrets-20261021T123600Z.tar.age（secrets=ok）
 ```
 
 ### 4. 未决
