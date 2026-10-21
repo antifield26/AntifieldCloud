@@ -38,7 +38,7 @@
 
 ### Minecraft 世界备份与灾备
 
-- `scripts/backup-world.mjs` + `antifieldcloud-world.service/.timer`：周日 04:00 一致性 gzip 归档，保留 4 份，gzip/SHA 校验，状态 JSON，`save-on` 放 finally。
+- `scripts/backup-world.mjs` + `antifieldcloud-world.service/.timer`：周日 12:00 一致性 gzip 归档，保留 4 份，gzip/SHA 校验，状态 JSON，`save-on` 放 finally。
 - `scripts/world-pull.ps1`：Windows 周度两阶段拉取（`.part` → SHA → 原子改名 → 远端 ack），失败保留远端不 ack，本地保留 4 份。
 - `scripts/drill.ps1` + `drill-verify.mjs`：full+inc 链、sidecar SHA、tar 安全、DB integrity/FK/schema、manifest 校验，报告保留 180 天，可选世界解包验证。
 - 状态文件 `/var/lib/antifieldcloud/{world-backup,world-pull,drill}-status.json`（0644，应用只读），新增三类超期告警。
@@ -88,7 +88,7 @@
 | 笔记附件 | 单文件 25 MiB、每笔记 100、每请求 1–5；`origin='note'` 隔离 |
 | 版本历史 | 标题/正文/标签变化时快照，保留 20 |
 | 分享 | 单文件兼容 + 多文件 1–50；密码新建 ≥8；默认 7 天/最长 30 天；0=不限次数；不生成 zip |
-| 世界备份 | root 脚本固定 RCON 命令；周日 04:00；保留 4 份；PC 校验后 ack |
+| 世界备份 | root 脚本固定 RCON 命令；周日 12:00；保留 4 份；PC 校验后 ack |
 | 演练 | 自动化脚本季度/升级前执行；报告 180 天；世界解包需显式 `-IncludeWorld` |
 | 系统 | 允许一次 Pi 重启；nftables 网段按实际直连/校园网段填写；SSH/sudo 不改（用户选择） |
 | 兼容 | 旧单文件分享、旧归档（无 origin 列按 user/pi 处理）、旧 legacy 世界归档不动 |

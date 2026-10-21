@@ -47,6 +47,16 @@ release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.4.2
 - Android 真机验收由用户完成（本次仅代码/CSS 级修复与构建验证）。
 - 工作区未删除 `scripts/backup.mjs`/`provision.mjs`：它们是服务端 `backups/service.ts`、部署/备份文档依赖的稳定入口，删除需跨域改代码，不在本维护版做破坏性清理。
 
+### 5. 运维调整：定时任务统一 12:00（2026-10-21）
+
+- 盘点：Pi 上无 cron（antifield/root）、无 at、无用户 timer；项目 timer 仅 `antifieldcloud-health.timer`（每 60s）与 `antifieldcloud-world.timer`。
+- 调整：`antifieldcloud-world.timer` 改为 **`OnCalendar=Sun 12:00 Asia/Shanghai`**，`Persistent=true`；`antifieldcloud-world.service` 不变。
+- 验证：`systemctl list-timers antifieldcloud-world.timer` 显示下次 `Sun 2026-10-25 12:00:00 CST`；timer active、`Persistent=yes`；健康探针仍约每 60s 触发。
+- 例外：健康探针保持 60s（改为每日会失去监控/告警意义）；OS 维护 timer（apt-daily、logrotate、fstrim、log2ram、e2scrub、systemd-tmpfiles 等）保持发行版默认，不属于项目任务。
+- Windows：`AntifieldCloud-Backup-Pull` 已是每日 12:00（另有登录后补跑）；周度 world-pull/drill 任务未安装。
+- 回滚：`/etc/systemd/system/antifieldcloud-world.timer.bak-v042` + `systemctl daemon-reload && systemctl restart antifieldcloud-world.timer`。
+- 文档：`deploy/antifieldcloud-world.timer`、README/AGENTS/ARCHITECTURE/BACKUP/DEPLOY/PLAN 已同步；CHANGELOG 记入 Unreleased。
+
 ## v0.4.1（历史）
 
 - 日期：2026-10-20（Asia/Shanghai）

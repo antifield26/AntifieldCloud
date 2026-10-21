@@ -11,7 +11,7 @@
 |---|---|---|---|
 | 应用数据归档 | 每日（Windows 任务触发 `--prepare`，或 Web 手动 prepare） | Pi pending 直到确认、已确认 2 个；PC daily 30 天、weekly 56 天 | PC 校验 SHA-256 后 `--ack` 才推进游标 |
 | 密钥包 | 每日随应用拉取任务执行 `backup-secrets.sh` | Pi `KEEP=2` 滚动；PC 90 天 | PC 拉取并校验 `.sha256` |
-| 世界备份 | 每周日 04:00（`antifieldcloud-world.timer`，Persistent） | Pi 最新 4 份；PC `world\` 最新 4 份 | PC `world-pull.ps1` 校验 SHA 后删除远端（ack） |
+| 世界备份 | 每周日 12:00（`antifieldcloud-world.timer`，显式 Asia/Shanghai，Persistent） | Pi 最新 4 份；PC `world\` 最新 4 份 | PC `world-pull.ps1` 校验 SHA 后删除远端（ack） |
 | 恢复演练 | 季度/升级前手动运行 `drill.ps1` | 报告 180 天 | 报告通过 + `drill-status.json` |
 
 - **两阶段（应用归档）**：Pi 端 `--prepare` 生成归档并记为 `pending`；Windows 拉取并校验 SHA-256 后 `--ack` 才推进备份游标。
@@ -164,10 +164,10 @@ cat /var/lib/antifieldcloud/world-backup-status.json
 cd "$env:USERPROFILE\projects\AntifieldCloud"
 .\scripts\world-pull.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
 
-# 手动创建周任务（示例：每周日 06:00；路径按实际安装位置替换）
+# 手动创建周任务（示例：每周日 12:00；路径按实际安装位置替换）
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
   -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldCloud\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
-$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 06:00
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 12:00
 Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldCloud 世界备份周度拉取"
 ```
 
@@ -183,7 +183,7 @@ Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Tr
 
 ### 6.3 磁盘与一致性注意
 
-- Pi 世界约 4.1 GiB；`save-off` 窗口内 Minecraft 不落盘，gzip 打包在 Pi 上可能持续数分钟——定时器放在周日 04:00，
+- Pi 世界约 4.1 GiB；`save-off` 窗口内 Minecraft 不落盘，gzip 打包在 Pi 上可能持续数分钟——定时器放在周日 12:00，
   不与玩家高峰重叠。脚本预检要求可用空间 ≥1.5× 世界体积，保留 4 份会持续占用更多磁盘，需定期 `df -h` 确认。
 - 世界归档是 tar.gz，恢复前必须停 Minecraft 或先 `save-off`，避免运行中的世界文件与归档混写。
 - 世界备份不包含 Paper 配置/插件数据；这些仍由密钥包与应用数据归档覆盖。

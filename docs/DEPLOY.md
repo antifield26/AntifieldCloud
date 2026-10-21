@@ -390,7 +390,7 @@ cat /var/lib/antifieldcloud/world-backup-status.json
 ls -lh /var/lib/antifieldcloud/world-backups/
 ```
 
-- `OnCalendar=Sun 04:00`（`Asia/Shanghai` 系统时区）、`Persistent=true`、`AccuracySec=1min`；`flock -w 600` 串行、
+- `OnCalendar=Sun 12:00 Asia/Shanghai`（显式时区）、`Persistent=true`、`AccuracySec=1min`；`flock -w 600` 串行、
   `TimeoutStartSec=4h`；unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、`/home/antifield/minecraft-server` 只读。
 - 归档保留最新 4 份（含本次），旧 legacy 文件不动；状态文件 0644，`error/message` 为 ASCII 错误码 + 英文说明，
   便于 PowerShell/前端解析。
@@ -404,10 +404,10 @@ ls -lh /var/lib/antifieldcloud/world-backups/
 # 先手动跑一次（直连网线可达；脚本在仓库 scripts/ 下，也可自行复制到固定路径）
 cd "$env:USERPROFILE\projects\AntifieldCloud"
 .\scripts\world-pull.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
-# 创建周任务：每周日 06:00（路径/参数按实际替换）
+# 创建周任务：每周日 12:00（路径/参数按实际替换）
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
   -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldCloud\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
-$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 06:00
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 12:00
 Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldCloud 世界备份周度拉取"
 ```
 

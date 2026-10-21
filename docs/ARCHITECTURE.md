@@ -20,7 +20,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  │   ├─ SLP    → 127.0.0.1:25565
  │   ├─ RCON   → 127.0.0.1:25575（只读状态 + 白名单增删）
  │   └─ 主机指标 /proc、/sys、statfs、systemctl is-active（60s 采样）
- ├─ antifieldcloud-world.service/.timer（root，周日 04:00，flock，4h 超时，沙箱）
+ ├─ antifieldcloud-world.service/.timer（root，周日 12:00，flock，4h 超时，沙箱）
  ├─ antifieldcloud-health.service/.timer（root，60s 写 /run/antifieldcloud/pi-health.json）
  ├─ opencode.service / minecraft.service / cloudflared.service（现有）
  └─ nftables（默认拒绝；22/25565 限网段，22 限速；25575 仅 loopback）

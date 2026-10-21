@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased] - 2026-10-21
+
+### Changed
+
+- **Pi 定时任务统一到正午 12:00**：`antifieldcloud-world.timer` 从「周日 04:00」改为「**周日 12:00 Asia/Shanghai**」（显式时区，`Persistent=true` 保留）；Pi 无其他 cron/at/用户 timer。健康探针 `antifieldcloud-health.timer` 仍每 60s（不属于可日调节的任务，改为每日会失去监控意义）；系统维护 timer（apt/logrotate/fstrim 等）保持发行版默认。
+- 文档同步：README/AGENTS/ARCHITECTURE/BACKUP/DEPLOY/PLAN 的世界备份时刻与 Windows 周任务示例统一为 12:00；本地回滚备份 `/etc/systemd/system/antifieldcloud-world.timer.bak-v042`。
+
 ## [0.4.2] - 2026-10-20
 
 ### Changed

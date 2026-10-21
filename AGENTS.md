@@ -123,7 +123,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `/run/antifieldcloud/pi-health.json`；`age` 与 `unattended-upgrades` 已安装。
 - 备份：应用归档为两阶段 pending/ack（未确认不删）；Windows 任务参数为实际 `-PiHost/-BackupRoot`，ACL 收紧；
   密钥包 Pi 端 `KEEP=2` 滚动保留，PC 不再立即删除远端密钥包。
-- 世界备份：`antifieldcloud-world.timer` 每周日 04:00（`Persistent=true`）以 root 执行 `scripts/backup-world.mjs`，
+- 世界备份：`antifieldcloud-world.timer` 每周日 12:00（显式 Asia/Shanghai，`Persistent=true`）以 root 执行 `scripts/backup-world.mjs`，
   归档到 `/var/lib/antifieldcloud/world-backups`、保留 4 份；Minecraft 世界约 4.1 GiB，周备份耗时与磁盘余量需按 1.5× 世界体积预留。
   旧的 `minecraft-backups` cron 已停用；旧约 9 GiB legacy 归档已于 v0.4.1 清理（`/home/antifield/minecraft-backups` 已删除），新归档由 PC 侧 `world` 目录保留。
 - 备份/灾备状态文件由脚本写入、应用只读：`/var/lib/antifieldcloud/world-backup-status.json`、
