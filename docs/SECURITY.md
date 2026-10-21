@@ -84,7 +84,7 @@
   `/help` `/status` `/backup` `/world` `/mc` `/files`，以及需 `BOT_AI_ENABLED=true` 的 `/ask`；未知命令只返回帮助；`/files` 只返回名称/大小，不含内容/路径。
 - AI：`/ask` 仅白名单用户；按 `botId:userId` 每小时限流（`BOT_AI_RATE_PER_HOUR`，默认 10）；提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`（默认 2000）；
   新建 OpenCode 会话传入 deny-all Permission.Ruleset 关闭工具；仅当 OpenCode 明确 400 拒绝 `permissions` 时降级为默认权限，并在日志标注“未隔离”，不宣称已隔离；
-  AI 只返回 assistant text 并截断 4000 字符，错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体；`bot_ai_sessions` 只存会话映射，不存对话内容。
+  AI 只返回 assistant text（AI 层截断 4000 字符，Bot 回复再清洗/截断到 1500），错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体；`bot_ai_sessions` 只存会话映射，不存对话内容。
 - 输出：`sanitizeExternalText` 将路径（`/home|/var|/etc|…`、盘符）与 `ssh://`/`http(s)://` 替换为 `[path]`/`[url]`，去控制字符并截断；
   模板只输出白名单字段，不拼接 HTML/原始平台对象。
 - 发布：`POST /api/bots/:id/publish` 必须带 `totpCode` 与 `confirmText:'PUBLISH'`，复用 `reauthLimiter`/`reauthGlobalLimiter`/`totpGlobalLimiter` 与失败审计；

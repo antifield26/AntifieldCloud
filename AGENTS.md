@@ -152,13 +152,13 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `BOT_COMMAND_RATE_PER_MINUTE=20`、`BOT_PUBLISH_MAX_MEDIA_BYTES=10485760`、`BOT_PUBLISH_MAX_SCHEDULED_DAYS=30`、`BOT_MAX_BOTS=10`。
   v0.5.1 新增 AI（OpenCode 本地 API，默认关闭）：`BOT_AI_ENABLED=false`、`BOT_AI_PROVIDER=`、`BOT_AI_MODEL=`、`BOT_AI_TIMEOUT_SECONDS=60`、
   `BOT_AI_MAX_PROMPT_CHARS=2000`、`BOT_AI_RATE_PER_HOUR=10`、`BOT_AI_SESSION_RETENTION_DAYS=7`；`bootstrap-env.sh` 已纳管这 7 项。
-  `BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 Token 只能重新录入。
+  `BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 Token/AppSecret 只能重新录入。
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对
   `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
   v0.5.1 的 QQ 真实回调、OpenCode `/ask` 真实模型回复与 Cloudflare Access service token 同样待用户配置/部署后验证。
-- 测试证据边界：Bot 适配器（含 QQ）、AI 对话、备份 tar、告警投递等以进程内 mock/夹具为主（T/S mock-only），未做真实平台/真实模型/真实网络的负路径验收；
+- 测试证据边界：Bot 适配器（含 QQ）、AI 对话、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），未做真实平台/真实模型/真实网络的负路径验收；
   发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；
   `install-backup-task.ps1` 只安装每日应用归档拉取任务。

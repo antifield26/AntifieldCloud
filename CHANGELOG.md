@@ -8,7 +8,7 @@
   - Webhook 使用 AppSecret 派生 Ed25519 密钥：`op=13` 回调地址校验返回 `{plain_token, signature}`；`op=0` 事件校验 `X-Signature-Ed25519` + `X-Signature-Timestamp`（±300 秒），成功/忽略/重复事件统一回 `{opcode:12}`。
   - 事件：`C2C_MESSAGE_CREATE`、`GROUP_AT_MESSAGE_CREATE`、`AT_MESSAGE_CREATE`；目标填 `user_openid`/`group_openid`/`channel_id`。
   - 发送：被动回复带 `msg_id` 与随机 `msg_seq`，主动通知走 `v2/users|groups` 或 `channels` 消息接口；AppSecret 只用于本地派生密钥与换取 `access_token`（进程内缓存、提前 60 秒过期）。
-  - **仅文本**：单条 ≤2000 字符；发布媒体对 QQ 直接返回 400（`qq_media_unsupported`/“QQ 官方 Bot 暂不支持媒体发布”）。
+  - **仅文本**：单条 ≤2000 字符；发布接口对 QQ 带媒体直接 400 拒绝，适配器发送媒体返回 `qq_media_unsupported`。
 - **OpenCode AI `/ask`**（`server/src/bot/ai.ts`）：新增 `/ask <问题>` 命令与 `BOT_AI_*` 环境变量；通过 `OPENCODE_URL`（默认 `http://127.0.0.1:4096`）Basic Auth 调用 OpenCode 本地 API。
   - 默认关闭；仅对已登记的目标 + user 白名单开放，按 `botId:userId` 每小时限流（默认 10 次），提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`（默认 2000），超时由 `BOT_AI_TIMEOUT_SECONDS`（默认 60）控制。
   - 会话复用：`bot_ai_sessions` 按 `(bot_id, target_external_id, user_id)` 映射 `session_id`，过期映射按 `BOT_AI_SESSION_RETENTION_DAYS`（默认 7）清理。
