@@ -20,14 +20,15 @@
 - **安全**：Token 只写不读；签名 + 时间戳（±300 秒）+ 事件去重；IP 120/min、Bot 300/min、命令 20/min、发布/测试 20/h；未授权命令不执行并审计；`BOT_ENABLED=false` 时 Webhook 404、写接口 503。
 - **运维**：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY`（`--force` 不轮换）；`deploy.ps1` 干净工作树门禁、回滚还原 `APP_VERSION`、smoke 失败门禁；`check-version` 覆盖 env.example/DEPLOY 标题/lock；SSH 仅公钥 `00-` drop-in + 24h 回滚 + `fail2ban` sshd jail；Cloudflare Access 策略与 bypass 文档；`backup-world.mjs` 信号时优先 `save-on`。
 - **审计/文档**：`docs/AUDIT.md` 第四轮（v0.4.2 基线 P0=0/P1=0/P2=3/P3=12；Bot WIP P1=2/P2=4，已修复项带测试/命令）；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BACKUP/ACCEPTANCE/AUDIT 与 `docs/BOT.md`、`deploy/env.example` 全量同步到 0.5.0。
-- **测试**：新增 `server/test/bot-core.test.ts`（6）、`bot-routes.test.ts`（1）、`bot-webhook-route.test.ts`（1）、`bot-migration.test.ts`（1）与 `web/src/pages/Bots.test.tsx`（8）。
+- **前端审计 P1**：修复 Files 移动端多选重复复选框、NoteEditor 未保存关闭确认、API 默认超时、设置页 hash 深链、笔记正文 UTF-8 字节校验、Bot 发布媒体选择器；新增 `Table.test.tsx` 回归。
+- **测试**：新增 `server/test/bot-core.test.ts`（6）、`bot-routes.test.ts`（1）、`bot-webhook-route.test.ts`（1）、`bot-migration.test.ts`（1）与 `web/src/pages/Bots.test.tsx`（8）、`web/src/components/Table.test.tsx`（2）。
 
 ### 2. 验证
 
 | 项目 | 结果 |
 |---|---|
 | `npm test` | **245/245 通过**（服务端 229 + 运维脚本 16；本地工作树实测，2026-10-21） |
-| `npm run test:web` | **137/137 通过**（27 个测试文件；本地工作树实测） |
+| `npm run test:web` | **139/139 通过**（28 个测试文件；含 Table 卡片模式 2 项与 Bots 8 项） |
 | `npm run typecheck` / `lint` | 通过（2026-10-21 本地工作树；TS7 native + ESLint 0 警告） |
 | `npm run check` | 通过（245 服务端/脚本 + 139 前端；2026-10-21 部署前最终工作树） |
 | `npm run build` | 通过（部署时构建 `web/dist`，v0.5.0） |
@@ -51,6 +52,7 @@ Cloudflare Access: 待用户后台配置 app 策略 + webhook/health/分享 bypa
 SSH: 仅公钥（00-antifield-hardening.conf，2026-10-21 13:49 CST 切换；24h 回滚窗口至 10-22 13:49）；fail2ban sshd jail 已启用
 tag: v0.5.0
 release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.5.0
+清理: 已二次确认并删除旧 release 20261020T150609Z、8 份旧 predeploy 快照、1 个孤儿归档（约 38 MB）；保留当前+上一 release、最新 2 份快照与用户/世界数据
 ```
 
 ### 4. 未决
