@@ -71,7 +71,7 @@ server/src/
   util/              通用工具（时间、路径、响应、只读状态文件解析）
 web/src/             React 页面与组件（只依赖 docs/API.md 的契约；/bots 管理页）
 scripts/             provision/backup CLI、世界备份 backup-world.mjs、drill-verify.mjs、
-                     world-pull.ps1、drill.ps1、部署/冒烟 PowerShell、bootstrap-env.sh、check-version.mjs
+                     world-pull.ps1、drill.ps1、部署/冒烟 PowerShell、discord-tunnel.ps1/.vbs、bootstrap-env.sh、check-version.mjs
 scripts/test/        运维脚本单元测试（node --test .test.mjs）
 deploy/              systemd（应用/健康探针/世界备份 timer）、nftables、cloudflared ingress、env 模板
 ```

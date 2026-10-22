@@ -477,7 +477,7 @@ release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.3.1
 ### 1. 交付
 
 - 审计修复：备份 SSH/SCP 硬超时与 secrets 独立状态；回收站分享 410；分享审计节流/密码≥8/备注私有/token 日志脱敏/GC；告警 unknown 降级与 90 天保留；legacy 无参备份显式化；孤儿归档可观测；备份空间纳入已确认/孤儿。
-- 备份管理：`migration 3`（`backup_archives` 扩展 + `restore_plans`）；Web 列表、手动 prepare、归档导入/校验、文件级恢复到新目录（TOTP + `RESTORE`）；整库恢复仅离线 CLI；密钥包纳入 opencode DB/config 一致性快照。
+- 备份管理：`migration 3`（`backup_archives` 扩展 + `restore_plans`）；Web 列表、手动 prepare、归档导入/校验、文件级恢复到新目录（TOTP + `RESTORE`）；整库恢复仅离线 root 手工流程；密钥包纳入 opencode DB/config 一致性快照。
 - 媒体：`previewKind` 增加 audio/video，白名单 mp4/webm/mp3/m4a/ogg/flac/wav；CSP `media-src 'self'`；Range/HEAD/416；不转码。
 - OpenCode：`OPENCODE_HTML_MODE=shim|attributes|passthrough`；默认 shim（无可见自定义按钮）；无垫片验证需 Cloudflare 关闭 ai 的 Rocket Loader/自动注入（待用户操作）。
 - 文档/状态：API/UI/ARCH/SECURITY/DEPLOY/BACKUP/PLAN/ROADMAP/README/AGENTS/CHANGELOG 同步；`.local/preflight` ACL 收紧。

@@ -193,7 +193,7 @@ SQLite（WAL）核心表（schema v10）：
   可选 `-IncludeWorld`（先查临时盘 ≥3× 归档空间再解包验证 `world/level.dat`）并回写 `drill-status.json`。
 - **Web 恢复**：只做归档导入/校验/文件级恢复到新目录（TOTP + typed confirmation）；恢复链按来源隔离；
   归档内 `origin!='user'` 的文件不进入用户目录；`skippedMissing` 文件从选择中剔除并报告；解包/落盘按选择字节 ×2 预检空间，
-  staging 上限 2 GiB 且不超过可用空间 20%；归档内容浏览按 IP 限流（30 次/分钟）；整库恢复走 root CLI（停服 + pre-restore 快照 + 回滚）。
+  staging 上限 2 GiB 且不超过可用空间 20%；归档内容浏览按 IP 限流（30 次/分钟）；整库恢复走离线 root 手工流程（停服 + pre-restore 快照 + 回滚，见 `docs/BACKUP.md` §8.1）。
 - **旧世界 cron**：验收后已从 `crontab` 移除 `minecraft-backups` 行；旧归档不自动删除，按 `docs/BACKUP.md`/`docs/DEPLOY.md` 手动清理。
 
 ## 9. 部署与运行
