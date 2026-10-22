@@ -96,6 +96,10 @@ test('describeBotError：已知错误码/常见模式映射，未知返回 null'
   assert.match(String(describeBotError('bot_ai_timeout: 超时')), /AI 响应超时/)
   assert.match(String(describeBotError('Error: connect ECONNREFUSED 127.0.0.1')), /出站网络不可用/)
   assert.match(String(describeBotError('partial_text_sent（已发送 2/3 段）')), /部分段落已发送/)
+  // 适配器 BotPlatformError 消息把错误码嵌在“平台请求失败（status:code）”内，也必须命中。
+  assert.match(String(describeBotError('平台请求失败（0:qq_access_token_failed）')), /QQ access_token/)
+  assert.match(String(describeBotError('平台请求失败（502:bot_ai_unavailable）')), /AI 服务不可达/)
+  assert.match(String(describeBotError('平台请求失败（200:invalid_auth）')), /Slack 凭据无效/)
   assert.equal(describeBotError('some_unknown_failure'), null)
   assert.equal(describeBotError(null), null)
 })

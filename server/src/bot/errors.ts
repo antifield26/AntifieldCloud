@@ -49,6 +49,15 @@ export function describeBotError(value: string | null | undefined): string | nul
   if (EXACT_HINTS[first]) return EXACT_HINTS[first]
   const direct = EXACT_HINTS[text]
   if (direct) return direct
+  // 适配器错误消息形如“平台请求失败（0:qq_access_token_failed）”，错误码嵌在消息内部；
+  // 取消息中包含的最长已知错误码，避免短码误命中（如 rate_limited 与更长的组合码）。
+  let matchedKey: string | null = null
+  for (const key of Object.keys(EXACT_HINTS)) {
+    if (!text.includes(key)) continue
+    if (matchedKey === null || key.length > matchedKey.length) matchedKey = key
+  }
+  const matchedHint = matchedKey === null ? undefined : EXACT_HINTS[matchedKey]
+  if (matchedHint) return matchedHint
   for (const [pattern, hint] of PATTERN_HINTS) {
     if (pattern.test(text)) return hint
   }
