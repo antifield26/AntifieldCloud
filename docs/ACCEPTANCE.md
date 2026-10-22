@@ -18,7 +18,7 @@
 - **OpenCode v2.1.2**：生产 v2.1.1 → v2.1.2 已完成（备份/重启/`GET`+`POST /api/session` 200、测试 session 已删除）。
 - **部署验证**：`/healthz` `{"ok":true,"version":"0.5.3","schemaVersion":9}`；完整 smoke **24/24**；迁移前快照 `db-predeploy-20261022T065156149Z.sqlite`（sha256 `17524d02…`）。
 - **连通性实测**：正常检查日志 `proxyPort=true, internet=true, platforms=[discord,qq]`；停止 PC 隧道后出现 `Bot 出站网络不可用 (proxyPort=false)`；恢复隧道后出现 `Bot 出站网络已恢复`、`Discord Gateway 网络恢复，立即重连`、`Gateway 会话已恢复`。
-- **备份**：部署后 inc `snapshot-20261022T065651320Z-inc.tar.gz`（91150 bytes）+ `secrets-20261022T065652Z.tar.age`（secrets=ok）。
+- **备份**：部署后 inc `snapshot-20261022T065651320Z-inc.tar.gz`（91150 bytes）+ `secrets-20261022T065652Z.tar.age`；QQ 群目标登记后再拉取 `snapshot-20261022T071549472Z-inc.tar.gz`（92882 bytes）+ `secrets-20261022T071550Z.tar.age`（secrets=ok）。
 - 本地验证：`npm test` 300、`npm run test:web` 141、`npm run check`、`check-version`、覆盖率门禁均通过。
 - **未决**：Telegram/Slack/QQ 频道真实 Chat、多附件/按钮平台联调未完成；QQ 空 @ 正文无回复属平台/适配器预期，需带正文。
 
