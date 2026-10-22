@@ -206,7 +206,7 @@ test('首次对话：创建 deny-all 权限会话、发送 prompt、等待 idle 
       botId: BOT_ID,
       targetExternalId: TARGET,
       userId: USER,
-      prompt: '你好',
+      mode: 'chat', prompt: '你好',
     })
     assert.equal(reply, '第一段\n第二段')
 
@@ -275,7 +275,7 @@ test('第二次对话复用同一 session_id，不重复创建会话', async () 
       botId: BOT_ID,
       targetExternalId: TARGET,
       userId: USER,
-      prompt: '第一次',
+      mode: 'chat', prompt: '第一次',
     })
     assert.equal(first, '第一次回答')
     fixture.db
@@ -287,7 +287,7 @@ test('第二次对话复用同一 session_id，不重复创建会话', async () 
       botId: BOT_ID,
       targetExternalId: TARGET,
       userId: USER,
-      prompt: '第二次',
+      mode: 'chat', prompt: '第二次',
     })
     assert.equal(second, '第二次回答')
 
@@ -310,6 +310,32 @@ test('第二次对话复用同一 session_id，不重复创建会话', async () 
   }
 })
 
+test('v0.5.4：task/chat 各自维护会话映射，不互相复用', async () => {
+  const fixture = setup(basicHandler())
+  try {
+    await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: TARGET,
+      userId: USER,
+      mode: 'chat', prompt: '闲聊',
+    })
+    await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: TARGET,
+      userId: USER,
+      mode: 'task', prompt: '任务',
+    })
+    const rows = fixture.db
+      .prepare('SELECT mode, session_id FROM bot_ai_sessions WHERE bot_id = ? ORDER BY mode')
+      .all(BOT_ID) as unknown as { mode: string; session_id: string }[]
+    assert.deepEqual(rows.map((row) => row.mode), ['chat', 'task'])
+    const createCalls = fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session')
+    assert.equal(createCalls.length, 2, '两种模式应各建一次会话')
+  } finally {
+    dispose(fixture)
+  }
+})
+
 test('assistant 无文本时抛错，错误与日志不泄漏密码或上游 URL', async () => {
   const fixture = setup(
     basicHandler({
@@ -323,7 +349,7 @@ test('assistant 无文本时抛错，错误与日志不泄漏密码或上游 URL
   )
   try {
     await assert.rejects(
-      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' }),
+      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, mode: 'chat', prompt: '你好' }),
       (error: unknown) => {
         assert.ok(error instanceof AppError)
         assert.equal(error.code, 'bot_ai_empty_response')
@@ -353,7 +379,7 @@ test('wait 返回 404 时回退为 500ms 轮询消息，不忙等', async () => 
       botId: BOT_ID,
       targetExternalId: TARGET,
       userId: USER,
-      prompt: '你好',
+      mode: 'chat', prompt: '你好',
     })
     assert.equal(reply, '轮询回答')
 
@@ -376,7 +402,7 @@ test('OpenCode 以 400 拒绝 permissions 时回退并在日志中标注未隔�
       botId: BOT_ID,
       targetExternalId: TARGET,
       userId: USER,
-      prompt: '你好',
+      mode: 'chat', prompt: '你好',
     })
     assert.equal(reply, '默认回答')
 
@@ -400,7 +426,7 @@ test('上游 HTTP 失败抛出短码 AppError，不泄漏密码或 URL', async (
   const fixture = setup(basicHandler({ promptStatus: 500 }))
   try {
     await assert.rejects(
-      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' }),
+      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, mode: 'chat', prompt: '你好' }),
       (error: unknown) => {
         assert.ok(error instanceof AppError)
         assert.equal(error.code, 'bot_ai_http_error')
@@ -421,7 +447,7 @@ test('网络失败归一化为不可达错误，不转发原始异常 URL', asyn
   })
   try {
     await assert.rejects(
-      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' }),
+      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, mode: 'chat', prompt: '你好' }),
       (error: unknown) => {
         assert.ok(error instanceof AppError)
         assert.equal(error.code, 'bot_ai_unavailable')
@@ -445,7 +471,7 @@ test('回复超过 4000 字符时截断', async () => {
       botId: BOT_ID,
       targetExternalId: TARGET,
       userId: USER,
-      prompt: '你好',
+      mode: 'chat', prompt: '你好',
     })
     assert.equal(reply.length, 4000)
   } finally {
@@ -457,8 +483,8 @@ test('cleanup 只删除超过保留期的会话映射', async () => {
   const fixture = setup(basicHandler())
   try {
     seedBot(fixture.db, OTHER_BOT_ID)
-    await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '旧会话' })
-    await fixture.ai.chat({ botId: OTHER_BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '新会话' })
+    await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, mode: 'chat', prompt: '旧会话' })
+    await fixture.ai.chat({ botId: OTHER_BOT_ID, targetExternalId: TARGET, userId: USER, mode: 'chat', prompt: '新会话' })
 
     const old = new Date(Date.now() - 8 * 86_400_000).toISOString()
     fixture.db.prepare('UPDATE bot_ai_sessions SET updated_at = ? WHERE bot_id = ?').run(old, BOT_ID)

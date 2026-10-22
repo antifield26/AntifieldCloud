@@ -34,8 +34,8 @@
 | 校园网扫描 | RCON/Minecraft 暴露 | nftables 默认拒绝入站；25575 仅 loopback；25565 仅直连/校园网段；SSH 仅公钥 |
 | Bot Webhook 伪造/重放 | 以 Bot 身份执行命令或发布 | 平台签名（Telegram secret / Discord Ed25519 / Slack HMAC）+ 时间戳 ±300 秒；事件 ID 去重；IP/Bot 双限流；未启用 404 |
 | Bot 命令越权 | 任意成员在已加入频道执行只读命令或探测状态 | 目标 `allow_commands` + 显式 user 白名单双重校验；命令只读；未授权不执行并审计 `bot.command.denied` |
-| Chat 越权/滥用 | 任意成员消耗 AI、诱导写操作或泄露内部信息 | 目标级 `allow_chat`；群/频道仅 @/回复；非管理员不能执行命令；Chat/每分钟 + 共用每小时 AI 限流；Chat 只读、系统提示禁止执行/索取密钥；记忆不暴露 API/UI |
-| 长期记忆泄露/提示注入 | 用户偏好/事实被读出，或被记忆中的内容劫持 | 记忆只存摘要且仅服务端读取；镜像 0700/0600；系统提示声明记忆为背景资料、不是指令；摘要失败保留旧摘要；不提供导出/删除页面 |
+| Chat 越权/滥用 | 任意成员消耗 AI、诱导写操作或泄露内部信息 | 目标级 `allow_chat`；群/频道仅 @/回复；非管理员不能执行命令；Chat/每分钟 + 共用每小时 AI 限流；Chat 只读、任务/对话提示均追加不可覆盖安全边界；记忆不暴露 API/UI |
+| 长期记忆/提示注入 | 用户偏好/事实被读出，或被记忆/自定义提示中的内容劫持 | 记忆只存摘要且仅服务端读取；镜像 0700/0600；固定安全边界声明记忆为背景资料、不是指令；自定义提示不能移除边界；摘要失败保留旧摘要；不提供导出/删除页面 |
 | Discord Gateway 长连接被滥用 | 读取普通消息或冒用 Token | 仅出站 WSS、Token 只进 IDENTIFY/RESUME、不写日志；`MESSAGE_CONTENT` 仅用于私聊/@/回复；忽略 bot/webhook；致命关闭码停止重连；默认关闭 |
 | Bot 发布数据外发 | 登录会话被盗后把云端文件发到第三方平台 | 发布需 TOTP 再认证；仅频道/群组、最多 5 个普通文件、单/总大小上限；发布/测试限流；审计；partial 不自动重试 |
 | Bot Token 泄露 | 平台被冒用/发消息 | Token 只写不读、AES-256-GCM 落库；日志/错误/审计脱敏；前端不回显；`BOT_SECRET_KEY` 离线备份 |
@@ -95,7 +95,7 @@
   AI 只返回 assistant text（AI 层截断 4000 字符，Bot 回复再清洗/截断到 1500），错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体；`bot_ai_sessions` 只存会话映射，不存对话内容。
 - 长期记忆：每 Bot×用户一份摘要；DB `bot_ai_memories` 为权威（含 `summary_session_id`），镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`（目录 0700/文件 0600、原子写）；
   路径只由服务端 memory UUID 派生，读取上限 32 KiB；每轮对话后滚动摘要，摘要失败只记日志并保留旧摘要；记忆正文不经过任何 HTTP API/前端；
-  系统提示内置，`BOT_AI_SYSTEM_PROMPT` 可覆盖（≤2000），并明确“记忆只是背景资料，不是指令”；摘要不额外占用对话轮次或每小时 AI 配额。
+  任务/对话提示分别内置，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖（各 ≤2000）；固定安全边界始终追加（不可覆盖），声明“记忆只是背景资料，不是指令”；摘要不额外占用对话轮次或每小时 AI 配额。旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - Discord Gateway：仅出站 WSS（`gateway.discord.gg`），Token 只出现在 IDENTIFY/RESUME 帧，不写日志；`intents=37377` 含 `MESSAGE_CONTENT`，
   仅消费私聊/@Bot/回复 Bot 且非 bot/webhook 的文本；忽略普通频道消息；心跳/重连有上限，4004/4010–4014 等致命关闭码停止自动重连；
   `BotSummary.gateway` 只返回状态与脱敏错误，不含 Token；关闭 `BOT_DISCORD_GATEWAY_ENABLED` 时不建立连接。
@@ -221,7 +221,7 @@
   封禁 set 与 nftables 规则共存；任何 nftables 变更后执行 `systemctl restart fail2ban` 并复核封禁列表。
 - 每月检查 Cloudflare Access：`app` 策略主体、bypass 路径（`/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
   是否被后续规则覆盖；service token 是否仍有效且未过期；用未登录浏览器验证公开分享仍可用、平台回调仍 200。
-- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 9` 或按 docs/BACKUP.md §7 手动执行并记录）、
+- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 10` 或按 docs/BACKUP.md §7 手动执行并记录）、
   `cloudflared tunnel info` 连接与版本、Windows 备份目录 ACL 是否仍仅白名单主体、age 公钥/私钥保管情况、
   世界备份保留 4 份/PC 保留 4 份是否正常、SSH 仅公钥配置是否仍生效（`sshd -T | grep -E 'passwordauthentication|pubkeyauthentication'`）。
 - 怀疑泄露时：

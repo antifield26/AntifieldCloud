@@ -1,6 +1,13 @@
 # 路线图
 
-## v0.5.3（当前，待部署）
+## v0.5.4（当前，待部署）
+
+- **双模式提示词**：`/ask` 任务导向、Chat 对话导向；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖，固定安全边界始终追加；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
+- **会话/记忆**：schema v10 `bot_ai_sessions.mode`；旧会话归 chat，`/ask` 新 task；共享长期记忆；审计 mode。
+- **状态**：本地测试/检查通过；生产 v0.5.3/schema 9，v0.5.4 部署/smoke 与真实 `/ask`/Chat 验收待执行。
+- **下一版**：v0.5.5 企业微信/钉钉/飞书；多管理员/审批仍不做。
+
+## v0.5.3（历史，已部署）
 
 - **Bot 出站连通性**：代理端口 TCP 存活 → 外网 → Discord/Telegram/Slack/QQ 平台 API 三层探测；默认 60s；`GET /api/bots/connectivity`、`POST /api/bots/connectivity/check`；`/bots` 出站网络卡片显示设备在线/代理端口/外网/平台延迟。
 - **自动重连**：网络恢复后 `DiscordGatewayManager.wake()` 跳过退避立即重连，并触发投递/发布队列扫描；Windows `discord-tunnel.ps1` 先探测 PC 代理 10090 再建 SSH，计划任务登录启动、异常重启。

@@ -114,7 +114,9 @@ export interface Config {
   /** v0.5.2 Chat/记忆/多附件/Gateway。 */
   botChatRatePerMinute: number
   botAiMemoryMaxChars: number
-  botAiSystemPrompt: string
+  /** 任务/对话提示词覆盖；空使用内置默认，最长 2000。 */
+  botAiTaskPrompt: string
+  botAiChatPrompt: string
   botDiscordGatewayEnabled: boolean
   /** v0.5.3 出站连通性探测与自动恢复；默认开启。 */
   botConnectivityEnabled: boolean
@@ -275,7 +277,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.5.3'),
+    appVersion: str(merged, 'APP_VERSION', '0.5.4'),
     botEnabled: bool(merged, 'BOT_ENABLED', false),
     botSecretKey: str(merged, 'BOT_SECRET_KEY', ''),
     botWebhookMaxBodyBytes: int(merged, 'BOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
@@ -295,7 +297,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiSessionRetentionDays: int(merged, 'BOT_AI_SESSION_RETENTION_DAYS', 7, 1, 90),
     botChatRatePerMinute: int(merged, 'BOT_CHAT_RATE_PER_MINUTE', 6, 1, 60),
     botAiMemoryMaxChars: int(merged, 'BOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
-    botAiSystemPrompt: str(merged, 'BOT_AI_SYSTEM_PROMPT', '').slice(0, 2000),
+    botAiTaskPrompt: str(merged, 'BOT_AI_TASK_PROMPT', '').slice(0, 2000),
+    botAiChatPrompt: str(merged, 'BOT_AI_CHAT_PROMPT', '').slice(0, 2000),
     botDiscordGatewayEnabled: bool(merged, 'BOT_DISCORD_GATEWAY_ENABLED', false),
     botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
     botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),

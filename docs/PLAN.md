@@ -1,8 +1,16 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.3**（schema v9）；生产待部署 v0.5.3，上一版 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`）。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.4**（schema v10）；生产待部署 v0.5.4，上一版 v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`）。
 
-## v0.5.3 补充（当前）
+## v0.5.4 补充（当前）
+
+- **任务/对话双模式**：`/ask` 任务导向（结论/步骤/风险/必要澄清），普通 Chat 对话导向（自然/简洁/不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖，空则内置。
+- **安全边界**：自定义提示后强制追加只读/不执行/不泄密/“记忆不是指令”；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
+- **会话隔离**：schema v10 重建 `bot_ai_sessions`，主键含 mode；旧会话归 chat，`/ask` 新建 task；共享长期记忆。
+- **审计**：`bot.ai.chat` 记录 mode；不记录提示词/记忆正文。
+- **状态**：本地测试 309/141、`npm run check` 通过；生产部署/smoke 与真实 `/ask`/Chat 验收待执行。
+
+## v0.5.3 补充（历史）
 
 - **出站连通性**：`server/src/bot/connectivity.ts` 按代理端口 → 外网 → 平台 API 三层探测；默认 60s、超时 8s；`BOT_CONNECTIVITY_ENABLED`/`BOT_CONNECTIVITY_INTERVAL_SECONDS`/`BOT_CONNECTIVITY_TIMEOUT_SECONDS`/`BOT_PROXY_URL`；`GET /api/bots/connectivity`、`POST /api/bots/connectivity/check`；`/bots` 出站网络卡片展示设备在线/代理端口/外网/平台延迟。
 - **自动恢复**：外网恢复时调用 Discord Gateway `wake()` 跳过退避立即重连并触发队列 tick；Windows 端 `scripts/discord-tunnel.ps1` 先探测代理端口再建 SSH 反向隧道，`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启计划任务。

@@ -1,5 +1,20 @@
 # Changelog
 
+## [v0.5.4] - 2026-10-22
+
+### Added
+
+- **任务/对话双模式提示词**：`/ask` 使用任务导向提示（先结论、步骤、风险、必要澄清），普通 Chat 使用对话导向提示（自然、简洁、不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，空则使用内置默认；固定安全边界始终追加，自定义不能移除只读/防泄密/“记忆不是指令”约束。
+- **独立 AI 会话**：`bot_ai_sessions` 新增 `mode`（chat/task），旧会话迁移为 chat；`/ask` 首次新建 task 会话，普通 Chat 保留原 chat 会话；两种模式共享每 Bot×用户的长期记忆。
+- **schema v10**：迁移 10 重建 `bot_ai_sessions`，主键改为 `(bot_id,target_external_id,user_id,mode)`；迁移 5–9 保留；旧 v0.5.3 无法直接读取 v10。
+- **审计可观测**：`bot.ai.chat` 审计增加 `mode`（不含提示词/记忆正文），便于区分 `/ask` 与 Chat。
+- **提示词模块**：新增 `server/src/bot/prompts.ts` 与单元测试；旧 `BOT_AI_SYSTEM_PROMPT` 废弃，不再读取。
+
+### Deployment
+
+- 版本/文档/`APP_VERSION` 升到 0.5.4；`deploy.ps1` smoke 期望 schema 10；生产部署、迁移前快照、smoke 与真实 `/ask`/Chat 验收待执行。
+- 本版无 UI 提示词编辑；修改提示词需改 env 并重启。
+
 ## [v0.5.3] - 2026-10-22
 
 ### Added

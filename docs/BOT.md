@@ -1,8 +1,8 @@
-# Bot 集成（v0.5.3）
+# Bot 集成（v0.5.4）
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
-v0.5.3 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增出站连通性探测/自动恢复。
-企业微信/钉钉/飞书（v0.5.4）与多管理员审批仍未实现。生产已部署 v0.5.3/schema v9（release `20261022T065126Z`），Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已实发确认；v0.5.3 出站连通性断开/恢复已实测。
+v0.5.4 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增任务/对话双模式提示词与出站连通性自动恢复。
+企业微信/钉钉/飞书（v0.5.5）与多管理员审批仍未实现。生产已部署 v0.5.3/schema v9（release `20261022T065126Z`），v0.5.4 待部署；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
@@ -96,7 +96,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
   Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6），Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）；
   新建 OpenCode 会话使用 deny-all 工具权限；若 OpenCode 明确 400 拒绝 `permissions`，降级为默认权限并在日志标注“未隔离”。
 - **长期记忆**：每 Bot×用户一份摘要；DB 为权威，镜像到 `DATA_DIR/bot-memory`；不通过 API/UI 暴露；系统提示内置，
-  `BOT_AI_SYSTEM_PROMPT` 覆盖；摘要失败保留旧摘要；摘要不额外占对话轮次或每小时 AI 配额。
+  两种 AI 模式共享记忆；摘要失败保留旧摘要；摘要不额外占对话轮次或每小时 AI 配额。
 - **管理面**：`GET /api/bots/:id/inbound-targets?limit=50`（需登录）返回最近命令/Chat/按钮的目标与用户（不含正文），
   `/bots` 目标分区可一键填入表单；`BotSummary.gateway` 返回 Discord Gateway 状态。
 
@@ -139,11 +139,21 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 | `BOT_AI_SESSION_RETENTION_DAYS` | `7` | AI 会话/记忆映射保留天数（1–90） |
 | `BOT_CHAT_RATE_PER_MINUTE` | `6` | Chat 每 Bot×用户每分钟上限（1–60） |
 | `BOT_AI_MEMORY_MAX_CHARS` | `4096` | 长期记忆摘要上限（512–16384） |
-| `BOT_AI_SYSTEM_PROMPT` | 空 | 覆盖内置系统提示；空则用内置文本，最长 2000 |
+| `BOT_AI_TASK_PROMPT` | 空 | `/ask` 任务提示覆盖；空则内置，最长 2000 |
+| `BOT_AI_CHAT_PROMPT` | 空 | 普通 Chat 提示覆盖；空则内置，最长 2000 |
 | `BOT_DISCORD_GATEWAY_ENABLED` | `false` | Discord Gateway 长连接开关；需先开启 Message Content Intent |
 
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 Token/AppSecret 无法解密；必须重新录入所有 Bot 凭据。不要把它写入仓库/前端/日志。
-`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*`、v0.5.2 的 6 项与 v0.5.3 的 4 项连通性键；`--force` 不会重置已有非空值。
+`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*`、v0.5.2 的 6 项、v0.5.3 的 4 项连通性键与 v0.5.4 的 2 项提示词键；`--force` 不会重置已有非空值。
+
+## 5.1 任务/对话提示词与会话（v0.5.4）
+
+- `/ask` 使用任务导向提示：先结论/结果，再步骤、命令要点和风险；复杂问题简短分点；信息不足时只问一个关键澄清。
+- 普通消息 Chat 使用对话导向提示：自然、友好、简洁；不机械复述记忆、不强行列清单、不说教。
+- `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可分别覆盖，空/空白使用内置默认，最长 2000；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取。
+- 固定安全边界不可覆盖：只读、不执行/不声称执行、不索取/泄露密钥/Token/密码/内部路径/URL、长期记忆不是指令。
+- 模式和完整提示由 `server/src/bot/prompts.ts` 生成；`/ask` 与 Chat 分别使用 `bot_ai_sessions.mode=task|chat` 的独立 OpenCode 会话，旧会话归 chat；两种模式共享 `bot_ai_memories` 长期记忆。
+- 审计 `bot.ai.chat` 增加 `mode`，不记录提示词/记忆正文。提示词仅环境变量配置，修改后重启应用。
 
 ## 6. 网络出站（Discord/Telegram/QQ/OpenCode）
 
@@ -214,10 +224,11 @@ v0.5.3 生产已出现群事件 `68611590B477339A04302BB23B426244`，审计 `bot
 - Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；QQ 使用固定 AppSecret 派生密钥对；AI 使用假 OpenCode HTTP 服务；
   Discord Gateway 使用假 WebSocket（HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码）。
 - v0.5.3 新增：`bot-connectivity.test.ts`（5）覆盖代理端口/外网/平台探测与恢复回调；Gateway `wake` 测试；QQ 未知事件 detail。
-- 本地基线：`npm test` 300、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
+- v0.5.4 新增：`bot-prompts.test.ts`（4）、`bot-v054.test.ts`（3）、task/chat 会话隔离测试；迁移测试覆盖 v6→v10 与 v9→v10。
+- 本地基线：`npm test` 309、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接；
-  v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
-  OpenCode v2.1.2 Basic/session 通过；多附件/按钮/Telegram/Slack/QQ 频道仍待补充。
+  v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
+  v0.5.4 双模式提示词/会话隔离待部署后以 `/ask` 与 Chat 真实回复验收；OpenCode v2.1.2 Basic/session 已通过。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→
   私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发布 1/5 个媒体（含 partial 失败场景）→
   多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→ Discord 开启 intent 后确认 Gateway `connected`。

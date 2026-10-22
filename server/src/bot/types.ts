@@ -250,11 +250,15 @@ export interface BotMediaStore {
 }
 
 /** AI 对话提供方（v0.5.1 通过 OpenCode 本地 HTTP API）。 */
+export type BotAiMode = 'task' | 'chat'
+
 export interface BotAi {
   chat(input: {
     botId: string
     targetExternalId: string
     userId: string
+    /** task=/ask 任务导向；chat=普通消息对话导向。 */
+    mode: BotAiMode
     prompt: string
   }): Promise<string>
   /** 每轮对话后滚动摘要长期记忆；未实现时服务端保留旧摘要。 */

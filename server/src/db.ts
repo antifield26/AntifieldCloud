@@ -578,6 +578,27 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_bot_inbound_targets_seen ON bot_inbound_targets(bot_id, last_seen_at DESC);
   `,
+  `
+  -- v0.5.4：任务/对话 AI 会话分离；旧会话保持为 chat，/ask 新建 task 会话。
+  CREATE TABLE bot_ai_sessions_v10 (
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    target_external_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'chat' CHECK (mode IN ('chat', 'task')),
+    session_id TEXT NOT NULL,
+    model TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, target_external_id, user_id, mode)
+  );
+  INSERT INTO bot_ai_sessions_v10
+    (bot_id, target_external_id, user_id, mode, session_id, model, created_at, updated_at)
+  SELECT bot_id, target_external_id, user_id, 'chat', session_id, model, created_at, updated_at
+  FROM bot_ai_sessions;
+  DROP TABLE bot_ai_sessions;
+  ALTER TABLE bot_ai_sessions_v10 RENAME TO bot_ai_sessions;
+  CREATE INDEX idx_bot_ai_sessions_updated ON bot_ai_sessions(updated_at);
+  `,
 ]
 
 export interface OpenOptions {
