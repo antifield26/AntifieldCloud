@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.10（**已部署**，release `20261022T152053Z`/commit `4619c91`/schema v13 无迁移；`/healthz` = version 0.5.10/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；生产 env 实测（3 个记忆变量就位、代理变量与 `BOT_PROXY_URL` 均无），无代理环境 QQ `checkBot` ok、连通性日志仅 internet/QQ；PC 隧道任务/进程已移除；**真实 QQ 行为待用户实发**：合并摘要、`/reset`/`/forget` 远端会话删除、出站网络卡片、普通 Chat/图片回归）。v0.5.10 记忆/会话修复（摘要一次性并删除远端会话、更新串行、合并=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）并移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）。
+> 状态：v0.5.10（**已部署并验收通过**，release `20261022T152053Z`/commit `4619c91`/schema v13 无迁移；`/healthz` = version 0.5.10/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；生产 env 实测（3 个记忆变量就位、代理变量与 `BOT_PROXY_URL` 均无），无代理环境 QQ `checkBot` ok、连通性日志仅 internet/QQ；PC 隧道任务/进程已移除；**用户已实发验收通过**（2026-10-22 23:26–23:29 CST：合并摘要 rounds=3、远端会话删除 404 两例、图片 145172 B、`/forget confirm`/`/reset` 有服务端证据；`/bots` 卡片为用户确认；23:29 完成验收））。v0.5.10 记忆/会话修复（摘要一次性并删除远端会话、更新串行、合并=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）并移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）。
 > 测试基线（Lead 实测 2026-10-22，v0.5.10）：`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例）、`npm run test:web` **157**（30 文件）、`npm run typecheck` 通过；覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**（`npm run test:coverage` exit 0），`npm run build` 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
@@ -163,7 +163,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
   `/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24；真实 QQ 消息/图片识别/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
 - 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，QQ 官方 Bot 当前不提供该能力。
-- v0.5.10（待部署验收）：记忆/会话修复（摘要会话一次性并删除远端、记忆更新串行、合并策略=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget confirm`/角色变更清理远端会话）；移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；schema v13 无迁移；测试基线 341/157（30 文件），覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、`npm run build` 通过。
+- v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST）：记忆/会话修复（摘要会话一次性并删除远端、记忆更新串行、合并策略=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget confirm`/角色变更清理远端会话）；移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；schema v13 无迁移；测试基线 341/157（30 文件），覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、`npm run build` 通过。
 - v0.5.9 起 `/ask` 已移除（AI 全部由普通消息 Chat 承担）；v0.5.3 已实发确认 QQ C2C 与 QQ 群 @Bot Chat；v0.5.8 的真实消息/图片能力/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片端到端成功）。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；

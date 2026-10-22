@@ -40,7 +40,8 @@
   PC 隧道任务/进程已移除、PC/Pi 无 `18090` 监听；前端 `/`、`/bots` 200（bundle `index-Bx6EBCIp.js` 644262 bytes，含“Pi 直连”，不含“代理端口/设备在线”）。
 - **部署后备份**：增量 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已拉取并 ack；密钥包 `secrets-20261022T152333Z.tar.age` secrets=ok。
 - **回滚**：schema 无迁移；切回 release `20261022T143451Z`（v0.5.9）并还原 env 备份（含代理变量与旧 `BOT_PROXY_URL`）+ 恢复旧隧道脚本/计划任务；无 schema 回滚。
-- **待用户实发验收**：合并摘要（3 条/空闲 120s 后只触发一次，`rounds` 审计）；`/reset`、`/forget confirm` 后远端会话删除（用部署前快照 session id 验证 404）；出站网络卡片仅外网/QQ 平台且检测可用；普通 Chat/图片回归。证据待用户实发后回填 `docs/ACCEPTANCE.md`。
+- **验收通过（用户实发，2026-10-22 23:26–23:29 CST / UTC 15:26–15:29）**：用户 `5B7B32E7…` 实发 8 条事件全部 outcome=ok——4 条 Chat（含 1 条仅图片 `image/jpeg, size=145172`）、3 条 `/forget`（2 次 confirm：`bot.memory.forget removed:1`；1 次用法提示）、1 条 `/reset`（`bot.reset`）。
+  合并摘要：4 条 Chat 仅 1 次 `bot.ai.memory`、detail `rounds:3`（15:28:37Z）；远端会话删除：部署前快照 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要）在 `/forget confirm` 后经 OpenCode API 查询均 404，该用户本地会话/记忆清空、其他用户不受影响、无删除失败日志；图片 145172 B JPEG 端到端成功；`/bots` 出站网络卡片按用户确认通过（服务端无单独 UI 证据）；23:29 CST 用户明确“完成验收”。
 
 ## [v0.5.9] - 2026-10-22
 

@@ -1,6 +1,6 @@
 # 路线图
 
-## v0.5.10（当前，已部署；真实 QQ 行为待用户实发；记忆/会话修复 + 移除代理隧道依赖）
+## v0.5.10（当前，已部署并验收通过；用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）
 
 - **记忆与会话修复**：摘要会话一次性（新建远端会话并在 `finally` 删除，不再保存 `summary_session_id`，列保留兼容）；记忆更新按 Bot×用户串行队列避免并发覆盖；
   合并策略=累计 `BOT_AI_MEMORY_BATCH_MESSAGES=3` 条或空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120` 触发，审计 `bot.ai.memory` 增加 `rounds`；
@@ -10,7 +10,7 @@
   生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`（空值）；连通性仅探测外网 + QQ 平台（Pi 直连），快照去掉 `deviceOnline`/`proxy`。
 - **数据/部署**：version 0.5.10，schema 保持 v13（无迁移）；`deploy.ps1` 无需改；回滚切回 v0.5.9 release 并恢复 env（含代理变量与旧隧道脚本/计划任务，如需）。
 - **状态**：已部署 v0.5.10/schema v13（2026-10-22 23:20–23:23 CST，release `20261022T152053Z`/commit `4619c91`，无迁移；上一 release `20261022T143451Z` 保留；`/healthz` v0.5.10/schema 13，smoke 16/16 与 24/24；env 实测 3 记忆变量就位、代理变量/`BOT_PROXY_URL` 均无；无代理直连 QQ `checkBot` ok、连通性日志仅 internet/QQ；PC 隧道任务/进程已移除、无 18090 监听；bundle `index-Bx6EBCIp.js` 含“Pi 直连”，不含“代理端口/设备在线”）；
-  本地测试基线（Lead 实测）`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例）、`npm run test:web` 157（30 文件）、`npm run typecheck` 通过；覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、build 通过；**真实 QQ 行为（合并摘要、远端会话删除、出站网络卡片、Chat/图片）待用户实发**。
+  本地测试基线（Lead 实测）`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例）、`npm run test:web` 157（30 文件）、`npm run typecheck` 通过；覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、build 通过；**用户已实发验收通过**（2026-10-22 23:26–23:29 CST：合并摘要 rounds=3、远端会话删除 404 两例、图片 145172 B 有服务端证据；`/bots` 卡片用户确认）。
 - **下一版**：v0.6 候选（企业微信/钉钉/飞书、多管理员审批），范围待用户确认。
 
 ## v0.5.9（历史，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST；v0.5.10 起移除代理隧道依赖）

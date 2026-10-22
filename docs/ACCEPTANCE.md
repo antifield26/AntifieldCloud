@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.10（已部署；真实 QQ 行为待用户实发；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST）；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -29,14 +29,16 @@
 > 生产 env 实测：`BOT_AI_MEMORY_RETENTION_DAYS=365`/`BOT_AI_MEMORY_BATCH_MESSAGES=3`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`BOT_PROXY_URL` 均无；
 > 直连 QQ `checkBot` ok（access_token 已获取），启动日志“Bot 连通性检查完成” detail 仅 `internet:true, platforms:["qq"]`（无 proxyPort）；PC 隧道任务/进程已移除、PC/Pi 均无 18090 监听；前端 bundle `index-Bx6EBCIp.js`（644262 bytes）含“Pi 直连”，不含“代理端口/设备在线”。
 > 部署后增量备份 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已拉取；密钥包 `secrets-20261022T152333Z.tar.age` secrets=ok。
-> **真实 QQ 行为验收（合并摘要/远端会话删除/出站网络卡片/普通 Chat/图片回归）待用户实发验收**，完成前不得声明该部分通过，详情见下方 v0.5.10 段。
+> **用户实发验收（通过，2026-10-22 23:26–23:29 CST / UTC 15:26–15:29）**：用户 `5B7B32E7…` 实发 8 条事件全部 outcome=ok——4 条 Chat（含 1 条仅图片 `image/jpeg, size=145172`，`bot.ai.image` 记录 mime/size、`bot.ai.chat` 带 image 标志）、3 条 `/forget`（2 次 confirm：`bot.memory.forget removed:1`；1 次用法提示）、1 条 `/reset`（`bot.reset` 审计）。
+> **合并摘要生效**：4 条 Chat 仅产生 1 次 `bot.ai.memory`，detail `rounds:3`（15:28:37Z）；**远端会话删除生效**：部署前快照会话 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要）在 `/forget confirm` 后经 OpenCode API 查询均为 404，该用户本地会话/记忆已清空，其他用户（`E259399F…`、`6B7DAC9B…`）会话/记忆保持 200 未受影响，无“删除远端 AI 会话失败”日志。
+> 图片回归通过（真实 145172 B JPEG 端到端）；`/bots` 出站网络卡片按用户确认验收通过（服务端无单独 UI 证据）；23:29 CST 用户明确“完成验收”。详见下方 v0.5.10 段。
 
-## v0.5.10（当前，已部署；真实 QQ 行为待用户实发；记忆/会话修复 + 移除代理隧道依赖）
+## v0.5.10（当前，已部署并验收通过；用户实发 2026-10-22 23:26–23:29 CST）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T152053Z`，commit `4619c91`，schema 13）+ Windows 本地工作区
 - **状态**：已部署 v0.5.10/schema v13（无迁移），部署验证（env 实测、直连连通性、隧道清理、健康检查、两次 smoke、前端产物）通过。
-  **真实 QQ 行为验收（合并摘要、`/reset`/`/forget` 远端会话删除、`/bots` 出站网络卡片、普通 Chat/图片回归）尚未由用户实发验收**，完成前不得声明该部分通过。
+  **用户实发验收于 2026-10-22 23:29 CST 确认通过**：合并摘要 rounds=3（4 条 Chat 仅 1 次摘要）、远端会话删除 404 两例且其他用户不受影响、真实图片 145172 B 端到端、`/forget confirm`/`/reset` 均有服务端证据；`/bots` 出站网络卡片为用户确认（服务端无单独 UI 证据）。
 - **交付范围**：
   - **记忆摘要一次性**：每次摘要新建远端 OpenCode 会话并在 `finally` 删除；不再保存 `summary_session_id`（列保留兼容，旧值仅历史遗留）。
   - **记忆更新串行化**：按 Bot×用户队列串行更新，避免并发覆盖；摘要失败只记日志并保留旧摘要。
@@ -58,11 +60,14 @@
   - **PC 隧道清理**：计划任务 `AntifieldCloudDiscordTunnel` 已移除、无隧道进程、PC/Pi 均无 `18090` 监听；仓库隧道脚本已删除。
   - **前端产物**：带 Access token 访问 `/` 与 `/bots` 均 **200**；新 bundle `/assets/index-Bx6EBCIp.js`（644262 bytes），含“Pi 直连”，**不含**“代理端口”“设备在线”。
   - **部署后备份**：增量 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已由 PC `backup-pull` 拉取并 ack；密钥包 `secrets-20261022T152333Z.tar.age` 拉取成功，`secrets=ok`。
-- **待用户实发验收项**（完成前不得声明通过）：
-  1. **合并摘要**：连续 3 条或空闲 120s 后只触发一次摘要；`bot.ai.memory` 审计含 `rounds`，`bot_ai_memories.summary` 更新且 `summary_session_id` 为 NULL。
-  2. **远端会话删除**：`/reset`、`/forget confirm` 后远端 OpenCode 会话被删除（服务端将用部署前快照的 session id 验证 404）；删除失败只记日志不阻塞回复。
-  3. **出站网络卡片**：`/bots` 卡片只显示外网/QQ 平台，无代理端口/设备在线字段；“检测”可手动复检。
-  4. **普通 Chat/图片回归**：C2C/群 @Bot Chat、图片理解/降级、`/help`、诊断与角色/记忆面板正常。
+- **用户实发验收（通过，2026-10-22 23:26–23:29 CST / UTC 15:26–15:29）**：
+  1. **事件与自助命令**：用户 `5B7B32E7…` 实发 8 条事件全部 outcome=ok：4 条 Chat、3 条 `/forget`（2 次 confirm：`bot.memory.forget removed:1`；1 次用法提示）、1 条 `/reset`（`bot.reset` 审计）。
+  2. **合并摘要（有服务端证据）**：4 条 Chat 仅产生 1 次 `bot.ai.memory`，detail `rounds:3`（15:28:37Z），明显少于 Chat 次数，证明“3 条或空闲 120s 触发一次”。
+  3. **远端会话删除（有服务端证据）**：部署前快照的两个会话 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要会话），在 `/forget confirm` 后经 OpenCode API 查询均为 **404**；
+     该用户本地 `bot_ai_sessions`/`bot_ai_memories` 已清空；其他用户（`E259399F…`、`6B7DAC9B…`）的会话/记忆保持 200/未受影响；无“删除远端 AI 会话失败”日志。
+  4. **图片回归（有服务端证据）**：真实图片消息 `image/jpeg, size=145172` 端到端成功，`bot.ai.image` 记录 mime/size、`bot.ai.chat` 带 image 标志。
+  5. **出站网络卡片**：`/bots` 卡片只显示外网/QQ 平台、无代理端口/设备在线，检测可用——用户确认验收通过（服务端无单独 UI 证据，如实记录）。
+  6. 用户于 **23:29 CST** 明确“完成验收”。
 - **回滚**：schema 无迁移；切回 release `20261022T143451Z`（v0.5.9）并还原 env 备份（含代理变量与旧 `BOT_PROXY_URL`）+ 恢复旧隧道脚本/计划任务后重启；无 schema 回滚需求。
 ## v0.5.9（历史，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST；v0.5.10 起移除代理隧道依赖）
 
