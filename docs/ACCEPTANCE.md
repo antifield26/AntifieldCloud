@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.9（已部署；真实 QQ 行为待用户实发；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -22,14 +22,14 @@
 > 迁移前 DB 快照（无迁移，仅部署保护）`db-predeploy-20261022T143520649Z.sqlite`（sha256 `14ca82ed9cfc54556faeadc4914fb1c797fc177aa5d1f2b27d3b2db72e42968b`）；`/healthz` = `{"ok":true,"version":"0.5.9","schemaVersion":13}`；
 > 部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**（首次因 Cloudflare Access 请求 20s 超时 1 项失败，重试后全通过，无代码/服务异常）。
 > 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除两个提示词变量、权限 640、APP_VERSION=0.5.9）；前端 `/` 与 `/bots` 200（bundle `index-CFrhFtH2.js` 644849 bytes）。
-> **真实 QQ 行为验收（`/help` 公开/管理员差异、`/ask` 拒绝/帮助不调用 AI、限速体验、Chat/图片回归）待用户实发验收**，完成前不得声明该部分通过，详情见下方 v0.5.9 段。
+> **用户实发验收（通过，2026-10-22 22:39–22:41 CST）**：22:39:52 CST 非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`，`bot_events` 记录 `command/ok/command_help`、`audit_log` 记录 `command=help`，事件 200 ack 且命令正常回复（无异常投递）；22:41 CST 用户原话“验收通过”。管理员 `/help` 全量、`/ask` 只回帮助不调用 AI、放宽后限速体验、Chat/图片回归为用户口头确认通过（服务端无单独事件证据），详见下方 v0.5.9 段。
 
-## v0.5.9（当前，已部署；真实 QQ 行为待用户实发；移除 /ask + 限速放宽 + /help 动态开放）
+## v0.5.9（当前，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T143451Z`，commit `97996dc`，schema 13）+ Windows 本地工作区
 - **状态**：已部署 v0.5.9/schema v13（无迁移），部署验证（env 迁移、健康检查、两次 smoke、运行时配置、前端产物）通过。
-  **真实 QQ 行为验收（`/help` 公开 vs 管理员、`/ask` 拒绝/帮助不调用 AI、放宽后限速体验、普通 Chat/图片回归）尚未由用户实发验收**，完成前不得声明该部分通过。
+  **用户实发验收于 2026-10-22 22:41 CST 确认通过**：非管理员 `/help` 有服务端事件证据（22:39:52 `command/ok/command_help`），其余项目为用户口头确认通过（服务端无单独事件证据，详见“用户实发验收”）。
 - **交付范围**：
   - **移除 `/ask`**：`BOT_COMMANDS` 删除 `ask`，现为 `/help /status /backup /world /mc /files /role /reset /forget`；`/ask` 作为未知命令——非管理员被拒（`bot.command.denied`、无回复），
     管理员回全量帮助、不调用 AI；斜杠命令不再触发 AI。
@@ -56,11 +56,11 @@
   - **前端产物**：带 Access token 访问 `/` 与 `/bots` 均 **200**；新 bundle `/assets/index-CFrhFtH2.js`（644849 bytes）；bundle 含“每分钟 30 次”新限速文案与“AI 对话由普通消息 Chat 承担”，**不含 `/ask`**。
   - 部署后增量备份：`snapshot-20261022T143749907Z-inc.tar.gz`（131088 bytes，sha256 `702a0d42221939a0d9e6b5bd2509dfa18ccf4e62622991d98e02de53b055c5a4`）已由 PC `backup-pull` 拉取并 ack（PC 侧 daily 目录）；密钥包 `secrets-20261022T143751Z.tar.age` 拉取成功，`secrets=ok`。
   - 回滚：schema 无回滚需求；切回 release `20261022T134852Z`（v0.5.8）+ 还原 env 备份（20/10/6 与两个提示词键占位）+ 重启。
-- **待用户实发验收项**（完成前不得声明通过）：
-  1. **非管理员 `/help`**：只收到公开命令（`/help`、`/role`、`/reset`、`/forget confirm` + Chat 说明），不含 `/status`、`/backup`、`/world`、`/mc`、`/files` 等管理命令。
-  2. **管理员 `/help` 与 `/ask`**：管理员 `/help` 收到全量帮助（无 `/ask`）；`/ask` 作为未知命令只回帮助、不调用 AI（无 `bot.ai.chat`/`bot.ai.memory` 新记录）；非管理员 `/ask` 被拒（无回复）。
-  3. **放宽后的限速体验**：Chat 30/min、AI 120/hour、命令 120/min 下正常使用；超限时收到中文提示且事件 `rate_limited`。
-  4. **普通 Chat/图片回归**：C2C/群 @Bot 文本 Chat 正常（`bot.ai.chat` 不含 `mode`）；图片识别或降级正常；`/reset` 清理该范围全部会话映射。
+- **用户实发验收（通过，2026-10-22 22:39–22:41 CST）**：
+  1. **非管理员 `/help`（有服务端证据）**：22:39:52 CST（UTC 14:39:52）非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`；`bot_events` 记录 `event_kind=command, outcome=ok, detail=command_help`，`audit_log` 记录 `bot.command`（`command=help`）；
+     事件 200 ack 且命令正常回复，无异常投递。自 v0.5.9 部署（22:35 CST）以来生产仅有这 1 条真实入站事件。
+  2. **管理员 `/help` 全量、`/ask` 只回帮助且不调用 AI、放宽后限速体验（30/min、120/hour、命令 120/min）、普通 Chat/图片回归**：用户口头确认通过；服务端无单独事件证据，本段如实记录为“用户确认”，不写成自动验证。
+  3. 用户于 **22:41 CST** 原话确认“验收通过”。
 - **回滚**：schema 未变（v13），切回 release `20261022T134852Z`（v0.5.8）并还原 env 备份（`BOT_COMMAND_RATE_PER_MINUTE=20`、`BOT_AI_RATE_PER_HOUR=10`、`BOT_CHAT_RATE_PER_MINUTE=6`；两个提示词键占位）后重启；无 schema 回滚需求。
 ## v0.5.8（历史，已部署并验收通过；用户实发 2026-10-22 21:59–22:08 CST；v0.5.9 起移除 /ask 与 task 模式）
 

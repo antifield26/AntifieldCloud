@@ -39,7 +39,8 @@
   前端 `/`、`/bots` 200（bundle `index-CFrhFtH2.js` 644849 bytes，含“每分钟 30 次”与“AI 对话由普通消息 Chat 承担”，不含 `/ask`）。
 - **部署后备份**：增量 `snapshot-20261022T143749907Z-inc.tar.gz`（131088 bytes，sha256 `702a0d42221939a0d9e6b5bd2509dfa18ccf4e62622991d98e02de53b055c5a4`）已由 PC `backup-pull` 拉取并 ack；密钥包 `secrets-20261022T143751Z.tar.age` 拉取成功，`secrets=ok`。
 - **回滚**：schema 无回滚需求；切回 release `20261022T134852Z`（v0.5.8）+ 还原 env 备份（20/10/6 与两个提示词键占位）+ 重启。
-- **待用户实发验收**：非管理员 `/help` 仅公开命令；管理员 `/help` 全量且 `/ask` 只回帮助不调用 AI；放宽后限速体验（30/min、120/h、命令 120/min）；普通 Chat/图片回归。证据待用户实发后回填 `docs/ACCEPTANCE.md`。
+- **验收通过（用户实发，2026-10-22 22:39–22:41 CST）**：22:39:52 CST 非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`，`bot_events` 记录 `command/ok/command_help`、`audit_log` 记录 `command=help`，事件 200 ack 且命令正常回复；22:41 CST 用户原话“验收通过”。
+  管理员 `/help` 全量、`/ask` 只回帮助不调用 AI、放宽后限速体验（30/min、120/h、命令 120/min）、普通 Chat/图片回归为用户口头确认通过（服务端无单独事件证据，如实记录为用户确认）。
 
 ## [v0.5.8] - 2026-10-22
 

@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.9（**已部署**，release `20261022T143451Z`/commit `97996dc`/schema v13 无迁移；`/healthz` = version 0.5.9/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；生产 env 迁移已完成：命令 120/AI 120/Chat 30、提示词变量已删除；**真实 QQ 行为待用户实发**：`/help` 公开/管理员差异、`/ask` 拒绝/帮助不调用 AI、限速体验、Chat/图片回归）。v0.5.9 移除 `/ask`（AI 全部由普通消息 Chat 承担）、限速放宽为 Chat **30/min**、AI **120/hour**、命令 **120/min**、`/help` 对非管理员开放且按身份动态显示。
+> 状态：v0.5.9（**已部署并验收通过**，release `20261022T143451Z`/commit `97996dc`/schema v13 无迁移；`/healthz` = version 0.5.9/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；生产 env 迁移已完成：命令 120/AI 120/Chat 30、提示词变量已删除；**用户已实发验收通过**（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户口头确认；22:41 原话“验收通过”））。v0.5.9 移除 `/ask`（AI 全部由普通消息 Chat 承担）、限速放宽为 Chat **30/min**、AI **120/hour**、命令 **120/min**、`/help` 对非管理员开放且按身份动态显示。
 > 测试基线（Lead 实测 2026-10-22）：`npm test` **333**（server + 运维脚本；较 v0.5.8 的 337 少 4 个已移除的 /ask/task 用例）、`npm run test:web` **157**（30 文件）、`npm run check` 通过；覆盖率 Lines **91.77%** / Branches **76.98%** / Functions **85.96%**；`npm run build` 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
