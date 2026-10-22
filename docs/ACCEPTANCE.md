@@ -10,18 +10,20 @@
 >
 > **v0.5.4 已部署**：2026-10-22 部署到生产 Pi（release `20261022T085120Z`，commit `b2bdc8d`，schema v10）；带 Cloudflare Access service token 的完整 smoke **24/24**。`/ask` 任务模式、Chat 对话模式、QQ C2C 管理员/非管理员对话均实发确认；schema v9→v10 迁移通过，旧会话归 chat，task/chat 会话分离；共享长期记忆。
 >
-> **v0.5.5 进行中**：私聊角色卡 `/role`、schema v11、Discord DM `isDirect` 修正已实现；本地测试通过，生产部署/smoke 与真实私聊验收待执行。
+> **v0.5.5 已部署**：2026-10-22 部署到生产 Pi（release `20261022T104834Z`，commit `a92c0a9`，schema v11）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊 `/role set/show/off/on/delete` 与 Chat 人设生效/停用恢复已由用户实发确认；schema v10→v11 迁移通过。
 
-## v0.5.5（当前，待部署验收）
+## v0.5.5（当前，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
-- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产 v0.5.4/schema 10，待升级）+ Windows 本地工作区
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T104834Z`，schema 11）+ Windows 本地工作区
 - **角色卡**：`/role` 对全部平台私聊用户开放，`set/show/off/on/delete`；每 Bot×用户一张“名字+设定”卡；名字≤32、设定≤1000；保留提示词标记被拒绝。
 - **Chat 集成**：仅私聊 Chat 使用启用卡；替换默认 Chat 风格；安全边界与共享记忆仍追加；`/ask` 与群/频道不使用；角色变更重置 chat 会话映射。
 - **权限**：仅 `/role` 绕过命令白名单；其他命令仍要求目标 `allow_commands` + 用户白名单；Telegram/Discord/Slack 私聊 Chat 仍按目标 `allow_chat`，QQ C2C 沿用 v0.5.4。
 - **schema v11**：新增 `bot_chat_roles`；Discord DM `isDirect` 修正；Discord/Slack 命令文本上限 2048。
 - **本地验证**：`npm test` 324、`test:web` 141、`check-version`、coverage；迁移 v6→v11、v9→v11、v10→v11 测试通过。
-- **待部署**：生产迁移/smoke、真实私聊 `/role` + Chat、备份/tag/release。
+- **部署验证**：`/healthz` `{"ok":true,"version":"0.5.5","schemaVersion":11}`；完整 smoke **24/24**；迁移前快照 `db-predeploy-20261022T104901134Z.sqlite`（sha256 `33a09f1f…`）。
+- **真实对话**：用户确认 `/role set`、`/role show`、Chat 角色生效、`/role off` 后恢复默认均正常；审计 `bot.role` 只记录动作与长度，`bot.ai.chat` 含 `role:true`；`bot_ai_sessions` 角色变更后出现新 chat 会话。
+- **备份**：部署后 inc `snapshot-20261022T105908606Z-inc.tar.gz`（109566 bytes，sha256 `f27d1665…`）已由 Windows 计划任务拉取并 ack，`secrets=ok`。
 
 ## v0.5.4（历史，已部署）
 

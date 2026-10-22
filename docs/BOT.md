@@ -2,7 +2,7 @@
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
 v0.5.5 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增私聊角色卡与任务/对话双模式提示词。
-企业微信/钉钉/飞书（v0.5.6）与多管理员审批仍未实现。生产已部署 v0.5.4/schema v10（release `20261022T085120Z`），v0.5.5 待部署；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
+企业微信/钉钉/飞书（v0.5.6）与多管理员审批仍未实现。生产已部署 v0.5.5/schema v11（release `20261022T104834Z`）；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 除 `/role` 外，斜杠命令需要目标 + 用户双重白名单；`/role` 仅对私聊开放；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
@@ -236,7 +236,7 @@ v0.5.3 生产已出现群事件 `68611590B477339A04302BB23B426244`，审计 `bot
 - 本地基线：`npm test` 324、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接；
   v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
-  v0.5.4 已部署 release `20261022T085120Z`/schema v10；双模式提示词/会话隔离与 QQ C2C 管理员/非管理员真实回复已验收；v0.5.5 私聊 `/role`/Chat 待部署验收；OpenCode v2.1.2 Basic/session 已通过。
+  v0.5.4 已部署 release `20261022T085120Z`/schema v10；双模式提示词/会话隔离与 QQ C2C 管理员/非管理员真实回复已验收；v0.5.5 私聊 `/role`/Chat 已实发确认；OpenCode v2.1.2 Basic/session 已通过。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→
   私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发布 1/5 个媒体（含 partial 失败场景）→
   多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→ Discord 开启 intent 后确认 Gateway `connected`。

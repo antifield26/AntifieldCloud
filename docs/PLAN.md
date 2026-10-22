@@ -1,6 +1,6 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.5**（schema v11）；生产已部署 v0.5.4 release `20261022T085120Z`/schema v10，v0.5.5 待部署。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.5**（schema v11）；生产已部署 v0.5.5 release `20261022T104834Z`/schema v11。
 
 ## v0.5.5 补充（当前）
 
@@ -9,7 +9,7 @@
 - **会话**：角色卡变更重置当前私聊 Chat 会话映射；task 会话与长期记忆不受影响。
 - **权限**：仅 `/role` 绕过命令白名单；其他命令仍要求目标 `allow_commands` + 用户白名单；Telegram/Discord/Slack 私聊 Chat 仍按目标 `allow_chat`。
 - **schema v11**：新增 `bot_chat_roles`；Discord DM 修正 `isDirect`；Discord/Slack 命令文本上限 2048。
-- **状态**：本地测试 324/141、`npm run check` 通过；生产部署/smoke 与真实私聊 `/role` 验收待执行。
+- **状态**：本地测试 324/141、`npm run check` 通过；生产 release `20261022T104834Z`/schema v11、smoke 24/24，私聊 `/role` 已实发确认。
 
 ## v0.5.4 补充（历史）
 

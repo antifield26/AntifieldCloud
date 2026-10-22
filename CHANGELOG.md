@@ -13,7 +13,8 @@
 
 ### Deployment
 
-- 版本/文档/`APP_VERSION` 升到 0.5.5；`deploy.ps1` smoke 期望 schema 11；生产部署、迁移前快照、smoke 与真实私聊 `/role`/Chat 验收待执行。
+- 版本/文档/`APP_VERSION` 升到 0.5.5；`deploy.ps1` smoke 期望 schema 11。
+- 生产已部署 release `20261022T104834Z`（commit `a92c0a9`，schema v11，smoke 24/24）；私聊 `/role set/show/off/on` 与 Chat 人设生效/停用恢复已由用户实发确认。
 - 本版无 UI 角色卡编辑；Discord/Slack 需在平台后台创建 `/role` 命令。
 
 ## [v0.5.4] - 2026-10-22
