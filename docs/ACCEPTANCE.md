@@ -38,7 +38,8 @@
   - schema 校验：`bot_targets.chat_trigger` 存在，5 个既有目标全部为默认 `mention`；`bot_events` 的 event_kind/outcome/detail/target_external_id/user_id/updated_at 6 列存在（修复重部署无新迁移）。
   - **错误提示映射修复生产复验**：Discord dead 投递 `平台请求失败（0:network）` → “出站网络不可用：检查 Pi 出站代理/隧道与 BOT_PROXY_URL”；QQ dead 投递 `平台请求失败（0:qq_access_token_failed）` → “QQ access_token 获取失败：检查出站网络/代理与 AppSecret”；`metrics.lastErrorHint` 同步返回对应中文提示。
   - **生产服务层只读验证**：对真实 DB 只读调用 `listEvents`/`listRoles`/`listMemories`/`metrics`/`listDeliveries` 均通过；角色/记忆列表只返回元数据（未含 prompt/summary 正文）；events 查询正常（部署后暂无新入站事件）。
-  - **前端产物核验**：带 Access token 访问 `https://app.antifield.work/` 与 `/bots`（`Accept: text/html`）均 **200**；HTML 引用的新 bundle `/assets/index-CH38JtCp.js`、`/assets/index-BJSYA4Y6.css` 均 **200**（刷新后加载新版本）。
+  - **前端产物核验**：带 Access token 访问 `https://app.antifield.work/` 与 `/bots`（`Accept: text/html`）均 **200**；HTML 引用的新 bundle `/assets/index-CH38JtCp.js`、`/assets/index-BJSYA4Y6.css` 均 **200**（刷新后加载新版本）；部署 bundle 内已确认包含「角色与记忆」「诊断」「全部消息」「检查连接」「lastErrorHint」「重置当前对话」「清除长期记忆」等 v0.5.7 文案。
+  - **Webhook 真实网络负路径验证**：无签名 `POST /api/bot/webhook/<botId>`（Discord/QQ 各一次）均返回 **401 `invalid_signature`**；未知 `botId` 返回 **404**；Cloudflare Access 对 webhook 路径 bypass 生效（不带 Access token 也能到达应用鉴权层）。QQ 非 `op=0/13` 回调返回 **200 `{ok:true}`**(仅确认不处理)；审计写入 `bot.webhook.rejected`，**拒绝事件不写入 `bot_events`**（不可信输入不落诊断表，符合设计）。
   - **Discord 命令注册实测（只读）**：global + guild `950388705846255688` 现有 `/status`、`/backup`、`/world`、`/mc`、`/files`、`/help`、`/ask`；**缺 `/role`、`/reset`、`/forget`**（属用户在 Developer Portal 的平台后台步骤；Telegram/QQ 无需注册，Slack 尚未配置）。
   - 第二次部署后增量备份：`snapshot-20261022T132013585Z-inc.tar.gz`（125874 bytes，sha256 `fb01cc1724b32c4f3db6608934cf0cd9a622f67bf1c4b17ff171170093cbe423`）已由 PC 侧 `backup-pull` 拉取并 ack（保存于 PC 侧 `daily/2026-10-22` 目录）；密钥包 `secrets-20261022T132014Z.tar.age` 拉取成功，`secrets=ok`。
   - 真实网络平台连接自检（首轮部署记录）：Discord `@lofii.bot`（`1562353648732868709`）ok、QQ access_token 获取 ok（经 PC 代理隧道）；页面“检查连接”展示脱敏结果。
