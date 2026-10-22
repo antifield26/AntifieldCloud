@@ -1,0 +1,25 @@
+{
+  "name": "lofii-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lofii Minecraft AI companion bot for Paper 26.1.2 on Raspberry Pi 5",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/unit",
+    "check": "npm run typecheck && npm test",
+    "smoke": "node test/smoke/live.ts"
+  },
+  "dependencies": {
+    "mineflayer": "^4.39.0",
+    "mineflayer-pathfinder": "^2.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  }
+}
