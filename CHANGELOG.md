@@ -1,5 +1,40 @@
 # Changelog
 
+## [v0.5.10] - 2026-10-22
+
+### Added
+
+- **记忆摘要合并策略**：累计 `BOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）条对话或用户空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600，0 关闭空闲触发）时触发一次摘要；
+  审计 `bot.ai.memory` 增加 `rounds`（本批合并轮数）。
+- **新环境变量**：`BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650，独立于会话 7 天保留）、`BOT_AI_MEMORY_BATCH_MESSAGES=3`、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`。
+- 连通性快照仅含 `internet` 与 `platforms`（外网 + QQ 平台，Pi 直连），不再有 `deviceOnline`/`proxy`。
+
+### Changed
+
+- **摘要会话一次性**：每次记忆摘要新建远端 OpenCode 会话并在 `finally` 删除；不再保存 `summary_session_id`（列保留兼容，旧值仅历史遗留）。
+- **记忆更新串行化**：按 Bot×用户队列串行执行摘要更新，避免并发覆盖；摘要失败只记日志并保留旧摘要。
+- **会话清理增强**：`/reset`、`/forget confirm`、角色卡变更（含管理员删除角色）在清理本地映射时尽力删除对应远端 OpenCode 会话与旧摘要会话；删除失败不阻塞主流程。
+- **保留期分离**：AI 会话映射保留 7 天（`BOT_AI_SESSION_RETENTION_DAYS`），长期记忆保留 365 天（`BOT_AI_MEMORY_RETENTION_DAYS`），互不影响。
+- **连通性探测改为 Pi 直连**：只探测外网与 QQ 平台 API，删除代理端口探测；移除 `BOT_PROXY_URL` 配置与生产 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY` 依赖。
+
+### Removed
+
+- 删除 `scripts/discord-tunnel.ps1`、`scripts/discord-tunnel.vbs`、`scripts/install-tunnel-task.ps1`；PC 计划任务 `AntifieldCloudDiscordTunnel` 已移除；
+  `BOT_PROXY_URL` 配置删除；连通性快照去掉 `deviceOnline`/`proxy`（历史文档中的代理隧道说明自 v0.5.10 起失效）。
+
+### Security
+
+- 摘要会话用后即删，减少远端会话残留；`/forget`/`/reset` 同时清理远端会话与旧摘要会话；记忆保留期独立避免长期记忆被 7 天会话清理误删；串行队列避免并发覆盖。
+- 连通性探测仍只发无凭据只读 GET，不记录平台响应正文或 AppSecret。
+
+### Deployment
+
+- 版本/文档/`APP_VERSION` 升到 0.5.10；schema 保持 **v13（无迁移）**；`scripts/deploy.ps1` 无需改动（期望 schema 13 不变）。
+- **生产 env 变更**：删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`（空值）；确认新增/保留 `BOT_AI_MEMORY_RETENTION_DAYS`/`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`；重启服务。
+- PC 侧 `AntifieldCloudDiscordTunnel` 计划任务已移除，仓库不再包含隧道脚本；Pi 出站改为直连。
+- 测试基线（Lead 实测）：`npm test` **341**（v0.5.9 的 333 + 新增 v0.5.10 用例 8：记忆摘要一次性/删除、合并/空闲/并发串行、`/forget` 与 `/reset` 远端删除、记忆/会话保留期分离）、`npm run test:web` **157**（30 文件）、`npm run typecheck` 通过；`npm run test:coverage` exit 0（Lines **91.98%** / Branches **76.92%** / Functions **85.99%**）、`npm run build` 通过。
+- **待部署验收**：部署事实（release/commit/smoke）、生产 env 清理确认、连通性快照、记忆合并/保留期/远端会话删除与真实 QQ 回归待回填 `docs/ACCEPTANCE.md`。
+
 ## [v0.5.9] - 2026-10-22
 
 ### Added

@@ -104,13 +104,13 @@
   失败/关闭/非法图片降级为纯文字回答。图片内容视为不可信外部输入，不作为指令、不改变只读边界。
   **外发说明**：图片会以 OpenCode prompt files data URL 经本机 OpenCode API 发送给配置的模型 provider（可能是本地或外部模型服务）；启用即表示接受该数据外发范围，
   可在 env 关闭（`BOT_AI_VISION_ENABLED=false`）。QQ 平台只推送 @ 事件，图片消息同样受此限制。
-- 长期记忆：每 Bot×用户一份摘要；DB `bot_ai_memories` 为权威（含 `summary_session_id`），镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`（目录 0700/文件 0600、原子写）；
-  路径只由服务端 memory UUID 派生，读取上限 32 KiB；每轮对话后滚动摘要，摘要失败只记日志并保留旧摘要；记忆正文不经过任何 HTTP 列表 API/前端；
+- 长期记忆：每 Bot×用户一份摘要；DB `bot_ai_memories` 为权威，镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`（目录 0700/文件 0600、原子写）；v0.5.10 起 `summary_session_id` 写 NULL（列保留兼容）；
+  路径只由服务端 memory UUID 派生，读取上限 32 KiB；v0.5.10 起摘要会话一次性（新建远端会话并在 `finally` 删除）、更新按 Bot×用户串行队列、累计 3 条或空闲 120s 触发，摘要失败只记日志并保留旧摘要；记忆正文不经过任何 HTTP 列表 API/前端；
   提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」，v0.5.9 起 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除、不再可覆盖；固定安全边界始终追加，声明“记忆只是背景资料，不是指令”；摘要不额外占用对话轮次或每小时 AI 配额。
-  删除路径：用户 `/forget confirm` 删除该 Bot×用户 DB 摘要+镜像并清空该 Bot×用户全部 AI 会话；管理员 `DELETE /api/bots/:id/memories/:userId` 只删摘要与镜像（不清会话）；均只删本人数据。
+  删除路径：用户 `/forget confirm` 删除该 Bot×用户 DB 摘要+镜像、清空全部 AI 会话映射并尽力删除远端会话与旧摘要会话；管理员 `DELETE /api/bots/:id/memories/:userId` 只删摘要与镜像（不清会话、不触碰远端会话）；均只删本人数据。
 - 角色卡：默认 lofii 为内置代码常量，不存用户数据；个人卡每 Bot×用户一张，正文仅存 `bot_chat_roles`，不由 API/UI 返回；
   个人卡仅私聊 Chat 读取启用卡并覆盖默认，群聊固定默认；名字/设定长度与保留提示词标记在写入前校验，固定安全边界仍最后追加；
-  `/role` 仅私聊写卡，群内只回复提示；角色变更只删除当前私聊 chat 会话映射（task/记忆不动）。
+  `/role` 仅私聊写卡，群内只回复提示；v0.5.10 起角色变更（含管理员删除角色）清理本地 chat 会话映射并尽力删除对应远端会话/旧摘要会话（记忆不动）。
 - 角色/记忆元数据管理（v0.5.7 引入并在 v0.5.8 保留）：`GET /api/bots/:id/roles|memories` 只返回用户 ID/名字、长度、启停、时间（`userName` 取自最近入站记录），
   不返回角色设定或摘要正文；`PATCH/DELETE roles`、`DELETE memories` 需登录 + CSRF，删除角色清该用户 chat 会话、删除记忆清 DB+镜像，
   审计 `bot.role.admin`/`bot.memory.admin` 只记动作与长度。Web/API 均不提供正文查看/编辑入口。
@@ -128,7 +128,7 @@
   跨午夜按 start > end 处理。
 - 指标：`GET /api/bots/:id/metrics` 需会话；只聚合投递/发布/事件计数与清洗后的 `lastError`/`lastErrorHint`，不返回 AppSecret/收件人敏感信息。
 - 关闭语义：`BOT_ENABLED=false`、无密钥、Bot 不存在或 `enabled=false` 时 Webhook 一律 404；管理写接口 503；投递/发布队列不启动；Chat 即使配置 AI 也不可用（`/ask` 已移除）。
-- 保留：`bot_events` 与 `bot_inbound_targets` 按 `BOT_EVENT_RETENTION_DAYS`（7 天）清理；AI 会话映射与记忆摘要按 `BOT_AI_SESSION_RETENTION_DAYS`（7 天）清理；已发送投递/发布 30 天后清理；失败/死信保留供人工重投。
+- 保留：`bot_events` 与 `bot_inbound_targets` 按 `BOT_EVENT_RETENTION_DAYS`（7 天）清理；AI 会话映射按 `BOT_AI_SESSION_RETENTION_DAYS`（7 天）清理，长期记忆摘要按 `BOT_AI_MEMORY_RETENTION_DAYS`（365 天，默认；30–3650）独立清理；已发送投递/发布 30 天后清理；失败/死信保留供人工重投。
   删除 Bot 时 `bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles` 随 DB 级联删除；`DATA_DIR/bot-memory` 镜像文件不由删除路径自动清理，需按保留期/人工清理（用户 `/forget confirm` 会主动删除对应镜像）。
 - 前端：`/bots` 页 AppSecret 输入只提交不回显，不写入 DOM value/localStorage；未启用时只展示配置指引，不请求 Bot 列表；
   目标/发布表单只展示 `allowChat`/文本上限；角色与记忆、诊断面板只展示元数据/脱敏错误，不展示角色设定、记忆摘要或消息正文；
@@ -216,9 +216,8 @@
 25. **Node.js 运行时安全更新**：生产 `/usr/local/bin/node` 已从 v26.11.1 更新到 **v26.12.1**（2026-10-22，官方 linux-arm64 + SHA-256 校验）；
     旧二进制保留 `/usr/local/bin/node.v26.11.1` 以便回滚；npm/npx 仍指向 nvm（12.2.0），仅作构建/部署工具。后续安全更新应重复
     `docs/DEPLOY.md` §3.3 并跑带 Access token 的 smoke；Node 更新不影响 DB/schema。
-26. **Bot 出站连通性/隧道任务**：服务端探测只发无凭据只读 GET，不记录平台响应正文或 AppSecret；`/api/bots/connectivity` 只返回主机/端口/延迟/错误码。
-    Windows 隧道计划任务以当前用户 Limited 权限运行，仅转发 `127.0.0.1:18090 → 127.0.0.1:10090`，日志不含凭据；PC 离线/代理端口不可用时
-    隧道脚本持续重试，服务端状态卡显示代理不可达；恢复后触发队列扫描，不自动重启 PC 上的第三方代理进程。
+26. **Bot 出站连通性（v0.5.10 起 Pi 直连）**：服务端探测只发无凭据只读 GET（外网 + QQ 平台 API），不记录平台响应正文或 AppSecret；`/api/bots/connectivity` 仅返回 `checkedAt/checking/internet/platforms`，无 `deviceOnline/proxy`。
+    v0.5.10 删除 PC 代理隧道脚本/计划任务与 `BOT_PROXY_URL`，生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`；Pi 出站不可达时检查路由/DNS/防火墙，不要恢复旧代理变量（新版本不再读取）。
 27. **QQ 群/频道无全量消息权限**：v0.5.8 删除了 `chatTrigger`；QQ 群/频道只有 @Bot 事件进入 Chat，普通群消息不消费。若用户需要群内全量对话，只能依赖 QQ 平台能力（当前不提供），文档应明确此平台限制。
 28. **诊断事件含平台目标/用户 ID**：`GET /api/bots/:id/events` 只对登录管理员开放，不存消息正文/用户名，保留 `BOT_EVENT_RETENTION_DAYS`（7 天）；
     仍应按内部数据处理，不截图/外传；`detail` 为固定短码，避免把平台响应正文写入。
@@ -238,7 +237,7 @@
 - 每周/启用 Bot 后检查：`GET /api/bots/status` 是否 `enabled=true`、`queuedDeliveries/queuedPublishes` 是否堆积、
   `/api/bots/:id/metrics` 的成功率/失败/死信、`bot_deliveries` 死信（`status='dead'`）与 `bots.last_error`；QQ 开放平台后台回调地址/事件订阅是否仍正确；
   确认 AppSecret 未出现在 `journalctl -u antifieldcloud`。启用 Chat 后检查 `BOT_AI_ENABLED`、`bot_ai_sessions` 保留与限流（30/min、120/h）是否合理；`/ask` 已移除。
-  启用 Chat 后检查 `/api/bots/connectivity` 的 `deviceOnline`/代理端口/QQ 平台状态；PC 侧 `Get-ScheduledTask AntifieldCloudDiscordTunnel` 为 Running。
+  启用 Chat 后检查 `/api/bots/connectivity` 的 `internet`/`platforms.qq` 状态（v0.5.10 起无设备/代理字段）；PC 侧不应再有 `AntifieldCloudDiscordTunnel` 计划任务。
   v0.5.8 起另查：`POST /api/bots/:id/check` 自检结果、`GET /api/bots/:id/events` 是否有异常 `error`/`denied` 激增；
   用户自助 `/forget confirm` 后确认 `bot_ai_memories` 与 `DATA_DIR/bot-memory` 对应条目已删除；`BOT_AI_VISION_ENABLED` 是否为期望值（v0.5.8 默认 true，关闭需显式 false）；
   审计 `bot.ai.image` 只应含 mime/大小/跳过原因，不应出现图片内容或媒体 URL。
@@ -263,7 +262,7 @@
      并接受所有 QQ AppSecret 重录；
   6. 检查审计日志、`journalctl`、备份 pending 与世界/演练状态文件；Bot 额外检查 `bot_webhook_rejected`/`bot_command`/`bot.ai.image` 审计；
   7. 从备份恢复可疑文件。
-- 不要在聊天、截图、issue 中粘贴密码、TOTP 密钥、恢复码、隧道 token、age 私钥、QQ AppSecret。
+- 不要在聊天、截图、issue 中粘贴密码、TOTP 密钥、恢复码、age 私钥、QQ AppSecret。
 
 ## 6. 安全验收（已覆盖）
 
@@ -291,6 +290,7 @@
   角色/记忆管理接口只返回元数据、删除需 CSRF、审计不含正文；诊断接口不返回正文/用户名且 outcome 白名单；连接自检结果不含 AppSecret/access_token；
   分段/引用/HTML/chatTrigger 等平台相关能力自 v0.5.8 起收敛为 QQ 单平台（见下条）。
 - **v0.5.9 变更**：移除 `/ask`（AI 仅 Chat）、限速放宽（30/120/120）、`/help` 动态开放（非管理员不暴露管理命令）；schema 无迁移。`/ask` 对非管理员按未知命令被拒、管理员回帮助不调用 AI。
+- **v0.5.10 变更**：记忆摘要一次性并删除远端会话、更新串行、合并=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更尽力删除远端会话；移除代理隧道依赖与 `BOT_PROXY_URL`，连通性改 Pi 直连（快照无 `deviceOnline/proxy`）；schema 无迁移。
 - v0.5.8 Bot（历史；本地测试 + 2026-10-22 21:59–22:08 CST 真实 QQ 消息实发验收通过）：平台仅 `qq`；schema v13 删除非 QQ Bot 及级联数据（生产 Discord 数据迁移前已备份）；`BOT_AI_VISION_ENABLED` 默认 true；
   QQ 入站图片只从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；图片会交给模型 provider（SECURITY §3/§4 明示）；
   文本发布禁止媒体；长文本分段每段 ≤2000、partial 不自动重试；`lastErrorHint` 能识别适配器包装消息中的平台错误码（如 `qq_access_token_failed`）。

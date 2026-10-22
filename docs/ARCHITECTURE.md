@@ -64,17 +64,17 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
   关闭/失败/mime 非法时降级为纯文字回答；仅图片无文字时也可进入 Chat。
 - Chat：普通消息在目标 `allow_chat=1` 时进入 `chatWithAi`；C2C 私聊直接进入，群/频道仅 @Bot 事件；Chat 每 Bot×用户 30 次/分钟、AI 每小时 120 次（v0.5.9 默认），
   与每小时 AI 配额（v0.5.9 默认 120）约束；Chat 不执行命令或写操作。
-- 记忆：`BotMemoryStore` 以 `bot_ai_memories`（DB 权威）保存每 Bot×用户摘要与 `summary_session_id`，镜像到
-  `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600、临时文件 + 原子 rename）；每轮对话后调用 `BotAi.summarizeMemory` 滚动摘要，
-  失败只记日志并保留旧摘要；记忆正文不进入 HTTP API/前端。`/forget confirm` 与管理删除会同时清 DB 行与镜像。
+- 记忆（v0.5.10）：`BotMemoryStore` 以 `bot_ai_memories`（DB 权威）保存每 Bot×用户摘要，`summary_session_id` 写 NULL（列保留兼容），镜像到
+`DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600、临时文件 + 原子 rename）；摘要按 Bot×用户串行队列更新，累计 3 条或空闲 120s 触发，`BotAi.summarizeMemory` 每次新建一次性远端会话并在 `finally` 删除，
+失败只记日志并保留旧摘要；记忆保留 365 天（`BOT_AI_MEMORY_RETENTION_DAYS`）与会话 7 天分离；记忆正文不进入 HTTP API/前端；`/forget confirm`/`/reset`/角色变更会尽力删除远端会话与旧摘要会话。
 - 提示词/角色（v0.5.9）：`server/src/bot/prompts.ts` 固定生成「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」；`BotAiMode`/task 提示词与 env 覆盖已移除；私聊个人 `/role` 卡可覆盖默认角色，固定安全边界不可覆盖；群聊固定默认角色；Chat 使用 `bot_ai_sessions.mode=chat`（列保留，旧 task 行历史遗留），共享 `bot_ai_memories`；个人角色卡存 `bot_chat_roles`；`/reset` 与角色变更清理该范围全部会话映射。
 - 诊断/自检：入站事件按 `(bot_id, platform_event_id)` 写 `bot_events`（event_kind/outcome/detail/target_external_id/user_id/updated_at），
   `GET /api/bots/:id/events` 按时间窗口/outcome/分页查询元数据；`POST /api/bots/:id/check` 调 QQ 适配器换取 `access_token` 做只读自检，
   结果脱敏并刷新 `last_checked_at`；`errors.ts` 把队列 last_error（含适配器包装消息中的平台错误码）映射为 `lastErrorHint`。
 - 管理 API：目标创建/更新不再有 `chatTrigger`；`roles`/`memories` 只返回元数据并支持启停/删除，正文不进入 Web/API。
-- 连通性：`BotConnectivityMonitor` 每 60s 探测代理 TCP 端口、外网与 QQ 平台 API（只读、无凭据）；快照经
-  `GET /api/bots/connectivity` 读取、`POST /api/bots/connectivity/check` 手动复检；外网恢复时触发队列扫描；
-  Pi 的 18090 代理由 PC 登录计划任务维护，使用 wscript/VBS 无窗口启动，PC 代理端口不可达时隧道脚本循环重试。
+- 连通性（v0.5.10，Pi 直连）：`BotConnectivityMonitor` 每 60s 探测外网与 QQ 平台 API（只读、无凭据），不再探测代理端口；
+快照 `{checkedAt,checking,internet,platforms}` 经 `GET /api/bots/connectivity` 读取、`POST /api/bots/connectivity/check` 手动复检；外网恢复时触发队列扫描。
+v0.5.10 删除 PC 代理隧道脚本/计划任务与 `BOT_PROXY_URL`，生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`。
 - 告警通知：`AlertService` 事件落库后调用 `BotService.notifyAlert`，按启用 Bot × `allow_notifications` 目标写 `bot_deliveries`
   （`dedupe_key=alert:<event>:<bot>:<target>`）；目标有静默时段且当前命中时，`next_attempt_at` 设为窗口结束；通知失败只记日志，不影响告警状态机。
 - 队列：`startBots()` 在 listen 后按 `BOT_DELIVERY_INTERVAL_SECONDS`（30s）`tick`：恢复 >10 分钟卡在 `sending` 的记录 →
@@ -91,7 +91,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 
 | 模块 | 职责 |
 |---|---|
-| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*`、v0.5.2 Chat/记忆键、v0.5.3 连通性键、v0.5.7 回答/图片键；v0.5.8 删除多平台/Gateway/媒体键、`BOT_AI_VISION_ENABLED` 默认 true；v0.5.9 删除双模式提示词键、限速默认 30/120/120） |
+| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*`、v0.5.2 Chat/记忆键、v0.5.3 连通性键、v0.5.7 回答/图片键；v0.5.8 删除多平台/Gateway/媒体键、`BOT_AI_VISION_ENABLED` 默认 true；v0.5.9 删除双模式提示词键、限速默认 30/120/120；v0.5.10 新增记忆保留/合并/空闲键并删除 `BOT_PROXY_URL`） |
 | `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v13）、事务；迁移前外键一致性检查与孤儿 shares 修复；迁移 13 删除非 QQ Bot 及其级联数据 |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性 |
@@ -103,7 +103,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | `metrics/` | 采样器（60s）、范围聚合查询（1h/6h/24h/7d/30d，最多 240 点）、保留期清理 |
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索；附件（`origin=note`）与版本历史 |
 | `shares/` | 单文件/多文件分享 token/密码/过期/次数/吊销、公开元数据与逐项内容 |
-| `bot/` | QQ 官方 Bot 适配器、Chat AI（v0.5.9 起 AI 仅 Chat，`/ask`/task 提示词已移除）、长期记忆（DB+镜像）、私聊角色卡、出站连通性探测、AES-256-GCM 凭据、Webhook 验签/去重、命令（含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 分段/`format.ts` QQ 纯文本/`errors.ts` 错误提示）、QQ 入站图片下载（默认开启）、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试 |
+| `bot/` | QQ 官方 Bot 适配器、Chat AI（v0.5.9 起 AI 仅 Chat，`/ask`/task 提示词已移除）、长期记忆（v0.5.10 一次性摘要/串行队列/合并策略/365 天保留，DB+镜像）、私聊角色卡、出站连通性探测、AES-256-GCM 凭据、Webhook 验签/去重、命令（含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 分段/`format.ts` QQ 纯文本/`errors.ts` 错误提示）、QQ 入站图片下载（默认开启）、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试 |
 | `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期；Bot 通知入队 |
 | `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口 |
 | `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db） |
@@ -146,6 +146,7 @@ SQLite（WAL）核心表（schema v13）：
 - `bot_chat_roles`：`(bot_id,user_id)` 主键，保存私聊个人角色卡名字/设定/启用状态与时间戳；仅私聊 Chat 读取，启用时覆盖默认 lofii；角色变更删除对应 chat 会话映射；
   正文不通过 API/UI 暴露（管理接口只返回元数据）。
 - `bot_ai_memories`：`(bot_id, user_id)` 主键、`memory_id` 唯一、`summary`、`summary_session_id`、时间戳；每 Bot×用户一份滚动摘要，镜像文件在 `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600）；
+`summary_session_id` v0.5.10 起写 NULL（列保留兼容）；不通过 API/UI 暴露正文，按 `BOT_AI_MEMORY_RETENTION_DAYS`（365 天）清理，与会话保留期分离；`/forget confirm`/`/reset`/角色变更会清理 DB/本地映射并尽力删除远端会话。
   不通过 API/UI 暴露正文，按 AI 会话保留期清理；`/forget confirm` 与管理删除会同时清 DB 行与镜像。
 - `bot_inbound_targets`：`(bot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 

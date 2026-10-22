@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.9（**已部署并验收通过**，release `20261022T143451Z`/commit `97996dc`/schema v13 无迁移；`/healthz` = version 0.5.9/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；生产 env 迁移已完成：命令 120/AI 120/Chat 30、提示词变量已删除；**用户已实发验收通过**（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户口头确认；22:41 原话“验收通过”））。v0.5.9 移除 `/ask`（AI 全部由普通消息 Chat 承担）、限速放宽为 Chat **30/min**、AI **120/hour**、命令 **120/min**、`/help` 对非管理员开放且按身份动态显示。
-> 测试基线（Lead 实测 2026-10-22）：`npm test` **333**（server + 运维脚本；较 v0.5.8 的 337 少 4 个已移除的 /ask/task 用例）、`npm run test:web` **157**（30 文件）、`npm run check` 通过；覆盖率 Lines **91.77%** / Branches **76.98%** / Functions **85.96%**；`npm run build` 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
+> 状态：v0.5.10（**待部署验收**；生产当前为 v0.5.9/schema v13，release `20261022T143451Z`/commit `97996dc`，已验收通过）。v0.5.10 记忆/会话修复（摘要一次性并删除远端会话、记忆更新串行、合并策略=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）并移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；schema 保持 v13（无迁移），生产 env 需删除代理变量并确认 3 个记忆变量。
+> 测试基线（Lead 实测 2026-10-22，v0.5.10）：`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例）、`npm run test:web` **157**（30 文件）、`npm run typecheck` 通过；覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**（`npm run test:coverage` exit 0），`npm run build` 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -13,7 +13,7 @@
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
 - Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI（v0.5.9 起 AI 仅 Chat 模式），长期记忆落 DB + `DATA_DIR/bot-memory` 镜像；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **337**：服务端 321 + 脚本 16）+ Vitest/jsdom（**157**，30 文件），ESLint，`tsc --noEmit`，覆盖率门禁（Lines 91.78% / Branches 77.06% / Functions 86.12%）
+- 测试：`node --test`（服务端 + 运维脚本 **341**）+ Vitest/jsdom（**157**，30 文件），ESLint，`tsc --noEmit`，覆盖率门禁（Lines **91.98%** / Branches **76.92%** / Functions **85.99%**）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -55,7 +55,7 @@
 - HTTP 与 WebSocket 均校验 `Origin`（仅 app/ai 正式 origin；WS 必须带合法 Origin），拒绝时 403 + 审计。
 - `OPENCODE_HTML_MODE=shim|attributes|passthrough` 兼容 Rocket Loader/自动注入差异，不添加可见 UI。
 
-### 机器人（v0.5.9，QQ 官方 Bot 单平台）
+### 机器人（v0.5.10，QQ 官方 Bot 单平台）
 
 - **平台收敛**：v0.5.8 起仅支持 QQ 官方 Bot：QQ 用 AppSecret 派生 Ed25519（`op=13` 回调地址校验、`op=0` 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。
   Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式与 Telegram HTML/引用/线程已移除；schema v13 删除非 QQ Bot 及其级联数据（生产 Discord Bot 数据迁移前已备份）。
@@ -63,12 +63,13 @@
 - **回复形态（QQ 纯文本）**：AI 回答经清洗、去 Markdown 标记后按 QQ 单条 2000 字符分段（最多 4 段，续段前缀“（续 n/m）”，超限截断）；partial 失败 `partial_text_sent` 不自动重试；QQ 不支持媒体/附件/按钮/引用回复。
 - **图片理解（默认开启）**：`BOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；
   失败/关闭/非法图片时降级为纯文字回答；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。需模型支持 image 输入（`opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。
-- **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮对话后滚动摘要，失败保留旧摘要；记忆正文不通过 API/UI 暴露。v0.5.9 起 AI 仅 Chat 一种模式，摘要不额外占用对话轮次或 AI 每小时配额。
+- **长期记忆（v0.5.10 增强）**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；摘要会话一次性（用后删除远端会话，不再保存 `summary_session_id`）；更新按 Bot×用户串行队列；
+  累计 **3** 条或用户空闲 **120s** 触发合并摘要（`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`），审计 `bot.ai.memory` 含 `rounds`；记忆保留 **365 天**（`BOT_AI_MEMORY_RETENTION_DAYS`），与会话 7 天分离；记忆正文不通过 API/UI 暴露。
 - **AI 仅普通消息 Chat（v0.5.9）**：提示词固定为「角色卡（个人卡或默认 lofii）+ 固定只读安全边界 + 长期记忆 + 用户消息」，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；`/reset` 与角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 mode。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
 - **默认角色与私聊角色卡**：内置默认角色 `lofii`，私聊和群聊普通对话都用它；`/role` 对 QQ 私聊用户开放（其他命令仍按白名单），每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；个人卡只覆盖私聊，`off` 后回到默认 lofii；群聊固定默认角色。角色卡变更会清理该范围全部会话映射（不再区分 task/chat）。
-- **自助命令**：`/help`（按身份动态帮助）、`/role`（仅私聊）、`/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除长期记忆 DB+镜像与该 Bot×用户全部会话）；对全部用户开放。
-- **出站连通性**：`server/src/bot/connectivity.ts` 每 60 秒按“代理端口 → 外网 → QQ 平台 API”探测；`GET /api/bots/connectivity` 返回设备在线/代理端口/外网/QQ 平台状态，`POST /api/bots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/bots` 概览展示“出站网络”卡片。
-- **Windows 代理隧道**：`scripts/discord-tunnel.ps1`（沿用文件名）先探测 PC 代理 10090，再建 SSH 反向隧道；默认通过 `discord-tunnel.vbs` 以 wscript 无窗口启动；`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启的静默计划任务。调试用 `-Foreground`。
+- **自助命令**：`/help`（按身份动态帮助）、`/role`（仅私聊）、`/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除长期记忆 DB+镜像与该 Bot×用户全部会话）；对全部用户开放；v0.5.10 起 `/reset`、`/forget confirm` 与角色卡变更会尽力删除对应远端 OpenCode 会话与旧摘要会话。
+- **出站连通性（v0.5.10，Pi 直连）**：`server/src/bot/connectivity.ts` 每 60 秒探测外网与 QQ 平台只读 API；`GET /api/bots/connectivity` 仅返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/bots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/bots` 概览展示外网/QQ 平台状态。
+- **代理隧道已移除（v0.5.10）**：删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`，Bot 出站改为 Pi 直连。
 - **平台连接自检**：`POST /api/bots/:id/check`（需登录 + CSRF）调用 QQ `access_token` 换取接口，返回脱敏的通过/异常项并刷新 `last_checked_at`；`/bots` 配置页“检查连接”展示结果。
 - **诊断与管理**：`GET /api/bots/:id/events?hours&limit&offset&outcome` 返回入站事件元数据（不含正文；结果 received/ok/denied/rate_limited/ignored/error）；投递/发布/指标含 `lastErrorHint` 中文提示；`GET/PATCH/DELETE /api/bots/:id/roles…` 与 `GET/DELETE /api/bots/:id/memories…` 只返回/操作元数据（可启停/删除，正文不进入 Web/API）。
 - 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布、角色与记忆、诊断六个分区；目标支持 `allowChat` 与“最近入站目标”登记；发布仅纯文本；AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
@@ -162,6 +163,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
   `/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24；真实 QQ 消息/图片识别/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
 - 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，QQ 官方 Bot 当前不提供该能力。
+- v0.5.10（待部署验收）：记忆/会话修复（摘要会话一次性并删除远端、记忆更新串行、合并策略=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget confirm`/角色变更清理远端会话）；移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；schema v13 无迁移；测试基线 341/157（30 文件），覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、`npm run build` 通过。
 - v0.5.9 起 `/ask` 已移除（AI 全部由普通消息 Chat 承担）；v0.5.3 已实发确认 QQ C2C 与 QQ 群 @Bot Chat；v0.5.8 的真实消息/图片能力/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片端到端成功）。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；

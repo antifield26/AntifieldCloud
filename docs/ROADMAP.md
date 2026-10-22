@@ -1,6 +1,18 @@
 # 路线图
 
-## v0.5.9（当前，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST；移除 /ask + 限速放宽 + /help 动态开放）
+## v0.5.10（当前，待部署验收；记忆/会话修复 + 移除代理隧道依赖）
+
+- **记忆与会话修复**：摘要会话一次性（新建远端会话并在 `finally` 删除，不再保存 `summary_session_id`，列保留兼容）；记忆更新按 Bot×用户串行队列避免并发覆盖；
+  合并策略=累计 `BOT_AI_MEMORY_BATCH_MESSAGES=3` 条或空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120` 触发，审计 `bot.ai.memory` 增加 `rounds`；
+  `/reset`、`/forget confirm`、角色卡变更（含管理员删除角色）尽力删除远端会话与旧摘要会话。
+- **保留期分离**：AI 会话 7 天（`BOT_AI_SESSION_RETENTION_DAYS`）与长期记忆 `BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650）独立。
+- **移除代理隧道依赖**：删除 `scripts/discord-tunnel.ps1/.vbs`、`scripts/install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；删除 `BOT_PROXY_URL`；
+  生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`（空值）；连通性仅探测外网 + QQ 平台（Pi 直连），快照去掉 `deviceOnline`/`proxy`。
+- **数据/部署**：version 0.5.10，schema 保持 v13（无迁移）；`deploy.ps1` 无需改；回滚切回 v0.5.9 release 并恢复 env（含代理变量与旧隧道脚本/计划任务，如需）。
+- **状态**：本地测试基线（Lead 实测）`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例）、`npm run test:web` 157（30 文件）、`npm run typecheck` 通过；覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、build 通过；**待部署验收**。
+- **下一版**：v0.6 候选（企业微信/钉钉/飞书、多管理员审批），范围待用户确认。
+
+## v0.5.9（历史，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST；v0.5.10 起移除代理隧道依赖）
 
 - **移除 `/ask`**：`BOT_COMMANDS` 删除 `ask`（现为 `/help /status /backup /world /mc /files /role /reset /forget`）；`/ask` 作为未知命令——非管理员被拒（无回复），管理员回全量帮助、不调用 AI；
   斜杠命令不再触发 AI。

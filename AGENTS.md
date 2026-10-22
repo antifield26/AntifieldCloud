@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、QQ 官方机器人（v0.5.8 起单平台；v0.5.9 起 AI 仅普通消息 Chat、自助 `/help` 动态开放）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.9，数据库 schema v13（迁移 5–12 保留，迁移 13 删除非 QQ Bot 及级联数据）；生产已部署 v0.5.9/schema v13（release `20261022T143451Z`，commit `97996dc`，无迁移；上一 release `20261022T134852Z`（v0.5.8）保留；`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24；生产 env 已迁移），用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户口头确认；22:41 原话“验收通过”）。v0.5.9 移除 `/ask`（AI 全部由普通消息 Chat 承担）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、`/help` 对非管理员开放且按身份动态显示；schema 保持 v13（无迁移），生产 env 迁移已完成（限速 120/120/30、`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除）。OpenCode 服务端 v2.1.2。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、QQ 官方机器人（v0.5.8 起单平台；v0.5.9 起 AI 仅普通消息 Chat、自助 `/help` 动态开放；v0.5.10 记忆/会话修复并移除代理隧道依赖）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.10，数据库 schema v13（迁移 5–12 保留，迁移 13 删除非 QQ Bot 及级联数据）；生产当前为 v0.5.9/schema v13（release `20261022T143451Z`，commit `97996dc`，已验收通过），v0.5.10 待部署验收。v0.5.10 记忆/会话修复（摘要会话一次性并删除远端、更新串行、合并=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）；移除代理隧道依赖（删隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；schema 保持 v13（无迁移）。OpenCode 服务端 v2.1.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -45,7 +45,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY 标题及 lock 根版本一致
 ```
 
-当前基线（Lead 实测 2026-10-22）：`npm test` **333** 项通过（server + 运维脚本；较 v0.5.8 的 337 少 4 个已移除的 /ask/task 用例），`npm run test:web` **157** 项通过（30 个测试文件）；`npm run check` 通过（typecheck/lint/server/web 全绿），`npm run test:coverage` 通过（Lines **91.77%** / Branches **76.98%** / Functions **85.96%**），`npm run build` 通过。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）与备份 tar、告警投递等同样只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
+当前基线（Lead 实测 2026-10-22，v0.5.10）：`npm test` **341** 项通过（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例：摘要一次性/删除、合并/空闲/并发串行、`/forget` 与 `/reset` 远端删除、记忆/会话保留期分离）、`npm run test:web` **157** 项通过（30 个测试文件）、`npm run typecheck` 通过；`npm run test:coverage` exit 0（Lines **91.98%** / Branches **76.92%** / Functions **85.99%**）、`npm run build` 通过。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）与备份 tar、告警投递等同样只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
 
 ## 4. 目录与模块边界
 
@@ -60,7 +60,7 @@ server/src/
   uploads/           分片上传会话/块索引、配额预留、拼接与过期清理
   mc/                SLP、RCON、白名单
   opencode/          ai.* Host 的认证反代 + HTML 模式（shim/attributes/passthrough）+ Origin 校验
-  bot/               QQ 官方 Bot 适配器、Chat AI（v0.5.9 起 AI 仅 Chat，`/ask` 与 task 提示词已移除）、长期记忆、私聊角色卡、出站连通性探测、AES-256-GCM 凭据、Webhook 验签/去重、命令（含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 2000 字符分段/`format.ts` QQ 纯文本/`errors.ts` 错误提示）、QQ 入站图片下载（默认开启）、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试
+  bot/               QQ 官方 Bot 适配器、Chat AI（v0.5.9 起 AI 仅 Chat，`/ask` 与 task 提示词已移除）、长期记忆（v0.5.10 摘要一次性/串行/合并策略/365 天保留）、私聊角色卡、出站连通性探测、AES-256-GCM 凭据、Webhook 验签/去重、命令（含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 2000 字符分段/`format.ts` QQ 纯文本/`errors.ts` 错误提示）、QQ 入站图片下载（默认开启）、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试
   backups/           归档导入/校验、文件级恢复（skippedMissing）、世界/拉取/演练状态只读
   dashboard/         主机指标、服务状态、备份状态、Bot 开关、轻量存储用量（/api/storage）
   metrics/           60s 主机指标采样、按范围分桶聚合、30 天保留清理
@@ -71,7 +71,7 @@ server/src/
   util/              通用工具（时间、路径、响应、只读状态文件解析）
 web/src/             React 页面与组件（只依赖 docs/API.md 的契约；/bots 管理页）
 scripts/             provision/backup CLI、世界备份 backup-world.mjs、drill-verify.mjs、
-                     world-pull.ps1、drill.ps1、部署/冒烟 PowerShell、discord-tunnel.ps1/.vbs、bootstrap-env.sh、check-version.mjs
+                     world-pull.ps1、drill.ps1、部署/冒烟 PowerShell、bootstrap-env.sh、check-version.mjs（代理隧道脚本 v0.5.10 已删除）
 scripts/test/        运维脚本单元测试（node --test .test.mjs）
 deploy/              systemd（应用/健康探针/世界备份 timer）、nftables、cloudflared ingress、env 模板
 ```
@@ -85,7 +85,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
    `save-off` / `save-all flush` / `save-on`（`save-on` 放在 finally），应用 API 不可触达该能力。
 2. 文件访问只经 DB id，不接受客户端路径；文件内容不可变；禁止覆盖上传。
 3. 所有非 GET `/api` 校验 CSRF；Cookie `HttpOnly + Secure + SameSite=Lax`（仅 loopback HTTP 例外）。
-4. 密码/TOTP/隧道凭据/opencode 密码不得进仓库、日志、错误响应、前端 bundle。
+4. 密码/TOTP/opencode 密码与任何平台/Bot 凭据不得进仓库、日志、错误响应、前端 bundle。
 5. 预览仅白名单类型内联；SVG/HTML/XML 强制下载；文本预览上限 1 MiB。
 6. 代理只允许固定上游 `http://127.0.0.1:4096`，客户端 `Authorization` 必须被覆盖；HTTP/WS 均校验 `Origin`。
 7. 不修改现有 Minecraft/opencode/frpc/SSH 配置；不重启 Minecraft（除非用户明确授权并已备份）；nginx/certbot 旧入口已移除，不再作为监控项。
@@ -115,7 +115,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `allow_commands`/`allow_notifications` 默认关闭/开启、`allow_chat` 默认关闭（与命令权限独立），静默时段 `quiet_start_minute`/`quiet_end_minute`（0–1439，成对设置）；
   `chat_trigger` 列保留但 v0.5.8 逻辑不再读写；`bot_deliveries` 队列（`dedupe_key` 唯一）、`bot_publish_jobs` 仅文本发布（`media_file_ids_json` 写空）、
   `bot_events` 按 `(bot_id, platform_event_id)` 去重，记录 event_kind/outcome/detail/target_external_id/user_id/updated_at 供诊断（不存正文；outcome ∈ received/ok/denied/rate_limited/ignored/error）、`bot_ai_sessions` 按 `(bot_id,target_external_id,user_id,mode)` 复用 AI 会话（v0.5.9 起 mode 只写 chat，列保留）、
-  `bot_ai_memories` 按 `(bot_id,user_id)` 保存滚动摘要与 `summary_session_id`（镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`）、
+  `bot_ai_memories` 按 `(bot_id,user_id)` 保存滚动摘要与 `summary_session_id`（v0.5.10 起写 NULL，列保留；镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`）、
   `bot_inbound_targets` 按 `(bot_id,target_external_id,user_id)` 记录最近入站目标/用户名/类型/时间（不存正文）。QQ AppSecret 不落在日志/API 响应。
 - 审计只记录元数据，不记录文件内容、密码、TOTP、Cookie、Authorization；单条 actor≤64、target≤256、detail≤4 KiB。
 
@@ -162,9 +162,9 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `BOT_AI_MAX_PROMPT_CHARS=2000`、`BOT_AI_RATE_PER_HOUR=120`（v0.5.9 放宽；范围 1–600）、`BOT_AI_SESSION_RETENTION_DAYS=7`；`bootstrap-env.sh` 已纳管这 7 项。
   v0.5.2 新增：`BOT_CHAT_RATE_PER_MINUTE`（v0.5.9 默认 **30**，范围 1–120；Chat 每 Bot×用户每分钟）、`BOT_AI_MEMORY_MAX_CHARS=4096`（记忆摘要上限 512–16384）。
   v0.5.4 曾新增 `BOT_AI_TASK_PROMPT=`/`BOT_AI_CHAT_PROMPT=`；**v0.5.9 已删除**（AI 仅 Chat，固定为角色卡 + 安全边界 + 记忆 + 用户；`bootstrap-env.sh` 不再纳管）；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃，不再读取。
-  v0.5.3 新增：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`、
-  `BOT_PROXY_URL=`（空则复用 `HTTPS_PROXY`/`HTTP_PROXY`）；`bootstrap-env.sh` 已纳管这 4 项。
+  v0.5.3 新增：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`；`bootstrap-env.sh` 已纳管。`BOT_PROXY_URL` 曾用于代理探测，**v0.5.10 已删除**（Pi 直连，连通性仅外网+QQ 平台；生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`）。
   v0.5.9 变更：`/ask` 与 task 模式移除、`/help` 对所有用户开放（非管理员仅公开命令 + Chat 说明）、限速默认放宽（Chat 30/min、AI 120/h、命令 120/min）；生产 env 已于 2026-10-22 迁移（120/120/30、提示词变量删除）。
+  v0.5.10 新增：`BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650，独立于 7 天会话保留）、`BOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600，0 关闭空闲触发）；`bootstrap-env.sh` 已纳管。
   v0.5.7 新增：`BOT_AI_MAX_REPLY_CHARS=4000`（AI 回答上限，1000–12000）、`BOT_AI_VISION_ENABLED=true`（v0.5.8 默认开启；图片理解总开关）、
   `BOT_AI_IMAGE_MAX_BYTES=10485760`（单张入站图片上限，1–20 MiB）；`bootstrap-env.sh` 已纳管这 3 项。图片理解需 OpenCode prompt files
   与支持 image 输入的模型；生产已只读验证 `opencode-go/deepseek-v4.1-flash` 支持 image。
@@ -178,6 +178,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T085120Z`/schema v10；v0.5.5 私聊角色卡 `/role` 已上线并由用户实发确认；v0.5.6 内置默认角色 lofii 与简洁 `/role` 文案已上线；v0.5.7 已部署 release `20261022T131813Z`/schema v12（commit `2f429be`，含 `lastErrorHint` 错误码识别修复）。
   **v0.5.8 已部署**（2026-10-22，schema v13）：release `20261022T134852Z`/commit `96294e4`，`/healthz` version 0.5.8/schemaVersion 13，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；迁移 13 后 `bots` 仅 1 行 QQ Bot，原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留；图片默认开启（`botAiVisionEnabled=true`），连通性仅 `qq`，新进程无 Discord Gateway；真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST：/reset、/forget confirm、/role、/help、文本 Chat、图片 148563 B jpeg 端到端均有生产证据；用户 22:10 CST 确认“验收通过”）。
   **v0.5.9 已部署**（2026-10-22 22:35 CST，schema v13、无迁移）：release `20261022T143451Z`/commit `97996dc`，`/healthz` version 0.5.9/schemaVersion 13，smoke 16/16 与 24/24；生产 env 迁移实测（命令 120/AI 120/Chat 30、提示词变量计数 0、权限 640、APP_VERSION=0.5.9）；运行时 `botChatRatePerMinute=30`/`botAiRatePerHour=120`/`botCommandRatePerMinute=120`/`botAiVisionEnabled=true`/`botAiEnabled=true`；前端 `/`、`/bots` 200（bundle `index-CFrhFtH2.js` 644849 bytes，含“每分钟 30 次”与“AI 对话由普通消息 Chat 承担”，不含 `/ask`）；用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户口头确认）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。
+  **v0.5.10 待部署验收**（schema v13、无迁移）：记忆/会话修复（摘要一次性并删除远端、串行、合并=3 条或空闲 120s、记忆 365 天/会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）；移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；生产 env 清理与 3 个记忆变量就位后重启；证据待部署后回填 `docs/ACCEPTANCE.md`。
   QQ 群/频道仅 @Bot 事件进入、C2C 私聊直接进入；QQ C2C 无需登记即可 Chat，但命令仍需白名单；`/help`、`/role`、`/reset`、`/forget confirm` 对全部私聊/群聊用户开放（自助命令不要求目标或用户白名单）。
 - 测试证据边界：QQ Bot 适配器、Chat/记忆、AI 对话、图片下载、自检/诊断、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），
   未做真实 QQ 平台限流/签名漂移/故障等负路径验收；真实 QQ 消息已于 2026-10-22 21:59–22:08 CST 实发验收通过（13 条入站事件、图片端到端），证据见 `docs/ACCEPTANCE.md`。
@@ -211,6 +212,6 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
     v0.5.8 起图片理解默认开启：需 `BOT_AI_ENABLED=true` 且模型支持 image 输入；QQ 入站图片经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀、
     image mime 白名单与 `BOT_AI_IMAGE_MAX_BYTES` 下载后交给 OpenCode；图片会发给模型 provider（见 `docs/SECURITY.md`），可设 `BOT_AI_VISION_ENABLED=false` 关闭。
     v0.5.9 起无 `/ask`：普通消息 Chat 在已部署环境配置 `BOT_AI_ENABLED=true`（可选 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`）并验证真实模型回复；QQ 无平台侧命令注册。
-11. 安装 Windows Bot 代理隧道任务（`.\scripts\install-tunnel-task.ps1`，当前用户权限）：登录启动、异常重启，静默 wscript/VBS 启动，不占前台 shell；先探测 PC 代理 10090；日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。调试用 `discord-tunnel.ps1 -Foreground`，移除用 `install-tunnel-task.ps1 -Remove`。
+11. Windows Bot 代理隧道任务 **v0.5.10 起已移除**：仓库删除 `discord-tunnel.ps1/.vbs`、`install-tunnel-task.ps1`，PC 计划任务 `AntifieldCloudDiscordTunnel` 已移除；Bot 出站改为 Pi 直连，生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`（空值）。
 12. SSH 仅公钥切换后保留 **24h 回滚窗口**：期间保留旧 drop-in 备份与一个已建立的 SSH 会话；确认新会话/自动化脚本
     （smoke、备份、世界拉取）均能公钥登录后，再按 `docs/DEPLOY.md` §9.7 结束回滚窗口。

@@ -1,4 +1,4 @@
-# AntifieldCloud HTTP API 契约（v9，2026-10-22）
+# AntifieldCloud HTTP API 契约（v10，2026-10-22）
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源。
 
@@ -538,7 +538,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `POST /api/notes/:id/versions/:versionId/restore` → 200 Note（恢复前自动保存当前版本快照）。
 - 版本在标题/正文/标签变化时自动生成，每笔记保留最近 `NOTE_VERSIONS_KEEP`（默认 20）条；删除笔记级联删除版本与附件。
 
-## 14. Bot 平台（v0.5.9，QQ 官方 Bot）
+## 14. Bot 平台（v0.5.10，QQ 官方 Bot）
 
 Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/bots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/bot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/DEPLOY.md` §5.2）。
 
@@ -546,7 +546,7 @@ Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` �
 
 v0.5.2 起的普通消息 Chat 语义保留：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat；C2C 私聊直接进入，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”触发）；非管理员只能 Chat，不能执行斜杠命令。v0.5.9 起限速放宽：Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 **30**）次、每小时 `BOT_AI_RATE_PER_HOUR`（默认 **120**）次；Chat 是只读 AI 对话，不产生写操作。
 
-v0.5.3 起的出站连通性保留：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测代理端口、外网与 QQ 平台 API；`GET /api/bots/connectivity` 返回快照，`POST /api/bots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 AppSecret 或平台响应正文；网络恢复后触发投递/发布队列扫描。
+v0.5.3 起的出站连通性保留（v0.5.10 改为 Pi 直连）：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测外网与 QQ 平台 API，不再探测代理端口；`GET /api/bots/connectivity` 返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/bots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 AppSecret 或平台响应正文；网络恢复后触发投递/发布队列扫描。
 
 v0.5.5/v0.5.6 角色卡保留：`/role` 仅私聊，个人卡可覆盖默认 lofii，群聊固定默认；角色设定不通过 HTTP API/UI 暴露。v0.5.9 起 AI 仅普通消息 Chat：提示词固定为「角色卡 + 固定安全边界 + 长期记忆 + 用户」，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 与 task 模式移除；`bot_ai_sessions.mode` 列保留但只写 `chat`；`/reset` 与角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 `mode`。
 
@@ -555,12 +555,16 @@ v0.5.8 变更：`BOT_AI_VISION_ENABLED` 默认 `true`，QQ 入站图片（`d.att
 删除 Discord Gateway / `BotSummary.gateway` / 目标 `chatTrigger` / 发布 `mediaFileIds` / 媒体与按钮相关错误码；schema v13 删除非 QQ Bot 数据。
 v0.5.9 变更：移除 `/ask`（`BOT_COMMANDS` 无 ask）；`/help` 对所有用户开放且动态（非管理员仅 `/help /role /reset /forget confirm` + Chat 说明，管理员全量且无 `/ask`；未知命令管理员回全量帮助、非管理员被拒）；
 AI 仅 Chat，`/reset`/角色变更清理全部会话映射；限速默认 30/120/120（Chat/min、AI/hour、命令/min），范围分别为 1–120、1–600、1–600。
+v0.5.10 变更：记忆摘要会话一次性（每次新建远端 OpenCode 会话并在 `finally` 删除，不再保存 `summary_session_id`，列保留兼容；响应 `BotMemorySummary` 不含会话 id）；
+记忆更新按 Bot×用户串行队列；合并策略=累计 `BOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）轮或用户空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s，0 关闭）触发，`bot.ai.memory` 审计增加 `rounds`；
+保留期分离：会话 `BOT_AI_SESSION_RETENTION_DAYS`（默认 7 天）与记忆 `BOT_AI_MEMORY_RETENTION_DAYS`（默认 365 天，30–3650）独立；`/reset`、`/forget confirm`、角色卡变更（含管理员删除）清理本地映射时尽力删除远端会话与旧摘要会话；
+移除代理隧道依赖：删除 `BOT_PROXY_URL` 与 PC 隧道脚本，连通性改 Pi 直连，快照去掉 `deviceOnline`/`proxy`。
 
 ### 对象
 
 ```json
 BotStatus:  { "enabled": true, "keyConfigured": true, "bots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null }
-BotConnectivitySnapshot: { "checkedAt": "…|null", "checking": false, "deviceOnline": true, "proxy": { "configured": true, "host": "127.0.0.1", "port": 18090, "portReachable": true, "latencyMs": 1, "error": null }, "internet": { "reachable": true, "latencyMs": 230, "status": 200, "error": null }, "platforms": { "qq": { "reachable": true, "latencyMs": 180, "status": 404, "error": null } } }
+BotConnectivitySnapshot: { "checkedAt": "…|null", "checking": false, "internet": { "reachable": true, "latencyMs": 230, "status": 200, "error": null }, "platforms": { "qq": { "reachable": true, "latencyMs": 180, "status": 404, "error": null } } }
 BotSummary: { "id": "uuid", "platform": "qq", "name": "运维通知", "enabled": true, "config": { "appId": "1029…" }, "webhookUrl": "https://app.example.com/api/bot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1 }
 BotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "user_openid/group_openid/channel_id", "label": "运维告警群", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
 BotInboundTarget: { "botId": "uuid", "targetExternalId": "QQ 目标 ID", "targetKind": "channel|user|group", "userId": "QQ 用户 openid", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
@@ -593,7 +597,7 @@ v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPubl
   - `PATCH /api/bots/:id/roles/:userId` body `{enabled:boolean}` → `{ "ok": true }`；需要会话 + CSRF；启停指定用户角色卡，不存在/非布尔值 `404/400`。
   - `DELETE /api/bots/:id/roles/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除角色卡并清理该用户 chat 会话（task 会话与记忆保留），不存在 `404`。
 - `GET /api/bots/:id/memories?limit=20&offset=0` → `{ "items": [BotMemorySummary], "total": n }`；需要会话；只返回元数据（用户/摘要长度/时间），不返回摘要正文。
-  - `DELETE /api/bots/:id/memories/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除该用户长期记忆 DB 摘要与镜像文件（不清 AI 会话；清全部会话由用户自助 `/forget confirm`），不存在 `404`。
+  - `DELETE /api/bots/:id/memories/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除该用户长期记忆 DB 摘要与镜像文件（不清 AI 会话；清全部会话与远端会话由用户自助 `/forget confirm`），不存在 `404`；v0.5.10 起删除不触碰远端会话。
 - `GET /api/bots/:id/inbound-targets?limit=50` → `{ "items": [BotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50；越界按边界截断）。
   只记录最近命令/Chat 事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `BOT_EVENT_RETENTION_DAYS` 清理。`/bots` 目标分区用该接口做“最近入站目标”登记。
 - `POST /api/bots` body `{platform,name,token,config?}` → `200 { "bot": BotSummary }`。
@@ -611,6 +615,7 @@ v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPubl
     v0.5.8 起不再有 `chatTrigger`（QQ 群/频道仅 @Bot，C2C 直接进入），传该字段忽略/400。
   - `PATCH /api/bots/:id/targets/:targetId` body `{label?,kind?,allowCommands?,allowNotifications?,allowChat?,quietStartMinute?,quietEndMinute?}` → `{ "target": BotTarget }`；`null` 表示清空，未传字段沿用当前值；合并后静默起止必须同时有值或同时为空且不能相同，否则 `400`；`DELETE` → `{ "ok": true }`。
   - 命令必须同时满足：命令所在会话的 `externalId` 已登记为 `allow_commands=1` 的目标，且发送者 `userId` 已登记为 `kind='user'` 且 `allow_commands=1` 的目标；否则不执行（仍返回 200）并写 `bot.command.denied` 审计。例外：`/help`、`/role`（仅私聊）、`/reset`、`/forget confirm` 为自助命令，不要求目标/用户白名单；`/ask` 为未知命令（非管理员被拒、管理员回全量帮助）。
+  v0.5.10 起 `/reset`、`/forget confirm`、角色卡变更（含管理员删除角色）在清理本地映射时尽力删除对应远端 OpenCode 会话与旧摘要会话（删除失败只记日志，不影响响应）。
   - `allowChat` 只授权普通消息 Chat，不授予斜杠命令：Chat 只需目标 `allow_chat=1`（不要求用户白名单）；C2C 私聊直接进入，群/频道仅 @Bot 事件进入。非管理员因此只能 Chat，不能借 Chat 执行命令。Chat 仍受 `BOT_CHAT_RATE_PER_MINUTE` 与 `BOT_AI_RATE_PER_HOUR` 限制。
 - 投递：
   - `GET /api/bots/:id/deliveries?limit=50`（1–200）→ `{ "items": [BotDelivery] }`，按创建时间倒序。
@@ -626,7 +631,7 @@ v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPubl
     - 长文本分段发送：按 2000 字符分段（最多 4 段、续段前缀、超限截断）；已发送部分后失败时任务标记 `failed` 且 `last_error` 含 `partial_text_sent`，**不自动重试**（避免重复外发），需人工确认后重建任务。
     - 限流 20 次/小时；队列每 `BOT_DELIVERY_INTERVAL_SECONDS`（30）扫描，失败按指数退避（30s 起，≤1h），达到 `BOT_DELIVERY_MAX_ATTEMPTS`（5）标记 `failed`/死信。
   - `DELETE /api/bots/:id/publish/:jobId` → `{ "ok": true }`；仅 `queued|draft` 可取消，其它 `404`。
-- 审计动作：`bot.create/update/delete`、`bot.target.create/update/delete`、`bot.delivery.retry/partial`、`bot.publish.create/sent/cancel/partial`、`bot.command`、`bot.command.denied`、`bot.chat`、`bot.chat.denied`、`bot.ai.chat`、`bot.ai.memory`、`bot.ai.image`、`bot.webhook.rejected/rate_limited`、`bot.event.ignored`、`bot.test`、`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin`、`reauth_bot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。
+- 审计动作：`bot.create/update/delete`、`bot.target.create/update/delete`、`bot.delivery.retry/partial`、`bot.publish.create/sent/cancel/partial`、`bot.command`、`bot.command.denied`、`bot.chat`、`bot.chat.denied`、`bot.ai.chat`、`bot.ai.memory`（v0.5.10 起含 `rounds`）、`bot.ai.image`、`bot.webhook.rejected/rate_limited`、`bot.event.ignored`、`bot.test`、`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin`、`reauth_bot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。
 
 ### 公开 Webhook
 

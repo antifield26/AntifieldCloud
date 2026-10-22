@@ -2,7 +2,17 @@
 
 本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.9**（schema v13，**已部署并验收通过 2026-10-22**，release `20261022T143451Z`/commit `97996dc`，无迁移；上一 release `20261022T134852Z`（v0.5.8）保留；`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24；生产 env 迁移完成），用户实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
 
-## v0.5.9 补充（当前，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST）
+## v0.5.10 补充（当前，待部署验收）
+
+- **记忆与会话修复**：摘要会话一次性并删除远端会话（不再保存 `summary_session_id`，列保留）；记忆更新按 Bot×用户串行队列；合并策略=累计 3 条或空闲 120s 触发，审计 `bot.ai.memory` 含 `rounds`；
+  `/reset`、`/forget confirm`、角色卡变更（含管理员删除）尽力删除远端会话与旧摘要会话。
+- **保留期分离**：会话 7 天（`BOT_AI_SESSION_RETENTION_DAYS`）与长期记忆 `BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650）独立。
+- **移除代理隧道依赖**：删除 `scripts/discord-tunnel.ps1/.vbs`、`scripts/install-tunnel-task.ps1` 与 PC 计划任务；删除 `BOT_PROXY_URL`；生产 env 删除代理变量；
+  连通性仅 `internet` + `platforms`（外网 + QQ 平台，Pi 直连），不再有 `deviceOnline`/`proxy`。
+- **数据/部署**：version 0.5.10，schema 保持 v13（无迁移）；`deploy.ps1` 无需改；回滚切回 v0.5.9 release 并恢复 env（代理变量/旧隧道脚本与计划任务，如需）。
+- **状态**：本地测试基线 `npm test` 341（333+8）、`npm run test:web` 157（30 文件）、`npm run typecheck` 通过；覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、build 通过；待部署验收。
+
+## v0.5.9 补充（历史，已部署并验收通过；v0.5.10 起移除代理隧道依赖）
 
 - **移除 `/ask`**：`BOT_COMMANDS` 无 `ask`；非管理员按未知命令被拒（无回复），管理员回全量帮助、不调用 AI；斜杠命令不再触发 AI。
 - **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」，`BotAiMode`/task 提示词与 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 移除；
