@@ -135,7 +135,8 @@ export class MovementManager {
       if (error instanceof MovementError) throw error
       const message = error instanceof Error ? error.message : String(error)
       if (/NoPath|no path/i.test(message)) throw new MovementError('找不到过去的路，可能被挡住了')
-      if (/Timeout|timeout/i.test(message)) throw new MovementError('走太久了，我先停下')
+      if (error instanceof Error && error.name === 'Timeout') throw new MovementError('想不出过去的路，可能太远了')
+      if (/Timeout|timeout|long to decide/i.test(message)) throw new MovementError('走太久了，我先停下')
       throw new MovementError(`移动失败：${message}`)
     } finally {
       if (timeout) clearTimeout(timeout)

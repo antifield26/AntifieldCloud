@@ -118,6 +118,7 @@ export class AiChatService {
       }
       await chatSender.say(text, 'ai')
       await memory.append(item.username, uuid, item.message, text)
+      state.setMemory(memory.stats())
       state.setAi({ lastLatencyMs: result.latencyMs, lastError: null })
       logger.info('ai reply sent', { username: item.username, latencyMs: result.latencyMs, chars: text.length })
     } catch (error) {

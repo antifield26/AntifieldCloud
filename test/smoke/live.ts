@@ -22,7 +22,8 @@ const bot = mineflayer.createBot({
 
 const pending: Array<{ predicate: (message: string) => boolean, resolve: (message: string) => void, timer: NodeJS.Timeout }> = []
 
-bot.on('chat', (_user: string, message: string) => {
+bot.on('chat', (user: string, message: string) => {
+  if (user !== 'lofii') return
   for (const waiter of [...pending]) {
     if (waiter.predicate(message)) {
       clearTimeout(waiter.timer)
@@ -49,10 +50,26 @@ function fail (message: string): never {
   process.exit(1)
 }
 
+function sleep (ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function waitForLofiiJoin (timeoutMs: number): Promise<void> {
+  const started = Date.now()
+  while (Date.now() - started < timeoutMs) {
+    if (bot.players.lofii) return
+    await sleep(500)
+  }
+  throw new Error(`Lofii did not join within ${timeoutMs}ms (dynamic presence)`)
+}
+
 bot.once('spawn', async () => {
   try {
     console.log('[smoke] spawned at', bot.entity?.position)
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    console.log('[smoke] waiting for Lofii to join (dynamic presence)')
+    await waitForLofiiJoin(Number(process.env.SMOKE_WAIT_JOIN_MS ?? 45000))
+    console.log('[smoke] Lofii is online')
+    await sleep(500)
 
     console.log('[smoke] step: status')
     bot.chat('Lofii 状态')
@@ -65,8 +82,8 @@ bot.once('spawn', async () => {
     console.log('[smoke] wave reply:', waveReply)
 
     if (!skipAi) {
-      console.log('[smoke] step: ai chat')
-      await new Promise(resolve => setTimeout(resolve, 10500))
+      console.log('[smoke] step: ai chat (waiting out per-player AI cooldown)')
+      await sleep(11000)
       bot.chat('Lofii 你好，用一句话介绍你自己')
       const aiReply = await waitForLofii(message => message.trim().length > 0, 45000)
       console.log('[smoke] ai reply:', aiReply)
@@ -86,4 +103,4 @@ bot.on('end', reason => {
   if (pending.length > 0) fail(`disconnected before replies: ${reason}`)
 })
 
-setTimeout(() => fail('overall timeout'), 120000)
+setTimeout(() => fail('overall timeout'), 180000)
