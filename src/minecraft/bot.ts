@@ -9,6 +9,20 @@ import { extractChatMessage, type ChatLike, type ParsedChatMessage } from './cha
 
 const { pathfinder } = pathfinderPackage
 
+function normalizeReason (reason: unknown): string {
+  if (typeof reason === 'string') return reason
+  if (reason && typeof reason === 'object') {
+    const value = (reason as { value?: unknown }).value
+    if (typeof value === 'string') return value
+    try {
+      return JSON.stringify(reason)
+    } catch {
+      return String(reason)
+    }
+  }
+  return String(reason)
+}
+
 export interface MinecraftClientDeps {
   config: Config
   logger: Logger
@@ -162,16 +176,16 @@ export class MinecraftClient implements BotController {
       })
 
       bot.on('kicked', (reason: string) => {
-        this.lastKickReason = reason
-        logger.warn('minecraft kicked', { reason })
+        this.lastKickReason = normalizeReason(reason)
+        logger.warn('minecraft kicked', { reason: this.lastKickReason })
       })
 
       bot.on('error', (error: Error) => {
         logger.warn('minecraft error', { error: error.message })
       })
 
-      bot.on('end', (reason: string) => {
-        const finalReason = this.lastKickReason ?? reason ?? 'ended'
+      bot.on('end', (reason: unknown) => {
+        const finalReason = this.lastKickReason ?? normalizeReason(reason)
         const wasManual = this.manualStop
         const wasSpawned = this.spawned
         const wasStarting = this.starting

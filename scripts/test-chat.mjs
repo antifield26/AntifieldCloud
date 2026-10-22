@@ -18,17 +18,31 @@ let index = 0
 
 bot.once('spawn', () => {
   console.log('[tester] spawned at', bot.entity.position)
-  const timer = setInterval(() => {
-    const message = messages[index]
-    if (message === undefined) {
-      clearInterval(timer)
-      setTimeout(() => bot.quit('tester done'), 3000)
-      return
+  const waitForLofii = async () => {
+    if (process.env.WAIT_LOFII !== '1') return
+    const started = Date.now()
+    while (Date.now() - started < 45000) {
+      if (bot.players.lofii) {
+        console.log('[tester] lofii is online')
+        return
+      }
+      await new Promise(resolve => setTimeout(resolve, 500))
     }
-    index += 1
-    console.log('[tester] sending:', message)
-    bot.chat(message)
-  }, Number(process.env.SEND_INTERVAL_MS ?? 3000))
+    console.log('[tester] lofii did not join in time')
+  }
+  void waitForLofii().then(() => {
+    const timer = setInterval(() => {
+      const message = messages[index]
+      if (message === undefined) {
+        clearInterval(timer)
+        setTimeout(() => bot.quit('tester done'), Number(process.env.KEEP_MS ?? 3000))
+        return
+      }
+      index += 1
+      console.log('[tester] sending:', message)
+      bot.chat(message)
+    }, Number(process.env.SEND_INTERVAL_MS ?? 3000))
+  })
 })
 
 bot.on('chat', (u, m) => console.log('[tester] chat', u, '|', m))
