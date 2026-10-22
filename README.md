@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.4（已部署，release `20261022T082027Z`/schema v10；Node.js 运行时 **v26.12.1**；Bot 任务/对话双模式提示词、独立 OpenCode 会话、共享长期记忆、QQ C2C 开放 Chat；OpenCode **v2.1.2**；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.4（已部署，release `20261022T085120Z`/schema v10；Node.js 运行时 **v26.12.1**；Bot 任务/对话双模式提示词、独立 OpenCode 会话、共享长期记忆、QQ C2C 开放 Chat（管理员/非管理员均已实发确认）；OpenCode **v2.1.2**；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 

@@ -1,6 +1,6 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.4**（schema v10）；生产待部署 v0.5.4，上一版 v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`）。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.4**（schema v10）；生产已部署 release `20261022T085120Z`，上一版 v0.5.3/schema v9。
 
 ## v0.5.4 补充（当前）
 
@@ -9,7 +9,7 @@
 - **会话隔离**：schema v10 重建 `bot_ai_sessions`，主键含 mode；旧会话归 chat，`/ask` 新建 task；共享长期记忆。
 - **QQ C2C**：QQ 私聊对任意用户开放 Chat（接触面由平台“谁可添加 Bot”控制）；群/频道与其他平台仍需目标登记；命令仍走白名单。
 - **审计**：`bot.ai.chat` 记录 mode；不记录提示词/记忆正文。
-- **状态**：本地测试 312/141、`npm run check` 通过；已部署 release `20261022T082027Z`/schema v10、smoke 24/24；QQ C2C 开放 Chat 补丁待重部署验收。
+- **状态**：本地测试 312/141、`npm run check` 通过；已部署 release `20261022T085120Z`/schema v10、smoke 24/24；QQ C2C 管理员/非管理员均实发确认。
 
 ## v0.5.3 补充（历史）
 

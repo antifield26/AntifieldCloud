@@ -14,7 +14,8 @@
 
 ### Deployment
 
-- 版本/文档/`APP_VERSION` 升到 0.5.4；`deploy.ps1` smoke 期望 schema 10；生产部署、迁移前快照、smoke 与真实 `/ask`/Chat 验收待执行。
+- 版本/文档/`APP_VERSION` 升到 0.5.4；`deploy.ps1` smoke 期望 schema 10。
+- 生产已部署 release `20261022T085120Z`（commit `b2bdc8d`，schema v10，smoke 24/24）；`/ask` 任务模式、Chat 对话模式、QQ C2C 管理员/非管理员均已实发确认。
 - 本版无 UI 提示词编辑；修改提示词需改 env 并重启。
 
 ## [v0.5.3] - 2026-10-22

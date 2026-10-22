@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.4，数据库 schema v10（迁移 5–9 保留，迁移 10 把 `bot_ai_sessions` 主键扩展为 task/chat 双模式）；生产已部署 v0.5.4/schema v10（release `20261022T082027Z`），v0.5.4 QQ C2C 开放 Chat 补丁已上线。OpenCode 服务端 v2.1.2。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.4，数据库 schema v10（迁移 5–9 保留，迁移 10 把 `bot_ai_sessions` 主键扩展为 task/chat 双模式）；生产已部署 v0.5.4/schema v10（release `20261022T085120Z`），v0.5.4 QQ C2C 开放 Chat 已由非管理员实发确认。OpenCode 服务端 v2.1.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -168,7 +168,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
   v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并通过带 token 的 smoke。
-  v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T082027Z`/schema v10，任务/对话双模式提示词与 QQ C2C 开放 Chat 已上线；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，Discord DM、Discord #general、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已由用户实发确认收到 AI 回复；QQ 群目标已登记（allow_chat=1/allow_commands=1），其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记；QQ C2C 无需登记即可 Chat，但命令仍需白名单。
+  v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T085120Z`/schema v10，任务/对话双模式提示词与 QQ C2C 开放 Chat 已上线；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，Discord DM、Discord #general、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已由用户实发确认收到 AI 回复；QQ 群目标已登记（allow_chat=1/allow_commands=1），其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记；QQ C2C 无需登记即可 Chat，但命令仍需白名单。
 - 测试证据边界：Bot 适配器（含 QQ）、Chat/记忆、AI 对话、多附件、按钮、Discord Gateway（假 WebSocket）、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），
   未做真实平台/真实模型/真实网络的负路径验收；发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；

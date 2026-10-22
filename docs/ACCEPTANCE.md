@@ -8,17 +8,20 @@
 >
 > **v0.5.3 已部署**：2026-10-22 部署到生产 Pi（release `20261022T065126Z`，commit `df06383`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。出站连通性探测已记录代理端口/外网/平台可达，断开 PC 隧道后检测为不可用、恢复后 Gateway 立即重连；OpenCode 已升级 v2.1.2。QQ 群事件已到达并定位为群目标未登记，登记 `68611590B477339A04302BB23B426244` 后用户确认 @Bot 已收到 AI 回复。
 >
-> **v0.5.4 进行中**：任务/对话双模式提示词、独立 OpenCode 会话、共享长期记忆、schema v10 已实现；本地测试通过，生产部署/smoke 待执行。
+> **v0.5.4 已部署**：2026-10-22 部署到生产 Pi（release `20261022T085120Z`，commit `b2bdc8d`，schema v10）；带 Cloudflare Access service token 的完整 smoke **24/24**。`/ask` 任务模式、Chat 对话模式、QQ C2C 管理员/非管理员对话均实发确认；schema v9→v10 迁移通过，旧会话归 chat，task/chat 会话分离；共享长期记忆。
 
-## v0.5.4（当前，待部署验收）
+## v0.5.4（当前，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
-- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产仍为 v0.5.3/schema 9）+ Windows 本地工作区
-- **双模式提示词**：`/ask` 任务导向、普通 Chat 对话导向；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖；固定安全边界始终追加；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T085120Z`，schema 10）+ Windows 本地工作区
+- **双模式提示词**：`/ask` 任务导向、普通 Chat 对话导向；Chat 不再声明 AntifieldCloud/助手身份、不主动谈业务；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖；固定安全边界始终追加；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - **独立会话**：schema v10 的 `bot_ai_sessions.mode`；旧会话迁为 chat，`/ask` 新建 task；shared memory 不变。
 - **QQ C2C**：QQ 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性）；QQ 群/频道与其他平台私聊仍需目标 `allow_chat`；命令仍只认白名单。
 - **本地验证**：`npm test` 312（含 QQ C2C 开放/非 QQ 不扩散/群拒绝测试）、`npm run test:web` 141、`npm run check`、`check-version`、coverage；迁移 v6→v10 与 v9→v10 测试通过。
-- **待部署**：生产迁移/healthz/smoke、`/ask` 与 Chat 真实模型验收、备份/tag/release。
+- **部署验证**：`/healthz` `{"ok":true,"version":"0.5.4","schemaVersion":10}`；完整 smoke **24/24**；v9→v10 迁移前快照 `db-predeploy-20261022T082056427Z.sqlite`（sha256 `840abf79…`）；补丁部署前快照 `db-predeploy-20261022T085149190Z.sqlite`（sha256 `dd24862d…`）。
+- **真实对话**：管理员 `/ask` 审计 `mode=task`、普通 Chat `mode=chat`；非管理员 QQ C2C 审计 `bot.chat` 含 `open=qq_c2c`，`bot.ai.chat` `mode=chat`；`bot_ai_sessions` 出现独立 task/chat 行，`bot_ai_memories` 共享写入。
+- **临时故障**：首次验收时 PC 反向代理隧道进程退出导致 QQ 回复 `qq_access_token_failed`（非提示词逻辑）；重启计划任务后 `Bot 出站网络已恢复`，Discord Gateway 重连，`/ask`/Chat 恢复正常。
+- **备份**：部署后 inc `snapshot-20261022T085536550Z-inc.tar.gz`（98506 bytes，sha256 `6c503057…`）已由 Windows 计划任务拉取并 ack，`secrets=ok`。
 
 ## v0.5.3（历史，已部署）
 
