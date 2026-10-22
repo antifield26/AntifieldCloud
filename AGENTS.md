@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.3，数据库 schema v9（迁移 5/6/7/8 保留，迁移 9 增加 `bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`），v0.5.3 待部署。OpenCode 服务端 v2.1.2。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.3，数据库 schema v9（迁移 5/6/7/8 保留，迁移 9 增加 `bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；生产已部署 v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`）。OpenCode 服务端 v2.1.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收

@@ -15,7 +15,7 @@
 - 当前 schema v9（迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：v0.5.3/schema v9（release `20261021T114908Z`，commit `abeabc7`，迁移前快照 `db-predeploy-20261021T114936153Z.sqlite`；带 Access token 的 smoke 24/24）。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且 Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认，多附件/按钮真实联调待补充。
+- 生产现状：v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`，迁移前快照 `db-predeploy-20261022T065156149Z.sqlite`；带 Access token 的 smoke 24/24）。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且 Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；v0.5.3 出站连通性探测/自动恢复已实测，QQ 群事件仍待平台订阅/入群 @ 复核。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -487,10 +487,10 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - Web 恢复：只允许导入/校验/文件级恢复到新目录（`skippedMissing` 会剔除并在结果报告）；整库恢复仍按 `docs/BACKUP.md` §8 离线执行。
 - 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载。
 - Bot 媒体：发布只接受 `origin='user'` 的活动普通文件，最多 5 个、单 ≤10 MiB、总 ≤50 MiB；笔记附件/回收站文件不可发布；QQ 无媒体。
-- 验收：`npm run check`（本地 293/140）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
-  `smoke.ps1 -ExpectedVersion 0.5.3`、Bot 四平台联调（§9.8；v0.5.1 QQ 真实回调已验证，v0.5.3 Chat/多附件/Gateway 待联调）、备份导入/校验/恢复（临时 DATA_DIR）、
+- 验收：`npm run check`（本地 300/141）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
+  `smoke.ps1 -ExpectedVersion 0.5.3`、Bot 四平台联调（§9.8；v0.5.1 QQ 真实回调、v0.5.2 Chat、v0.5.3 连通性已验证；QQ 群事件待平台订阅/入群 @ 复核）、备份导入/校验/恢复（临时 DATA_DIR）、
   世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 9` 演练通过；OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
-  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.3 已部署/迁移 v9/smoke 24/24，Chat/记忆真实模型与 Discord Gateway 长连接待开启生产目标与 Intent 后验证。
+  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.3 已部署/smoke 24/24，OpenCode v2.1.2 Basic/session 通过，Chat/记忆真实模型与 Discord Gateway 长连接已由用户实发确认。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -736,6 +736,7 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
    平台发 `op=13` 时应用返回 `plain_token` 签名 → 订阅 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE` →
    目标填 `user_openid`/`group_openid`/`channel_id`，命令用户另建 `kind=user` 且允许命令的目标 → 发 `/help` 验证。
    QQ 仅文本（≤2000 字符）、无媒体；Chat 先 @Bot 发一条消息，再从“最近入站目标”登记并勾选 `allow_chat`。
+   群事件必须订阅 `GROUP_AT_MESSAGE_CREATE` 且 Bot 已入群、消息 @Bot；无入站事件时按 `docs/BOT.md` §6.2 排查，应用侧审计 `bot.event.ignored` 只记录事件类型。
    真实回调必须在 QQ 后台完成，未配置前不能验收。
 5. **应用侧**：`/bots` 中 Bot 默认 `enabled=false`；先保存配置与目标（可设静默时段），再开启 `BOT_ENABLED=true` 并重启，
    最后逐个 `PATCH enabled=true`。用“测试连接”发一条测试消息（20 次/小时）；发布用 `/bots` → 投递与发布 →

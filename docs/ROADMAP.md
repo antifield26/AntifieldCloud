@@ -6,7 +6,7 @@
 - **自动重连**：网络恢复后 `DiscordGatewayManager.wake()` 跳过退避立即重连，并触发投递/发布队列扫描；Windows `discord-tunnel.ps1` 先探测 PC 代理 10090 再建 SSH，计划任务登录启动、异常重启。
 - **QQ 群排查**：QQ 未知事件/空正文带 detail，审计 `bot.event.ignored`（仅事件类型）；群事件需要开放平台订阅 `GROUP_AT_MESSAGE_CREATE`、Bot 入群 @ 与目标登记。当前生产 QQ 群无目标/无入站事件，C2C 正常。
 - **OpenCode v2.1.2**：生产已升级（v2.1.1 → v2.1.2），备份与回滚步骤见 `docs/DEPLOY.md` §3.2。
-- **状态**：本地测试/检查通过；生产 v0.5.2/schema v9，v0.5.3 部署与 smoke/真实平台验收待执行。
+- **状态**：本地测试/检查通过；生产已部署 v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`），smoke 24/24，Gateway 已连接；出站连通性断开/恢复实测通过；OpenCode v2.1.2；QQ 群事件待平台订阅/入群 @ 复核。
 - **下一版**：v0.5.4 企业微信/钉钉/飞书；多管理员/审批仍不做。
 
 ## v0.5.2（历史，已部署）

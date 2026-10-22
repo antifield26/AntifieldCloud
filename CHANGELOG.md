@@ -10,6 +10,13 @@
 - **QQ 群事件诊断**：QQ 适配器对未知事件/空正文返回 `detail`，服务端审计 `bot.event.ignored`（只记录 QQ 事件类型，不记录正文），用于确认群事件是否到达；群事件仍需 `GROUP_AT_MESSAGE_CREATE` 订阅、Bot 入群 @ 与目标登记。
 - **OpenCode v2.1.2**：生产从 v2.1.1 升级到 v2.1.2（备份二进制/数据/env/unit，重启后 Basic API 200，兼容性见 `docs/DEPLOY.md` §3.2）。
 
+### Deployment
+
+- 2026-10-22 部署 `20261022T065126Z`/commit `df06383` 到生产 Pi，schema 保持 v9；`/healthz` 0.5.3、完整 Access smoke 24/24。
+- 迁移前 DB 快照 `db-predeploy-20261022T065156149Z.sqlite`；部署后 inc `snapshot-20261022T065651320Z-inc.tar.gz` + 密钥包 `secrets-20261022T065652Z.tar.age`（secrets=ok）。
+- Windows 隧道计划任务已安装；断开/恢复 PC 代理的实测日志为 `Bot 出站网络不可用` → `Bot 出站网络已恢复` → `Discord Gateway 网络恢复，立即重连` → `会话已恢复`。
+- QQ 群仍无入站事件，平台侧事件订阅/Bot 入群 @ 待复核。
+
 ### Security
 
 - 连通性探测只做无凭据只读 GET，不携带 Bot Token/AppSecret；响应/日志不包含平台响应正文。

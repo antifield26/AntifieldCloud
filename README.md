@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.3（生产部署待执行；上一版 v0.5.2 release `20261021T114908Z`/schema v9；Node.js 运行时 **v26.12.1**；Bot 出站连通性探测/自动恢复、Windows 隧道计划任务、QQ 群事件诊断、OpenCode **v2.1.2**；Gateway 已连接，Discord DM/#general @Bot/QQ C2C 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.3（生产已部署，release `20261022T065126Z`/commit `df06383`/schema v9；Node.js 运行时 **v26.12.1**；Bot 出站连通性探测/自动恢复、Windows 隧道计划任务、QQ 群事件诊断、OpenCode **v2.1.2**；Gateway 已连接，Discord DM/#general @Bot/QQ C2C 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 

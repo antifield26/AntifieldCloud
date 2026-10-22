@@ -6,17 +6,21 @@
 >
 > **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`）；Discord DM、Discord #general @Bot、QQ C2C 的普通消息 Chat 已由用户实发确认收到 AI 回复，`bot_ai_sessions`/`bot_ai_memories` 已写入；其他目标仍默认关闭。
 >
-> **v0.5.3 进行中**：Bot 出站连通性探测/自动恢复、Windows 代理隧道计划任务、QQ 群事件诊断、OpenCode v2.1.2 已实现；本地测试通过，生产部署/smoke 待执行。
+> **v0.5.3 已部署**：2026-10-22 部署到生产 Pi（release `20261022T065126Z`，commit `df06383`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。出站连通性探测已记录代理端口/外网/平台可达，断开 PC 隧道后检测为不可用、恢复后 Gateway 立即重连；OpenCode 已升级 v2.1.2。QQ 群仍无入站事件，待平台订阅/Bot 入群 @ 复核。
 
-## v0.5.3（当前，待部署验收）
+## v0.5.3（当前，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
-- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产当前仍为 v0.5.2/schema 9）+ Windows 本地工作区
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T065126Z`，schema 9）+ Windows 本地工作区
 - **出站连通性**：新增 `server/src/bot/connectivity.ts`；代理端口 TCP 探测 + 外网/平台只读 GET；`GET /api/bots/connectivity` 与 `POST /api/bots/connectivity/check`；`/bots` 概览新增“出站网络”卡片（设备在线/代理端口/外网/平台延迟）。
 - **自动恢复**：网络从不可用恢复时，Discord Gateway `wake()` 跳过退避立即重连，并触发队列扫描；PC 隧道由 `scripts/install-tunnel-task.ps1` 注册登录启动、异常重启计划任务。
 - **QQ 群诊断**：QQ 适配器未知事件/空正文带 `detail`，服务端审计 `bot.event.ignored`（仅事件类型）；群事件需订阅 `GROUP_AT_MESSAGE_CREATE`、Bot 入群且被 @、目标登记。当前生产无 QQ 群目标/群事件，C2C 正常。
-- **OpenCode v2.1.2**：生产 v2.1.1 → v2.1.2 已完成（备份/重启/`/api/session` 200）；兼容性待完整 smoke 与 `/ask` 复核。
-- 本地验证：`npm test` 300、`npm run test:web` 141、`npm run check`、`check-version`；生产部署后补 smoke 与真实平台验收。
+- **OpenCode v2.1.2**：生产 v2.1.1 → v2.1.2 已完成（备份/重启/`GET`+`POST /api/session` 200、测试 session 已删除）。
+- **部署验证**：`/healthz` `{"ok":true,"version":"0.5.3","schemaVersion":9}`；完整 smoke **24/24**；迁移前快照 `db-predeploy-20261022T065156149Z.sqlite`（sha256 `17524d02…`）。
+- **连通性实测**：正常检查日志 `proxyPort=true, internet=true, platforms=[discord,qq]`；停止 PC 隧道后出现 `Bot 出站网络不可用 (proxyPort=false)`；恢复隧道后出现 `Bot 出站网络已恢复`、`Discord Gateway 网络恢复，立即重连`、`Gateway 会话已恢复`。
+- **备份**：部署后 inc `snapshot-20261022T065651320Z-inc.tar.gz`（91150 bytes）+ `secrets-20261022T065652Z.tar.age`（secrets=ok）。
+- 本地验证：`npm test` 300、`npm run test:web` 141、`npm run check`、`check-version`、覆盖率门禁均通过。
+- **未决**：QQ 群事件仍未到达（平台订阅/入群/@ 待复核）；Telegram/Slack/QQ 群真实 Chat、多附件/按钮平台联调未完成。
 
 ## v0.5.2（历史，已部署）
 

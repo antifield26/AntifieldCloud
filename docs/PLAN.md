@@ -8,7 +8,7 @@
 - **自动恢复**：外网恢复时调用 Discord Gateway `wake()` 跳过退避立即重连并触发队列 tick；Windows 端 `scripts/discord-tunnel.ps1` 先探测代理端口再建 SSH 反向隧道，`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启计划任务。
 - **QQ 群诊断**：QQ 适配器未知事件/空正文带 detail；服务端审计 `bot.event.ignored`（仅事件类型，无正文）；群事件仍要求 `GROUP_AT_MESSAGE_CREATE` 订阅、Bot 入群 @ 和目标登记。
 - **OpenCode v2.1.2**：生产已从 v2.1.1 升级；备份、重启、`/api/session` 200，完整兼容性随 smoke 复核。
-- **状态**：版本 0.5.3；本地测试基线见 `docs/ACCEPTANCE.md`；生产部署与真实平台验收待执行。
+- **状态**：版本 0.5.3；本地测试 300/141 与 `npm run check` 通过；生产已部署 v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`），带 Access token 的 smoke 24/24，Gateway 已连接；出站连通性断开/恢复实测通过；OpenCode v2.1.2；QQ 群事件仍待平台订阅/入群 @ 复核。
 
 ## v0.5.2 补充（历史）
 

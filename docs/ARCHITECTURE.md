@@ -82,7 +82,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 
 | 模块 | 职责 |
 |---|---|
-| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*` 与 v0.5.2 Chat/记忆/多附件/Gateway 键） |
+| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*`、v0.5.2 Chat/记忆/多附件/Gateway 键与 v0.5.3 连通性键） |
 | `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v9）、事务；迁移前外键一致性检查与孤儿 shares 修复 |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性 |
@@ -203,7 +203,7 @@ SQLite（WAL）核心表（schema v9）：
   → `/healthz` 断言版本；失败先停服、还原迁移前 DB 快照、切回 previous、启动、复检（无快照则拒绝自动回滚）。
 - nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。SSH 为仅公钥（`00-` drop-in，保留 24h 回滚窗口）。
-- Bot 部署：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*` 与 v0.5.2 的 Chat/记忆/多附件/Gateway 键，`BOT_ENABLED` 默认 false；
+- Bot 部署：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*`、v0.5.2 的 Chat/记忆/多附件/Gateway 键与 v0.5.3 连通性键，`BOT_ENABLED` 默认 false；
   迁移 7/8/9 从 v6 起依次建表/重建/加列，回滚需迁移前 DB 快照；Discord Gateway 还需 Developer Portal 开启 Message Content Intent；
   Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
