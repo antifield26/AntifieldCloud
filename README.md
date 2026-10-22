@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.7（实现完成，**待部署验收**；生产当前为 v0.5.6/schema v11，release `20261022T114546Z`/commit `38dfe70`）。v0.5.7 新增 AI 长回复分段、Markdown 平台化、群聊引用/线程、目标触发方式（仅 @/回复、全部消息）、图片理解（默认关闭）、`/reset`/`/forget confirm`、连接自检、事件诊断、角色/记忆管理与 `/bots` 6 标签；schema v12（迁移 12）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.7（已部署，release `20261022T131121Z`/commit `8dcd10f`/schema v12；部署脚本内部只读 smoke 16/16、带 Cloudflare Access service token 的完整 smoke **24/24**；真实平台消息级联调待用户实发）。v0.5.7 新增 AI 长回复分段、Markdown 平台化、群聊引用/线程、目标触发方式（仅 @/回复、全部消息）、图片理解（默认关闭）、`/reset`/`/forget confirm`、连接自检、事件诊断、角色/记忆管理与 `/bots` 6 标签；schema v12（迁移 12）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -157,10 +157,10 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
 - Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体/图片；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书与多管理员审批留待下一版；QQ 频道目标仍待真实场景补充。
-- v0.5.7：长回复分段/Markdown/引用线程、群聊触发方式（QQ 群/频道仅 @）、图片理解（默认关闭，需 OpenCode prompt files + 支持 image 的模型）、`/reset`/`/forget confirm`、连接自检、事件诊断、角色/记忆管理；schema v12（迁移 12）；生产仍为 v0.5.6，**待部署验收**。
-- 图片理解默认关闭：开启需模型支持 image 输入；Telegram/Discord/Slack 支持入站图片，QQ 不支持；生产仅完成只读验证（OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash`），图片识别质量与真实失败路径待部署后按需验证。
+- v0.5.7：长回复分段/Markdown/引用线程、群聊触发方式（QQ 群/频道仅 @）、图片理解（默认关闭，需 OpenCode prompt files + 支持 image 的模型）、`/reset`/`/forget confirm`、连接自检、事件诊断、角色/记忆管理；schema v12（迁移 12）；已在生产部署（release `20261022T131121Z`，schema 12，smoke 24/24），**真实平台消息级联调待用户实发**。
+- 图片理解默认关闭：开启需模型支持 image 输入；Telegram/Discord/Slack 支持入站图片，QQ 不支持；生产仅完成只读验证（OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash`），图片识别质量与真实失败路径待用户实发验收。
 - 群聊“全部消息”触发依赖平台前置：Telegram 关闭 privacy mode、Discord 开启 Message Content Intent、Slack 订阅 `message.channels`；未满足时只有 @/回复进入 Chat。QQ 群/频道仅支持 @Bot，无法开启全部消息。
-- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot Chat；v0.5.7 的新回复形态（分段/Markdown/引用）与图片能力待部署后真实平台验收。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot Chat；v0.5.7 的新回复形态（分段/Markdown/引用）、触发方式、诊断/管理面板与图片能力待用户实发验收。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。

@@ -4,7 +4,7 @@ AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（
 v0.5.7 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本（无媒体/图片）；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat。
 本版新增：目标级群聊触发方式（仅 @/回复、全部消息）、回复引用/线程、长回复分段与 Markdown 平台化、图片理解（默认关闭）、
 `/reset` 与 `/forget confirm` 自助命令、平台连接自检、入站事件诊断、角色/记忆元数据管理，以及 `/bots` 的 6 个分区。
-企业微信/钉钉/飞书与多管理员审批仍未实现。生产当前为 v0.5.6/schema v11（release `20261022T114546Z`）；**v0.5.7 实现完成、待部署验收**（schema v12）。
+企业微信/钉钉/飞书与多管理员审批仍未实现。生产已部署 v0.5.7/schema v12（release `20261022T131121Z`，commit `8dcd10f`，部署内只读 smoke 16/16、完整 smoke 24/24；迁移前快照 `db-predeploy-20261022T131150335Z.sqlite`）；真实平台消息级联调待用户实发。
 Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
@@ -357,8 +357,8 @@ v0.5.7 起群/频道诊断可直接用 `/bots` → 诊断分区按 outcome 过�
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接；
   v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
   v0.5.4 已部署 release `20261022T085120Z`/schema v10；双模式提示词/会话隔离与 QQ C2C 管理员/非管理员真实回复已验收；v0.5.5 私聊 `/role`/Chat 已实发确认；
-  v0.5.6 默认角色 lofii 与简洁 `/role` 文案已验收；OpenCode v2.1.2 Basic/session 已通过。v0.5.7 待部署后按 `docs/ACCEPTANCE.md` 验收：
-  分段/Markdown/引用、触发方式、`/reset`/`/forget confirm`、连接自检、诊断、角色/记忆管理、图片（默认关闭，按需临时开启）。
+  v0.5.6 默认角色 lofii 与简洁 `/role` 文案已验收；OpenCode v2.1.2 Basic/session 已通过。v0.5.7 已部署（release `20261022T131121Z`/schema v12，smoke 24/24；Gateway 已连接、连接自检通过），
+  真实平台消息级联调待用户实发后按 `docs/ACCEPTANCE.md` 回填：分段/Markdown/引用、触发方式、`/reset`/`/forget confirm`、连接自检、诊断、角色/记忆管理、图片（默认关闭，按需临时开启）。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→ 选择触发方式 →
   私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发 `/reset`、`/forget confirm` 确认自助命令 →
   发布 1/5 个媒体（含 partial 失败场景）→ 多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→

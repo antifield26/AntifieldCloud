@@ -36,7 +36,9 @@
 - 版本/文档/`APP_VERSION` 升到 0.5.7；`docs/DEPLOY.md` 的 schema/健康检查/smoke 期望同步为 v0.5.7/schema 12。
 - 部署顺序：迁移前 DB 快照 → 部署（迁移 12）→ `/healthz` 断言 `version=0.5.7`/`schemaVersion=12` → 带 Access token 的 smoke → Bot env 校验（迁移 12 只加列/索引，不重建表）。
 - 迁移 12 单向、无 down：回滚必须恢复迁移前 DB 快照并同步还原 `APP_VERSION`；回滚窗口内保持 Bot/AI/Gateway 关闭。
-- **待部署验收**：本地基线 `npm test` 387、`npm run test:web` 157（30 文件）、`npm run check` 通过；生产部署、真实平台联调与验收证据待 Lead 完成后回填 `docs/ACCEPTANCE.md`。
+- **已部署**：2026-10-22 部署到生产 Pi（release `20261022T131121Z`，commit `8dcd10f`，version 0.5.7/schema v12）；上一 release `20261022T114546Z`（v0.5.6）保留；迁移前快照 `db-predeploy-20261022T131150335Z.sqlite`（sha256 `756300be69aad88f55176b7455f74208fde6627cd52e4cbff748aba64347cce7`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署脚本内部只读 smoke 16/16、带 Cloudflare Access service token 的完整 smoke **24/24**。
+- **部署后校验**：`bot_targets.chat_trigger` 存在且 5 个既有目标均为默认 `mention`；`bot_events` 的 6 个诊断列存在；重启后 Discord Gateway `已连接`（bot `853f85e6-f757-4060-8692-19ec06dea4aa`）；真实网络连接自检 Discord `@lofii.bot` 与 QQ access_token 通过。部署后增量备份 `snapshot-20261022T131405421Z-inc.tar.gz`（125428 bytes，sha256 `2073fef3beb9e980832e602b2f412be50724f79e4e5a1ca31cd6cc93e869a1dd`）已由 PC 拉取并 ack，密钥包 `secrets-20261022T131406Z.tar.age` 已拉取（`secrets=ok`）。
+- **待用户实发验收**：本地基线 `npm test` 387、`npm run test:web` 157（30 文件）；真实平台消息级联调（`/reset`、`/forget confirm`、分段/Markdown、群聊引用、`all` 触发、图片、诊断/角色/记忆面板实际交互）**尚未由用户实发验收**，证据待用户实发后回填 `docs/ACCEPTANCE.md`。
 
 ## [v0.5.6] - 2026-10-22
 

@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.7（待部署验收）；v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.7（已部署；真实平台消息级联调待用户实发）；v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -13,12 +13,15 @@
 > **v0.5.5 已部署**：2026-10-22 部署到生产 Pi（release `20261022T104834Z`，commit `a92c0a9`，schema v11）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊 `/role set/show/off/on/delete` 与 Chat 人设生效/停用恢复已由用户实发确认；schema v10→v11 迁移通过。
 >
 > **v0.5.6 已部署**：2026-10-22 部署到生产 Pi（release `20261022T114546Z`，commit `38dfe70`，schema v11，无新迁移）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊/群聊默认 lofii、个人角色覆盖/`off` 回落、简洁 `/role` 文案均已由用户实发确认。
+>
+> **v0.5.7 已部署**：2026-10-22 部署到生产 Pi（release `20261022T131121Z`，commit `8dcd10f`，schema v12）；迁移前快照 `db-predeploy-20261022T131150335Z.sqlite`（sha256 `756300be69aad88f55176b7455f74208fde6627cd52e4cbff748aba64347cce7`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署脚本内部只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**。schema 校验通过（`bot_targets.chat_trigger` 存在、5 个既有目标均为默认 `mention`；`bot_events` 6 个诊断列存在），重启后 Discord Gateway `已连接`，真实网络平台连接自检 Discord `@lofii.bot`/QQ access_token 通过。**真实平台消息级联调（`/reset`、`/forget confirm`、长回复分段/Markdown、群聊引用、all 触发、图片、诊断/角色/记忆面板实际交互）待用户实发验收。**
 
-## v0.5.7（当前，待部署验收）
+## v0.5.7（当前，已部署；真实平台消息级联调待用户实发）
 
 - 日期：2026-10-22（Asia/Shanghai）
-- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（schema 12）+ Windows 本地工作区
-- **状态**：代码与文档已完成；生产仍为 v0.5.6/schema v11，**待部署与真实平台验收**。本段只记录交付范围与本地基线，部署/真实平台证据待 Lead 部署回填后再标记通过。
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T131121Z`，commit `8dcd10f`，schema 12）+ Windows 本地工作区
+- **状态**：已部署 v0.5.7/schema v12；部署验证、迁移、健康检查、smoke、Discord Gateway 与真实网络连接自检已通过。
+  **真实平台消息级联调（`/reset`、`/forget confirm`、分段/Markdown、群聊引用、all 触发、图片、诊断/角色/记忆面板实际交互）尚未由用户实发验收**，完成前不得声明该部分通过。
 - **交付范围**：
   - schema v12（迁移 12）：`bot_targets.chat_trigger`、`bot_events` 诊断列与索引。
   - 群聊触发策略（目标级 mention/all；QQ 群/频道仅 @；message 触发未授权时静默）；引用回复/线程（Telegram `reply_to_message_id`、Slack `thread_ts`、Discord `message_reference`）；长回复按平台上限分段（最多 4 段、续段前缀、超限截断、Telegram HTML 安全分段、partial 不自动重试）；Markdown 平台化（Telegram HTML / Discord markdown / Slack mrkdwn / QQ 纯文本）。
@@ -27,13 +30,23 @@
   - `POST /api/bots/:id/check` 连接自检；`GET /api/bots/:id/events` 诊断事件（无正文）；deliveries/publish/metrics 的 `lastErrorHint`。
   - 角色/记忆管理 API（仅元数据、可启停/删除）；目标 `chatTrigger`；Web `/bots` 6 标签与新面板。
   - 新 env：`BOT_AI_MAX_REPLY_CHARS=4000`、`BOT_AI_VISION_ENABLED=false`、`BOT_AI_IMAGE_MAX_BYTES=10485760`。
-- **本地验证**：`npm test` 387（服务端 + 运维脚本）、`npm run test:web` 157（30 文件）、`node scripts/check-version.mjs` 通过；`npm run check` 以 Lead 最终结果为准。
-- **待部署验收项**（完成后回填证据）：
-  1. `deploy.ps1` 迁移前快照 → 部署 v0.5.7 → `/healthz` `{"version":"0.5.7","schemaVersion":12}` → 带 Access token 的 smoke（`-ExpectedSchemaVersion 12`）。
-  2. Bot 平台真实联调：`/reset`、`/forget confirm`、长回复分段与 Markdown、群聊引用、`all` 触发（Telegram 关 privacy mode / Discord Message Content Intent / Slack `message.channels`）、QQ 群/频道仅 @、连接自检、诊断事件、角色/记忆面板。
-  3. 图片理解：确认已关闭时降级提示；在用户同意下临时开启并验证一张图片（不落盘、失败降级），随后恢复默认关闭。
-  4. 失败/partial 场景（长回复中途失败、附件部分外发）不自动重试；迁移前快照与回滚路径可用。
-- **回滚**：迁移 12 只加列/索引；回滚必须恢复迁移前 DB 快照并同步还原 `APP_VERSION`，窗口内保持 `BOT_ENABLED`/`BOT_AI_ENABLED`/`BOT_DISCORD_GATEWAY_ENABLED`/`BOT_AI_VISION_ENABLED=false`。
+- **本地验证**：`npm test` 387（服务端 + 运维脚本）、`npm run test:web` 157（30 文件）、`node scripts/check-version.mjs` 通过；`npm run check`、`test:coverage`、`test:web:coverage`、`npm run build` 均通过（Lead 最终验证）。
+- **部署验证**：
+  - release `20261022T131121Z`（commit `8dcd10f`，version 0.5.7/schema v12）已切换并重启；上一 release `20261022T114546Z`（v0.5.6）保留。
+  - 迁移前 DB 快照：`/var/lib/antifieldcloud/backups/db-predeploy-20261022T131150335Z.sqlite`（sha256 `756300be69aad88f55176b7455f74208fde6627cd52e4cbff748aba64347cce7`）；schema v11→v12 迁移成功。
+  - `/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署脚本内部只读 smoke **16/16**；带 Cloudflare Access service token 的完整 smoke **24/24**。
+  - schema 校验：`bot_targets.chat_trigger` 存在，5 个既有目标全部为默认 `mention`；`bot_events` 的 event_kind/outcome/detail/target_external_id/user_id/updated_at 6 列存在。
+  - 重启后 `Discord Gateway 已连接`（bot `853f85e6-f757-4060-8692-19ec06dea4aa`）。
+  - 真实网络平台连接自检：Discord `@lofii.bot`（`1562353648732868709`）ok、QQ access_token 获取 ok（经 PC 代理隧道）；页面“检查连接”展示脱敏结果。
+  - 部署后增量备份：`snapshot-20261022T131405421Z-inc.tar.gz`（125428 bytes，sha256 `2073fef3beb9e980832e602b2f412be50724f79e4e5a1ca31cd6cc93e869a1dd`）已由 PC 侧 `backup-pull.ps1` 拉取并 ack（保存于 PC 侧 `daily/2026-10-22` 目录）；密钥包 `secrets-20261022T131406Z.tar.age` 已拉取，`secrets=ok`。
+- **待用户实发验收项**（用户实际发送消息/操作后回填证据）：
+  1. 自助命令：实际发送 `/reset` 与 `/forget confirm`，确认会话/记忆清理与审计；`/forget` 无参数时只返回用法。
+  2. 回复形态：长回复分段（续段前缀/截断）、Markdown 展示、群/频道引用或线程（Telegram/Discord/Slack）。
+  3. 触发方式：默认 `mention` 生效；“全部消息”按平台前置逐个验证（Telegram 关 privacy mode、Discord Message Content Intent、Slack 订阅 `message.channels`）；QQ 群/频道仅 @。
+  4. 连接自检与诊断：`POST /api/bots/:id/check` 结果、`GET /api/bots/:id/events` 事件/筛选、`lastErrorHint`；`/bots` 角色与记忆面板启停/删除实际交互（仅元数据）。
+  5. 图片理解：确认关闭时降级提示；在用户同意下临时开启验证一张图片（不落盘、失败降级），随后恢复 `BOT_AI_VISION_ENABLED=false`；QQ 不支持。
+  6. 失败/partial 场景（长回复中途失败、附件部分外发）不自动重试；迁移前快照与回滚路径可用（本次快照已确认存在）。
+- **回滚**：迁移 12 只加列/索引；回滚必须恢复迁移前 DB 快照（`db-predeploy-20261022T131150335Z.sqlite`）并同步还原 `APP_VERSION`，窗口内保持 `BOT_ENABLED`/`BOT_AI_ENABLED`/`BOT_DISCORD_GATEWAY_ENABLED`/`BOT_AI_VISION_ENABLED=false`。
 
 ## v0.5.6（历史，已部署）
 
