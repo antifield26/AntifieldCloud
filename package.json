@@ -2,6 +2,7 @@
   "name": "lofii-bot",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Lofii Minecraft AI companion bot for Paper 26.1.2 on Raspberry Pi 5",
   "engines": {

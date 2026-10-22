@@ -138,3 +138,7 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 - 动态在线意味着空服时服务器会 pause；如要 7×24 保活，设 `FORCE_ONLINE=true`（注意功耗/发热）。
 - `come` / `follow` 依赖 mineflayer-pathfinder 与当前 26.1 方块数据；跨维度、目标实体未加载或地形无路时会明确失败。
 - AI 输出只用于聊天；不会触发任何游戏操作。
+
+## License
+
+本项目采用 [MIT License](LICENSE)，Copyright (c) 2026 Antifield。
