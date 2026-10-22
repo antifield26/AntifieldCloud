@@ -21,8 +21,8 @@
   `db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）。
   迁移 13 后 `bots` 仅剩 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；
   QQ 数据保留（targets 2/deliveries 4/events 44/sessions 4/memories 3/roles 1/inbound 4）；`chat_trigger` 列保留但不读写；图片理解默认开启（`botAiVisionEnabled=true`），出站连通性仅 `qq`、新进程无 Discord Gateway。
-  前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ webhook 负路径 401/200/404 与 QQ 连接自检 `access_token 已获取` 通过。**真实 QQ 消息已由用户实发验收通过**（2026-10-22 21:59–22:08 CST，13 条入站事件全部符合预期，图片端到端通过；用户 22:10 CST 确认“验收通过”）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。 **v0.5.9 待部署验收**（schema 保持 v13，无迁移）：移除 `/ask`（AI 仅普通消息 Chat）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、`/help` 对非管理员开放且动态；
-**部署前必须做生产 env 迁移**（`BOT_COMMAND_RATE_PER_MINUTE=120`、`BOT_AI_RATE_PER_HOUR=120`、新增 `BOT_CHAT_RATE_PER_MINUTE=30`、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`）并重启，否则生产仍是旧限速；回滚还原旧 env 值/旧 release。
+  前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ webhook 负路径 401/200/404 与 QQ 连接自检 `access_token 已获取` 通过。**真实 QQ 消息已由用户实发验收通过**（2026-10-22 21:59–22:08 CST，13 条入站事件全部符合预期，图片端到端通过；用户 22:10 CST 确认“验收通过”）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。 **v0.5.9 已部署**（2026-10-22 22:35 CST，schema 保持 v13、无迁移）：release `20261022T143451Z`/commit `97996dc`；`/healthz` = `{"ok":true,"version":"0.5.9","schemaVersion":13}`，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24（首次 Access 20s 超时 1 项失败，重试全通过）；
+生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。真实 QQ 行为（`/help` 差异、`/ask` 拒绝/帮助、限速、Chat/图片）待用户实发。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -486,7 +486,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 验收：`npm run check`（测试基线 **333/157**）、`npm run build`、`npm run test:coverage`（Lines **91.77%** / Branches **76.98%** / Functions **85.96%**）、`npm run test:web:coverage`、
   `smoke.ps1 -ExpectedVersion 0.5.9 -ExpectedSchemaVersion 13`、QQ 平台联调（§9.8；C2C/群@/频道、命令、`/help` 动态、Chat、图片、发布、诊断、自检、角色/记忆）、
   备份导入/校验/恢复（临时 DATA_DIR）、世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 13` 演练通过；OpenCode 升级后按 §3.2 复验。
-  v0.5.7 及以前已部署/smoke 24/24；**v0.5.8 已部署**（release `20261022T134852Z`/commit `96294e4`，`/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24，迁移 13 后 `bots` 仅 1 行 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。 **v0.5.9 待部署**（version 0.5.9/schema 13，无迁移，需生产 env 迁移；`/help`/`/ask`/限速行为待验收）。
+  v0.5.7 及以前已部署/smoke 24/24；**v0.5.8 已部署**（release `20261022T134852Z`/commit `96294e4`，`/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24，迁移 13 后 `bots` 仅 1 行 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。 **v0.5.9 已部署**（release `20261022T143451Z`/commit `97996dc`，`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24，env 迁移完成；真实 QQ 行为待用户实发验收）。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -734,8 +734,8 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
    一次图片识别成功与一次降级；Chat 至少一条真实模型回复；`/help` 非管理员/管理员差异与 `/ask` 被拒/管理员回帮助不调用 AI；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
    记录 `bot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`；
    未配置 AI/图片时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
-   **v0.5.8 实际验收（2026-10-22 21:59–22:08 CST，通过）**：C2C 文本命令/自助命令/权限拒绝/两条文本 Chat/真实图片端到端均有生产证据（13 条入站事件全部符合预期，图片 `image/jpeg` 148563 B）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。 **v0.5.9 待部署验收**（schema 保持 v13，无迁移）：移除 `/ask`（AI 仅普通消息 Chat）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、`/help` 对非管理员开放且动态；
-**部署前必须做生产 env 迁移**（`BOT_COMMAND_RATE_PER_MINUTE=120`、`BOT_AI_RATE_PER_HOUR=120`、新增 `BOT_CHAT_RATE_PER_MINUTE=30`、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`）并重启，否则生产仍是旧限速；回滚还原旧 env 值/旧 release。
+   **v0.5.8 实际验收（2026-10-22 21:59–22:08 CST，通过）**：C2C 文本命令/自助命令/权限拒绝/两条文本 Chat/真实图片端到端均有生产证据（13 条入站事件全部符合预期，图片 `image/jpeg` 148563 B）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。 **v0.5.9 已部署**（2026-10-22 22:35 CST，schema 保持 v13、无迁移）：release `20261022T143451Z`/commit `97996dc`；`/healthz` = `{"ok":true,"version":"0.5.9","schemaVersion":13}`，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24（首次 Access 20s 超时 1 项失败，重试全通过）；
+生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。真实 QQ 行为（`/help` 差异、`/ask` 拒绝/帮助、限速、Chat/图片）待用户实发。
 
 ### 9.9 Bot 队列/发布故障排查
 

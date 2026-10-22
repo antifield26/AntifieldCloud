@@ -1,6 +1,6 @@
 # 路线图
 
-## v0.5.9（当前，待部署验收；移除 /ask + 限速放宽 + /help 动态开放）
+## v0.5.9（当前，已部署；真实 QQ 行为待用户实发；移除 /ask + 限速放宽 + /help 动态开放）
 
 - **移除 `/ask`**：`BOT_COMMANDS` 删除 `ask`（现为 `/help /status /backup /world /mc /files /role /reset /forget`）；`/ask` 作为未知命令——非管理员被拒（无回复），管理员回全量帮助、不调用 AI；
   斜杠命令不再触发 AI。
@@ -9,7 +9,8 @@
 - **限速宽松档**：`BOT_CHAT_RATE_PER_MINUTE=30`（1–120）、`BOT_AI_RATE_PER_HOUR=120`（1–600）、`BOT_COMMAND_RATE_PER_MINUTE=120`（1–600）。
 - **`/help` 自助且动态**：对所有用户开放；非管理员仅 `/help /role /reset /forget confirm` + Chat 说明（不暴露管理命令），管理员全量（无 `/ask`）；未知命令按身份回帮助/被拒。
 - **数据/部署**：version 0.5.9，schema 保持 v13（无迁移）；`deploy.ps1` 期望 schema 13；生产需 env 迁移（限速值 + 删除两个提示词变量）后重启；回滚还原旧 env 值/旧 release。
-- **状态**：本地测试基线（Lead 实测 2026-10-22）`npm test` 333（server + 脚本，较 v0.5.8 少 4 个已移除用例）、`npm run test:web` 157（30 文件）、`check`/coverage（Lines 91.77% / Branches 76.98% / Functions 85.96%）/build 通过；**待部署验收**（证据待 `docs/ACCEPTANCE.md` 回填）。
+- **状态**：已部署 v0.5.9/schema v13（2026-10-22 22:35 CST，release `20261022T143451Z`/commit `97996dc`，无迁移；上一 release `20261022T134852Z`（v0.5.8）保留；`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24；生产 env 迁移完成：命令 120/AI 120/Chat 30、提示词变量已删除）；
+  本地测试基线（Lead 实测 2026-10-22）`npm test` 333（server + 脚本，较 v0.5.8 少 4 个已移除用例）、`npm run test:web` 157（30 文件）、`check`/coverage（Lines 91.77% / Branches 76.98% / Functions 85.96%）/build 通过；**真实 QQ 行为（`/help` 差异、`/ask` 拒绝/帮助、限速、Chat/图片）待用户实发**（证据待 `docs/ACCEPTANCE.md` 回填）。
 - **下一版**：v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），范围待用户确认。
 ## v0.5.8（历史，已部署并验收通过；QQ 单平台 + 图片默认开启 + schema v13；v0.5.9 起移除 /ask）
 
@@ -168,7 +169,7 @@
 
 ## 已知限制
 
-- v0.5.9 待部署验收：移除 `/ask`（AI 仅 Chat）、限速放宽（Chat 30/min、AI 120/h、命令 120/min）、`/help` 动态开放；schema 保持 v13（无迁移），生产需 env 迁移（新限速值 + 删除两个提示词变量）后重启；部署/真实平台证据待回填。
+- v0.5.9 已部署（2026-10-22 22:35 CST）：移除 `/ask`（AI 仅 Chat）、限速放宽（Chat 30/min、AI 120/h、命令 120/min）、`/help` 动态开放；schema 保持 v13（无迁移），生产 env 迁移已完成（限速 120/120/30、提示词变量删除）；真实 QQ 行为（`/help` 差异、`/ask` 拒绝/帮助、限速、Chat/图片）待用户实发验收。
 - v0.5.8 已部署（2026-10-22）并验收通过：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，迁移前快照可回滚）；真实 QQ 消息/图片识别/自助命令已由用户实发验收通过。
 - v0.5.8 起仅 QQ 官方 Bot：QQ 仅文本、无媒体/附件/按钮/引用；群/频道只有 @Bot 事件（平台限制，无“全部消息”）；C2C 私聊直接进入 Chat；QQ 平台故障时无备用平台。
 - v0.5.8 图片理解默认开启且需模型支持 image 输入；图片会经 OpenCode 交给模型 provider；生产只读验证过 `opencode-go/deepseek-v4.1-flash` 支持 image，真实图片识别质量/失败路径待在部署后验收。

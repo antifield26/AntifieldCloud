@@ -2,7 +2,7 @@
 
 本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.8**（schema v13，**已部署 2026-10-22**，release `20261022T134852Z`/commit `96294e4`；上一 release `20261022T131813Z`（v0.5.7）保留；部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；迁移 13 后仅剩 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。
 
-## v0.5.9 补充（当前）
+## v0.5.9 补充（当前，已部署；真实 QQ 行为待用户实发）
 
 - **移除 `/ask`**：`BOT_COMMANDS` 无 `ask`；非管理员按未知命令被拒（无回复），管理员回全量帮助、不调用 AI；斜杠命令不再触发 AI。
 - **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」，`BotAiMode`/task 提示词与 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 移除；
@@ -11,7 +11,7 @@
 - **`/help` 自助且动态**：非管理员 `publicHelpText()`（`/help /role /reset /forget confirm` + Chat 说明），管理员 `helpText()` 全量（无 `/ask`）；未知命令按身份回帮助/被拒。
 - **数据/部署**：version 0.5.9，schema 保持 v13（无迁移）；生产需 env 迁移（新限速值 + 删除两个提示词变量）后重启；回滚还原旧 env 值/旧 release。
 - **状态**：本地测试基线（Lead 实测 2026-10-22）`npm test` 333（server + 脚本；较 v0.5.8 少 4 个已移除用例）、`npm run test:web` 157（30 文件）、
-  `npm run check`/coverage（Lines 91.77% / Branches 76.98% / Functions 85.96%）/build 通过；**待部署验收**（证据待 `docs/ACCEPTANCE.md` 回填）。
+  `npm run check`/coverage（Lines 91.77% / Branches 76.98% / Functions 85.96%）/build 通过；已部署 v0.5.9/schema v13（release `20261022T143451Z`/commit `97996dc`，smoke 16/16 与 24/24，env 迁移完成）；**真实 QQ 行为待用户实发**（证据待 `docs/ACCEPTANCE.md` 回填）。
 - **下一版**：v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），范围待用户确认。
 ## v0.5.8 补充（历史；已部署并验收通过，v0.5.9 起移除 /ask 与 task 模式）
 
