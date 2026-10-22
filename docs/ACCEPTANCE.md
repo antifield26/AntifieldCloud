@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.4；v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.5；v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -9,8 +9,21 @@
 > **v0.5.3 已部署**：2026-10-22 部署到生产 Pi（release `20261022T065126Z`，commit `df06383`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。出站连通性探测已记录代理端口/外网/平台可达，断开 PC 隧道后检测为不可用、恢复后 Gateway 立即重连；OpenCode 已升级 v2.1.2。QQ 群事件已到达并定位为群目标未登记，登记 `68611590B477339A04302BB23B426244` 后用户确认 @Bot 已收到 AI 回复。
 >
 > **v0.5.4 已部署**：2026-10-22 部署到生产 Pi（release `20261022T085120Z`，commit `b2bdc8d`，schema v10）；带 Cloudflare Access service token 的完整 smoke **24/24**。`/ask` 任务模式、Chat 对话模式、QQ C2C 管理员/非管理员对话均实发确认；schema v9→v10 迁移通过，旧会话归 chat，task/chat 会话分离；共享长期记忆。
+>
+> **v0.5.5 进行中**：私聊角色卡 `/role`、schema v11、Discord DM `isDirect` 修正已实现；本地测试通过，生产部署/smoke 与真实私聊验收待执行。
 
-## v0.5.4（当前，已部署）
+## v0.5.5（当前，待部署验收）
+
+- 日期：2026-10-22（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产 v0.5.4/schema 10，待升级）+ Windows 本地工作区
+- **角色卡**：`/role` 对全部平台私聊用户开放，`set/show/off/on/delete`；每 Bot×用户一张“名字+设定”卡；名字≤32、设定≤1000；保留提示词标记被拒绝。
+- **Chat 集成**：仅私聊 Chat 使用启用卡；替换默认 Chat 风格；安全边界与共享记忆仍追加；`/ask` 与群/频道不使用；角色变更重置 chat 会话映射。
+- **权限**：仅 `/role` 绕过命令白名单；其他命令仍要求目标 `allow_commands` + 用户白名单；Telegram/Discord/Slack 私聊 Chat 仍按目标 `allow_chat`，QQ C2C 沿用 v0.5.4。
+- **schema v11**：新增 `bot_chat_roles`；Discord DM `isDirect` 修正；Discord/Slack 命令文本上限 2048。
+- **本地验证**：`npm test` 324、`test:web` 141、`check-version`、coverage；迁移 v6→v11、v9→v11、v10→v11 测试通过。
+- **待部署**：生产迁移/smoke、真实私聊 `/role` + Chat、备份/tag/release。
+
+## v0.5.4（历史，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T085120Z`，schema 10）+ Windows 本地工作区

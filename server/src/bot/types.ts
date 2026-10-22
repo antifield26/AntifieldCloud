@@ -364,5 +364,5 @@ export interface BotSummary {
   gateway: BotGatewayStatus
 }
 
-export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask'] as const
+export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask', 'role'] as const
 export type BotCommandName = (typeof BOT_COMMANDS)[number]

@@ -1,11 +1,11 @@
-# Bot 集成（v0.5.4）
+# Bot 集成（v0.5.5）
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
-v0.5.4 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增任务/对话双模式提示词与出站连通性自动恢复。
-企业微信/钉钉/飞书（v0.5.5）与多管理员审批仍未实现。生产已部署 v0.5.4/schema v10（release `20261022T085120Z`）；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
+v0.5.5 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增私聊角色卡与任务/对话双模式提示词。
+企业微信/钉钉/飞书（v0.5.6）与多管理员审批仍未实现。生产已部署 v0.5.4/schema v10（release `20261022T085120Z`），v0.5.5 待部署；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
-> 斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
+> 除 `/role` 外，斜杠命令需要目标 + 用户双重白名单；`/role` 仅对私聊开放；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
 > 通知/命令/Chat 输出不包含内部路径或 URL；记忆不通过 API/UI 暴露；Bot 默认关闭（`BOT_ENABLED=false`），Webhook 关闭时返回 404。
 
 ## 1. 架构
@@ -47,7 +47,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
    `https://app.example.com/api/bot/webhook/<botId>`，并设置随机 `secret_token`（≥16 字符）；
    `allowed_updates` 至少包含 `message` 与 `callback_query`（按钮回调）。
 2. 在 `/bots` 填写 Token 与 `Webhook Secret`；平台消息需在允许的私聊/群组/频道中。
-3. 命令：`/help`、`/status`、`/backup`、`/world`、`/mc`、`/files [关键词]`、`/ask <问题>`。
+3. 命令：`/help`、`/status`、`/backup`、`/world`、`/mc`、`/files [关键词]`、`/ask <问题>`；私聊另开放 `/role`。
 4. Chat：私聊普通消息直接进入；群/频道需 @Bot 或回复 Bot（需关闭 BotFather privacy mode，或让用户回复 Bot 消息）。
 5. 按钮：`/status`、`/help` 回复带“刷新状态/帮助”inline keyboard；回调走 `callback_query`，仍需命令目标 + 用户白名单。
 
@@ -55,7 +55,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 
 1. Developer Portal 创建 Application/Bot，取得 Bot Token、Application ID、Public Key。
 2. Interactions Endpoint URL 填 `https://app.example.com/api/bot/webhook/<botId>`；Discord 会以 Ed25519 签名验证。
-3. `/bots` 填写 Application ID、Public Key、Token；斜杠命令通过平台注册（`/status` 等）。
+3. `/bots` 填写 Application ID、Public Key、Token；斜杠命令通过平台注册（`/status` 等；另注册 `/role`，私聊对全部用户开放）。
 4. 首次命令使用 deferred response（type 5），按钮使用 deferred update（type 6），随后通过 interaction follow-up webhook 回复。
 5. **普通消息 Chat**：在 Developer Portal 开启 **Message Content Intent**，并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；
    Gateway 使用 Node 内置 WebSocket 连接 `wss://gateway.discord.gg/?v=10&encoding=json`，`intents=37377`
@@ -83,8 +83,8 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 
 ## 3. 权限模型
 
-- **命令目标**：`bot_targets` 中 `allow_commands=1` 的频道/群组/私聊。
-- **用户白名单**：发送者必须是 `kind='user'` 且 `allow_commands=1` 的目标；频道里的普通成员即使目标开启命令也无法执行。
+- **命令目标**：`bot_targets` 中 `allow_commands=1` 的频道/群组/私聊；`/role` 例外，只要求私聊。
+- **用户白名单**：发送者必须是 `kind='user'` 且 `allow_commands=1` 的目标；频道里的普通成员即使目标开启命令也无法执行。`/role` 不要求白名单或目标登记。
 - **Chat 目标**：`allow_chat=1` 的目标内普通消息可进入 AI Chat；与 `allow_commands` 独立，不授予斜杠命令权限。
   非管理员只能 Chat；群/频道需 @Bot 或回复 Bot，私聊全部；Chat 不执行写操作。
 - 只有管理员能在 `/bots` 添加目标/开启权限；Bot 命令本身不提供 RCON、启停、封禁、OP 或任意 shell。
@@ -92,7 +92,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
   （目标 `allow_commands=1` + user 白名单），只调用只读 provider，无写操作；Slack/QQ 不做按钮。
 - **发布**：仅管理员手动/定时创建；必须提供 6 位 TOTP（`totpCode`）与 `confirmText: "PUBLISH"`，不能仅靠会话 + CSRF 外发文件。
 - 发布媒体仅限活动、`origin='user'` 的普通文件：最多 5 个、单文件 ≤10 MiB、总计 ≤50 MiB；不含外部 URL 抓取；QQ 平台无媒体。
-- **AI `/ask` / Chat**：需 `BOT_AI_ENABLED=true`；`/ask` 仅命令白名单用户；Chat 仅 `allow_chat` 目标；提示词 ≤`BOT_AI_MAX_PROMPT_CHARS`；
+- **AI `/ask` / Chat**：需 `BOT_AI_ENABLED=true`；`/ask` 仅命令白名单用户；Chat 仅 `allow_chat` 目标；私聊 Chat 可加载 `/role` 角色卡；提示词 ≤`BOT_AI_MAX_PROMPT_CHARS`；
   Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6），Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）；
   新建 OpenCode 会话使用 deny-all 工具权限；若 OpenCode 明确 400 拒绝 `permissions`，降级为默认权限并在日志标注“未隔离”。
 - **长期记忆**：每 Bot×用户一份摘要；DB 为权威，镜像到 `DATA_DIR/bot-memory`；不通过 API/UI 暴露；系统提示内置，
@@ -144,7 +144,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 | `BOT_DISCORD_GATEWAY_ENABLED` | `false` | Discord Gateway 长连接开关；需先开启 Message Content Intent |
 
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 Token/AppSecret 无法解密；必须重新录入所有 Bot 凭据。不要把它写入仓库/前端/日志。
-`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*`、v0.5.2 的 6 项、v0.5.3 的 4 项连通性键与 v0.5.4 的 2 项提示词键；`--force` 不会重置已有非空值。
+`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*`、v0.5.2 的 6 项、v0.5.3 的 4 项连通性键与 v0.5.4 的 2 项提示词键；v0.5.5 角色卡不需要新增 env 键。
 
 ## 5.1 任务/对话提示词与会话（v0.5.4）
 
@@ -155,6 +155,13 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 - 模式和完整提示由 `server/src/bot/prompts.ts` 生成；`/ask` 与 Chat 分别使用 `bot_ai_sessions.mode=task|chat` 的独立 OpenCode 会话，旧会话归 chat；两种模式共享 `bot_ai_memories` 长期记忆。
 - QQ C2C 私聊对任意用户开放 Chat（不要求先登记目标），接触面由 QQ 平台“谁可添加 Bot”控制；斜杠命令仍要求目标 `allow_commands` 与用户白名单。QQ 群/频道、Discord/Telegram 私聊仍按目标登记与 `allow_chat`。
 - 审计 `bot.ai.chat` 增加 `mode`，不记录提示词/记忆正文。提示词仅环境变量配置，修改后重启应用。
+
+## 5.2 私聊角色卡（v0.5.5）
+
+- `/role` 对全部平台私聊用户开放，其他命令仍按目标+用户白名单。
+- 每 Bot×用户一张卡：名字 1–32、设定 1–1000；`/role set <名字> <设定>`、`/role show`、`/role off`、`/role on`、`/role delete`。
+- 仅私聊 Chat 使用启用卡；角色卡替换默认 Chat 风格，固定安全边界与共享记忆仍追加；`/ask`、群/频道 Chat 不使用。
+- 角色卡变更会删除当前私聊 Chat 的 `bot_ai_sessions` 映射；task 会话与长期记忆不受影响。角色设定不通过 API/UI 暴露，只由 `/role show` 返回本人；DB 备份包含正文。
 
 ## 6. 网络出站（Discord/Telegram/QQ/OpenCode）
 
@@ -225,11 +232,11 @@ v0.5.3 生产已出现群事件 `68611590B477339A04302BB23B426244`，审计 `bot
 - Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；QQ 使用固定 AppSecret 派生密钥对；AI 使用假 OpenCode HTTP 服务；
   Discord Gateway 使用假 WebSocket（HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码）。
 - v0.5.3 新增：`bot-connectivity.test.ts`（5）覆盖代理端口/外网/平台探测与恢复回调；Gateway `wake` 测试；QQ 未知事件 detail。
-- v0.5.4 新增：`bot-prompts.test.ts`（4）、`bot-v054.test.ts`（3）、`bot-v054-c2c.test.ts`（3）、task/chat 会话隔离测试；迁移测试覆盖 v6→v10 与 v9→v10。
-- 本地基线：`npm test` 312、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
+- v0.5.4 新增：`bot-prompts.test.ts`（4）、`bot-v054.test.ts`（3）、`bot-v054-c2c.test.ts`（3）、task/chat 会话隔离测试；v0.5.5 新增 `bot-roles.test.ts`、`bot-v055.test.ts`，迁移测试覆盖 v6→v11、v9→v11、v10→v11。
+- 本地基线：`npm test` 324、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接；
   v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
-  v0.5.4 已部署 release `20261022T085120Z`/schema v10；双模式提示词/会话隔离与 QQ C2C 管理员/非管理员真实回复已验收；OpenCode v2.1.2 Basic/session 已通过。
+  v0.5.4 已部署 release `20261022T085120Z`/schema v10；双模式提示词/会话隔离与 QQ C2C 管理员/非管理员真实回复已验收；v0.5.5 私聊 `/role`/Chat 待部署验收；OpenCode v2.1.2 Basic/session 已通过。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→
   私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发布 1/5 个媒体（含 partial 失败场景）→
   多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→ Discord 开启 intent 后确认 Gateway `connected`。

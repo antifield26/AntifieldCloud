@@ -34,13 +34,22 @@ import {
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { BotMemoryStore } from './memory.ts'
 import { buildBotPrompt } from './prompts.ts'
+import {
+  BotChatRoleStore,
+  normalizeRolePrompt,
+  validateRole,
+  ROLE_NAME_MAX,
+  ROLE_PROMPT_MAX,
+  type BotChatRole,
+  type RoleValidationError,
+} from './roles.ts'
 import { DiscordGatewayManager } from './discord-gateway.ts'
 import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
 import { DiscordAdapter } from './adapters/discord.ts'
 import { QqAdapter } from './adapters/qq.ts'
 import { SlackAdapter } from './adapters/slack.ts'
 import { TelegramAdapter } from './adapters/telegram.ts'
-import { commandDenied, commandFailed, formatFileList, formatPairs, helpText } from './templates.ts'
+import { commandDenied, commandFailed, formatFileList, formatPairs, helpText, roleUsage } from './templates.ts'
 
 const NAME_MAX = 80
 const TARGET_MAX = 128
@@ -51,6 +60,38 @@ const STATUS_BUTTONS = [
   { id: 'refresh_status' as const, label: '刷新状态' },
   { id: 'help' as const, label: '帮助' },
 ]
+
+interface ParsedCommand {
+  command: string
+  args: string
+}
+
+function parseCommandText(text: string): ParsedCommand | null {
+  const parsed = /^\/([a-z0-9_]{1,32})(?:\s+([\s\S]*))?$/.exec(text.trim())
+  if (!parsed) return null
+  return { command: parsed[1] ?? '', args: (parsed[2] ?? '').trim() }
+}
+
+function roleValidationMessage(error: RoleValidationError): string {
+  switch (error) {
+    case 'role_name_empty':
+      return `名字不能为空；用法：/role set <名字> <角色设定>（名字不超过 ${ROLE_NAME_MAX} 字、不能含空格或括号）。`
+    case 'role_name_too_long':
+      return `名字最长 ${ROLE_NAME_MAX} 字。`
+    case 'role_name_has_whitespace':
+      return '名字不能包含空格或换行。'
+    case 'role_name_invalid_chars':
+      return '名字不能包含方括号或控制字符。'
+    case 'role_prompt_empty':
+      return `角色设定不能为空；最多 ${ROLE_PROMPT_MAX} 字。`
+    case 'role_prompt_too_long':
+      return `角色设定最长 ${ROLE_PROMPT_MAX} 字。`
+    case 'role_prompt_reserved_marker':
+      return '角色设定不能包含 [系统提示]/[安全边界]/[长期记忆]/[用户消息]/[模式：] 等保留标记。'
+    default:
+      return '角色卡内容不合法。'
+  }
+}
 
 export interface CreateBotInput {
   platform: BotPlatform
@@ -188,6 +229,7 @@ export class BotService {
   private readonly aiLimiter: SlidingWindowLimiter
   private readonly chatLimiter: SlidingWindowLimiter
   private readonly memory: BotMemoryStore
+  private readonly roles: BotChatRoleStore
   private readonly gateway: DiscordGatewayManager
   private readonly connectivity: BotConnectivityMonitor
   private timer: NodeJS.Timeout | null = null
@@ -204,6 +246,7 @@ export class BotService {
     this.aiLimiter = new SlidingWindowLimiter(3_600_000, Math.max(1, deps.config.botAiRatePerHour))
     this.chatLimiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botChatRatePerMinute))
     this.memory = new BotMemoryStore(deps.db, deps.config.dataDir, deps.config.botAiMemoryMaxChars)
+    this.roles = new BotChatRoleStore(deps.db)
     this.gateway = new DiscordGatewayManager({
       enabled: deps.config.botDiscordGatewayEnabled,
       log: deps.log,
@@ -1027,8 +1070,10 @@ export class BotService {
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): Promise<{ status: number; body: unknown }> {
+    const parsed = parseCommandText(result.text)
+    const roleDm = parsed?.command === 'role' && result.isDirect
     const target = this.inboundTarget(bot.id, result)
-    if (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId)) {
+    if (!roleDm && (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId))) {
       this.deps.audit('bot.command.denied', bot.id, { target: result.targetExternalId, user: result.userId.slice(0, 64) })
       return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
     }
@@ -1037,7 +1082,7 @@ export class BotService {
       void result.reply('命令过于频繁，请稍后再试。').catch(() => undefined)
       return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
     }
-    const task = this.executeCommand(bot, result, target).catch((error: unknown) => {
+    const task = this.executeCommand(bot, result, parsed).catch((error: unknown) => {
       this.deps.log('warn', 'Bot 命令执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
     })
     this.pending.add(task)
@@ -1113,11 +1158,10 @@ export class BotService {
   private async executeCommand(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
-    _target: BotTargetRow,
+    parsed: ParsedCommand | null,
   ): Promise<void> {
-    const parsed = /^\/([a-z0-9_]{1,32})(?:\s+([\s\S]*))?$/.exec(result.text.trim())
-    const command = parsed?.[1] ?? ''
-    const args = (parsed?.[2] ?? '').trim()
+    const command = parsed?.command ?? ''
+    const args = parsed?.args ?? ''
     this.deps.audit('bot.command', `${bot.platform}:${result.targetExternalId}`, {
       command: command.slice(0, 32),
       bot: bot.id,
@@ -1177,6 +1221,9 @@ export class BotService {
           memoryAnswer = text
           break
         }
+        case 'role':
+          text = await this.executeRoleCommand(bot, result, args)
+          break
         default:
           text = commandDenied()
       }
@@ -1189,13 +1236,97 @@ export class BotService {
     }
   }
 
+  private async executeRoleCommand(
+    bot: BotRow,
+    result: Extract<InboundVerification, { kind: 'command' }>,
+    args: string,
+  ): Promise<string> {
+    // dispatchCommand 已限制为私聊；这里再做一次防御，避免未来路由变化导致群内写角色卡。
+    if (!result.isDirect) return commandDenied()
+    const card = this.roles.get(bot.id, result.userId)
+    const parsed = /^(\S+)(?:\s+([\s\S]*))?$/.exec(args.trim())
+    const sub = (parsed?.[1] ?? '').toLowerCase()
+    const rest = (parsed?.[2] ?? '').trim()
+    if (!sub || sub === 'help') {
+      const status = card
+        ? `当前角色卡：${card.name}（${card.enabled ? '已启用' : '已停用'}）`
+        : '当前未设置角色卡。'
+      return `${status}\n\n${roleUsage()}`
+    }
+
+    if (sub === 'show') {
+      if (!card) return '当前未设置角色卡。\n\n' + roleUsage()
+      return [
+        `角色卡：${card.name}`,
+        `状态：${card.enabled ? '已启用' : '已停用'}`,
+        '设定：',
+        card.prompt,
+      ].join('\n')
+    }
+
+    if (sub === 'set') {
+      const parts = /^(\S+)(?:\s+([\s\S]*))?$/.exec(rest)
+      const name = (parts?.[1] ?? '').trim()
+      const prompt = normalizeRolePrompt(parts?.[2] ?? '')
+      const error = validateRole(name, prompt)
+      if (error) return roleValidationMessage(error)
+      this.roles.save(bot.id, result.userId, name, prompt)
+      this.resetChatSession(bot.id, result.targetExternalId, result.userId)
+      this.deps.audit('bot.role', `${bot.platform}:${result.targetExternalId}`, {
+        bot: bot.id,
+        user: result.userId.slice(0, 64),
+        action: 'set',
+        nameLength: name.length,
+        promptLength: prompt.length,
+      })
+      return `角色卡「${name}」已启用；当前私聊 Chat 会话已重置。`
+    }
+
+    if (sub === 'off' || sub === 'on') {
+      if (!card) return `尚未设置角色卡，无法${sub === 'off' ? '停用' : '启用'}。\n\n` + roleUsage()
+      const enabled = sub === 'on'
+      if (!this.roles.setEnabled(bot.id, result.userId, enabled)) return '角色卡状态更新失败。'
+      this.resetChatSession(bot.id, result.targetExternalId, result.userId)
+      this.deps.audit('bot.role', `${bot.platform}:${result.targetExternalId}`, {
+        bot: bot.id,
+        user: result.userId.slice(0, 64),
+        action: sub,
+      })
+      return `角色卡「${card.name}」已${enabled ? '启用' : '停用'}；当前私聊 Chat 会话已重置。`
+    }
+
+    if (sub === 'delete') {
+      if (!this.roles.remove(bot.id, result.userId)) return '当前未设置角色卡。'
+      this.resetChatSession(bot.id, result.targetExternalId, result.userId)
+      this.deps.audit('bot.role', `${bot.platform}:${result.targetExternalId}`, {
+        bot: bot.id,
+        user: result.userId.slice(0, 64),
+        action: 'delete',
+      })
+      return '角色卡已删除；当前私聊 Chat 会话已重置。'
+    }
+
+    return roleUsage()
+  }
+
+  /** 角色变更后丢弃当前私聊 Chat 映射；task/群会话与远端历史不删除。 */
+  private resetChatSession(botId: string, targetExternalId: string, userId: string): void {
+    this.db
+      .prepare(
+        "DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat'",
+      )
+      .run(botId, targetExternalId, userId)
+  }
+
   private async executeChat(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'chat' }>,
     text: string,
   ): Promise<void> {
     try {
-      const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, text, 'chat')
+      const role = result.isDirect ? this.roles.get(bot.id, result.userId) : null
+      const roleCard = role?.enabled ? role : null
+      const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, text, 'chat', roleCard)
       await result.reply(sanitizeExternalText(answer))
       this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, text, answer)
     } catch {
@@ -1232,6 +1363,7 @@ export class BotService {
     targetExternalId: string,
     text: string,
     mode: BotAiMode,
+    roleCard?: BotChatRole | null,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     const memory = this.memory.get(bot.id, userId)
@@ -1239,6 +1371,7 @@ export class BotService {
     const prompt = buildBotPrompt({
       mode,
       customPrompt,
+      roleCard: mode === 'chat' ? roleCard : null,
       memory: memory.summary,
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
@@ -1247,6 +1380,7 @@ export class BotService {
       user: userId.slice(0, 64),
       mode,
       chars: text.length,
+      ...(roleCard ? { role: true } : {}),
     })
     const answer = await this.deps.ai.chat({
       botId: bot.id,

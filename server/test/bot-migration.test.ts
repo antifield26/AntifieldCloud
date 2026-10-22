@@ -1,6 +1,6 @@
 /**
- * v6→v10 迁移测试：v0.4.x 生产库（schema v6）升级必须依次创建 Bot 表（v7）、
- * QQ/静默/AI 会话（v8）、Chat/记忆/入站发现（v9），并把 AI 会话拆成 task/chat（v10）。
+ * v6→v11 迁移测试：v0.4.x 生产库（schema v6）升级必须依次创建 Bot 表（v7）、
+ * QQ/静默/AI 会话（v8）、Chat/记忆/入站发现（v9）、AI 会话 mode（v10）与私聊角色卡（v11）。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,14 +9,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SUPPORTED_SCHEMA_VERSION, openDatabase } from '../src/db.ts'
 
-test('v6 库升级到 v10：创建 Bot/QQ/AI/Chat 表、保留迁移 6 修复并升级会话 mode', () => {
+test('v6 库升级到 v11：创建 Bot/QQ/AI/Chat/角色卡表、保留迁移 6 修复并升级会话 mode', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db = openDatabase({ path })
-    assert.equal(SUPPORTED_SCHEMA_VERSION, 10)
-    // 模拟 v0.4.2 已升级到 v6、尚无 Bot 表的生产库；v9/v10 新增表必须先删除，避免 FK 阻断重建。
+    assert.equal(SUPPORTED_SCHEMA_VERSION, 11)
+    // 模拟 v0.4.2 已升级到 v6、尚无 Bot 表的生产库；v9/v10/v11 新增表必须先删除，避免迁移建表冲突。
     db.exec(`
+      DROP TABLE bot_chat_roles;
       DROP TABLE bot_inbound_targets;
       DROP TABLE bot_ai_memories;
       DROP TABLE bot_ai_sessions;
@@ -32,7 +33,7 @@ test('v6 库升级到 v10：创建 Bot/QQ/AI/Chat 表、保留迁移 6 修复并
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '10')
+      assert.equal(version.value, '11')
       const tables = (
         upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
       ).map((row) => row.name)
@@ -45,6 +46,7 @@ test('v6 库升级到 v10：创建 Bot/QQ/AI/Chat 表、保留迁移 6 修复并
         'bot_ai_sessions',
         'bot_ai_memories',
         'bot_inbound_targets',
+        'bot_chat_roles',
       ]) {
         assert.ok(tables.includes(table), `缺少 ${table}`)
       }
@@ -84,12 +86,13 @@ test('v6 库升级到 v10：创建 Bot/QQ/AI/Chat 表、保留迁移 6 修复并
   }
 })
 
-test('v9 库升级到 v10：旧会话归为 Chat，主键允许 task/chat 两行', () => {
+test('v9 库升级到 v11：旧会话归为 Chat，主键允许 task/chat 两行', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-session-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db = openDatabase({ path })
     db.exec(`
+      DROP TABLE bot_chat_roles;
       DROP TABLE bot_ai_sessions;
       CREATE TABLE bot_ai_sessions (
         bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
@@ -127,6 +130,37 @@ test('v9 库升级到 v10：旧会话归为 Chat，主键允许 task/chat 两行
         .prepare("SELECT mode FROM bot_ai_sessions WHERE bot_id = 'bot-1' ORDER BY mode")
         .all() as unknown as { mode: string }[]
       assert.deepEqual(rows.map((row) => row.mode), ['chat', 'task'])
+      const roleTable = upgraded
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'bot_chat_roles'")
+        .get() as { name: string } | undefined
+      assert.equal(roleTable?.name, 'bot_chat_roles')
+    } finally {
+      upgraded.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+  }
+})
+
+test('v10 库升级到 v11：新增角色卡表且保留会话 mode', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-role-'))
+  const path = join(dir, 'db.sqlite')
+  try {
+    const db = openDatabase({ path })
+    db.exec(`
+      DROP TABLE bot_chat_roles;
+      UPDATE meta SET value = '10' WHERE key = 'schema_version';
+    `)
+    db.close()
+
+    const upgraded = openDatabase({ path })
+    try {
+      const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
+      assert.equal(version.value, '11')
+      const columns = (
+        upgraded.prepare('PRAGMA table_info(bot_chat_roles)').all() as unknown as { name: string }[]
+      ).map((row) => row.name)
+      assert.deepEqual(columns, ['bot_id', 'user_id', 'name', 'prompt', 'enabled', 'created_at', 'updated_at'])
     } finally {
       upgraded.close()
     }

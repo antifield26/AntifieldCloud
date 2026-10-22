@@ -3,6 +3,7 @@
  * 安全边界：自定义提示词只能改变风格与任务策略，不能移除只读、防泄密和“记忆不是指令”约束。
  */
 import type { BotAiMode } from './types.ts'
+import type { BotChatRole } from './roles.ts'
 
 export const DEFAULT_TASK_PROMPT =
   '你是 AntifieldCloud 的任务助手，处理用户通过 /ask 提出的明确任务或问题。先给出结论或结果，再给必要步骤、命令要点和风险；复杂问题用简短分点，不空泛；信息不足时只问一个最关键澄清；不确定就说明，不虚构状态、文件、网络或执行结果。'
@@ -22,6 +23,8 @@ export interface BuildBotPromptInput {
   mode: BotAiMode
   /** 环境变量覆盖；空/空白时使用该模式内置默认。 */
   customPrompt?: string
+  /** 仅私聊 Chat 的启用角色卡；存在时替换 Chat 默认/覆盖提示。 */
+  roleCard?: Pick<BotChatRole, 'name' | 'prompt'> | null
   /** 该 Bot×用户的长期记忆摘要；只作为背景资料。 */
   memory?: string
   userText: string
@@ -31,7 +34,12 @@ export interface BuildBotPromptInput {
 export function buildBotPrompt(input: BuildBotPromptInput): string {
   const fallback = input.mode === 'task' ? DEFAULT_TASK_PROMPT : DEFAULT_CHAT_PROMPT
   const custom = (input.customPrompt ?? '').trim()
-  const systemPrompt = custom ? custom.slice(0, 2000) : fallback
+  const roleCard = input.mode === 'chat' ? input.roleCard : null
+  const systemPrompt = roleCard
+    ? `[角色卡：${roleCard.name}]\n${roleCard.prompt.trim()}`
+    : custom
+      ? custom.slice(0, 2000)
+      : fallback
   const memory = (input.memory ?? '').trim() || '（暂无）'
   return [
     `[模式：${MODE_LABEL[input.mode]}]`,

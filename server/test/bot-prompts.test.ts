@@ -42,6 +42,34 @@ test('v0.5.4 提示词：自定义提示词只替换风格，安全边界仍追�
   assert.ok(prompt.includes('[模式：任务]'))
 })
 
+test('v0.5.5 提示词：私聊角色卡替换 Chat 默认并保留安全边界', () => {
+  const prompt = buildBotPrompt({
+    mode: 'chat',
+    customPrompt: '环境覆盖不应生效',
+    roleCard: { name: '猫娘', prompt: '说话简短，偶尔用喵。' },
+    memory: '用户喜欢深色模式',
+    userText: '你好',
+  })
+  assert.match(prompt, /^\[模式：对话\]/)
+  assert.ok(prompt.includes('[角色卡：猫娘]'))
+  assert.ok(prompt.includes('说话简短，偶尔用喵。'))
+  assert.ok(!prompt.includes(DEFAULT_CHAT_PROMPT))
+  assert.ok(!prompt.includes('环境覆盖不应生效'))
+  assert.ok(prompt.includes(SAFETY_BOUNDARY))
+  assert.ok(prompt.includes('用户喜欢深色模式'))
+})
+
+test('v0.5.5 提示词：角色卡只影响 Chat，任务模式忽略', () => {
+  const prompt = buildBotPrompt({
+    mode: 'task',
+    roleCard: { name: '猫娘', prompt: '说话简短，偶尔用喵。' },
+    userText: '总结',
+  })
+  assert.match(prompt, /^\[模式：任务\]/)
+  assert.ok(prompt.includes(DEFAULT_TASK_PROMPT))
+  assert.ok(!prompt.includes('[角色卡：'))
+})
+
 test('v0.5.4 提示词：空白自定义回退默认；超长自定义截断到 2000', () => {
   const blank = buildBotPrompt({ mode: 'chat', customPrompt: '   ', userText: 'hi' })
   assert.ok(blank.includes(DEFAULT_CHAT_PROMPT))

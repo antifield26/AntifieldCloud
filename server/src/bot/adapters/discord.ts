@@ -19,6 +19,7 @@ import { BotPlatformError, fetchJson, headerValue, parseJsonBody } from './http.
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const TEXT_LIMIT = 2000
+const COMMAND_TEXT_MAX = 2048
 const MAX_MEDIA_FILES = 5
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
 
@@ -110,7 +111,7 @@ export class DiscordAdapter implements BotAdapter {
         'Interactions Endpoint URL 填上面复制的地址（保存时 Discord 会发送 PING，服务端会返回 PONG）。',
         '邀请 Bot 到测试服务器并授予“发送消息/附件”权限。',
         '在目标频道右键复制频道 ID，在“目标”中登记并开启命令/通知权限。',
-        '如需斜杠命令，在 Developer Portal 或 API 注册 /help、/status、/backup、/world、/mc、/files。',
+        '如需斜杠命令，在 Developer Portal 或 API 注册 /help、/status、/backup、/world、/mc、/files；另注册 /role（字符串选项 action/name/prompt），该命令在私聊对全部用户开放。',
       ],
     }
   }
@@ -171,8 +172,8 @@ export class DiscordAdapter implements BotAdapter {
       targetKind: 'channel',
       userId: String(author.id ?? ''),
       userName: typeof author.username === 'string' ? author.username : null,
-      text: `/${command}${options ? ` ${options}` : ''}`.slice(0, 512),
-      isDirect: false,
+      text: `/${command}${options ? ` ${options}` : ''}`.slice(0, COMMAND_TEXT_MAX),
+      isDirect: typeof payload.guild_id !== 'string',
       immediateResponse: { type: 5 },
       reply: async (replyText: string, replyOptions?: BotReplyOptions) => {
         await this.interactionFollowUp(applicationId, interactionToken, replyText, replyOptions)

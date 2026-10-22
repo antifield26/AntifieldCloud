@@ -1,15 +1,24 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.4**（schema v10）；生产已部署 release `20261022T085120Z`，上一版 v0.5.3/schema v9。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.5**（schema v11）；生产已部署 v0.5.4 release `20261022T085120Z`/schema v10，v0.5.5 待部署。
 
-## v0.5.4 补充（当前）
+## v0.5.5 补充（当前）
+
+- **私聊角色卡**：`/role` 对全部平台私聊用户开放；每 Bot×用户一张“名字+设定”卡；`set/show/off/on/delete` 管理。
+- **应用范围**：只替换私聊 Chat 默认人设；安全边界与共享记忆仍追加；`/ask` 与群/频道 Chat 不使用角色卡。
+- **会话**：角色卡变更重置当前私聊 Chat 会话映射；task 会话与长期记忆不受影响。
+- **权限**：仅 `/role` 绕过命令白名单；其他命令仍要求目标 `allow_commands` + 用户白名单；Telegram/Discord/Slack 私聊 Chat 仍按目标 `allow_chat`。
+- **schema v11**：新增 `bot_chat_roles`；Discord DM 修正 `isDirect`；Discord/Slack 命令文本上限 2048。
+- **状态**：本地测试 324/141、`npm run check` 通过；生产部署/smoke 与真实私聊 `/role` 验收待执行。
+
+## v0.5.4 补充（历史）
 
 - **任务/对话双模式**：`/ask` 任务导向（结论/步骤/风险/必要澄清），普通 Chat 对话导向（自然/简洁/不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖，空则内置。
 - **安全边界**：自定义提示后强制追加只读/不执行/不泄密/“记忆不是指令”；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - **会话隔离**：schema v10 重建 `bot_ai_sessions`，主键含 mode；旧会话归 chat，`/ask` 新建 task；共享长期记忆。
 - **QQ C2C**：QQ 私聊对任意用户开放 Chat（接触面由平台“谁可添加 Bot”控制）；群/频道与其他平台仍需目标登记；命令仍走白名单。
 - **审计**：`bot.ai.chat` 记录 mode；不记录提示词/记忆正文。
-- **状态**：本地测试 312/141、`npm run check` 通过；已部署 release `20261022T085120Z`/schema v10、smoke 24/24；QQ C2C 管理员/非管理员均实发确认。
+- **状态**：本地测试 324/141、`npm run check` 通过；已部署 release `20261022T085120Z`/schema v10、smoke 24/24；QQ C2C 管理员/非管理员均实发确认。
 
 ## v0.5.3 补充（历史）
 

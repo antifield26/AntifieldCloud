@@ -1,5 +1,21 @@
 # Changelog
 
+## [v0.5.5] - 2026-10-22
+
+### Added
+
+- **私聊角色卡**：新增 `/role`，对全部平台私聊用户开放；`/role set <名字> <设定>`、`/role show`、`/role off`、`/role on`、`/role delete`。每 Bot×用户一张启用卡，名字 1–32 字符、设定 1–1000 字符，拒绝保留提示词标记。
+- **Chat 人设**：私聊 Chat 有启用角色卡时，用角色卡替换默认 Chat 风格；固定只读安全边界与共享长期记忆仍追加；`/ask` 与群/频道 Chat 不使用角色卡。
+- **会话重置**：设置/停用/启用/删除角色卡后删除当前私聊 Chat 会话映射，下次 Chat 新建会话；`/ask` task 会话不受影响。
+- **权限边界**：`/role` 是唯一对全部私聊用户开放的斜杠命令；其他命令仍需目标 `allow_commands` + 用户白名单。Telegram/Discord/Slack 私聊 Chat 仍按现有目标 `allow_chat`，QQ C2C 沿用 v0.5.4 开放。
+- **Discord/Slack**：Discord DM interaction 正确标记 `isDirect`；Discord/Slack 命令文本上限从 512 提升到 2048，容纳角色设定。
+- **schema v11**：迁移 11 新增 `bot_chat_roles`；角色卡不通过 API/UI 暴露，随数据库备份。
+
+### Deployment
+
+- 版本/文档/`APP_VERSION` 升到 0.5.5；`deploy.ps1` smoke 期望 schema 11；生产部署、迁移前快照、smoke 与真实私聊 `/role`/Chat 验收待执行。
+- 本版无 UI 角色卡编辑；Discord/Slack 需在平台后台创建 `/role` 命令。
+
 ## [v0.5.4] - 2026-10-22
 
 ### Added

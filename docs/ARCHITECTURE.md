@@ -17,7 +17,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  │   ├─ Bot 出站 → api.telegram.org / discord.com/api/v10 / slack.com/api / bots.qq.com / api.sgroup.qq.com（固定上游，15s 超时）
  │   ├─ Bot AI → 127.0.0.1:4096 OpenCode 本地 API（/ask 与 Chat，默认关闭）
  │   ├─ Bot 记忆 → SQLite bot_ai_memories + DATA_DIR/bot-memory/memory-<uuid>.md（0700/0600）
- │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v10）
+ │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v11）
  │   ├─ 文件   /var/lib/antifieldcloud/files/<xx>/<id>（files.origin=user|note|system）
  │   ├─ 应用备份 /var/lib/antifieldcloud/backups（pending/acked/imports/secrets/db-predeploy-*）
  │   ├─ 世界备份 /var/lib/antifieldcloud/world-backups（world-<UTC>.tar.gz，保留 4 份）
@@ -62,7 +62,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 记忆：`BotMemoryStore` 以 `bot_ai_memories`（DB 权威）保存每 Bot×用户摘要与 `summary_session_id`，镜像到
   `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600、临时文件 + 原子 rename）；每轮对话后调用 `BotAi.summarizeMemory` 滚动摘要，
   失败只记日志并保留旧摘要；记忆正文不进入 HTTP API/前端。
-- 提示词（v0.5.4）：`server/src/bot/prompts.ts` 生成任务/对话两套提示，固定安全边界不可覆盖；`/ask` 与 Chat 使用 `bot_ai_sessions.mode=task|chat` 独立会话，共享 `bot_ai_memories`。
+- 提示词（v0.5.4/v0.5.5）：`server/src/bot/prompts.ts` 生成任务/对话提示；私聊 Chat 可加载 `/role` 角色卡替换默认风格，固定安全边界不可覆盖；`/ask` 与 Chat 使用 `bot_ai_sessions.mode=task|chat` 独立会话，共享 `bot_ai_memories`；角色卡存 `bot_chat_roles`。
 - 连通性（v0.5.3）：`BotConnectivityMonitor` 每 60s 探测代理 TCP 端口、外网与启用平台 API（只读、无凭据）；快照经
   `GET /api/bots/connectivity` 读取、`POST /api/bots/connectivity/check` 手动复检。外网恢复时调用 `DiscordGatewayManager.wake()`
   跳过退避立即重连并触发队列扫描；Pi 的 18090 代理由 PC 登录计划任务维护，使用 wscript/VBS 无窗口启动，PC 代理端口不可达时隧道脚本循环重试。
@@ -84,7 +84,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | 模块 | 职责 |
 |---|---|
 | `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*`、v0.5.2 Chat/记忆/多附件/Gateway 键、v0.5.3 连通性键与 v0.5.4 双模式提示词键） |
-| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v10）、事务；迁移前外键一致性检查与孤儿 shares 修复 |
+| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v11）、事务；迁移前外键一致性检查与孤儿 shares 修复 |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性 |
 | `uploads/` | 分片上传会话/块索引、配额预留、断点状态、拼接与过期清理 |
@@ -108,7 +108,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 
 ## 4. 数据模型
 
-SQLite（WAL）核心表（schema v10）：
+SQLite（WAL）核心表（schema v11）：
 
 - `users`：单管理员；scrypt 哈希 + salt；TOTP secret；`totp_last_step` 防重放；恢复码哈希 JSON。
 - `auth_challenges`：密码通过后的 5 分钟一次性挑战（只存 token 哈希）。
@@ -132,6 +132,7 @@ SQLite（WAL）核心表（schema v10）：
 - `bot_publish_jobs`：发布任务（文本 + 媒体文件 id 列表 + `scheduled_at`），状态 `draft|queued|sending|sent|failed|canceled`。
 - `bot_events`：`(bot_id, platform_event_id)` 主键，用于 Webhook 重放去重；按 `received_at` 保留 7 天。
 - `bot_ai_sessions`：`(bot_id, target_external_id, user_id, mode)` 主键（mode=chat/task），映射 OpenCode `session_id`、模型标签与更新时间；旧会话归 chat；按保留期清理，不删除远端会话。
+- `bot_chat_roles`：`(bot_id,user_id)` 主键，保存私聊角色卡名字/设定/启用状态与时间戳；仅私聊 Chat 读取，角色变更删除对应 chat 会话映射；不通过 API/UI 暴露。
 - `bot_ai_memories`：`(bot_id, user_id)` 主键、`memory_id` 唯一、`summary`、`summary_session_id`、时间戳；每 Bot×用户一份滚动摘要，镜像文件在 `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600）；不通过 API/UI 暴露，按 AI 会话保留期清理。
 - `bot_inbound_targets`：`(bot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 

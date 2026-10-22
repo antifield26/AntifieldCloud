@@ -29,7 +29,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.5.4", "schemaVersion": 10, "uptimeSec": 1234 }
+{ "ok": true, "version": "0.5.5", "schemaVersion": 11, "uptimeSec": 1234 }
 ```
 
 ## 2. 认证与账号
@@ -381,7 +381,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.5.4", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["telegram","discord","slack","qq"] }`。
+- `GET /api/version`（需要会话）：`{ "version": "0.5.5", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["telegram","discord","slack","qq"] }`。
 - `GET /api/storage`（需要会话；v0.4.0 轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
 - 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
@@ -450,7 +450,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `POST /api/restores/:planId/execute` body `{totpCode,confirmText:"RESTORE"}` → `{plan,result}`；只恢复文件内容到**新文件夹**（新 ID，不覆盖），单并发/锁；`410 plan_expired`、`409 restore_busy/plan_completed`；`result.skippedMissing` 列出执行时仍缺失的文件，其余文件正常恢复。
 - `GET /api/restores/:planId` → `{plan}`。
 - 错误码：`restore_disabled` 403、`archive_not_verified`/`archive_chain_invalid` 409、`invalid_selection`/`confirmation_failed` 400、`invalid_totp` 401、`restore_too_many_files` 400。
-- 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。schema v10 启动时会拒绝低于/高于支持版本的数据库（迁移 6 孤儿分享修复、迁移 7 Bot 表、迁移 8 QQ/静默/AI 会话、迁移 9 Chat/记忆/入站目标、迁移 10 双模式 AI 会话）。
+- 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。schema v11 启动时会拒绝低于/高于支持版本的数据库（迁移 6 孤儿分享修复、迁移 7 Bot 表、迁移 8 QQ/静默/AI 会话、迁移 9 Chat/记忆/入站目标、迁移 10 双模式 AI 会话、迁移 11 私聊角色卡）。
 - 整库恢复：不在 Web API 内，按 `docs/BACKUP.md` §8.1 的离线 root 手工流程执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；仓库不提供 `restore.sh` 自动脚本。
 
 ## 12. 可观测性与备份状态（v0.4.0）
@@ -538,7 +538,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `POST /api/notes/:id/versions/:versionId/restore` → 200 Note（恢复前自动保存当前版本快照）。
 - 版本在标题/正文/标签变化时自动生成，每笔记保留最近 `NOTE_VERSIONS_KEEP`（默认 20）条；删除笔记级联删除版本与附件。
 
-## 14. Bot 平台（v0.5.4）
+## 14. Bot 平台（v0.5.5）
 
 Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/bots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/bot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/DEPLOY.md` §5.2）。
 
@@ -549,6 +549,8 @@ v0.5.2 新增普通消息 Chat：非斜杠消息在目标 `allow_chat=1` 时进�
 v0.5.3 新增 Bot 出站连通性：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测代理端口、外网与各启用平台 API；`GET /api/bots/connectivity` 返回快照，`POST /api/bots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 Token/AppSecret 或平台响应正文；网络恢复后服务端自动唤醒 Discord Gateway 并触发队列扫描。
 
 v0.5.4 新增双模式 AI：`/ask` 使用任务导向提示，普通 Chat 使用对话导向提示；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定安全边界不可覆盖。`bot_ai_sessions` 增加 `mode`（chat/task），`/ask` 与 Chat 使用独立 OpenCode 会话、共享长期记忆；`bot.ai.chat` 审计包含 `mode`，不记录提示词/记忆正文。
+
+v0.5.5 新增私聊角色卡：`/role` 仅对私聊用户开放，`set/show/off/on/delete` 管理每 Bot×用户一张“名字+角色设定”卡；仅私聊 Chat 使用启用卡并替换默认 Chat 风格，固定安全边界与共享记忆仍追加；`/ask` 与群/频道 Chat 不使用；角色变更删除当前私聊 Chat 会话映射。角色设定不通过 HTTP API/UI 暴露。
 
 ### 对象
 

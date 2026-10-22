@@ -494,6 +494,67 @@ test('Discord：命令回复支持按钮 components', async () => {
   assert.equal(components[0]?.components[0]?.custom_id, 'help')
 })
 
+test('Discord：DM 命令 isDirect=true，/role 长设定不被 512 截断', async () => {
+  const keys = discordKeys()
+  const { fetchImpl } = makeFetch(() => jsonResponse({ id: 'webhook-msg' }))
+  const adapter = discordAdapter(fetchImpl, keys)
+  const prompt = '角色设定'.repeat(200)
+  const body = Buffer.from(
+    JSON.stringify({
+      type: 2,
+      id: 'interaction-dm-role',
+      token: 'interaction-token',
+      channel_id: 'dm-channel',
+      user: { id: 'user-1', username: 'alice' },
+      data: {
+        name: 'role',
+        options: [
+          { name: 'action', value: 'set' },
+          { name: 'name', value: '猫娘' },
+          { name: 'prompt', value: prompt },
+        ],
+      },
+    }),
+  )
+  const timestamp = String(Math.floor(Date.now() / 1000))
+  const result = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: discordHeaders(keys.privateKey, timestamp, body),
+    body,
+  })
+  assert.equal(result.kind, 'command')
+  if (result.kind !== 'command') throw new Error('expected command')
+  assert.equal(result.isDirect, true)
+  assert.equal(result.text.includes(prompt), true)
+  assert.ok(result.text.length > 512)
+})
+
+test('Discord：服务器内命令 isDirect=false', async () => {
+  const keys = discordKeys()
+  const { fetchImpl } = makeFetch(() => jsonResponse({ id: 'webhook-msg' }))
+  const adapter = discordAdapter(fetchImpl, keys)
+  const body = Buffer.from(
+    JSON.stringify({
+      type: 2,
+      id: 'interaction-guild-role',
+      token: 'interaction-token',
+      channel_id: 'channel-1',
+      guild_id: 'guild-1',
+      member: { user: { id: 'user-1', username: 'alice' } },
+      data: { name: 'role', options: [{ name: 'action', value: 'show' }] },
+    }),
+  )
+  const timestamp = String(Math.floor(Date.now() / 1000))
+  const result = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: discordHeaders(keys.privateKey, timestamp, body),
+    body,
+  })
+  assert.equal(result.kind, 'command')
+  if (result.kind !== 'command') throw new Error('expected command')
+  assert.equal(result.isDirect, false)
+})
+
 test('Discord：多附件一次 multipart，返回 externalIds；单附件保持 externalId', async () => {
   const keys = discordKeys()
   let handler: FetchHandler = () =>

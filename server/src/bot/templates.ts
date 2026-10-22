@@ -55,10 +55,24 @@ export function helpText(platform: string): string {
       '/mc Minecraft 状态',
       '/files <关键词> 文件元数据（最多 10 条）',
       '/ask <问题> AI 对话（需管理员启用并限流）',
+      '/role 私聊角色卡（仅私聊，所有私聊用户可用）',
       '普通消息 Chat：目标开启允许 Chat 后，私聊直接对话；群/频道 @Bot 或回复 Bot 触发。',
-      '斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
+      '除 /role 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
     ].join('\n'),
   )
+}
+
+/** 私聊角色卡用法；无卡或未知子命令时展示，不读取/回显他人内容。 */
+export function roleUsage(): string {
+  return [
+    '角色卡（仅私聊 Chat，每个 Bot×用户一张）：',
+    '/role set <名字> <角色设定>  新建/覆盖并启用',
+    '/role show  查看当前角色卡',
+    '/role off   停用但保留',
+    '/role on    重新启用',
+    '/role delete 删除',
+    '角色卡只影响私聊 Chat，不影响 /ask 与群聊；安全边界始终保留。',
+  ].join('\n')
 }
 
 export function commandDenied(): string {

@@ -599,6 +599,20 @@ const MIGRATIONS: string[] = [
   ALTER TABLE bot_ai_sessions_v10 RENAME TO bot_ai_sessions;
   CREATE INDEX idx_bot_ai_sessions_updated ON bot_ai_sessions(updated_at);
   `,
+  `
+  -- v0.5.5：私聊 Chat 用户角色卡；每个 Bot×用户一张，可停用/覆盖。
+  CREATE TABLE bot_chat_roles (
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 32),
+    prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 1000),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, user_id)
+  );
+  CREATE INDEX idx_bot_chat_roles_updated ON bot_chat_roles(updated_at);
+  `,
 ]
 
 export interface OpenOptions {

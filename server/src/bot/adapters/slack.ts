@@ -17,6 +17,7 @@ import { BotPlatformError, fetchJson, headerValue, parseJsonBody } from './http.
 
 const SLACK_API = 'https://slack.com/api'
 const TEXT_LIMIT = 4000
+const COMMAND_TEXT_MAX = 2048
 const BOT_USER_CACHE_TTL_MS = 60 * 60 * 1000
 const BOT_USER_FAILURE_TTL_MS = 30 * 1000
 
@@ -132,7 +133,7 @@ export class SlackAdapter implements BotAdapter {
       steps: [
         '在 api.slack.com/apps 创建 App，取得 Bot Token（xoxb-…）与 Signing Secret。',
         'Event Subscriptions 开启并填上面地址，订阅 message.channels、message.im、app_mention（按需）。',
-        'Slash Commands 的 Request URL 填同一地址，创建 /help、/status、/backup、/world、/mc、/files。',
+        'Slash Commands 的 Request URL 填同一地址，创建 /help、/status、/backup、/world、/mc、/files；另创建 /role（私聊对全部用户开放）。',
         '安装 App 到测试 workspace，邀请 Bot 到测试频道并复制频道 ID 登记目标。',
       ],
     }
@@ -176,7 +177,7 @@ export class SlackAdapter implements BotAdapter {
     const channelId = form.get('channel_id') ?? ''
     const userId = form.get('user_id') ?? ''
     if (!channelId || !userId) return { kind: 'rejected', status: 400, code: 'missing_fields' }
-    const text = `/${command.name}${command.args.length ? ` ${command.args.join(' ')}` : ''}`.slice(0, 512)
+    const text = `/${command.name}${command.args.length ? ` ${command.args.join(' ')}` : ''}`.slice(0, COMMAND_TEXT_MAX)
     const eventId = `slack:${form.get('trigger_id') ?? ''}`
     if (!form.get('trigger_id')) return { kind: 'rejected', status: 400, code: 'missing_trigger_id' }
     const responseHost = (() => {
@@ -243,7 +244,7 @@ export class SlackAdapter implements BotAdapter {
         targetKind: 'channel',
         userId,
         userName: null,
-        text: `/${command.name}${command.args.length ? ` ${command.args.join(' ')}` : ''}`.slice(0, 512),
+        text: `/${command.name}${command.args.length ? ` ${command.args.join(' ')}` : ''}`.slice(0, COMMAND_TEXT_MAX),
         isDirect,
         reply: async (replyText: string) => {
           await this.sendMessage(channelId, replyText.slice(0, TEXT_LIMIT))

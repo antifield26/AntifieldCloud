@@ -300,9 +300,9 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 单请求仍受 100 MiB/Cloudflare 代理限制；分片块 8 MiB 远低于限制，5 GiB 文件约 640 块。
 
-## 15. v0.5.4 机器人页
+## 15. v0.5.5 机器人页
 
-> v0.5.1 引入机器人页；v0.5.2 增加目标 Chat、最近入站目标、发布多选媒体与 Discord Gateway 状态；v0.5.3 增加出站网络卡片；v0.5.4 的提示词仅 env 配置，无 UI 编辑。
+> v0.5.1 引入机器人页；v0.5.2 增加目标 Chat、最近入站目标、发布多选媒体与 Discord Gateway 状态；v0.5.3 增加出站网络卡片；v0.5.4 的提示词仅 env 配置；v0.5.5 私聊角色卡仅由 `/role` 管理，无 UI 编辑。
 
 ### 入口与布局
 
@@ -334,6 +334,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
   Telegram 显示群/频道需关闭 privacy mode 或回复 Bot；QQ 显示先把 Bot 拉群并 @Bot 触发，再到目标分区从“最近入站目标”登记；Slack 无 Gateway/按钮提示。
 - 校验：必填/长度/hex/数字规则在前端即时提示，服务端 `invalid_bot_config` 错误映射到表单顶部。
 - v0.5.4 任务/对话提示词仅通过 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 环境变量配置，本页不提供编辑；修改后重启应用。
+- v0.5.5 私聊角色卡由用户在聊天窗口通过 `/role` 管理；本页不展示角色卡正文，也不提供管理员编辑入口。
 
 ### 目标
 
