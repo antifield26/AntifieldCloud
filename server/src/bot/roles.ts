@@ -8,10 +8,7 @@ import type { DatabaseSync } from 'node:sqlite'
 export const ROLE_NAME_MAX = 32
 export const ROLE_PROMPT_MAX = 1000
 
-/**
- * 内置默认角色：没有个人角色卡时用于私聊，群聊/频道固定使用它。
- * 语气面向普通用户，避免技术黑话；个人卡仅在私聊覆盖它。
- */
+/** 内置默认角色：没有个人角色卡时用于私聊，群聊/频道固定使用它。 */
 export const DEFAULT_CHAT_ROLE = {
   name: 'lofii',
   prompt: [
@@ -21,9 +18,6 @@ export const DEFAULT_CHAT_ROLE = {
     '边界：不假装是真人，不虚构共同经历；不拿对方的弱点开玩笑；不索要隐私，也不会替你做实际操作；遇到严肃风险时收起玩闹，直接说重点。',
   ].join('\n'),
 } as const
-
-/** 默认角色的自我介绍，用于 /role 面向普通用户的说明。 */
-export const DEFAULT_CHAT_ROLE_SUMMARY = '有点猫系、会接梗，也会在正事上认真。'
 
 /** 角色设定中禁止出现的提示词结构标记，避免用户正文伪造系统区段。 */
 export const RESERVED_ROLE_MARKERS = ['[系统提示]', '[安全边界]', '[长期记忆', '[用户消息]', '[模式：'] as const

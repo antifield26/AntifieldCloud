@@ -550,7 +550,7 @@ v0.5.3 新增 Bot 出站连通性：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECO
 
 v0.5.4 新增双模式 AI：`/ask` 使用任务导向提示，普通 Chat 使用对话导向提示；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定安全边界不可覆盖。`bot_ai_sessions` 增加 `mode`（chat/task），`/ask` 与 Chat 使用独立 OpenCode 会话、共享长期记忆；`bot.ai.chat` 审计包含 `mode`，不记录提示词/记忆正文。
 
-v0.5.6 新增默认角色 lofii（私聊/群聊）；个人 `/role` 卡只覆盖私聊，`off` 回落到 lofii；面向普通用户的角色文案不带技术术语。v0.5.5 新增私聊角色卡：`/role` 仅对私聊用户开放，`set/show/off/on/delete` 管理每 Bot×用户一张“名字+角色设定”卡；仅私聊 Chat 使用启用卡并替换默认 Chat 风格，固定安全边界与共享记忆仍追加；`/ask` 与群/频道 Chat 不使用；角色变更删除当前私聊 Chat 会话映射。角色设定不通过 HTTP API/UI 暴露。
+v0.5.6 新增默认角色 lofii（私聊/群聊）；个人 `/role` 卡只覆盖私聊，`off` 回落到 lofii；`/role` 文案只写当前角色与命令用法，不注入默认角色个性，也不带技术术语。v0.5.5 新增私聊角色卡：`/role` 仅对私聊用户开放，`set/show/off/on/delete` 管理每 Bot×用户一张“名字+角色设定”卡；仅私聊 Chat 使用启用卡并替换默认 Chat 风格，固定安全边界与共享记忆仍追加；`/ask` 与群/频道 Chat 不使用；角色变更删除当前私聊 Chat 会话映射。角色设定不通过 HTTP API/UI 暴露。
 
 ### 对象
 

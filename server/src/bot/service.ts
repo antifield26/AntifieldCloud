@@ -73,21 +73,21 @@ function parseCommandText(text: string): ParsedCommand | null {
 function roleValidationMessage(error: RoleValidationError): string {
   switch (error) {
     case 'role_name_empty':
-      return '名字还没写呢。可以这样说：/role set 名字 你希望我是什么样'
+      return '请提供名字。用法：/role set <名字> <设定>'
     case 'role_name_too_long':
-      return '名字有点长，换一个短一点、好记的吧。'
+      return '名字过长，请控制在 32 字以内。'
     case 'role_name_has_whitespace':
-      return '名字里不要放空格哦。'
+      return '名字不能包含空格。'
     case 'role_name_invalid_chars':
-      return '名字里不要放方括号这类符号，换个简单的名字吧。'
+      return '名字不能包含方括号等符号。'
     case 'role_prompt_empty':
-      return '还没写希望我是什么样呢。可以说说你的想法。'
+      return '请提供设定内容。'
     case 'role_prompt_too_long':
-      return '你想说的有点多，我记不住啦，精简一点再试试？'
+      return '设定过长，请控制在 1000 字以内。'
     case 'role_prompt_reserved_marker':
-      return '这段描述我读不太明白，换成自然的说话方式试试？'
+      return '设定包含不支持的格式，请换一种写法。'
     default:
-      return '这个角色我有点没看懂，换个说法试试？'
+      return '设定格式无法识别。'
   }
 }
 
@@ -1257,7 +1257,7 @@ export class BotService {
     const rest = (parsed?.[2] ?? '').trim()
     if (!sub || sub === 'help') {
       const status = card
-        ? `现在给你看的专属样子：${card.name}${card.enabled ? '（正在用）' : '（先收起来了）'}`
+        ? `当前角色：${card.name}（专属，${card.enabled ? '使用中' : '已暂停'}）`
         : roleDefaultText()
       return `${status}\n\n${roleUsage()}`
     }
@@ -1265,9 +1265,8 @@ export class BotService {
     if (sub === 'show') {
       if (!card) return roleDefaultText()
       return [
-        `现在的样子：${card.name}`,
-        card.enabled ? '正在用。' : '先收起来了，暂时用默认的 lofii。',
-        '你写给我的：',
+        `当前角色：${card.name}（专属，${card.enabled ? '使用中' : '已暂停'}）`,
+        '设定：',
         card.prompt,
       ].join('\n')
     }
@@ -1287,17 +1286,17 @@ export class BotService {
         nameLength: name.length,
         promptLength: prompt.length,
       })
-      return `好呀，以后私聊里我会用「${name}」的样子和你说话。之前聊天的感觉先放一放，我们从下一句重新开始。群聊里还是默认的 lofii。`
+      return `专属角色「${name}」已设置，私聊将使用该角色；群聊仍使用默认 lofii。`
     }
 
     if (sub === 'off' || sub === 'on') {
       if (!card) {
         return sub === 'off'
-          ? `${roleDefaultText()}\n\n不用收起来，我本来就是默认的 lofii。`
-          : '你还没有专属样子呢，先 /role set 一个吧。'
+          ? '当前没有专属角色，正在使用默认 lofii。'
+          : '当前没有专属角色，可先用 /role set 设置。'
       }
       const enabled = sub === 'on'
-      if (!this.roles.setEnabled(bot.id, result.userId, enabled)) return '这次没改成，稍后再试试？'
+      if (!this.roles.setEnabled(bot.id, result.userId, enabled)) return '角色状态更新失败，请稍后重试。'
       this.resetChatSession(bot.id, result.targetExternalId, result.userId)
       this.deps.audit('bot.role', `${bot.platform}:${result.targetExternalId}`, {
         bot: bot.id,
@@ -1305,13 +1304,13 @@ export class BotService {
         action: sub,
       })
       return enabled
-        ? `专属样子「${card.name}」又回来啦。`
-        : `你的专属样子「${card.name}」先收起来了，我回到默认的 lofii。`
+        ? `专属角色「${card.name}」已启用。`
+        : '专属角色已暂停，当前使用默认 lofii。'
     }
 
     if (sub === 'delete') {
       if (!this.roles.remove(bot.id, result.userId)) {
-        return `${roleDefaultText()}\n\n没有需要删掉的专属样子。`
+        return '当前没有专属角色。'
       }
       this.resetChatSession(bot.id, result.targetExternalId, result.userId)
       this.deps.audit('bot.role', `${bot.platform}:${result.targetExternalId}`, {
@@ -1319,7 +1318,7 @@ export class BotService {
         user: result.userId.slice(0, 64),
         action: 'delete',
       })
-      return '专属样子删掉了，我会一直用默认的 lofii。'
+      return '专属角色已删除，当前使用默认 lofii。'
     }
 
     return roleUsage()
@@ -1346,7 +1345,7 @@ export class BotService {
       await result.reply(sanitizeExternalText(answer))
       this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, text, answer)
     } catch {
-      await result.reply('我刚刚有点走神，稍后再和我说一次好吗？').catch(() => undefined)
+      await result.reply('暂时没回应上来，稍后再试。').catch(() => undefined)
     }
   }
 

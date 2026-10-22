@@ -167,6 +167,12 @@ test('v0.5.5：/role show/off/on/delete 与会话重置；task 会话保留', as
   const { dir, db, service, bot, aiCalls, replies } = setup()
   try {
     await sendCommand(service, bot.id, '/role set 老师 用耐心、分步骤的方式解释。')
+    const setReply = replies.at(-1) ?? ''
+    assert.ok(setReply.includes('专属角色「老师」已设置'))
+    assert.equal(setReply.includes('Chat'), false)
+    assert.equal(setReply.includes('会话'), false)
+    assert.equal(setReply.includes('好呀'), false)
+    assert.equal(setReply.includes('猫系'), false)
     service.createTarget(bot.id, {
       externalId: CHAT_ID,
       label: '私聊',
@@ -245,7 +251,7 @@ test('v0.5.6：/role 不扩大其他命令权限，群内 /role 只给友好提�
       (db.prepare('SELECT COUNT(*) AS n FROM bot_chat_roles WHERE bot_id = ?').get(bot.id) as { n: number }).n,
       0,
     )
-    assert.ok(replies.at(-1)?.includes('默认的 lofii'))
+    assert.ok(replies.at(-1)?.includes('默认角色 lofii'))
     assert.equal(replies.at(-1)?.includes('Chat'), false)
     assert.ok(audits.some((item) => item.action === 'bot.role.hint'))
     void target
@@ -315,20 +321,23 @@ test('v0.5.6：无个人卡时私聊使用默认 lofii，/role show 与 /role of
     assert.equal(aiCalls[0]?.prompt.includes('自然、友好、简洁地进行普通聊天'), false)
 
     await sendCommand(service, bot.id, '/role show')
-    assert.ok(replies.at(-1)?.includes('默认的 lofii'))
+    assert.ok(replies.at(-1)?.includes('当前角色：lofii'))
     assert.equal(replies.at(-1)?.includes('Chat'), false)
     assert.equal(replies.at(-1)?.includes('会话'), false)
     assert.equal(replies.at(-1)?.includes('/ask'), false)
 
     await sendCommand(service, bot.id, '/role')
-    assert.ok(replies.at(-1)?.includes('我是 lofii'))
+    assert.ok(replies.at(-1)?.includes('可用命令'))
+    assert.ok(replies.at(-1)?.includes('/role set'))
     assert.equal(replies.at(-1)?.includes('Chat'), false)
     assert.equal(replies.at(-1)?.includes('会话'), false)
     assert.equal(replies.at(-1)?.includes('安全边界'), false)
     assert.equal(replies.at(-1)?.includes('/ask'), false)
+    assert.equal(replies.at(-1)?.includes('猫系'), false)
+    assert.equal(replies.at(-1)?.includes('喵'), false)
 
     await sendCommand(service, bot.id, '/role off')
-    assert.ok(replies.at(-1)?.includes('本来就是默认的 lofii'))
+    assert.ok(replies.at(-1)?.includes('当前没有专属角色'))
     assert.equal(replies.at(-1)?.includes('Chat'), false)
     assert.equal(replies.at(-1)?.includes('会话'), false)
   } finally {

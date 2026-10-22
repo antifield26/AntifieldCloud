@@ -163,7 +163,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 - 每 Bot×用户一张卡：名字 1–32、设定 1–1000；`/role set <名字> <设定>`、`/role show`、`/role off`、`/role on`、`/role delete`。
 - 个人启用卡只覆盖私聊；`/role off` 收起个人卡并回落到 lofii；`/role delete` 同样回到默认；群聊始终 lofii，不使用个人卡。
 - 角色卡变更会删除当前私聊 Chat 的 `bot_ai_sessions` 映射；task 会话与长期记忆不受影响。角色设定不通过 API/UI 暴露，只由 `/role show` 返回本人；DB 备份包含正文。
-- 面向普通用户的 Chat 回复和 `/role` 文案不使用技术术语；群内 `/role` 仅提示“可私聊设置个人角色”。
+- `/role` 文案只写当前角色与分支命令用法，不注入默认角色个性，也不使用技术术语；群内 `/role` 仅提示“可私聊设置个人角色”。
 
 ## 6. 网络出站（Discord/Telegram/QQ/OpenCode）
 

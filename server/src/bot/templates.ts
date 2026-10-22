@@ -2,7 +2,7 @@
  * Bot 回复模板：把只读 provider 的结构化数据格式化为平台纯文本。
  * 普通用户可见文案避免技术术语；安全边界：只输出白名单字段/截断后的值，不拼接原始 HTML 或密钥。
  */
-import { DEFAULT_CHAT_ROLE, DEFAULT_CHAT_ROLE_SUMMARY } from './roles.ts'
+import { DEFAULT_CHAT_ROLE } from './roles.ts'
 
 const MAX_REPLY = 3500
 
@@ -57,33 +57,32 @@ export function helpText(platform: string): string {
       '/mc Minecraft 状态',
       '/files <关键词> 文件元数据（最多 10 条）',
       '/ask <问题> AI 对话（需管理员启用并限流）',
-      '/role 给我换个样子（私聊里大家都能用）',
+      '/role 角色设置（私聊）',
       '普通消息 Chat：目标开启允许 Chat 后，私聊直接对话；群/频道 @Bot 或回复 Bot 触发。',
       '除 /role 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
     ].join('\n'),
   )
 }
 
-/** 面向普通用户的角色用法；不出现内部术语、标记或实现细节。 */
+/** 面向普通用户的角色命令用法；只列当前角色与分支命令，不注入角色个性。 */
 export function roleUsage(): string {
   return [
-    '我是 lofii，平时有点猫系，也会认真听你说话。',
-    '你可以给我换个只属于你的样子（只影响我们私聊）：',
-    '/role set 名字 你希望我是什么样',
-    '/role show 看看现在的样子',
-    '/role off 先收起你的专属样子',
-    '/role on 再把专属样子放回来',
-    '/role delete 删掉专属样子',
-    '不设置也没关系，我会一直是默认的 lofii；群聊里大家看到的是默认的我。',
+    '可用命令：',
+    '/role set <名字> <设定> 设置专属角色',
+    '/role show 查看当前角色',
+    '/role off 暂停专属角色',
+    '/role on 启用专属角色',
+    '/role delete 删除专属角色',
+    '专属角色只影响私聊；群聊使用默认 lofii。',
   ].join('\n')
 }
 
 export function roleDefaultText(): string {
-  return `现在没有你的专属角色，我用的是默认的 ${DEFAULT_CHAT_ROLE.name}：${DEFAULT_CHAT_ROLE_SUMMARY}`
+  return `当前角色：${DEFAULT_CHAT_ROLE.name}（默认）`
 }
 
 export function roleGroupHint(): string {
-  return `群聊里大家看到的是默认的 ${DEFAULT_CHAT_ROLE.name}：${DEFAULT_CHAT_ROLE_SUMMARY}想给我换个只属于你的样子，可以私聊发 /role。`
+  return `群聊使用默认角色 ${DEFAULT_CHAT_ROLE.name}。专属角色请私聊发 /role 设置。`
 }
 
 export function commandDenied(): string {
