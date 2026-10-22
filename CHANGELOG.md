@@ -1,5 +1,39 @@
 # Changelog
 
+## [v0.5.9] - 2026-10-22
+
+### Added
+
+- **`/help` 对所有用户开放且动态显示**：非管理员收到 `publicHelpText()`（`/help`、`/role` 私聊、`/reset`、`/forget confirm` + Chat 说明，不出现 `/status` 等管理命令）；
+  管理员收到 `helpText()` 全量帮助（无 `/ask`）；未知命令对管理员回全量帮助、对非管理员被拒（无回复），均不调用 AI。
+- **限速宽松档**：`BOT_CHAT_RATE_PER_MINUTE=30`（范围 1–120）、`BOT_AI_RATE_PER_HOUR=120`（范围 1–600）、`BOT_COMMAND_RATE_PER_MINUTE=120`。
+
+### Changed
+
+- **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或默认 lofii）+ 固定只读安全边界 + 长期记忆 + 用户消息」；`BotAiMode`/task 提示词全部移除；
+  `bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；`/reset` 与角色卡变更清理该范围全部会话映射（不再区分 task/chat）；审计 `bot.ai.chat` 不再记录 `mode`。
+- **`/ask` 移除**：`BOT_COMMANDS` 删除 `ask`（现为 `/help /status /backup /world /mc /files /role /reset /forget`）；`/ask` 作为未知命令：
+  非管理员被拒（`bot.command.denied`、无回复），管理员回全量帮助、不调用 AI。
+- 配置：`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 从 `config.ts`/`bootstrap-env.sh`/`deploy/env.example` 删除。
+
+### Removed
+
+- 删除 `/ask` 命令、AI task 模式与 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`；AI 会话不再创建 task 会话（旧 task 映射保留在 DB，仅历史遗留）。
+
+### Security
+
+- `/help` 非管理员不暴露管理命令名；未知命令不执行任何只读/AI 操作；限速放宽后仍按 Bot×用户维度限流（Chat 30/min、AI 120/h、命令 120/min）。
+
+### Deployment
+
+- 版本/文档/`APP_VERSION` 升到 0.5.9；schema 保持 **v13（无迁移）**；`scripts/deploy.ps1` 期望 `-ExpectedSchemaVersion 13` 不变。
+- **生产 env 迁移（必须，否则仍是旧限速）**：`/etc/antifieldcloud/env` 中 `BOT_COMMAND_RATE_PER_MINUTE` 改为 `120`、`BOT_AI_RATE_PER_HOUR` 改为 `120`、
+  新增 `BOT_CHAT_RATE_PER_MINUTE=30`、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 两行，然后重启 `antifieldcloud`。
+- 回滚：schema 未变，可切回上一 release 并还原旧 env 值（命令 20 / AI 10 / Chat 6）后重启；部署脚本仍会生成迁移前快照但无迁移需恢复。
+- 测试基线（Lead 实测 2026-10-22）：`npm test` **333**（server + 运维脚本；较 v0.5.8 的 337 少 4 个已移除的 /ask/task 用例）、`npm run test:web` **157**（30 文件）、
+  `npm run check` 通过、`npm run test:coverage` 通过（Lines **91.77%** / Branches **76.98%** / Functions **85.96%**）、`npm run build` 通过。
+- **待部署验收**：生产部署（release/commit/smoke）与 QQ 实发验证（`/help` 公开/管理员差异、`/ask` 非管理员被拒、管理员回帮助不调用 AI、限速生效）待 Lead/用户完成后回填 `docs/ACCEPTANCE.md`。
+
 ## [v0.5.8] - 2026-10-22
 
 ### Added

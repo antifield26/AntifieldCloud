@@ -1,4 +1,4 @@
-# AntifieldCloud UI 规范（v8，2026-10-22）
+# AntifieldCloud UI 规范（v9，2026-10-22）
 
 ## 1. 定位与基调
 
@@ -318,7 +318,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 ### 概览
 
 - 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）。
-- 概览提示：命令与 Chat 均为只读（含 `/ask`），发布需 TOTP + `PUBLISH` 双确认；`/reset`、`/forget confirm` 为全用户自助命令；QQ 仅文本，入站图片默认交 AI 理解。
+- 概览提示：命令与 Chat 均为只读（v0.5.9 起 AI 仅 Chat，`/ask` 已移除），发布需 TOTP + `PUBLISH` 双确认；`/help`、`/role`（私聊）、`/reset`、`/forget confirm` 为全用户自助命令；QQ 仅文本，入站图片默认交 AI 理解。
 - Bot 列表/选择：名称、平台（QQ 官方）、启用徽章、目标数、密钥版本、最近检查时间；点击切换到该 Bot（并进入配置分区）。
 - “出站网络”卡片：设备在线（代理端口 + 外网）、代理主机:端口、外网延迟、QQ 平台探测状态与延迟；“检测”按钮调用 `POST /api/bots/connectivity/check`，
   页面每 60 秒读取 `GET /api/bots/connectivity`；不可达时显示 warning，不展示任何 AppSecret。
@@ -338,7 +338,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 平台提示：QQ 群/频道只有 @Bot 消息进入 Bot（平台限制），C2C 私聊直接进入 Chat；仅支持文本；图片默认交给 AI 理解；
   先把 Bot 拉群并 @Bot 触发，再到目标分区从“最近入站目标”登记。
 - 校验：必填/长度/数字规则在前端即时提示，服务端 `invalid_bot_config` 错误映射到表单顶部；非 QQ 平台值不再提供入口。
-- 任务/对话提示词仅通过 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 环境变量配置，本页不提供编辑；修改后重启应用。
+- v0.5.9 起 AI 提示词固定为「角色卡 + 固定安全边界 + 记忆 + 用户」，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；本页不提供提示词编辑。
 - 个人角色卡由用户在私聊通过 `/role` 管理，默认 lofii 为内置角色；本页不展示角色正文，也不提供正文编辑入口（仅“角色与记忆”元数据管理）。
 
 ### 目标

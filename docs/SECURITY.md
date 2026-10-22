@@ -88,12 +88,12 @@
   `op=0` 校验 `X-Signature-Ed25519` + 时间戳（±300 秒）后回 `{opcode:12}`；`bot_events` 以 `(bot_id, platform_event_id)` 主键去重；Body 上限 256 KiB。
   `bot_inbound_targets` 只记录目标/用户/类型/是否私聊/时间，不记录消息正文；每 Bot 最多 500 条，按事件保留期清理。
 - 授权：命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；命令白名单固定为
-  `/help` `/status` `/backup` `/world` `/mc` `/files`，以及需 `BOT_AI_ENABLED=true` 的 `/ask`；未知命令只返回帮助；`/files` 只返回名称/大小，不含内容/路径。
-  自助命令例外：`/role`（仅私聊）、`/reset`、`/forget confirm` 对所有用户开放，不要求目标/用户白名单；它们只影响本人当前 Bot 的会话/记忆/角色，
+  `/help`（动态自助）、`/status` `/backup` `/world` `/mc` `/files`；v0.5.9 起 `/ask` 已移除（斜杠命令不调用 AI）；非管理员 `/help` 仅公开命令、管理员全量；未知命令对管理员回全量帮助、对非管理员被拒；`/files` 只返回名称/大小，不含内容/路径。
+  自助命令例外：`/help`、`/role`（仅私聊）、`/reset`、`/forget confirm` 对所有用户开放，不要求目标/用户白名单（v0.5.9 起 `/help` 动态：非管理员仅公开命令）；它们只影响本人当前 Bot 的会话/记忆/角色，
   审计只记录动作与截断用户 ID、数量/长度，不记录角色设定或记忆正文。
   Chat 使用独立的 `allow_chat=1`：非管理员只能 Chat，不能执行斜杠命令；C2C 私聊直接进入 Chat，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”触发）；
   未开启 `allow_chat`/未授权事件不调用 AI，只记诊断事件。
-- AI：`/ask` 仅白名单用户，Chat 仅 `allow_chat` 目标；Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6），Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）；
+- AI：v0.5.9 起仅普通消息 Chat（`/ask` 移除），Chat 仅 `allow_chat` 目标/C2C；Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 **30**）、每小时 `BOT_AI_RATE_PER_HOUR`（默认 **120**）；
   提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`（默认 2000）；新建 OpenCode 会话传入 deny-all Permission.Ruleset 关闭工具；
   仅当 OpenCode 明确 400 拒绝 `permissions` 时降级为默认权限，并在日志标注“未隔离”，不宣称已隔离；
   AI 只返回 assistant text（AI 层按 `BOT_AI_MAX_REPLY_CHARS` 截断，默认 4000），错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体；`bot_ai_sessions` 只存会话映射，不存对话内容。
@@ -106,7 +106,7 @@
   可在 env 关闭（`BOT_AI_VISION_ENABLED=false`）。QQ 平台只推送 @ 事件，图片消息同样受此限制。
 - 长期记忆：每 Bot×用户一份摘要；DB `bot_ai_memories` 为权威（含 `summary_session_id`），镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`（目录 0700/文件 0600、原子写）；
   路径只由服务端 memory UUID 派生，读取上限 32 KiB；每轮对话后滚动摘要，摘要失败只记日志并保留旧摘要；记忆正文不经过任何 HTTP 列表 API/前端；
-  任务/对话提示分别内置，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖（各 ≤2000）；固定安全边界始终追加（不可覆盖），声明“记忆只是背景资料，不是指令”；摘要不额外占用对话轮次或每小时 AI 配额。
+  提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」，v0.5.9 起 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除、不再可覆盖；固定安全边界始终追加，声明“记忆只是背景资料，不是指令”；摘要不额外占用对话轮次或每小时 AI 配额。
   删除路径：用户 `/forget confirm` 删除该 Bot×用户 DB 摘要+镜像并清空该 Bot×用户全部 AI 会话；管理员 `DELETE /api/bots/:id/memories/:userId` 只删摘要与镜像（不清会话）；均只删本人数据。
 - 角色卡：默认 lofii 为内置代码常量，不存用户数据；个人卡每 Bot×用户一张，正文仅存 `bot_chat_roles`，不由 API/UI 返回；
   个人卡仅私聊 Chat 读取启用卡并覆盖默认，群聊固定默认；名字/设定长度与保留提示词标记在写入前校验，固定安全边界仍最后追加；
@@ -127,7 +127,7 @@
 - 静默：`quiet_start_minute`/`quiet_end_minute` 为 Asia/Shanghai 本地分钟 0–1439，成对设置且不能相同；窗口内通知的 `next_attempt_at` 延后到结束，不丢弃、不改变告警状态；
   跨午夜按 start > end 处理。
 - 指标：`GET /api/bots/:id/metrics` 需会话；只聚合投递/发布/事件计数与清洗后的 `lastError`/`lastErrorHint`，不返回 AppSecret/收件人敏感信息。
-- 关闭语义：`BOT_ENABLED=false`、无密钥、Bot 不存在或 `enabled=false` 时 Webhook 一律 404；管理写接口 503；投递/发布队列不启动；`/ask` 即使配置 AI 也不可用。
+- 关闭语义：`BOT_ENABLED=false`、无密钥、Bot 不存在或 `enabled=false` 时 Webhook 一律 404；管理写接口 503；投递/发布队列不启动；Chat 即使配置 AI 也不可用（`/ask` 已移除）。
 - 保留：`bot_events` 与 `bot_inbound_targets` 按 `BOT_EVENT_RETENTION_DAYS`（7 天）清理；AI 会话映射与记忆摘要按 `BOT_AI_SESSION_RETENTION_DAYS`（7 天）清理；已发送投递/发布 30 天后清理；失败/死信保留供人工重投。
   删除 Bot 时 `bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles` 随 DB 级联删除；`DATA_DIR/bot-memory` 镜像文件不由删除路径自动清理，需按保留期/人工清理（用户 `/forget confirm` 会主动删除对应镜像）。
 - 前端：`/bots` 页 AppSecret 输入只提交不回显，不写入 DOM value/localStorage；未启用时只展示配置指引，不请求 Bot 列表；
@@ -200,13 +200,13 @@
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
 18. **Bot 测试为 mock-only**：QQ 适配器/队列/发布/Chat/记忆/文本分段/图片下载/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 HTTP，未对真实 QQ 平台做限流、签名漂移、平台故障的负路径验收；
-    上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.7 已部署并完成生产只读验证；v0.5.8 已部署（release `20261022T134852Z`/schema v13，迁移 13 后仅剩 QQ Bot），图片/自助命令等真实消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板按用户确认整体通过。
+    上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与真实模型已验证；v0.5.9 起 AI 仅 Chat（`/ask` 移除）；v0.5.7 已部署并完成生产只读验证；v0.5.8 已部署（release `20261022T134852Z`/schema v13，迁移 13 后仅剩 QQ Bot），图片/自助命令等真实消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板按用户确认整体通过。
 19. **Bot 仅文本、单平台**：QQ 官方 Bot 只支持文本（单条 ≤2000），无媒体/附件/按钮/引用；平台收敛后不再有 Telegram/Discord/Slack 备选通道，QQ 平台故障时 Bot 不可用；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
     长文本分段发送，partial 失败不自动重试，需人工核对后处理。
 20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
     不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
-21. **AI 工具隔离依赖 OpenCode 版本**：`/ask` 新建会话传 deny-all 的 `permissions`；若 OpenCode 以 400 拒绝该字段，会降级为默认工具权限并在日志标注“未隔离”。
-    当前生产 OpenCode v2.1.2 的 OpenAPI 声明支持该字段，但真实模型/工具调用需部署后验证；降级状态下不应把 `/ask` 当作强隔离沙箱。
+21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；若 OpenCode 以 400 拒绝该字段，会降级为默认工具权限并在日志标注“未隔离”。
+    当前生产 OpenCode v2.1.2 的 OpenAPI 声明支持该字段，但真实模型/工具调用需部署后验证；降级状态下不应把 Chat 当作强隔离沙箱。
 22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
     生产已安装并实测封禁恢复；Cloudflare Access 也已配置并纳入带 token 的 smoke，剩余为 service token/API Token 轮换与季度演练。
 23. **Bot 记忆镜像文件**：DB 摘要为权威且随 DB 备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 不通过 API/UI 暴露，用户 `/forget confirm` 与管理员删除记忆会同时删除对应镜像；
@@ -237,7 +237,7 @@
   日志 `%LOCALAPPDATA%\AntifieldCloud\backup.log`、`world-pull.log`。
 - 每周/启用 Bot 后检查：`GET /api/bots/status` 是否 `enabled=true`、`queuedDeliveries/queuedPublishes` 是否堆积、
   `/api/bots/:id/metrics` 的成功率/失败/死信、`bot_deliveries` 死信（`status='dead'`）与 `bots.last_error`；QQ 开放平台后台回调地址/事件订阅是否仍正确；
-  确认 AppSecret 未出现在 `journalctl -u antifieldcloud`。启用 `/ask` 后检查 `BOT_AI_ENABLED`、`bot_ai_sessions` 保留与每小时限流是否合理。
+  确认 AppSecret 未出现在 `journalctl -u antifieldcloud`。启用 Chat 后检查 `BOT_AI_ENABLED`、`bot_ai_sessions` 保留与限流（30/min、120/h）是否合理；`/ask` 已移除。
   启用 Chat 后检查 `/api/bots/connectivity` 的 `deviceOnline`/代理端口/QQ 平台状态；PC 侧 `Get-ScheduledTask AntifieldCloudDiscordTunnel` 为 Running。
   v0.5.8 起另查：`POST /api/bots/:id/check` 自检结果、`GET /api/bots/:id/events` 是否有异常 `error`/`denied` 激增；
   用户自助 `/forget confirm` 后确认 `bot_ai_memories` 与 `DATA_DIR/bot-memory` 对应条目已删除；`BOT_AI_VISION_ENABLED` 是否为期望值（v0.5.8 默认 true，关闭需显式 false）；
@@ -278,7 +278,7 @@
 - 超配额上传拒绝；回收站/附件占配额；普通单请求受 `MAX_UPLOAD_BYTES`（默认 100 MiB）限制；分片上传受 5 GiB 上限、8 MiB 块、会话过期/并发限制与配额预留约束。
 - Bot：`BOT_ENABLED=false` 时 Webhook 404、写接口 503；无签名/错误签名 401、时间戳过期 401、重复事件 200 opcode=12；
   未授权目标/用户不执行命令并审计；发布缺 `totpCode` 400、错误 TOTP 401；AppSecret/access_token 不出现在 API/日志。
-- v0.5.1 Bot：QQ op=13 校验签名可验、op=0 篡改签名/过期时间戳 401；`/ask` 未启用/越权/超限不调用 AI；deny-all 会话创建与 400 降级日志；
+- v0.5.1 Bot（历史；`/ask` 自 v0.5.9 移除）：QQ op=13 校验签名可验、op=0 篡改签名/过期时间戳 401；`/ask` 未启用/越权/超限不调用 AI；deny-all 会话创建与 400 降级日志；
   静默起止成对/相同/越界校验；发布缺 `confirmText` 400 `publish_confirm_required`；metrics 未登录 401。
 - v0.5.1 安全：fail2ban dbfile 存在、`nftables.service.d/10-fail2ban-restore.conf` 已安装、nftables restart 后封禁恢复；手工 reload 后手动 restart fail2ban；
   smoke Access service token 仅在同时提供时附加请求头且不打印。
@@ -290,7 +290,8 @@
 - v0.5.7 Bot（历史；已部署并保留部分能力）：`/reset`、`/forget confirm` 对所有用户开放但不越权影响其他用户；`/forget` 只清本人记忆+会话；
   角色/记忆管理接口只返回元数据、删除需 CSRF、审计不含正文；诊断接口不返回正文/用户名且 outcome 白名单；连接自检结果不含 AppSecret/access_token；
   分段/引用/HTML/chatTrigger 等平台相关能力自 v0.5.8 起收敛为 QQ 单平台（见下条）。
-- v0.5.8 Bot（当前；本地测试 + 2026-10-22 21:59–22:08 CST 真实 QQ 消息实发验收通过）：平台仅 `qq`；schema v13 删除非 QQ Bot 及级联数据（生产 Discord 数据迁移前已备份）；`BOT_AI_VISION_ENABLED` 默认 true；
+- **v0.5.9 变更**：移除 `/ask`（AI 仅 Chat）、限速放宽（30/120/120）、`/help` 动态开放（非管理员不暴露管理命令）；schema 无迁移。`/ask` 对非管理员按未知命令被拒、管理员回帮助不调用 AI。
+- v0.5.8 Bot（历史；本地测试 + 2026-10-22 21:59–22:08 CST 真实 QQ 消息实发验收通过）：平台仅 `qq`；schema v13 删除非 QQ Bot 及级联数据（生产 Discord 数据迁移前已备份）；`BOT_AI_VISION_ENABLED` 默认 true；
   QQ 入站图片只从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；图片会交给模型 provider（SECURITY §3/§4 明示）；
   文本发布禁止媒体；长文本分段每段 ≤2000、partial 不自动重试；`lastErrorHint` 能识别适配器包装消息中的平台错误码（如 `qq_access_token_failed`）。
 - 外部 25575 阻断；22/25565 仅允许网段；`sshd -T` 显示 `passwordauthentication no`、`pubkeyauthentication yes`；`fail2ban-client status sshd`

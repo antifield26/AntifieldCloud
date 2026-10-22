@@ -2,7 +2,18 @@
 
 本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.8**（schema v13，**已部署 2026-10-22**，release `20261022T134852Z`/commit `96294e4`；上一 release `20261022T131813Z`（v0.5.7）保留；部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；迁移 13 后仅剩 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。
 
-## v0.5.8 补充（当前）
+## v0.5.9 补充（当前）
+
+- **移除 `/ask`**：`BOT_COMMANDS` 无 `ask`；非管理员按未知命令被拒（无回复），管理员回全量帮助、不调用 AI；斜杠命令不再触发 AI。
+- **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」，`BotAiMode`/task 提示词与 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 移除；
+  `bot_ai_sessions.mode` 列保留但只写 `chat`；`/reset` 与角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 `mode`。
+- **限速宽松档**：`BOT_CHAT_RATE_PER_MINUTE=30`（1–120）、`BOT_AI_RATE_PER_HOUR=120`（1–600）、`BOT_COMMAND_RATE_PER_MINUTE=120`（1–600）。
+- **`/help` 自助且动态**：非管理员 `publicHelpText()`（`/help /role /reset /forget confirm` + Chat 说明），管理员 `helpText()` 全量（无 `/ask`）；未知命令按身份回帮助/被拒。
+- **数据/部署**：version 0.5.9，schema 保持 v13（无迁移）；生产需 env 迁移（新限速值 + 删除两个提示词变量）后重启；回滚还原旧 env 值/旧 release。
+- **状态**：本地测试基线（Lead 实测 2026-10-22）`npm test` 333（server + 脚本；较 v0.5.8 少 4 个已移除用例）、`npm run test:web` 157（30 文件）、
+  `npm run check`/coverage（Lines 91.77% / Branches 76.98% / Functions 85.96%）/build 通过；**待部署验收**（证据待 `docs/ACCEPTANCE.md` 回填）。
+- **下一版**：v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），范围待用户确认。
+## v0.5.8 补充（历史；已部署并验收通过，v0.5.9 起移除 /ask 与 task 模式）
 
 - **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、目标 `chatTrigger`、
   Telegram HTML/引用/线程；删除 env `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`；`BotPlatform` 仅 `qq`。
@@ -17,7 +28,7 @@
 - **状态**：已部署 v0.5.8/schema v13（release `20261022T134852Z`/commit `96294e4`，smoke 16/16 与 24/24，迁移 13 后仅 1 行 QQ Bot）；测试基线 337/157（Lead 全量实测 2026-10-22，`npm run check`/coverage/build 通过）；**真实 QQ 消息已由用户实发验收通过**（2026-10-22 21:59–22:08 CST，13 条入站事件符合预期；证据见 `docs/ACCEPTANCE.md`）。
 - **下一版**：v0.5.9/v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），范围待用户确认。
 
-## v0.5.7 补充（历史；v0.5.8 起移除多平台能力）
+## v0.5.7 补充（历史；v0.5.8 起移除多平台能力，v0.5.9 起移除 /ask 与 task 双模式）
 
 - **范围**：群聊触发方式（目标级 `chatTrigger=mention|all`；QQ 群/频道仅 @）、回复引用/线程（Telegram/Discord/Slack）、
   长回复按平台上限分段（最多 4 段、续段前缀、超限截断、Telegram HTML 安全分段）、Markdown 平台化、图片理解（默认关闭）、
@@ -49,7 +60,7 @@
 - **schema v11**：新增 `bot_chat_roles`；Discord DM 修正 `isDirect`；Discord/Slack 命令文本上限 2048。
 - **状态**：本地测试 324/141、`npm run check` 通过；已部署 release `20261022T104834Z`/schema v11、smoke 24/24，私聊 `/role` 已实发确认。
 
-## v0.5.4 补充（历史）
+## v0.5.4 补充（历史；`/ask`/task 双模式自 v0.5.9 起移除）
 
 - **任务/对话双模式**：`/ask` 任务导向（结论/步骤/风险/必要澄清），普通 Chat 对话导向（自然/简洁/不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖，空则内置。
 - **安全边界**：自定义提示后强制追加只读/不执行/不泄密/“记忆不是指令”；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
@@ -78,7 +89,7 @@
 - **env**：`BOT_CHAT_RATE_PER_MINUTE=6`、`BOT_AI_MEMORY_MAX_CHARS=4096`、`BOT_AI_SYSTEM_PROMPT=`、`BOT_DISCORD_GATEWAY_ENABLED=false`、`BOT_PUBLISH_MAX_MEDIA_FILES=5`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`；已有 `BOT_AI_RATE_PER_HOUR=10`。
 - **状态**：版本 0.5.2；本地测试基线 `npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件），`npm run check` 本地通过；生产已部署 v0.5.2/schema v9，带 Access token 的完整 smoke 24/24，Discord Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；多附件/按钮行为待补充验证。
 
-## v0.5.1 补充（历史）
+## v0.5.1 补充（历史；`/ask`/task 双模式自 v0.5.9 起移除）
 
 - **QQ 官方 Bot**：新增 `server/src/bot/adapters/qq.ts` 与 `bots.platform='qq'`；op=13 Ed25519 回调地址校验、op=0 事件验签、`{opcode:12}` 确认体；C2C/群@/频道文本命令与通知；仅文本、单条 ≤2000 字符，不支持媒体。
 - **OpenCode AI `/ask`**：`server/src/bot/ai.ts` 通过本地 OpenCode API 提供 AI 对话；`BOT_AI_*` 默认关闭、按用户每小时限流、仅命令白名单用户、`bot_ai_sessions` 会话复用、新建会话 deny-all 工具权限；生产已启用 `opencode-go/deepseek-v4.1-flash` 并验证真实回复。

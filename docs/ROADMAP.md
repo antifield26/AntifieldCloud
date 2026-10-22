@@ -1,6 +1,17 @@
 # 路线图
 
-## v0.5.8（当前，已部署并验收通过；QQ 单平台 + 图片默认开启 + schema v13）
+## v0.5.9（当前，待部署验收；移除 /ask + 限速放宽 + /help 动态开放）
+
+- **移除 `/ask`**：`BOT_COMMANDS` 删除 `ask`（现为 `/help /status /backup /world /mc /files /role /reset /forget`）；`/ask` 作为未知命令——非管理员被拒（无回复），管理员回全量帮助、不调用 AI；
+  斜杠命令不再触发 AI。
+- **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」，`BotAiMode`/task 提示词与 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 移除；
+  `bot_ai_sessions.mode` 列保留只写 `chat`；`/reset` 与角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 `mode`。
+- **限速宽松档**：`BOT_CHAT_RATE_PER_MINUTE=30`（1–120）、`BOT_AI_RATE_PER_HOUR=120`（1–600）、`BOT_COMMAND_RATE_PER_MINUTE=120`（1–600）。
+- **`/help` 自助且动态**：对所有用户开放；非管理员仅 `/help /role /reset /forget confirm` + Chat 说明（不暴露管理命令），管理员全量（无 `/ask`）；未知命令按身份回帮助/被拒。
+- **数据/部署**：version 0.5.9，schema 保持 v13（无迁移）；`deploy.ps1` 期望 schema 13；生产需 env 迁移（限速值 + 删除两个提示词变量）后重启；回滚还原旧 env 值/旧 release。
+- **状态**：本地测试基线（Lead 实测 2026-10-22）`npm test` 333（server + 脚本，较 v0.5.8 少 4 个已移除用例）、`npm run test:web` 157（30 文件）、`check`/coverage（Lines 91.77% / Branches 76.98% / Functions 85.96%）/build 通过；**待部署验收**（证据待 `docs/ACCEPTANCE.md` 回填）。
+- **下一版**：v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），范围待用户确认。
+## v0.5.8（历史，已部署并验收通过；QQ 单平台 + 图片默认开启 + schema v13；v0.5.9 起移除 /ask）
 
 - **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、目标 `chatTrigger`、Telegram HTML/引用/线程；
   删除 env `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_*`；schema v13（迁移 13）删除非 QQ Bot 及其级联数据（**生产 Discord Bot 数据迁移前已备份**，迁移不可逆）。
@@ -14,7 +25,7 @@
   本地测试基线（Lead 全量实测 2026-10-22）`npm test` 337（服务端 321 + 脚本 16）、`npm run test:web` 157（30 文件），`npm run check`/coverage/build 通过；**真实 QQ 消息已由用户实发验收通过**（2026-10-22 21:59–22:08 CST，13 条入站事件符合预期、图片端到端通过；证据见 `docs/ACCEPTANCE.md`）。
 - **下一版**：v0.5.9/v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），具体范围待用户确认。
 
-## v0.5.7（历史，已部署；真实平台实发待补；v0.5.8 起移除多平台能力）
+## v0.5.7（历史，已部署；真实平台实发待补；v0.5.8 起移除多平台能力，v0.5.9 起移除 /ask 与 task 双模式）
 
 - **群聊触发方式**：目标级 `chatTrigger`（`mention` 默认 / `all`）；QQ 群/频道仅 @，`all` 返回 `chat_trigger_unsupported`；
   `all` 需平台前置（Telegram 关 privacy mode、Discord 开启 Message Content Intent、Slack 订阅 `message.channels`）；未授权 message 触发静默忽略。
@@ -46,7 +57,7 @@
 - **状态**：本地测试 324/141；已部署 release `20261022T104834Z`/schema v11，smoke 24/24，私聊 `/role` 已实发确认。
 - **下一版**：v0.5.6 默认角色 lofii 与全用户友好文案；多管理员/审批仍不做。
 
-## v0.5.4（历史，已部署）
+## v0.5.4（历史，已部署；`/ask`/task 双模式自 v0.5.9 起移除）
 
 - **双模式提示词**：`/ask` 任务导向、Chat 对话导向；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖，固定安全边界始终追加；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - **会话/记忆**：schema v10 `bot_ai_sessions.mode`；旧会话归 chat，`/ask` 新 task；共享长期记忆；审计 mode。
@@ -88,7 +99,7 @@
 - **企业微信/钉钉/飞书**：新增平台适配器、回调验签/加解密、目标与消息发送；仍需各平台后台注册与真实联调。
 - 多管理员/审批流、QQ 媒体、Slack 按钮不在 v0.5.3 承诺范围（单管理员/企业平台优先）。
 
-## v0.5.1（已交付）
+## v0.5.1（已交付；`/ask`/task 双模式自 v0.5.9 起移除）
 
 - **QQ 官方 Bot**：`server/src/bot/adapters/qq.ts`；AppID + AppSecret（密文）；op=13 Ed25519 回调地址校验、op=0 事件验签、`{opcode:12}` 确认；C2C/群@/频道文本命令与通知；仅文本（≤2000 字符），不支持媒体。生产回调已配置，C2C `/help` 回复已实测。
 - **OpenCode AI `/ask`**：`server/src/bot/ai.ts`；`BOT_AI_*` 默认关闭；仅命令白名单用户；按用户每小时限流；会话复用（`bot_ai_sessions`）；新建会话 deny-all 工具权限（OpenCode 明确 400 拒绝时才降级并标注“未隔离”）；生产已启用 `opencode-go/deepseek-v4.1-flash` 并验证真实回复。
@@ -157,8 +168,8 @@
 
 ## 已知限制
 
-- v0.5.8 已部署（2026-10-22）：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，迁移前快照 `db-predeploy-20261022T134921798Z.sqlite` 可回滚，迁移不可逆）；生产已无 Discord Bot 数据；QQ 数据保留；
-  真实 QQ 消息/图片识别与降级/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
+- v0.5.9 待部署验收：移除 `/ask`（AI 仅 Chat）、限速放宽（Chat 30/min、AI 120/h、命令 120/min）、`/help` 动态开放；schema 保持 v13（无迁移），生产需 env 迁移（新限速值 + 删除两个提示词变量）后重启；部署/真实平台证据待回填。
+- v0.5.8 已部署（2026-10-22）并验收通过：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，迁移前快照可回滚）；真实 QQ 消息/图片识别/自助命令已由用户实发验收通过。
 - v0.5.8 起仅 QQ 官方 Bot：QQ 仅文本、无媒体/附件/按钮/引用；群/频道只有 @Bot 事件（平台限制，无“全部消息”）；C2C 私聊直接进入 Chat；QQ 平台故障时无备用平台。
 - v0.5.8 图片理解默认开启且需模型支持 image 输入；图片会经 OpenCode 交给模型 provider；生产只读验证过 `opencode-go/deepseek-v4.1-flash` 支持 image，真实图片识别质量/失败路径待在部署后验收。
 - 回复分段最多 4 段，超长内容会截断并标记；partial 失败不自动重试，需人工核对后处理。

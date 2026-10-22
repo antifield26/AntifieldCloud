@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.8（已部署并验收通过；用户实发，2026-10-22 21:59–22:08 CST）；v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.9（待部署验收；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -18,7 +18,41 @@
 >
 > **v0.5.8 已部署**：2026-10-22 部署到生产 Pi（release `20261022T134852Z`，commit `96294e4`，version 0.5.8/schema v13）；current 指向该 release，保留上一 release `20261022T131813Z`（v0.5.7）。迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）`db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）；`/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。迁移 13 后 `bots` 仅 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留（目标 2/投递 4/事件 44/会话 4/记忆 3/角色 1/入站 4）。前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ 连接自检 `access_token 已获取`。**真实 QQ 消息级验收已由用户实发并于 2026-10-22 22:10 CST 确认通过**（21:59–22:08 CST 共 13 条真实入站事件全部符合预期；命令/自助命令/权限拒绝/文本 Chat 与图片端到端均有生产证据，详见下方“用户实发验收”）；用户原话“验收通过”。
 
-## v0.5.8（当前，已部署并验收通过；用户实发 2026-10-22 21:59–22:08 CST）
+> **v0.5.9 待部署**：2026-10-22 目标版本 v0.5.9（schema 保持 v13，无迁移）。移除 `/ask`（AI 全部由普通消息 Chat 承担）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、
+> `/help` 对非管理员开放且按身份动态显示；需先做生产 env 迁移（写入新限速值、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`）后重启。部署与真实平台验证完成前不得声明通过，详情见下方 v0.5.9 段。
+
+## v0.5.9（当前，待部署验收；移除 /ask + 限速放宽 + /help 动态开放）
+
+- 日期：2026-10-22（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（目标 version 0.5.9/schema 13，无迁移）+ Windows 本地工作区
+- **状态**：代码与文档已完成，**待部署验收**。部署事实（release/commit/smoke）与 QQ 实发证据待 Lead/用户完成后回填；当前不写未证实数据。
+- **交付范围**：
+  - **移除 `/ask`**：`BOT_COMMANDS` 删除 `ask`，现为 `/help /status /backup /world /mc /files /role /reset /forget`；`/ask` 作为未知命令——非管理员被拒（`bot.command.denied`、无回复），
+    管理员回全量帮助、不调用 AI；斜杠命令不再触发 AI。
+  - **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或默认 lofii）+ 固定只读安全边界 + 长期记忆 + 用户消息」；`BotAiMode`/task 提示词移除；
+    `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 从 `config.ts`/`bootstrap-env.sh`/`env.example` 删除；`bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；
+    `/reset` 与角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 `mode`。
+  - **限速宽松档**：`BOT_CHAT_RATE_PER_MINUTE=30`（1–120）、`BOT_AI_RATE_PER_HOUR=120`（1–600）、`BOT_COMMAND_RATE_PER_MINUTE=120`（1–600）；
+    限流仍按 Bot×用户维度，超限回复中文提示并写 `rate_limited` 诊断事件。
+  - **`/help` 自助且动态**：`/help` 与 `/role`（私聊）、`/reset`、`/forget confirm` 一样对全部用户开放；非管理员仅公开命令 + Chat 说明（`publicHelpText()`），
+    管理员全量（`helpText()`，无 `/ask`）；未知命令对管理员回全量帮助、对非管理员被拒。
+  - **版本/数据**：version 0.5.9；schema 保持 v13，无迁移；`deploy.ps1` 期望 `-ExpectedSchemaVersion 13` 不变。
+  - **文档**：BOT/API/AGENTS/README/CHANGELOG/ROADMAP/PLAN/DEPLOY/SECURITY/UI-SPEC 全量同步；历史验收段落保留，v0.5.9 起 `/ask`/task 模式标注移除。
+- **本地验证**（Lead 实测 2026-10-22）：`npm test` **333**（server + 运维脚本；较 v0.5.8 的 337 少 4 个已移除的 /ask/task 用例）、`npm run test:web` **157**（30 文件）、
+  `npm run check` 通过；`npm run test:coverage` 通过（Lines **91.77%** / Branches **76.98%** / Functions **85.96%**）；`npm run build` 通过。
+- **部署要点（含生产 env 迁移）**：
+  1. 备份/校验（部署脚本自动迁移前 DB 快照；schema 无迁移，快照仅回滚保险）。
+  2. `/etc/antifieldcloud/env`：`BOT_COMMAND_RATE_PER_MINUTE` 改为 `120`、`BOT_AI_RATE_PER_HOUR` 改为 `120`、新增 `BOT_CHAT_RATE_PER_MINUTE=30`、
+     删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 两行；确认无残留旧提示词变量。
+  3. `deploy.ps1 -PiHost <直连 IP>` 部署 v0.5.9；`/healthz` 断言 `version=0.5.9`、`schemaVersion=13`；部署内只读 smoke 与带 Access token 完整 smoke 通过。
+  4. 重启后验证：`/api/version` version 0.5.9；QQ `/help` 非管理员仅公开命令、管理员全量（无 /ask）；`/ask` 非管理员无回复、管理员回全量帮助不调用 AI；
+     Chat 正常（30/min、AI 120/h 生效）；未发现 `bot_ai_sessions` 新建 `mode=task` 行。
+- **待部署验收项**（完成前不得声明通过）：
+  1. 生产部署事实（release/commit/healthz/smoke）与生产 env 迁移确认。
+  2. 用户实发：`/help` 公开 vs 管理员差异；`/ask` 非管理员被拒、管理员回帮助且无 AI 调用；Chat 与图片回归；限速（30/min、120/h、命令 120/min）。
+- **回滚**：schema 未变（v13），可切回上一 release（`20261022T134852Z`，v0.5.8）并还原旧 env 值（`BOT_COMMAND_RATE_PER_MINUTE=20`、`BOT_AI_RATE_PER_HOUR=10`、`BOT_CHAT_RATE_PER_MINUTE=6`，
+  恢复两个提示词变量可选）后重启；迁移前快照保留但无迁移需恢复。
+## v0.5.8（历史，已部署并验收通过；用户实发 2026-10-22 21:59–22:08 CST；v0.5.9 起移除 /ask 与 task 模式）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T134852Z`，commit `96294e4`，schema 13）+ Windows 本地工作区

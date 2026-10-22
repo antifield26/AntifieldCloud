@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.5.8）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.5.9）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -21,7 +21,8 @@
   `db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）。
   迁移 13 后 `bots` 仅剩 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；
   QQ 数据保留（targets 2/deliveries 4/events 44/sessions 4/memories 3/roles 1/inbound 4）；`chat_trigger` 列保留但不读写；图片理解默认开启（`botAiVisionEnabled=true`），出站连通性仅 `qq`、新进程无 Discord Gateway。
-  前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ webhook 负路径 401/200/404 与 QQ 连接自检 `access_token 已获取` 通过。**真实 QQ 消息已由用户实发验收通过**（2026-10-22 21:59–22:08 CST，13 条入站事件全部符合预期，图片端到端通过；用户 22:10 CST 确认“验收通过”）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
+  前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ webhook 负路径 401/200/404 与 QQ 连接自检 `access_token 已获取` 通过。**真实 QQ 消息已由用户实发验收通过**（2026-10-22 21:59–22:08 CST，13 条入站事件全部符合预期，图片端到端通过；用户 22:10 CST 确认“验收通过”）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。 **v0.5.9 待部署验收**（schema 保持 v13，无迁移）：移除 `/ask`（AI 仅普通消息 Chat）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、`/help` 对非管理员开放且动态；
+**部署前必须做生产 env 迁移**（`BOT_COMMAND_RATE_PER_MINUTE=120`、`BOT_AI_RATE_PER_HOUR=120`、新增 `BOT_CHAT_RATE_PER_MINUTE=30`、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`）并重启，否则生产仍是旧限速；回滚还原旧 env 值/旧 release。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -114,22 +115,22 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `BOT_WEBHOOK_MAX_BODY_BYTES=262144`：Webhook 原始 body 上限（16 KiB–1 MiB）。
   - `BOT_DELIVERY_INTERVAL_SECONDS=30`（5–300）、`BOT_DELIVERY_MAX_ATTEMPTS=5`（1–20）：队列扫描与最大尝试次数。
   - `BOT_EVENT_RETENTION_DAYS=7`（1–90）：事件去重记录保留；已发送投递/发布固定 30 天清理。
-  - `BOT_COMMAND_RATE_PER_MINUTE=20`（1–600）：每 Bot × 用户命令限流。
+  - `BOT_COMMAND_RATE_PER_MINUTE=120`（1–600，v0.5.9 放宽）：每 Bot × 用户命令限流。
   - `BOT_PUBLISH_MAX_SCHEDULED_DAYS=30`（1–365）、`BOT_MAX_BOTS=10`（1–50）。
 - v0.5.1 新增 Bot AI env（`bootstrap-env.sh` 已纳管，`--force` 不会重置已有非空值；默认关闭）：
-  - `BOT_AI_ENABLED=false`：`/ask` 总开关；关闭时命令只返回“AI 对话未启用”。
+  - `BOT_AI_ENABLED=false`：普通消息 Chat 的 AI 总开关（v0.5.9 起 AI 仅 Chat）；关闭时 Chat 不调用 AI。
   - `BOT_AI_PROVIDER=`、`BOT_AI_MODEL=`：可选 OpenCode provider/model，二者同时设置才指定模型；为空用 OpenCode 默认模型。
   - `BOT_AI_TIMEOUT_SECONDS=60`（10–180）：单次 AI 请求/等待超时。
   - `BOT_AI_MAX_PROMPT_CHARS=2000`（100–8000）：提示词截断。
-  - `BOT_AI_RATE_PER_HOUR=10`（1–120）：每 Bot×用户每小时调用上限（v0.5.4 起 Chat 与 `/ask` 共用）。
+  - `BOT_AI_RATE_PER_HOUR=120`（1–600，v0.5.9 放宽）：每 Bot×用户每小时 AI 调用上限（仅 Chat）。
   - `BOT_AI_SESSION_RETENTION_DAYS=7`（1–90）：`bot_ai_sessions` 映射保留，不删除 OpenCode 远端会话。
 - v0.5.2 新增 Bot Chat/记忆 env（`bootstrap-env.sh` 已纳管，`--force` 不会重置已有非空值）：
-  - `BOT_CHAT_RATE_PER_MINUTE=6`（1–60）：普通消息 Chat 每 Bot×用户每分钟上限；与 `/ask` 共用 `BOT_AI_RATE_PER_HOUR`。
+  - `BOT_CHAT_RATE_PER_MINUTE=30`（1–120，v0.5.9 放宽）：普通消息 Chat 每 Bot×用户每分钟上限；仍受 `BOT_AI_RATE_PER_HOUR` 总量约束。
   - `BOT_AI_MEMORY_MAX_CHARS=4096`（512–16384）：每 Bot×用户长期记忆摘要上限。
-- v0.5.4 新增双模式提示词 env：
-  - `BOT_AI_TASK_PROMPT=`（空）：`/ask` 任务导向提示覆盖，最长 2000；空则使用内置默认。
-  - `BOT_AI_CHAT_PROMPT=`（空）：普通 Chat 对话导向提示覆盖，最长 2000；空则使用内置默认。
-  - 固定安全边界始终追加，不能通过环境变量移除；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取，部署时应删除。
+- v0.5.4 曾新增双模式提示词 env（**v0.5.9 已删除**，`bootstrap-env.sh` 不再纳管）：
+  - `BOT_AI_TASK_PROMPT`（v0.5.9 已删除）：原 `/ask` 任务提示覆盖；生产 env 需删除该行。
+  - `BOT_AI_CHAT_PROMPT`（v0.5.9 已删除）：原 Chat 提示覆盖；生产 env 需删除该行。
+  - v0.5.9 起 AI 提示词固定为「角色卡 + 固定安全边界 + 记忆 + 用户」，不再有 env 覆盖；固定安全边界不能通过环境变量移除；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取，部署时应删除。
 - v0.5.7 新增 AI 回答/图片 env（`bootstrap-env.sh` 已纳管，`--force` 不会重置已有非空值）：
   - `BOT_AI_MAX_REPLY_CHARS=4000`（1000–12000）：AI 单次回答字符上限；QQ 适配器再按 2000 字符分段发送。
   - `BOT_AI_VISION_ENABLED=true`（v0.5.8 默认开启）：QQ 入站图片理解总开关。开启需 OpenCode 支持 prompt files 与模型支持 image 输入（生产已完成只读验证：data URL + `opencode-go/deepseek-v4.1-flash`）；
@@ -162,86 +163,61 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.1 v0.5.8 应用部署步骤（平台收敛 + schema v13）
+### 3.1 v0.5.9 应用部署步骤（移除 /ask + 限速放宽 + /help 动态；schema 仍 v13）
 
-顺序固定为：**备份/校验（含生产 Discord Bot 数据备份）→ 环境预检 → 部署（自动迁移前快照 + 迁移 13）→ 生成/校验 `BOT_SECRET_KEY` 与 `BOT_*` → Bot 保持默认关闭 → 显式启用（先 QQ Bot，后 AI/Chat/图片）**。
-迁移 13 会 `DELETE FROM bots WHERE platform <> 'qq'` 并级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡，**不可逆**：
-必须先确认迁移前 DB 快照成功，并额外备份生产 Discord Bot 配置（DB 快照已包含，建议同时在 `/bots` 页面记录配置或导出 `bots`/`bot_targets` 行）；
-迁移后仅 QQ Bot 数据保留。迁移 12 的 `chat_trigger` 列保留但逻辑不再读写。
+顺序固定为：**本地校验 → 备份/校验 → 生产 env 迁移（限速值 + 删除两个提示词变量）→ 部署（schema 无迁移，脚本仍自动快照）→ 验证 healthz 0.5.9/13 与 smoke → QQ 行为验证（`/help`/`/ask`/Chat/图片）→ 部署后备份与验收回填**。
+v0.5.9 **schema 保持 v13、无迁移**；但生产 `/etc/antifieldcloud/env` 必须迁移，否则仍是旧限速（命令 20、AI 10、Chat 6）且残留已删除的提示词变量。
 
 1. **本地与发布前校验**（PC）：
-   - `npm run check`、`npm run build`；确认 `package.json` 版本 `0.5.8`，`node scripts/check-version.mjs` 通过（含 env.example/DEPLOY 标题/lock 根版本）。
-   - 测试基线（Lead 全量实测 2026-10-22）：`npm test` **337**（服务端 321 + 运维脚本 16）、`npm run test:web` **157**（30 文件）；`npm run check`、coverage、`npm run build` 均通过。
+   - `npm run check`、`npm run build`；确认 `package.json` 版本 `0.5.9`，`node scripts/check-version.mjs` 通过（含 env.example/DEPLOY 标题/lock 根版本）。
+   - 测试基线（Lead 实测 2026-10-22）：`npm test` **333**（server + 运维脚本；较 v0.5.8 的 337 少 4 个已移除的 /ask/task 用例）、`npm run test:web` **157**（30 文件）；
+     `npm run check` 通过、`npm run test:coverage` 通过（Lines **91.77%** / Branches **76.98%** / Functions **85.96%**）、`npm run build` 通过。
    - 确认工作树干净；`git rev-parse --short HEAD` 记入发布记录（脏发布只允许 `-AllowDirty`，并在 `docs/ACCEPTANCE.md` 标注）。
-   - 记录当前 `APP_VERSION` 与 `/healthz.version`（本次升级前生产为 0.5.7/schema 12；升级后应为 0.5.8/schema 13），便于回滚对照。
+   - 记录升级前 `/healthz`（生产为 0.5.8/schema 13），升级后应为 **0.5.9/schema 13**，便于回滚对照。
 2. **备份与校验**（Pi，只读优先）：
    - `sudo -u antifieldcloud -H /usr/local/bin/node /opt/antifieldcloud/current/scripts/backup.mjs --pending`：确认无异常 pending/孤儿；
      如 pending 未拉取，先在 PC 跑一次 `backup-pull.ps1` 完成 ack。
-   - **备份生产 Discord Bot 数据**：确认最新 DB 快照/应用归档可用；在 `/bots` 页面记录 Discord Bot 的公开配置与目标（AppSecret 不回显，需平台后台保留），
-     必要时导出 `bots`/`bot_targets` 行到受控位置（不写入仓库）。迁移 13 后将只剩 QQ Bot 数据。
    - 确认 PC 最新应用归档 `.sha256` 可校验、密钥包 `secretsOk=true`（含 `/etc/antifieldcloud/env`）、世界备份/拉取状态新鲜；
-     必要时手跑 `.\scripts\drill.ps1 -ExpectedSchemaVersion 12`（升级前基线）并保存报告。
-   - 记录磁盘余量：`df -hT /`；迁移 13 只删数据/不改表结构，建议 ≥2 GiB；迁移前确认 `db.sqlite` 与快照可读。
-3. **部署（自动快照 + 迁移 13）**：
-   - `.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本完成迁移前 DB 快照（`db-predeploy-*.sqlite`）、APP_VERSION 注入、切换与健康检查。
-   - 健康检查通过后应用启动时执行迁移 13：删除 `platform <> 'qq'` 的 Bot 及其级联数据；迁移 5–12 保留，QQ Bot 数据不重建。
-   - Bot 因 `BOT_ENABLED=false` 不启动队列，Webhook 返回 404；`/ask`/Chat 因 `BOT_AI_ENABLED=false` 不可用；图片开关默认 true，但 AI 关闭时不会下载/调用。
-4. **生成/校验 Bot env**：
+     必要时手跑 `.\scripts\drill.ps1 -ExpectedSchemaVersion 13` 并保存报告。
+   - 记录磁盘余量：`df -hT /`；schema 无迁移，建议 ≥2 GiB；确认 `db.sqlite` 与快照可读。
+3. **生产 env 迁移（v0.5.9 必须；与部署同一重启生效）**：
    ```bash
-   sudo bash /opt/antifieldcloud/current/scripts/bootstrap-env.sh --dry-run   # 预览，不回显密钥
-   sudo bash /opt/antifieldcloud/current/scripts/bootstrap-env.sh --force     # 缺失时生成；已有则复用
-   sudo grep -c '^BOT_SECRET_KEY=' /etc/antifieldcloud/env                    # 1
-   sudo grep -c '^BOT_ENABLED=false' /etc/antifieldcloud/env                  # 1（保持关闭）
-   sudo grep -c '^BOT_AI_ENABLED=false' /etc/antifieldcloud/env               # 1（保持关闭）
-   sudo grep -c '^BOT_AI_RATE_PER_HOUR=' /etc/antifieldcloud/env              # 1
-   sudo grep -c '^BOT_CHAT_RATE_PER_MINUTE=' /etc/antifieldcloud/env          # 1
-   sudo grep -c '^BOT_AI_MEMORY_MAX_CHARS=' /etc/antifieldcloud/env           # 1
-   sudo grep -c '^BOT_AI_MAX_REPLY_CHARS=' /etc/antifieldcloud/env            # 1（v0.5.7）
-   sudo grep -c '^BOT_AI_VISION_ENABLED=true' /etc/antifieldcloud/env         # 1（v0.5.8 默认开启）
-   sudo grep -c '^BOT_AI_IMAGE_MAX_BYTES=' /etc/antifieldcloud/env            # 1（v0.5.7）
-   sudo grep -c '^BOT_DISCORD_GATEWAY_ENABLED=' /etc/antifieldcloud/env       # 0（v0.5.8 删除）
-   sudo grep -c '^BOT_PUBLISH_MAX_MEDIA' /etc/antifieldcloud/env              # 0（v0.5.8 删除）
-   sudo systemctl restart antifieldcloud
+   sudo cp -a /etc/antifieldcloud/env /var/backups/antifieldcloud/env.v058.$(date -u +%Y%m%dT%H%M%SZ)
+   sudo sed -i 's/^BOT_COMMAND_RATE_PER_MINUTE=.*/BOT_COMMAND_RATE_PER_MINUTE=120/' /etc/antifieldcloud/env
+   sudo sed -i 's/^BOT_AI_RATE_PER_HOUR=.*/BOT_AI_RATE_PER_HOUR=120/' /etc/antifieldcloud/env
+   sudo grep -q '^BOT_CHAT_RATE_PER_MINUTE=' /etc/antifieldcloud/env \
+     && sudo sed -i 's/^BOT_CHAT_RATE_PER_MINUTE=.*/BOT_CHAT_RATE_PER_MINUTE=30/' /etc/antifieldcloud/env \
+     || echo 'BOT_CHAT_RATE_PER_MINUTE=30' | sudo tee -a /etc/antifieldcloud/env >/dev/null
+   sudo sed -i '/^BOT_AI_TASK_PROMPT=/d;/^BOT_AI_CHAT_PROMPT=/d' /etc/antifieldcloud/env
+   sudo grep -E '^BOT_(COMMAND_RATE_PER_MINUTE|AI_RATE_PER_HOUR|CHAT_RATE_PER_MINUTE)=' /etc/antifieldcloud/env   # 120/120/30
+   sudo grep -cE '^BOT_(AI_TASK|AI_CHAT)_PROMPT=' /etc/antifieldcloud/env   # 0（应已删除）
    ```
-   - 校验 `stat -c '%a %U %G' /etc/antifieldcloud/env` 为 `640 root antifieldcloud`；不要把密钥值打印到终端/日志。
-   - 立即把 env 纳入下一次密钥包（`scripts/backup-secrets.sh`）并确认 PC 拉取成功；`BOT_SECRET_KEY` 丢失 = 已存 QQ AppSecret 需重录。
-5. **验证迁移与关闭态**：
+   - 逐项确认：命令 120、AI 120、Chat 30；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 为 0 行；不打印其它密钥值。
+   - 校验 `stat -c '%a %U %G' /etc/antifieldcloud/env` 仍为 `640 root antifieldcloud`；该 env 备份供回滚使用（不提交仓库）。
+4. **部署（schema 无迁移，脚本仍自动快照）**：
+   - `.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本完成迁移前 DB 快照（`db-predeploy-*.sqlite`）、APP_VERSION 注入、切换、健康检查与只读 smoke。
+   - 应用启动不执行新迁移；schema 保持 v13；Bot/AI 开关沿用生产现有值（v0.5.8 已启用）。
+5. **验证健康检查、schema 与 smoke**：
    ```bash
-   curl -fsS http://127.0.0.1:3000/healthz                       # {"ok":true,"version":"0.5.8","schemaVersion":13,...}
-   curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:3000/api/bot/webhook/x   # 404
-   sudo -u antifieldcloud /usr/local/bin/node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/var/lib/antifieldcloud/db.sqlite');console.log(db.prepare(\"select value from meta where key='schema_version'\").get(),db.prepare(\"select name from sqlite_master where type='table' and name like 'bot%'\").all(),db.prepare('select platform,count(*) c from bots group by platform').all())"
+   curl -fsS http://127.0.0.1:3000/healthz                       # {"ok":true,"version":"0.5.9","schemaVersion":13,...}
+   curl -fsS http://127.0.0.1:3000/api/version                   # 需登录；version 0.5.9、botsEnabled true、botPlatforms ["qq"]
+   sudo -u antifieldcloud /usr/local/bin/node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('/var/lib/antifieldcloud/db.sqlite');console.log(db.prepare(\"select value from meta where key='schema_version'\").get(),db.prepare('select mode,count(*) c from bot_ai_sessions group by mode').all(),db.prepare('select platform,count(*) c from bots group by platform').all())"
    ```
-   期望 `schemaVersion=13`、9 张 `bot*` 表（含 `bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles`）、`bots.platform` 仅 `qq`（非 QQ Bot 已删除）；
-   `/api/bots` 未登录 401；登录后 `/api/version` 的 `botsEnabled=false`、`botPlatforms` 仅含 `qq`；`GET /api/bots/:id/events` 在 Bot 关闭时 503（启用后可读）。
-6. **显式启用 QQ Bot（平台联调后）**：
-   - 先在 Cloudflare 配置 Access 与 bypass（§5.2），再在 QQ 开放平台登记回调地址并完成 `op=13` 校验（§9.8）。
-   - 在 `/bots` 新建 QQ Bot（默认 `enabled=false`）、录入 AppID/AppSecret、加目标（可设静默时段）并勾选 `allow_commands`/`allow_notifications`；
-     仅给可信 user 目标勾选 `allow_commands`；不再有触发方式/媒体字段。
-   - 将 `/etc/antifieldcloud/env` 的 `BOT_ENABLED=false` 改为 `true`（或在 `deploy.conf` 覆盖后 `bootstrap-env.sh --force`），
-     `sudo systemctl restart antifieldcloud`；验证 `/api/bots/status` 的 `enabled/keyConfigured=true`、Webhook 返回 200/opcode=12（不再 404）。
-   - 在 `/bots` 配置页点“检查连接”，确认 QQ `access_token` 自检通过或给出脱敏原因。
-7. **启用 AI、Chat 与图片（可选，Bot 稳定后）**：
-   - 确认 OpenCode `127.0.0.1:4096` 可达、应用 env 的 `OPENCODE_PASSWORD` 与 `/etc/opencode/opencode.env` 一致。
-   - 设 `BOT_AI_ENABLED=true`；如需固定模型再设 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`（两者同时设置），重启应用；`BOT_AI_MAX_REPLY_CHARS` 默认 4000，图片默认开启。
-   - 由管理员在白名单私聊发 `/ask 今天状态如何`，确认有文本回复、限流与审计 `bot.ai.ask`；真实模型质量与超时按实际记录，
-     若 OpenCode 拒绝 `permissions`，日志会出现“未隔离”警告，需在验收中注明。
-   - Chat：给目标勾选 `allow_chat`；QQ 群/频道先 @Bot 后从“最近入站目标”登记；C2C 私聊直接对话；发普通消息确认 AI 回复、`bot.chat`/`bot.ai.chat` 审计与限流。
-   - 长文本/格式：让模型返回超长/含 Markdown 的回答，确认按 2000 字符分段、续段前缀与截断标记、Markdown 标记被剥离；人为制造第二段发送失败时，
-     队列应记录 `partial_text_sent` 且不自动重试，核对平台消息后人工处理。
-   - 自助命令：任意用户发 `/reset` 与 `/forget confirm`（后者需完整参数），确认回复、会话/记忆清理与审计 `bot.reset`/`bot.memory.forget`（不记录正文）。
-   - 记忆：多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory/memory-<uuid>.md` 存在（不打印内容），确认目录 0700/文件 0600；摘要失败时旧摘要保留。
-   - **图片（默认开启）**：在 QQ 私聊/群 @Bot 发送一张图片（可无文字），确认模型识别或降级提示；下载只允许 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）、image mime 白名单、
-     ≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘；如需关闭设 `BOT_AI_VISION_ENABLED=false` 并重启。图片会经 OpenCode 发给模型 provider（见 SECURITY）。
-   - 发布（可选）：发布 1 条纯文本（含长文本分段），确认 TOTP + `PUBLISH` 双确认；QQ 不支持媒体。
-8. **部署后**：
-   - `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.8 -ExpectedSchemaVersion 13`；配置 Cloudflare Access 后可加
-     `-AccessClientId/-AccessClientSecret`（service token，不写入仓库/日志）。公网/手机/PWA 与 QQ 平台联调按 `docs/ACCEPTANCE.md` 记录。
+   期望 `schemaVersion=13`（无迁移）、`bots.platform` 仍仅 `qq`、QQ 目标/队列/事件/会话/记忆数据保留；`bot_ai_sessions.mode` 历史 task 行可存在（v0.5.9 不再新建）。
+6. **QQ 行为验证（v0.5.9 变更点）**：
+   - **`/help` 动态**：非管理员发 `/help` 只收到 `/help /role /reset /forget confirm` 与 Chat 说明（不含 `/status` 等管理命令）；管理员发 `/help` 收到全量帮助且**不含 `/ask`**；未知命令（如 `/foo`）对管理员回全量帮助、对非管理员被拒（无回复）。
+   - **`/ask` 移除**：非管理员发 `/ask` 被拒（`bot.command.denied`、无回复）；管理员发 `/ask` 回全量帮助、**不调用 AI**（无 `bot.ai.chat`/`bot.ai.memory` 新记录）。
+   - **限速**：Chat 每分钟最多 30 次（超限回复中文提示、事件 `rate_limited`）；AI 每小时最多 120 次；命令每分钟最多 120 次。
+   - **Chat/图片回归**：C2C/群 @Bot 普通消息 Chat 正常（`bot.ai.chat` 审计不含 `mode`）；`/reset` 清理该范围全部会话映射；角色卡变更同样清理；图片消息仍按域名/mime/大小走 OpenCode 视觉或降级。
+   - 生产既有关闭态/启用态不变；如从关闭态启用，按 §9.8 与旧步骤执行。
+7. **部署后**：
+   - `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.9 -ExpectedSchemaVersion 13`；配置 Cloudflare Access 后可加
+     `-AccessClientId/-AccessClientSecret`（service token，不写入仓库/日志）。公网/手机/PWA 与 QQ 行为验证按 `docs/ACCEPTANCE.md` 记录。
    - PC 重装每日任务：`.\scripts\install-backup-task.ps1 -PiHost <直连 IP> -BackupRoot <目录>`，确认 `backup-task.json` 脚本 SHA 更新；
-     手跑一次确认 `secrets=ok`（含 `BOT_*`）。
-   - 世界拉取/演练：任务参数不变；演练改用 `-ExpectedSchemaVersion 13`。
-   - 按 `docs/ACCEPTANCE.md` v0.5.8 填写部署/测试证据（不要提前声明通过）。
-
-**回滚**：`deploy.ps1` 自动回滚会 stop → 还原迁移前 DB 快照 → 把 `APP_VERSION` 改回上一 release 版本 → 切回 previous → start → 健康检查；
+     手跑一次确认 `secrets=ok`（含新 env 限速值）。
+   - 世界拉取/演练：任务参数不变；演练继续用 `-ExpectedSchemaVersion 13`。
+   - 按 `docs/ACCEPTANCE.md` v0.5.9 填写部署/测试证据（不要提前声明通过）。
+**回滚**：v0.5.9 schema 未变（v13），可切回上一 release `20261022T134852Z`（v0.5.8）并还原旧 env 值后重启；`deploy.ps1` 自动回滚仍会 stop → 还原迁移前 DB 快照 → 把 `APP_VERSION` 改回上一 release 版本 → 切回 previous → start → 健康检查；
 手工顺序见 §11。**不要用未还原 `APP_VERSION` 的旧 release 通过 `/healthz` 判断成功**。v13 迁移删除了非 QQ Bot 数据，**只能靠迁移前 DB 快照恢复**；
 回滚前保留 `db-predeploy-*.sqlite` 与当前 `bots`/`bot_targets`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_chat_roles` 数据；`BOT_SECRET_KEY` 不要轮换（轮换等于重录 QQ AppSecret）。
 回滚窗口内 `BOT_ENABLED`/`BOT_AI_ENABLED` 保持 false；`BOT_AI_VISION_ENABLED` 可保持 true。fail2ban 的 nftables drop-in 与业务版本无关，回滚应用时无需删除；如需回滚该安全项见 §9.7。
@@ -486,19 +462,20 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 `https://ai.example.com` 登录后进入 opencode。若 opencode 仍要求输入自身密码，属于其 UI 行为，
 从 Pi `sudo grep OPENCODE_PASSWORD /etc/opencode/opencode.env` 获取后输入一次（不写入前端）。
 
-### 6.1 v0.5.8 备份/灾备/迁移
+### 6.1 v0.5.9 备份/灾备/迁移
 
-- 迁移：v0.5.8 把 schema 从 v12 升到 v13（迁移 13 = `DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；
+- **v0.5.9：schema 保持 v13、无迁移**；生产必须做 env 迁移（`BOT_COMMAND_RATE_PER_MINUTE=120`、`BOT_AI_RATE_PER_HOUR=120`、新增 `BOT_CHAT_RATE_PER_MINUTE=30`、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`）后重启，否则仍是旧限速；回滚还原旧 env 值（20/10/6）并切回 v0.5.8 release。
+- 迁移（v0.5.8）：v0.5.8 把 schema 从 v12 升到 v13（迁移 13 = `DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；
   迁移 5–12 结构与 QQ Bot 数据保留，`bot_targets.chat_trigger` 列保留但逻辑不再读写）。部署脚本切换前自动 `--snapshot-db`；
   **迁移前必须确认 DB 快照成功并额外备份生产 Discord Bot 数据**（DB 快照已包含，建议同时在 `/bots` 记录配置）；迁移 13 不可逆，回滚只能还原快照。
-- Bot 密钥：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY`，纳管 `BOT_AI_*`、Chat/记忆键、连通性键、提示词键与回答/图片键；
+- Bot 密钥：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY`，纳管 `BOT_AI_*`、Chat/记忆键、连通性键与回答/图片键（v0.5.9 删除提示词键）；
   v0.5.8 已删除 `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`，`BOT_AI_VISION_ENABLED` 默认 true。
   **`BOT_SECRET_KEY` 必须与 DB 一起恢复**，否则 QQ AppSecret 不可解密。首次部署后立即跑一次 `backup-secrets.sh` 并确认 PC 拉取成功。
 - 启用 Bot 后：`/api/version` 返回 `botsEnabled:true` 与 `botPlatforms:["qq"]`；`/api/bots/status` 的 `keyConfigured/enabled` 均为 true；
-  `POST /api/bots/:id/check` 与 `GET /api/bots/:id/events` 可读；`smoke.ps1 -ExpectedVersion 0.5.8 -ExpectedSchemaVersion 13` 通过（公网 Webhook 路径不应被 Access 302）。
+  `POST /api/bots/:id/check` 与 `GET /api/bots/:id/events` 可读；`smoke.ps1 -ExpectedVersion 0.5.9 -ExpectedSchemaVersion 13` 通过（公网 Webhook 路径不应被 Access 302）。
 - QQ Chat/图片：C2C 私聊直接进入 Chat，群/频道仅 @Bot；`BOT_AI_VISION_ENABLED=true` 时 `d.attachments` 图片按 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、
   image mime 白名单与 `BOT_AI_IMAGE_MAX_BYTES` 下载后交给模型；失败/关闭降级。长回复按 2000 字符分段，partial 不自动重试。
-- 自助/管理：`/reset`、`/forget confirm` 对所有用户开放；角色/记忆管理 API 只返回元数据，删除不可撤销；诊断事件只含元数据。
+- 自助/管理：`/help`（按身份动态）、`/role`（私聊）、`/reset`、`/forget confirm` 对所有用户开放；非管理员 `/help` 不显示管理命令，`/ask` 已移除；角色/记忆管理 API 只返回元数据，删除不可撤销；诊断事件只含元数据。
 - Windows 应用备份脚本：更新仓库后**重新运行 `install-backup-task.ps1`**（管理员），刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记；
   手跑一次核对 `backup.log` 出现 `secrets=ok`，Pi `backup-pull.json` 含 `secretsOk=true`（env 内含 `BOT_SECRET_KEY`/`BOT_*`，不打印值）。
 - 世界备份/拉取：`antifieldcloud-world.timer` 时刻不变（周日 12:00）；`world-pull.ps1` 参数不变，更新仓库后手跑一次确认仍能校验/ack。
@@ -506,10 +483,10 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - Web 恢复：只允许导入/校验/文件级恢复到新目录（`skippedMissing` 会剔除并在结果报告）；整库恢复仍按 `docs/BACKUP.md` §8 离线执行。
 - 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载（与 Bot 无关）。
 - Bot 发布：v0.5.8 起仅文本（≤2000，超长分段）；不再支持媒体附件；QQ 无媒体。
-- 验收：`npm run check`（测试基线 337/157）、`npm run build`、`npm run test:coverage`（Lines 91.78% / Branches 77.06% / Functions 86.12%）、`npm run test:web:coverage`、
-  `smoke.ps1 -ExpectedVersion 0.5.8 -ExpectedSchemaVersion 13`、QQ 平台联调（§9.8；C2C/群@/频道、命令、Chat、图片、发布、诊断、自检、角色/记忆）、
+- 验收：`npm run check`（测试基线 **333/157**）、`npm run build`、`npm run test:coverage`（Lines **91.77%** / Branches **76.98%** / Functions **85.96%**）、`npm run test:web:coverage`、
+  `smoke.ps1 -ExpectedVersion 0.5.9 -ExpectedSchemaVersion 13`、QQ 平台联调（§9.8；C2C/群@/频道、命令、`/help` 动态、Chat、图片、发布、诊断、自检、角色/记忆）、
   备份导入/校验/恢复（临时 DATA_DIR）、世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 13` 演练通过；OpenCode 升级后按 §3.2 复验。
-  v0.5.7 及以前已部署/smoke 24/24；**v0.5.8 已部署**（release `20261022T134852Z`/commit `96294e4`，`/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24，迁移 13 后 `bots` 仅 1 行 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。
+  v0.5.7 及以前已部署/smoke 24/24；**v0.5.8 已部署**（release `20261022T134852Z`/commit `96294e4`，`/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24，迁移 13 后 `bots` 仅 1 行 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。 **v0.5.9 待部署**（version 0.5.9/schema 13，无迁移，需生产 env 迁移；`/help`/`/ask`/限速行为待验收）。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -750,14 +727,15 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 6. **图片（默认开启）**：`BOT_AI_VISION_ENABLED=true`（默认）、`BOT_AI_ENABLED=true` 且模型支持 image 输入时，QQ `d.attachments` 中 image/* 附件经
    `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载后交给 OpenCode；不落盘、失败降级。
    如需关闭设 `BOT_AI_VISION_ENABLED=false` 并重启；图片会经 OpenCode 发给模型 provider（见 `docs/SECURITY.md`）。
-7. **AI（可选）**：Bot 稳定后设 `BOT_AI_ENABLED=true`（可同时设 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`）并重启；由白名单用户在私聊发 `/ask <问题>`，
-   确认有文本回复且审计 `bot.ai.ask`；再验证 Chat、长期记忆、角色卡与 `/reset`/`/forget confirm`；真实模型/工具行为按 `docs/SECURITY.md` §4 记录。
+7. **AI（可选）**：Bot 稳定后设 `BOT_AI_ENABLED=true`（可同时设 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`）并重启；v0.5.9 起无 `/ask`，由用户在私聊/群 @Bot 发普通消息 Chat，
+   确认有文本回复且审计 `bot.ai.chat`（不含 `mode`）；再验证长期记忆、角色卡与 `/reset`/`/forget confirm`；真实模型/工具行为按 `docs/SECURITY.md` §4 记录。
 8. **发布**：`/bots` → 投递与发布 → 填纯文本（≤2000，超长服务端分段）+ TOTP 验证码 + `PUBLISH` 二次确认；QQ 无媒体/附件。
 9. **验收证据**：QQ 至少一条 C2C/群@/频道文本命令、一条 Chat、一条测试通知、一条文本发布（含长文本分段）+ 一次定时/取消 + 一次失败重试；
-   一次图片识别成功与一次降级；`/ask` 至少一条真实模型回复；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
+   一次图片识别成功与一次降级；Chat 至少一条真实模型回复；`/help` 非管理员/管理员差异与 `/ask` 被拒/管理员回帮助不调用 AI；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
    记录 `bot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`；
    未配置 AI/图片时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
-   **v0.5.8 实际验收（2026-10-22 21:59–22:08 CST，通过）**：C2C 文本命令/自助命令/权限拒绝/两条文本 Chat/真实图片端到端均有生产证据（13 条入站事件全部符合预期，图片 `image/jpeg` 148563 B）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
+   **v0.5.8 实际验收（2026-10-22 21:59–22:08 CST，通过）**：C2C 文本命令/自助命令/权限拒绝/两条文本 Chat/真实图片端到端均有生产证据（13 条入站事件全部符合预期，图片 `image/jpeg` 148563 B）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。 **v0.5.9 待部署验收**（schema 保持 v13，无迁移）：移除 `/ask`（AI 仅普通消息 Chat）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、`/help` 对非管理员开放且动态；
+**部署前必须做生产 env 迁移**（`BOT_COMMAND_RATE_PER_MINUTE=120`、`BOT_AI_RATE_PER_HOUR=120`、新增 `BOT_CHAT_RATE_PER_MINUTE=30`、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`）并重启，否则生产仍是旧限速；回滚还原旧 env 值/旧 release。
 
 ### 9.9 Bot 队列/发布故障排查
 
@@ -767,11 +745,11 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 | Webhook 404 | `BOT_ENABLED=false`/无 `BOT_SECRET_KEY`/Bot `enabled=false`/botId 错；看 `/api/bots/status` 与审计 `bot.webhook.rejected` |
 | Webhook 401 | QQ Ed25519 签名/时间戳（±300s）或 AppSecret 不匹配；核对 QQ 开放平台回调与 Secret；`op=13` 校验需返回签名体 |
 | 命令无回复 | 目标未勾选 `allow_commands`、用户未登记为 `kind=user` 且允许命令、命令限流、平台 API 失败；看 `bot.command.denied`、`bot_deliveries.last_error` |
-| `/ask` 提示未启用/频繁 | `BOT_AI_ENABLED=false`、用户不在白名单、超过 `BOT_AI_RATE_PER_HOUR`；看 `bot.ai.ask` 审计与 `BOT_AI_*` env |
-| `/ask` 超时/502/504 | OpenCode 不可达、Basic 密码不一致、模型未配置或超时；`curl -u` 探测 4096，检查 `OPENCODE_PASSWORD` 与 `BOT_AI_TIMEOUT_SECONDS`；不要打印密码 |
+| `/ask` 已移除 | v0.5.9 起 `/ask` 不是有效命令：非管理员按未知命令被拒（`bot.command.denied`、无回复），管理员回全量帮助且不调用 AI；AI 请用普通消息 Chat |
+| Chat AI 超时/502/504 | OpenCode 不可达、Basic 密码不一致、模型未配置或超时；`curl -u` 探测 4096，检查 `OPENCODE_PASSWORD` 与 `BOT_AI_TIMEOUT_SECONDS`；不要打印密码 |
 | 发布 400/401 | 缺 `totpCode` 或 `confirmText:'PUBLISH'`、TOTP 过期/重放、目标是 user、文本超 2000 字符、定时超 30 天；v0.5.8 起无媒体字段 |
 | 发布 `partial_text_sent` | 长文本部分段落已外发后失败；任务标记 `failed` 且不自动重试，避免重复外发。核对平台消息后人工重建任务 |
-| Chat 无回复 | 目标未勾选 `allow_chat`、`BOT_AI_ENABLED=false`、QQ 群/频道未 @Bot、限流（6/min 或 10/h）；看 `bot.chat.denied`/`bot.chat`/`bot.ai.chat` 审计 |
+| Chat 无回复 | 目标未勾选 `allow_chat`、`BOT_AI_ENABLED=false`、QQ 群/频道未 @Bot、限流（30/min 或 120/h）；看 `bot.chat.denied`/`bot.chat`/`bot.ai.chat` 审计 |
 | 群/频道不消费未 @ 的消息 | 属 QQ 平台限制：群/频道只有 @Bot 事件进入 Bot，不支持“全部消息”；C2C 私聊直接进入 |
 | 图片提示暂不支持/未处理 | `BOT_AI_VISION_ENABLED=false`、附件 mime/大小/域名不合规或下载失败；看审计 `bot.ai.image`（只含 mime/大小/跳过原因）与日志（不含图片内容） |
 | 检查连接失败 | 按 QQ AppID/AppSecret、出站网络/代理隧道核对；`bot_health_unsupported` 表示适配器未实现自检；结果只含脱敏项 |
@@ -832,6 +810,7 @@ curl -fsS http://127.0.0.1:3000/healthz
   迁移 12 `chat_trigger`/`bot_events` 诊断列、迁移 13 删除非 QQ Bot 及级联数据）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
   其它外键不一致会拒绝启动；旧代码遇到更高 schema 会拒绝启动。迁移单向、无 down；回滚旧 release 前必须恢复对应迁移前快照
   （`stop → 复制快照为 db.sqlite → 删除 -wal/-shm → 还原 APP_VERSION → 切 release → start`）。
+- **v0.5.9 无迁移**：schema 保持 v13；回滚只需切回 release `20261022T134852Z`（v0.5.8）并还原旧 env 值（`BOT_COMMAND_RATE_PER_MINUTE=20`、`BOT_AI_RATE_PER_HOUR=10`、`BOT_CHAT_RATE_PER_MINUTE=6`；提示词变量可选恢复）后重启，无需还原 DB 快照（脚本仍会生成，仅保险）。
 - **v0.5.8 迁移 13 不可逆**：非 QQ Bot 数据（目标/队列/事件/会话/记忆/角色卡）在迁移后从 DB 删除，应用层无恢复入口；只能还原迁移前 DB 快照。
   回滚到 v0.5.7 时须恢复迁移前快照 `db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）并同步还原 `APP_VERSION`、切回 release `20261022T131813Z`；生产 Discord 数据归属见 `docs/ACCEPTANCE.md` v0.5.8 记录。
 - Bot 数据回滚：`bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles` 随 DB 快照恢复；
@@ -895,16 +874,16 @@ Windows PowerShell job 覆盖**全部** `scripts/*.ps1` 的 PS 5.1 解析 + UTF-
 | Bot Webhook 401 | 平台签名/时间戳/Public Key/Signing Secret 不匹配；QQ 检查 AppSecret、Ed25519 头与时间戳是否在 ±300 秒 |
 | QQ 回调地址校验失败 | AppSecret 错、AppID 与 Secret 不配对、请求未带 `op=13` 的 `plain_token/event_ts`；看 `bot.webhook.rejected` 与 journald（不打印 AppSecret） |
 | QQ 发布会话 | QQ 仅文本、单条 ≤2000 字符（超长服务端分段）；v0.5.8 起无媒体/附件字段 |
-| `/ask` 不可用 | `BOT_AI_ENABLED=false`、用户未命中命令白名单、超过 `BOT_AI_RATE_PER_HOUR`，或 OpenCode 不可达/超时；看审计 `bot.ai.ask` 与 `journalctl -u opencode` |
+| `/ask` 已移除 | v0.5.9 起 `/ask` 为未知命令：非管理员被拒（无回复），管理员回全量帮助、不调用 AI；Chat 问题看 `bot.chat.denied`、`BOT_AI_RATE_PER_HOUR` 与 `journalctl -u opencode` |
 | 通知被静默延后 | 目标设置了 `quietStartMinute/quietEndMinute` 且当前在窗口内；通知的 `next_attempt_at` 为窗口结束，属预期 |
 | 发布提示 publish_confirm_required | 请求体缺少 `confirmText:'PUBLISH'`；TOTP 不能替代该二次确认 |
 | smoke Access token 无效 | 同时提供 `-AccessClientId/-AccessClientSecret`、确认 token 未过期且策略绑定 `app`；不要使用全局/宽范围 token |
 | nftables restart 后封禁丢失 | drop-in 未安装/未 `daemon-reload`/dbfile 不可写；手工 reload 不触发，需 `systemctl restart fail2ban`（§9.7） |
 | Bot 管理页提示缺少密钥 | `BOT_SECRET_KEY` 未写入或不是 base64 32 字节；用 `bootstrap-env.sh --force` 生成/复用后重启（不要手工替换旧 key） |
 | Bot 发布 400/401 | 缺 `totpCode`、TOTP 过期/重放、目标是 user、文本超 2000 字符、定时超 30 天；见 API §14 |
-| Bot Chat 无回复 | `BOT_AI_ENABLED=false`、目标未 `allow_chat`、群/频道未 @Bot、6/min 或 10/h 限流；看 `bot.chat.denied` 与审计 |
+| Bot Chat 无回复 | `BOT_AI_ENABLED=false`、目标未 `allow_chat`、群/频道未 @Bot、30/min 或 120/h 限流；看 `bot.chat.denied` 与审计 |
 | Bot 长回复截断/重复 | QQ 单条上限 2000，最多 4 段并带续段前缀；partial 失败不自动重试，需核对平台消息后人工处理，避免重复外发 |
-| Bot 图片不生效 | 默认 `BOT_AI_VISION_ENABLED=false`；开启需 OpenCode prompt files + 支持 image 的模型、图片 mime/大小合规；QQ 不支持；看 `bot.ai.image` 审计（不含内容） |
+| Bot 图片不生效 | v0.5.8 起 `BOT_AI_VISION_ENABLED=true` 默认开启；需 `BOT_AI_ENABLED=true` 且模型支持 image、附件域名/mime/大小合规；看 `bot.ai.image` 审计（不含内容） |
 | Bot `/forget` 提示用法 | 必须发送 `/forget confirm`（完整参数）；只清长期记忆与该 Bot×用户全部会话，不删除角色卡 |
 | 平台连接自检失败 | 检查 QQ AppID/AppSecret、出站网络/代理隧道；`/bots`“检查连接”只显示脱敏原因 |
 | Bot 投递 dead/不重试 | 平台 Token 失效/权限不足/被限流；修 Token 后 `POST /api/bots/:id/deliveries/:id/retry`；`bot_deliveries.last_error` 有短错误码 |
