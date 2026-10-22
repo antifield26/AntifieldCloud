@@ -16,10 +16,12 @@
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：v0.5.7/schema v12（release `20261022T131813Z`，commit `2f429be`）；**v0.5.8 待部署验收**。v0.5.8 平台收敛为 QQ 官方 Bot：
-  **部署前必须备份生产 Discord Bot 数据**（DB 快照已覆盖），迁移 13 会删除 `platform <> 'qq'` 的 Bot 及其目标/队列/事件/会话/记忆/角色卡；
-  迁移后 QQ C2C/群@/频道与 `/ask`、Chat、角色卡、诊断、连接自检、文本发布保留；QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`）。
-  QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产出站连通性探测/自动恢复已实测；v0.5.7 图片能力已完成生产只读验证（OpenCode prompt files data URL + 当前模型支持 image）。
+- 生产现状：**v0.5.8/schema v13 已部署**（release `20261022T134852Z`，commit `96294e4`；current 指向该 release，上一 release `20261022T131813Z`（v0.5.7）保留）。
+  `/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**；迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）
+  `db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）。
+  迁移 13 后 `bots` 仅剩 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；
+  QQ 数据保留（targets 2/deliveries 4/events 44/sessions 4/memories 3/roles 1/inbound 4）；`chat_trigger` 列保留但不读写；图片理解默认开启（`botAiVisionEnabled=true`），出站连通性仅 `qq`、新进程无 Discord Gateway。
+  前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ webhook 负路径 401/200/404 与 QQ 连接自检 `access_token 已获取` 通过。**真实 QQ 消息级联调待用户实发验收。**
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -228,7 +230,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
      队列应记录 `partial_text_sent` 且不自动重试，核对平台消息后人工处理。
    - 自助命令：任意用户发 `/reset` 与 `/forget confirm`（后者需完整参数），确认回复、会话/记忆清理与审计 `bot.reset`/`bot.memory.forget`（不记录正文）。
    - 记忆：多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory/memory-<uuid>.md` 存在（不打印内容），确认目录 0700/文件 0600；摘要失败时旧摘要保留。
-   - **图片（默认开启）**：在 QQ 私聊/群 @Bot 发送一张图片（可无文字），确认模型识别或降级提示；下载只允许 `.qpic.cn`/`.qq.com`/`.gtimg.cn`、image mime 白名单、
+   - **图片（默认开启）**：在 QQ 私聊/群 @Bot 发送一张图片（可无文字），确认模型识别或降级提示；下载只允许 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）、image mime 白名单、
      ≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘；如需关闭设 `BOT_AI_VISION_ENABLED=false` 并重启。图片会经 OpenCode 发给模型 provider（见 SECURITY）。
    - 发布（可选）：发布 1 条纯文本（含长文本分段），确认 TOTP + `PUBLISH` 双确认；QQ 不支持媒体。
 8. **部署后**：
@@ -494,7 +496,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
   **`BOT_SECRET_KEY` 必须与 DB 一起恢复**，否则 QQ AppSecret 不可解密。首次部署后立即跑一次 `backup-secrets.sh` 并确认 PC 拉取成功。
 - 启用 Bot 后：`/api/version` 返回 `botsEnabled:true` 与 `botPlatforms:["qq"]`；`/api/bots/status` 的 `keyConfigured/enabled` 均为 true；
   `POST /api/bots/:id/check` 与 `GET /api/bots/:id/events` 可读；`smoke.ps1 -ExpectedVersion 0.5.8 -ExpectedSchemaVersion 13` 通过（公网 Webhook 路径不应被 Access 302）。
-- QQ Chat/图片：C2C 私聊直接进入 Chat，群/频道仅 @Bot；`BOT_AI_VISION_ENABLED=true` 时 `d.attachments` 图片按 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 后缀、
+- QQ Chat/图片：C2C 私聊直接进入 Chat，群/频道仅 @Bot；`BOT_AI_VISION_ENABLED=true` 时 `d.attachments` 图片按 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、
   image mime 白名单与 `BOT_AI_IMAGE_MAX_BYTES` 下载后交给模型；失败/关闭降级。长回复按 2000 字符分段，partial 不自动重试。
 - 自助/管理：`/reset`、`/forget confirm` 对所有用户开放；角色/记忆管理 API 只返回元数据，删除不可撤销；诊断事件只含元数据。
 - Windows 应用备份脚本：更新仓库后**重新运行 `install-backup-task.ps1`**（管理员），刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记；
@@ -507,7 +509,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 验收：`npm run check`（测试基线 337/157）、`npm run build`、`npm run test:coverage`（Lines 91.78% / Branches 77.06% / Functions 86.12%）、`npm run test:web:coverage`、
   `smoke.ps1 -ExpectedVersion 0.5.8 -ExpectedSchemaVersion 13`、QQ 平台联调（§9.8；C2C/群@/频道、命令、Chat、图片、发布、诊断、自检、角色/记忆）、
   备份导入/校验/恢复（临时 DATA_DIR）、世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 13` 演练通过；OpenCode 升级后按 §3.2 复验。
-  v0.5.7 及以前已部署/smoke 24/24；v0.5.8 的部署与 QQ 真实平台验收证据待 `docs/ACCEPTANCE.md` 回填。
+  v0.5.7 及以前已部署/smoke 24/24；**v0.5.8 已部署**（release `20261022T134852Z`/commit `96294e4`，`/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24，迁移 13 后 `bots` 仅 1 行 QQ Bot），真实 QQ 消息级联调待用户实发后按 `docs/ACCEPTANCE.md` 回填。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -746,7 +748,7 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
    用“测试连接”发一条测试消息（20 次/小时）；配置页“检查连接”确认 QQ `access_token` 自检通过。
 5. **Chat/触发**：C2C 私聊普通文本直接进入 Chat；QQ 群/频道先 @Bot，再从“最近入站目标”登记并勾选 `allow_chat`。非管理员只能 Chat，不能执行斜杠命令。
 6. **图片（默认开启）**：`BOT_AI_VISION_ENABLED=true`（默认）、`BOT_AI_ENABLED=true` 且模型支持 image 输入时，QQ `d.attachments` 中 image/* 附件经
-   `.qpic.cn`/`.qq.com`/`.gtimg.cn` 后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载后交给 OpenCode；不落盘、失败降级。
+   `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载后交给 OpenCode；不落盘、失败降级。
    如需关闭设 `BOT_AI_VISION_ENABLED=false` 并重启；图片会经 OpenCode 发给模型 provider（见 `docs/SECURITY.md`）。
 7. **AI（可选）**：Bot 稳定后设 `BOT_AI_ENABLED=true`（可同时设 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`）并重启；由白名单用户在私聊发 `/ask <问题>`，
    确认有文本回复且审计 `bot.ai.ask`；再验证 Chat、长期记忆、角色卡与 `/reset`/`/forget confirm`；真实模型/工具行为按 `docs/SECURITY.md` §4 记录。
@@ -830,7 +832,7 @@ curl -fsS http://127.0.0.1:3000/healthz
   其它外键不一致会拒绝启动；旧代码遇到更高 schema 会拒绝启动。迁移单向、无 down；回滚旧 release 前必须恢复对应迁移前快照
   （`stop → 复制快照为 db.sqlite → 删除 -wal/-shm → 还原 APP_VERSION → 切 release → start`）。
 - **v0.5.8 迁移 13 不可逆**：非 QQ Bot 数据（目标/队列/事件/会话/记忆/角色卡）在迁移后从 DB 删除，应用层无恢复入口；只能还原迁移前 DB 快照。
-  回滚到 v0.5.7 时 Discord Gateway/多平台能力随旧代码恢复，但需要对应 schema 12 快照；生产 Discord 数据归属见 `docs/ACCEPTANCE.md` v0.5.8 记录。
+  回滚到 v0.5.7 时须恢复迁移前快照 `db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）并同步还原 `APP_VERSION`、切回 release `20261022T131813Z`；生产 Discord 数据归属见 `docs/ACCEPTANCE.md` v0.5.8 记录。
 - Bot 数据回滚：`bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles` 随 DB 快照恢复；
   `BOT_SECRET_KEY` 不在 DB 中，必须保持与快照生成时一致的 env（否则 QQ AppSecret 不可解密）。`DATA_DIR/bot-memory` 镜像文件不由快照恢复，
   如需与 DB 摘要一致，可保留现有镜像或按保留期/人工清理；不通过 API 暴露。

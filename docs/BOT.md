@@ -6,6 +6,9 @@ v0.5.8 起平台收敛为 **QQ 单平台**：Telegram / Discord / Slack 适配�
 QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`），图片经 OpenCode 交给模型 provider 处理。
 企业微信/钉钉/飞书与多管理员审批仍未实现。
 
+> v0.5.8 已部署（2026-10-22，release `20261022T134852Z`/commit `96294e4`，schema v13；`/healthz` version 0.5.8/schemaVersion 13，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24）。
+> 迁移 13 后 `bots` 仅剩 1 行 QQ Bot，原 Discord Bot 及级联数据已删除（迁移前快照 `db-predeploy-20261022T134921798Z.sqlite` 可回滚）；QQ 数据保留，图片理解默认开启。真实 QQ 消息级联调待用户实发验收。
+
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
 > 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；记忆/角色正文不通过 API/UI 暴露；
@@ -24,7 +27,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
                                └─ 入站错误 → 401/404/429（不执行业务）
 
 入站图片管线（默认开启）：d.attachments → image/* 元数据(content_type/filename/size/url)
-  → 固定域名后缀白名单(.qpic.cn/.qq.com/.gtimg.cn) + image mime 白名单 + ≤BOT_AI_IMAGE_MAX_BYTES
+  → 固定域名后缀白名单(.qpic.cn/.qq.com/.qq.com.cn/.gtimg.cn，实际图床如 multimedia.nt.qq.com.cn) + image mime 白名单 + ≤BOT_AI_IMAGE_MAX_BYTES
   → 内存下载（不落盘）→ OpenCode prompt files(data URL) → 模型 provider；失败降级为文字回答
 
 命令/Chat 回复管线：AI 文本 → sanitize（路径/URL/控制字符）→ QQ 纯文本格式化（去 Markdown 标记）
@@ -74,7 +77,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 5. 命令（无需平台注册，直接发送）：`/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/ask <问题>`、`/role`（仅私聊）、`/reset`、`/forget confirm`。
 6. 触发：C2C 私聊普通文本直接进入 Chat；群/频道只有 @Bot 事件进入（平台本身只推送 @ 消息），**不支持“全部消息”触发**。
 7. **入站图片（默认开启）**：QQ 事件 `d.attachments` 提供 `content_type`/`filename`/`size`/`url`；只取首个 `image/*` 附件，仅图片无文字也可进入 Chat。
-   适配器只从固定域名后缀 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 下载，校验 image mime 白名单（jpeg/png/webp/gif）与 `BOT_AI_IMAGE_MAX_BYTES`；
+   适配器只从固定域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载，校验 image mime 白名单（jpeg/png/webp/gif）与 `BOT_AI_IMAGE_MAX_BYTES`；
    图片在内存中转 base64，以 OpenCode prompt files data URL 随本轮 prompt 发送给模型 provider（本地 AI 服务），**不落盘、不写日志/审计正文**。
    `BOT_AI_VISION_ENABLED=false`、无图片权限、下载失败或 mime/大小不合规时降级为文字回答（有文字时附“图片未能处理”说明；无文字时提示改用文字）。
 8. 文本输出：单条 ≤2000 字符；被动回复带入站 `msg_id`，主动通知/发布不带 `msg_id`；长回复按 2000 字符分段（最多 4 段、续段前缀、超限截断）；
@@ -173,7 +176,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - 开关：`BOT_AI_VISION_ENABLED=true`（v0.5.8 默认）；开启需 OpenCode 支持 prompt files 与模型支持 image 输入
   （生产只读验证：OpenCode prompt files 接受 `data:` URL，`opencode-go/deepseek-v4.1-flash` 支持 image）。
 - 入站：QQ 事件 `d.attachments` 中首个 `content_type` 以 `image/` 开头的附件（`filename`/`size`/`url`）；仅图片无文字也可进入 Chat。
-- 下载：只允许域名后缀 `.qpic.cn`/`.qq.com`/`.gtimg.cn`（完整 DNS 标签边界）；image mime 白名单 jpeg/png/webp/gif；≤`BOT_AI_IMAGE_MAX_BYTES`；
+- 下载：只允许域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）（完整 DNS 标签边界）；image mime 白名单 jpeg/png/webp/gif；≤`BOT_AI_IMAGE_MAX_BYTES`；
   平台声明大小超限提前拒绝；图片不写磁盘，只在内存转 base64。
 - 外发模型：图片内容会以 data URL 经本机 OpenCode API 交给配置的模型 provider，说明见 `docs/SECURITY.md`；不落盘、不写日志/审计正文。
 - 降级：vision 关闭/无图片权限/下载失败/mime 非法时，有文字则继续文字回答并附“（图片未能处理，已按文字回答）”；无文字则提示“当前暂不支持处理这张图片，可以用文字描述”。
@@ -236,7 +239,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
    若 `bot_inbound_targets` 出现 `target_kind='group'`，到 `/bots` 目标分区从“最近入站目标”登记该 group_openid，再开启 `allow_chat`（命令另开 `allow_commands`）。
 4. 若没有新事件，优先检查开放平台事件订阅、Bot 入群状态与 @ 方式；入站 Webhook 不依赖出站代理。
 5. 有事件但无回复：查看 `/bots` 出站网络卡片（设备在线/代理端口/QQ 平台延迟）和投递 `lastError`/`lastErrorHint`；QQ 回复需经代理访问 `bots.qq.com`/`api.sgroup.qq.com`。
-6. 图片无响应/提示不支持：确认 `BOT_AI_VISION_ENABLED=true`、`BOT_AI_ENABLED=true`、模型支持 image；附件 URL 域名在 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 白名单内、mime 与大小合规；看审计 `bot.ai.image`（只含 mime/大小/跳过原因）。
+6. 图片无响应/提示不支持：确认 `BOT_AI_VISION_ENABLED=true`、`BOT_AI_ENABLED=true`、模型支持 image；附件 URL 域名在 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 白名单内、mime 与大小合规；看审计 `bot.ai.image`（只含 mime/大小/跳过原因）。
 
 ## 7. 记忆存储与运维
 

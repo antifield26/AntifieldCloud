@@ -5,7 +5,7 @@
 ### Added
 
 - **QQ 入站图片理解默认开启**：`BOT_AI_VISION_ENABLED=true`（默认）；QQ 事件 `d.attachments` 中首个 `image/*` 附件（`content_type`/`filename`/`size`/`url`）经
-  `.qpic.cn`/`.qq.com`/`.gtimg.cn` 域名后缀白名单、image mime 白名单（jpeg/png/webp/gif）、≤`BOT_AI_IMAGE_MAX_BYTES` 内存下载（不落盘）后，
+  `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单、image mime 白名单（jpeg/png/webp/gif）、≤`BOT_AI_IMAGE_MAX_BYTES` 内存下载（不落盘）后，
   以 OpenCode prompt files data URL 交给模型 provider；仅图片无文字也可进入 Chat；失败/关闭/非法图片降级为纯文字回答。
 - **schema v13（迁移 13）**：`DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；迁移 5–12 保留。
 - **QQ 单平台能力**：保留 QQ 官方 Bot 接入（AppID/AppSecret、`op=13` 回调校验、`op=0` Ed25519 验签）、命令（`/help /status /backup /world /mc /files /ask /role /reset /forget`）、
@@ -36,7 +36,11 @@
 
 - 版本/文档/`APP_VERSION` 升到 0.5.8；`docs/DEPLOY.md` 的 schema/健康检查/smoke 期望同步为 v0.5.8/schema 13；`scripts/deploy.ps1` 部署后 smoke `-ExpectedSchemaVersion 13`。
 - 部署顺序：**备份生产 Discord Bot 数据** → 迁移前 DB 快照 → 部署（迁移 13）→ `/healthz` 断言 `version=0.5.8`/`schemaVersion=13` → 带 Access token 的 smoke → QQ env/Bot 校验。
-- **待部署验收**：本地测试基线（Lead 全量实测 2026-10-22）`npm test` **337**（服务端 321 + 运维脚本 16）、`npm run test:web` **157**（30 文件）；`npm run check`、coverage（Lines 91.78% / Branches 77.06% / Functions 86.12%）、`npm run build` 均通过。生产部署、schema 13 校验、QQ 真实平台联调与图片验收证据待 Lead 回填 `docs/ACCEPTANCE.md`。
+- **已部署（2026-10-22）**：release `20261022T134852Z`（commit `96294e4`，version 0.5.8/schema v13）已切换并重启；current 指向该 release，上一 release `20261022T131813Z`（v0.5.7）保留。
+- **部署验证**：`/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Cloudflare Access service token 完整 smoke **24/24**；迁移 13 后 `bots` 仅 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行，QQ 数据保留（targets 2/deliveries 4/events 44/sessions 4/memories 3/roles 1/inbound 4），`chat_trigger` 列保留但不读写；运行时 `botAiVisionEnabled=true`、`botAiImageMaxBytes=10485760`、`botAiMaxReplyChars=4000`、`BOT_ENABLED`/`BOT_AI_ENABLED` 均为 true；连通性仅 `platforms:["qq"]`，无 Discord Gateway；`/` 与 `/bots` 均 200（新 bundle `index-C-fPrxEf.js` 644795 bytes），bundle 含「AppID/检查连接/角色与记忆/诊断」不含「Discord Gateway/Telegram/Slack」；QQ webhook 负路径 `op=0` 无签名 401、`op=99` 200、未知 bot 404；QQ 连接自检 `access_token 已获取` ok。
+- **迁移前快照/回滚**：`db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`，含删除前 Discord Bot 数据）。迁移 13 不可逆，回滚必须恢复该快照并同步还原 `APP_VERSION`、切回 `20261022T131813Z`。
+- **部署后备份**：增量 `snapshot-20261022T135052128Z-inc.tar.gz`（126419 bytes，sha256 `262afd2d4cbd39c2ae12ab5ae152517f0ff470e59cfc9b641aed5982b56fb78a`）已由 PC `backup-pull` 拉取并 ack；密钥包 `secrets-20261022T135053Z.tar.age` 拉取成功，`secrets=ok`。
+- **待用户实发验收**：真实 QQ 文本命令/Chat、图片识别/降级（含仅图片无正文、`.qpic.cn` 与 `multimedia.nt.qq.com.cn` 两种图床）、自助命令、诊断/角色记忆面板、文本发布，证据待用户实发后回填 `docs/ACCEPTANCE.md`。
 
 ## [v0.5.7] - 2026-10-22
 

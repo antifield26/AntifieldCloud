@@ -100,7 +100,7 @@
   回复管线：sanitize（路径/URL/控制字符）→ QQ 纯文本格式化（去 Markdown 标记，仅 http(s) 链接保留为文字）→ 按 QQ 2000 字符分段（最多 4 段）；
   partial 失败不自动重试（`partial_text_sent`）。QQ 无按钮/引用/线程/媒体。
 - **图片输入（v0.5.8，默认开启）**：`BOT_AI_VISION_ENABLED=true`；只接受 image mime 白名单（jpeg/png/webp/gif）且 ≤`BOT_AI_IMAGE_MAX_BYTES`，
-  只从 QQ CDN 固定域名后缀 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 下载（完整 DNS 标签边界校验），内存下载、**不落盘**、不写入日志/审计正文；
+  只从 QQ CDN 固定域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载（完整 DNS 标签边界校验），内存下载、**不落盘**、不写入日志/审计正文；
   失败/关闭/非法图片降级为纯文字回答。图片内容视为不可信外部输入，不作为指令、不改变只读边界。
   **外发说明**：图片会以 OpenCode prompt files data URL 经本机 OpenCode API 发送给配置的模型 provider（可能是本地或外部模型服务）；启用即表示接受该数据外发范围，
   可在 env 关闭（`BOT_AI_VISION_ENABLED=false`）。QQ 平台只推送 @ 事件，图片消息同样受此限制。
@@ -122,7 +122,7 @@
   模板只输出白名单字段，不拼接 HTML/原始平台对象。
 - 发布：`POST /api/bots/:id/publish` 必须带 `totpCode` 与 `confirmText:'PUBLISH'`，复用 `reauthLimiter`/`reauthGlobalLimiter`/`totpGlobalLimiter` 与失败审计；
   目标限频道/群组；仅文本（≤2000，超长分段发送）；不支持媒体附件；长文本 partial 失败标记 `failed`/`partial_text_sent` 且不自动重试，避免重复外发。
-- 出站：只调用固定 QQ 平台 API（`bots.qq.com`、`api.sgroup.qq.com`）与图片 CDN（`.qpic.cn`/`.qq.com`/`.gtimg.cn` 白名单），
+- 出站：只调用固定 QQ 平台 API（`bots.qq.com`、`api.sgroup.qq.com`）与图片 CDN（`.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 白名单），
   HTTP 15 秒超时、禁止重定向、响应 ≤1 MiB；平台错误只保留状态/短错误码，不含完整 URL（可能含 token）。
 - 静默：`quiet_start_minute`/`quiet_end_minute` 为 Asia/Shanghai 本地分钟 0–1439，成对设置且不能相同；窗口内通知的 `next_attempt_at` 延后到结束，不丢弃、不改变告警状态；
   跨午夜按 start > end 处理。
@@ -200,7 +200,7 @@
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
 18. **Bot 测试为 mock-only**：QQ 适配器/队列/发布/Chat/记忆/文本分段/图片下载/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 HTTP，未对真实 QQ 平台做限流、签名漂移、平台故障的负路径验收；
-    上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.7 已部署并完成生产只读验证；v0.5.8 收敛为 QQ 单平台后，图片/自助命令/诊断/角色记忆的真实消息级联调待部署后由用户实发验收。
+    上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.7 已部署并完成生产只读验证；v0.5.8 已部署（release `20261022T134852Z`/schema v13，迁移 13 后仅剩 QQ Bot），图片/自助命令/诊断/角色记忆的真实消息级联调待用户实发验收。
 19. **Bot 仅文本、单平台**：QQ 官方 Bot 只支持文本（单条 ≤2000），无媒体/附件/按钮/引用；平台收敛后不再有 Telegram/Discord/Slack 备选通道，QQ 平台故障时 Bot 不可用；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
     长文本分段发送，partial 失败不自动重试，需人工核对后处理。
 20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
@@ -291,7 +291,7 @@
   角色/记忆管理接口只返回元数据、删除需 CSRF、审计不含正文；诊断接口不返回正文/用户名且 outcome 白名单；连接自检结果不含 AppSecret/access_token；
   分段/引用/HTML/chatTrigger 等平台相关能力自 v0.5.8 起收敛为 QQ 单平台（见下条）。
 - v0.5.8 Bot（当前，本地测试覆盖）：平台仅 `qq`；schema v13 删除非 QQ Bot 及级联数据（生产 Discord 数据迁移前已备份）；`BOT_AI_VISION_ENABLED` 默认 true；
-  QQ 入站图片只从 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；图片会交给模型 provider（SECURITY §3/§4 明示）；
+  QQ 入站图片只从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；图片会交给模型 provider（SECURITY §3/§4 明示）；
   文本发布禁止媒体；长文本分段每段 ≤2000、partial 不自动重试；`lastErrorHint` 能识别适配器包装消息中的平台错误码（如 `qq_access_token_failed`）。
 - 外部 25575 阻断；22/25565 仅允许网段；`sshd -T` 显示 `passwordauthentication no`、`pubkeyauthentication yes`；`fail2ban-client status sshd`
   显示 jail 与封禁统计（nftables 后端、24h ban）；内存 cgroup 含 `memory`；备份 pending/48h 状态与 PC `.sha256` 旁文件（见 `scripts/smoke.ps1`）。

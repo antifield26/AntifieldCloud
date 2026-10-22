@@ -2,7 +2,9 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.8（**待部署验收**；生产当前为 v0.5.7/schema v12，release `20261022T131813Z`/commit `2f429be`）。v0.5.8 平台收敛为 QQ 官方 Bot 单平台（schema v13 删除非 QQ Bot 数据，生产 Discord Bot 数据迁移前已备份），QQ 入站图片理解默认开启，移除 Discord Gateway/多平台适配器/媒体与多附件发布/按钮/群聊触发方式；
+> 状态：v0.5.8（**已部署**，release `20261022T134852Z`/commit `96294e4`/schema v13；`/healthz` = version 0.5.8/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；迁移 13 验证 `bots` 仅剩 QQ Bot、原 Discord Bot 级联数据 0 行；**真实 QQ 消息级联调待用户实发**）。v0.5.8 平台收敛为 QQ 官方 Bot 单平台（迁移前已备份生产 Discord Bot 数据），QQ 入站图片理解默认开启，移除 Discord Gateway/多平台适配器/媒体与多附件发布/按钮/群聊触发方式；
+> 保留 QQ 命令、Chat、长期记忆、角色卡、事件诊断、连接自检、角色/记忆元数据管理与文本发布。测试基线（Lead 全量实测 2026-10-22）：`npm test` 337（服务端 321 + 脚本 16）/`npm run test:web` 157（30 文件），`npm run check`/coverage/build 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
+> 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 > 保留 QQ 命令、Chat、长期记忆、角色卡、事件诊断、连接自检、角色/记忆元数据管理与文本发布。测试基线（Lead 全量实测 2026-10-22）：`npm test` 337（服务端 321 + 脚本 16）、`npm run test:web` 157（30 文件），`npm run check`/coverage/build 均通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
@@ -61,7 +63,7 @@
   Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式与 Telegram HTML/引用/线程已移除；schema v13 删除非 QQ Bot 及其级联数据（生产 Discord Bot 数据迁移前已备份）。
 - **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话；C2C 私聊直接进入，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”）；非管理员只能 Chat，管理员斜杠命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读。每 Bot×用户每分钟默认 6 次，并与 `/ask` 共用每小时 10 次 AI 配额。
 - **回复形态（QQ 纯文本）**：AI 回答经清洗、去 Markdown 标记后按 QQ 单条 2000 字符分段（最多 4 段，续段前缀“（续 n/m）”，超限截断）；partial 失败 `partial_text_sent` 不自动重试；QQ 不支持媒体/附件/按钮/引用回复。
-- **图片理解（默认开启）**：`BOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 域名后缀白名单下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；
+- **图片理解（默认开启）**：`BOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；
   失败/关闭/非法图片时降级为纯文字回答；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。需模型支持 image 输入（`opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。
 - **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮对话后滚动摘要，失败保留旧摘要；记忆正文不通过 API/UI 暴露。两种 AI 模式共享记忆；摘要不额外占用对话轮次或 AI 每小时配额。
 - **双模式提示词**：`/ask` 使用任务导向提示（结论/步骤/风险/必要澄清），普通 Chat 使用无产品身份限定的自然对话提示；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定只读安全边界始终追加；`/ask` 与 Chat 分别使用独立 OpenCode 会话，共享长期记忆；QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
@@ -158,11 +160,11 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
 - Bot 已知限制：v0.5.8 起仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件，无“全部消息”；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批留待下一版。
-- v0.5.8（待部署验收）：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，生产 Discord Bot 数据迁移前已备份）、QQ 入站图片理解默认开启、`/bots` 去 Gateway/媒体/触发方式；
-  生产当前仍为 v0.5.7/schema v12；真实平台与图片验收待在部署后按 `docs/ACCEPTANCE.md` 回填。
-- 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
+- v0.5.8（已部署 2026-10-22）：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，迁移前已备份生产 Discord Bot 数据，回滚只能还原快照）、QQ 入站图片理解默认开启、`/bots` 去 Gateway/媒体/触发方式；
+  `/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24；真实 QQ 消息、图片识别/降级、自助命令、诊断/角色记忆面板与文本发布待用户实发验收。
+- 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，QQ 官方 Bot 当前不提供该能力。
-- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 QQ C2C 与 QQ 群 @Bot Chat；v0.5.8 的图片能力/自助命令/诊断/角色记忆真实消息级联调待部署后用户实发验收。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 QQ C2C 与 QQ 群 @Bot Chat；v0.5.8 的图片能力/自助命令/诊断/角色记忆/文本发布真实消息级联调待用户实发验收（部署与迁移 13 验证已通过）。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。
