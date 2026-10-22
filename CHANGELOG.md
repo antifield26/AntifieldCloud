@@ -31,14 +31,20 @@
 - 诊断事件只存事件类型/结果/短码/目标与用户 ID，不存消息正文；图片输入不可信：固定域名、mime 白名单、大小上限、不落盘，失败降级为文字。
 - 长回复/多附件 partial 失败不自动重试（`partial_text_sent`/`partial_media_sent`），避免重复外发；发布仍需 TOTP + `PUBLISH` 双确认。
 
+### Fixed
+
+- **错误提示映射**：修复适配器包装消息中的平台错误码未被 `describeBotError` 识别、导致 `lastErrorHint` 为 null 的问题（如 `平台请求失败（0:qq_access_token_failed）`）；修复 commit `2f429be`（`fix(bot): 错误提示识别适配器包装消息中的平台错误码`），生产复验 Discord `network` 与 QQ `qq_access_token_failed` 均返回对应中文提示，`metrics.lastErrorHint` 同步。
+
 ### Deployment
 
 - 版本/文档/`APP_VERSION` 升到 0.5.7；`docs/DEPLOY.md` 的 schema/健康检查/smoke 期望同步为 v0.5.7/schema 12。
 - 部署顺序：迁移前 DB 快照 → 部署（迁移 12）→ `/healthz` 断言 `version=0.5.7`/`schemaVersion=12` → 带 Access token 的 smoke → Bot env 校验（迁移 12 只加列/索引，不重建表）。
 - 迁移 12 单向、无 down：回滚必须恢复迁移前 DB 快照并同步还原 `APP_VERSION`；回滚窗口内保持 Bot/AI/Gateway 关闭。
-- **已部署**：2026-10-22 部署到生产 Pi（release `20261022T131121Z`，commit `8dcd10f`，version 0.5.7/schema v12）；上一 release `20261022T114546Z`（v0.5.6）保留；迁移前快照 `db-predeploy-20261022T131150335Z.sqlite`（sha256 `756300be69aad88f55176b7455f74208fde6627cd52e4cbff748aba64347cce7`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署脚本内部只读 smoke 16/16、带 Cloudflare Access service token 的完整 smoke **24/24**。
-- **部署后校验**：`bot_targets.chat_trigger` 存在且 5 个既有目标均为默认 `mention`；`bot_events` 的 6 个诊断列存在；重启后 Discord Gateway `已连接`（bot `853f85e6-f757-4060-8692-19ec06dea4aa`）；真实网络连接自检 Discord `@lofii.bot` 与 QQ access_token 通过。部署后增量备份 `snapshot-20261022T131405421Z-inc.tar.gz`（125428 bytes，sha256 `2073fef3beb9e980832e602b2f412be50724f79e4e5a1ca31cd6cc93e869a1dd`）已由 PC 拉取并 ack，密钥包 `secrets-20261022T131406Z.tar.age` 已拉取（`secrets=ok`）。
-- **待用户实发验收**：本地基线 `npm test` 387、`npm run test:web` 157（30 文件）；真实平台消息级联调（`/reset`、`/forget confirm`、分段/Markdown、群聊引用、`all` 触发、图片、诊断/角色/记忆面板实际交互）**尚未由用户实发验收**，证据待用户实发后回填 `docs/ACCEPTANCE.md`。
+- **已部署（含修复发布）**：2026-10-22 首次部署 release `20261022T131121Z`（commit `8dcd10f`，version 0.5.7/schema v12）后，生产只读验证发现 `lastErrorHint` 错误码识别缺陷；修复 commit `2f429be` 并重新部署 release `20261022T131813Z`（commit `2f429be`，version 0.5.7/schema v12），current 指向该 release，保留 `20261022T131121Z`、`20261022T114546Z`。第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`（sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`）。
+- **部署后校验**：`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke 16/16、带 Cloudflare Access service token 的完整 smoke **24/24**；重启后 Discord Gateway `已连接`（21:18:48）；`bot_targets.chat_trigger` 存在且 5 个既有目标均为默认 `mention`，`bot_events` 6 个诊断列存在；真实网络连接自检 Discord `@lofii.bot` 与 QQ access_token 通过。
+- **生产只读复验**：服务层 `listEvents`/`listRoles`/`listMemories`/`metrics`/`listDeliveries` 只读调用通过（角色/记忆仅元数据、不含正文）；`lastErrorHint` 修复对 Discord `network`、QQ `qq_access_token_failed` 均生效且 metrics 同步；带 Access token 访问 `/` 与 `/bots` 均 200，新 bundle `/assets/index-CH38JtCp.js`、`/assets/index-BJSYA4Y6.css` 均 200；Discord 已注册命令实测为 `status/backup/world/mc/files/help/ask`，缺 `role/reset/forget`（用户平台后台步骤，待补）。
+- **部署后备份**：第二次增量 `snapshot-20261022T132013585Z-inc.tar.gz`（125874 bytes，sha256 `fb01cc1724b32c4f3db6608934cf0cd9a622f67bf1c4b17ff171170093cbe423`）已由 PC 拉取并 ack；密钥包 `secrets-20261022T132014Z.tar.age` 拉取成功（`secrets=ok`）。
+- **待用户实发验收**：本地基线 `npm test` 387、`npm run test:web` 157（30 文件）；真实平台消息级联调（`/reset`、`/forget confirm`、分段/Markdown、群聊引用、`all` 触发、图片、诊断/角色/记忆面板实际交互）**尚未由用户实发验收**（Discord 需先补注册 `/role` `/reset` `/forget`），证据待用户实发后回填 `docs/ACCEPTANCE.md`。
 
 ## [v0.5.6] - 2026-10-22
 

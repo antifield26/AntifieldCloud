@@ -200,7 +200,7 @@
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
 18. **Bot 测试为 mock-only**：适配器/队列/发布/Chat/记忆/按钮/Gateway/分段/格式化/引用/触发/图片/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 WebSocket，未对真实 Telegram/Discord/Slack/QQ 做限流、签名漂移、平台故障的负路径验收；
-    上线前必须在各平台后台完成 Webhook/命令注册并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.2 已部署/迁移 v9/smoke 24/24，Discord Gateway 已连接并在生产开启，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；v0.5.7 已部署（release `20261022T131121Z`/schema 12，smoke 24/24，Gateway 与连接自检通过），新回复形态/触发/自检/诊断/管理/图片的真实消息级联调待用户实发验收。
+    上线前必须在各平台后台完成 Webhook/命令注册并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.2 已部署/迁移 v9/smoke 24/24，Discord Gateway 已连接并在生产开启，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；v0.5.7 已部署（当前 release `20261022T131813Z`/schema 12，commit `2f429be`，含 `lastErrorHint` 修复，smoke 24/24，Gateway 与连接自检通过），新回复形态/触发/自检/诊断/管理/图片的真实消息级联调待用户实发验收（Discord 尚缺 `/role` `/reset` `/forget` 注册）。
 19. **Bot 多附件与只读边界**：单次发布最多 5 个媒体（单 ≤10 MiB、总 ≤50 MiB；QQ 无媒体），命令/Chat 严格只读；Discord Gateway 是唯一长连接，其它平台仍不支持主动拉取；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
     多附件部分成功不自动重试，需人工重建。
 20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 Bot 凭据将不可解密，必须重新录入 Token/AppSecret；轮换需先备份 DB + 旧密钥并接受一次性重录，

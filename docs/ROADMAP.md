@@ -15,7 +15,7 @@
 - **Web `/bots`**：6 分区（概览/配置/目标/投递与发布/角色与记忆/诊断）、“检查连接”、目标触发方式、新面板只显示元数据；窄屏表格容器内横向滚动。
 - **数据/部署**：schema v12（迁移 12：`bot_targets.chat_trigger` + `bot_events` 诊断列/索引）；新 env `BOT_AI_MAX_REPLY_CHARS`/`BOT_AI_VISION_ENABLED`/`BOT_AI_IMAGE_MAX_BYTES`；
   `deploy.ps1` smoke 期望 schema 12；迁移单向，回滚需迁移前 DB 快照。
-- **状态**：本地 `npm test` 387、`npm run test:web` 157（30 文件）、`node scripts/check-version.mjs` 通过；生产已部署 v0.5.7/schema v12（release `20261022T131121Z`，commit `8dcd10f`，部署内 smoke 16/16、完整 smoke 24/24；迁移 11→12、Gateway 与连接自检通过）；真实平台消息级联调待用户实发（证据待在 `docs/ACCEPTANCE.md` 回填）。
+- **状态**：本地 `npm test` 387、`npm run test:web` 157（30 文件）、`node scripts/check-version.mjs` 通过；生产已部署 v0.5.7/schema v12（当前 release `20261022T131813Z`，commit `2f429be`，含 `lastErrorHint` 错误码识别修复；部署内 smoke 16/16、完整 smoke 24/24；第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`；迁移 11→12、Gateway 与连接自检通过；生产只读复验 lastErrorHint/服务层/前端产物通过）；真实平台消息级联调待用户实发（Discord 尚缺 `/role` `/reset` `/forget` 注册；证据待在 `docs/ACCEPTANCE.md` 回填）。
 - **下一版**：v0.5.8 候选（企业微信/钉钉/飞书、多管理员审批、Slack 按钮等），具体范围待用户确认。
 
 ## v0.5.6（历史，已部署）
@@ -143,7 +143,7 @@
 
 ## 已知限制
 
-- v0.5.7 已部署（release `20261022T131121Z`/schema 12，smoke 24/24）；真实平台消息级联调（分段/Markdown/引用、触发方式、`/reset`/`/forget confirm`、连接自检、诊断、角色/记忆、图片）待用户实发验收，完成前不声明该部分通过。
+- v0.5.7 已部署（当前 release `20261022T131813Z`/schema 12，commit `2f429be`，smoke 24/24；修复了 `lastErrorHint` 错误码识别并生产复验）；真实平台消息级联调（分段/Markdown/引用、触发方式、`/reset`/`/forget confirm`、连接自检、诊断、角色/记忆、图片）待用户实发验收，完成前不声明该部分通过；Discord 需先补注册 `/role` `/reset` `/forget`。
 - v0.5.7 群聊“全部消息”触发依赖平台前置（Telegram 关 privacy mode、Discord Message Content Intent、Slack `message.channels`）；未满足时只有 @/回复进入 Chat；QQ 群/频道仅 @/回复。
 - v0.5.7 图片理解默认关闭且需模型支持 image 输入；生产仅完成只读验证，真实图片识别质量/失败路径待验收；QQ 不支持图片。
 - 回复分段最多 4 段，超长内容会截断并标记；partial 失败不自动重试，需人工核对后处理。

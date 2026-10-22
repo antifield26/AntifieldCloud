@@ -1,6 +1,6 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.7**（schema v12，已部署）；生产为 v0.5.7/schema v12（release `20261022T131121Z`，commit `8dcd10f`，smoke 24/24），真实平台消息级联调待用户实发后按 `docs/ACCEPTANCE.md` 回填证据。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.7**（schema v12，已部署）；生产为 v0.5.7/schema v12（当前 release `20261022T131813Z`，commit `2f429be`，含 `lastErrorHint` 错误码识别修复，smoke 24/24），真实平台消息级联调待用户实发后按 `docs/ACCEPTANCE.md` 回填证据。
 
 ## v0.5.7 补充（当前）
 
@@ -15,7 +15,7 @@
   partial 失败不自动重试；发布仍为 TOTP + `PUBLISH` 双确认。
 - **决策**：QQ 群/频道不支持“全部消息”（平台事件本身即 @，服务端拒绝 `all`）；AI 回答上限由固定 4000 改为可配置并由平台层分段；
   图片能力默认关闭，避免无意把图片交给模型；回复在群/频道引用原消息，私聊不引用。
-- **状态**：本地测试 387/157、`npm run check` 通过、`check-version` 通过；已部署 v0.5.7/schema v12（release `20261022T131121Z`，部署内只读 smoke 16/16、完整 smoke 24/24，`/healthz` v0.5.7/schema 12，迁移前快照保留）；真实平台消息级联调待用户实发。
+- **状态**：本地测试 387/157、`npm run check` 通过、`check-version` 通过；已部署 v0.5.7/schema v12（当前 release `20261022T131813Z`，commit `2f429be`，含错误提示映射修复；部署内只读 smoke 16/16、完整 smoke 24/24，`/healthz` v0.5.7/schema 12，第二次迁移前快照保留；生产只读复验通过）；真实平台消息级联调待用户实发（Discord 需先补注册 `/role` `/reset` `/forget`）。
 - **下一版**：v0.5.8 候选（企业微信/钉钉/飞书、多管理员审批、Slack 按钮），范围待用户确认。
 
 ## v0.5.6 补充（历史）

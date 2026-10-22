@@ -16,7 +16,7 @@
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：v0.5.7/schema v12（release `20261022T131121Z`，commit `8dcd10f`；迁移前快照 `db-predeploy-20261022T131150335Z.sqlite`，sha256 `756300be69aad88f55176b7455f74208fde6627cd52e4cbff748aba64347cce7`；上一 release `20261022T114546Z` 保留；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke 16/16、带 Access token 的完整 smoke **24/24**）。真实平台消息级联调（`/reset`、`/forget confirm`、分段/Markdown、引用、all 触发、图片、诊断/角色/记忆面板实发）**待用户实发验收**。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且重启后 Gateway `已连接`（bot `853f85e6-f757-4060-8692-19ec06dea4aa`），连接自检 Discord `@lofii.bot` 与 QQ access_token 通过；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认；v0.5.3 出站连通性探测/自动恢复已实测；v0.5.7 图片能力已完成生产只读验证（OpenCode prompt files data URL + 当前模型支持 image）。
+- 生产现状：v0.5.7/schema v12（当前 release `20261022T131813Z`，commit `2f429be`，含 `lastErrorHint` 错误码识别修复；第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`，sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`；另保留 `20261022T131121Z`、`20261022T114546Z`；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke 16/16、带 Access token 的完整 smoke **24/24**）。真实平台消息级联调（`/reset`、`/forget confirm`、分段/Markdown、引用、all 触发、图片、诊断/角色/记忆面板实发）**待用户实发验收**；实测 Discord 尚缺 `/role` `/reset` `/forget` 命令注册。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且重启后 Gateway `已连接`（21:18:48，bot `853f85e6-f757-4060-8692-19ec06dea4aa`），连接自检 Discord `@lofii.bot` 与 QQ access_token 通过；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认；v0.5.3 出站连通性探测/自动恢复已实测；v0.5.7 图片能力已完成生产只读验证（OpenCode prompt files data URL + 当前模型支持 image）。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -520,7 +520,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 验收：`npm run check`（本地基线 387/157）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
   `smoke.ps1 -ExpectedVersion 0.5.7 -ExpectedSchemaVersion 12`、Bot 四平台联调（§9.8；v0.5.1 QQ 真实回调、v0.5.2 Chat、v0.5.3 连通性、v0.5.5/v0.5.6 角色已验证）、
   备份导入/校验/恢复（临时 DATA_DIR）、世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 12` 演练通过；OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
-  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.4–v0.5.6 已部署/smoke 24/24；v0.5.7 已部署（release `20261022T131121Z`/schema 12，smoke 24/24），其回复分段/Markdown/引用、触发方式、连接自检、诊断、角色/记忆管理与图片能力的真实平台消息级联调待用户实发后按 `docs/ACCEPTANCE.md` 回填。
+  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.4–v0.5.6 已部署/smoke 24/24；v0.5.7 已部署（当前 release `20261022T131813Z`/schema 12，commit `2f429be`，含 `lastErrorHint` 修复，smoke 24/24），其回复分段/Markdown/引用、触发方式、连接自检、诊断、角色/记忆管理与图片能力的真实平台消息级联调待用户实发后按 `docs/ACCEPTANCE.md` 回填（Discord 需先补注册 `/role` `/reset` `/forget`）。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
