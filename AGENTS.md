@@ -200,6 +200,6 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
     v0.5.2 若要启用普通消息 Chat：Discord 需在 Developer Portal 开启 **Message Content Intent** 并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；
     Telegram 群需关闭 BotFather privacy mode 或让用户回复 Bot；QQ 群/频道需先把 Bot 拉入群并 @Bot 发一条消息，再到 `/bots` 目标分区
     从“最近入站目标”登记；最后给目标勾选 `allow_chat`。Chat 不授予斜杠命令权限，多附件发布仍受 5 个/10 MiB/50 MiB 限制。
-11. 安装 Windows Bot 代理隧道任务（`.\scripts\install-tunnel-task.ps1`，当前用户权限）：登录启动、异常重启，先探测 PC 代理 10090；日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。移除用 `-Remove`。
+11. 安装 Windows Bot 代理隧道任务（`.\scripts\install-tunnel-task.ps1`，当前用户权限）：登录启动、异常重启，静默 wscript/VBS 启动，不占前台 shell；先探测 PC 代理 10090；日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。调试用 `discord-tunnel.ps1 -Foreground`，移除用 `install-tunnel-task.ps1 -Remove`。
 12. SSH 仅公钥切换后保留 **24h 回滚窗口**：期间保留旧 drop-in 备份与一个已建立的 SSH 会话；确认新会话/自动化脚本
     （smoke、备份、世界拉取）均能公钥登录后，再按 `docs/DEPLOY.md` §9.7 结束回滚窗口。

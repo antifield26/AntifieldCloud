@@ -14,7 +14,7 @@
 ## v0.5.3 补充（历史）
 
 - **出站连通性**：`server/src/bot/connectivity.ts` 按代理端口 → 外网 → 平台 API 三层探测；默认 60s、超时 8s；`BOT_CONNECTIVITY_ENABLED`/`BOT_CONNECTIVITY_INTERVAL_SECONDS`/`BOT_CONNECTIVITY_TIMEOUT_SECONDS`/`BOT_PROXY_URL`；`GET /api/bots/connectivity`、`POST /api/bots/connectivity/check`；`/bots` 出站网络卡片展示设备在线/代理端口/外网/平台延迟。
-- **自动恢复**：外网恢复时调用 Discord Gateway `wake()` 跳过退避立即重连并触发队列 tick；Windows 端 `scripts/discord-tunnel.ps1` 先探测代理端口再建 SSH 反向隧道，`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启计划任务。
+- **自动恢复**：外网恢复时调用 Discord Gateway `wake()` 跳过退避立即重连并触发队列 tick；Windows 端 `scripts/discord-tunnel.ps1` 先探测代理端口再建 SSH 反向隧道，`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启计划任务（wscript/VBS 静默、无前台 shell、单实例互斥）。
 - **QQ 群诊断**：QQ 适配器未知事件/空正文带 detail；服务端审计 `bot.event.ignored`（仅事件类型，无正文）；群事件仍要求 `GROUP_AT_MESSAGE_CREATE` 订阅、Bot 入群 @ 和目标登记。
 - **OpenCode v2.1.2**：生产已从 v2.1.1 升级；备份、重启、`/api/session` 200，完整兼容性随 smoke 复核。
 - **状态**：版本 0.5.3；本地测试 300/141 与 `npm run check` 通过；生产已部署 v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`），带 Access token 的 smoke 24/24，Gateway 已连接；出站连通性断开/恢复实测通过；OpenCode v2.1.2；QQ 群目标已登记并确认 @Bot AI 回复。

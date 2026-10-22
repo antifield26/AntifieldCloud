@@ -296,19 +296,23 @@ curl -fsS http://127.0.0.1:3000/healthz
 回滚：`sudo install -m 0755 /usr/local/bin/node.v26.11.1 /usr/local/bin/node && sudo systemctl restart antifieldcloud`，
 再跑本机 healthz + smoke；旧二进制保留至下一轮确认稳定后删除。Node 更新不触碰 DB，无需 schema 回滚；若同时更新 npm/npx 才需同步 nvm 目录。
 
-### 3.4 Windows Bot 代理隧道自恢复任务
+### 3.4 Windows Bot 代理隧道自恢复任务（静默、无前台 shell）
 
-Pi 的 Bot 出站依赖 PC 上的 `127.0.0.1:10090` 经 SSH 反向隧道映射到 Pi `127.0.0.1:18090`。v0.5.4 把一次性启动项升级为登录启动、异常重启的计划任务：
+Pi 的 Bot 出站依赖 PC 上的 `127.0.0.1:10090` 经 SSH 反向隧道映射到 Pi `127.0.0.1:18090`。v0.5.4 使用 wscript + VBS 静默启动后台 PowerShell，再运行 `discord-tunnel.ps1`；计划任务登录启动、异常重启：
 
 ```powershell
 # 在 PC 仓库根目录；无需管理员
 .\scripts\install-tunnel-task.ps1
 Get-ScheduledTask -TaskName AntifieldCloudDiscordTunnel | Select TaskName,State
 Get-Content "$env:LOCALAPPDATA\AntifieldCloud\discord-tunnel.log" -Tail 10
+# 前台调试（会占用当前 shell，仅排查时使用）
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\AntifieldCloud\discord-tunnel.ps1" -Foreground
 # 移除：.\scripts\install-tunnel-task.ps1 -Remove
 ```
 
-判据：任务 `Running`、日志出现 `tunnel starting 18090:10090`、Pi 上 `ss -ltn | grep 18090` 有监听，`/bots` 出站网络卡片显示设备在线/代理端口存活；PC 代理 10090 不可用时脚本会持续重试而不会静默退出。任务使用当前用户 Limited 权限，不写系统级配置。
+判据：任务 `Running`、日志出现 `tunnel starting 18090:10090`、Pi 上 `ss -ltn | grep 18090` 有监听，`/bots` 出站网络卡片显示设备在线/代理端口存活；PC 代理 10090 不可用时脚本会持续重试。直接运行 `discord-tunnel.ps1` 默认会通过 VBS 自隐藏并立即返回，不占用前台；脚本用命名互斥量防止重复实例，安装器会清理旧 wscript/powershell/ssh 进程。任务使用当前用户 Limited 权限，不写系统级配置。
+
+未注册 NSSM 服务：SSH 反向隧道依赖当前 Windows 用户的 SSH 私钥与登录会话，NSSM 服务化通常需要管理员保存账户密码，且会扩大常驻权限；当前“登录启动 + 静默任务”已满足无窗口运行。若需要登录前/开机即运行，再单独评估 NSSM 以当前用户凭据注册。
 
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 

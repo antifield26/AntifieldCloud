@@ -65,7 +65,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 提示词（v0.5.4）：`server/src/bot/prompts.ts` 生成任务/对话两套提示，固定安全边界不可覆盖；`/ask` 与 Chat 使用 `bot_ai_sessions.mode=task|chat` 独立会话，共享 `bot_ai_memories`。
 - 连通性（v0.5.3）：`BotConnectivityMonitor` 每 60s 探测代理 TCP 端口、外网与启用平台 API（只读、无凭据）；快照经
   `GET /api/bots/connectivity` 读取、`POST /api/bots/connectivity/check` 手动复检。外网恢复时调用 `DiscordGatewayManager.wake()`
-  跳过退避立即重连并触发队列扫描；Pi 的 18090 代理由 PC 登录计划任务维护，PC 代理端口不可达时隧道脚本循环重试。
+  跳过退避立即重连并触发队列扫描；Pi 的 18090 代理由 PC 登录计划任务维护，使用 wscript/VBS 无窗口启动，PC 代理端口不可达时隧道脚本循环重试。
 - 告警通知：`AlertService` 事件落库后调用 `BotService.notifyAlert`，按启用 Bot × `allow_notifications` 目标写 `bot_deliveries`
   （`dedupe_key=alert:<event>:<bot>:<target>`）；目标有静默时段且当前命中时，`next_attempt_at` 设为窗口结束；通知失败只记日志，不影响告警状态机。
 - 队列：`startBots()` 在 listen 后按 `BOT_DELIVERY_INTERVAL_SECONDS`（30s）`tick`：恢复 >10 分钟卡在 `sending` 的记录 →

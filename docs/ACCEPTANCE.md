@@ -20,7 +20,7 @@
 - **本地验证**：`npm test` 312（含 QQ C2C 开放/非 QQ 不扩散/群拒绝测试）、`npm run test:web` 141、`npm run check`、`check-version`、coverage；迁移 v6→v10 与 v9→v10 测试通过。
 - **部署验证**：`/healthz` `{"ok":true,"version":"0.5.4","schemaVersion":10}`；完整 smoke **24/24**；v9→v10 迁移前快照 `db-predeploy-20261022T082056427Z.sqlite`（sha256 `840abf79…`）；补丁部署前快照 `db-predeploy-20261022T085149190Z.sqlite`（sha256 `dd24862d…`）。
 - **真实对话**：管理员 `/ask` 审计 `mode=task`、普通 Chat `mode=chat`；非管理员 QQ C2C 审计 `bot.chat` 含 `open=qq_c2c`，`bot.ai.chat` `mode=chat`；`bot_ai_sessions` 出现独立 task/chat 行，`bot_ai_memories` 共享写入。
-- **临时故障**：首次验收时 PC 反向代理隧道进程退出导致 QQ 回复 `qq_access_token_failed`（非提示词逻辑）；重启计划任务后 `Bot 出站网络已恢复`，Discord Gateway 重连，`/ask`/Chat 恢复正常。
+- **临时故障**：首次验收时 PC 反向代理隧道进程退出导致 QQ 回复 `qq_access_token_failed`（非提示词逻辑）；重启计划任务后 `Bot 出站网络已恢复`，Discord Gateway 重连，`/ask`/Chat 恢复正常。隧道已改为 wscript/VBS 静默启动（无前台 shell、单实例互斥），并重装计划任务验证代理 302/Gateway 重连。
 - **备份**：部署后 inc `snapshot-20261022T085536550Z-inc.tar.gz`（98506 bytes，sha256 `6c503057…`）已由 Windows 计划任务拉取并 ack，`secrets=ok`。
 
 ## v0.5.3（历史，已部署）

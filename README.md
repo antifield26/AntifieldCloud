@@ -63,7 +63,7 @@
 - **只读按钮**：Telegram inline keyboard 与 Discord message components 支持 `/status`、`/help` 的“刷新状态/帮助”按钮；按钮动作需目标 `allow_commands` + user 白名单，只调用只读 provider，无写操作；Slack/QQ 本轮不做按钮。
 - **Discord Gateway**：`server/src/bot/discord-gateway.ts` 使用 Node 内置 WebSocket 建立长连接，`intents=37377`（含 `MESSAGE_CONTENT`）；需在 Developer Portal 开启 Message Content Intent；支持 HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避重连与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭（生产已设为 true），`BotSummary.gateway` 展示连接状态。
 - **出站连通性（v0.5.3）**：`server/src/bot/connectivity.ts` 每 60 秒按“代理端口 → 外网 → 平台 API”探测；`GET /api/bots/connectivity` 返回设备在线/代理端口/外网/平台状态，`POST /api/bots/connectivity/check` 手动复检；网络恢复后自动 `wake` Discord Gateway 并触发队列扫描；`/bots` 概览展示“出站网络”卡片。
-- **Windows 代理隧道**：`scripts/discord-tunnel.ps1` 先探测 PC 代理 10090，再建 SSH 反向隧道；`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启的计划任务，解决 PC 重启或隧道退出后 Bot 无出站的问题。
+- **Windows 代理隧道**：`scripts/discord-tunnel.ps1` 先探测 PC 代理 10090，再建 SSH 反向隧道；默认通过 `discord-tunnel.vbs` 以 wscript 无窗口启动，直接运行也不占前台 shell；`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启的静默计划任务，并清理旧实例防止重复占用 18090。调试用 `-Foreground`。
 - 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布四个分区；目标支持 `allowChat` 与“最近入站目标”登记；发布表单多选媒体；Token/Webhook Secret/Signing Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
 - 只读命令 `/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`，以及 AI 命令 `/ask <问题>`：必须同时命中目标的 `allow_commands` 与显式 user 白名单（`kind='user'` 且 `allow_commands=1`）；`/ask` 仅在 `BOT_AI_ENABLED=true` 时可用，按用户每小时限流（默认 10 次），复用 OpenCode 会话，新建会话使用 deny-all 工具权限；不返回文件内容或密钥。
 - 告警通知：告警事件写入后按目标 `allow_notifications` 入队，按告警事件去重；目标可配置 `quietStartMinute`/`quietEndMinute`（Asia/Shanghai 本地分钟，0–1439），静默窗口内的通知延后到结束时刻；通知文本清洗内部路径/URL 后外发。

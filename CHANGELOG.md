@@ -16,6 +16,7 @@
 
 - 版本/文档/`APP_VERSION` 升到 0.5.4；`deploy.ps1` smoke 期望 schema 10。
 - 生产已部署 release `20261022T085120Z`（commit `b2bdc8d`，schema v10，smoke 24/24）；`/ask` 任务模式、Chat 对话模式、QQ C2C 管理员/非管理员均已实发确认。
+- Windows Bot 隧道改为 wscript/VBS 静默启动（无前台 shell、单实例互斥，安装器清理旧实例）；`-Foreground` 仅用于调试，应用版本不变。
 - 本版无 UI 提示词编辑；修改提示词需改 env 并重启。
 
 ## [v0.5.3] - 2026-10-22

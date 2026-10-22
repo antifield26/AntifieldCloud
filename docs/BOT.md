@@ -190,7 +190,7 @@ Discord Gateway 启用后若无法连接，`BotSummary.gateway.state` 会显示 
   3. 每个启用平台的只读 API URL（Discord/Telegram/Slack/QQ），4xx 也算网络可达。
 - `GET /api/bots/connectivity` 返回 `deviceOnline`、代理 host/port、外网与各平台延迟；`POST /api/bots/connectivity/check` 手动复检（30 次/分钟）；`/bots` 概览卡片展示这些状态。
 - 外网从不可达恢复时调用 `DiscordGatewayManager.wake()` 跳过退避立即重连，并触发投递/发布队列扫描；探测不携带 Bot 凭据、不记录响应正文。
-- PC 端隧道：先运行 `.\scripts\install-tunnel-task.ps1`（登录启动、异常重启），后台脚本会先探测 PC 代理 10090，不可用时持续重试；任务日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。
+- PC 端隧道：先运行 `.\scripts\install-tunnel-task.ps1`（登录启动、异常重启；wscript/VBS 无窗口启动，不占前台 shell），后台脚本会先探测 PC 代理 10090，不可用时持续重试；任务日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。调试用 `.\scripts\discord-tunnel.ps1 -Foreground`。
   判据：计划任务 `Running`，Pi `ss -ltn | grep 18090` 有监听，`/bots` 显示设备在线/代理端口存活。
 
 ### 6.2 QQ 群/频道无响应排查（v0.5.3）
