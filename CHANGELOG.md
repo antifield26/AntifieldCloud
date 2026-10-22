@@ -33,7 +33,14 @@
 - **生产 env 变更**：删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`（空值）；确认新增/保留 `BOT_AI_MEMORY_RETENTION_DAYS`/`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`；重启服务。
 - PC 侧 `AntifieldCloudDiscordTunnel` 计划任务已移除，仓库不再包含隧道脚本；Pi 出站改为直连。
 - 测试基线（Lead 实测）：`npm test` **341**（v0.5.9 的 333 + 新增 v0.5.10 用例 8：记忆摘要一次性/删除、合并/空闲/并发串行、`/forget` 与 `/reset` 远端删除、记忆/会话保留期分离）、`npm run test:web` **157**（30 文件）、`npm run typecheck` 通过；`npm run test:coverage` exit 0（Lines **91.98%** / Branches **76.92%** / Functions **85.99%**）、`npm run build` 通过。
-- **待部署验收**：部署事实（release/commit/smoke）、生产 env 清理确认、连通性快照、记忆合并/保留期/远端会话删除与真实 QQ 回归待回填 `docs/ACCEPTANCE.md`。
+- **已部署（2026-10-22 23:20–23:23 CST）**：release `20261022T152053Z`（commit `4619c91`，version 0.5.10/schema v13，无迁移）；current 指向该 release，上一 release `20261022T143451Z`（v0.5.9）保留；
+  迁移前 DB 快照（仅部署保护）`db-predeploy-20261022T152150860Z.sqlite`（sha256 `3e48eb3359c00408903adde5ac642dd9f2b190e106e2d502112c3ff3ce7078e6`）。
+- **部署验证**：`/healthz` = `{"ok":true,"version":"0.5.10","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**；
+  生产 env 实测（3 个记忆变量就位、代理变量与 `BOT_PROXY_URL` 均无、运行时 365/3/120/7、config 无 proxy 字段）；无代理环境下 QQ `checkBot` ok，启动日志 detail 仅 `internet:true, platforms:["qq"]`（无 proxyPort）；
+  PC 隧道任务/进程已移除、PC/Pi 无 `18090` 监听；前端 `/`、`/bots` 200（bundle `index-Bx6EBCIp.js` 644262 bytes，含“Pi 直连”，不含“代理端口/设备在线”）。
+- **部署后备份**：增量 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已拉取并 ack；密钥包 `secrets-20261022T152333Z.tar.age` secrets=ok。
+- **回滚**：schema 无迁移；切回 release `20261022T143451Z`（v0.5.9）并还原 env 备份（含代理变量与旧 `BOT_PROXY_URL`）+ 恢复旧隧道脚本/计划任务；无 schema 回滚。
+- **待用户实发验收**：合并摘要（3 条/空闲 120s 后只触发一次，`rounds` 审计）；`/reset`、`/forget confirm` 后远端会话删除（用部署前快照 session id 验证 404）；出站网络卡片仅外网/QQ 平台且检测可用；普通 Chat/图片回归。证据待用户实发后回填 `docs/ACCEPTANCE.md`。
 
 ## [v0.5.9] - 2026-10-22
 

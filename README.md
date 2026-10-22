@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.10（**待部署验收**；生产当前为 v0.5.9/schema v13，release `20261022T143451Z`/commit `97996dc`，已验收通过）。v0.5.10 记忆/会话修复（摘要一次性并删除远端会话、记忆更新串行、合并策略=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）并移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；schema 保持 v13（无迁移），生产 env 需删除代理变量并确认 3 个记忆变量。
+> 状态：v0.5.10（**已部署**，release `20261022T152053Z`/commit `4619c91`/schema v13 无迁移；`/healthz` = version 0.5.10/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；生产 env 实测（3 个记忆变量就位、代理变量与 `BOT_PROXY_URL` 均无），无代理环境 QQ `checkBot` ok、连通性日志仅 internet/QQ；PC 隧道任务/进程已移除；**真实 QQ 行为待用户实发**：合并摘要、`/reset`/`/forget` 远端会话删除、出站网络卡片、普通 Chat/图片回归）。v0.5.10 记忆/会话修复（摘要一次性并删除远端会话、更新串行、合并=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）并移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）。
 > 测试基线（Lead 实测 2026-10-22，v0.5.10）：`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例）、`npm run test:web` **157**（30 文件）、`npm run typecheck` 通过；覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**（`npm run test:coverage` exit 0），`npm run build` 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 

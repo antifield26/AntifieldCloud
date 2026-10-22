@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.10（待部署验收；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST）；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.10（已部署；真实 QQ 行为待用户实发；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST）；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -24,14 +24,19 @@
 > 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除两个提示词变量、权限 640、APP_VERSION=0.5.9）；前端 `/` 与 `/bots` 200（bundle `index-CFrhFtH2.js` 644849 bytes）。
 > **用户实发验收（通过，2026-10-22 22:39–22:41 CST）**：22:39:52 CST 非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`，`bot_events` 记录 `command/ok/command_help`、`audit_log` 记录 `command=help`，事件 200 ack 且命令正常回复（无异常投递）；22:41 CST 用户原话“验收通过”。管理员 `/help` 全量、`/ask` 只回帮助不调用 AI、放宽后限速体验、Chat/图片回归为用户口头确认通过（服务端无单独事件证据），详见下方 v0.5.9 段。
 
-> **v0.5.10 待部署**：2026-10-22 目标版本 v0.5.10（schema 保持 v13，无迁移）。记忆/会话修复（摘要会话一次性并删除远端、记忆更新串行、合并策略=3 条或空闲 120s、记忆保留 365 天与 7 天会话分离、
-> `/reset`/`/forget`/角色变更清理远端会话）与移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）。部署与真实平台验证完成前不得声明通过，详情见下方 v0.5.10 段。
+> **v0.5.10 已部署**：2026-10-22 部署到生产 Pi（release `20261022T152053Z`，commit `4619c91`，version 0.5.10/schema v13，无迁移）；current 指向该 release，上一 release `20261022T143451Z`（v0.5.9）保留。
+> 迁移前 DB 快照（仅部署保护）`db-predeploy-20261022T152150860Z.sqlite`（sha256 `3e48eb3359c00408903adde5ac642dd9f2b190e106e2d502112c3ff3ce7078e6`）；`/healthz` = `{"ok":true,"version":"0.5.10","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。
+> 生产 env 实测：`BOT_AI_MEMORY_RETENTION_DAYS=365`/`BOT_AI_MEMORY_BATCH_MESSAGES=3`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`BOT_PROXY_URL` 均无；
+> 直连 QQ `checkBot` ok（access_token 已获取），启动日志“Bot 连通性检查完成” detail 仅 `internet:true, platforms:["qq"]`（无 proxyPort）；PC 隧道任务/进程已移除、PC/Pi 均无 18090 监听；前端 bundle `index-Bx6EBCIp.js`（644262 bytes）含“Pi 直连”，不含“代理端口/设备在线”。
+> 部署后增量备份 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已拉取；密钥包 `secrets-20261022T152333Z.tar.age` secrets=ok。
+> **真实 QQ 行为验收（合并摘要/远端会话删除/出站网络卡片/普通 Chat/图片回归）待用户实发验收**，完成前不得声明该部分通过，详情见下方 v0.5.10 段。
 
-## v0.5.10（当前，待部署验收；记忆/会话修复 + 移除代理隧道依赖）
+## v0.5.10（当前，已部署；真实 QQ 行为待用户实发；记忆/会话修复 + 移除代理隧道依赖）
 
 - 日期：2026-10-22（Asia/Shanghai）
-- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（目标 version 0.5.10/schema 13，无迁移）+ Windows 本地工作区
-- **状态**：代码与文档已完成，**待部署验收**；部署事实（release/commit/smoke）与真实 QQ 回归待回填。
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T152053Z`，commit `4619c91`，schema 13）+ Windows 本地工作区
+- **状态**：已部署 v0.5.10/schema v13（无迁移），部署验证（env 实测、直连连通性、隧道清理、健康检查、两次 smoke、前端产物）通过。
+  **真实 QQ 行为验收（合并摘要、`/reset`/`/forget` 远端会话删除、`/bots` 出站网络卡片、普通 Chat/图片回归）尚未由用户实发验收**，完成前不得声明该部分通过。
 - **交付范围**：
   - **记忆摘要一次性**：每次摘要新建远端 OpenCode 会话并在 `finally` 删除；不再保存 `summary_session_id`（列保留兼容，旧值仅历史遗留）。
   - **记忆更新串行化**：按 Bot×用户队列串行更新，避免并发覆盖；摘要失败只记日志并保留旧摘要。
@@ -39,26 +44,26 @@
   - **保留期分离**：AI 会话映射保留 7 天（`BOT_AI_SESSION_RETENTION_DAYS`）；长期记忆保留 `BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650），互不影响。
   - **远端会话清理增强**：`/reset`、`/forget confirm`、角色卡变更（含管理员删除角色）清理本地映射时尽力删除远端 OpenCode 会话与旧摘要会话。
   - **移除代理隧道依赖**：删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；删除 `BOT_PROXY_URL`；
-    生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`（空值）；连通性只探测外网 + QQ 平台（Pi 直连），`BotConnectivitySnapshot` 去掉 `deviceOnline`/`proxy`。
+    生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`；连通性只探测外网 + QQ 平台（Pi 直连），`BotConnectivitySnapshot` 去掉 `deviceOnline`/`proxy`。
   - **版本/数据**：version 0.5.10；schema 保持 v13（无迁移）；`scripts/deploy.ps1` 无需改（期望 schema 13 不变）。
 - **本地验证**（Lead 实测 2026-10-22）：`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例：摘要一次性/删除、合并/空闲/并发串行、`/forget` 与 `/reset` 远端删除、记忆/会话保留期分离）、
   `npm run test:web` **157**（30 文件）、`npm run typecheck` 通过；`npm run test:coverage` exit 0（Lines **91.98%** / Branches **76.92%** / Functions **85.99%**）、`npm run build` 通过。
-- **部署前状态（Lead 实测）**：生产 env 已就绪（`BOT_AI_MEMORY_RETENTION_DAYS=365`、`BOT_AI_MEMORY_BATCH_MESSAGES=3`、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；已删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`BOT_PROXY_URL`）；
-  PC 隧道计划任务与进程已移除（`18090` 无监听）。**v0.5.10 部署与真实 QQ 回归待执行/回填。**
-- **部署要点**：
-  1. `/etc/antifieldcloud/env`：删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`（空值）；确认/新增 `BOT_AI_MEMORY_RETENTION_DAYS=365`、
-     `BOT_AI_MEMORY_BATCH_MESSAGES=3`、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；确认权限 `640 root:antifieldcloud` 并备份 env。
-  2. `deploy.ps1 -PiHost <直连 IP>` 部署 v0.5.10；`/healthz` 断言 `version=0.5.10`、`schemaVersion=13`；部署内只读 smoke 与带 Access token 完整 smoke（`-ExpectedSchemaVersion 13`）通过。
-  3. 验证：`GET /api/bots/connectivity` 快照仅含 `checkedAt/checking/internet/platforms`（无 `deviceOnline/proxy`）；`/bots` 出站网络卡片无代理/设备在线字段；
-     多轮 Chat 后 `bot.ai.memory` 审计含 `rounds`、`bot_ai_memories.summary` 更新且 `summary_session_id` 为 NULL；`/reset`/`/forget confirm` 后远端会话与旧摘要会话被尽力删除；
-     记忆按 365 天、会话按 7 天分别清理；PC 侧 `Get-ScheduledTask AntifieldCloudDiscordTunnel` 不存在。
-  4. 真实 QQ 回归：C2C/群 @Bot Chat、图片理解/降级、`/help`/`/reset`/`/forget confirm`、诊断与角色/记忆面板。
-- **待部署验收项**：
-  1. 生产部署事实（release/commit/healthz/smoke）与 env 清理确认（代理变量/`BOT_PROXY_URL` 删除、3 个记忆变量就位）。
-  2. 连通性快照形状与 Pi 直连探测、PC 计划任务已移除。
-  3. 记忆合并策略（3 条/空闲 120s）、`rounds` 审计、摘要会话一次性与远端删除、保留期分离。
-  4. 真实 QQ Chat/图片/`/help`/`/reset`/`/forget confirm` 回归。
-- **回滚**：schema 无迁移；切回 release `20261022T143451Z`（v0.5.9）并恢复 env（若需回到旧代理链路，需恢复 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY` 与旧隧道脚本/计划任务；v0.5.10 仓库已删除这些脚本，可从上一 release 或备份取回）后重启。
+- **部署验证**：
+  - release `20261022T152053Z`（commit `4619c91`，version 0.5.10/schema v13）已切换并重启；current 指向该 release，上一 release `20261022T143451Z`（v0.5.9）保留；schema 无迁移。
+  - 迁移前 DB 快照（仅部署保护）：`db-predeploy-20261022T152150860Z.sqlite`（sha256 `3e48eb3359c00408903adde5ac642dd9f2b190e106e2d502112c3ff3ce7078e6`）。
+  - `/healthz` = `{"ok":true,"version":"0.5.10","schemaVersion":13}`；部署内只读 smoke **16/16**；带 Cloudflare Access service token 完整 smoke **24/24**。
+  - **生产 env 实测**：`BOT_AI_MEMORY_RETENTION_DAYS=365`、`BOT_AI_MEMORY_BATCH_MESSAGES=3`、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`BOT_PROXY_URL` 均无；
+    运行时 `botAiMemoryRetentionDays=365`、`botAiMemoryBatchMessages=3`、`botAiMemoryIdleFlushSeconds=120`、`botAiSessionRetentionDays=7`，config 中无 proxy 字段。
+  - **直连与连通性**：无代理环境下 QQ `checkBot` ok（access_token 已获取）；启动日志“Bot 连通性检查完成” detail 仅 `internet:true, platforms:["qq"]`（无 proxyPort）。
+  - **PC 隧道清理**：计划任务 `AntifieldCloudDiscordTunnel` 已移除、无隧道进程、PC/Pi 均无 `18090` 监听；仓库隧道脚本已删除。
+  - **前端产物**：带 Access token 访问 `/` 与 `/bots` 均 **200**；新 bundle `/assets/index-Bx6EBCIp.js`（644262 bytes），含“Pi 直连”，**不含**“代理端口”“设备在线”。
+  - **部署后备份**：增量 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已由 PC `backup-pull` 拉取并 ack；密钥包 `secrets-20261022T152333Z.tar.age` 拉取成功，`secrets=ok`。
+- **待用户实发验收项**（完成前不得声明通过）：
+  1. **合并摘要**：连续 3 条或空闲 120s 后只触发一次摘要；`bot.ai.memory` 审计含 `rounds`，`bot_ai_memories.summary` 更新且 `summary_session_id` 为 NULL。
+  2. **远端会话删除**：`/reset`、`/forget confirm` 后远端 OpenCode 会话被删除（服务端将用部署前快照的 session id 验证 404）；删除失败只记日志不阻塞回复。
+  3. **出站网络卡片**：`/bots` 卡片只显示外网/QQ 平台，无代理端口/设备在线字段；“检测”可手动复检。
+  4. **普通 Chat/图片回归**：C2C/群 @Bot Chat、图片理解/降级、`/help`、诊断与角色/记忆面板正常。
+- **回滚**：schema 无迁移；切回 release `20261022T143451Z`（v0.5.9）并还原 env 备份（含代理变量与旧 `BOT_PROXY_URL`）+ 恢复旧隧道脚本/计划任务后重启；无 schema 回滚需求。
 ## v0.5.9（历史，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST；v0.5.10 起移除代理隧道依赖）
 
 - 日期：2026-10-22（Asia/Shanghai）

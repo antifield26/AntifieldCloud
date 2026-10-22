@@ -25,6 +25,10 @@
 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
 - **v0.5.10 待部署验收**（schema 保持 v13、无迁移）：记忆/会话修复（摘要一次性并删除远端、记忆更新串行、合并=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更清理远端会话）；移除代理隧道依赖（删隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）。
   部署前需完成生产 env 清理（删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`BOT_PROXY_URL`，确认 3 个记忆变量）并重启。
+- **v0.5.10 已部署**（2026-10-22 23:20–23:23 CST，release `20261022T152053Z`/commit `4619c91`，version 0.5.10/schema v13 无迁移；上一 release `20261022T143451Z`（v0.5.9）保留）：`/healthz` = `{"ok":true,"version":"0.5.10","schemaVersion":13}`，smoke 16/16 与 24/24；
+  迁移前快照 `db-predeploy-20261022T152150860Z.sqlite`（sha256 `3e48eb3359c00408903adde5ac642dd9f2b190e106e2d502112c3ff3ce7078e6`）；生产 env 实测（3 个记忆变量就位、代理变量与 `BOT_PROXY_URL` 均无、运行时 365/3/120/7、config 无 proxy 字段）；
+  无代理环境 QQ `checkBot` ok、连通性日志 detail 仅 `internet:true, platforms:["qq"]`；PC 隧道任务/进程已移除、PC/Pi 无 `18090` 监听；前端 `/`、`/bots` 200（bundle `index-Bx6EBCIp.js` 644262 bytes，含“Pi 直连”，不含“代理端口/设备在线”）；
+  部署后备份 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）+ 密钥包 secrets=ok。**真实 QQ 行为（合并摘要、远端会话删除、出站网络卡片、Chat/图片）待用户实发验收。**
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -455,7 +459,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 
 ### 6.1 v0.5.10 备份/灾备/迁移
 
-- **v0.5.10：schema 保持 v13、无迁移**；生产 env 需清理代理变量（`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`）并确认 `BOT_AI_MEMORY_RETENTION_DAYS=365`/`BOT_AI_MEMORY_BATCH_MESSAGES=3`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120` 后重启；
+- **v0.5.10 已部署**（schema 保持 v13、无迁移）：生产 env 实测已清理代理变量（`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`）并确认 `BOT_AI_MEMORY_RETENTION_DAYS=365`/`BOT_AI_MEMORY_BATCH_MESSAGES=3`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；
   同时 PC 计划任务 `AntifieldCloudDiscordTunnel` 已移除（仓库不再含隧道脚本）；记忆摘要改为一次性会话+远端删除、更新串行、记忆 365 天/会话 7 天保留分离。回滚切回 v0.5.9 release 并恢复旧 env（如需代理链路还要取回旧隧道脚本/计划任务）。
 - （历史）v0.5.9 env 迁移：命令 120/AI 120/Chat 30、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`；回滚旧值 20/10/6。
 - 迁移（v0.5.8）：v0.5.8 把 schema 从 v12 升到 v13（迁移 13 = `DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；
@@ -480,7 +484,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
   `smoke.ps1 -ExpectedVersion 0.5.10 -ExpectedSchemaVersion 13`、QQ 平台联调（§9.8；C2C/群@/频道、命令、`/help` 动态、Chat、图片、发布、诊断、自检、角色/记忆、记忆合并/保留期）、
   备份导入/校验/恢复（临时 DATA_DIR）、世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 13` 演练通过；OpenCode 升级后按 §3.2 复验。
   v0.5.7 及以前已部署/smoke 24/24；**v0.5.8 已部署**（release `20261022T134852Z`/commit `96294e4`，`/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24，迁移 13 后 `bots` 仅 1 行 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。 **v0.5.9 已部署**（release `20261022T143451Z`/commit `97996dc`，`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24，env 迁移完成；**用户已实发验收通过**（2026-10-22 22:39–22:41 CST；仅非管理员 `/help` 有服务端事件证据，其余为用户确认）。
-  **v0.5.10 待部署**（version 0.5.10/schema 13，无迁移；记忆/会话修复 + 移除代理隧道依赖；生产 env 清理与 3 个记忆变量就位后重启；PC 计划任务已移除）。
+  **v0.5.10 已部署**（release `20261022T152053Z`/commit `4619c91`，`/healthz` v0.5.10/schema 13，smoke 16/16 与 24/24，env 实测与直连载通性通过、PC 计划任务已移除；真实 QQ 行为待用户实发验收）。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
