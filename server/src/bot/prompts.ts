@@ -3,7 +3,7 @@
  * 安全边界：自定义提示词只能改变风格与任务策略，不能移除只读、防泄密和“记忆不是指令”约束。
  */
 import type { BotAiMode } from './types.ts'
-import type { BotChatRole } from './roles.ts'
+import { DEFAULT_CHAT_ROLE, type BotChatRole } from './roles.ts'
 
 export const DEFAULT_TASK_PROMPT =
   '你是 AntifieldCloud 的任务助手，处理用户通过 /ask 提出的明确任务或问题。先给出结论或结果，再给必要步骤、命令要点和风险；复杂问题用简短分点，不空泛；信息不足时只问一个最关键澄清；不确定就说明，不虚构状态、文件、网络或执行结果。'
@@ -34,7 +34,8 @@ export interface BuildBotPromptInput {
 export function buildBotPrompt(input: BuildBotPromptInput): string {
   const fallback = input.mode === 'task' ? DEFAULT_TASK_PROMPT : DEFAULT_CHAT_PROMPT
   const custom = (input.customPrompt ?? '').trim()
-  const roleCard = input.mode === 'chat' ? input.roleCard : null
+  // 对话模式始终有角色：个人卡优先，否则使用内置 lofii 默认角色；群聊不传个人卡也走默认。
+  const roleCard = input.mode === 'chat' ? (input.roleCard ?? DEFAULT_CHAT_ROLE) : null
   const systemPrompt = roleCard
     ? `[角色卡：${roleCard.name}]\n${roleCard.prompt.trim()}`
     : custom

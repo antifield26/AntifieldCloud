@@ -62,7 +62,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 记忆：`BotMemoryStore` 以 `bot_ai_memories`（DB 权威）保存每 Bot×用户摘要与 `summary_session_id`，镜像到
   `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600、临时文件 + 原子 rename）；每轮对话后调用 `BotAi.summarizeMemory` 滚动摘要，
   失败只记日志并保留旧摘要；记忆正文不进入 HTTP API/前端。
-- 提示词（v0.5.4/v0.5.5）：`server/src/bot/prompts.ts` 生成任务/对话提示；私聊 Chat 可加载 `/role` 角色卡替换默认风格，固定安全边界不可覆盖；`/ask` 与 Chat 使用 `bot_ai_sessions.mode=task|chat` 独立会话，共享 `bot_ai_memories`；角色卡存 `bot_chat_roles`。
+- 提示词（v0.5.4/v0.5.6）：`server/src/bot/prompts.ts` 生成任务/对话提示；Chat 默认使用内置 lofii 角色，私聊个人 `/role` 卡可覆盖，固定安全边界不可覆盖；群聊固定默认角色；`/ask` 与 Chat 使用 `bot_ai_sessions.mode=task|chat` 独立会话，共享 `bot_ai_memories`；个人角色卡存 `bot_chat_roles`。
 - 连通性（v0.5.3）：`BotConnectivityMonitor` 每 60s 探测代理 TCP 端口、外网与启用平台 API（只读、无凭据）；快照经
   `GET /api/bots/connectivity` 读取、`POST /api/bots/connectivity/check` 手动复检。外网恢复时调用 `DiscordGatewayManager.wake()`
   跳过退避立即重连并触发队列扫描；Pi 的 18090 代理由 PC 登录计划任务维护，使用 wscript/VBS 无窗口启动，PC 代理端口不可达时隧道脚本循环重试。
@@ -132,7 +132,7 @@ SQLite（WAL）核心表（schema v11）：
 - `bot_publish_jobs`：发布任务（文本 + 媒体文件 id 列表 + `scheduled_at`），状态 `draft|queued|sending|sent|failed|canceled`。
 - `bot_events`：`(bot_id, platform_event_id)` 主键，用于 Webhook 重放去重；按 `received_at` 保留 7 天。
 - `bot_ai_sessions`：`(bot_id, target_external_id, user_id, mode)` 主键（mode=chat/task），映射 OpenCode `session_id`、模型标签与更新时间；旧会话归 chat；按保留期清理，不删除远端会话。
-- `bot_chat_roles`：`(bot_id,user_id)` 主键，保存私聊角色卡名字/设定/启用状态与时间戳；仅私聊 Chat 读取，角色变更删除对应 chat 会话映射；不通过 API/UI 暴露。
+- `bot_chat_roles`：`(bot_id,user_id)` 主键，保存私聊个人角色卡名字/设定/启用状态与时间戳；仅私聊 Chat 读取，启用时覆盖默认 lofii；角色变更删除对应 chat 会话映射；不通过 API/UI 暴露。
 - `bot_ai_memories`：`(bot_id, user_id)` 主键、`memory_id` 唯一、`summary`、`summary_session_id`、时间戳；每 Bot×用户一份滚动摘要，镜像文件在 `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600）；不通过 API/UI 暴露，按 AI 会话保留期清理。
 - `bot_inbound_targets`：`(bot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 

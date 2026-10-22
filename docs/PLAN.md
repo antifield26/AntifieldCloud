@@ -1,15 +1,22 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.5**（schema v11）；生产已部署 v0.5.5 release `20261022T104834Z`/schema v11。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.6**（schema v11）；生产已部署 v0.5.5 release `20261022T104834Z`/schema v11，v0.5.6 待部署。
 
-## v0.5.5 补充（当前）
+## v0.5.6 补充（当前）
+
+- **默认角色 lofii**：内置猫系轻松伙伴，私聊与群聊普通对话默认使用；个人卡只覆盖私聊，`/role off` 回落到 lofii。
+- **全用户语气**：Chat 与 `/role` 文案去掉技术术语；群内 `/role` 只给友好提示。
+- **兼容**：schema 保持 v11；`BOT_AI_CHAT_PROMPT` 不再影响 Chat；个人角色卡与任务模式不变。
+- **状态**：本地测试 324/141、`npm run check` 通过；v0.5.6 生产部署/smoke 与私聊/群聊 lofii 验收待执行。
+
+## v0.5.5 补充（历史）
 
 - **私聊角色卡**：`/role` 对全部平台私聊用户开放；每 Bot×用户一张“名字+设定”卡；`set/show/off/on/delete` 管理。
 - **应用范围**：只替换私聊 Chat 默认人设；安全边界与共享记忆仍追加；`/ask` 与群/频道 Chat 不使用角色卡。
 - **会话**：角色卡变更重置当前私聊 Chat 会话映射；task 会话与长期记忆不受影响。
 - **权限**：仅 `/role` 绕过命令白名单；其他命令仍要求目标 `allow_commands` + 用户白名单；Telegram/Discord/Slack 私聊 Chat 仍按目标 `allow_chat`。
 - **schema v11**：新增 `bot_chat_roles`；Discord DM 修正 `isDirect`；Discord/Slack 命令文本上限 2048。
-- **状态**：本地测试 324/141、`npm run check` 通过；生产 release `20261022T104834Z`/schema v11、smoke 24/24，私聊 `/role` 已实发确认。
+- **状态**：本地测试 324/141、`npm run check` 通过；已部署 release `20261022T104834Z`/schema v11、smoke 24/24，私聊 `/role` 已实发确认。
 
 ## v0.5.4 补充（历史）
 

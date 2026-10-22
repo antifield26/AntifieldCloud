@@ -8,7 +8,7 @@ import { randomBytes } from 'node:crypto'
 import { rmSync } from 'node:fs'
 import { tempDataDir, testConfig, testDb } from './helpers.ts'
 import { BotService } from '../src/bot/service.ts'
-import { DEFAULT_CHAT_PROMPT, DEFAULT_TASK_PROMPT, SAFETY_BOUNDARY } from '../src/bot/prompts.ts'
+import { DEFAULT_TASK_PROMPT, SAFETY_BOUNDARY } from '../src/bot/prompts.ts'
 import type { BotAiMode } from '../src/bot/types.ts'
 
 interface AiCall {
@@ -135,7 +135,7 @@ test('v0.5.4：/ask 使用任务提示、共享记忆并审计 mode=task', async
   }
 })
 
-test('v0.5.4：普通 Chat 使用对话提示与自定义 Chat 覆盖', async () => {
+test('v0.5.6：普通 Chat 使用 lofii 默认角色，环境 Chat 覆盖不生效', async () => {
   const { dir, db, service, created, target, aiCalls } = setup({ chatPrompt: '用轻松语气回答。' })
   try {
     await service.handleGatewayMessage(created.id, {
@@ -153,8 +153,8 @@ test('v0.5.4：普通 Chat 使用对话提示与自定义 Chat 覆盖', async ()
     assert.equal(aiCalls[0]?.mode, 'chat')
     const prompt = aiCalls[0]?.prompt ?? ''
     assert.match(prompt, /^\[模式：对话\]/)
-    assert.ok(prompt.includes('用轻松语气回答。'))
-    assert.ok(!prompt.includes(DEFAULT_CHAT_PROMPT))
+    assert.ok(prompt.includes('[角色卡：lofii]'))
+    assert.equal(prompt.includes('用轻松语气回答。'), false)
     assert.ok(prompt.includes(SAFETY_BOUNDARY))
   } finally {
     db.close()
@@ -162,7 +162,7 @@ test('v0.5.4：普通 Chat 使用对话提示与自定义 Chat 覆盖', async ()
   }
 })
 
-test('v0.5.4：Task 与 Chat 自定义提示词互不串用，且共享记忆', async () => {
+test('v0.5.6：Task 自定义与 Chat lofii 默认互不串用，且共享记忆', async () => {
   const { dir, db, service, created, target, aiCalls } = setup({
     taskPrompt: '任务自定义提示。',
     chatPrompt: '对话自定义提示。',
@@ -183,10 +183,11 @@ test('v0.5.4：Task 与 Chat 自定义提示词互不串用，且共享记忆', 
     assert.equal(aiCalls.length, 2)
     assert.ok(aiCalls[0]?.prompt.includes('任务自定义提示。'))
     assert.ok(aiCalls[0]?.prompt.includes('用户喜欢深色模式'))
-    assert.ok(!aiCalls[0]?.prompt.includes('对话自定义提示。'))
-    assert.ok(aiCalls[1]?.prompt.includes('对话自定义提示。'))
+    assert.equal(aiCalls[0]?.prompt.includes('对话自定义提示。'), false)
+    assert.ok(aiCalls[1]?.prompt.includes('[角色卡：lofii]'))
+    assert.equal(aiCalls[1]?.prompt.includes('对话自定义提示。'), false)
     assert.ok(aiCalls[1]?.prompt.includes('记忆：执行计划'))
-    assert.ok(!aiCalls[1]?.prompt.includes('任务自定义提示。'))
+    assert.equal(aiCalls[1]?.prompt.includes('任务自定义提示。'), false)
   } finally {
     db.close()
     rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })

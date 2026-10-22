@@ -38,8 +38,6 @@ import {
   BotChatRoleStore,
   normalizeRolePrompt,
   validateRole,
-  ROLE_NAME_MAX,
-  ROLE_PROMPT_MAX,
   type BotChatRole,
   type RoleValidationError,
 } from './roles.ts'
@@ -49,7 +47,7 @@ import { DiscordAdapter } from './adapters/discord.ts'
 import { QqAdapter } from './adapters/qq.ts'
 import { SlackAdapter } from './adapters/slack.ts'
 import { TelegramAdapter } from './adapters/telegram.ts'
-import { commandDenied, commandFailed, formatFileList, formatPairs, helpText, roleUsage } from './templates.ts'
+import { commandDenied, commandFailed, formatFileList, formatPairs, helpText, roleDefaultText, roleGroupHint, roleUsage } from './templates.ts'
 
 const NAME_MAX = 80
 const TARGET_MAX = 128
@@ -75,21 +73,21 @@ function parseCommandText(text: string): ParsedCommand | null {
 function roleValidationMessage(error: RoleValidationError): string {
   switch (error) {
     case 'role_name_empty':
-      return `名字不能为空；用法：/role set <名字> <角色设定>（名字不超过 ${ROLE_NAME_MAX} 字、不能含空格或括号）。`
+      return '名字还没写呢。可以这样说：/role set 名字 你希望我是什么样'
     case 'role_name_too_long':
-      return `名字最长 ${ROLE_NAME_MAX} 字。`
+      return '名字有点长，换一个短一点、好记的吧。'
     case 'role_name_has_whitespace':
-      return '名字不能包含空格或换行。'
+      return '名字里不要放空格哦。'
     case 'role_name_invalid_chars':
-      return '名字不能包含方括号或控制字符。'
+      return '名字里不要放方括号这类符号，换个简单的名字吧。'
     case 'role_prompt_empty':
-      return `角色设定不能为空；最多 ${ROLE_PROMPT_MAX} 字。`
+      return '还没写希望我是什么样呢。可以说说你的想法。'
     case 'role_prompt_too_long':
-      return `角色设定最长 ${ROLE_PROMPT_MAX} 字。`
+      return '你想说的有点多，我记不住啦，精简一点再试试？'
     case 'role_prompt_reserved_marker':
-      return '角色设定不能包含 [系统提示]/[安全边界]/[长期记忆]/[用户消息]/[模式：] 等保留标记。'
+      return '这段描述我读不太明白，换成自然的说话方式试试？'
     default:
-      return '角色卡内容不合法。'
+      return '这个角色我有点没看懂，换个说法试试？'
   }
 }
 
@@ -1071,6 +1069,16 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): Promise<{ status: number; body: unknown }> {
     const parsed = parseCommandText(result.text)
+    // 群聊里角色统一使用默认 lofii；/role 只做友好提示，不读取或修改任何人的私聊角色。
+    if (parsed?.command === 'role' && !result.isDirect) {
+      const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
+      if (retry === 0) void result.reply(roleGroupHint()).catch(() => undefined)
+      this.deps.audit('bot.role.hint', bot.id, {
+        target: result.targetExternalId,
+        user: result.userId.slice(0, 64),
+      })
+      return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
+    }
     const roleDm = parsed?.command === 'role' && result.isDirect
     const target = this.inboundTarget(bot.id, result)
     if (!roleDm && (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId))) {
@@ -1241,25 +1249,25 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'command' }>,
     args: string,
   ): Promise<string> {
-    // dispatchCommand 已限制为私聊；这里再做一次防御，避免未来路由变化导致群内写角色卡。
-    if (!result.isDirect) return commandDenied()
+    // dispatchCommand 已把群聊引导到 roleGroupHint；这里再做一次防御，避免未来路由变化导致群内写角色卡。
+    if (!result.isDirect) return roleGroupHint()
     const card = this.roles.get(bot.id, result.userId)
     const parsed = /^(\S+)(?:\s+([\s\S]*))?$/.exec(args.trim())
     const sub = (parsed?.[1] ?? '').toLowerCase()
     const rest = (parsed?.[2] ?? '').trim()
     if (!sub || sub === 'help') {
       const status = card
-        ? `当前角色卡：${card.name}（${card.enabled ? '已启用' : '已停用'}）`
-        : '当前未设置角色卡。'
+        ? `现在给你看的专属样子：${card.name}${card.enabled ? '（正在用）' : '（先收起来了）'}`
+        : roleDefaultText()
       return `${status}\n\n${roleUsage()}`
     }
 
     if (sub === 'show') {
-      if (!card) return '当前未设置角色卡。\n\n' + roleUsage()
+      if (!card) return roleDefaultText()
       return [
-        `角色卡：${card.name}`,
-        `状态：${card.enabled ? '已启用' : '已停用'}`,
-        '设定：',
+        `现在的样子：${card.name}`,
+        card.enabled ? '正在用。' : '先收起来了，暂时用默认的 lofii。',
+        '你写给我的：',
         card.prompt,
       ].join('\n')
     }
@@ -1279,31 +1287,39 @@ export class BotService {
         nameLength: name.length,
         promptLength: prompt.length,
       })
-      return `角色卡「${name}」已启用；当前私聊 Chat 会话已重置。`
+      return `好呀，以后私聊里我会用「${name}」的样子和你说话。之前聊天的感觉先放一放，我们从下一句重新开始。群聊里还是默认的 lofii。`
     }
 
     if (sub === 'off' || sub === 'on') {
-      if (!card) return `尚未设置角色卡，无法${sub === 'off' ? '停用' : '启用'}。\n\n` + roleUsage()
+      if (!card) {
+        return sub === 'off'
+          ? `${roleDefaultText()}\n\n不用收起来，我本来就是默认的 lofii。`
+          : '你还没有专属样子呢，先 /role set 一个吧。'
+      }
       const enabled = sub === 'on'
-      if (!this.roles.setEnabled(bot.id, result.userId, enabled)) return '角色卡状态更新失败。'
+      if (!this.roles.setEnabled(bot.id, result.userId, enabled)) return '这次没改成，稍后再试试？'
       this.resetChatSession(bot.id, result.targetExternalId, result.userId)
       this.deps.audit('bot.role', `${bot.platform}:${result.targetExternalId}`, {
         bot: bot.id,
         user: result.userId.slice(0, 64),
         action: sub,
       })
-      return `角色卡「${card.name}」已${enabled ? '启用' : '停用'}；当前私聊 Chat 会话已重置。`
+      return enabled
+        ? `专属样子「${card.name}」又回来啦。`
+        : `你的专属样子「${card.name}」先收起来了，我回到默认的 lofii。`
     }
 
     if (sub === 'delete') {
-      if (!this.roles.remove(bot.id, result.userId)) return '当前未设置角色卡。'
+      if (!this.roles.remove(bot.id, result.userId)) {
+        return `${roleDefaultText()}\n\n没有需要删掉的专属样子。`
+      }
       this.resetChatSession(bot.id, result.targetExternalId, result.userId)
       this.deps.audit('bot.role', `${bot.platform}:${result.targetExternalId}`, {
         bot: bot.id,
         user: result.userId.slice(0, 64),
         action: 'delete',
       })
-      return '角色卡已删除；当前私聊 Chat 会话已重置。'
+      return '专属样子删掉了，我会一直用默认的 lofii。'
     }
 
     return roleUsage()
@@ -1330,7 +1346,7 @@ export class BotService {
       await result.reply(sanitizeExternalText(answer))
       this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, text, answer)
     } catch {
-      await result.reply('AI 暂时不可用，请稍后再试。').catch(() => undefined)
+      await result.reply('我刚刚有点走神，稍后再和我说一次好吗？').catch(() => undefined)
     }
   }
 

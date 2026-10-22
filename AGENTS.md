@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.5，数据库 schema v11（迁移 5–10 保留，迁移 11 新增 `bot_chat_roles` 私聊角色卡）；生产已部署 v0.5.5/schema v11（release `20261022T104834Z`，commit `a92c0a9`），私聊 `/role`/Chat 已实发确认。OpenCode 服务端 v2.1.2。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.6，数据库 schema v11（迁移 5–10 保留，迁移 11 新增 `bot_chat_roles` 私聊角色卡）；生产已部署 v0.5.5/schema v11（release `20261022T104834Z`，commit `a92c0a9`），v0.5.6 待部署（内置默认角色 lofii，私聊/群聊均生效）。OpenCode 服务端 v2.1.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -160,7 +160,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   v0.5.2 新增：`BOT_CHAT_RATE_PER_MINUTE=6`（Chat 每 Bot×用户每分钟）、`BOT_AI_MEMORY_MAX_CHARS=4096`（记忆摘要上限 512–16384）、
   `BOT_DISCORD_GATEWAY_ENABLED=false`（Discord Gateway 默认关闭）、
   `BOT_PUBLISH_MAX_MEDIA_FILES=5`（默认 5；UI 与 Telegram/Discord 适配器按 5 控制）、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`（总媒体上限）；`bootstrap-env.sh` 已纳管这 6 项。
-  v0.5.4 新增：`BOT_AI_TASK_PROMPT=`、`BOT_AI_CHAT_PROMPT=`（空则内置；各最长 2000；固定安全边界不可覆盖）；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃，不再读取。
+  v0.5.4 新增：`BOT_AI_TASK_PROMPT=`、`BOT_AI_CHAT_PROMPT=`（各最长 2000）；v0.5.6 起 Chat 固定使用个人角色或内置 lofii，`BOT_AI_CHAT_PROMPT` 不再影响 Chat（仅保留配置解析兼容）；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃，不再读取。
   v0.5.3 新增：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`、
   `BOT_PROXY_URL=`（空则复用 `HTTPS_PROXY`/`HTTP_PROXY`）；`bootstrap-env.sh` 已纳管这 4 项。
   `BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 Token/AppSecret 只能重新录入。
@@ -169,7 +169,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
   v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并通过带 token 的 smoke。
-  v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T085120Z`/schema v10，任务/对话双模式提示词与 QQ C2C 开放 Chat 已上线；v0.5.5 私聊角色卡 `/role` 已上线并由用户实发确认；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，Discord DM、Discord #general、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已由用户实发确认收到 AI 回复；QQ 群目标已登记（allow_chat=1/allow_commands=1），其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记；QQ C2C 无需登记即可 Chat，但命令仍需白名单；`/role` 对全部私聊用户开放。
+  v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T085120Z`/schema v10，任务/对话双模式提示词与 QQ C2C 开放 Chat 已上线；v0.5.5 私聊角色卡 `/role` 已上线并由用户实发确认；v0.5.6 内置默认角色 lofii 待部署；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，Discord DM、Discord #general、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已由用户实发确认收到 AI 回复；QQ 群目标已登记（allow_chat=1/allow_commands=1），其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记；QQ C2C 无需登记即可 Chat，但命令仍需白名单；`/role` 对全部私聊用户开放。
 - 测试证据边界：Bot 适配器（含 QQ）、Chat/记忆、AI 对话、多附件、按钮、Discord Gateway（假 WebSocket）、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），
   未做真实平台/真实模型/真实网络的负路径验收；发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；
@@ -201,7 +201,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
     v0.5.2 若要启用普通消息 Chat：Discord 需在 Developer Portal 开启 **Message Content Intent** 并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；
     Telegram 群需关闭 BotFather privacy mode 或让用户回复 Bot；QQ 群/频道需先把 Bot 拉入群并 @Bot 发一条消息，再到 `/bots` 目标分区
     从“最近入站目标”登记；最后给目标勾选 `allow_chat`。Chat 不授予斜杠命令权限，多附件发布仍受 5 个/10 MiB/50 MiB 限制。
-    v0.5.5 角色卡：Discord/Slack 需在平台后台创建 `/role` 命令；Telegram/QQ 直接发送 `/role` 即可；普通私聊用户不要求目标登记或用户白名单。
+    v0.5.5/v0.5.6 角色：Discord/Slack 需在平台后台创建 `/role` 命令；Telegram/QQ 直接发送 `/role` 即可；普通私聊用户不要求目标登记或用户白名单。默认角色 lofii 对私聊/群聊 Chat 生效，个人角色只覆盖私聊。
 11. 安装 Windows Bot 代理隧道任务（`.\scripts\install-tunnel-task.ps1`，当前用户权限）：登录启动、异常重启，静默 wscript/VBS 启动，不占前台 shell；先探测 PC 代理 10090；日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。调试用 `discord-tunnel.ps1 -Foreground`，移除用 `install-tunnel-task.ps1 -Remove`。
 12. SSH 仅公钥切换后保留 **24h 回滚窗口**：期间保留旧 drop-in 备份与一个已建立的 SSH 会话；确认新会话/自动化脚本
     （smoke、备份、世界拉取）均能公钥登录后，再按 `docs/DEPLOY.md` §9.7 结束回滚窗口。

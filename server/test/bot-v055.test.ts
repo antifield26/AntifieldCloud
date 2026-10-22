@@ -189,6 +189,9 @@ test('v0.5.5：/role show/off/on/delete 与会话重置；task 会话保留', as
     assert.ok(replies.at(-1)?.includes('用耐心、分步骤的方式解释。'))
 
     await sendCommand(service, bot.id, '/role off')
+    const offReply = replies.at(-1) ?? ''
+    assert.equal(offReply.includes('Chat'), false)
+    assert.equal(offReply.includes('会话'), false)
     const sessions = db
       .prepare('SELECT mode FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? ORDER BY mode')
       .all(bot.id, CHAT_ID, USER_ID) as unknown as { mode: string }[]
@@ -199,7 +202,8 @@ test('v0.5.5：/role show/off/on/delete 与会话重置；task 会话保留', as
     )
 
     await sendChat(service, bot.id, '你好')
-    assert.equal(aiCalls.at(-1)?.prompt.includes('[角色卡：老师]'), false, '停用后 Chat 不使用角色卡')
+    assert.ok(aiCalls.at(-1)?.prompt.includes('[角色卡：lofii]'), '停用个人角色后回落到默认 lofii')
+    assert.equal(aiCalls.at(-1)?.prompt.includes('[角色卡：老师]'), false)
 
     await sendCommand(service, bot.id, '/role on')
     await sendCommand(service, bot.id, '/role delete')
@@ -213,8 +217,8 @@ test('v0.5.5：/role show/off/on/delete 与会话重置；task 会话保留', as
   }
 })
 
-test('v0.5.5：/role 不扩大其他命令权限，群内 /role 拒绝', async () => {
-  const { dir, db, service, bot, aiCalls, audits } = setup()
+test('v0.5.6：/role 不扩大其他命令权限，群内 /role 只给友好提示', async () => {
+  const { dir, db, service, bot, aiCalls, audits, replies } = setup()
   try {
     const target = service.createTarget(bot.id, {
       externalId: CHAT_ID,
@@ -241,6 +245,9 @@ test('v0.5.5：/role 不扩大其他命令权限，群内 /role 拒绝', async (
       (db.prepare('SELECT COUNT(*) AS n FROM bot_chat_roles WHERE bot_id = ?').get(bot.id) as { n: number }).n,
       0,
     )
+    assert.ok(replies.at(-1)?.includes('默认的 lofii'))
+    assert.equal(replies.at(-1)?.includes('Chat'), false)
+    assert.ok(audits.some((item) => item.action === 'bot.role.hint'))
     void target
   } finally {
     db.close()
@@ -248,7 +255,7 @@ test('v0.5.5：/role 不扩大其他命令权限，群内 /role 拒绝', async (
   }
 })
 
-test('v0.5.5：非法 /role set 不写库；群聊不使用角色卡', async () => {
+test('v0.5.5：非法 /role set 不写库；群聊使用默认 lofii', async () => {
   const { dir, db, service, bot, aiCalls } = setup()
   try {
     await sendCommand(service, bot.id, '/role set [坏] 设定')
@@ -282,9 +289,48 @@ test('v0.5.5：非法 /role set 不写库；群聊不使用角色卡', async () 
     await sendChat(service, bot.id, '私聊')
     await sendChat(service, bot.id, '群聊', false)
     assert.equal(aiCalls.length, 2)
-    assert.ok(aiCalls[0]?.prompt.includes('[角色卡：猫娘]'), '私聊 Chat 应使用角色卡')
+    assert.ok(aiCalls[0]?.prompt.includes('[角色卡：猫娘]'), '私聊 Chat 应使用个人角色卡')
     assert.equal(aiCalls[0]?.prompt.includes('只影响私聊'), true)
-    assert.equal(aiCalls[1]?.prompt.includes('[角色卡：猫娘]'), false, '群聊不应使用角色卡')
+    assert.ok(aiCalls[1]?.prompt.includes('[角色卡：lofii]'), '群聊应使用默认 lofii')
+    assert.equal(aiCalls[1]?.prompt.includes('[角色卡：猫娘]'), false)
+  } finally {
+    db.close()
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+  }
+})
+
+test('v0.5.6：无个人卡时私聊使用默认 lofii，/role show 与 /role off 文案友好', async () => {
+  const { dir, db, service, bot, aiCalls, replies } = setup()
+  try {
+    service.createTarget(bot.id, {
+      externalId: CHAT_ID,
+      label: '私聊',
+      kind: 'user',
+      allowCommands: false,
+      allowNotifications: false,
+      allowChat: true,
+    })
+    await sendChat(service, bot.id, '你好')
+    assert.ok(aiCalls[0]?.prompt.includes('[角色卡：lofii]'))
+    assert.equal(aiCalls[0]?.prompt.includes('自然、友好、简洁地进行普通聊天'), false)
+
+    await sendCommand(service, bot.id, '/role show')
+    assert.ok(replies.at(-1)?.includes('默认的 lofii'))
+    assert.equal(replies.at(-1)?.includes('Chat'), false)
+    assert.equal(replies.at(-1)?.includes('会话'), false)
+    assert.equal(replies.at(-1)?.includes('/ask'), false)
+
+    await sendCommand(service, bot.id, '/role')
+    assert.ok(replies.at(-1)?.includes('我是 lofii'))
+    assert.equal(replies.at(-1)?.includes('Chat'), false)
+    assert.equal(replies.at(-1)?.includes('会话'), false)
+    assert.equal(replies.at(-1)?.includes('安全边界'), false)
+    assert.equal(replies.at(-1)?.includes('/ask'), false)
+
+    await sendCommand(service, bot.id, '/role off')
+    assert.ok(replies.at(-1)?.includes('本来就是默认的 lofii'))
+    assert.equal(replies.at(-1)?.includes('Chat'), false)
+    assert.equal(replies.at(-1)?.includes('会话'), false)
   } finally {
     db.close()
     rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })

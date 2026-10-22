@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.5；v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.6；v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -11,8 +11,22 @@
 > **v0.5.4 已部署**：2026-10-22 部署到生产 Pi（release `20261022T085120Z`，commit `b2bdc8d`，schema v10）；带 Cloudflare Access service token 的完整 smoke **24/24**。`/ask` 任务模式、Chat 对话模式、QQ C2C 管理员/非管理员对话均实发确认；schema v9→v10 迁移通过，旧会话归 chat，task/chat 会话分离；共享长期记忆。
 >
 > **v0.5.5 已部署**：2026-10-22 部署到生产 Pi（release `20261022T104834Z`，commit `a92c0a9`，schema v11）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊 `/role set/show/off/on/delete` 与 Chat 人设生效/停用恢复已由用户实发确认；schema v10→v11 迁移通过。
+>
+> **v0.5.6 进行中**：内置默认角色 lofii、个人角色只覆盖私聊、`/role off` 回落默认、群聊默认角色与全用户友好文案已实现；本地测试通过，生产部署/smoke 与私聊/群聊真实验收待执行。
 
-## v0.5.5（当前，已部署）
+## v0.5.6（当前，待部署验收）
+
+- 日期：2026-10-22（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产 v0.5.5/schema 11，待升级）+ Windows 本地工作区
+- **默认角色**：内置猫系轻松伙伴 `lofii`，私聊/群聊普通对话默认使用；语气轻松，正事认真。
+- **个人角色**：`/role` 仍对全部平台私聊用户开放；个人卡启用时覆盖默认；`/role off` 收起个人卡并回落到 lofii；`/role delete` 同样回到默认。
+- **群聊**：普通对话固定 lofii；群内 `/role` 只回复友好提示，不读取/修改个人角色。
+- **文案**：`/role` 用法、设置/停用/删除回复与错误提示去掉技术术语；Chat 异常回复改为自然说法。
+- **兼容**：schema 保持 v11；`BOT_AI_CHAT_PROMPT` 不再影响 Chat；`/ask`、任务提示、个人卡与记忆不变。
+- **本地验证**：`npm test` 324、`test:web` 141、`check-version`、coverage。
+- **待部署**：生产部署/smoke、私聊/群聊 lofii 真实验收、备份/tag/release。
+
+## v0.5.5（历史，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T104834Z`，schema 11）+ Windows 本地工作区

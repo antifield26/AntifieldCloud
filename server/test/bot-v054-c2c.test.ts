@@ -79,7 +79,7 @@ test('v0.5.4：QQ C2C 未登记用户可直接 Chat，使用对话模式', async
     assert.equal(aiCalls.length, 1)
     assert.equal(aiCalls[0]?.mode, 'chat')
     assert.match(aiCalls[0]?.prompt ?? '', /^\[模式：对话\]/)
-    assert.ok(aiCalls[0]?.prompt.includes('不自我介绍或提及产品身份'))
+    assert.ok(aiCalls[0]?.prompt.includes('[角色卡：lofii]'))
     const chatAudit = audits.filter((item) => item.action === 'bot.chat').at(-1)
     assert.equal(chatAudit?.detail?.open, 'qq_c2c')
     assert.equal(audits.filter((item) => item.action === 'bot.chat.denied').length, 0)

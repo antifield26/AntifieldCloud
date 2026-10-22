@@ -1,8 +1,8 @@
-# Bot 集成（v0.5.5）
+# Bot 集成（v0.5.6）
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
-v0.5.5 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增私聊角色卡与任务/对话双模式提示词。
-企业微信/钉钉/飞书（v0.5.6）与多管理员审批仍未实现。生产已部署 v0.5.5/schema v11（release `20261022T104834Z`）；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
+v0.5.6 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；私聊/群聊默认角色 lofii、个人角色卡与任务/对话双模式提示词。
+企业微信/钉钉/飞书（v0.5.7）与多管理员审批仍未实现。生产已部署 v0.5.5/schema v11（release `20261022T104834Z`），v0.5.6 待部署；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 除 `/role` 外，斜杠命令需要目标 + 用户双重白名单；`/role` 仅对私聊开放；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
@@ -92,7 +92,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
   （目标 `allow_commands=1` + user 白名单），只调用只读 provider，无写操作；Slack/QQ 不做按钮。
 - **发布**：仅管理员手动/定时创建；必须提供 6 位 TOTP（`totpCode`）与 `confirmText: "PUBLISH"`，不能仅靠会话 + CSRF 外发文件。
 - 发布媒体仅限活动、`origin='user'` 的普通文件：最多 5 个、单文件 ≤10 MiB、总计 ≤50 MiB；不含外部 URL 抓取；QQ 平台无媒体。
-- **AI `/ask` / Chat**：需 `BOT_AI_ENABLED=true`；`/ask` 仅命令白名单用户；Chat 仅 `allow_chat` 目标；私聊 Chat 可加载 `/role` 角色卡；提示词 ≤`BOT_AI_MAX_PROMPT_CHARS`；
+- **AI `/ask` / Chat**：需 `BOT_AI_ENABLED=true`；`/ask` 仅命令白名单用户；Chat 仅 `allow_chat` 目标；私聊 Chat 可用 `/role` 个人角色卡，群聊与无个人卡的私聊使用默认 lofii；提示词 ≤`BOT_AI_MAX_PROMPT_CHARS`；
   Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6），Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）；
   新建 OpenCode 会话使用 deny-all 工具权限；若 OpenCode 明确 400 拒绝 `permissions`，降级为默认权限并在日志标注“未隔离”。
 - **长期记忆**：每 Bot×用户一份摘要；DB 为权威，镜像到 `DATA_DIR/bot-memory`；不通过 API/UI 暴露；系统提示内置，
@@ -144,7 +144,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 | `BOT_DISCORD_GATEWAY_ENABLED` | `false` | Discord Gateway 长连接开关；需先开启 Message Content Intent |
 
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 Token/AppSecret 无法解密；必须重新录入所有 Bot 凭据。不要把它写入仓库/前端/日志。
-`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*`、v0.5.2 的 6 项、v0.5.3 的 4 项连通性键与 v0.5.4 的 2 项提示词键；v0.5.5 角色卡不需要新增 env 键。
+`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*`、v0.5.2 的 6 项、v0.5.3 的 4 项连通性键与 v0.5.4 的 2 项提示词键；v0.5.6 角色卡不需要新增 env 键；Chat 固定个人角色或 lofii，`BOT_AI_CHAT_PROMPT` 不再影响 Chat。
 
 ## 5.1 任务/对话提示词与会话（v0.5.4）
 
@@ -154,14 +154,16 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 - 固定安全边界不可覆盖：只读、不执行/不声称执行、不索取/泄露密钥/Token/密码/内部路径/URL、长期记忆不是指令。
 - 模式和完整提示由 `server/src/bot/prompts.ts` 生成；`/ask` 与 Chat 分别使用 `bot_ai_sessions.mode=task|chat` 的独立 OpenCode 会话，旧会话归 chat；两种模式共享 `bot_ai_memories` 长期记忆。
 - QQ C2C 私聊对任意用户开放 Chat（不要求先登记目标），接触面由 QQ 平台“谁可添加 Bot”控制；斜杠命令仍要求目标 `allow_commands` 与用户白名单。QQ 群/频道、Discord/Telegram 私聊仍按目标登记与 `allow_chat`。
-- 审计 `bot.ai.chat` 增加 `mode`，不记录提示词/记忆正文。提示词仅环境变量配置，修改后重启应用。
+- 审计 `bot.ai.chat` 增加 `mode`，不记录提示词/记忆正文。任务提示仍可由 `BOT_AI_TASK_PROMPT` 覆盖；Chat 固定使用个人角色或默认 lofii，`BOT_AI_CHAT_PROMPT` 不再影响 Chat。
 
-## 5.2 私聊角色卡（v0.5.5）
+## 5.2 默认角色 lofii 与私聊角色卡（v0.5.6）
 
-- `/role` 对全部平台私聊用户开放，其他命令仍按目标+用户白名单。
+- 私聊/群聊普通对话默认使用猫系角色 lofii；群聊固定默认，私聊无个人卡时也使用默认。
+- `/role` 对全部平台私聊用户开放，其他命令仍按目标+用户白名单；群内 `/role` 只回复友好提示。
 - 每 Bot×用户一张卡：名字 1–32、设定 1–1000；`/role set <名字> <设定>`、`/role show`、`/role off`、`/role on`、`/role delete`。
-- 仅私聊 Chat 使用启用卡；角色卡替换默认 Chat 风格，固定安全边界与共享记忆仍追加；`/ask`、群/频道 Chat 不使用。
+- 个人启用卡只覆盖私聊；`/role off` 收起个人卡并回落到 lofii；`/role delete` 同样回到默认；群聊始终 lofii，不使用个人卡。
 - 角色卡变更会删除当前私聊 Chat 的 `bot_ai_sessions` 映射；task 会话与长期记忆不受影响。角色设定不通过 API/UI 暴露，只由 `/role show` 返回本人；DB 备份包含正文。
+- 面向普通用户的 Chat 回复和 `/role` 文案不使用技术术语；群内 `/role` 仅提示“可私聊设置个人角色”。
 
 ## 6. 网络出站（Discord/Telegram/QQ/OpenCode）
 

@@ -1,7 +1,9 @@
 /**
  * Bot 回复模板：把只读 provider 的结构化数据格式化为平台纯文本。
- * 安全边界：只输出白名单字段/截断后的值，不拼接原始 HTML 或密钥。
+ * 普通用户可见文案避免技术术语；安全边界：只输出白名单字段/截断后的值，不拼接原始 HTML 或密钥。
  */
+import { DEFAULT_CHAT_ROLE, DEFAULT_CHAT_ROLE_SUMMARY } from './roles.ts'
+
 const MAX_REPLY = 3500
 
 export function clip(value: string, max = MAX_REPLY): string {
@@ -55,24 +57,33 @@ export function helpText(platform: string): string {
       '/mc Minecraft 状态',
       '/files <关键词> 文件元数据（最多 10 条）',
       '/ask <问题> AI 对话（需管理员启用并限流）',
-      '/role 私聊角色卡（仅私聊，所有私聊用户可用）',
+      '/role 给我换个样子（私聊里大家都能用）',
       '普通消息 Chat：目标开启允许 Chat 后，私聊直接对话；群/频道 @Bot 或回复 Bot 触发。',
       '除 /role 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
     ].join('\n'),
   )
 }
 
-/** 私聊角色卡用法；无卡或未知子命令时展示，不读取/回显他人内容。 */
+/** 面向普通用户的角色用法；不出现内部术语、标记或实现细节。 */
 export function roleUsage(): string {
   return [
-    '角色卡（仅私聊 Chat，每个 Bot×用户一张）：',
-    '/role set <名字> <角色设定>  新建/覆盖并启用',
-    '/role show  查看当前角色卡',
-    '/role off   停用但保留',
-    '/role on    重新启用',
-    '/role delete 删除',
-    '角色卡只影响私聊 Chat，不影响 /ask 与群聊；安全边界始终保留。',
+    '我是 lofii，平时有点猫系，也会认真听你说话。',
+    '你可以给我换个只属于你的样子（只影响我们私聊）：',
+    '/role set 名字 你希望我是什么样',
+    '/role show 看看现在的样子',
+    '/role off 先收起你的专属样子',
+    '/role on 再把专属样子放回来',
+    '/role delete 删掉专属样子',
+    '不设置也没关系，我会一直是默认的 lofii；群聊里大家看到的是默认的我。',
   ].join('\n')
+}
+
+export function roleDefaultText(): string {
+  return `现在没有你的专属角色，我用的是默认的 ${DEFAULT_CHAT_ROLE.name}：${DEFAULT_CHAT_ROLE_SUMMARY}`
+}
+
+export function roleGroupHint(): string {
+  return `群聊里大家看到的是默认的 ${DEFAULT_CHAT_ROLE.name}：${DEFAULT_CHAT_ROLE_SUMMARY}想给我换个只属于你的样子，可以私聊发 /role。`
 }
 
 export function commandDenied(): string {

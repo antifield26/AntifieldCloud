@@ -338,7 +338,7 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 
 ### 8.4 验证清单
 
-1. `/healthz` 返回 `{"ok":true,"version":"0.5.5","schemaVersion":11,...}`，服务 active；`/api/version` 登录后版本一致且 `botsEnabled` 与 env 一致。
+1. `/healthz` 返回 `{"ok":true,"version":"0.5.6","schemaVersion":11,...}`，服务 active；`/api/version` 登录后版本一致且 `botsEnabled` 与 env 一致。
 2. 登录成功（TOTP 仍有效，因为 DB 快照含用户与 TOTP secret）；恢复码可用。
 3. 文件列表数量、随机抽样文件的 SHA-256 与 API `GET /api/files/:id` 的 `sha256` 字段一致；笔记附件可见。
 4. 图片/文本/PDF/预览正常，回收站内容与备份时一致；多文件分享/笔记版本可打开。
@@ -371,7 +371,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
 | 现象 | 处理 |
 |---|---|
-| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.5.5/schema v11 |
+| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.5.6/schema v11 |
 | pending 一直不减少 | PC 下载失败：看 `backup.log`；确认直连/SSH；保留 pending 是预期行为，不要手工删 DB 行 |
 | `--ack` 报 SHA 不匹配 | 归档损坏/被替换；对比 PC `.sha256`，从 PC 副本重新确认或重新 `--prepare --full` |
 | `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB；世界备份另需 1.5× 世界体积 |
