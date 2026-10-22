@@ -2,7 +2,7 @@
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
 v0.5.6 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；私聊/群聊默认角色 lofii、个人角色卡与任务/对话双模式提示词。
-企业微信/钉钉/飞书（v0.5.7）与多管理员审批仍未实现。生产已部署 v0.5.5/schema v11（release `20261022T104834Z`），v0.5.6 待部署；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
+企业微信/钉钉/飞书（v0.5.7）与多管理员审批仍未实现。生产已部署 v0.5.6/schema v11（release `20261022T114546Z`）；Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群普通消息 Chat 已实发确认；出站连通性断开/恢复已实测。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 除 `/role` 外，斜杠命令需要目标 + 用户双重白名单；`/role` 仅对私聊开放；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；

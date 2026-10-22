@@ -15,7 +15,7 @@
 - 当前 schema v11（迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：v0.5.5/schema v11（release `20261022T104834Z`，commit `a92c0a9`；带 Access token 的 smoke 24/24）；v0.5.6（默认角色 lofii，schema 不变）待部署。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且 Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认；v0.5.3 出站连通性探测/自动恢复已实测。
+- 生产现状：v0.5.6/schema v11（release `20261022T114546Z`，commit `38dfe70`；迁移前快照 `db-predeploy-20261022T114615308Z.sqlite`；带 Access token 的 smoke 24/24）。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且 Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认；v0.5.3 出站连通性探测/自动恢复已实测。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -497,7 +497,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - 验收：`npm run check`（本地 300/141）、`npm run build`、`npm run test:coverage`、`npm run test:web:coverage`、
   `smoke.ps1 -ExpectedVersion 0.5.6`、Bot 四平台联调（§9.8；v0.5.1 QQ 真实回调、v0.5.2 Chat、v0.5.4 连通性已验证；QQ 群事件待平台订阅/入群 @ 复核）、备份导入/校验/恢复（临时 DATA_DIR）、
   世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 11` 演练通过；OpenCode 升级后按 §3.2 复验 Basic/session/垫片注入/公开入口。
-  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.4 已部署/smoke 24/24；v0.5.5 私聊角色卡已验收；v0.5.6 默认角色 lofii 待验收，OpenCode v2.1.2 Basic/session 通过，Chat/记忆真实模型与 Discord Gateway 长连接已由用户实发确认。
+  `/ask` 真实模型回复在 v0.5.1 已验证；v0.5.4 已部署/smoke 24/24；v0.5.5 私聊角色卡、v0.5.6 默认角色 lofii 与简洁 `/role` 文案均已验收，OpenCode v2.1.2 Basic/session 通过，Chat/记忆真实模型与 Discord Gateway 长连接已由用户实发确认。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 

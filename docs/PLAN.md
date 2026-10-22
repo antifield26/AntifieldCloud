@@ -1,13 +1,13 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.6**（schema v11）；生产已部署 v0.5.5 release `20261022T104834Z`/schema v11，v0.5.6 待部署。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.6**（schema v11）；生产已部署 v0.5.6 release `20261022T114546Z`/schema v11。
 
 ## v0.5.6 补充（当前）
 
 - **默认角色 lofii**：内置猫系轻松伙伴，私聊与群聊普通对话默认使用；个人卡只覆盖私聊，`/role off` 回落到 lofii。
 - **全用户语气**：`/role` 文案只写当前角色与用法，不注入默认角色个性或技术术语；群内 `/role` 只给友好提示。
 - **兼容**：schema 保持 v11；`BOT_AI_CHAT_PROMPT` 不再影响 Chat；个人角色卡与任务模式不变。
-- **状态**：本地测试 324/141、`npm run check` 通过；v0.5.6 生产部署/smoke 与私聊/群聊 lofii 验收待执行。
+- **状态**：本地测试 324/141、`npm run check` 通过；生产 release `20261022T114546Z`/schema v11、smoke 24/24，私聊/群聊 lofii 与简洁 `/role` 文案已实发确认。
 
 ## v0.5.5 补充（历史）
 

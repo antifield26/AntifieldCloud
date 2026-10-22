@@ -12,19 +12,21 @@
 >
 > **v0.5.5 已部署**：2026-10-22 部署到生产 Pi（release `20261022T104834Z`，commit `a92c0a9`，schema v11）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊 `/role set/show/off/on/delete` 与 Chat 人设生效/停用恢复已由用户实发确认；schema v10→v11 迁移通过。
 >
-> **v0.5.6 进行中**：内置默认角色 lofii、个人角色只覆盖私聊、`/role off` 回落默认、群聊默认角色与全用户友好文案已实现；本地测试通过，生产部署/smoke 与私聊/群聊真实验收待执行。
+> **v0.5.6 已部署**：2026-10-22 部署到生产 Pi（release `20261022T114546Z`，commit `38dfe70`，schema v11，无新迁移）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊/群聊默认 lofii、个人角色覆盖/`off` 回落、简洁 `/role` 文案均已由用户实发确认。
 
-## v0.5.6（当前，待部署验收）
+## v0.5.6（当前，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
-- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产 v0.5.5/schema 11，待升级）+ Windows 本地工作区
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T114546Z`，schema 11）+ Windows 本地工作区
 - **默认角色**：内置猫系轻松伙伴 `lofii`，私聊/群聊普通对话默认使用；语气轻松，正事认真。
 - **个人角色**：`/role` 仍对全部平台私聊用户开放；个人卡启用时覆盖默认；`/role off` 收起个人卡并回落到 lofii；`/role delete` 同样回到默认。
 - **群聊**：普通对话固定 lofii；群内 `/role` 只回复友好提示，不读取/修改个人角色。
 - **文案**：`/role` 用法、设置/停用/删除回复与错误提示只写当前角色与分支命令，不注入默认角色个性，也不出现技术术语；Chat 异常回复改为中性说法。
 - **兼容**：schema 保持 v11；`BOT_AI_CHAT_PROMPT` 不再影响 Chat；`/ask`、任务提示、个人卡与记忆不变。
 - **本地验证**：`npm test` 324、`test:web` 141、`check-version`、coverage。
-- **待部署**：生产部署/smoke、私聊/群聊 lofii 真实验收、备份/tag/release。
+- **部署验证**：`/healthz` `{"ok":true,"version":"0.5.6","schemaVersion":11}`；完整 smoke **24/24**；迁移前快照 `db-predeploy-20261022T114615308Z.sqlite`（sha256 `5ce4e642…`）。
+- **真实对话**：用户确认私聊/群聊默认 lofii 正常、个人卡 `off` 回落正常；群内 `/role` 返回提示；二次复核确认 `/role` 文案仅含当前角色与命令用法。
+- **备份**：部署后 inc `snapshot-20261022T115427825Z-inc.tar.gz`（113205 bytes，sha256 `9b7c1ef5…`）已由 Windows 计划任务拉取并 ack，`secrets=ok`。
 
 ## v0.5.5（历史，已部署）
 

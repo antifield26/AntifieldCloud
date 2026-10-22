@@ -10,6 +10,11 @@
 - **全用户友好文案**：`/role` 用法、设置/停用/删除回复和错误提示只写当前角色与分支命令，不注入默认角色个性，也不出现 Chat、会话、保留标记、`/ask` 等技术词；Chat 异常回复改为中性说法。
 - **兼容性**：`BOT_AI_CHAT_PROMPT` 不再影响 Chat（Chat 固定个人角色或 lofii）；任务提示与 `BOT_AI_TASK_PROMPT` 不变；schema 保持 v11，无新增 env。
 
+### Deployment
+
+- 生产已部署 release `20261022T114546Z`（commit `38dfe70`，schema v11，无新迁移，smoke 24/24）。
+- 私聊/群聊默认 lofii、个人角色覆盖/`off` 回落、简洁 `/role` 文案均已由用户实发确认。
+
 ## [v0.5.5] - 2026-10-22
 
 ### Added
