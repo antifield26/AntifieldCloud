@@ -1,5 +1,43 @@
 # Changelog
 
+## [v0.5.7] - 2026-10-22
+
+### Added
+
+- **schema v12（迁移 12）**：`bot_targets.chat_trigger`（`mention`/`all`，默认 `mention`）；`bot_events` 新增 `event_kind`/`outcome`/`detail`/`target_external_id`/`user_id`/`updated_at` 与 `(bot_id, outcome, received_at)` 索引；迁移 5–11 保留。
+- **群聊触发策略**：目标级 `chatTrigger`（仅 @/回复、全部消息）。Telegram/Discord/Slack 的“全部消息”需平台前置配置（关闭 privacy mode、开启 Message Content Intent、订阅 `message.channels`）；QQ 群/频道仅支持 @Bot（传 `all` 返回 `chat_trigger_unsupported`）；未授权目标/关闭 Chat 时的 message 触发静默忽略（只记诊断事件）。
+- **引用回复/线程**：Telegram 群/频道使用 `reply_to_message_id`，Slack 频道使用 `thread_ts`，Discord Gateway 使用 `message_reference`；私聊不引用；被引消息失效/线程失效时降级为无引用重发一次。
+- **长回复分段**：按平台单项上限（Telegram 4096 / Discord 2000 / Slack 4000 / QQ 2000）分段发送，单次最多 4 段，续段前缀“（续 n/m）”，超出截断并标记“内容过长已截断”；Telegram HTML 按标签边界安全分段；partial 失败记录 `partial_text_sent` 且不自动重试，避免重复外发。
+- **Markdown 格式化**：AI 回答按平台转换（Telegram HTML `parse_mode`、Discord markdown、Slack mrkdwn、QQ 纯文本），链接只放行 http(s)。
+- **图片理解（默认关闭）**：开启后 Telegram photo/document、Discord/Slack 图片附件经固定平台域名下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；关闭/失败/无文字时降级提示；QQ 不支持图片。生产已完成只读验证：OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash` 支持 image 输入。
+- **自助命令**：`/reset` 重置当前目标 Chat/任务会话（保留长期记忆）；`/forget confirm` 清除长期记忆（DB+镜像）与该 Bot×用户的全部会话；对所有用户开放，`/help` 文案已更新。
+- **平台连接自检**：`POST /api/bots/:id/check`（Telegram `getMe`+`getWebhookInfo`、Discord `/users/@me`、Slack `auth.test`、QQ `access_token`），结果脱敏并刷新 `last_checked_at`。
+- **诊断**：`GET /api/bots/:id/events?hours&limit&offset&outcome` 返回入站事件元数据（不含正文；outcome：`received`/`ok`/`denied`/`rate_limited`/`ignored`/`error`）；投递、发布、指标增加 `lastErrorHint` 中文提示。
+- **角色/记忆管理**：`GET/PATCH/DELETE /api/bots/:id/roles…`、`GET/DELETE /api/bots/:id/memories…`，只返回元数据（用户、名字、长度、启停、时间）；删除角色清该用户 chat 会话，删除记忆清 DB 行+镜像文件；正文不进入 Web/API。
+- **目标触发字段**：目标创建/更新接受 `chatTrigger`，`BotTarget` 返回 `chatTrigger`。
+- **Web `/bots`**：标签扩展为 6 个（概览/配置/目标/投递与发布/角色与记忆/诊断）；配置页“检查连接”；目标页触发方式选择与快捷切换；角色/记忆与诊断面板只展示元数据/脱敏错误。
+
+### Changed
+
+- **AI 回答上限**：由固定 4000 字符改为 `BOT_AI_MAX_REPLY_CHARS`（默认 4000，1000–12000）；统一管线为 sanitize → 平台格式化 → 分段发送，适配器接收 `textMode`/`replyTo`。
+- **outcome 语义**：入站事件先记 `received` 再更新最终结果；Webhook 重复事件仍按 `bot_events` 去重；`message` 触发仅在目标 `allow_chat=1` 且目标 `chatTrigger=all` 时进入 Chat。
+- **环境变量**：新增 `BOT_AI_MAX_REPLY_CHARS=4000`、`BOT_AI_VISION_ENABLED=false`、`BOT_AI_IMAGE_MAX_BYTES=10485760`（1–20 MiB），`bootstrap-env.sh` 已纳管这 3 项。
+- **部署脚本**：`scripts/deploy.ps1` 部署后 smoke 的 `-ExpectedSchemaVersion` 由 11 改为 12。
+
+### Security
+
+- 自助 `/reset`/`/forget confirm` 只清理当前 Bot 的会话/记忆，审计只记录动作与数量，不记录正文；命令输出不泄露内部路径/URL。
+- 管理 API 的角色/记忆只返回元数据，角色设定与记忆摘要正文不通过 Web/API 暴露；删除操作需登录 + CSRF。
+- 诊断事件只存事件类型/结果/短码/目标与用户 ID，不存消息正文；图片输入不可信：固定域名、mime 白名单、大小上限、不落盘，失败降级为文字。
+- 长回复/多附件 partial 失败不自动重试（`partial_text_sent`/`partial_media_sent`），避免重复外发；发布仍需 TOTP + `PUBLISH` 双确认。
+
+### Deployment
+
+- 版本/文档/`APP_VERSION` 升到 0.5.7；`docs/DEPLOY.md` 的 schema/健康检查/smoke 期望同步为 v0.5.7/schema 12。
+- 部署顺序：迁移前 DB 快照 → 部署（迁移 12）→ `/healthz` 断言 `version=0.5.7`/`schemaVersion=12` → 带 Access token 的 smoke → Bot env 校验（迁移 12 只加列/索引，不重建表）。
+- 迁移 12 单向、无 down：回滚必须恢复迁移前 DB 快照并同步还原 `APP_VERSION`；回滚窗口内保持 Bot/AI/Gateway 关闭。
+- **待部署验收**：本地基线 `npm test` 387、`npm run test:web` 157（30 文件）、`npm run check` 通过；生产部署、真实平台联调与验收证据待 Lead 完成后回填 `docs/ACCEPTANCE.md`。
+
 ## [v0.5.6] - 2026-10-22
 
 ### Added

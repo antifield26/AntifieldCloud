@@ -1,4 +1,4 @@
-# AntifieldCloud UI 规范（v5，2026-10-21）
+# AntifieldCloud UI 规范（v6，2026-10-22）
 
 ## 1. 定位与基调
 
@@ -300,25 +300,28 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 单请求仍受 100 MiB/Cloudflare 代理限制；分片块 8 MiB 远低于限制，5 GiB 文件约 640 块。
 
-## 15. v0.5.6 机器人页
+## 15. v0.5.7 机器人页
 
-> v0.5.1 引入机器人页；v0.5.2 增加目标 Chat、最近入站目标、发布多选媒体与 Discord Gateway 状态；v0.5.3 增加出站网络卡片；v0.5.4 的提示词仅 env 配置；v0.5.5/v0.5.6 私聊个人角色卡与默认 lofii 仅由聊天命令管理，无 UI 编辑。
+> v0.5.1 引入机器人页；v0.5.2 增加目标 Chat、最近入站目标、发布多选媒体与 Discord Gateway 状态；v0.5.3 增加出站网络卡片；
+> v0.5.4 的提示词仅 env 配置；v0.5.5/v0.5.6 私聊个人角色卡与默认 lofii 由聊天命令管理；v0.5.7 扩展为 6 个分区（概览/配置/目标/投递与发布/角色与记忆/诊断），
+> 新增“检查连接”、目标触发方式、角色/记忆元数据管理、事件诊断与中文错误提示。
 
 ### 入口与布局
 
-- 侧栏新增“机器人”（`Bot` 图标，路由 `/bots`），页面标题“机器人”，副标题“Telegram / Discord / Slack / QQ 通知、Chat/只读命令、AI 问答与消息发布”。
+- 侧栏“机器人”（`Bot` 图标，路由 `/bots`），页面标题“机器人”，副标题“Telegram / Discord / Slack / QQ 通知、Chat 与只读命令、角色与记忆、诊断”。
 - 顶部工具栏：左侧“当前 Bot”下拉（`label` 关联 select；无 Bot 时显示“暂无 Bot”并禁用），右侧“新建 Bot”主按钮 + “刷新”。
-- 标签页（`role=tablist`，“概览/配置/目标/投递与发布”）：左右方向键/Home/End 切换，`aria-selected`/`aria-controls` 与面板联动；面板可聚焦。
+- 标签页（`role=tablist`，6 个：“概览/配置/目标/投递与发布/角色与记忆/诊断”）：左右方向键/Home/End 切换，`aria-selected`/`aria-controls` 与面板联动；面板可聚焦。
 - 未启用（`BOT_ENABLED=false` 或 `bot_key_missing/bot_key_invalid`）：不请求 Bot 列表，展示 `Card` 指引：
   设置 `BOT_ENABLED=true`、生成/写入 `BOT_SECRET_KEY`（示例 `openssl rand -base64 32`）、重启服务、点击“重新检测”；
   不显示任何密钥值，说明密钥只保存在服务端。
 
 ### 概览
 
-- 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示）。
-- 概览提示：命令与 Chat 均为只读（含 `/ask`），发布需 TOTP + `PUBLISH` 双确认。
+- 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）。
+- 概览提示：命令与 Chat 均为只读（含 `/ask`），发布需 TOTP + `PUBLISH` 双确认；`/reset`、`/forget confirm` 为全用户自助命令。
 - Bot 列表/选择：名称、平台、启用徽章、目标数、密钥版本、最近检查时间；Discord Bot 额外显示 `Gateway 已连接/连接中/重连中/错误/未启用`；点击切换到该 Bot（并进入配置分区）。
-- “出站网络”卡片（v0.5.3，概览顶部）：设备在线（代理端口 + 外网）、代理主机:端口、外网延迟、Discord/Telegram/Slack/QQ 各平台探测状态与延迟；“检测”按钮调用 `POST /api/bots/connectivity/check`，页面每 60 秒读取 `GET /api/bots/connectivity`；不可达时显示 warning，不展示任何 Token/Secret。
+- “出站网络”卡片：设备在线（代理端口 + 外网）、代理主机:端口、外网延迟、Discord/Telegram/Slack/QQ 各平台探测状态与延迟；“检测”按钮调用 `POST /api/bots/connectivity/check`，
+  页面每 60 秒读取 `GET /api/bots/connectivity`；不可达时显示 warning，不展示任何 Token/Secret。
 - 空态：“还没有机器人” + “新建 Bot”（平台含 QQ）；加载中 `SkeletonText`；错误 `InlineError` + 重试。
 
 ### 配置
@@ -328,32 +331,62 @@ CSS 变量（`web/src/styles/tokens.css`）：
   QQ AppID（5–32 位数字，公开配置）+ AppSecret（写在“Token”字段，只提交不回显）。
 - 密钥输入 `type=password`、`autocomplete=new-password`，编辑时留空表示保持原值，**永不回显**；不写入 localStorage/DOM 默认值。
 - 开关“启用 Bot”（默认关）；保存/删除（`ConfirmDialog`，危险按钮默认焦点“取消”）。
+- **“检查连接”（v0.5.7）**：编辑已有 Bot 时显示“检查连接”按钮（`Stethoscope` 图标，`loading` 态禁用重复点击）；调用 `POST /api/bots/:id/check`，
+  结果区显示“全部通过/存在异常项”徽章、检查时间、项数（“共 N 项，不含任何密钥”），逐项列表：名称、通过/异常徽章、脱敏 detail 与状态图标；
+  失败时 `InlineError` + “重新检查”。不展示 Token/Signing Secret/AppSecret 或完整平台 URL。
 - 右列接入信息：`webhookUrl` + 复制按钮、`setupSteps` 有序列表（平台后台步骤）、`keyVersion`/时间等只读元数据；
-  提示“URL 只用于平台后台，Token 不会显示”。
+  提示“URL 只用于平台后台，Token 不会显示”。v0.5.7 的 setup 步骤补充 `/reset`/`/forget confirm` 与触发方式说明。
 - 平台提示：Discord 显示“普通消息 Chat 需 Developer Portal 开启 Message Content Intent 并设 `BOT_DISCORD_GATEWAY_ENABLED=true`”及当前 Gateway 状态；
-  Telegram 显示群/频道需关闭 privacy mode 或回复 Bot；QQ 显示先把 Bot 拉群并 @Bot 触发，再到目标分区从“最近入站目标”登记；Slack 无 Gateway/按钮提示。
+  Telegram 显示群/频道默认仅 @/回复，全部消息需关闭 privacy mode；Slack 显示全部消息需目标 `all` 且订阅 `message.channels`；
+  QQ 显示先把 Bot 拉群并 @Bot 触发，再到目标分区从“最近入站目标”登记，且仅 @、无媒体/图片。
 - 校验：必填/长度/hex/数字规则在前端即时提示，服务端 `invalid_bot_config` 错误映射到表单顶部。
-- v0.5.4 任务/对话提示词仅通过 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 环境变量配置，本页不提供编辑；修改后重启应用。
-- v0.5.5/v0.5.6 个人角色卡由用户在私聊通过 `/role` 管理，默认 lofii 为内置角色；本页不展示角色正文，也不提供管理员编辑入口。
+- 任务/对话提示词仅通过 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 环境变量配置，本页不提供编辑；修改后重启应用。
+- 个人角色卡由用户在私聊通过 `/role` 管理，默认 lofii 为内置角色；本页不展示角色正文，也不提供正文编辑入口（仅“角色与记忆”元数据管理）。
 
 ### 目标
 
 - 表单：平台目标 ID、名称、类型（频道/用户/群组）、三个开关“允许命令”“接收通知”“允许 Chat”（命令默认关、通知默认开、Chat 默认关）、
+  **触发方式（v0.5.7）**：`仅 @/回复触发`（默认）/`全部消息触发`；QQ 平台禁用选择并提示“QQ 群/频道仅支持 @Bot 触发”；
+  其它平台提示“全部消息仅对 Telegram/Discord/Slack 生效，需平台侧关闭 privacy mode / 开启 Message Content Intent / 订阅 message.channels”；
   静默时段两个 `time` 输入（可选，`HH:mm`，Asia/Shanghai；起止需同时填写且不能相同，窗口内通知延后到结束）。
 - 最近入站目标：表单下方列出最近的命令/Chat/按钮目标（用户名或用户 ID 尾号、类型徽章、私聊徽章、平台外部 ID），最多展示 8 条；
   “登记”按钮把外部 ID/类型/建议名称填入上方表单，由管理员确认后添加；不展示消息正文。
-- 列表：目标名、外部 ID（等宽截断）、类型徽章、三个开关（可直接 PATCH）、删除按钮（确认）；配置静默时段的目标显示
-  “静默 HH:mm–HH:mm”徽章。
-- 说明：命令需“目标允许命令 + 用户白名单（类型=用户且允许命令）”同时满足；`允许 Chat` 只授权普通消息 AI 对话，
-  不授予斜杠命令；发布只支持频道/群组；QQ 目标填 `user_openid`/`group_openid`/`channel_id`。
+- 列表：目标名、外部 ID（等宽截断）、类型徽章、触发方式徽章（“仅 @/回复触发”/“全部消息触发”）、三个开关（可直接 PATCH）、
+  “改为仅 @/回复”或“改为全部消息”快捷按钮（QQ 不显示）、删除按钮（确认）；配置静默时段的目标显示“静默 HH:mm–HH:mm”徽章。
+- 说明：命令需“目标允许命令 + 用户白名单（类型=用户且允许命令）”同时满足；自助命令 `/role`（私聊）、`/reset`、`/forget confirm` 不要求白名单；
+  `允许 Chat` 只授权普通消息 AI 对话，不授予斜杠命令；全部消息触发需平台前置；发布只支持频道/群组；QQ 目标填 `user_openid`/`group_openid`/`channel_id`。
 - 空态/错误/保存中禁用重复提交；每 Bot 最多 100 个目标，重复 `409` 提示；静默起止缺失、格式错误或相同均在前端拦截；
   最近入站目标读取失败不影响已配置目标列表。
+
+### 角色与记忆（v0.5.7）
+
+- 顶部隐私说明（`notice`）：“仅显示元数据，正文不通过 Web 暴露：角色设定与记忆摘要只在服务端对话中使用，本页不提供查看或编辑入口。”
+- 角色卡 Card：标题“角色卡”，描述“私聊用户通过 `/role` 设置的个人角色；一只 Bot 内每位用户一张，停用后回退到内置角色。”
+  表格列：用户（优先 `userName`，否则截断 `userId`，`title` 放完整 ID）、角色名（截断）、状态（已启用/已停用徽章）、更新时间、操作（停用/启用、删除）。
+  删除使用 `ConfirmDialog`：标题“删除角色卡”，说明“删除后该用户将回退到内置角色，且其私聊会话会被清理；此操作不可撤销。”
+- 长期记忆 Card：标题“长期记忆”，描述“AI 对话滚动摘要的元数据；用户可通过 `/forget confirm` 清除，管理员也可在此删除。”
+  表格列：用户、记忆长度（“摘要 N 字”，只显示长度）、更新时间、操作（删除）；删除确认“清除长期记忆”，说明长期记忆摘要会被清除、已有对话会话保留、不可撤销。
+- 两个 Card 各自分页（每页 20，>20 才显示分页、展示“第 x / y 页 · 共 n 条”）、加载态、`InlineError` + 重试、空态文案；
+  启停成功 Toast“角色卡已启用/已停用”，删除成功 Toast 并刷新列表；操作期间禁用该行/其它操作按钮避免重复提交。
+- 不展示角色设定或记忆摘要正文；不提供“查看正文/编辑”入口；`userId` 只作标识用途。
+
+### 诊断（v0.5.7）
+
+- 顶部隐私说明：“诊断只展示事件元数据与脱敏错误：不展示消息正文、平台用户名或任何 Token/Secret。”
+- “最近事件”Card：描述“入站 Webhook/消息的去重记录；按到达时间倒序，可按时间范围与结果筛选。”
+  - 筛选：时间范围（最近 1 小时/24 小时/7 天）、结果（全部结果/成功/拒绝/限流/忽略/错误）、刷新按钮（并行刷新事件与错误，Toast 反馈）。
+  - 表格列：时间、类型（`kind`，等宽小字）、结果（徽标：`received` 已接收 info、`ok` 成功 success、`denied` 拒绝 warning、`rate_limited` 限流 warning、
+    `ignored` 忽略 muted、`error` 错误 danger；未知按原文 muted）、目标（短 ID + `title` 完整值）、用户（短 ID + `title`）、详情（截断短码 + `title`）；
+    空态“暂无入站事件”，错误 `InlineError` + 重试；分页 20（>20 显示）。
+- “最近错误”Card：描述“失败/死信的投递与发布任务（最多 10 条）；展示队列错误原文与服务端中文提示，不包含消息正文。”
+  每条显示状态徽标、来源（投递类型/发布）、时间、错误原文（等宽、红字）、`lastErrorHint` 中文提示（有 Info 图标）；无错误时空态“最近没有失败记录”。
+- 不提供事件正文/用户名/目标名查看；不展示 Token/Secret/AppSecret。
 
 ### 投递与发布
 
 - 顶部“近 24 小时指标”卡：投递成功数、成功率（sent/(sent+failed)）、失败/死信、发布 sent/失败、最近发送时间、事件数；
-  有 `lastError` 时显示脱敏错误条；数据来自 `GET /api/bots/:id/metrics?hours=24`。
-- 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要；
+  有 `lastError` 时显示脱敏错误条，有 `lastErrorHint` 时追加中文提示；数据来自 `GET /api/bots/:id/metrics?hours=24`。
+- 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要（错误原文 + 中文提示）；
   `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）。
 - 发布表单：目标（仅频道/群组）、文本（显示平台上限；QQ 2000、Discord 2000、Slack 4000、Telegram 4096）、
   可选媒体多选（打开云端普通文件选择器，最多 5 个、单个 ≤10 MiB、总计 ≤50 MiB；已选显示文件名/大小/移除；
@@ -362,12 +395,17 @@ CSS 变量（`web/src/styles/tokens.css`）：
   **二次确认输入**（必须输入 `PUBLISH`，与 TOTP 共同构成双确认）；提交后进入列表。
 - 媒体选择器：只列活动普通文件（`origin='user'`），按名称搜索；单文件 >10 MiB 不展示/不可选；达到 5 个后其余行显示“已达上限”；
   选择器只读列表/元数据，不读取文件内容，不提供外部 URL。
-- 发布列表：状态、目标、文本摘要、媒体标记、定时/发送时间、错误；`queued/draft` 可“取消”（确认）。
+- 发布列表：状态、目标、文本摘要、媒体标记、定时/发送时间、错误（含中文提示）；`queued/draft` 可“取消”（确认）。
 - 提交中禁用按钮；`totp_required`、`invalid_code`、`publish_confirm_required`、`too_many_media`、`media_too_large`、
-  `media_total_too_large`、`qq_media_unsupported`、`rate_limited` 用字段错误/Toast 明确提示；不展示 Token/Secret/AppSecret/完整平台 URL。
+  `media_total_too_large`、`qq_media_unsupported`、`rate_limited`、`chat_trigger_unsupported`、`bot_health_unsupported` 用字段错误/Toast 明确提示；
+  不展示 Token/Secret/AppSecret/完整平台 URL。
 
 ### 响应式与可访问性
 
-- 390 px：工具栏纵向堆叠，Bot 选择/按钮全宽；标签页横向滚动（隐藏滚动条）或换行；表单单列；投递/发布表格卡片化。
-- 所有开关有可访问名称（`aria-label` 含目标名）；标签页键盘可操作；危险操作焦点默认在取消；图标按钮有 `aria-label`。
-- 不新增第三方组件库；沿用现有 `Button/Card/Modal/Toast/Table/Badge/FormField` 与 tokens。
+- 390 px：工具栏纵向堆叠，Bot 选择/按钮全宽；6 个标签两行/三行换行且不溢出（`flex:1 1 30%`、文本省略）；
+  标签页键盘可操作；表单单列；诊断筛选控件换行，分页按钮可换行。
+- **窄屏表格（v0.5.7）**：角色/记忆/诊断表格放入 `.bots-table-scroll` 容器内横向滚动（`overflow-x:auto`、最小宽度 660px，卡片化视图隐藏）；
+  页面本身不横向滚动；目标/投递/发布既有表格行为不变。
+- 所有开关有可访问名称（`aria-label` 含目标名）；新增表格有 `caption`/列标题；危险操作焦点默认在取消；图标按钮有 `aria-label`。
+- 不新增第三方组件库；沿用现有 `Button/Card/Modal/Toast/Table/Badge/FormField/ConfirmDialog/InlineError/EmptyState` 与 tokens；
+  新样式集中在 `web/src/styles/v06.css`，在 `main.tsx` 引入。

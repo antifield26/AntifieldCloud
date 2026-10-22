@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.6，数据库 schema v11（迁移 5–10 保留，迁移 11 新增 `bot_chat_roles` 私聊角色卡）；生产已部署 v0.5.6/schema v11（release `20261022T114546Z`，commit `38dfe70`），内置默认角色 lofii（私聊/群聊）与简洁 `/role` 文案已实发确认。OpenCode 服务端 v2.1.2。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.7，数据库 schema v12（迁移 5–11 保留，迁移 12 新增 `bot_targets.chat_trigger` 与 `bot_events` 诊断列）；生产当前为 v0.5.6/schema v11（release `20261022T114546Z`，commit `38dfe70`），v0.5.7 实现完成、待部署验收。v0.5.7 新增 AI 长回复分段、平台化 Markdown、群聊引用/线程、目标触发方式（仅 @/回复、全部消息）、图片理解（默认关闭）、`/reset` 与 `/forget confirm`、平台连接自检、事件诊断、角色/记忆管理与 `/bots` 新面板。OpenCode 服务端 v2.1.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -45,7 +45,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY 标题及 lock 根版本一致
 ```
 
-当前基线：`npm test` **324** 项通过（服务端 + 运维脚本），`npm run test:web` **141** 项通过（28 个测试文件；本地实测 2026-10-22；`npm run check` 已通过）。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（含 QQ 官方 Bot、Chat、多附件、按钮、Discord Gateway、连通性探测与双模式提示词）同样只使用进程内假平台/假 WebSocket/假 OpenCode（不访问真实平台或模型）；使用进程内假服务器/夹具。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
+当前基线：`npm test` **387** 项通过（服务端 + 运维脚本），`npm run test:web` **157** 项通过（30 个测试文件；本地实测 2026-10-22；以 Lead 最终 `npm run check` 为准）。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（含 QQ 官方 Bot、Chat、多附件、按钮、Discord Gateway、连通性探测、双模式提示词、分段/格式化/引用/触发/图片下载/连接自检）同样只使用进程内假平台/假 WebSocket/假 OpenCode（不访问真实平台或模型）；使用进程内假服务器/夹具。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
 
 ## 4. 目录与模块边界
 
@@ -54,13 +54,13 @@ server/src/
   main.ts            进程入口：配置、DB、Fastify、信号退出、启动指标采样
   config.ts          环境变量解析与校验（失败即退出）
   logger.ts          Fastify/pino 日志与脱敏
-  db.ts              SQLite 打开、迁移（当前 schema v11）、事务辅助
+  db.ts              SQLite 打开、迁移（当前 schema v12）、事务辅助
   auth/              scrypt、TOTP、会话、CSRF、限流、恢复码、审计（字段截断）、Bot 发布 TOTP 再认证
   files/             存储、上传、配额、搜索、预览、回收站、files.origin 可见性
   uploads/           分片上传会话/块索引、配额预留、拼接与过期清理
   mc/                SLP、RCON、白名单
   opencode/          ai.* Host 的认证反代 + HTML 模式（shim/attributes/passthrough）+ Origin 校验
-  bot/               Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆、Discord Gateway、出站连通性探测、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令、指标/静默、通知/发布队列与重试
+  bot/               Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆、Discord Gateway、出站连通性探测、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令、指标/静默、通知/发布队列与重试；`text.ts`（平台上限与分段）、`format.ts`（Markdown 四平台转换）、`errors.ts`（错误中文提示）为出站展示的纯函数模块
   backups/           归档导入/校验、文件级恢复（skippedMissing）、世界/拉取/演练状态只读
   dashboard/         主机指标、服务状态、备份状态、Bot 开关、轻量存储用量（/api/storage）
   metrics/           60s 主机指标采样、按范围分桶聚合、30 天保留清理
@@ -92,26 +92,27 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 8. 部署、备份脚本必须幂等、可重试；失败要留下可诊断日志，不得静默吞错。
 9. 世界备份/拉取/演练状态文件由 root/PC 脚本写入，应用只读；状态文件不得包含密钥或路径敏感信息。
 10. Bot 凭据（平台 Token/Webhook Secret/Signing Secret）只写不读，数据库只存 AES-256-GCM 密文；
-    Webhook 只以平台签名/时间戳鉴权，命令需目标 `allow_commands` + 显式 user 白名单；发布必须 TOTP 再认证；
-    通知/命令输出不得包含内部路径、URL 或密钥；`BOT_ENABLED=false` 时 Webhook 返回 404。
+    Webhook 只以平台签名/时间戳鉴权；除自助命令（`/role` 仅私聊、`/reset`、`/forget confirm`）外，命令需目标 `allow_commands` + 显式 user 白名单；
+    发布必须 TOTP 再认证；通知/命令输出不得包含内部路径、URL 或密钥；`BOT_ENABLED=false` 时 Webhook 返回 404。
 
 ## 6. 数据库与数据
 
 - schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，
-  当前 schema v11（迁移 5：`files.origin`、唯一索引含 origin、`note_attachments`/`note_versions`/`share_items`/`metrics_samples`；
+  当前 schema v12（迁移 5：`files.origin`、唯一索引含 origin、`note_attachments`/`note_versions`/`share_items`/`metrics_samples`；
   迁移 6：删除孤儿 shares 并回填 `share_items`，不改表结构；迁移 7：新增 `bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events`；
   迁移 8：重建 Bot 表把 `bots.platform` CHECK 扩到 `qq`，`bot_targets` 增加 `quiet_start_minute`/`quiet_end_minute`，新增 `bot_ai_sessions`；
   迁移 9：`bot_targets.allow_chat`（默认 0）、`bot_ai_memories`（DB 摘要权威 + `summary_session_id`）、`bot_inbound_targets`（最近入站目标）；
   迁移 10：重建 `bot_ai_sessions`，主键加入 `mode`（chat/task），旧会话归 chat；
   迁移 11：新增 `bot_chat_roles` 私聊角色卡（每 Bot×用户一张，名字 1–32、设定 1–1000，可停用）；
+  迁移 12：`bot_targets.chat_trigger`（mention/all，默认 mention）与 `bot_events` 的 event_kind/outcome/detail/target_external_id/user_id/updated_at 诊断列；
   Bot 凭据只存密文）。数据库 schema 高于程序支持版本时拒绝启动。
 - 时间统一存 ISO 8601 UTC 字符串；展示用 `Asia/Shanghai`。
 - 文件物理路径 `DATA_DIR/files/<id 前两位>/<id>`；上传先写 `DATA_DIR/tmp/` 再原子 rename。
 - 配额 = 所有 `kind='file'` 的 `size` 之和（含回收站与笔记附件），上限 10 GiB；`fileCount` 只统计 `origin='user'`。
 - `files.origin`：`user`（普通云盘）/`note`（笔记附件，不出现在列表/搜索/回收站）/`system`（保留）。
 - `bots`：平台/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`；`bot_targets` 唯一 `(bot_id, external_id)`，
-  `allow_commands`/`allow_notifications` 默认关闭/开启、`allow_chat` 默认关闭（与命令权限独立），静默时段 `quiet_start_minute`/`quiet_end_minute`（0–1439，成对设置）；`bot_deliveries` 队列（`dedupe_key` 唯一）、`bot_publish_jobs` 定时发布、
-  `bot_events` 按 `(bot_id, platform_event_id)` 去重、`bot_ai_sessions` 按 `(bot_id,target_external_id,user_id,mode)` 复用 AI 会话（mode=chat/task）、
+  `allow_commands`/`allow_notifications` 默认关闭/开启、`allow_chat` 默认关闭（与命令权限独立）、`chat_trigger` 默认 `mention`（群聊仅 @/回复；`all` 仅 Telegram/Discord/Slack，QQ 群/频道拒绝），静默时段 `quiet_start_minute`/`quiet_end_minute`（0–1439，成对设置）；`bot_deliveries` 队列（`dedupe_key` 唯一）、`bot_publish_jobs` 定时发布、
+  `bot_events` 按 `(bot_id, platform_event_id)` 去重，记录 event_kind/outcome/detail/target_external_id/user_id/updated_at 供诊断（不存正文；outcome ∈ received/ok/denied/rate_limited/ignored/error）、`bot_ai_sessions` 按 `(bot_id,target_external_id,user_id,mode)` 复用 AI 会话（mode=chat/task）、
   `bot_ai_memories` 按 `(bot_id,user_id)` 保存滚动摘要与 `summary_session_id`（镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`）、
   `bot_inbound_targets` 按 `(bot_id,target_external_id,user_id)` 记录最近入站目标/用户名/类型/时间（不存正文）。Bot Token/AppSecret 不落在日志/API 响应。
 - 审计只记录元数据，不记录文件内容、密码、TOTP、Cookie、Authorization；单条 actor≤64、target≤256、detail≤4 KiB。
@@ -163,13 +164,16 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   v0.5.4 新增：`BOT_AI_TASK_PROMPT=`、`BOT_AI_CHAT_PROMPT=`（各最长 2000）；v0.5.6 起 Chat 固定使用个人角色或内置 lofii，`BOT_AI_CHAT_PROMPT` 不再影响 Chat（仅保留配置解析兼容）；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃，不再读取。
   v0.5.3 新增：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`、
   `BOT_PROXY_URL=`（空则复用 `HTTPS_PROXY`/`HTTP_PROXY`）；`bootstrap-env.sh` 已纳管这 4 项。
+  v0.5.7 新增：`BOT_AI_MAX_REPLY_CHARS=4000`（AI 回答上限，1000–12000）、`BOT_AI_VISION_ENABLED=false`（图片理解总开关）、
+  `BOT_AI_IMAGE_MAX_BYTES=10485760`（单张入站图片上限，1–20 MiB）；`bootstrap-env.sh` 已纳管这 3 项。图片理解需 OpenCode prompt files
+  与支持 image 输入的模型；生产已只读验证 `opencode-go/deepseek-v4.1-flash` 支持 image（默认为关闭）。
   `BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 Token/AppSecret 只能重新录入。
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对
   `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。
   `BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（BotFather/Developer Portal/Slack App、QQ 开放平台、Webhook URL、斜杠命令）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；
   v0.5.1 生产已配置 Discord + QQ 官方 Bot、OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并通过带 token 的 smoke。
-  v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T085120Z`/schema v10，任务/对话双模式提示词与 QQ C2C 开放 Chat 已上线；v0.5.5 私聊角色卡 `/role` 已上线并由用户实发确认；v0.5.6 内置默认角色 lofii 与简洁 `/role` 文案已上线；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，Discord DM、Discord #general、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已由用户实发确认收到 AI 回复；QQ 群目标已登记（allow_chat=1/allow_commands=1），其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记；QQ C2C 无需登记即可 Chat，但命令仍需白名单；`/role` 对全部私聊用户开放。
+  v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T085120Z`/schema v10，任务/对话双模式提示词与 QQ C2C 开放 Chat 已上线；v0.5.5 私聊角色卡 `/role` 已上线并由用户实发确认；v0.5.6 内置默认角色 lofii 与简洁 `/role` 文案已上线；v0.5.7 实现完成、待部署验收（schema v12；长回复分段、Markdown、引用线程、触发方式、`/reset`/`/forget confirm`、连接自检、事件诊断、角色/记忆管理、图片理解默认关闭）；生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true` 并记录 Gateway `connected`，Discord DM、Discord #general、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已由用户实发确认收到 AI 回复；QQ 群目标已登记（allow_chat=1/allow_commands=1），其他目标默认关闭。Discord 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot，Slack 频道“全部消息”需订阅 `message.channels`，QQ 群/频道仅 @Bot 触发（`chatTrigger=all` 会被拒绝）；QQ 群/频道需先 @Bot 触发后从“最近入站目标”登记；QQ C2C 无需登记即可 Chat，但命令仍需白名单；`/role`、`/reset`、`/forget confirm` 对全部私聊/群聊用户开放（自助命令不要求目标或用户白名单）。
 - 测试证据边界：Bot 适配器（含 QQ）、Chat/记忆、AI 对话、多附件、按钮、Discord Gateway（假 WebSocket）、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），
   未做真实平台/真实模型/真实网络的负路径验收；发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；
@@ -188,7 +192,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
    v0.5.2 更新仓库后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。
 4. 离线保存 age 私钥；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
 5. 手动安装 Windows 周度世界拉取任务（调用 `scripts/world-pull.ps1`，`-PiHost/-BackupRoot`）与恢复演练任务/手跑
-   （`scripts/drill.ps1 -ExpectedSchemaVersion 11`，建议季度或升级前）；确认直连网线可通。
+   （`scripts/drill.ps1 -ExpectedSchemaVersion 12`，建议季度或升级前）；确认直连网线可通。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在 `169.254.77.0/24` 或 `172.23.88.0/21` 内（否则会锁死）；
    保留物理键鼠/已建立 SSH 作为回滚通道。
 7. 旧 `minecraft-backups` cron 已停用、legacy 归档已清理；如后续手工重建 cron 或旧目录，按 `docs/DEPLOY.md` 处理并再次确认迁移。
@@ -202,6 +206,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
     Telegram 群需关闭 BotFather privacy mode 或让用户回复 Bot；QQ 群/频道需先把 Bot 拉入群并 @Bot 发一条消息，再到 `/bots` 目标分区
     从“最近入站目标”登记；最后给目标勾选 `allow_chat`。Chat 不授予斜杠命令权限，多附件发布仍受 5 个/10 MiB/50 MiB 限制。
     v0.5.5/v0.5.6 角色：Discord/Slack 需在平台后台创建 `/role` 命令；Telegram/QQ 直接发送 `/role` 即可；普通私聊用户不要求目标登记或用户白名单。默认角色 lofii 对私聊/群聊 Chat 生效，个人角色只覆盖私聊。
+    v0.5.7 自助命令与触发方式：Discord/Slack 还需在平台后台创建 `/reset`、`/forget` 命令；Telegram/QQ 直接发送。群聊“全部消息”触发需平台前置（Telegram 关 privacy mode、Discord 开启 Message Content Intent、Slack 订阅 `message.channels`），QQ 群/频道仅 @Bot；图片理解默认关闭，开启需 OpenCode prompt files + 支持 image 的模型。
 11. 安装 Windows Bot 代理隧道任务（`.\scripts\install-tunnel-task.ps1`，当前用户权限）：登录启动、异常重启，静默 wscript/VBS 启动，不占前台 shell；先探测 PC 代理 10090；日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。调试用 `discord-tunnel.ps1 -Foreground`，移除用 `install-tunnel-task.ps1 -Remove`。
 12. SSH 仅公钥切换后保留 **24h 回滚窗口**：期间保留旧 drop-in 备份与一个已建立的 SSH 会话；确认新会话/自动化脚本
     （smoke、备份、世界拉取）均能公钥登录后，再按 `docs/DEPLOY.md` §9.7 结束回滚窗口。

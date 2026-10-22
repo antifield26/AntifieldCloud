@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.6；v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.7（待部署验收）；v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -14,7 +14,28 @@
 >
 > **v0.5.6 已部署**：2026-10-22 部署到生产 Pi（release `20261022T114546Z`，commit `38dfe70`，schema v11，无新迁移）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊/群聊默认 lofii、个人角色覆盖/`off` 回落、简洁 `/role` 文案均已由用户实发确认。
 
-## v0.5.6（当前，已部署）
+## v0.5.7（当前，待部署验收）
+
+- 日期：2026-10-22（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（schema 12）+ Windows 本地工作区
+- **状态**：代码与文档已完成；生产仍为 v0.5.6/schema v11，**待部署与真实平台验收**。本段只记录交付范围与本地基线，部署/真实平台证据待 Lead 部署回填后再标记通过。
+- **交付范围**：
+  - schema v12（迁移 12）：`bot_targets.chat_trigger`、`bot_events` 诊断列与索引。
+  - 群聊触发策略（目标级 mention/all；QQ 群/频道仅 @；message 触发未授权时静默）；引用回复/线程（Telegram `reply_to_message_id`、Slack `thread_ts`、Discord `message_reference`）；长回复按平台上限分段（最多 4 段、续段前缀、超限截断、Telegram HTML 安全分段、partial 不自动重试）；Markdown 平台化（Telegram HTML / Discord markdown / Slack mrkdwn / QQ 纯文本）。
+  - 图片理解（默认关闭）：Telegram photo/document、Discord/Slack 图片附件、固定域名下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；QQ 不支持。生产已完成只读验证：OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash` 支持 image。
+  - 自助命令 `/reset`、`/forget confirm`（所有用户）；`/help` 更新。
+  - `POST /api/bots/:id/check` 连接自检；`GET /api/bots/:id/events` 诊断事件（无正文）；deliveries/publish/metrics 的 `lastErrorHint`。
+  - 角色/记忆管理 API（仅元数据、可启停/删除）；目标 `chatTrigger`；Web `/bots` 6 标签与新面板。
+  - 新 env：`BOT_AI_MAX_REPLY_CHARS=4000`、`BOT_AI_VISION_ENABLED=false`、`BOT_AI_IMAGE_MAX_BYTES=10485760`。
+- **本地验证**：`npm test` 387（服务端 + 运维脚本）、`npm run test:web` 157（30 文件）、`node scripts/check-version.mjs` 通过；`npm run check` 以 Lead 最终结果为准。
+- **待部署验收项**（完成后回填证据）：
+  1. `deploy.ps1` 迁移前快照 → 部署 v0.5.7 → `/healthz` `{"version":"0.5.7","schemaVersion":12}` → 带 Access token 的 smoke（`-ExpectedSchemaVersion 12`）。
+  2. Bot 平台真实联调：`/reset`、`/forget confirm`、长回复分段与 Markdown、群聊引用、`all` 触发（Telegram 关 privacy mode / Discord Message Content Intent / Slack `message.channels`）、QQ 群/频道仅 @、连接自检、诊断事件、角色/记忆面板。
+  3. 图片理解：确认已关闭时降级提示；在用户同意下临时开启并验证一张图片（不落盘、失败降级），随后恢复默认关闭。
+  4. 失败/partial 场景（长回复中途失败、附件部分外发）不自动重试；迁移前快照与回滚路径可用。
+- **回滚**：迁移 12 只加列/索引；回滚必须恢复迁移前 DB 快照并同步还原 `APP_VERSION`，窗口内保持 `BOT_ENABLED`/`BOT_AI_ENABLED`/`BOT_DISCORD_GATEWAY_ENABLED`/`BOT_AI_VISION_ENABLED=false`。
+
+## v0.5.6（历史，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T114546Z`，schema 11）+ Windows 本地工作区

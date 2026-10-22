@@ -1,8 +1,24 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.6**（schema v11）；生产已部署 v0.5.6 release `20261022T114546Z`/schema v11。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.7**（schema v12，实现完成、待部署验收）；生产当前为 v0.5.6/schema v11（release `20261022T114546Z`），待部署后按 `docs/ACCEPTANCE.md` 回填证据。
 
-## v0.5.6 补充（当前）
+## v0.5.7 补充（当前）
+
+- **范围**：群聊触发方式（目标级 `chatTrigger=mention|all`；QQ 群/频道仅 @）、回复引用/线程（Telegram/Discord/Slack）、
+  长回复按平台上限分段（最多 4 段、续段前缀、超限截断、Telegram HTML 安全分段）、Markdown 平台化、图片理解（默认关闭）、
+  自助 `/reset`/`/forget confirm`、平台连接自检、入站事件诊断与 `lastErrorHint`、角色/记忆元数据管理、Web `/bots` 6 分区。
+- **数据**：schema v12（迁移 12：`bot_targets.chat_trigger` 默认 mention；`bot_events` 增加 event_kind/outcome/detail/target_external_id/user_id/updated_at 与索引）；
+  迁移 5–11 保留；迁移单向，回滚需迁移前 DB 快照。
+- **配置**：新增 `BOT_AI_MAX_REPLY_CHARS=4000`（1000–12000）、`BOT_AI_VISION_ENABLED=false`、`BOT_AI_IMAGE_MAX_BYTES=10485760`（1–20 MiB）；
+  `bootstrap-env.sh` 已纳管；图片需 OpenCode prompt files + 支持 image 输入的模型（生产只读验证 `opencode-go/deepseek-v4.1-flash`），默认关闭。
+- **安全**：自助命令不要求目标/用户白名单但只影响本人数据且审计无正文；管理 API 仅元数据；诊断不存正文；图片不可信/不落盘/固定域名；
+  partial 失败不自动重试；发布仍为 TOTP + `PUBLISH` 双确认。
+- **决策**：QQ 群/频道不支持“全部消息”（平台事件本身即 @，服务端拒绝 `all`）；AI 回答上限由固定 4000 改为可配置并由平台层分段；
+  图片能力默认关闭，避免无意把图片交给模型；回复在群/频道引用原消息，私聊不引用。
+- **状态**：本地测试 387/157、`npm run check` 通过、`check-version` 通过；**待部署验收**（生产迁移 12 → 健康检查 v0.5.7/schema 12 → smoke → 真实平台联调）。
+- **下一版**：v0.5.8 候选（企业微信/钉钉/飞书、多管理员审批、Slack 按钮），范围待用户确认。
+
+## v0.5.6 补充（历史）
 
 - **默认角色 lofii**：内置猫系轻松伙伴，私聊与群聊普通对话默认使用；个人卡只覆盖私聊，`/role off` 回落到 lofii。
 - **全用户语气**：`/role` 文案只写当前角色与用法，不注入默认角色个性或技术术语；群内 `/role` 只给友好提示。
@@ -77,7 +93,7 @@
 - 修复 Android 指标趋势周期选择器压缩文字标签；工作区/文档清理，CI 增加 check-version。
 - 版本 0.4.2；schema v6 不变。
 
-## 目标
+## 目标（历史，v0.5.2 阶段）
 
 在 v0.5.1 已交付的 Bot 平台（Telegram/Discord/Slack/QQ、`/ask`、指标/静默/发布双确认）基础上，完成 v0.5.2：**普通消息 Chat 与长期记忆、多附件发布、Telegram/Discord 只读按钮、Discord Gateway 长连接，以及目标 `allow_chat`/最近入站目标与 schema v9**；企业微信/钉钉/飞书留到 v0.5.4。
 
@@ -140,7 +156,7 @@
 - 同步 README/CHANGELOG/AGENTS/ARCHITECTURE/SECURITY/DEPLOY/ROADMAP/PLAN/UI-SPEC/ACCEPTANCE/BOT，修正过期版本、schema、测试数字、平台数量与待部署状态。
 - `scripts/check-version.mjs` 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY 标题及 lock 根版本一致。
 
-## 阶段
+## 阶段（历史，v0.5.2 交付时记录）
 
 1. 基线确认：v0.5.1 生产/审计待办分拣；确认 Discord Gateway intent、Telegram/QQ 平台 Chat 权限与 v0.5.2 部署前置条件。
 2. 服务端：schema v9（迁移 9：`allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）、Chat 分发、记忆摘要与镜像、多附件发送、只读按钮、Discord Gateway；保持 v0.5.1 安全语义。
@@ -150,7 +166,7 @@
 6. 本地验证：`npm run check`、`npm test`、`npm run test:web`、`npm run build`（本次记录 `npm test` 293、`npm run test:web` 140、`npm run check` 通过；未执行真实平台验收）。
 7. 部署与验收（待执行）：PC 部署、迁移前快照、v9 迁移、`BOT_*` 写入、冒烟、Discord Gateway 真实长连接、各平台 Chat/多附件/按钮、记忆持久化、公网/手机/PWA、世界备份/拉取/恢复演练（schema 9）与 Cloudflare Access 复跑。
 
-## 验收摘要
+## 验收摘要（历史，v0.5.2 交付时记录）
 
 1. 本地验证：`npm run check` 全绿（`npm test` 293 = 服务端 277 + 运维脚本 16，`npm run test:web` 140；2026-10-21 本次文档更新期间通过）；`npm run build`、覆盖率与 CI 以最新 main 为准（本次未重新执行）。
 2. 版本一致：`/healthz`、`/api/version`、`package.json`、README、CHANGELOG、AGENTS、`deploy/env.example`、DEPLOY 标题均为 0.5.2；schema v9（本地代码/迁移测试；生产待迁移）。
@@ -164,6 +180,8 @@
 10. 生产部署、迁移 v9、smoke 已完成；Discord Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；多附件/按钮行为待补充并记录到 `docs/ACCEPTANCE.md`。
 
 ## 关键决策
+
+> 下表为 v0.5.2 阶段的累计决策；v0.5.7 的增量（触发方式/引用/分段/格式化/图片/自助命令/诊断/管理）见顶部「v0.5.7 补充（当前）」。
 
 | 项 | 决策 |
 |---|---|
@@ -192,13 +210,15 @@
 
 ## 非目标（v0.5.x 不做）
 
-企业微信/钉钉/飞书（v0.5.4）、Bot 多管理员审批、QQ 媒体、Slack/QQ 按钮、除 Discord Gateway 外的平台主动拉取/长连接、任意命令执行；目录打包分享、笔记公开分享、整包加密归档、异地副本/对象存储、WebDAV/rclone、Minecraft 启停/控制台、多用户与权限分离、SSD/LUKS 迁移、`antifield` sudo 收紧（用户确认后另做）。Cloudflare Access 只做 `app` 策略与 Bot/health/公开分享 bypass，不覆盖 `ai`（OpenCode 自身认证 + 应用会话已足够，后续再评估）。
+企业微信/钉钉/飞书（未排期）、Bot 多管理员审批、QQ 媒体、Slack/QQ 按钮、除 Discord Gateway 外的平台主动拉取/长连接、任意命令执行；目录打包分享、笔记公开分享、整包加密归档、异地副本/对象存储、WebDAV/rclone、Minecraft 启停/控制台、多用户与权限分离、SSD/LUKS 迁移、`antifield` sudo 收紧（用户确认后另做）。Cloudflare Access 只做 `app` 策略与 Bot/health/公开分享 bypass，不覆盖 `ai`（OpenCode 自身认证 + 应用会话已足够，后续再评估）。
 
 ## 回滚
 
 - 代码：`scripts/deploy.ps1` 停止服务并还原迁移前 DB 快照、还原上一 release 的 `APP_VERSION` 后切回 previous；无快照/读不到版本时拒绝自动回滚并打印手工步骤；部署后 smoke 失败默认让部署失败（`-AllowSmokeFailure` 仅告警）。
-- DB：schema v9 只向上；回滚旧 release 前必须恢复 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`；迁移 9 新增列/表，旧代码不能直接读 v9（会拒绝启动），不能只回退代码。
-- Bot：`BOT_ENABLED` 保持 false；`BOT_SECRET_KEY` 不轮换（轮换=全部 Token 重录）；`bots`/`bot_ai_sessions`/`bot_ai_memories`/`bot_inbound_targets` 随 DB 快照回滚；`DATA_DIR/bot-memory` 镜像文件按需人工清理；`/ask` 保持关闭。
+- DB：schema v12 只向上；回滚旧 release 前必须恢复 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`；
+  迁移 12 只加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引，旧代码不能直接读 v12（会拒绝启动），不能只回退代码；迁移 5–11 的历史说明见 DEPLOY/BACKUP。
+- Bot：`BOT_ENABLED` 保持 false；`BOT_SECRET_KEY` 不轮换（轮换=全部 Token 重录）；`bots`/`bot_targets`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles` 随 DB 快照回滚；
+  `DATA_DIR/bot-memory` 镜像文件按需人工清理；`/ask`、Chat、Gateway 与 `BOT_AI_VISION_ENABLED` 保持关闭。
 - 系统：nftables 恢复 `/etc/nftables.conf.bak` 后 `systemctl restart nftables`；fail2ban drop-in 回滚删除 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` 后 `daemon-reload`；SSH 删除 `00-` drop-in 后 `sshd -t && systemctl reload ssh`（24h 窗口内）。
 - 世界备份：`systemctl disable --now antifieldcloud-world.timer` 并移除 unit；旧 cron 未恢复前不重新启用。
 - Windows：`Unregister-ScheduledTask` 世界拉取/演练任务；每日应用备份任务可用 `install-backup-task.ps1` 重装。

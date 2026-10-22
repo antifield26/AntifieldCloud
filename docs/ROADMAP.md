@@ -1,11 +1,29 @@
 # 路线图
 
-## v0.5.6（当前，已部署）
+## v0.5.7（当前，已实现、待部署验收）
+
+- **群聊触发方式**：目标级 `chatTrigger`（`mention` 默认 / `all`）；QQ 群/频道仅 @，`all` 返回 `chat_trigger_unsupported`；
+  `all` 需平台前置（Telegram 关 privacy mode、Discord 开启 Message Content Intent、Slack 订阅 `message.channels`）；未授权 message 触发静默忽略。
+- **回复形态**：长回复按平台上限分段（Telegram 4096 / Discord 2000 / Slack 4000 / QQ 2000，最多 4 段、续段前缀、超限截断、Telegram HTML 安全分段）；
+  Markdown 平台化（Telegram HTML / Discord / Slack mrkdwn / QQ 纯文本）；群/频道引用原消息或留线程，私聊不引用，失败降级；partial 不自动重试。
+- **图片理解（默认关闭）**：Telegram/Discord/Slack 入站图片（固定域名、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交 OpenCode prompt files；
+  失败/关闭降级；QQ 不支持；生产只读验证 OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash` 支持 image。
+- **自助命令**：`/reset`（重置当前目标 Chat/任务会话，保留记忆）、`/forget confirm`（清长期记忆+镜像+该 Bot×用户全部会话），对所有用户开放；`/help` 更新。
+- **诊断与自检**：`POST /api/bots/:id/check`（Telegram getMe+getWebhookInfo / Discord `/users/@me` / Slack auth.test / QQ access_token，脱敏）；
+  `GET /api/bots/:id/events`（元数据，无正文；outcome received/ok/denied/rate_limited/ignored/error）；deliveries/publish/metrics 的 `lastErrorHint`。
+- **角色/记忆管理**：`GET/PATCH/DELETE /api/bots/:id/roles…`、`GET/DELETE /api/bots/:id/memories…`（仅元数据、可启停/删除；删除角色清 chat 会话、删除记忆清 DB+镜像）。
+- **Web `/bots`**：6 分区（概览/配置/目标/投递与发布/角色与记忆/诊断）、“检查连接”、目标触发方式、新面板只显示元数据；窄屏表格容器内横向滚动。
+- **数据/部署**：schema v12（迁移 12：`bot_targets.chat_trigger` + `bot_events` 诊断列/索引）；新 env `BOT_AI_MAX_REPLY_CHARS`/`BOT_AI_VISION_ENABLED`/`BOT_AI_IMAGE_MAX_BYTES`；
+  `deploy.ps1` smoke 期望 schema 12；迁移单向，回滚需迁移前 DB 快照。
+- **状态**：本地 `npm test` 387、`npm run test:web` 157（30 文件）、`node scripts/check-version.mjs` 通过；生产仍为 v0.5.6/schema v11，**待部署验收**（部署/真实平台证据待在 `docs/ACCEPTANCE.md` 回填）。
+- **下一版**：v0.5.8 候选（企业微信/钉钉/飞书、多管理员审批、Slack 按钮等），具体范围待用户确认。
+
+## v0.5.6（历史，已部署）
 
 - **默认角色 lofii**：内置猫系轻松伙伴，私聊/群聊普通对话默认使用；个人 `/role` 只覆盖私聊，`off` 回落到 lofii。
 - **全用户语气**：`/role` 文案只写当前角色与用法，不注入默认角色个性或技术术语；群内 `/role` 只给友好提示。
 - **状态**：本地测试 324/141；生产 release `20261022T114546Z`/schema v11、smoke 24/24，私聊/群聊 lofii 与简洁 `/role` 文案已实发确认。
-- **下一版**：v0.5.7 企业微信/钉钉/飞书；多管理员/审批仍不做。
+- **下一版**：v0.5.7 群聊触发/引用/长回复分段/图片理解/诊断与管理（已实现，待部署）；企业平台顺延。
 ## v0.5.5（历史，已部署）
 
 - **私聊角色卡**：`/role` 对全部平台私聊用户开放；每 Bot×用户一张“名字+设定”卡；`set/show/off/on/delete`；仅私聊 Chat 使用，安全边界与共享记忆保留；变更重置 Chat 会话。
@@ -51,7 +69,7 @@
 5. 记忆文件权限/位置与摘要失败保留旧摘要；验证 `DATA_DIR/bot-memory` 不通过 Web 暴露、重启后仍能读取；真实模型多轮对话。
 6. 按 `docs/ACCEPTANCE.md` v0.5.2 填写证据后再标记通过；生产部署前不得宣称已验收。
 
-## v0.5.3（规划：企业平台）
+## 企业平台（未排期，原 v0.5.3 规划）
 
 - **企业微信/钉钉/飞书**：新增平台适配器、回调验签/加解密、目标与消息发送；仍需各平台后台注册与真实联调。
 - 多管理员/审批流、QQ 媒体、Slack 按钮不在 v0.5.3 承诺范围（单管理员/企业平台优先）。
@@ -100,7 +118,7 @@
 
 ## 下一批候选（按价值排序）
 
-1. **更多 Bot 平台**：企业微信/钉钉/飞书（v0.5.4；需各自回调签名/加解密与媒体模型）；QQ 媒体能力待平台开放后再评估。
+1. **更多 Bot 平台**：企业微信/钉钉/飞书（原 v0.5.4 计划，未排期；需各自回调签名/加解密与媒体模型）；QQ 媒体能力待平台开放后再评估。
 2. **Bot 多人审批/发布复核**：在单管理员 TOTP + `PUBLISH` 之外增加第二人复核或延时窗口；需先定义多管理员模型。
 3. **Slack 按钮**：Slack interactivity 与 `response_url`/`trigger_id` 语义，补齐与 Telegram/Discord 一致的只读按钮。
 4. **整包加密 + 异地副本**：普通归档仍含 TOTP/会话明文；优先评估 age/restic 整包加密、VPS/对象存储异地副本与生命周期。
@@ -125,12 +143,16 @@
 
 ## 已知限制
 
+- v0.5.7 已实现、待部署：生产仍为 v0.5.6/schema v11；部署后需按 `docs/DEPLOY.md` §3.1/§9.8 与 `docs/ACCEPTANCE.md` 完成真实平台验收（分段/Markdown/引用、触发方式、`/reset`/`/forget confirm`、连接自检、诊断、角色/记忆、图片）。
+- v0.5.7 群聊“全部消息”触发依赖平台前置（Telegram 关 privacy mode、Discord Message Content Intent、Slack `message.channels`）；未满足时只有 @/回复进入 Chat；QQ 群/频道仅 @/回复。
+- v0.5.7 图片理解默认关闭且需模型支持 image 输入；生产仅完成只读验证，真实图片识别质量/失败路径待验收；QQ 不支持图片。
+- 回复分段最多 4 段，超长内容会截断并标记；partial 失败不自动重试，需人工核对后处理。
 - v0.5.2 已部署，Discord Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；多附件/按钮需补充验证，Telegram/Slack/QQ 群/频道待目标开启后联调。
 - v0.5.2 多附件部分成功不自动重试（标记 `partial_media_sent`），需人工确认并重建；单次最多 5 个、单 10 MiB、总 50 MiB。
-- 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。
-- 企业微信/钉钉/飞书未实现（v0.5.4）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。
-- QQ 官方 Bot 仅文本、不支持媒体；真实回调需用户后台配置；群/频道目标仍需真实场景补充。
-- `/ask` 与 Chat 依赖 OpenCode 本地 API 与已配置模型；默认关闭，v0.5.1 生产已验证 `/ask`；v0.5.2 Chat/记忆真实模型行为待验收；deny-all 工具在 OpenCode 明确拒绝 `permissions` 时会降级并在日志标注未隔离。
+- 记忆只保留摘要，不保存逐条对话；不提供导出页面，但用户可 `/forget confirm`、管理员可在“角色与记忆”删除；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像需按保留期/人工清理。
+- 企业微信/钉钉/飞书未实现（未排期）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。
+- QQ 官方 Bot 仅文本、不支持媒体/图片；真实回调需用户后台配置；群/频道目标仍需真实场景补充。
+- `/ask` 与 Chat 依赖 OpenCode 本地 API 与已配置模型；默认关闭，v0.5.1 生产已验证 `/ask`；deny-all 工具在 OpenCode 明确拒绝 `permissions` 时会降级并在日志标注未隔离。
 - Cloudflare Access 策略/bypass 与 service token 需用户后台配置，应用无法自证；smoke 的 Access token 仅用于测试，不替代应用认证。
 - `fail2ban` 封禁已由 dbfile 持久化，nftables 启动后由 drop-in 异步重启恢复；手工 `systemctl reload nftables` 不触发，需手动 `systemctl restart fail2ban`。
 - SSH 已仅公钥（`00-` drop-in，24h 回滚窗口），`fail2ban` sshd jail（nftables 后端、24h ban）；Pi 登录用户 `antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择），待收紧。

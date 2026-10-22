@@ -2,16 +2,16 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.6（已部署，release `20261022T114546Z`/commit `38dfe70`/schema v11；Node.js 运行时 **v26.12.1**；Bot 默认角色 lofii（私聊/群聊）、私聊个人角色卡、任务/对话双模式提示词、独立 OpenCode 会话、共享长期记忆、QQ C2C 开放 Chat；OpenCode **v2.1.2**；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.7（实现完成，**待部署验收**；生产当前为 v0.5.6/schema v11，release `20261022T114546Z`/commit `38dfe70`）。v0.5.7 新增 AI 长回复分段、Markdown 平台化、群聊引用/线程、目标触发方式（仅 @/回复、全部消息）、图片理解（默认关闭）、`/reset`/`/forget confirm`、连接自检、事件诊断、角色/记忆管理与 `/bots` 6 标签；schema v12（迁移 12）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
 - 服务端：Node.js >= 26（生产安全更新至 v26.12.1；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
-- Bot：Telegram Bot API、Discord Interactions（Ed25519）+ Gateway 长连接、Slack Events API/Slash Command（HMAC）、QQ 官方 Bot（op=13 Ed25519 回调校验 + op=0 事件回调）；普通消息 Chat 与 `/ask` 共用本地 OpenCode AI，长期记忆落 DB + `DATA_DIR/bot-memory` 镜像；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用平台 API
+- Bot：Telegram Bot API、Discord Interactions（Ed25519）+ Gateway 长连接、Slack Events API/Slash Command（HMAC）、QQ 官方 Bot（op=13 Ed25519 回调校验 + op=0 事件回调）；普通消息 Chat 与 `/ask` 共用本地 OpenCode AI，长期记忆落 DB + `DATA_DIR/bot-memory` 镜像；回复按平台上限分段、Markdown 平台化、群聊引用/线程、目标级触发策略；图片理解默认关闭（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用平台 API
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 324）+ Vitest/jsdom（前端 141），ESLint，`tsc --noEmit`，覆盖率门禁
+- 测试：`node --test`（服务端 + 运维脚本 387）+ Vitest/jsdom（前端 157，30 文件），ESLint，`tsc --noEmit`，覆盖率门禁
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -53,23 +53,28 @@
 - HTTP 与 WebSocket 均校验 `Origin`（仅 app/ai 正式 origin；WS 必须带合法 Origin），拒绝时 403 + 审计。
 - `OPENCODE_HTML_MODE=shim|attributes|passthrough` 兼容 Rocket Loader/自动注入差异，不添加可见 UI。
 
-### 机器人（v0.5.6）
+### 机器人（v0.5.7）
 
-- Telegram、Discord、Slack、QQ 官方 Bot 四个适配器：Telegram 用 `X-Telegram-Bot-Api-Secret-Token`，Discord 用 Ed25519 + 时间戳，Slack 用 HMAC-SHA256 + 时间戳，QQ 用 AppSecret 派生 Ed25519（op=13 回调地址校验、op=0 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。QQ 仅支持文本（C2C/群@/频道，单条 ≤2000 字符），不支持媒体。
-- **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话（Telegram/Slack/QQ Webhook 与 Discord Gateway）；群/频道仅 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊直接进入；非管理员只能 Chat，管理员斜杠命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读，不执行写操作。每 Bot×用户每分钟默认 6 次，并与 `/ask` 共用每小时 10 次 AI 配额。
-- **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮对话后滚动摘要，失败保留旧摘要；记忆不通过 API/UI 暴露。两种 AI 模式共享记忆；摘要不额外占用对话轮次或 AI 每小时配额。
-- **双模式提示词（v0.5.4）**：`/ask` 使用任务导向提示（结论/步骤/风险/必要澄清），普通 Chat 使用无产品身份限定的自然对话提示（不自我介绍、不主动谈业务）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定只读安全边界始终追加；`/ask` 与 Chat 分别使用独立 OpenCode 会话，共享长期记忆；QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
-- **默认角色与私聊角色卡（v0.5.6）**：内置默认角色 `lofii`，私聊和群聊普通对话都用它；`/role` 对全部平台私聊用户开放（其他命令仍按白名单），每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；个人卡只覆盖私聊，`off` 后回到默认 lofii；群聊固定默认角色。`/ask` 不受影响；角色变更会重置当前私聊对话。`/role` 文案只写当前角色与命令用法，不注入默认角色个性，也不出现技术术语。
+- Telegram、Discord、Slack、QQ 官方 Bot 四个适配器：Telegram 用 `X-Telegram-Bot-Api-Secret-Token`，Discord 用 Ed25519 + 时间戳，Slack 用 HMAC-SHA256 + 时间戳，QQ 用 AppSecret 派生 Ed25519（op=13 回调地址校验、op=0 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。QQ 仅支持文本（C2C/群@/频道，单条 ≤2000 字符），不支持媒体/图片。
+- **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话（Telegram/Slack/QQ Webhook 与 Discord Gateway）；群/频道默认仅 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊直接进入；目标可设“全部消息”触发（QQ 群/频道仅 @）；非管理员只能 Chat，管理员斜杠命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读，不执行写操作。每 Bot×用户每分钟默认 6 次，并与 `/ask` 共用每小时 10 次 AI 配额。
+- **长回复/Markdown/引用（v0.5.7）**：AI 回答按平台上限分段（Telegram 4096 / Discord 2000 / Slack 4000 / QQ 2000，最多 4 段，续段前缀“（续 n/m）”，超限截断）；Telegram HTML 安全分段；格式按平台转换（Telegram HTML `parse_mode`、Discord markdown、Slack mrkdwn、QQ 纯文本）；群/频道引用原消息（Telegram `reply_to_message_id`、Slack `thread_ts`、Discord `message_reference`），私聊不引用，引用/线程失效降级为无引用重发；partial 失败 `partial_text_sent` 不自动重试。
+- **图片理解（v0.5.7，默认关闭）**：`BOT_AI_VISION_ENABLED=true` 后 Telegram photo/document、Discord/Slack 图片附件经固定平台域名下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；失败/关闭/无文字时降级提示；QQ 不支持。需 OpenCode prompt files 与支持 image 输入的模型（当前 `opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。
+- **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮对话后滚动摘要，失败保留旧摘要；记忆正文不通过 API/UI 暴露。两种 AI 模式共享记忆；摘要不额外占用对话轮次或 AI 每小时配额。
+- **双模式提示词**：`/ask` 使用任务导向提示（结论/步骤/风险/必要澄清），普通 Chat 使用无产品身份限定的自然对话提示（不自我介绍、不主动谈业务）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定只读安全边界始终追加；`/ask` 与 Chat 分别使用独立 OpenCode 会话，共享长期记忆；QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
+- **默认角色与私聊角色卡**：内置默认角色 `lofii`，私聊和群聊普通对话都用它；`/role` 对全部平台私聊用户开放（其他命令仍按白名单），每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；个人卡只覆盖私聊，`off` 后回到默认 lofii；群聊固定默认角色。`/ask` 不受影响；角色变更会重置当前私聊对话。`/role` 文案只写当前角色与命令用法，不注入默认角色个性，也不出现技术术语。
+- **自助命令（v0.5.7）**：`/reset` 重置当前目标 Chat/任务会话（保留长期记忆）；`/forget confirm` 清除长期记忆（DB+镜像）与该 Bot×用户的全部会话；对全部用户开放，`/help` 已列出。
 - **多附件**：单次最多 5 个、单文件 ≤10 MiB、总 ≤50 MiB；Telegram 全图片走 media group、混合类型逐文件，Discord 单次 multipart，Slack 逐文件上传后一次完成；QQ 仅文本。部分成功不自动重试（标记 `failed`/`partial_media_sent`，需人工重建）。
 - **只读按钮**：Telegram inline keyboard 与 Discord message components 支持 `/status`、`/help` 的“刷新状态/帮助”按钮；按钮动作需目标 `allow_commands` + user 白名单，只调用只读 provider，无写操作；Slack/QQ 本轮不做按钮。
 - **Discord Gateway**：`server/src/bot/discord-gateway.ts` 使用 Node 内置 WebSocket 建立长连接，`intents=37377`（含 `MESSAGE_CONTENT`）；需在 Developer Portal 开启 Message Content Intent；支持 HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避重连与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭（生产已设为 true），`BotSummary.gateway` 展示连接状态。
-- **出站连通性（v0.5.3）**：`server/src/bot/connectivity.ts` 每 60 秒按“代理端口 → 外网 → 平台 API”探测；`GET /api/bots/connectivity` 返回设备在线/代理端口/外网/平台状态，`POST /api/bots/connectivity/check` 手动复检；网络恢复后自动 `wake` Discord Gateway 并触发队列扫描；`/bots` 概览展示“出站网络”卡片。
+- **出站连通性**：`server/src/bot/connectivity.ts` 每 60 秒按“代理端口 → 外网 → 平台 API”探测；`GET /api/bots/connectivity` 返回设备在线/代理端口/外网/平台状态，`POST /api/bots/connectivity/check` 手动复检；网络恢复后自动 `wake` Discord Gateway 并触发队列扫描；`/bots` 概览展示“出站网络”卡片。
 - **Windows 代理隧道**：`scripts/discord-tunnel.ps1` 先探测 PC 代理 10090，再建 SSH 反向隧道；默认通过 `discord-tunnel.vbs` 以 wscript 无窗口启动，直接运行也不占前台 shell；`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启的静默计划任务，并清理旧实例防止重复占用 18090。调试用 `-Foreground`。
-- 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布四个分区；目标支持 `allowChat` 与“最近入站目标”登记；发布表单多选媒体；Token/Webhook Secret/Signing Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
-- 只读命令 `/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`，AI 命令 `/ask <问题>`，以及私聊角色卡命令 `/role`：除 `/role` 仅要求私聊外，其余命令必须同时命中目标的 `allow_commands` 与显式 user 白名单（`kind='user'` 且 `allow_commands=1`）；`/ask` 仅在 `BOT_AI_ENABLED=true` 时可用，按用户每小时限流（默认 10 次），复用 OpenCode 会话，新建会话使用 deny-all 工具权限；不返回文件内容或密钥。
+- **平台连接自检（v0.5.7）**：`POST /api/bots/:id/check`（需登录 + CSRF）调用 Telegram `getMe`+`getWebhookInfo`、Discord `/users/@me`、Slack `auth.test`、QQ `access_token`，返回脱敏的通过/异常项并刷新 `last_checked_at`；`/bots` 配置页“检查连接”展示结果。
+- **诊断与管理（v0.5.7）**：`GET /api/bots/:id/events?hours&limit&offset&outcome` 返回入站事件元数据（不含正文；结果 received/ok/denied/rate_limited/ignored/error）；投递/发布/指标新增 `lastErrorHint` 中文提示；`GET/PATCH/DELETE /api/bots/:id/roles…` 与 `GET/DELETE /api/bots/:id/memories…` 只返回/操作元数据（可启停/删除，正文不进入 Web/API）。
+- 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布、角色与记忆、诊断六个分区；目标支持 `allowChat`/`chatTrigger` 与“最近入站目标”登记；发布表单多选媒体；Token/Webhook Secret/Signing Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
+- 只读命令 `/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`，AI 命令 `/ask <问题>`，私聊角色卡命令 `/role`，自助命令 `/reset`、`/forget confirm`：除自助命令（`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，其余命令必须同时命中目标的 `allow_commands` 与显式 user 白名单（`kind='user'` 且 `allow_commands=1`）；`/ask` 仅在 `BOT_AI_ENABLED=true` 时可用，按用户每小时限流（默认 10 次），复用 OpenCode 会话，新建会话使用 deny-all 工具权限；不返回文件内容或密钥。
 - 告警通知：告警事件写入后按目标 `allow_notifications` 入队，按告警事件去重；目标可配置 `quietStartMinute`/`quietEndMinute`（Asia/Shanghai 本地分钟，0–1439），静默窗口内的通知延后到结束时刻；通知文本清洗内部路径/URL 后外发。
 - 发布：文本 + 最多 5 个云端普通文件媒体（单文件 ≤10 MiB、总 ≤50 MiB），目标必须是频道/群组；每次发布要求管理员 TOTP 再认证（`totpCode`）且请求体必须带 `confirmText: 'PUBLISH'`，缺失返回 `publish_confirm_required`；可定时（≤30 天）、取消 queued/draft、失败指数退避重试与手动重投；QQ 仅文本、拒绝媒体。
-- 运维：`GET /api/bots/status`、`GET /api/bots/connectivity`、`GET /api/bots/:id/metrics?hours=24`、`GET /api/bots/:id/inbound-targets` 返回运行/连通性/投递/发布/事件统计与最近入站目标；`/bots` 展示近 24 小时指标卡、Discord Gateway 与出站网络状态。
+- 运维：`GET /api/bots/status`、`GET /api/bots/connectivity`、`GET /api/bots/:id/metrics?hours=24`、`GET /api/bots/:id/inbound-targets`、`GET /api/bots/:id/events`、`POST /api/bots/:id/check` 返回运行/连通性/投递/发布/事件诊断与最近入站目标；`/bots` 展示近 24 小时指标卡、Discord Gateway 与出站网络状态。
 - 默认 `BOT_ENABLED=false`：关闭时 Webhook 与写接口返回 404/503；`BOT_SECRET_KEY` 丢失后已存 Token 无法解密，只能重新录入。Bot 不可用时不影响应用主功能。
 
 ### 可观测性与告警
@@ -110,7 +115,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.6 -ExpectedSchemaVersion 11`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.7 -ExpectedSchemaVersion 12`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
 
 ## 目录
 
@@ -132,7 +137,8 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - opencode 仅通过 `ai.example.com` 反代访问，端口 4096 不对外；代理覆写客户端 Authorization/Cookie，并校验 HTTP/WS Origin。
 - 分享 token 只存 SHA-256，密码 scrypt；过期/吊销/次数用尽返回 410；公开页 `noindex`；公开写请求校验 Origin 并限流。
 - Bot 平台 Token/签名密钥/QQ AppSecret 只写不读，数据库仅存 AES-256-GCM 密文；Webhook 以平台签名/时间戳鉴权并按事件 ID 去重；QQ 额外校验 op=13 Ed25519 回调地址；命令要求目标授权 + 显式用户白名单；发布要求 TOTP + `PUBLISH` 双确认；通知/命令输出清洗路径与 URL。
-- Chat 目标级 `allow_chat` 与命令 `allow_commands` 分离：非管理员只能 Chat，群/频道需 @Bot 或回复 Bot；记忆只存摘要（DB 权威 + `DATA_DIR/bot-memory` 镜像，0700/0600），不通过 API/UI 暴露；Discord Gateway 只建立出站 WSS，Token 只出现在 IDENTIFY/RESUME，MESSAGE_CONTENT 仅消费私聊/@/回复消息。
+- Chat 目标级 `allow_chat` 与命令 `allow_commands` 分离：非管理员只能 Chat，群/频道默认需 @Bot 或回复 Bot（目标可显式设“全部消息”，QQ 群/频道仅 @）；记忆只存摘要（DB 权威 + `DATA_DIR/bot-memory` 镜像，0700/0600），不通过 API/UI 暴露；Discord Gateway 只建立出站 WSS，Token 只出现在 IDENTIFY/RESUME，MESSAGE_CONTENT 仅消费私聊/@/回复/目标允许的频道消息。
+- 诊断只存事件元数据（类型/结果/短码/目标与用户 ID），不存消息正文；角色/记忆管理 API 只返回元数据，正文不进入 Web/API；图片输入不可信：固定平台域名、image mime 白名单、大小上限、不落盘，失败降级为纯文字；长回复/附件 partial 失败不自动重试。
 - `/ask` 与 Chat 仅对已授权用户/目标开放，默认关闭且按用户每小时限流；AI 会话新建时使用 deny-all 工具权限，若 OpenCode 明确拒绝该字段才降级并在日志标注“未隔离”；AI 仅把文本回复交给 Bot，不上传文件、不返回 OpenCode 凭据。
 - 备份归档校验 SHA-256 与 tar 安全（拒绝路径穿越/链接/设备/超大条目）；Web 恢复只到新目录、不覆盖，整库恢复仅离线 root 流程。
 - 指标与审计只记录元数据/主机数值，不含文件内容；审计字段截断（actor≤64、target≤256、detail≤4 KiB）。
@@ -150,10 +156,11 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
-- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书留 v0.5.4，多管理员审批未实现；QQ 群/频道目标仍待真实场景补充。
-- v0.5.6：Bot 默认角色 lofii（私聊/群聊）、`/role` 个人角色只覆盖私聊、`off` 回落到 lofii；v0.5.5 的私聊角色卡与 schema v11 保留；v0.5.3 的出站连通性/隧道自恢复/QQ 群 Chat 已完成。
-- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书留 v0.5.7，多管理员审批未实现；QQ 频道目标仍待补充。
-- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot Chat；多附件真实平台外发、按钮与 Telegram/Slack 仍待验收。
+- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体/图片；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书与多管理员审批留待下一版；QQ 频道目标仍待真实场景补充。
+- v0.5.7：长回复分段/Markdown/引用线程、群聊触发方式（QQ 群/频道仅 @）、图片理解（默认关闭，需 OpenCode prompt files + 支持 image 的模型）、`/reset`/`/forget confirm`、连接自检、事件诊断、角色/记忆管理；schema v12（迁移 12）；生产仍为 v0.5.6，**待部署验收**。
+- 图片理解默认关闭：开启需模型支持 image 输入；Telegram/Discord/Slack 支持入站图片，QQ 不支持；生产仅完成只读验证（OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash`），图片识别质量与真实失败路径待部署后按需验证。
+- 群聊“全部消息”触发依赖平台前置：Telegram 关闭 privacy mode、Discord 开启 Message Content Intent、Slack 订阅 `message.channels`；未满足时只有 @/回复进入 Chat。QQ 群/频道仅支持 @Bot，无法开启全部消息。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot Chat；v0.5.7 的新回复形态（分段/Markdown/引用）与图片能力待部署后真实平台验收。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。

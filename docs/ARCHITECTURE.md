@@ -17,7 +17,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  │   ├─ Bot 出站 → api.telegram.org / discord.com/api/v10 / slack.com/api / bots.qq.com / api.sgroup.qq.com（固定上游，15s 超时）
  │   ├─ Bot AI → 127.0.0.1:4096 OpenCode 本地 API（/ask 与 Chat，默认关闭）
  │   ├─ Bot 记忆 → SQLite bot_ai_memories + DATA_DIR/bot-memory/memory-<uuid>.md（0700/0600）
- │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v11）
+ │   ├─ SQLite /var/lib/antifieldcloud/db.sqlite（schema v12）
  │   ├─ 文件   /var/lib/antifieldcloud/files/<xx>/<id>（files.origin=user|note|system）
  │   ├─ 应用备份 /var/lib/antifieldcloud/backups（pending/acked/imports/secrets/db-predeploy-*）
  │   ├─ 世界备份 /var/lib/antifieldcloud/world-backups（world-<UTC>.tar.gz，保留 4 份）
@@ -45,24 +45,39 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 指标采样：`metrics/sampler.ts` 每 `METRICS_SAMPLE_SECONDS`（默认 60）读取 HostMonitor 与配额用量写入 `metrics_samples`；维护任务按 `METRICS_RETENTION_DAYS`（默认 30）清理。
 - 公开分享：`/api/public/shares/:token/*` 不挂会话，但 POST 校验 Origin、按 IP/用户限流；内容支持 Range/HEAD/ETag，多文件走 `items/:itemId/content`。
 
-### 2.1 Bot 请求与队列路径（v0.5.4）
+### 2.1 Bot 请求与队列路径（v0.5.7）
 
 - 入站：`POST /api/bot/webhook/:botId` 在独立 Fastify scope 中以 raw body 解析（JSON 或 form，≤256 KiB），
   按 `CF-Connecting-IP` 做 120 次/分钟 IP 限流 → `BotService.handleWebhook` 校验 `BOT_ENABLED`/密钥/Bot 启用（否则 404）
   → 按 Bot 300 次/分钟限流 → 适配器验签（Telegram secret token / Discord Ed25519+timestamp / Slack HMAC+timestamp / QQ Ed25519+timestamp）
-  → `bot_events` 去重（重复直接 200）→ `bot_inbound_targets` 记录目标/用户（不存正文）→ 按事件类型分发：
-  斜杠命令需目标 `allow_commands` + 用户白名单；普通消息需目标 `allow_chat` 且 AI 启用；按钮动作需命令双白名单；
-  命令/Chat 异步执行并用平台 API 回复。QQ 的 `op=13` 回调地址校验在验签前直接返回签名体；成功/忽略/重复事件统一返回 `{opcode:12}`。
+  → `bot_events` 去重并记录诊断元数据（`received`，重复直接 200）→ `bot_inbound_targets` 记录目标/用户（不存正文）→ 按事件类型分发：
+  斜杠命令需目标 `allow_commands` + 用户白名单（自助命令 `/role` 仅私聊、`/reset`、`/forget confirm` 除外）；
+  普通消息需目标 `allow_chat`、AI 启用且满足触发方式（`mention` 仅 @/回复，`all` 消费全部消息；QQ 群/频道仅 mention）；
+  按钮动作需命令双白名单；命令/Chat 异步执行并用平台 API 回复；处理结果回写 `bot_events.outcome`（ok/denied/rate_limited/ignored/error）
+  与短码 detail。QQ 的 `op=13` 回调地址校验在验签前直接返回签名体；成功/忽略/重复事件统一返回 `{opcode:12}`。
+  普通群消息在 `all` 策略下由适配器/`chatTriggerFor` 注入解析为 `message` 触发；未授权/非 all 时静默忽略。
+- 回复管线（v0.5.7）：模型文本 → `sanitizeAiText`（去路径/URL/控制字符）→ `format.ts` 平台化（Telegram HTML / Discord markdown / Slack mrkdwn / QQ 纯文本）
+  → `text.ts` 按平台上限分段（最多 4 段、续段前缀、截断标记；Telegram HTML 标签安全切分）→ 适配器发送；群/频道携带引用
+  （Telegram `reply_to_message_id`、Discord Gateway `message_reference`、Slack `thread_ts`），私聊不引用；引用/线程失效降级无引用重发；
+  第二段起失败时已发送 ID 挂到错误对象，队列记录 `partial_text_sent` 且不自动重试。
+- 图片管线（v0.5.7，默认关闭）：适配器从入站消息提取图片引用 → `BOT_AI_VISION_ENABLED` 且适配器实现 `loadImage` 时，从固定平台域名下载
+  （image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）→ 内存 base64 → OpenCode prompt files `data:` URL 随本轮 prompt 发送；
+  关闭/失败/mime 非法时降级为纯文字回答；QQ 不支持。
 - Discord Gateway：`DiscordGatewayManager` 仅对启用且带 Token 的 Discord Bot 建立 WSS；`intents=37377`（含 MESSAGE_CONTENT），
-  完成 HELLO/IDENTIFY/RESUME 与心跳；`MESSAGE_CREATE` 只取私聊、@Bot、回复 Bot 且非 bot/webhook 的文本，经
-  `BotService.handleGatewayMessage` 复用 Chat 授权/限流；RECONNECT/INVALID_SESSION 重连（1s 起、≤60s），4004/4010–4014 等致命码停止自动重连；
+  完成 HELLO/IDENTIFY/RESUME 与心跳；`MESSAGE_CREATE` 取私聊、@Bot、回复 Bot，或目标 `chatTrigger=all` 的频道消息（非 bot/webhook），经
+  `BotService.handleGatewayMessage` 复用 Chat 授权/限流/图片管线；RECONNECT/INVALID_SESSION 重连（1s 起、≤60s），4004/4010–4014 等致命码停止自动重连；
   `BotSummary.gateway` 输出 `disabled/connecting/connected/reconnecting/error`。
-- Chat：普通消息在目标 `allow_chat=1` 时进入 `chatWithAi`；群/频道需 @/回复触发，私聊全部；Chat 每 Bot×用户 6 次/分钟，
+- Chat：普通消息在目标 `allow_chat=1` 时进入 `chatWithAi`；群/频道默认 @/回复触发、目标 `all` 时全部消息，私聊全部；Chat 每 Bot×用户 6 次/分钟，
   与 `/ask` 共用每小时 10 次 AI 配额；Chat 不执行命令或写操作。
 - 记忆：`BotMemoryStore` 以 `bot_ai_memories`（DB 权威）保存每 Bot×用户摘要与 `summary_session_id`，镜像到
   `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600、临时文件 + 原子 rename）；每轮对话后调用 `BotAi.summarizeMemory` 滚动摘要，
-  失败只记日志并保留旧摘要；记忆正文不进入 HTTP API/前端。
-- 提示词（v0.5.4/v0.5.6）：`server/src/bot/prompts.ts` 生成任务/对话提示；Chat 默认使用内置 lofii 角色，私聊个人 `/role` 卡可覆盖，固定安全边界不可覆盖；群聊固定默认角色；`/ask` 与 Chat 使用 `bot_ai_sessions.mode=task|chat` 独立会话，共享 `bot_ai_memories`；个人角色卡存 `bot_chat_roles`。
+  失败只记日志并保留旧摘要；记忆正文不进入 HTTP API/前端。`/forget confirm` 与管理删除会同时清 DB 行与镜像。
+- 提示词/角色：`server/src/bot/prompts.ts` 生成任务/对话提示；Chat 默认使用内置 lofii 角色，私聊个人 `/role` 卡可覆盖，固定安全边界不可覆盖；
+  群聊固定默认角色；`/ask` 与 Chat 使用 `bot_ai_sessions.mode=task|chat` 独立会话，共享 `bot_ai_memories`；个人角色卡存 `bot_chat_roles`。
+- 诊断/自检（v0.5.7）：入站事件按 `(bot_id, platform_event_id)` 写 `bot_events`（event_kind/outcome/detail/target_external_id/user_id/updated_at），
+  `GET /api/bots/:id/events` 按时间窗口/outcome/分页查询元数据；`POST /api/bots/:id/check` 调适配器只读自检（Telegram getMe+getWebhookInfo、
+  Discord /users/@me、Slack auth.test、QQ access_token），结果脱敏并刷新 `last_checked_at`；`errors.ts` 把队列 last_error 映射为 `lastErrorHint`。
+- 管理 API（v0.5.7）：目标创建/更新支持 `chatTrigger`；`roles`/`memories` 只返回元数据并支持启停/删除，正文不进入 Web/API。
 - 连通性（v0.5.3）：`BotConnectivityMonitor` 每 60s 探测代理 TCP 端口、外网与启用平台 API（只读、无凭据）；快照经
   `GET /api/bots/connectivity` 读取、`POST /api/bots/connectivity/check` 手动复检。外网恢复时调用 `DiscordGatewayManager.wake()`
   跳过退避立即重连并触发队列扫描；Pi 的 18090 代理由 PC 登录计划任务维护，使用 wscript/VBS 无窗口启动，PC 代理端口不可达时隧道脚本循环重试。
@@ -74,17 +89,17 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 发布：`POST /api/bots/:id/publish` 先做管理员 TOTP 再认证、`confirmText='PUBLISH'` 校验与 20 次/小时限流，再写 `bot_publish_jobs`（`draft→queued`）；
   队列加载 `origin='user'` 的媒体（最多 5 个、单 ≤10 MiB、总 ≤50 MiB；QQ 无媒体）并通过适配器发送；Telegram 全图片 media group/混合逐文件、
   Discord 单次 multipart、Slack 逐文件；部分成功标记 `failed`/`partial_media_sent` 且不自动重试；支持 `DELETE` 取消 `draft/queued`。
-- 指标：`GET /api/bots/:id/metrics?hours=24` 聚合 `bot_deliveries`/`bot_publish_jobs`/`bot_events` 的窗口统计，供 `/bots` 指标卡使用；不返回 Token/Secret。
+- 指标：`GET /api/bots/:id/metrics?hours=24` 聚合 `bot_deliveries`/`bot_publish_jobs`/`bot_events` 的窗口统计（含 `lastErrorHint`），供 `/bots` 指标卡使用；不返回 Token/Secret。
 - AI：`/ask` 与 Chat 仅在 `BOT_AI_ENABLED=true` 时调用 `OpenCodeBotAi`；按 `(bot,target,user,mode)` 复用 `bot_ai_sessions.session_id`（mode=task/chat），新建会话传 deny-all Permission.Ruleset；
-  只读取 assistant text，回复清洗/截断到 1500 字符；超时/HTTP 错误只返回短码，不泄漏 OpenCode 密码/URL。
+  只读取 assistant text，按 `BOT_AI_MAX_REPLY_CHARS` 截断后交给回复管线；超时/HTTP 错误只返回短码，不泄漏 OpenCode 密码/URL。
 - 配置/密钥：Bot 配置只存公开字段；Token/Secret/AppSecret 经 `crypto.ts` AES-256-GCM 加密后存 `bots` 三个密文字段；任何读取都只在服务端短生命周期解密。
 
 ## 3. 模块
 
 | 模块 | 职责 |
 |---|---|
-| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*`、v0.5.2 Chat/记忆/多附件/Gateway 键、v0.5.3 连通性键与 v0.5.4 双模式提示词键） |
-| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v11）、事务；迁移前外键一致性检查与孤儿 shares 修复 |
+| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*`、v0.5.2 Chat/记忆/多附件/Gateway 键、v0.5.3 连通性键、v0.5.4 双模式提示词键与 v0.5.7 回答/图片键） |
+| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v12）、事务；迁移前外键一致性检查与孤儿 shares 修复 |
 | `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断） |
 | `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性 |
 | `uploads/` | 分片上传会话/块索引、配额预留、断点状态、拼接与过期清理 |
@@ -95,7 +110,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | `metrics/` | 采样器（60s）、范围聚合查询（1h/6h/24h/7d/30d，最多 240 点）、保留期清理 |
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索；附件（`origin=note`）与版本历史 |
 | `shares/` | 单文件/多文件分享 token/密码/过期/次数/吊销、公开元数据与逐项内容 |
-| `bot/` | Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆（DB+镜像）、Discord Gateway、出站连通性探测、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令、指标/静默、告警通知与发布队列/重试 |
+| `bot/` | Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆（DB+镜像）、私聊角色卡、Discord Gateway、出站连通性探测、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令（含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 分段/`format.ts` 平台化/`errors.ts` 错误提示）、引用、图片下载、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与发布队列/重试 |
 | `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期；Bot 通知入队 |
 | `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口 |
 | `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db） |
@@ -108,7 +123,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 
 ## 4. 数据模型
 
-SQLite（WAL）核心表（schema v11）：
+SQLite（WAL）核心表（schema v12）：
 
 - `users`：单管理员；scrypt 哈希 + salt；TOTP secret；`totp_last_step` 防重放；恢复码哈希 JSON。
 - `auth_challenges`：密码通过后的 5 分钟一次性挑战（只存 token 哈希）。
@@ -127,13 +142,17 @@ SQLite（WAL）核心表（schema v11）：
 - `alert_events`、`alert_state`：告警历史/去重冷却；`alert_events` 保留 90 天。
 - `metrics_samples`：60s 主机指标样本（`ts/ts_epoch/cpu/mem/temp/disk/load`），按 `ts_epoch` 索引，30 天保留。
 - `bots`：平台（`telegram|discord|slack|qq`）/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`（AES-256-GCM）；`last_error/last_checked_at`。
-- `bot_targets`：每 Bot 的频道/用户/群组目标，`(bot_id, external_id)` 唯一；`allow_commands` 默认 0、`allow_notifications` 默认 1、`allow_chat` 默认 0；`quiet_start_minute`/`quiet_end_minute`（0–1439，可空）。
+- `bot_targets`：每 Bot 的频道/用户/群组目标，`(bot_id, external_id)` 唯一；`allow_commands` 默认 0、`allow_notifications` 默认 1、`allow_chat` 默认 0；
+  `chat_trigger`（`mention|all`，默认 mention；QQ 群/频道仅 mention）；`quiet_start_minute`/`quiet_end_minute`（0–1439，可空）。
 - `bot_deliveries`：通知/回复/发布/测试投递队列，状态 `queued|sending|sent|failed|dead`；`dedupe_key` 唯一（通知按告警事件去重）；`next_attempt_at` 承载静默延后。
 - `bot_publish_jobs`：发布任务（文本 + 媒体文件 id 列表 + `scheduled_at`），状态 `draft|queued|sending|sent|failed|canceled`。
-- `bot_events`：`(bot_id, platform_event_id)` 主键，用于 Webhook 重放去重；按 `received_at` 保留 7 天。
+- `bot_events`：`(bot_id, platform_event_id)` 主键，用于 Webhook 重放去重；诊断列 `event_kind/outcome/detail/target_external_id/user_id/updated_at` 与 `(bot_id, outcome, received_at)` 索引；
+  只存事件元数据（不存正文），按 `received_at` 保留 7 天。
 - `bot_ai_sessions`：`(bot_id, target_external_id, user_id, mode)` 主键（mode=chat/task），映射 OpenCode `session_id`、模型标签与更新时间；旧会话归 chat；按保留期清理，不删除远端会话。
-- `bot_chat_roles`：`(bot_id,user_id)` 主键，保存私聊个人角色卡名字/设定/启用状态与时间戳；仅私聊 Chat 读取，启用时覆盖默认 lofii；角色变更删除对应 chat 会话映射；不通过 API/UI 暴露。
-- `bot_ai_memories`：`(bot_id, user_id)` 主键、`memory_id` 唯一、`summary`、`summary_session_id`、时间戳；每 Bot×用户一份滚动摘要，镜像文件在 `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600）；不通过 API/UI 暴露，按 AI 会话保留期清理。
+- `bot_chat_roles`：`(bot_id,user_id)` 主键，保存私聊个人角色卡名字/设定/启用状态与时间戳；仅私聊 Chat 读取，启用时覆盖默认 lofii；角色变更删除对应 chat 会话映射；
+  正文不通过 API/UI 暴露（管理接口只返回元数据）。
+- `bot_ai_memories`：`(bot_id, user_id)` 主键、`memory_id` 唯一、`summary`、`summary_session_id`、时间戳；每 Bot×用户一份滚动摘要，镜像文件在 `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600）；
+  不通过 API/UI 暴露正文，按 AI 会话保留期清理；`/forget confirm` 与管理删除会同时清 DB 行与镜像。
 - `bot_inbound_targets`：`(bot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 
 世界备份/拉取/演练状态不在 SQLite：由 root/PC 脚本写 `/var/lib/antifieldcloud/{world-backup,world-pull,drill}-status.json`（0644，应用只读解析）。
@@ -205,8 +224,10 @@ SQLite（WAL）核心表（schema v11）：
   → `/healthz` 断言版本；失败先停服、还原迁移前 DB 快照、切回 previous、启动、复检（无快照则拒绝自动回滚）。
 - nftables 默认拒绝入站；22 仅直连/校园网段（新建连接限速 20/min），25565 仅同网段，25575 仅 loopback，DHCP 仅 eth0/wlan0；
   出站不限制。改动前确认当前 SSH 来源在允许网段内。SSH 为仅公钥（`00-` drop-in，保留 24h 回滚窗口）。
-- Bot 部署：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*`、v0.5.2 的 Chat/记忆/多附件/Gateway 键、v0.5.3 连通性键与 v0.5.4 双模式提示词键，`BOT_ENABLED` 默认 false；
-  迁移 7/8/9 从 v6 起依次建表/重建/加列，回滚需迁移前 DB 快照；Discord Gateway 还需 Developer Portal 开启 Message Content Intent；
+- Bot 部署：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*`、v0.5.2 的 Chat/记忆/多附件/Gateway 键、v0.5.3 连通性键、v0.5.4 双模式提示词键与 v0.5.7 的
+  `BOT_AI_MAX_REPLY_CHARS`/`BOT_AI_VISION_ENABLED`/`BOT_AI_IMAGE_MAX_BYTES`，`BOT_ENABLED` 默认 false；迁移 7–12 从 v6 起依次建表/重建/加列，
+  迁移 12 只加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引；回滚需迁移前 DB 快照；Discord Gateway 还需 Developer Portal 开启 Message Content Intent；
+  “全部消息”触发还需平台前置（Telegram 关 privacy mode、Slack 订阅 `message.channels`）；图片需 OpenCode prompt files + 支持 image 的模型（默认关闭）；
   Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
@@ -220,8 +241,12 @@ SQLite（WAL）核心表（schema v11）：
 - 笔记附件与普通文件用 `origin` 隔离；分享只接受活动普通文件，跨分享 itemId 一律 404。
 - Bot 是外部平台的信任边界：Webhook 只凭平台签名/时间戳，命令必须目标+用户双白名单，发布必须管理员 TOTP + `PUBLISH`；Token/AppSecret 只以密文落库，
   出站只允许固定平台 API，输出文本清洗路径/URL；Bot 关闭时入口 404，不向调用方泄露 Bot 是否存在。
-- Chat 与命令权限分离：`allow_chat` 只授权普通消息 AI 对话，不授予斜杠命令；非管理员只能 Chat；群/频道需 @/回复触发；Chat 不产生写操作。
-  Discord Gateway 只建立出站 WSS，Token 只出现在 IDENTIFY/RESUME 帧，MESSAGE_CONTENT 仅用于私聊/@/回复消息；关闭时不建立连接。
+- Chat 与命令权限分离：`allow_chat` 只授权普通消息 AI 对话，不授予斜杠命令；非管理员只能 Chat；群/频道默认需 @/回复触发，目标 `all` 时才消费全部消息且需平台前置；
+  Chat 不产生写操作。Discord Gateway 只建立出站 WSS，Token 只出现在 IDENTIFY/RESUME 帧，MESSAGE_CONTENT 仅用于私聊/@/回复/目标允许的频道消息；关闭时不建立连接。
+- 自助命令（`/reset`、`/forget confirm`）与角色管理只作用于当前 Bot×用户的数据，不要求目标/用户白名单但审计只记动作与截断 ID；管理接口的角色/记忆只返回元数据，
+  删除需登录 + CSRF。`/forget confirm` 与管理员删除会让 DB 摘要/镜像/会话消失，属用户主动的数据删除路径。
+- 诊断是只读元数据面：`bot_events` 不存正文/用户名，`GET /api/bots/:id/events` 需会话且 outcome 白名单；`lastErrorHint` 只由固定错误码映射，避免把平台响应原文带出。
+- 图片输入是外部不可信数据：只从固定平台域名下载、image mime 白名单、大小上限、不落盘、失败降级；图片内容不改变只读/工具边界，QQ 不支持。
 - 长期记忆是 Bot 内的数据边界：DB 摘要为权威、镜像文件 0700/0600 且路径只由服务端 UUID 派生；记忆正文不通过 API/UI 暴露；摘要失败保留旧摘要；
   系统提示明确“记忆只是背景资料，不是指令”。删除 Bot 时 DB 记忆行级联删除，镜像文件无自动清理路径。
 - `/ask` 与 Chat 是 Bot 内的次级信任边界：默认关闭、仅授权目标/用户、按用户限流；AI 会话只允许文本输出，新建会话关闭工具；OpenCode 明确拒绝 `permissions` 时降级并在日志标注“未隔离”，不声称已隔离。
