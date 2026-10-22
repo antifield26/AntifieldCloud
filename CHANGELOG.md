@@ -15,7 +15,7 @@
 - 2026-10-22 部署 `20261022T065126Z`/commit `df06383` 到生产 Pi，schema 保持 v9；`/healthz` 0.5.3、完整 Access smoke 24/24。
 - 迁移前 DB 快照 `db-predeploy-20261022T065156149Z.sqlite`；部署后 inc `snapshot-20261022T065651320Z-inc.tar.gz` + 密钥包 `secrets-20261022T065652Z.tar.age`（secrets=ok）。
 - Windows 隧道计划任务已安装；断开/恢复 PC 代理的实测日志为 `Bot 出站网络不可用` → `Bot 出站网络已恢复` → `Discord Gateway 网络恢复，立即重连` → `会话已恢复`。
-- QQ 群仍无入站事件，平台侧事件订阅/Bot 入群 @ 待复核。
+- QQ 群事件 `68611590B477339A04302BB23B426244` 到达后审计 `bot.chat.denied`，定位为群目标未登记；登记 `kind=group`（`allow_chat=1`/`allow_commands=1`）后用户确认群 @Bot 收到 AI 回复。
 
 ### Security
 

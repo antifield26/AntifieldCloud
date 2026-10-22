@@ -15,7 +15,7 @@
 - 当前 schema v9（迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`，迁移前快照 `db-predeploy-20261022T065156149Z.sqlite`；带 Access token 的 smoke 24/24）。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且 Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；v0.5.3 出站连通性探测/自动恢复已实测，QQ 群事件仍待平台订阅/入群 @ 复核。
+- 生产现状：v0.5.3/schema v9（release `20261022T065126Z`，commit `df06383`，迁移前快照 `db-predeploy-20261022T065156149Z.sqlite`；带 Access token 的 smoke 24/24）。QQ 回调、AI 真实模型与 Cloudflare Access 已在 v0.5.1 配置并验收；生产 `BOT_DISCORD_GATEWAY_ENABLED=true` 且 Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认；v0.5.3 出站连通性探测/自动恢复已实测。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 

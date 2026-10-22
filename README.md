@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.3（生产已部署，release `20261022T065126Z`/commit `df06383`/schema v9；Node.js 运行时 **v26.12.1**；Bot 出站连通性探测/自动恢复、Windows 隧道计划任务、QQ 群事件诊断、OpenCode **v2.1.2**；Gateway 已连接，Discord DM/#general @Bot/QQ C2C 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.3（生产已部署，release `20261022T065126Z`/commit `df06383`/schema v9；Node.js 运行时 **v26.12.1**；Bot 出站连通性探测/自动恢复、Windows 隧道计划任务、QQ 群事件诊断、OpenCode **v2.1.2**；Gateway 已连接，Discord DM/#general @Bot/QQ C2C/QQ 群 @Bot 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -149,9 +149,9 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
 - Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书留 v0.5.4，多管理员审批未实现；QQ 群/频道目标仍待真实场景补充。
-- v0.5.3：Bot 出站连通性（代理端口/外网/平台 API）探测与自动恢复；Windows 代理隧道计划任务；QQ 群事件审计诊断；OpenCode v2.1.2。v0.5.2 的 Chat/Gateway 已实发确认；QQ 群仍需平台订阅 `GROUP_AT_MESSAGE_CREATE` 且 @Bot。
+- v0.5.3：Bot 出站连通性（代理端口/外网/平台 API）探测与自动恢复；Windows 代理隧道计划任务；QQ 群事件诊断；OpenCode v2.1.2。v0.5.2 的 Chat/Gateway 已实发确认；QQ 群事件已定位为群目标未登记并修复，@Bot AI 回复已确认。
 - v0.5.2 已部署；生产 Gateway 已开启并连接、QQ C2C 与 Discord #general 目标已开 `allow_chat`，其他目标默认关闭；Discord Gateway 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot。
-- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.2 Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已由用户实发确认；v0.5.3 出站网络与 QQ 群事件诊断待部署后验证，多附件真实平台外发与 /status 按钮仍待验收。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot Chat；多附件真实平台外发、按钮与 Telegram/Slack 仍待验收。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。

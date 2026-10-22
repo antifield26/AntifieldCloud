@@ -2,7 +2,7 @@
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
 v0.5.3 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增出站连通性探测/自动恢复。
-企业微信/钉钉/飞书（v0.5.4）与多管理员审批仍未实现。生产已部署 v0.5.3/schema v9（release `20261022T065126Z`），Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；v0.5.3 出站连通性断开/恢复已实测，QQ 群仍无入站事件（平台订阅/入群 @ 待复核）。
+企业微信/钉钉/飞书（v0.5.4）与多管理员审批仍未实现。生产已部署 v0.5.3/schema v9（release `20261022T065126Z`），Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已实发确认；v0.5.3 出站连通性断开/恢复已实测。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
@@ -194,6 +194,7 @@ Discord Gateway 启用后若无法连接，`BotSummary.gateway.state` 会显示 
 5. 有事件但无回复：查看 `/bots` 出站网络卡片（设备在线/代理端口/QQ 平台延迟）和投递 `lastError`；QQ 回复需经代理访问 `bots.qq.com`/`api.sgroup.qq.com`。
 
 v0.5.2 当前生产只有 QQ C2C 目标与事件，未出现群入站事件；因此“群无响应”的首个待查项是平台事件订阅/Bot 入群/@，而不是 Chat 授权。
+v0.5.3 生产已出现群事件 `68611590B477339A04302BB23B426244`，审计 `bot.chat.denied` 证实根因是群目标未登记；登记 `kind=group`（`allow_chat=1`/`allow_commands=1`）后用户确认群 @Bot 已收到 AI 回复。
 
 ## 7. 记忆存储与运维
 
@@ -215,8 +216,8 @@ v0.5.2 当前生产只有 QQ C2C 目标与事件，未出现群入站事件；�
 - v0.5.3 新增：`bot-connectivity.test.ts`（5）覆盖代理端口/外网/平台探测与恢复回调；Gateway `wake` 测试；QQ 未知事件 detail。
 - 本地基线：`npm test` 300、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接；
-  v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot 与 QQ C2C 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
-  OpenCode v2.1.2 Basic/session 通过；QQ 群无入站事件（平台订阅/入群 @ 待复核），多附件/按钮/Telegram/Slack 仍待补充。
+  v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 `68611590B477339A04302BB23B426244` 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
+  OpenCode v2.1.2 Basic/session 通过；多附件/按钮/Telegram/Slack/QQ 频道仍待补充。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→
   私聊/群 @Bot 发普通消息确认 Chat → 发 `/status` 确认命令与按钮 → 发布 1/5 个媒体（含 partial 失败场景）→
   多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→ Discord 开启 intent 后确认 Gateway `connected`。
