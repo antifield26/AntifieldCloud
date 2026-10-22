@@ -13,6 +13,7 @@ param(
 # First run: .\scripts\deploy.ps1 -Provision -ServerConfig -AllowDirty
 
 $ErrorActionPreference = "Stop"
+try { $PSNativeCommandUseErrorActionPreference = $false } catch { }
 $root = Split-Path -Parent $PSScriptRoot
 $target = "$PiUser@$PiHost"
 $tag = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
@@ -25,8 +26,14 @@ $switched = $false
 
 function Invoke-Remote {
   param([string]$Command, [int]$TimeoutSeconds = 120, [string]$Label = "")
-  $out = & ssh.exe -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 $target $Command 2>&1
-  $code = $LASTEXITCODE
+  $oldPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try {
+    $out = & ssh.exe -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 $target $Command 2>&1
+    $code = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $oldPreference
+  }
   return [pscustomobject]@{
     Code = $code
     Output = (($out | ForEach-Object { "$_" }) -join "`n").Trim()
@@ -87,7 +94,7 @@ try {
   }
 
   Write-Host "== installing release =="
-  $install = "sudo install -d -m 0755 $releaseDir && sudo tar -xzf /tmp/lofii-bot-$tag.tar.gz -C $releaseDir && cd $releaseDir && sudo timeout 900 /usr/local/bin/npm ci --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir"
+  $install = "sudo install -d -m 0755 $releaseDir && sudo tar -xzf /tmp/lofii-bot-$tag.tar.gz -C $releaseDir && sudo chmod 0755 $releaseDir && cd $releaseDir && sudo timeout 900 /usr/local/bin/npm ci --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir"
   Must-Remote -Command $install -Label "install release" | Write-Host
 
   $previousTarget = (Invoke-Remote -Command "readlink -f $currentLink 2>/dev/null || true" -Label "read current").Output
