@@ -139,6 +139,7 @@ export class PresenceManager {
         latencyMs: null,
         lastPingAt: new Date().toISOString()
       })
+      this.deps.state.setPresence(0, `server unreachable: ${message}`)
       this.deps.state.setState('idle', `server unreachable: ${message}`)
       this.deps.logger.warn('server unreachable', { error: message })
       this.probeBackoffMs = Math.min(60000, Math.max(this.deps.config.presencePollMs, this.probeBackoffMs * 2))
@@ -207,6 +208,8 @@ export class PresenceManager {
     const { state, controller, logger, config } = this.deps
     logger.info('presence: leaving because no other players', { graceMs: config.presenceGraceMs })
     state.setState('cooldown', 'no other players; leaving')
+    state.setPresence(0, 'no other players; leaving')
+    state.setServer({ ...state.server, online: 0 })
     this.lastQuitAt = Date.now()
     try {
       await controller.stop('no players')
@@ -238,6 +241,7 @@ export class PresenceManager {
       if (this.stopped) return
       const message = error instanceof Error ? error.message : String(error)
       this.deps.logger.warn('presence: connect failed', { error: message })
+      this.deps.state.setPresence(0, `connect failed: ${message}`)
       this.scheduleBackoff(`connect failed: ${message}`, isFatalLoginReason(message))
     } finally {
       this.connecting = false
@@ -256,6 +260,8 @@ export class PresenceManager {
     this.lastQuitAt = Date.now()
     this.deps.state.recordDisconnect(reason)
     this.deps.state.clearPlayer()
+    this.deps.state.setPresence(0, `disconnected: ${reason}`)
+    this.deps.state.setServer({ ...this.deps.state.server, online: 0 })
     this.deps.state.setState('backoff', `disconnected: ${reason}`)
     this.deps.logger.warn('presence: unexpected disconnect', { reason })
     this.scheduleBackoff(`disconnected: ${reason}`, isFatalLoginReason(reason))
