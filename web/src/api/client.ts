@@ -23,6 +23,7 @@ import type {
   BotDelivery,
   BotInboundTarget,
   BotMetrics,
+  BotConnectivitySnapshot,
   BotPublishInput,
   BotPublishJob,
   BotStatus,
@@ -1055,6 +1056,12 @@ export const api = {
   bots: {
     status(signal?: AbortSignal): Promise<BotStatus> {
       return get<BotStatus>('/api/bots/status', { signal })
+    },
+    connectivity(signal?: AbortSignal): Promise<BotConnectivitySnapshot> {
+      return get<BotConnectivitySnapshot>('/api/bots/connectivity', { signal })
+    },
+    checkConnectivity(): Promise<BotConnectivitySnapshot> {
+      return post<BotConnectivitySnapshot>('/api/bots/connectivity/check')
     },
     async list(signal?: AbortSignal): Promise<BotSummary[]> {
       const result = await get<{ items: BotSummary[] }>('/api/bots', { signal })

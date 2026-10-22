@@ -175,7 +175,7 @@ export interface SendResult {
 export type ChatTrigger = 'direct' | 'mention' | 'reply'
 
 export type InboundVerification =
-  | { kind: 'ignored'; ackBody?: unknown }
+  | { kind: 'ignored'; ackBody?: unknown; detail?: string }
   | { kind: 'challenge'; body: unknown }
   | { kind: 'rejected'; status: number; code: string }
   | {

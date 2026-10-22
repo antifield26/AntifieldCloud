@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.5.3] - 2026-10-22
+
+### Added
+
+- **Bot 出站连通性与自动恢复**：新增 `server/src/bot/connectivity.ts`，按“代理端口 → 外网 → 各平台 API”三层探测，默认每 60 秒一次（`BOT_CONNECTIVITY_ENABLED`/`BOT_CONNECTIVITY_INTERVAL_SECONDS`/`BOT_CONNECTIVITY_TIMEOUT_SECONDS`；`BOT_PROXY_URL` 留空时复用 `HTTPS_PROXY`/`HTTP_PROXY`）。代理端口恢复或外网恢复时自动唤醒 Discord Gateway 重连并触发队列扫描；`GET /api/bots/connectivity` 与 `POST /api/bots/connectivity/check` 返回不含凭据的状态。
+- **Bot 概览出站网络卡片**：展示设备在线、代理端口、外网、Discord/Telegram/Slack/QQ 平台探测延迟，支持手动复检；每 60 秒自动刷新。
+- **Windows 代理隧道自恢复**：新增 `scripts/discord-tunnel.ps1` 与 `scripts/install-tunnel-task.ps1`。先探测 PC 代理端口 10090，再建立 SSH 反向隧道；SSH 退出/代理不可用时循环重试；计划任务登录启动并异常重启。
+- **QQ 群事件诊断**：QQ 适配器对未知事件/空正文返回 `detail`，服务端审计 `bot.event.ignored`（只记录 QQ 事件类型，不记录正文），用于确认群事件是否到达；群事件仍需 `GROUP_AT_MESSAGE_CREATE` 订阅、Bot 入群 @ 与目标登记。
+- **OpenCode v2.1.2**：生产从 v2.1.1 升级到 v2.1.2（备份二进制/数据/env/unit，重启后 Basic API 200，兼容性见 `docs/DEPLOY.md` §3.2）。
+
+### Security
+
+- 连通性探测只做无凭据只读 GET，不携带 Bot Token/AppSecret；响应/日志不包含平台响应正文。
+- 代理隧道计划任务以当前用户 Limited 权限运行，仅转发 loopback；日志不包含 Token。
+- Node.js 运行时已更新到 v26.12.1（v0.5.2 维护项，见下）。
+
+### Docs
+
+- README/AGENTS/CHANGELOG/ACCEPTANCE/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BOT 同步到 v0.5.3；新增连通性接口、界面、Windows 任务与 QQ 群排查步骤。
+
 ## [v0.5.2] - 2026-10-21
 
 ### Added
@@ -38,7 +58,7 @@
 
 ### Known limitations（v0.5.2 明确不做）
 
-- 企业微信/钉钉/飞书留 v0.5.3；多管理员/审批流不做；QQ 媒体不做；Slack 按钮不做。
+- 企业微信/钉钉/飞书留 v0.5.4；多管理员/审批流不做；QQ 媒体不做；Slack 按钮不做。
 - Discord Gateway 已有进程内假 WebSocket 测试；生产已开启并记录 `Gateway 已连接`，MESSAGE_CONTENT 负路径/断线重连仍待观察。
 - Telegram/Slack/Discord/QQ 的真实 Chat 与多附件仅覆盖 mock 契约测试；生产 QQ C2C 与 Discord #general 已开 `allow_chat`，需按 `docs/DEPLOY.md` §9.8 实发联调。
 - 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。

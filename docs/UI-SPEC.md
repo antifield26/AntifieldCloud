@@ -300,9 +300,9 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - 单请求仍受 100 MiB/Cloudflare 代理限制；分片块 8 MiB 远低于限制，5 GiB 文件约 640 块。
 
-## 15. v0.5.2 机器人页
+## 15. v0.5.3 机器人页
 
-> v0.5.1 引入机器人页；v0.5.2 增加目标 Chat、最近入站目标、发布多选媒体与 Discord Gateway 状态。
+> v0.5.1 引入机器人页；v0.5.2 增加目标 Chat、最近入站目标、发布多选媒体与 Discord Gateway 状态；v0.5.3 增加出站网络卡片。
 
 ### 入口与布局
 
@@ -318,6 +318,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示）。
 - 概览提示：命令与 Chat 均为只读（含 `/ask`），发布需 TOTP + `PUBLISH` 双确认。
 - Bot 列表/选择：名称、平台、启用徽章、目标数、密钥版本、最近检查时间；Discord Bot 额外显示 `Gateway 已连接/连接中/重连中/错误/未启用`；点击切换到该 Bot（并进入配置分区）。
+- “出站网络”卡片（v0.5.3，概览顶部）：设备在线（代理端口 + 外网）、代理主机:端口、外网延迟、Discord/Telegram/Slack/QQ 各平台探测状态与延迟；“检测”按钮调用 `POST /api/bots/connectivity/check`，页面每 60 秒读取 `GET /api/bots/connectivity`；不可达时显示 warning，不展示任何 Token/Secret。
 - 空态：“还没有机器人” + “新建 Bot”（平台含 QQ）；加载中 `SkeletonText`；错误 `InlineError` + 重试。
 
 ### 配置

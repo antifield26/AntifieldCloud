@@ -318,6 +318,20 @@ test('Discord Gateway：MESSAGE_CREATE 解析频道/DM/mention/reply 并忽略 b
   }
 })
 
+test('Discord Gateway：wake 跳过退避立即重连', () => {
+  const { manager, sockets } = setup()
+  try {
+    manager.start()
+    ready(sockets[0]!)
+    sockets[0]!.closeFromServer(4000)
+    assert.equal(sockets.length, 1)
+    manager.wake()
+    assert.equal(sockets.length, 2)
+  } finally {
+    manager.stop()
+  }
+})
+
 test('Discord Gateway：stop 关闭连接并停止重连', async () => {
   const { manager, sockets } = setup()
   try {

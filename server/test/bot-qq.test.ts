@@ -332,6 +332,7 @@ test('QQ：篡改签名、过期时间戳与异常载荷均被拒绝', async () 
   assert.equal(unknown.kind, 'ignored')
   if (unknown.kind !== 'ignored') throw new Error('expected ignored')
   assert.deepEqual(unknown.ackBody, { opcode: 12 })
+  assert.equal(unknown.detail, 'qq:event:MESSAGE_CREATE')
 
   const otherOp = await adapter.verifyInbound({
     botId: 'bot-1',

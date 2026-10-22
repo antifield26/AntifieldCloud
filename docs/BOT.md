@@ -1,8 +1,8 @@
-# Bot 集成（v0.5.2）
+# Bot 集成（v0.5.3）
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）和手动/定时内容发布接到社交平台。
-v0.5.2 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat。
-企业微信/钉钉/飞书（v0.5.3）与多管理员审批仍未实现。生产已部署 v0.5.2/schema v9，Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认，多附件/按钮待补充。
+v0.5.3 支持 **Telegram、Discord、Slack、QQ 官方 Bot**；QQ 仅文本；Telegram/Discord 提供只读按钮；Discord 支持 Gateway 长连接与普通消息 Chat；新增出站连通性探测/自动恢复。
+企业微信/钉钉/飞书（v0.5.4）与多管理员审批仍未实现。生产已部署 v0.5.2/schema v9（v0.5.3 待部署），Discord Gateway 已连接；Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认，v0.5.3 出站连通性/QQ 群诊断待部署验证。
 
 > 安全边界：Bot Token/Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台签名鉴权；
 > 斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；发布必须 TOTP + `PUBLISH` 二次确认；
@@ -143,7 +143,7 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 | `BOT_DISCORD_GATEWAY_ENABLED` | `false` | Discord Gateway 长连接开关；需先开启 Message Content Intent |
 
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 Token/AppSecret 无法解密；必须重新录入所有 Bot 凭据。不要把它写入仓库/前端/日志。
-`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*` 与 v0.5.2 的 6 项新键；`--force` 不会重置已有非空值。
+`bootstrap-env.sh` 已纳管 v0.5.1 的 7 项 `BOT_AI_*`、v0.5.2 的 6 项与 v0.5.3 的 4 项连通性键；`--force` 不会重置已有非空值。
 
 ## 6. 网络出站（Discord/Telegram/QQ/OpenCode）
 
@@ -171,6 +171,30 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 Discord Gateway 启用后若无法连接，`BotSummary.gateway.state` 会显示 `error` 并在配置页展示脱敏原因（Token/intent/网络）。
 `/ask` 与 Chat 只访问 `OPENCODE_URL`（默认 `http://127.0.0.1:4096`），不走外部代理；不要修改固定上游。不要把代理凭据写入仓库；本机部署信息放在 gitignored 的 `.local/DEPLOYMENT.md`。
 
+### 6.1 连通性探测与自动恢复（v0.5.3）
+
+- `BOT_CONNECTIVITY_ENABLED=true` 时，服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测：
+  1. 代理 URL（`BOT_PROXY_URL`，空则用 `HTTPS_PROXY`/`HTTP_PROXY`）的 TCP 端口；
+  2. 经代理的 `https://discord.com/api/v10/gateway` 外网探测；
+  3. 每个启用平台的只读 API URL（Discord/Telegram/Slack/QQ），4xx 也算网络可达。
+- `GET /api/bots/connectivity` 返回 `deviceOnline`、代理 host/port、外网与各平台延迟；`POST /api/bots/connectivity/check` 手动复检（30 次/分钟）；`/bots` 概览卡片展示这些状态。
+- 外网从不可达恢复时调用 `DiscordGatewayManager.wake()` 跳过退避立即重连，并触发投递/发布队列扫描；探测不携带 Bot 凭据、不记录响应正文。
+- PC 端隧道：先运行 `.\scripts\install-tunnel-task.ps1`（登录启动、异常重启），后台脚本会先探测 PC 代理 10090，不可用时持续重试；任务日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。
+  判据：计划任务 `Running`，Pi `ss -ltn | grep 18090` 有监听，`/bots` 显示设备在线/代理端口存活。
+
+### 6.2 QQ 群/频道无响应排查（v0.5.3）
+
+按顺序确认，避免把平台配置问题误判为代码问题：
+
+1. QQ 开放平台已订阅群事件 `GROUP_AT_MESSAGE_CREATE`（频道为 `AT_MESSAGE_CREATE`），回调地址为 `https://app.<域名>/api/bot/webhook/<botId>`，且回调校验 `op=13` 已通过。
+2. Bot 已被拉入该群/频道；QQ 群消息必须 **@Bot** 才会推送给机器人，普通群聊不会产生事件。
+3. 发送后查看服务端：`bot_events` 是否有新事件；若事件到达但正文为空/未知，会记录 `audit_log.action='bot.event.ignored'`（只含事件类型，不含正文）。
+   若 `bot_inbound_targets` 出现 `target_kind='group'`，到 `/bots` 目标分区从“最近入站目标”登记该 group_openid，再开启 `allow_chat`（命令另开 `allow_commands`）。
+4. 若没有新事件，优先检查开放平台事件订阅、Bot 入群状态与 @ 方式；入站 Webhook 不依赖出站代理。
+5. 有事件但无回复：查看 `/bots` 出站网络卡片（设备在线/代理端口/QQ 平台延迟）和投递 `lastError`；QQ 回复需经代理访问 `bots.qq.com`/`api.sgroup.qq.com`。
+
+v0.5.2 当前生产只有 QQ C2C 目标与事件，未出现群入站事件；因此“群无响应”的首个待查项是平台事件订阅/Bot 入群/@，而不是 Chat 授权。
+
 ## 7. 记忆存储与运维
 
 - DB `bot_ai_memories`：`(bot_id, user_id)` 主键、`memory_id` 唯一、`summary`、`summary_session_id`、时间戳；DB 是权威来源。
@@ -188,7 +212,7 @@ Discord Gateway 启用后若无法连接，`BotSummary.gateway.state` 会显示 
   `bot-migration.test.ts` 覆盖 v6→v9（`allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）。
 - Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；QQ 使用固定 AppSecret 派生密钥对；AI 使用假 OpenCode HTTP 服务；
   Discord Gateway 使用假 WebSocket（HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码）。
-- 本地基线：`npm test` 293（服务端 277 + 运维脚本 16）、`npm run test:web` 140（28 文件）、`npm run check` 通过（2026-10-21）。
+- 本地基线：`npm test` 300、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接，QQ C2C 与 Discord #general 已开 `allow_chat`；
   生产 Discord DM、Discord #general @Bot 与 QQ C2C 普通消息 Chat 已实发确认；多附件/按钮/记忆多轮行为待补充验证，Telegram/Slack/QQ 群/频道待目标开启后联调。
 - 手工验收：创建/启用 Bot → 添加目标并勾选 `allow_chat`（命令另勾 `allow_commands` 并登记 user 白名单）→

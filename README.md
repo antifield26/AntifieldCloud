@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.2（生产已部署，release `20261021T114908Z`/commit `abeabc7`/schema v9；Node.js 运行时已安全更新到 **v26.12.1**；Bot Chat/长期记忆/多附件/只读按钮/Discord Gateway；Gateway 已连接，Discord DM/#general @Bot/QQ C2C 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.3（生产部署待执行；上一版 v0.5.2 release `20261021T114908Z`/schema v9；Node.js 运行时 **v26.12.1**；Bot 出站连通性探测/自动恢复、Windows 隧道计划任务、QQ 群事件诊断、OpenCode **v2.1.2**；Gateway 已连接，Discord DM/#general @Bot/QQ C2C 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -11,7 +11,7 @@
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
 - Bot：Telegram Bot API、Discord Interactions（Ed25519）+ Gateway 长连接、Slack Events API/Slash Command（HMAC）、QQ 官方 Bot（op=13 Ed25519 回调校验 + op=0 事件回调）；普通消息 Chat 与 `/ask` 共用本地 OpenCode AI，长期记忆落 DB + `DATA_DIR/bot-memory` 镜像；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用平台 API
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 277 + 运维脚本 16 = 293）+ Vitest/jsdom（前端 140），ESLint，`tsc --noEmit`，覆盖率门禁
+- 测试：`node --test`（服务端 + 运维脚本 300）+ Vitest/jsdom（前端 141），ESLint，`tsc --noEmit`，覆盖率门禁
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -53,7 +53,7 @@
 - HTTP 与 WebSocket 均校验 `Origin`（仅 app/ai 正式 origin；WS 必须带合法 Origin），拒绝时 403 + 审计。
 - `OPENCODE_HTML_MODE=shim|attributes|passthrough` 兼容 Rocket Loader/自动注入差异，不添加可见 UI。
 
-### 机器人（v0.5.2）
+### 机器人（v0.5.3）
 
 - Telegram、Discord、Slack、QQ 官方 Bot 四个适配器：Telegram 用 `X-Telegram-Bot-Api-Secret-Token`，Discord 用 Ed25519 + 时间戳，Slack 用 HMAC-SHA256 + 时间戳，QQ 用 AppSecret 派生 Ed25519（op=13 回调地址校验、op=0 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。QQ 仅支持文本（C2C/群@/频道，单条 ≤2000 字符），不支持媒体。
 - **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话（Telegram/Slack/QQ Webhook 与 Discord Gateway）；群/频道仅 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊直接进入；非管理员只能 Chat，管理员斜杠命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读，不执行写操作。每 Bot×用户每分钟默认 6 次，并与 `/ask` 共用每小时 10 次 AI 配额。
@@ -61,11 +61,13 @@
 - **多附件**：单次最多 5 个、单文件 ≤10 MiB、总 ≤50 MiB；Telegram 全图片走 media group、混合类型逐文件，Discord 单次 multipart，Slack 逐文件上传后一次完成；QQ 仅文本。部分成功不自动重试（标记 `failed`/`partial_media_sent`，需人工重建）。
 - **只读按钮**：Telegram inline keyboard 与 Discord message components 支持 `/status`、`/help` 的“刷新状态/帮助”按钮；按钮动作需目标 `allow_commands` + user 白名单，只调用只读 provider，无写操作；Slack/QQ 本轮不做按钮。
 - **Discord Gateway**：`server/src/bot/discord-gateway.ts` 使用 Node 内置 WebSocket 建立长连接，`intents=37377`（含 `MESSAGE_CONTENT`）；需在 Developer Portal 开启 Message Content Intent；支持 HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避重连与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭（生产已设为 true），`BotSummary.gateway` 展示连接状态。
+- **出站连通性（v0.5.3）**：`server/src/bot/connectivity.ts` 每 60 秒按“代理端口 → 外网 → 平台 API”探测；`GET /api/bots/connectivity` 返回设备在线/代理端口/外网/平台状态，`POST /api/bots/connectivity/check` 手动复检；网络恢复后自动 `wake` Discord Gateway 并触发队列扫描；`/bots` 概览展示“出站网络”卡片。
+- **Windows 代理隧道**：`scripts/discord-tunnel.ps1` 先探测 PC 代理 10090，再建 SSH 反向隧道；`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启的计划任务，解决 PC 重启或隧道退出后 Bot 无出站的问题。
 - 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布四个分区；目标支持 `allowChat` 与“最近入站目标”登记；发布表单多选媒体；Token/Webhook Secret/Signing Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
 - 只读命令 `/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`，以及 AI 命令 `/ask <问题>`：必须同时命中目标的 `allow_commands` 与显式 user 白名单（`kind='user'` 且 `allow_commands=1`）；`/ask` 仅在 `BOT_AI_ENABLED=true` 时可用，按用户每小时限流（默认 10 次），复用 OpenCode 会话，新建会话使用 deny-all 工具权限；不返回文件内容或密钥。
 - 告警通知：告警事件写入后按目标 `allow_notifications` 入队，按告警事件去重；目标可配置 `quietStartMinute`/`quietEndMinute`（Asia/Shanghai 本地分钟，0–1439），静默窗口内的通知延后到结束时刻；通知文本清洗内部路径/URL 后外发。
 - 发布：文本 + 最多 5 个云端普通文件媒体（单文件 ≤10 MiB、总 ≤50 MiB），目标必须是频道/群组；每次发布要求管理员 TOTP 再认证（`totpCode`）且请求体必须带 `confirmText: 'PUBLISH'`，缺失返回 `publish_confirm_required`；可定时（≤30 天）、取消 queued/draft、失败指数退避重试与手动重投；QQ 仅文本、拒绝媒体。
-- 运维：`GET /api/bots/status`、`GET /api/bots/:id/metrics?hours=24`、`GET /api/bots/:id/inbound-targets` 返回运行/投递/发布/事件统计与最近入站目标；`/bots` 展示近 24 小时指标卡与 Discord Gateway 状态。
+- 运维：`GET /api/bots/status`、`GET /api/bots/connectivity`、`GET /api/bots/:id/metrics?hours=24`、`GET /api/bots/:id/inbound-targets` 返回运行/连通性/投递/发布/事件统计与最近入站目标；`/bots` 展示近 24 小时指标卡、Discord Gateway 与出站网络状态。
 - 默认 `BOT_ENABLED=false`：关闭时 Webhook 与写接口返回 404/503；`BOT_SECRET_KEY` 丢失后已存 Token 无法解密，只能重新录入。Bot 不可用时不影响应用主功能。
 
 ### 可观测性与告警
@@ -106,7 +108,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.3 -ExpectedSchemaVersion 9`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
 
 ## 目录
 
@@ -146,9 +148,10 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
-- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书留 v0.5.3，多管理员审批未实现；QQ 群/频道目标仍待真实场景补充。
+- Bot 已知限制：QQ 官方 Bot 仅文本、不支持媒体；单次发布最多 5 个媒体文件（单 10 MiB、总 50 MiB，QQ 无媒体）；命令严格只读；Slack/QQ 按钮未实现；企业微信/钉钉/飞书留 v0.5.4，多管理员审批未实现；QQ 群/频道目标仍待真实场景补充。
+- v0.5.3：Bot 出站连通性（代理端口/外网/平台 API）探测与自动恢复；Windows 代理隧道计划任务；QQ 群事件审计诊断；OpenCode v2.1.2。v0.5.2 的 Chat/Gateway 已实发确认；QQ 群仍需平台订阅 `GROUP_AT_MESSAGE_CREATE` 且 @Bot。
 - v0.5.2 已部署；生产 Gateway 已开启并连接、QQ C2C 与 Discord #general 目标已开 `allow_chat`，其他目标默认关闭；Discord Gateway 需 Developer Portal 开启 Message Content Intent，Telegram 群需关闭 privacy mode 或回复 Bot。
-- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.2 Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已由用户实发确认；多附件真实平台外发与 /status 按钮仍待验收。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.2 Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已由用户实发确认；v0.5.3 出站网络与 QQ 群事件诊断待部署后验证，多附件真实平台外发与 /status 按钮仍待验收。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。

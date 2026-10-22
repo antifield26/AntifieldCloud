@@ -7,12 +7,15 @@ import type {
   BotStatus,
   BotSummary,
   BotTarget,
+  BotConnectivitySnapshot,
 } from '../api/types'
 import { ToastProvider } from '../components/Toast'
 import { Bots } from './Bots'
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(),
+  connectivity: vi.fn(),
+  checkConnectivity: vi.fn(),
   list: vi.fn(),
   get: vi.fn(),
   create: vi.fn(),
@@ -38,6 +41,8 @@ vi.mock('../api/client', () => ({
   api: {
     bots: {
       status: mocks.status,
+      connectivity: mocks.connectivity,
+      checkConnectivity: mocks.checkConnectivity,
       list: mocks.list,
       get: mocks.get,
       create: mocks.create,
@@ -165,6 +170,21 @@ function job(overrides: Partial<BotPublishJob> = {}): BotPublishJob {
   }
 }
 
+function connectivity(overrides: Partial<BotConnectivitySnapshot> = {}): BotConnectivitySnapshot {
+  return {
+    checkedAt: '2026-10-22T00:00:00.000Z',
+    checking: false,
+    deviceOnline: true,
+    proxy: { configured: true, host: '127.0.0.1', port: 18090, portReachable: true, latencyMs: 1, error: null },
+    internet: { reachable: true, latencyMs: 120, status: 200, error: null },
+    platforms: {
+      discord: { reachable: true, latencyMs: 140, status: 200, error: null },
+      qq: { reachable: true, latencyMs: 180, status: 404, error: null },
+    },
+    ...overrides,
+  }
+}
+
 function renderPage() {
   return render(
     <ToastProvider>
@@ -175,6 +195,8 @@ function renderPage() {
 
 beforeEach(() => {
   mocks.status.mockResolvedValue(botStatus())
+  mocks.connectivity.mockResolvedValue(connectivity())
+  mocks.checkConnectivity.mockResolvedValue(connectivity())
   mocks.list.mockResolvedValue([bot()])
   mocks.get.mockResolvedValue(bot())
   mocks.create.mockResolvedValue(bot({ id: 'bot-2', name: '新 Bot', targetsCount: 0 }))
@@ -242,6 +264,15 @@ describe('Bots 机器人管理', () => {
     renderPage()
     expect(await screen.findByText('还没有配置 Bot')).toBeTruthy()
     expect(screen.getByRole('button', { name: '创建第一个 Bot' })).toBeTruthy()
+  })
+
+  it('概览展示出站连通性并支持手动复检', async () => {
+    renderPage()
+    expect(await screen.findByRole('heading', { name: '出站网络' })).toBeTruthy()
+    expect(await screen.findByText('设备在线')).toBeTruthy()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: '检测' }))
+    await waitFor(() => expect(mocks.checkConnectivity).toHaveBeenCalledTimes(1))
   })
 
   it('创建表单校验必填项，填写后可提交公开配置', async () => {

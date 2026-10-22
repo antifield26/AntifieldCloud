@@ -14,6 +14,7 @@ import { InlineError } from '../components/InlineError'
 import { PageHeader } from '../components/PageHeader'
 import { SkeletonText } from '../components/Skeleton'
 import { BotConfigPanel } from '../components/bots/BotConfigPanel'
+import { BotConnectivityCard } from '../components/bots/BotConnectivityCard'
 import { BotDeliveryPanel } from '../components/bots/BotDeliveryPanel'
 import { BotOverview } from '../components/bots/BotOverview'
 import type { BotSelectTab } from '../components/bots/BotOverview'
@@ -315,16 +316,19 @@ export function Bots() {
             tabIndex={0}
           >
             {tab === 'overview' ? (
-              <BotOverview
-                status={status}
-                bots={bots}
-                loading={loading && bots.length === 0}
-                error={error}
-                selectedId={selectedId}
-                onRetry={() => void loadCore()}
-                onCreate={openCreate}
-                onSelect={selectBot}
-              />
+              <>
+                <BotConnectivityCard />
+                <BotOverview
+                  status={status}
+                  bots={bots}
+                  loading={loading && bots.length === 0}
+                  error={error}
+                  selectedId={selectedId}
+                  onRetry={() => void loadCore()}
+                  onCreate={openCreate}
+                  onSelect={selectBot}
+                />
+              </>
             ) : null}
 
             {tab === 'config' ? (

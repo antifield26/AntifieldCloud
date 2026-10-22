@@ -1,8 +1,16 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.2**（schema v9）；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`）。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.3**（schema v9）；生产待部署 v0.5.3，上一版 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`）。
 
-## v0.5.2 补充（当前）
+## v0.5.3 补充（当前）
+
+- **出站连通性**：`server/src/bot/connectivity.ts` 按代理端口 → 外网 → 平台 API 三层探测；默认 60s、超时 8s；`BOT_CONNECTIVITY_ENABLED`/`BOT_CONNECTIVITY_INTERVAL_SECONDS`/`BOT_CONNECTIVITY_TIMEOUT_SECONDS`/`BOT_PROXY_URL`；`GET /api/bots/connectivity`、`POST /api/bots/connectivity/check`；`/bots` 出站网络卡片展示设备在线/代理端口/外网/平台延迟。
+- **自动恢复**：外网恢复时调用 Discord Gateway `wake()` 跳过退避立即重连并触发队列 tick；Windows 端 `scripts/discord-tunnel.ps1` 先探测代理端口再建 SSH 反向隧道，`scripts/install-tunnel-task.ps1` 注册登录启动/异常重启计划任务。
+- **QQ 群诊断**：QQ 适配器未知事件/空正文带 detail；服务端审计 `bot.event.ignored`（仅事件类型，无正文）；群事件仍要求 `GROUP_AT_MESSAGE_CREATE` 订阅、Bot 入群 @ 和目标登记。
+- **OpenCode v2.1.2**：生产已从 v2.1.1 升级；备份、重启、`/api/session` 200，完整兼容性随 smoke 复核。
+- **状态**：版本 0.5.3；本地测试基线见 `docs/ACCEPTANCE.md`；生产部署与真实平台验收待执行。
+
+## v0.5.2 补充（历史）
 
 - **Bot Chat**：非斜杠普通消息进入 AI Chat；目标级 `allow_chat`（默认 0）与 `allow_commands` 分离；群/频道仅 @Bot 或回复 Bot，私聊全部；Telegram/Slack/QQ Webhook 与 Discord Gateway 支持；非管理员只能 Chat，管理员斜杠命令仍由 `allow_commands` 目标 + user 白名单双校验；Chat 只读，不执行写操作。
 - **长期记忆**：每 Bot×用户一份；DB `bot_ai_memories` 摘要为权威 + `summary_session_id`，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮滚动摘要；摘要失败保留旧摘要；记忆不通过 API/UI 暴露；系统提示内置，`BOT_AI_SYSTEM_PROMPT` 覆盖；摘要不额外占对话轮次或 AI 每小时配额。
@@ -46,7 +54,7 @@
 
 ## 目标
 
-在 v0.5.1 已交付的 Bot 平台（Telegram/Discord/Slack/QQ、`/ask`、指标/静默/发布双确认）基础上，完成 v0.5.2：**普通消息 Chat 与长期记忆、多附件发布、Telegram/Discord 只读按钮、Discord Gateway 长连接，以及目标 `allow_chat`/最近入站目标与 schema v9**；企业微信/钉钉/飞书留到 v0.5.3。
+在 v0.5.1 已交付的 Bot 平台（Telegram/Discord/Slack/QQ、`/ask`、指标/静默/发布双确认）基础上，完成 v0.5.2：**普通消息 Chat 与长期记忆、多附件发布、Telegram/Discord 只读按钮、Discord Gateway 长连接，以及目标 `allow_chat`/最近入站目标与 schema v9**；企业微信/钉钉/飞书留到 v0.5.4。
 
 ## 范围
 
@@ -159,7 +167,7 @@
 
 ## 非目标（v0.5.x 不做）
 
-企业微信/钉钉/飞书（v0.5.3）、Bot 多管理员审批、QQ 媒体、Slack/QQ 按钮、除 Discord Gateway 外的平台主动拉取/长连接、任意命令执行；目录打包分享、笔记公开分享、整包加密归档、异地副本/对象存储、WebDAV/rclone、Minecraft 启停/控制台、多用户与权限分离、SSD/LUKS 迁移、`antifield` sudo 收紧（用户确认后另做）。Cloudflare Access 只做 `app` 策略与 Bot/health/公开分享 bypass，不覆盖 `ai`（OpenCode 自身认证 + 应用会话已足够，后续再评估）。
+企业微信/钉钉/飞书（v0.5.4）、Bot 多管理员审批、QQ 媒体、Slack/QQ 按钮、除 Discord Gateway 外的平台主动拉取/长连接、任意命令执行；目录打包分享、笔记公开分享、整包加密归档、异地副本/对象存储、WebDAV/rclone、Minecraft 启停/控制台、多用户与权限分离、SSD/LUKS 迁移、`antifield` sudo 收紧（用户确认后另做）。Cloudflare Access 只做 `app` 策略与 Bot/health/公开分享 bypass，不覆盖 `ai`（OpenCode 自身认证 + 应用会话已足够，后续再评估）。
 
 ## 回滚
 

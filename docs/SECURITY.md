@@ -197,6 +197,9 @@
 25. **Node.js 运行时安全更新**：生产 `/usr/local/bin/node` 已从 v26.11.1 更新到 **v26.12.1**（2026-10-22，官方 linux-arm64 + SHA-256 校验）；
     旧二进制保留 `/usr/local/bin/node.v26.11.1` 以便回滚；npm/npx 仍指向 nvm（12.2.0），仅作构建/部署工具。后续安全更新应重复
     `docs/DEPLOY.md` §3.3 并跑带 Access token 的 smoke；Node 更新不影响 DB/schema。
+26. **Bot 出站连通性/隧道任务**：服务端探测只发无凭据只读 GET，不记录平台响应正文或 Token；`/api/bots/connectivity` 只返回主机/端口/延迟/错误码。
+    Windows 隧道计划任务以当前用户 Limited 权限运行，仅转发 `127.0.0.1:18090 → 127.0.0.1:10090`，日志不含凭据；PC 离线/代理端口不可用时
+    隧道脚本持续重试，服务端状态卡显示代理不可达。恢复后 Gateway 立即重连；不自动重启 PC 上的第三方代理进程。
 
 ## 5. 运维安全清单
 
@@ -209,6 +212,7 @@
 - 每周/启用 Bot 后检查：`GET /api/bots/status` 是否 `enabled=true`、`queuedDeliveries/queuedPublishes` 是否堆积、
   `/api/bots/:id/metrics` 的成功率/失败/死信、`bot_deliveries` 死信（`status='dead'`）与 `bots.last_error`；平台后台 Webhook/命令是否仍指向正确 URL；
   确认 Token/AppSecret 未出现在 `journalctl -u antifieldcloud`。启用 `/ask` 后检查 `BOT_AI_ENABLED`、`bot_ai_sessions` 保留与每小时限流是否合理。
+  启用 Chat/Gateway 后检查 `/api/bots/connectivity` 的 `deviceOnline`/代理端口/平台状态；PC 侧 `Get-ScheduledTask AntifieldCloudDiscordTunnel` 为 Running。
 - 每月检查：`systemctl --failed`、`journalctl -u antifieldcloud -p warning`、`nft list ruleset`（确认 22 来源网段）、
   `/sys/fs/cgroup/cgroup.controllers` 含 `memory`、`vcgencmd get_throttled`、`vcgencmd measure_temp`、磁盘/内存余量、
   `crontab -l` 不含旧 `minecraft-backups` 行。

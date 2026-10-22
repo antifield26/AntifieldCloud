@@ -836,6 +836,28 @@ export interface BotGatewayStatus {
   state: BotGatewayState
   lastError: string | null
 }
+export interface BotConnectivityProbe {
+  reachable: boolean
+  latencyMs: number | null
+  status: number | null
+  error: string | null
+}
+/** 出站连通性快照：代理端口 -> 外网 -> 各平台 API；不含凭据。 */
+export interface BotConnectivitySnapshot {
+  checkedAt: string | null
+  checking: boolean
+  deviceOnline: boolean
+  proxy: {
+    configured: boolean
+    host: string | null
+    port: number | null
+    portReachable: boolean
+    latencyMs: number | null
+    error: string | null
+  }
+  internet: BotConnectivityProbe
+  platforms: Partial<Record<BotPlatform, BotConnectivityProbe>>
+}
 export type BotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'test'
 export type BotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
 export type BotPublishStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled'

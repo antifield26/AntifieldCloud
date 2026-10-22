@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.2，数据库 schema v9（迁移 5/6/7/8 保留，迁移 9 增加 `bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`）。OpenCode 服务端 v2.1.1。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、Telegram/Discord/Slack/QQ 官方机器人（Chat/长期记忆/多附件/只读按钮/Discord Gateway/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.3，数据库 schema v9（迁移 5/6/7/8 保留，迁移 9 增加 `bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；生产已部署 v0.5.2/schema v9（release `20261021T114908Z`，commit `abeabc7`），v0.5.3 待部署。OpenCode 服务端 v2.1.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -45,7 +45,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY 标题及 lock 根版本一致
 ```
 
-当前基线：`npm test` **293** 项通过（服务端 277 + 运维脚本 16），`npm run test:web` **140** 项通过（28 个测试文件；本地实测 2026-10-21；`npm run check` 已通过）。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（含 QQ 官方 Bot、Chat、多附件、按钮与 Discord Gateway）同样只使用进程内假平台/假 WebSocket/假 OpenCode（不访问真实平台或模型）；使用进程内假服务器/夹具。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
+当前基线：`npm test` **300** 项通过（服务端 + 运维脚本），`npm run test:web` **141** 项通过（28 个测试文件；本地实测 2026-10-22；`npm run check` 已通过）。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（含 QQ 官方 Bot、Chat、多附件、按钮、Discord Gateway 与连通性探测）同样只使用进程内假平台/假 WebSocket/假 OpenCode（不访问真实平台或模型）；使用进程内假服务器/夹具。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
 
 ## 4. 目录与模块边界
 
@@ -60,7 +60,7 @@ server/src/
   uploads/           分片上传会话/块索引、配额预留、拼接与过期清理
   mc/                SLP、RCON、白名单
   opencode/          ai.* Host 的认证反代 + HTML 模式（shim/attributes/passthrough）+ Origin 校验
-  bot/               Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆、Discord Gateway、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令、指标/静默、通知/发布队列与重试
+  bot/               Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆、Discord Gateway、出站连通性探测、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令、指标/静默、通知/发布队列与重试
   backups/           归档导入/校验、文件级恢复（skippedMissing）、世界/拉取/演练状态只读
   dashboard/         主机指标、服务状态、备份状态、Bot 开关、轻量存储用量（/api/storage）
   metrics/           60s 主机指标采样、按范围分桶聚合、30 天保留清理
@@ -128,7 +128,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 - Pi：`antifield@192.0.2.10` 直连；WiFi 198.51.100.10 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；v0.5.2 安全更新，旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
-- opencode：`127.0.0.1:4096`，服务端 **v2.1.1**（2026-10-20 由 v2.0.32 升级；升级/回滚见 `docs/DEPLOY.md`），Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 opencode 与 antifieldcloud）。
+- opencode：`127.0.0.1:4096`，服务端 **v2.1.2**（2026-10-22 由 v2.1.1 升级；升级/回滚见 `docs/DEPLOY.md`），Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 opencode 与 antifieldcloud）。
 - Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（v0.2.0 已轮换为 32 位随机），
   服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。
 - Pi 已启用 memory cgroup（`cgroup.controllers` 含 `memory`）；`antifieldcloud-health.timer` 每 60s 写
@@ -158,6 +158,8 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   v0.5.2 新增：`BOT_CHAT_RATE_PER_MINUTE=6`（Chat 每 Bot×用户每分钟）、`BOT_AI_MEMORY_MAX_CHARS=4096`（记忆摘要上限 512–16384）、
   `BOT_AI_SYSTEM_PROMPT=`（空则使用内置提示，最长 2000）、`BOT_DISCORD_GATEWAY_ENABLED=false`（Discord Gateway 默认关闭）、
   `BOT_PUBLISH_MAX_MEDIA_FILES=5`（默认 5；UI 与 Telegram/Discord 适配器按 5 控制）、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES=52428800`（总媒体上限）；`bootstrap-env.sh` 已纳管这 6 项。
+  v0.5.3 新增：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`、
+  `BOT_PROXY_URL=`（空则复用 `HTTPS_PROXY`/`HTTP_PROXY`）；`bootstrap-env.sh` 已纳管这 4 项。
   `BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 Token/AppSecret 只能重新录入。
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对
   `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。
@@ -196,5 +198,6 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
     v0.5.2 若要启用普通消息 Chat：Discord 需在 Developer Portal 开启 **Message Content Intent** 并设 `BOT_DISCORD_GATEWAY_ENABLED=true`；
     Telegram 群需关闭 BotFather privacy mode 或让用户回复 Bot；QQ 群/频道需先把 Bot 拉入群并 @Bot 发一条消息，再到 `/bots` 目标分区
     从“最近入站目标”登记；最后给目标勾选 `allow_chat`。Chat 不授予斜杠命令权限，多附件发布仍受 5 个/10 MiB/50 MiB 限制。
-11. SSH 仅公钥切换后保留 **24h 回滚窗口**：期间保留旧 drop-in 备份与一个已建立的 SSH 会话；确认新会话/自动化脚本
+11. 安装 Windows Bot 代理隧道任务（`.\scripts\install-tunnel-task.ps1`，当前用户权限）：登录启动、异常重启，先探测 PC 代理 10090；日志 `%LOCALAPPDATA%\AntifieldCloud\discord-tunnel.log`。移除用 `-Remove`。
+12. SSH 仅公钥切换后保留 **24h 回滚窗口**：期间保留旧 drop-in 备份与一个已建立的 SSH 会话；确认新会话/自动化脚本
     （smoke、备份、世界拉取）均能公钥登录后，再按 `docs/DEPLOY.md` §9.7 结束回滚窗口。

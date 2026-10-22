@@ -29,7 +29,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.5.2", "schemaVersion": 9, "uptimeSec": 1234 }
+{ "ok": true, "version": "0.5.3", "schemaVersion": 9, "uptimeSec": 1234 }
 ```
 
 ## 2. 认证与账号
@@ -381,7 +381,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.5.2", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["telegram","discord","slack","qq"] }`。
+- `GET /api/version`（需要会话）：`{ "version": "0.5.3", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["telegram","discord","slack","qq"] }`。
 - `GET /api/storage`（需要会话；v0.4.0 轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
 - 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
@@ -538,7 +538,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `POST /api/notes/:id/versions/:versionId/restore` → 200 Note（恢复前自动保存当前版本快照）。
 - 版本在标题/正文/标签变化时自动生成，每笔记保留最近 `NOTE_VERSIONS_KEEP`（默认 20）条；删除笔记级联删除版本与附件。
 
-## 14. Bot 平台（v0.5.2）
+## 14. Bot 平台（v0.5.3）
 
 Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/bots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/bot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/DEPLOY.md` §5.2）。
 
@@ -546,10 +546,13 @@ Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` �
 
 v0.5.2 新增普通消息 Chat：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat（Telegram/Slack/QQ Webhook；Discord 普通消息经 Gateway）；群/频道仅 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊直接进入；非管理员只能 Chat，不能执行斜杠命令。Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6）次，并与 `/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）次。Chat 是只读 AI 对话，不产生写操作。Discord Gateway 的普通消息不经过 `POST /api/bot/webhook/:botId`，由服务端长连接消费；`BotSummary.gateway` 暴露状态。
 
+v0.5.3 新增 Bot 出站连通性：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测代理端口、外网与各启用平台 API；`GET /api/bots/connectivity` 返回快照，`POST /api/bots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 Token/AppSecret 或平台响应正文；网络恢复后服务端自动唤醒 Discord Gateway 并触发队列扫描。
+
 ### 对象
 
 ```json
 BotStatus:  { "enabled": true, "keyConfigured": true, "bots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null }
+BotConnectivitySnapshot: { "checkedAt": "…|null", "checking": false, "deviceOnline": true, "proxy": { "configured": true, "host": "127.0.0.1", "port": 18090, "portReachable": true, "latencyMs": 1, "error": null }, "internet": { "reachable": true, "latencyMs": 230, "status": 200, "error": null }, "platforms": { "discord": { "reachable": true, "latencyMs": 240, "status": 200, "error": null }, "qq": { "reachable": true, "latencyMs": 180, "status": 404, "error": null } } }
 BotSummary: { "id": "uuid", "platform": "telegram|discord|slack|qq", "name": "运维通知", "enabled": true, "config": {}, "webhookUrl": "https://app.example.com/api/bot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1, "gateway": { "state": "disabled|connecting|connected|reconnecting|error", "lastError": null } }
 BotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "频道/用户/群组 ID", "label": "运维告警频道", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
 BotInboundTarget: { "botId": "uuid", "targetExternalId": "平台目标 ID", "targetKind": "channel|user|group", "userId": "平台用户 ID", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
@@ -563,6 +566,8 @@ BotMetrics: { "hours": 24, "deliveries": { "total": 10, "sent": 8, "failed": 1, 
 ### 管理端点
 
 - `GET /api/bots/status` → `BotStatus`（功能关闭时也可读；用于前端判断是否展示配置指引）。
+- `GET /api/bots/connectivity` → `BotConnectivitySnapshot`；需要会话，功能关闭时仍返回当前快照/未检测状态。
+- `POST /api/bots/connectivity/check` → `BotConnectivitySnapshot`；需要会话 + CSRF，30 次/分钟；手动复检代理/外网/平台。
 - `GET /api/bots` → `{ "items": [BotSummary] }`；`GET /api/bots/:id` → `{ "bot": BotSummary }`；不存在/已删除 `404 not_found`。
   功能未启用时列表/详情返回 `503 bot_disabled|bot_key_missing`（前端应先用 `/api/bots/status` 判断）。
 - `GET /api/bots/:id/metrics?hours=24` → `{ "metrics": BotMetrics }`；`hours` 默认 24、范围 1–720，非法/越界值回退 24；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`。

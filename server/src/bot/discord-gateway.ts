@@ -185,6 +185,25 @@ export class DiscordGatewayManager {
     if (count > 0) this.log('info', 'Discord Gateway 已停止', { bots: count })
   }
 
+  /** 出站网络恢复时立即唤醒所有待重连连接，跳过长退避；已连接连接不受影响。 */
+  wake(): void {
+    if (!this.enabled || !this.started) return
+    let woken = 0
+    for (const connection of this.connections.values()) {
+      if (connection.stopped || connection.socket !== null) continue
+      if (connection.reconnectTimer) {
+        clearTimeout(connection.reconnectTimer)
+        connection.reconnectTimer = null
+      }
+      connection.reconnecting = true
+      connection.reconnectAttempts = 0
+      connection.lastError = null
+      this.connect(connection)
+      woken += 1
+    }
+    if (woken > 0) this.log('info', 'Discord Gateway 网络恢复，立即重连', { bots: woken })
+  }
+
   /** 根据 getBots() 对账：新增连接、移除连接、Token 变化重建、error 状态重试。 */
   sync(): void {
     if (!this.enabled) {

@@ -1,6 +1,15 @@
 # 路线图
 
-## v0.5.2（已部署，真实平台联调待开启）
+## v0.5.3（当前，待部署）
+
+- **Bot 出站连通性**：代理端口 TCP 存活 → 外网 → Discord/Telegram/Slack/QQ 平台 API 三层探测；默认 60s；`GET /api/bots/connectivity`、`POST /api/bots/connectivity/check`；`/bots` 出站网络卡片显示设备在线/代理端口/外网/平台延迟。
+- **自动重连**：网络恢复后 `DiscordGatewayManager.wake()` 跳过退避立即重连，并触发投递/发布队列扫描；Windows `discord-tunnel.ps1` 先探测 PC 代理 10090 再建 SSH，计划任务登录启动、异常重启。
+- **QQ 群排查**：QQ 未知事件/空正文带 detail，审计 `bot.event.ignored`（仅事件类型）；群事件需要开放平台订阅 `GROUP_AT_MESSAGE_CREATE`、Bot 入群 @ 与目标登记。当前生产 QQ 群无目标/无入站事件，C2C 正常。
+- **OpenCode v2.1.2**：生产已升级（v2.1.1 → v2.1.2），备份与回滚步骤见 `docs/DEPLOY.md` §3.2。
+- **状态**：本地测试/检查通过；生产 v0.5.2/schema v9，v0.5.3 部署与 smoke/真实平台验收待执行。
+- **下一版**：v0.5.4 企业微信/钉钉/飞书；多管理员/审批仍不做。
+
+## v0.5.2（历史，已部署）
 
 - **Bot Chat**：普通消息（非斜杠）在目标 `allow_chat=1` 时进入 AI Chat；群/频道仅 @Bot 或回复 Bot，私聊全部；Telegram/Slack/QQ Webhook 与 Discord Gateway 支持；非管理员只能 Chat，管理员斜杠命令仍由 `allow_commands` 目标 + user 白名单双校验；Chat 只读，不占写操作。
 - **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 摘要为权威（`summary_session_id`）+ `DATA_DIR/bot-memory/memory-<uuid>.md` 镜像（0700/0600）；每轮滚动摘要；摘要失败保留旧摘要；不通过 API/UI 暴露；系统提示内置，`BOT_AI_SYSTEM_PROMPT` 覆盖；不额外占对话轮次或 AI 每小时配额。
@@ -69,7 +78,7 @@
 
 ## 下一批候选（按价值排序）
 
-1. **更多 Bot 平台**：企业微信/钉钉/飞书（v0.5.3；需各自回调签名/加解密与媒体模型）；QQ 媒体能力待平台开放后再评估。
+1. **更多 Bot 平台**：企业微信/钉钉/飞书（v0.5.4；需各自回调签名/加解密与媒体模型）；QQ 媒体能力待平台开放后再评估。
 2. **Bot 多人审批/发布复核**：在单管理员 TOTP + `PUBLISH` 之外增加第二人复核或延时窗口；需先定义多管理员模型。
 3. **Slack 按钮**：Slack interactivity 与 `response_url`/`trigger_id` 语义，补齐与 Telegram/Discord 一致的只读按钮。
 4. **整包加密 + 异地副本**：普通归档仍含 TOTP/会话明文；优先评估 age/restic 整包加密、VPS/对象存储异地副本与生命周期。
@@ -97,7 +106,7 @@
 - v0.5.2 已部署，Discord Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；多附件/按钮需补充验证，Telegram/Slack/QQ 群/频道待目标开启后联调。
 - v0.5.2 多附件部分成功不自动重试（标记 `partial_media_sent`），需人工确认并重建；单次最多 5 个、单 10 MiB、总 50 MiB。
 - 记忆只保留摘要，不保存逐条对话；不提供导出/删除页面；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件不由删除路径清理，需按保留期/人工清理。
-- 企业微信/钉钉/飞书未实现（v0.5.3）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。
+- 企业微信/钉钉/飞书未实现（v0.5.4）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。
 - QQ 官方 Bot 仅文本、不支持媒体；真实回调需用户后台配置；群/频道目标仍需真实场景补充。
 - `/ask` 与 Chat 依赖 OpenCode 本地 API 与已配置模型；默认关闭，v0.5.1 生产已验证 `/ask`；v0.5.2 Chat/记忆真实模型行为待验收；deny-all 工具在 OpenCode 明确拒绝 `permissions` 时会降级并在日志标注未隔离。
 - Cloudflare Access 策略/bypass 与 service token 需用户后台配置，应用无法自证；smoke 的 Access token 仅用于测试，不替代应用认证。

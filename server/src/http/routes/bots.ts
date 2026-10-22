@@ -41,8 +41,16 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
   const csrf = csrfGuard(config)
   const publishLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
   const testLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
+  const connectivityLimiter = new SlidingWindowLimiter(60_000, 30)
 
   app.get('/api/bots/status', { preHandler: [requireAuth] }, async () => bots.status())
+
+  app.get('/api/bots/connectivity', { preHandler: [requireAuth] }, async () => bots.connectivityStatus())
+
+  app.post('/api/bots/connectivity/check', { preHandler: [requireAuth, csrf] }, async () => {
+    if (connectivityLimiter.hit('global') > 0) throw rateLimited(60)
+    return bots.checkConnectivity()
+  })
 
   app.get('/api/bots', { preHandler: [requireAuth] }, async () => ({ items: bots.listBots() }))
 

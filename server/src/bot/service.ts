@@ -33,6 +33,7 @@ import {
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { BotMemoryStore } from './memory.ts'
 import { DiscordGatewayManager } from './discord-gateway.ts'
+import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
 import { DiscordAdapter } from './adapters/discord.ts'
 import { QqAdapter } from './adapters/qq.ts'
 import { SlackAdapter } from './adapters/slack.ts'
@@ -188,6 +189,7 @@ export class BotService {
   private readonly chatLimiter: SlidingWindowLimiter
   private readonly memory: BotMemoryStore
   private readonly gateway: DiscordGatewayManager
+  private readonly connectivity: BotConnectivityMonitor
   private timer: NodeJS.Timeout | null = null
   private stopped = false
   private ticking = false
@@ -213,6 +215,18 @@ export class BotService {
             error: error instanceof Error ? error.message : 'unknown',
           })
         })
+      },
+    })
+    this.connectivity = new BotConnectivityMonitor({
+      enabled: deps.config.botEnabled && deps.config.botConnectivityEnabled,
+      intervalSeconds: deps.config.botConnectivityIntervalSeconds,
+      timeoutSeconds: deps.config.botConnectivityTimeoutSeconds,
+      proxyUrl: deps.config.botProxyUrl,
+      getPlatforms: () => this.enabledPlatforms(),
+      log: deps.log,
+      onRecover: () => {
+        this.gateway.wake()
+        this.scheduleTick()
       },
     })
     try {
@@ -254,6 +268,21 @@ export class BotService {
       queuedPublishes: publishes.c,
       lastError: lastError?.last_error ?? null,
     }
+  }
+
+  connectivityStatus(): ConnectivitySnapshot {
+    return this.connectivity.snapshot()
+  }
+
+  async checkConnectivity(): Promise<ConnectivitySnapshot> {
+    return this.connectivity.checkNow()
+  }
+
+  private enabledPlatforms(): BotPlatform[] {
+    const rows = this.db
+      .prepare('SELECT DISTINCT platform FROM bots WHERE enabled = 1')
+      .all() as unknown as { platform: string }[]
+    return rows.map((row) => row.platform).filter((platform): platform is BotPlatform => isBotPlatform(platform))
   }
 
   metrics(botId: string, hours = 24): BotMetrics {
@@ -621,6 +650,7 @@ export class BotService {
     this.timer.unref()
     this.scheduleTick()
     this.gateway.start()
+    this.connectivity.start()
   }
 
   stop(): void {
@@ -629,6 +659,7 @@ export class BotService {
       clearInterval(this.timer)
       this.timer = null
     }
+    this.connectivity.stop()
     this.gateway.stop()
   }
 
@@ -887,7 +918,10 @@ export class BotService {
       return { status: result.status, body: { error: { code: result.code } } }
     }
     if (result.kind === 'challenge') return { status: 200, body: result.body }
-    if (result.kind === 'ignored') return { status: 200, body: result.ackBody ?? { ok: true } }
+    if (result.kind === 'ignored') {
+      if (result.detail) this.deps.audit('bot.event.ignored', bot.id, { event: result.detail.slice(0, 80) })
+      return { status: 200, body: result.ackBody ?? { ok: true } }
+    }
     const inserted = this.db
       .prepare('INSERT OR IGNORE INTO bot_events (bot_id, platform_event_id, received_at) VALUES (?, ?, ?)')
       .run(bot.id, result.eventId, nowIso())

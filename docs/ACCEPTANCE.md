@@ -1,12 +1,24 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.2；v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.3；v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
 > **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`）；Discord DM、Discord #general @Bot、QQ C2C 的普通消息 Chat 已由用户实发确认收到 AI 回复，`bot_ai_sessions`/`bot_ai_memories` 已写入；其他目标仍默认关闭。
+>
+> **v0.5.3 进行中**：Bot 出站连通性探测/自动恢复、Windows 代理隧道计划任务、QQ 群事件诊断、OpenCode v2.1.2 已实现；本地测试通过，生产部署/smoke 待执行。
 
-## v0.5.2（当前，已部署）
+## v0.5.3（当前，待部署验收）
+
+- 日期：2026-10-22（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产当前仍为 v0.5.2/schema 9）+ Windows 本地工作区
+- **出站连通性**：新增 `server/src/bot/connectivity.ts`；代理端口 TCP 探测 + 外网/平台只读 GET；`GET /api/bots/connectivity` 与 `POST /api/bots/connectivity/check`；`/bots` 概览新增“出站网络”卡片（设备在线/代理端口/外网/平台延迟）。
+- **自动恢复**：网络从不可用恢复时，Discord Gateway `wake()` 跳过退避立即重连，并触发队列扫描；PC 隧道由 `scripts/install-tunnel-task.ps1` 注册登录启动、异常重启计划任务。
+- **QQ 群诊断**：QQ 适配器未知事件/空正文带 `detail`，服务端审计 `bot.event.ignored`（仅事件类型）；群事件需订阅 `GROUP_AT_MESSAGE_CREATE`、Bot 入群且被 @、目标登记。当前生产无 QQ 群目标/群事件，C2C 正常。
+- **OpenCode v2.1.2**：生产 v2.1.1 → v2.1.2 已完成（备份/重启/`/api/session` 200）；兼容性待完整 smoke 与 `/ask` 复核。
+- 本地验证：`npm test` 300、`npm run test:web` 141、`npm run check`、`check-version`；生产部署后补 smoke 与真实平台验收。
+
+## v0.5.2（历史，已部署）
 
 - 日期：2026-10-21（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产 release `20261021T114908Z`）+ Windows 本地工作区

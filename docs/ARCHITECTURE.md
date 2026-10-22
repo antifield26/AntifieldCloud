@@ -45,7 +45,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 指标采样：`metrics/sampler.ts` 每 `METRICS_SAMPLE_SECONDS`（默认 60）读取 HostMonitor 与配额用量写入 `metrics_samples`；维护任务按 `METRICS_RETENTION_DAYS`（默认 30）清理。
 - 公开分享：`/api/public/shares/:token/*` 不挂会话，但 POST 校验 Origin、按 IP/用户限流；内容支持 Range/HEAD/ETag，多文件走 `items/:itemId/content`。
 
-### 2.1 Bot 请求与队列路径（v0.5.2）
+### 2.1 Bot 请求与队列路径（v0.5.3）
 
 - 入站：`POST /api/bot/webhook/:botId` 在独立 Fastify scope 中以 raw body 解析（JSON 或 form，≤256 KiB），
   按 `CF-Connecting-IP` 做 120 次/分钟 IP 限流 → `BotService.handleWebhook` 校验 `BOT_ENABLED`/密钥/Bot 启用（否则 404）
@@ -62,6 +62,9 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 记忆：`BotMemoryStore` 以 `bot_ai_memories`（DB 权威）保存每 Bot×用户摘要与 `summary_session_id`，镜像到
   `DATA_DIR/bot-memory/memory-<uuid>.md`（0700/0600、临时文件 + 原子 rename）；每轮对话后调用 `BotAi.summarizeMemory` 滚动摘要，
   失败只记日志并保留旧摘要；记忆正文不进入 HTTP API/前端。
+- 连通性（v0.5.3）：`BotConnectivityMonitor` 每 60s 探测代理 TCP 端口、外网与启用平台 API（只读、无凭据）；快照经
+  `GET /api/bots/connectivity` 读取、`POST /api/bots/connectivity/check` 手动复检。外网恢复时调用 `DiscordGatewayManager.wake()`
+  跳过退避立即重连并触发队列扫描；Pi 的 18090 代理由 PC 登录计划任务维护，PC 代理端口不可达时隧道脚本循环重试。
 - 告警通知：`AlertService` 事件落库后调用 `BotService.notifyAlert`，按启用 Bot × `allow_notifications` 目标写 `bot_deliveries`
   （`dedupe_key=alert:<event>:<bot>:<target>`）；目标有静默时段且当前命中时，`next_attempt_at` 设为窗口结束；通知失败只记日志，不影响告警状态机。
 - 队列：`startBots()` 在 listen 后按 `BOT_DELIVERY_INTERVAL_SECONDS`（30s）`tick`：恢复 >10 分钟卡在 `sending` 的记录 →
@@ -91,7 +94,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 | `metrics/` | 采样器（60s）、范围聚合查询（1h/6h/24h/7d/30d，最多 240 点）、保留期清理 |
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索；附件（`origin=note`）与版本历史 |
 | `shares/` | 单文件/多文件分享 token/密码/过期/次数/吊销、公开元数据与逐项内容 |
-| `bot/` | Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆（DB+镜像）、Discord Gateway、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令、指标/静默、告警通知与发布队列/重试 |
+| `bot/` | Telegram/Discord/Slack/QQ 适配器、Chat/`/ask` AI、长期记忆（DB+镜像）、Discord Gateway、出站连通性探测、只读按钮、AES-256-GCM 凭据、Webhook 验签/去重、命令、指标/静默、告警通知与发布队列/重试 |
 | `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期；Bot 通知入队 |
 | `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口 |
 | `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db） |

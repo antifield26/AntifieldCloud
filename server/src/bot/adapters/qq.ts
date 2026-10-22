@@ -215,7 +215,7 @@ export class QqAdapter implements BotAdapter {
   private parseEvent(payload: Record<string, unknown>): InboundVerification {
     const eventType = typeof payload.t === 'string' ? payload.t : ''
     const d = asRecord(payload.d)
-    if (!d) return { kind: 'ignored', ackBody: QQ_ACK_BODY }
+    if (!d) return { kind: 'ignored', ackBody: QQ_ACK_BODY, detail: `qq:event:${eventType || 'unknown'}` }
     const author = asRecord(d.author)
 
     let route: { targetExternalId: string; userId: string; kind: QqTarget['kind']; isDirect: boolean }
@@ -242,7 +242,7 @@ export class QqAdapter implements BotAdapter {
         }
         break
       default:
-        return { kind: 'ignored', ackBody: QQ_ACK_BODY }
+        return { kind: 'ignored', ackBody: QQ_ACK_BODY, detail: `qq:event:${eventType || 'unknown'}` }
     }
     const { targetExternalId, userId, kind, isDirect } = route
     if (!targetExternalId || !userId) {
@@ -253,7 +253,7 @@ export class QqAdapter implements BotAdapter {
     // C2C 不包含平台 mention 前缀；群/频道先剥离开头的 @Bot 再判断命令或 Chat。
     const content = isDirect ? rawContent : stripMentionPrefix(rawContent)
     // 空消息也必须确认，避免 QQ 反复重推同一事件。
-    if (!content) return { kind: 'ignored', ackBody: QQ_ACK_BODY }
+    if (!content) return { kind: 'ignored', ackBody: QQ_ACK_BODY, detail: 'qq:event:empty_content' }
 
     const messageId = textValue(d.id)
     const eventTs = textValue(d.timestamp) || String(Math.floor(this.now().getTime() / 1000))

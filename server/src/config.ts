@@ -116,6 +116,12 @@ export interface Config {
   botAiMemoryMaxChars: number
   botAiSystemPrompt: string
   botDiscordGatewayEnabled: boolean
+  /** v0.5.3 出站连通性探测与自动恢复；默认开启。 */
+  botConnectivityEnabled: boolean
+  botConnectivityIntervalSeconds: number
+  botConnectivityTimeoutSeconds: number
+  /** 本机出站代理；空则使用 HTTPS_PROXY/HTTP_PROXY，供连通性探测展示。 */
+  botProxyUrl: string
   botPublishMaxMediaFiles: number
   botPublishMaxMediaTotalBytes: number
 }
@@ -269,7 +275,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.5.2'),
+    appVersion: str(merged, 'APP_VERSION', '0.5.3'),
     botEnabled: bool(merged, 'BOT_ENABLED', false),
     botSecretKey: str(merged, 'BOT_SECRET_KEY', ''),
     botWebhookMaxBodyBytes: int(merged, 'BOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
@@ -291,6 +297,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiMemoryMaxChars: int(merged, 'BOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
     botAiSystemPrompt: str(merged, 'BOT_AI_SYSTEM_PROMPT', '').slice(0, 2000),
     botDiscordGatewayEnabled: bool(merged, 'BOT_DISCORD_GATEWAY_ENABLED', false),
+    botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
+    botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
+    botConnectivityTimeoutSeconds: int(merged, 'BOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
+    botProxyUrl: str(
+      merged,
+      'BOT_PROXY_URL',
+      str(merged, 'HTTPS_PROXY', str(merged, 'HTTP_PROXY', '')),
+    ).trim(),
     botPublishMaxMediaFiles: int(merged, 'BOT_PUBLISH_MAX_MEDIA_FILES', 5, 1, 10),
     botPublishMaxMediaTotalBytes: int(
       merged,
