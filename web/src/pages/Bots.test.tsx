@@ -184,8 +184,6 @@ function connectivity(overrides: Partial<BotConnectivitySnapshot> = {}): BotConn
   return {
     checkedAt: '2026-10-22T00:00:00.000Z',
     checking: false,
-    deviceOnline: true,
-    proxy: { configured: true, host: '127.0.0.1', port: 18090, portReachable: true, latencyMs: 1, error: null },
     internet: { reachable: true, latencyMs: 120, status: 200, error: null },
     platforms: {
       qq: { reachable: true, latencyMs: 180, status: 404, error: null },
@@ -284,7 +282,7 @@ describe('Bots 机器人管理', () => {
   it('概览展示出站连通性并支持手动复检', async () => {
     renderPage()
     expect(await screen.findByRole('heading', { name: '出站网络' })).toBeTruthy()
-    expect(await screen.findByText('设备在线')).toBeTruthy()
+    expect(await screen.findByText('可直连')).toBeTruthy()
     expect((await screen.findAllByText('QQ 官方')).length).toBeGreaterThan(0)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '检测' }))

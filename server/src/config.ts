@@ -112,6 +112,12 @@ export interface Config {
   /** v0.5.2 Chat/记忆/多附件/Gateway。 */
   botChatRatePerMinute: number
   botAiMemoryMaxChars: number
+  /** 长期记忆自动清理周期（天）；与 7 天的会话映射保留期独立。 */
+  botAiMemoryRetentionDays: number
+  /** 累计多少条 Chat 后合并触发一次记忆摘要。 */
+  botAiMemoryBatchMessages: number
+  /** 用户空闲多少秒后合并触发记忆摘要；0 表示关闭空闲触发、只按条数触发。 */
+  botAiMemoryIdleFlushSeconds: number
 
   /** AI 回答最大字符数；QQ 适配器会按平台上限分段发送。 */
   botAiMaxReplyChars: number
@@ -123,8 +129,6 @@ export interface Config {
   botConnectivityEnabled: boolean
   botConnectivityIntervalSeconds: number
   botConnectivityTimeoutSeconds: number
-  /** 本机出站代理；空则使用 HTTPS_PROXY/HTTP_PROXY，供连通性探测展示。 */
-  botProxyUrl: string
 }
 
 const DEFAULT_ENV_FILE = '/etc/antifieldcloud/env'
@@ -295,17 +299,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiSessionRetentionDays: int(merged, 'BOT_AI_SESSION_RETENTION_DAYS', 7, 1, 90),
     botChatRatePerMinute: int(merged, 'BOT_CHAT_RATE_PER_MINUTE', 30, 1, 120),
     botAiMemoryMaxChars: int(merged, 'BOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
+    botAiMemoryRetentionDays: int(merged, 'BOT_AI_MEMORY_RETENTION_DAYS', 365, 30, 3650),
+    botAiMemoryBatchMessages: int(merged, 'BOT_AI_MEMORY_BATCH_MESSAGES', 3, 1, 20),
+    botAiMemoryIdleFlushSeconds: int(merged, 'BOT_AI_MEMORY_IDLE_FLUSH_SECONDS', 120, 0, 3600),
     botAiMaxReplyChars: int(merged, 'BOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
     botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', true),
     botAiImageMaxBytes: int(merged, 'BOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),
     botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
     botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
     botConnectivityTimeoutSeconds: int(merged, 'BOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
-    botProxyUrl: str(
-      merged,
-      'BOT_PROXY_URL',
-      str(merged, 'HTTPS_PROXY', str(merged, 'HTTP_PROXY', '')),
-    ).trim(),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')

@@ -106,13 +106,15 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     botAiSessionRetentionDays: 7,
     botChatRatePerMinute: 30,
     botAiMemoryMaxChars: 4096,
+    botAiMemoryRetentionDays: 365,
+    botAiMemoryBatchMessages: 1,
+    botAiMemoryIdleFlushSeconds: 0,
     botAiMaxReplyChars: 4000,
     botAiVisionEnabled: true,
     botAiImageMaxBytes: 10 * 1024 * 1024,
     botConnectivityEnabled: false,
     botConnectivityIntervalSeconds: 60,
     botConnectivityTimeoutSeconds: 8,
-    botProxyUrl: '',
     ...overrides,
   }
 }

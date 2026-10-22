@@ -838,19 +838,10 @@ export interface BotConnectivityProbe {
   status: number | null
   error: string | null
 }
-/** 出站连通性快照：代理端口 -> 外网 -> QQ 平台 API；不含凭据。 */
+/** 出站连通性快照：外网 -> QQ 平台 API（Pi 直连，不依赖代理隧道）；不含凭据。 */
 export interface BotConnectivitySnapshot {
   checkedAt: string | null
   checking: boolean
-  deviceOnline: boolean
-  proxy: {
-    configured: boolean
-    host: string | null
-    port: number | null
-    portReachable: boolean
-    latencyMs: number | null
-    error: string | null
-  }
   internet: BotConnectivityProbe
   platforms: Partial<Record<BotPlatform, BotConnectivityProbe>>
 }

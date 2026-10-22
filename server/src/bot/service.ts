@@ -265,6 +265,14 @@ export class BotService {
   private stopped = false
   private ticking = false
   private readonly pending = new Set<Promise<void>>()
+  /** 合并中的待摘要对话：按 Bot×用户去重，减少高频 Chat 的额外模型调用。 */
+  private readonly memoryPending = new Map<
+    string,
+    { bot: BotRow; userId: string; targetExternalId: string; rounds: { userText: string; assistantText: string }[] }
+  >()
+  private readonly memoryTimers = new Map<string, NodeJS.Timeout>()
+  /** 同一 Bot×用户的摘要串行执行，避免并发读到旧摘要后互相覆盖。 */
+  private readonly memoryQueues = new Map<string, Promise<void>>()
 
   constructor(deps: BotServiceDeps) {
     this.db = deps.db
@@ -280,7 +288,6 @@ export class BotService {
       enabled: deps.config.botEnabled && deps.config.botConnectivityEnabled,
       intervalSeconds: deps.config.botConnectivityIntervalSeconds,
       timeoutSeconds: deps.config.botConnectivityTimeoutSeconds,
-      proxyUrl: deps.config.botProxyUrl,
       getPlatforms: () => this.enabledPlatforms(),
       log: deps.log,
       onRecover: () => {
@@ -626,12 +633,13 @@ export class BotService {
     })
   }
 
-  /** 删除角色卡，并清理该 Bot×用户的全部会话映射（下次 Chat 重新创建会话）。 */
+  /** 删除角色卡，并清理该 Bot×用户的全部会话映射与远端会话（下次 Chat 重新创建会话）。 */
   deleteRole(botId: string, userId: string): void {
     this.requireEnabled()
     this.botRow(botId)
     const card = this.roles.get(botId, userId)
     if (!card || !this.roles.remove(botId, userId)) throw notFound('角色卡不存在')
+    this.deleteRemoteSessions(botId, { userId })
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(botId, userId)
     this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
       action: 'delete',
@@ -889,6 +897,7 @@ export class BotService {
 
   stop(): void {
     this.stopped = true
+    this.flushPendingMemory()
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
@@ -1459,7 +1468,7 @@ export class BotService {
     }
   }
 
-  /** `/reset`：删除当前 Bot×目标×用户的会话映射，长期记忆保留。 */
+  /** `/reset`：删除当前 Bot×目标×用户的会话映射与远端会话，长期记忆保留。 */
   private resetConversation(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
@@ -1469,7 +1478,7 @@ export class BotService {
     return '已重置当前对话（长期记忆保留）。'
   }
 
-  /** `/forget confirm`：清除长期记忆（DB+镜像）与该 Bot×用户的全部会话上下文；幂等。 */
+  /** `/forget confirm`：清除长期记忆（DB+镜像）、全部会话映射与远端会话；幂等。 */
   private forgetMemory(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
@@ -1478,6 +1487,7 @@ export class BotService {
     if (args.trim().toLowerCase() !== 'confirm') {
       return '用法：/forget confirm（将清除长期记忆与全部对话上下文，此操作不可恢复）。'
     }
+    this.deleteRemoteSessions(bot.id, { userId: result.userId })
     const removed = this.memory.remove(bot.id, result.userId)
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
     this.deps.audit('bot.memory.forget', bot.id, { bot: bot.id, user: result.userId.slice(0, 64), removed: removed ? 1 : 0 })
@@ -1564,11 +1574,53 @@ export class BotService {
     return roleUsage()
   }
 
-  /** 删除当前 Bot×目标×用户的会话映射（保留远端会话历史，下一次 Chat 重新建立映射）。 */
+  /** 删除当前 Bot×目标×用户的会话映射，并尽力删除对应远端会话（保留远端历史以外的副本）。 */
   private resetChatSession(botId: string, targetExternalId: string, userId: string): void {
+    this.deleteRemoteSessions(botId, { targetExternalId, userId })
     this.db
       .prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ?')
       .run(botId, targetExternalId, userId)
+  }
+
+  /**
+   * 尽力删除本地映射对应的远端 OpenCode 会话（含旧摘要会话）。
+   * 远端删除异步执行并纳入 pending；失败只记日志，不阻塞命令响应。
+   */
+  private deleteRemoteSessions(
+    botId: string,
+    filter: { targetExternalId?: string; userId?: string },
+  ): void {
+    if (!this.deps.ai?.deleteSession) return
+    const clauses = ['bot_id = ?']
+    const params: string[] = [botId]
+    if (filter.targetExternalId) {
+      clauses.push('target_external_id = ?')
+      params.push(filter.targetExternalId)
+    }
+    if (filter.userId) {
+      clauses.push('user_id = ?')
+      params.push(filter.userId)
+    }
+    const rows = this.db
+      .prepare(`SELECT session_id FROM bot_ai_sessions WHERE ${clauses.join(' AND ')}`)
+      .all(...params) as unknown as { session_id: string }[]
+    const summaryClauses = ['bot_id = ?', 'summary_session_id IS NOT NULL']
+    const summaryParams: string[] = [botId]
+    if (filter.userId) {
+      summaryClauses.push('user_id = ?')
+      summaryParams.push(filter.userId)
+    }
+    const memories = this.db
+      .prepare(`SELECT summary_session_id FROM bot_ai_memories WHERE ${summaryClauses.join(' AND ')}`)
+      .all(...summaryParams) as unknown as { summary_session_id: string }[]
+    const ids = new Set<string>()
+    for (const row of rows) if (row.session_id) ids.add(row.session_id)
+    for (const row of memories) if (row.summary_session_id) ids.add(row.summary_session_id)
+    for (const sessionId of ids) {
+      const task = this.deps.ai.deleteSession(sessionId).catch(() => undefined)
+      this.pending.add(task)
+      void task.finally(() => this.pending.delete(task))
+    }
   }
 
   private async executeChat(
@@ -1754,7 +1806,10 @@ export class BotService {
     return cleaned.slice(0, this.config.botAiMaxReplyChars)
   }
 
-  /** 回复已发送后再更新长期记忆，避免摘要模型调用拖慢用户可见回复。 */
+  /**
+   * 回复已发送后再更新长期记忆：按 Bot×用户合并待摘要对话，
+   * 达到条数阈值或用户空闲后触发一次摘要，减少高频 Chat 的额外模型调用。
+   */
   private scheduleMemoryUpdate(
     bot: BotRow,
     userId: string,
@@ -1763,9 +1818,62 @@ export class BotService {
     assistantText: string,
   ): void {
     if (!this.deps.ai?.summarizeMemory) return
-    const task = this.updateMemory(bot, userId, targetExternalId, userText, assistantText)
+    const key = `${bot.id}:${userId}`
+    const entry = this.memoryPending.get(key) ?? { bot, userId, targetExternalId, rounds: [] }
+    entry.bot = bot
+    entry.targetExternalId = targetExternalId
+    entry.rounds.push({ userText, assistantText })
+    this.memoryPending.set(key, entry)
+    const existing = this.memoryTimers.get(key)
+    if (existing) {
+      clearTimeout(existing)
+      this.memoryTimers.delete(key)
+    }
+    if (entry.rounds.length >= Math.max(1, this.config.botAiMemoryBatchMessages)) {
+      this.flushMemory(key)
+      return
+    }
+    const idleSeconds = this.config.botAiMemoryIdleFlushSeconds
+    if (idleSeconds > 0) {
+      const timer = setTimeout(() => {
+        this.memoryTimers.delete(key)
+        this.flushMemory(key)
+      }, idleSeconds * 1000)
+      timer.unref()
+      this.memoryTimers.set(key, timer)
+    }
+  }
+
+  /** 把某用户待摘要批次送入串行队列；同用户摘要严格顺序执行，避免并发覆盖。 */
+  private flushMemory(key: string): void {
+    const timer = this.memoryTimers.get(key)
+    if (timer) {
+      clearTimeout(timer)
+      this.memoryTimers.delete(key)
+    }
+    const entry = this.memoryPending.get(key)
+    if (!entry) return
+    this.memoryPending.delete(key)
+    const rounds = entry.rounds.length
+    const userText = entry.rounds.map((round) => round.userText).join('\n---\n')
+    const assistantText = entry.rounds.map((round) => round.assistantText).join('\n---\n')
+    const previous = this.memoryQueues.get(key) ?? Promise.resolve()
+    const task = previous
+      .catch(() => undefined)
+      .then(() => this.updateMemory(entry.bot, entry.userId, entry.targetExternalId, userText, assistantText, rounds))
+    this.memoryQueues.set(key, task)
     this.pending.add(task)
-    void task.finally(() => this.pending.delete(task))
+    void task.finally(() => {
+      this.pending.delete(task)
+      if (this.memoryQueues.get(key) === task) this.memoryQueues.delete(key)
+    })
+  }
+
+  /** 进程停止前把待摘要批次全部入队；不阻塞关闭流程。 */
+  private flushPendingMemory(): void {
+    for (const key of [...this.memoryPending.keys()]) this.flushMemory(key)
+    for (const timer of this.memoryTimers.values()) clearTimeout(timer)
+    this.memoryTimers.clear()
   }
 
   private async updateMemory(
@@ -1774,6 +1882,7 @@ export class BotService {
     targetExternalId: string,
     userText: string,
     assistantText: string,
+    rounds: number,
   ): Promise<void> {
     try {
       const memory = this.memory.get(bot.id, userId)
@@ -1781,14 +1890,18 @@ export class BotService {
         botId: bot.id,
         userId,
         memoryId: memory.memoryId,
-        sessionId: memory.sessionId,
         existing: memory.summary,
         userText,
         assistantText,
         maxChars: this.config.botAiMemoryMaxChars,
       })
-      this.memory.save(bot.id, userId, memory.memoryId, updated.summary, updated.sessionId)
-      this.deps.audit('bot.ai.memory', `${bot.platform}:${targetExternalId}`, { bot: bot.id, user: userId.slice(0, 64) })
+      // 摘要使用一次性远端会话，不再保存摘要会话 id。
+      this.memory.save(bot.id, userId, memory.memoryId, updated.summary, null)
+      this.deps.audit('bot.ai.memory', `${bot.platform}:${targetExternalId}`, {
+        bot: bot.id,
+        user: userId.slice(0, 64),
+        rounds,
+      })
     } catch (error) {
       this.deps.log('warn', 'Bot 记忆摘要失败', {
         bot: bot.id,
@@ -1847,7 +1960,7 @@ export class BotService {
     try {
       this.db.prepare('DELETE FROM bot_events WHERE received_at < ?').run(cutoff)
       this.db.prepare('DELETE FROM bot_inbound_targets WHERE last_seen_at < ?').run(cutoff)
-      this.memory.cleanup(this.config.botAiSessionRetentionDays)
+      this.memory.cleanup(this.config.botAiMemoryRetentionDays)
       this.db.prepare("DELETE FROM bot_deliveries WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
       this.db.prepare("DELETE FROM bot_publish_jobs WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
       this.deps.ai?.cleanup?.()

@@ -244,17 +244,18 @@ export interface BotAi {
     /** 可选图片；未启用/不支持时由调用方降级为纯文本。 */
     image?: BotAiImage
   }): Promise<string>
-  /** 每轮对话后滚动摘要长期记忆；未实现时服务端保留旧摘要。 */
+  /** 合并摘要长期记忆；每次使用一次性远端会话并在结束后删除。 */
   summarizeMemory?(input: {
     botId: string
     userId: string
     memoryId: string
-    sessionId: string | null
     existing: string
     userText: string
     assistantText: string
     maxChars: number
-  }): Promise<{ summary: string; sessionId: string | null }>
+  }): Promise<{ summary: string }>
+  /** 删除远端 AI 会话（/reset、/forget、角色变更等本地映射清理时尽力删除）。 */
+  deleteSession?(sessionId: string): Promise<void>
   /** 清理过期会话映射；未实现时服务端跳过。 */
   cleanup?(): number
 }

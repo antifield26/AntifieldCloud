@@ -471,3 +471,50 @@ test('cleanup 只删除超过保留期的会话映射', async () => {
     dispose(fixture)
   }
 })
+
+test('v0.5.10：记忆摘要每次新建一次性远端会话并在结束后删除', async () => {
+  const fixture = setup(basicHandler({ messages: [assistant([{ type: 'text', text: '新记忆摘要' }])] }))
+  try {
+    const first = await fixture.ai.summarizeMemory({
+      botId: BOT_ID,
+      userId: USER,
+      memoryId: 'memory-1',
+      existing: '旧记忆',
+      userText: '用户说喜欢深色模式',
+      assistantText: '记住了',
+      maxChars: 4096,
+    })
+    assert.deepEqual(first, { summary: '新记忆摘要' })
+    const second = await fixture.ai.summarizeMemory({
+      botId: BOT_ID,
+      userId: USER,
+      memoryId: 'memory-1',
+      existing: '新记忆摘要',
+      userText: '用户说喜欢猫',
+      assistantText: '好的',
+      maxChars: 4096,
+    })
+    assert.deepEqual(second, { summary: '新记忆摘要' })
+    const creates = fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session')
+    const deletes = fixture.calls.filter((call) => call.method === 'DELETE' && call.url.pathname.startsWith('/api/session/'))
+    assert.equal(creates.length, 2, '每次摘要都应新建一次性会话')
+    assert.equal(deletes.length, 2, '每次摘要后都应删除远端会话')
+    assert.ok(deletes.every((call) => call.url.pathname === `/api/session/${SESSION_ID}`))
+    assertNoSecret(fixture.logs)
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.5.10：deleteSession 对已不存在的远端会话不抛错', async () => {
+  const fixture = setup(basicHandler())
+  try {
+    await fixture.ai.deleteSession('ses_already_gone')
+    const del = fixture.calls.find((call) => call.method === 'DELETE')
+    assert.ok(del)
+    assert.equal(del.url.pathname, '/api/session/ses_already_gone')
+    assertNoSecret(fixture.logs)
+  } finally {
+    dispose(fixture)
+  }
+})

@@ -1,18 +1,16 @@
-/** v0.5.3 连通性探测：代理端口、外网、平台探针与恢复回调。 */
+/** v0.5.10 连通性探测（Pi 直连，无代理层）：外网、QQ 平台探针与恢复回调。 */
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { BotConnectivityMonitor, type ConnectivityDeps } from '../src/bot/connectivity.ts'
 
-function monitor(overrides: Partial<ConnectivityDeps> & { proxyUrl?: string } = {}) {
+function monitor(overrides: Partial<ConnectivityDeps> = {}) {
   const events: string[] = []
   const deps: ConnectivityDeps = {
     enabled: true,
     intervalSeconds: 60,
     timeoutSeconds: 2,
-    proxyUrl: 'http://127.0.0.1:18090',
     getPlatforms: () => ['qq'],
     fetchImpl: async () => new Response('{}', { status: 200 }),
-    probePort: async () => true,
     log: (level, message) => events.push(`${level}:${message}`),
     onRecover: () => events.push('recover'),
     onDown: () => events.push('down'),
@@ -21,24 +19,21 @@ function monitor(overrides: Partial<ConnectivityDeps> & { proxyUrl?: string } = 
   return { monitor: new BotConnectivityMonitor(deps), events }
 }
 
-test('v0.5.3 连通性：代理端口不可达时不发起外网探测', async () => {
+test('v0.5.10 连通性：外网不可达时平台探针同样判不可达', async () => {
   let fetched = 0
   const { monitor: m } = monitor({
-    probePort: async () => false,
     fetchImpl: (async () => {
       fetched += 1
-      return new Response('{}')
+      throw new Error('fetch failed')
     }) as typeof fetch,
   })
   const snapshot = await m.checkNow()
-  assert.equal(snapshot.proxy.portReachable, false)
   assert.equal(snapshot.internet.reachable, false)
-  assert.equal(snapshot.internet.error, 'proxy_port_unreachable')
-  assert.equal(fetched, 0)
   assert.equal(snapshot.platforms.qq?.reachable, false)
+  assert.equal(fetched, 2)
 })
 
-test('v0.5.3 连通性：代理与外网可达时探测 QQ 平台，4xx 仍视为网络可达', async () => {
+test('v0.5.10 连通性：外网与 QQ 平台可达，4xx 仍视为网络可达', async () => {
   const urls: string[] = []
   const { monitor: m } = monitor({
     fetchImpl: (async (input: string | URL | Request) => {
@@ -47,24 +42,26 @@ test('v0.5.3 连通性：代理与外网可达时探测 QQ 平台，4xx 仍视�
     }) as typeof fetch,
   })
   const snapshot = await m.checkNow()
-  assert.equal(snapshot.proxy.portReachable, true)
   assert.equal(snapshot.internet.reachable, true)
   assert.equal(snapshot.internet.status, 401)
   assert.equal(snapshot.platforms.qq?.reachable, true)
   assert.equal(urls.length, 2)
   assert.ok(urls.some((url) => url.includes('bots.qq.com')))
+  assert.ok(urls.some((url) => url.includes('www.qq.com')))
 })
 
-test('v0.5.3 连通性：网络从不可用恢复时触发一次自动恢复回调', async () => {
-  let portOk = false
+test('v0.5.10 连通性：网络从不可用恢复时触发一次自动恢复回调', async () => {
+  let down = true
   const { monitor: m, events } = monitor({
-    probePort: async () => portOk,
-    fetchImpl: async () => new Response('{}', { status: 200 }),
+    fetchImpl: (async () => {
+      if (down) throw new Error('fetch failed')
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch,
   })
   const first = await m.checkNow()
   assert.equal(first.internet.reachable, false)
   assert.equal(events.filter((event) => event === 'recover').length, 0)
-  portOk = true
+  down = false
   const second = await m.checkNow()
   assert.equal(second.internet.reachable, true)
   assert.equal(events.filter((event) => event === 'recover').length, 1)
@@ -72,23 +69,24 @@ test('v0.5.3 连通性：网络从不可用恢复时触发一次自动恢复回�
   assert.equal(events.filter((event) => event === 'recover').length, 1)
 })
 
-test('v0.5.3 连通性：网络从可用变为不可用时触发一次 down 回调', async () => {
-  let portOk = true
+test('v0.5.10 连通性：网络从可用变为不可用时触发一次 down 回调', async () => {
+  let down = false
   const { monitor: m, events } = monitor({
-    probePort: async () => portOk,
-    fetchImpl: async () => new Response('{}', { status: 200 }),
+    fetchImpl: (async () => {
+      if (down) throw new Error('fetch failed')
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch,
   })
   await m.checkNow()
-  portOk = false
+  down = true
   const snapshot = await m.checkNow()
   assert.equal(snapshot.internet.reachable, false)
   assert.equal(events.filter((event) => event === 'down').length, 1)
 })
 
-test('v0.5.3 连通性：未配置代理时直接探测外网，代理状态为未配置', async () => {
-  const { monitor: m } = monitor({ proxyUrl: '', getPlatforms: () => [] })
+test('v0.5.10 连通性：无启用平台时只探测外网', async () => {
+  const { monitor: m } = monitor({ getPlatforms: () => [] })
   const snapshot = await m.checkNow()
-  assert.equal(snapshot.proxy.configured, false)
   assert.equal(snapshot.internet.reachable, true)
   assert.deepEqual(snapshot.platforms, {})
 })

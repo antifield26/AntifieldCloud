@@ -1,8 +1,8 @@
-// Bot 出站网络卡片：展示代理端口、外网与平台 API 连通性，并提供手动复检。
-// 安全边界：只展示服务端返回的主机/端口/状态，不读取或渲染任何 Bot 凭据。
+// Bot 出站网络卡片：展示外网与 QQ 平台 API 连通性，并提供手动复检。
+// Pi 直连 QQ 平台，不再依赖 PC 代理隧道；不读取或渲染任何 Bot 凭据。
 
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw, ShieldAlert, Wifi } from 'lucide-react'
+import { RefreshCw, Wifi } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type { BotConnectivityProbe, BotConnectivitySnapshot, BotPlatform } from '../../api/types'
 import { Badge } from '../Badge'
@@ -68,17 +68,15 @@ export function BotConnectivityCard() {
     }
   }
 
-  const proxyText = data?.proxy.configured
-    ? `${data.proxy.host}:${data.proxy.port}`
-    : '未配置代理'
   const platforms = PLATFORM_ORDER.filter((platform) => data?.platforms[platform] !== undefined)
   const checkedAt = data?.checkedAt ?? null
   const busy = loading || checking || data?.checking === true
+  const online = data?.internet.reachable === true
 
   return (
     <Card
       title="出站网络"
-      description="Bot 依赖本机代理访问 QQ 平台 API；这里展示代理端口、外网与 QQ 平台的最近一次探测结果。"
+      description="Pi 直连 QQ 平台 API（不依赖 PC 代理隧道）；这里展示外网与 QQ 平台的最近一次探测结果。"
       actions={
         <Button
           size="sm"
@@ -103,24 +101,15 @@ export function BotConnectivityCard() {
         <>
           <div className="bot-connectivity-grid">
             <div className="bot-connectivity-item">
-              <span className="bot-status-label">设备在线</span>
-              <span className="bot-connectivity-value">{data.deviceOnline ? '在线' : '离线'}</span>
-              <Badge tone={data.deviceOnline ? 'success' : 'warning'} dot>
-                {data.deviceOnline ? '可出站' : '需检查代理'}
-              </Badge>
-            </div>
-            <div className="bot-connectivity-item">
-              <span className="bot-status-label">代理端口</span>
-              <span className="bot-connectivity-value">{proxyText}</span>
-              <Badge tone={data.proxy.portReachable ? 'success' : 'warning'} dot>
-                {data.proxy.portReachable ? '存活' : '不可达'}
+              <span className="bot-status-label">出站网络</span>
+              <span className="bot-connectivity-value">{online ? '在线' : '离线'}</span>
+              <Badge tone={online ? 'success' : 'warning'} dot>
+                {online ? '可直连' : '需检查网络'}
               </Badge>
             </div>
             <div className="bot-connectivity-item">
               <span className="bot-status-label">外网</span>
-              <span className="bot-connectivity-value">
-                {data.internet.reachable ? '可达' : '不可达'}
-              </span>
+              <span className="bot-connectivity-value">{data.internet.reachable ? '可达' : '不可达'}</span>
               <Badge tone={probeTone(data.internet)}>
                 {data.internet.latencyMs !== null ? `${data.internet.latencyMs}ms` : '—'}
               </Badge>
@@ -151,13 +140,6 @@ export function BotConnectivityCard() {
           ) : (
             <p className="field-hint">暂无启用的 QQ Bot；启用 Bot 后会自动探测 QQ 平台。</p>
           )}
-
-          {!data.proxy.configured ? (
-            <div className="notice notice-warning" role="status">
-              <ShieldAlert size={16} aria-hidden="true" /> 未配置 `BOT_PROXY_URL`/`HTTPS_PROXY`；若平台的
-              出站网络需要代理，请先修复代理。
-            </div>
-          ) : null}
         </>
       ) : (
         <p className="field-hint">

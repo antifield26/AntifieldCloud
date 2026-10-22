@@ -152,6 +152,7 @@ export interface QqServiceFixture {
   fetch: QQServiceFetch
   aiCalls: AiCall[]
   memoryCalls: { userText: string; assistantText: string }[]
+  deletedSessions: string[]
   audits: AuditRecord[]
   botId: string
   appId: string
@@ -169,6 +170,7 @@ export interface QqServiceOptions {
   aiEnabled?: boolean
   aiHandler?: (input: AiCall) => Promise<string>
   summarizeMemory?: boolean
+  summarizeHandler?: (input: { userText: string; assistantText: string }) => Promise<{ summary: string }>
   configOverrides?: Partial<Config>
   fetchOptions?: QQServiceFetchOptions
 }
@@ -186,6 +188,7 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
   const fetch = makeQqServiceFetch(options.fetchOptions)
   const aiCalls: AiCall[] = []
   const memoryCalls: { userText: string; assistantText: string }[] = []
+  const deletedSessions: string[] = []
   const audits: AuditRecord[] = []
   const appId = nextAppId()
   const appSecret = `qq-app-secret-${randomBytes(8).toString('hex')}`
@@ -215,7 +218,15 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
               : {
                   summarizeMemory: async (input: { userText: string; assistantText: string }) => {
                     memoryCalls.push({ userText: input.userText, assistantText: input.assistantText })
-                    return { summary: `记忆：${input.userText}`, sessionId: 'memory-session' }
+                    if (options.summarizeHandler) return await options.summarizeHandler(input)
+                    return { summary: `记忆：${input.userText}` }
+                  },
+                  deleteSession: async (sessionId: string) => {
+                    deletedSessions.push(sessionId)
+                  },
+                  cleanup: () => {
+                    const cutoff = new Date(Date.now() - config.botAiSessionRetentionDays * 86_400_000).toISOString()
+                    return Number(db.prepare('DELETE FROM bot_ai_sessions WHERE updated_at < ?').run(cutoff).changes)
                   },
                 }),
           },
@@ -244,6 +255,7 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
     fetch,
     aiCalls,
     memoryCalls,
+    deletedSessions,
     audits,
     botId: bot.id,
     appId,

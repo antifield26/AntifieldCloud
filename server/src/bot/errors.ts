@@ -26,7 +26,7 @@ const EXACT_HINTS: Record<string, string> = {
 
 const PATTERN_HINTS: Array<[RegExp, string]> = [
   [/partial_text_sent/i, '长消息部分段落已发送，需人工确认后处理，避免重复外发'],
-  [/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNRESET|fetch failed|network/i, '出站网络不可用：检查 Pi 出站代理/隧道与 BOT_PROXY_URL'],
+  [/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNRESET|fetch failed|network/i, '出站网络不可用：检查 Pi 到 QQ 平台的直连网络'],
   [/timeout|超时/i, '平台请求超时：稍后重试并检查出站网络'],
   [/403|forbidden|missing.*permission|权限/i, 'QQ 平台权限不足：检查 Bot 在群/频道的发送权限'],
   [/429|too many requests|frequency/i, '平台限流：稍后重试'],
