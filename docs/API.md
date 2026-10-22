@@ -1,4 +1,4 @@
-# AntifieldCloud HTTP API 契约（v6，2026-10-22）
+# AntifieldCloud HTTP API 契约（v8，2026-10-22）
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源。
 
@@ -381,7 +381,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.5.6", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["telegram","discord","slack","qq"] }`。
+- `GET /api/version`（需要会话）：`{ "version": "0.5.8", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"] }`。
 - `GET /api/storage`（需要会话；v0.4.0 轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
 - 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
@@ -538,57 +538,53 @@ RCON 不可用：`502 rcon_unavailable`。
 - `POST /api/notes/:id/versions/:versionId/restore` → 200 Note（恢复前自动保存当前版本快照）。
 - 版本在标题/正文/标签变化时自动生成，每笔记保留最近 `NOTE_VERSIONS_KEEP`（默认 20）条；删除笔记级联删除版本与附件。
 
-## 14. Bot 平台（v0.5.7）
+## 14. Bot 平台（v0.5.8，QQ 官方 Bot）
 
 Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/bots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/bot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/DEPLOY.md` §5.2）。
 
-平台：`telegram`、`discord`、`slack`、`qq`。QQ 官方 Bot 仅文本（≤2000 字符），不支持媒体；`/ask` AI 仅在 `BOT_AI_ENABLED=true` 且用户命中命令白名单时可用。
+平台：仅 `qq`（QQ 官方 Bot）。v0.5.8 起移除 Telegram/Discord/Slack：API 不再接受其它平台值，`BotSummary` 无 `gateway`，目标无 `chatTrigger`，发布无 `mediaFileIds`；schema v13 删除非 QQ Bot 及其级联数据。QQ 仅支持文本（单条 ≤2000 字符），入站图片默认交给 AI 理解；`/ask`/Chat 需 `BOT_AI_ENABLED=true`。
 
-v0.5.2 新增普通消息 Chat：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat（Telegram/Slack/QQ Webhook；Discord 普通消息经 Gateway）；群/频道仅 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊直接进入；非管理员只能 Chat，不能执行斜杠命令。Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6）次，并与 `/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）次。Chat 是只读 AI 对话，不产生写操作。Discord Gateway 的普通消息不经过 `POST /api/bot/webhook/:botId`，由服务端长连接消费；`BotSummary.gateway` 暴露状态。v0.5.4 起 QQ C2C 私聊对任意用户开放 Chat（不要求目标登记；接触面由 QQ 平台限制），QQ 群/频道与其他平台私聊仍需目标 `allow_chat`。
+v0.5.2 起的普通消息 Chat 语义保留：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat；C2C 私聊直接进入，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”触发）；非管理员只能 Chat，不能执行斜杠命令。Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 6）次，并与 `/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（默认 10）次；Chat 是只读 AI 对话，不产生写操作。
 
-v0.5.3 新增 Bot 出站连通性：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测代理端口、外网与各启用平台 API；`GET /api/bots/connectivity` 返回快照，`POST /api/bots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 Token/AppSecret 或平台响应正文；网络恢复后服务端自动唤醒 Discord Gateway 并触发队列扫描。
+v0.5.3 起的出站连通性保留：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测代理端口、外网与 QQ 平台 API；`GET /api/bots/connectivity` 返回快照，`POST /api/bots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 AppSecret 或平台响应正文；网络恢复后触发投递/发布队列扫描。
 
-v0.5.4 新增双模式 AI：`/ask` 使用任务导向提示，普通 Chat 使用对话导向提示；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定安全边界不可覆盖。`bot_ai_sessions` 增加 `mode`（chat/task），`/ask` 与 Chat 使用独立 OpenCode 会话、共享长期记忆；`bot.ai.chat` 审计包含 `mode`，不记录提示词/记忆正文。
+v0.5.4 起的双模式 AI 与 v0.5.5/v0.5.6 角色卡保留：`/ask` 使用任务导向提示，普通 Chat 使用对话导向提示；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定安全边界不可覆盖；`bot_ai_sessions.mode`（chat/task）独立会话、共享长期记忆；`/role` 仅私聊，个人卡可覆盖默认 lofii，群聊固定默认；角色设定不通过 HTTP API/UI 暴露。
 
-v0.5.6 新增默认角色 lofii（私聊/群聊）；个人 `/role` 卡只覆盖私聊，`off` 回落到 lofii；`/role` 文案只写当前角色与命令用法，不注入默认角色个性，也不带技术术语。v0.5.5 新增私聊角色卡：`/role` 仅对私聊用户开放，`set/show/off/on/delete` 管理每 Bot×用户一张“名字+角色设定”卡；仅私聊 Chat 使用启用卡并替换默认 Chat 风格，固定安全边界与共享记忆仍追加；`/ask` 与群/频道 Chat 不使用；角色变更删除当前私聊 Chat 会话映射。角色设定不通过 HTTP API/UI 暴露。
-
-v0.5.7（schema v12）新增：
-- 目标级群聊触发方式 `chatTrigger`（`mention` 默认 / `all`；QQ 群/频道传 `all` 返回 `400 chat_trigger_unsupported`）；`BotTarget` 返回 `chatTrigger`。
-- 平台连接自检 `POST /api/bots/:id/check`；诊断事件 `GET /api/bots/:id/events`（无正文）；投递/发布/指标增加 `lastErrorHint`。
-- 角色/记忆元数据管理：`GET/PATCH/DELETE /api/bots/:id/roles…`、`GET/DELETE /api/bots/:id/memories…`（正文不返回）。
-- AI 回复管线：按平台分段发送（Telegram 4096 / Discord 2000 / Slack 4000 / QQ 2000，最多 4 段）、Markdown 平台化、群/频道引用原消息；
-  图片理解默认关闭（`BOT_AI_VISION_ENABLED`），仅 Telegram/Discord/Slack 入站图片，QQ 不支持。
-- 自助命令 `/reset`、`/forget confirm` 对所有用户开放（不要求目标 `allow_commands`/用户白名单）；`/help` 已更新。
+v0.5.7 引入并保留：平台连接自检 `POST /api/bots/:id/check`；诊断事件 `GET /api/bots/:id/events`（无正文）；投递/发布/指标 `lastErrorHint`；角色/记忆元数据管理；自助命令 `/reset`、`/forget confirm`（全用户）。
+v0.5.8 变更：`BOT_AI_VISION_ENABLED` 默认 `true`，QQ 入站图片（`d.attachments` 中 `image/*`）经固定域名后缀白名单（`.qpic.cn`/`.qq.com`/`.gtimg.cn`）下载后交给 AI；
+删除 Discord Gateway / `BotSummary.gateway` / 目标 `chatTrigger` / 发布 `mediaFileIds` / 媒体与按钮相关错误码；schema v13 删除非 QQ Bot 数据。
 
 ### 对象
 
 ```json
 BotStatus:  { "enabled": true, "keyConfigured": true, "bots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null }
-BotConnectivitySnapshot: { "checkedAt": "…|null", "checking": false, "deviceOnline": true, "proxy": { "configured": true, "host": "127.0.0.1", "port": 18090, "portReachable": true, "latencyMs": 1, "error": null }, "internet": { "reachable": true, "latencyMs": 230, "status": 200, "error": null }, "platforms": { "discord": { "reachable": true, "latencyMs": 240, "status": 200, "error": null }, "qq": { "reachable": true, "latencyMs": 180, "status": 404, "error": null } } }
-BotSummary: { "id": "uuid", "platform": "telegram|discord|slack|qq", "name": "运维通知", "enabled": true, "config": {}, "webhookUrl": "https://app.example.com/api/bot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1, "gateway": { "state": "disabled|connecting|connected|reconnecting|error", "lastError": null } }
-BotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "频道/用户/群组 ID", "label": "运维告警频道", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "chatTrigger": "mention|all", "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
-BotInboundTarget: { "botId": "uuid", "targetExternalId": "平台目标 ID", "targetKind": "channel|user|group", "userId": "平台用户 ID", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
+BotConnectivitySnapshot: { "checkedAt": "…|null", "checking": false, "deviceOnline": true, "proxy": { "configured": true, "host": "127.0.0.1", "port": 18090, "portReachable": true, "latencyMs": 1, "error": null }, "internet": { "reachable": true, "latencyMs": 230, "status": 200, "error": null }, "platforms": { "qq": { "reachable": true, "latencyMs": 180, "status": 404, "error": null } } }
+BotSummary: { "id": "uuid", "platform": "qq", "name": "运维通知", "enabled": true, "config": { "appId": "1029…" }, "webhookUrl": "https://app.example.com/api/bot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1 }
+BotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "user_openid/group_openid/channel_id", "label": "运维告警群", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
+BotInboundTarget: { "botId": "uuid", "targetExternalId": "QQ 目标 ID", "targetKind": "channel|user|group", "userId": "QQ 用户 openid", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
 BotDelivery:{ "id": "uuid", "botId": "uuid", "targetId": "uuid|null", "kind": "notification|command_reply|publish|test", "status": "queued|sending|sent|failed|dead", "attempts": 0, "nextAttemptAt": null, "lastError": null, "lastErrorHint": "中文提示|null", "externalId": null, "createdAt": "…", "sentAt": null }
-BotPublishJob: { "id": "uuid", "botId": "uuid", "targetId": "uuid", "text": "…", "mediaFileIds": [], "scheduledAt": null, "status": "draft|queued|sending|sent|failed|canceled", "attempts": 0, "lastError": null, "lastErrorHint": "中文提示|null", "createdAt": "…", "sentAt": null }
+BotPublishJob: { "id": "uuid", "botId": "uuid", "targetId": "uuid", "text": "…", "scheduledAt": null, "status": "draft|queued|sending|sent|failed|canceled", "attempts": 0, "lastError": null, "lastErrorHint": "中文提示|null", "createdAt": "…", "sentAt": null }
 BotMetrics: { "hours": 24, "deliveries": { "total": 10, "sent": 8, "failed": 1, "dead": 1, "successRate": 88.9 }, "publishes": { "total": 2, "sent": 2, "failed": 0 }, "events": 5, "lastError": null, "lastErrorHint": "中文提示|null", "lastSentAt": "…" }
-BotHealthCheck: { "ok": false, "items": [{ "name": "Bot 账号", "ok": true, "detail": "@bot" }, { "name": "Webhook", "ok": false, "detail": "webhook_url_mismatch" }], "checkedAt": "…" }
-BotEventItem: { "eventId": "tg:update:123", "kind": "command|chat|action|ignored", "outcome": "received|ok|denied|rate_limited|ignored|error", "detail": "短码|null（如 command_denied/chat_rate_limited）", "targetExternalId": "…|null", "userId": "…|null", "receivedAt": "…", "updatedAt": "…|null" }
+BotHealthCheck: { "ok": true, "items": [{ "name": "access_token", "ok": true, "detail": "access_token 已获取" }], "checkedAt": "…" }
+BotEventItem: { "eventId": "qq:message_id", "kind": "command|chat|ignored", "outcome": "received|ok|denied|rate_limited|ignored|error", "detail": "短码|null（如 command_denied/chat_rate_limited）", "targetExternalId": "…|null", "userId": "…|null", "receivedAt": "…", "updatedAt": "…|null" }
 BotRoleSummary: { "userId": "…", "userName": "…|null", "name": "角色名", "enabled": true, "promptLength": 320, "createdAt": "…", "updatedAt": "…" }
 BotMemorySummary: { "userId": "…", "userName": "…|null", "summaryLength": 512, "createdAt": "…", "updatedAt": "…" }
 ```
 
-`BotSummary.config` 只含公开配置（Discord `applicationId/publicKey`；QQ `appId`）；Token、Telegram Webhook Secret、Slack Signing Secret、QQ AppSecret 永不返回，也不出现在审计/日志中。`webhookUrl` 与 `setupSteps` 由服务端按 `APP_ORIGIN` 和平台模板生成。`BotSummary.gateway` 仅对启用 `BOT_DISCORD_GATEWAY_ENABLED` 的 Discord Bot 有意义：`disabled` 为未启用/未连接，`connecting/connected/reconnecting/error` 反映当前连接；非 Discord Bot 恒为 `disabled`。`BotMetrics.deliveries.successRate = sent / (sent + failed) × 100`（保留 1 位小数，无尝试时为 0）；`lastError`/`lastSentAt` 取投递与发布的最近值。
+`BotSummary.config` 只含公开配置（QQ `appId`）；QQ AppSecret 永不返回，也不出现在审计/日志中。`webhookUrl` 与 `setupSteps` 由服务端按 `APP_ORIGIN` 和 QQ 平台模板生成。
+`BotMetrics.deliveries.successRate = sent / (sent + failed) × 100`（保留 1 位小数，无尝试时为 0）；`lastError`/`lastErrorHint`/`lastSentAt` 取投递与发布的最近值。
+v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPublishJob` 无 `mediaFileIds`；`BotDelivery` 的 `partial` 语义仅针对长文本分段。
 
 ### 管理端点
 
 - `GET /api/bots/status` → `BotStatus`（功能关闭时也可读；用于前端判断是否展示配置指引）。
 - `GET /api/bots/connectivity` → `BotConnectivitySnapshot`；需要会话，功能关闭时仍返回当前快照/未检测状态。
-- `POST /api/bots/connectivity/check` → `BotConnectivitySnapshot`；需要会话 + CSRF，30 次/分钟；手动复检代理/外网/平台。
+- `POST /api/bots/connectivity/check` → `BotConnectivitySnapshot`；需要会话 + CSRF，30 次/分钟；手动复检代理/外网/QQ 平台。
 - `GET /api/bots` → `{ "items": [BotSummary] }`；`GET /api/bots/:id` → `{ "bot": BotSummary }`；不存在/已删除 `404 not_found`。
   功能未启用时列表/详情返回 `503 bot_disabled|bot_key_missing`（前端应先用 `/api/bots/status` 判断）。
 - `GET /api/bots/:id/metrics?hours=24` → `{ "metrics": BotMetrics }`；`hours` 默认 24、范围 1–720，非法/越界值回退 24；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`lastErrorHint` 为服务端按 `lastError` 映射的中文提示（未知为 null）。
-- `POST /api/bots/:id/check` → `{ "health": BotHealthCheck }`；需要会话 + CSRF，30 次/分钟；调用适配器只读自检（Telegram getMe+getWebhookInfo、Discord `/users/@me`、Slack `auth.test`、QQ `access_token`），
-  结果脱敏并刷新 `lastCheckedAt`；即使失败也返回 200 + `ok:false` 项；平台不支持自检时 `400 bot_health_unsupported`；Bot 关闭/不存在 `503/404`。
+- `POST /api/bots/:id/check` → `{ "health": BotHealthCheck }`；需要会话 + CSRF，30 次/分钟；调用 QQ 适配器换取 `access_token` 做只读自检，
+  结果脱敏并刷新 `lastCheckedAt`；即使失败也返回 200 + `ok:false` 项；适配器不支持自检时 `400 bot_health_unsupported`；Bot 关闭/不存在 `503/404`。
 - `GET /api/bots/:id/events?hours=24&limit=50&offset=0&outcome=ok` → `{ "items": [BotEventItem], "total": n }`；需要会话；`hours` 1–720（默认 24）、`limit` 1–200（默认 50）、`offset` ≥0；
   `outcome` 缺省返回全部，只接受 `received|ok|denied|rate_limited|ignored|error`，非法值 `400 invalid_request`；只返回事件元数据，**不含消息正文/用户名**。
 - `GET /api/bots/:id/roles?limit=20&offset=0` → `{ "items": [BotRoleSummary], "total": n }`；需要会话；只返回元数据（用户/名字/长度/启停/时间），不返回角色设定正文。
@@ -596,69 +592,67 @@ BotMemorySummary: { "userId": "…", "userName": "…|null", "summaryLength": 51
   - `DELETE /api/bots/:id/roles/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除角色卡并清理该用户 chat 会话（task 会话与记忆保留），不存在 `404`。
 - `GET /api/bots/:id/memories?limit=20&offset=0` → `{ "items": [BotMemorySummary], "total": n }`；需要会话；只返回元数据（用户/摘要长度/时间），不返回摘要正文。
   - `DELETE /api/bots/:id/memories/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除该用户长期记忆 DB 摘要与镜像文件（不清 AI 会话；清全部会话由用户自助 `/forget confirm`），不存在 `404`。
-- `GET /api/bots/:id/inbound-targets?limit=50` → `{ "items": [BotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50；越界按边界截断）。只记录最近命令/Chat/按钮事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `BOT_EVENT_RETENTION_DAYS` 清理。`/bots` 目标分区用该接口做“最近入站目标”登记。
-- `POST /api/bots` body `{platform,name,token,config?,webhookSecret?,publicKey?,signingSecret?}` → `200 { "bot": BotSummary }`。
-  - `platform` 必须为 `telegram|discord|slack|qq`；`name` ≤80；最多 `BOT_MAX_BOTS`（默认 10）个。
-  - Telegram 需 `token`（≥20）与 `webhookSecret`（≥16）；Discord 需 `token`、`applicationId`（5–32 位数字）、`publicKey`（64 位 hex，可放 `config.publicKey` 或顶层 `publicKey`）；Slack 需 `token` 与 `signingSecret`（≥16）。
-  - QQ 需 `token`（AppSecret，≥16）与 `config.appId`（5–32 位数字）；`token` 只存密文，AppID 可公开。
-  - 校验失败 `400 invalid_bot_config`（`details` 为 `<platform>_token_invalid` 等错误码数组）；超过上限 `400`。
+- `GET /api/bots/:id/inbound-targets?limit=50` → `{ "items": [BotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50；越界按边界截断）。
+  只记录最近命令/Chat 事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `BOT_EVENT_RETENTION_DAYS` 清理。`/bots` 目标分区用该接口做“最近入站目标”登记。
+- `POST /api/bots` body `{platform,name,token,config?}` → `200 { "bot": BotSummary }`。
+  - `platform` 必须为 `qq`（其它平台值 `400 invalid_bot_config`）；`name` ≤80；最多 `BOT_MAX_BOTS`（默认 10）个。
+  - QQ 需 `token`（AppSecret，≥16）与 `config.appId`（5–32 位数字）；`token` 只存密文，AppID 可公开；不再接受 `webhookSecret/publicKey/signingSecret`。
+  - 校验失败 `400 invalid_bot_config`（`details` 为 `qq_token_invalid` 等错误码数组）；超过上限 `400`。
   - 新建 Bot 默认 `enabled=false`；需显式 `PATCH enabled=true` 才处理 Webhook/队列。
-- `PATCH /api/bots/:id` body 任意 `{name?,enabled?,config?,token?,webhookSecret?,publicKey?,signingSecret?}` → `200 { "bot": BotSummary }`。
-  `token` 省略或空串表示保持原值；`webhookSecret/signingSecret/publicKey` 省略表示保持、**显式空串会清空**（Discord Public Key 清空后验签失败，
-  前端不提供清空入口）。修改成功会清空 `lastError`。`DELETE /api/bots/:id` → `{ "ok": true }`（级联删除目标/投递/发布/事件）。
+- `PATCH /api/bots/:id` body 任意 `{name?,enabled?,config?,token?}` → `200 { "bot": BotSummary }`；`token` 省略或空串表示保持原值；修改成功会清空 `lastError`。
+  `DELETE /api/bots/:id` → `{ "ok": true }`（级联删除目标/投递/发布/事件/AI 会话/记忆/角色卡）。
 - `POST /api/bots/:id/test` body `{targetId?}` → `{ "ok": true }`；缺目标 `400`；未配置目标时使用最早登记的目标；限流 20 次/小时。
 - 目标：
   - `GET /api/bots/:id/targets` → `{ "items": [BotTarget] }`。
-  - `POST /api/bots/:id/targets` body `{externalId,label,kind,allowCommands?,allowNotifications?,allowChat?,chatTrigger?,quietStartMinute?,quietEndMinute?}` → `200 { "target": BotTarget }`；`allowCommands` 默认 false、`allowNotifications` 默认 true、`allowChat` 默认 false；`chatTrigger` 默认 `mention`（`all` 需平台支持，QQ 群/频道传 `all` 返回 `400 chat_trigger_unsupported`）；每 Bot ≤100；`(bot_id, external_id)` 唯一，重复 `409 conflict`。
+  - `POST /api/bots/:id/targets` body `{externalId,label,kind,allowCommands?,allowNotifications?,allowChat?,quietStartMinute?,quietEndMinute?}` → `200 { "target": BotTarget }`；`allowCommands` 默认 false、`allowNotifications` 默认 true、`allowChat` 默认 false；每 Bot ≤100；`(bot_id, external_id)` 唯一，重复 `409 conflict`。
     `quietStartMinute`/`quietEndMinute` 为 Asia/Shanghai 本地分钟（0–1439），必须同时设置或同时留空，不能相同；窗口跨午夜（start > end）按跨越处理；设置后该目标的告警通知在窗口内延后到结束时刻。
-  - `PATCH /api/bots/:id/targets/:targetId` body `{label?,kind?,allowCommands?,allowNotifications?,allowChat?,chatTrigger?,quietStartMinute?,quietEndMinute?}` → `{ "target": BotTarget }`；`null` 表示清空，未传字段沿用当前值；合并后静默起止必须同时有值或同时为空且不能相同，否则 `400`；`chatTrigger` 只接受 `mention|all`，QQ 群/频道传 `all` 返回 `400 chat_trigger_unsupported`；`DELETE` → `{ "ok": true }`。
+    v0.5.8 起不再有 `chatTrigger`（QQ 群/频道仅 @Bot，C2C 直接进入），传该字段忽略/400。
+  - `PATCH /api/bots/:id/targets/:targetId` body `{label?,kind?,allowCommands?,allowNotifications?,allowChat?,quietStartMinute?,quietEndMinute?}` → `{ "target": BotTarget }`；`null` 表示清空，未传字段沿用当前值；合并后静默起止必须同时有值或同时为空且不能相同，否则 `400`；`DELETE` → `{ "ok": true }`。
   - 命令必须同时满足：命令所在会话的 `externalId` 已登记为 `allow_commands=1` 的目标，且发送者 `userId` 已登记为 `kind='user'` 且 `allow_commands=1` 的目标；否则不执行（仍返回 200）并写 `bot.command.denied` 审计。例外：`/role`（仅私聊）、`/reset`、`/forget confirm` 为自助命令，不要求目标/用户白名单。
-  - `allowChat` 只授权普通消息 Chat，不授予斜杠命令：Chat 只需目标 `allow_chat=1`（不要求用户白名单）；群/频道默认仅 @Bot/回复 Bot，目标 `chatTrigger=all` 时消费全部消息（`message` 触发在目标未开放/非 all 时静默忽略），私聊直接进入。非管理员因此只能 Chat，不能借 Chat 执行命令。Chat 仍受 `BOT_CHAT_RATE_PER_MINUTE` 与 `BOT_AI_RATE_PER_HOUR` 限制。
+  - `allowChat` 只授权普通消息 Chat，不授予斜杠命令：Chat 只需目标 `allow_chat=1`（不要求用户白名单）；C2C 私聊直接进入，群/频道仅 @Bot 事件进入。非管理员因此只能 Chat，不能借 Chat 执行命令。Chat 仍受 `BOT_CHAT_RATE_PER_MINUTE` 与 `BOT_AI_RATE_PER_HOUR` 限制。
 - 投递：
   - `GET /api/bots/:id/deliveries?limit=50`（1–200）→ `{ "items": [BotDelivery] }`，按创建时间倒序。
   - `POST /api/bots/:id/deliveries/:deliveryId/retry` → `{ "ok": true }`；仅 `failed|dead` 可重投，其它 `404`。
-- 发布：
+- 发布（仅文本）：
   - `GET /api/bots/:id/publish?limit=50`（1–200）→ `{ "items": [BotPublishJob] }`。
-  - `POST /api/bots/:id/publish` body `{targetId,text,mediaFileIds?,scheduledAt?,totpCode,confirmText}` → `200 { "job": BotPublishJob }`。
+  - `POST /api/bots/:id/publish` body `{targetId,text,scheduledAt?,totpCode,confirmText}` → `200 { "job": BotPublishJob }`。
     - **必须** `totpCode`：缺码 `400 totp_required`；验证失败 `401 invalid_code`（计入 TOTP/再认证限流，审计 `reauth_bot_publish`）。不能用会话 + CSRF 直接外发。
     - **必须** `confirmText: "PUBLISH"`：缺失/不匹配 `400 publish_confirm_required`；与 TOTP 共同构成双确认。
-    - `targetId` 必须是本 Bot 的 `channel|group` 目标（`user` 返回 400）；`text` 非空，≤平台上限（Telegram 4096 / Discord 2000 / Slack 4000 / QQ 2000）。
-    - `mediaFileIds` 最多 `BOT_PUBLISH_MAX_MEDIA_FILES`（默认 5）个；必须是活动普通文件（`origin='user'` 且未进回收站），每个 ≤ `BOT_PUBLISH_MAX_MEDIA_BYTES`（默认 10 MiB），合计 ≤ `BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES`（默认 50 MiB）。超过数量 `400 too_many_media`、单个超限 `400 media_too_large`、总量超限 `400 media_total_too_large`；QQ 平台带媒体返回 `400 qq_media_unsupported`（仅文本）。
+    - `targetId` 必须是本 Bot 的 `channel|group` 目标（`user` 返回 400）；`text` 非空，≤2000 字符（QQ 单条上限，超长由服务端分段发送）。
+    - v0.5.8 起不再支持 `mediaFileIds`/媒体附件；带媒体字段不再校验或外发，QQ 仅文本。
     - `scheduledAt` 为 ISO 时间，可为空（立即入队）；不得早于当前时间 30 秒以上，最长 `BOT_PUBLISH_MAX_SCHEDULED_DAYS`（默认 30）天。
-    - 多附件发送策略：Telegram 全图片（jpeg/png/webp/gif）走一次 media group，混合类型逐文件；Discord 一次 multipart；Slack 逐文件上传后一次 `files.completeUploadExternal`；QQ 仅文本。任一附件已外发后失败时，任务标记 `failed` 且 `lastError` 含 `partial_media_sent`，**不自动重试**（避免重复外发），需人工确认后重建任务。
+    - 长文本分段发送：按 2000 字符分段（最多 4 段、续段前缀、超限截断）；已发送部分后失败时任务标记 `failed` 且 `last_error` 含 `partial_text_sent`，**不自动重试**（避免重复外发），需人工确认后重建任务。
     - 限流 20 次/小时；队列每 `BOT_DELIVERY_INTERVAL_SECONDS`（30）扫描，失败按指数退避（30s 起，≤1h），达到 `BOT_DELIVERY_MAX_ATTEMPTS`（5）标记 `failed`/死信。
   - `DELETE /api/bots/:id/publish/:jobId` → `{ "ok": true }`；仅 `queued|draft` 可取消，其它 `404`。
-- 审计动作：`bot.create/update/delete`、`bot.target.create/update/delete`、`bot.delivery.retry`、`bot.publish.create/sent/cancel`、`bot.publish.partial`、`bot.command`、`bot.command.denied`、`bot.chat`、`bot.chat.denied`、`bot.action`、`bot.action.denied`、`bot.ai.ask`、`bot.ai.chat`、`bot.ai.memory`、`bot.ai.image`、`bot.webhook.rejected/rate_limited`、`bot.test`、`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin`、`reauth_bot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。
+- 审计动作：`bot.create/update/delete`、`bot.target.create/update/delete`、`bot.delivery.retry/partial`、`bot.publish.create/sent/cancel/partial`、`bot.command`、`bot.command.denied`、`bot.chat`、`bot.chat.denied`、`bot.ai.ask`、`bot.ai.chat`、`bot.ai.memory`、`bot.ai.image`、`bot.webhook.rejected/rate_limited`、`bot.event.ignored`、`bot.test`、`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin`、`reauth_bot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。
 
 ### 公开 Webhook
 
-`POST /api/bot/webhook/:botId`（无会话/CSRF/Origin 校验；独立 raw body scope；Cloudflare Access 需 bypass）
+`POST /api/bot/webhook/:botId`（无会话/CSRF/Origin 校验；独立 raw body scope；Cloudflare Access 需 bypass；v0.5.8 起仅 QQ 官方 Bot）
 
 - Content-Type：`application/json` 或 `application/x-www-form-urlencoded`；body ≤ `BOT_WEBHOOK_MAX_BODY_BYTES`（默认 256 KiB）。
-- 成功：平台 challenge 原样返回（Discord `{"type":1}`、Slack `{"challenge":"…"}`、QQ op=13 `{"plain_token":"…","signature":"…"}`）；普通事件 `200 {"ok":true}`（QQ 为 `{"opcode":12}`）；重复事件 `200 {"ok":true,"duplicate":true}`（QQ 同样为 `{"opcode":12}`）；未授权目标/用户不执行命令，返回 `200`。
-- 失败：签名缺失/错误 `401 invalid_signature`；时间戳超出 ±300 秒 `401 stale_signature`；payload 无效/缺字段 `400 invalid_payload|missing_fields|missing_trigger_id|invalid_response_url`；Bot 未启用/不存在/未启用 `404 not_found`；限流 `429 rate_limited`（IP scope 带 `Retry-After`，Bot scope 不带）。
-- 验签规则：
-  - Telegram：`X-Telegram-Bot-Api-Secret-Token` 与 Bot 的 `webhookSecret` 恒定时间比较；处理 `/命令`、普通消息 Chat 与 `callback_query` 按钮回调。
-    群/频道普通消息默认只有 @Bot 或回复 Bot 才进入 Chat（目标 `chatTrigger=all` 且 privacy mode 关闭时未 @ 消息以 `message` 触发进入）；私聊普通消息直接进入。
-    群/频道回复带 `reply_to_message_id`，私聊不引用；引用失效降级为无引用重发一次。
-  - Discord：`X-Signature-Ed25519` + `X-Signature-Timestamp`，用 Public Key 校验 `timestamp + body`；`type=1` PING 返回 `{"type":1}`，`type=2` 为斜杠命令，`type=3` 为消息组件（按钮）；命令 deferred `{"type":5}`、按钮 deferred update `{"type":6}`，回复走 interaction webhook。普通频道/DM 消息不经过本 Webhook，由 Discord Gateway 消费（`message_reference` 引用入站消息）。
-  - Slack：`X-Slack-Signature`（`v0=`）+ `X-Slack-Request-Timestamp`，HMAC 校验 `v0:<timestamp>:<body>`；`url_verification` 返回 challenge；Slash Command 要求 `trigger_id` 与 `https://hooks.slack.com/...` 的 `response_url`；`event_callback` 处理 `message`/`app_mention`（忽略 bot/subtype），DM 或 app_mention/显式 `<@BOTID>` 进入 Chat；目标 `chatTrigger=all` 且订阅 `message.channels` 时普通频道消息也进入；频道回复以 `thread_ts` 留在原线程。
-  - QQ：`op=13` 为回调地址校验（无签名头，使用 AppSecret 派生 Ed25519 私钥对 `${event_ts}${plain_token}` 签名）；`op=0` 校验 `X-Signature-Ed25519` + `X-Signature-Timestamp`（±300 秒）后解析 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE`；命令与普通文本分别进入命令/Chat，未知事件也回 `{"opcode":12}` 防止重推。QQ 群/频道仅 @Bot 触发，不支持全部消息；不支持媒体/图片。
-- 去重：事件 ID（Telegram `tg:<chat>:<message|update>`、Discord `dc:<interaction>`/`dc_msg:<message>`、Slack `slack:<event_id|client_msg_id|trigger_id>`、QQ `qq:<message_id|target:timestamp>`）写入 `bot_events`，并记录 event_kind/outcome/detail/target/user/updated_at 供诊断；保留 `BOT_EVENT_RETENTION_DAYS`（7）天。
+- 成功：QQ op=13 回调校验返回 `{"plain_token":"…","signature":"…"}`；普通事件/重复事件/未授权目标或用户统一返回 `200 {"opcode":12}`（不泄露是否存在/是否授权）。
+- 失败：签名缺失/错误 `401 invalid_signature`；时间戳超出 ±300 秒 `401 stale_signature`；payload 无效/缺字段 `400 invalid_payload|missing_fields`；Bot 未启用/不存在/未启用 `404 not_found`；限流 `429 rate_limited`（IP scope 带 `Retry-After`，Bot scope 不带）。
+- 验签规则（QQ）：
+  - `op=13` 回调地址校验：无签名头，使用 AppSecret 派生 Ed25519 私钥对 `${event_ts}${plain_token}` 签名，返回 `plain_token`/`signature`。
+  - `op=0` 事件：校验 `X-Signature-Ed25519` + `X-Signature-Timestamp`（±300 秒）后解析 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE`；
+    命令与普通文本分别进入命令/Chat，未知事件也回 `{"opcode":12}` 防止重推。
+- 事件内容：C2C 私聊普通文本直接进入 Chat；群/频道只有 @Bot 事件进入（平台限制，无“全部消息”）；入站图片在 `d.attachments` 中取首个 `image/*`（`content_type`/`filename`/`size`/`url`），
+  仅图片无文字也可进入 Chat；QQ 不支持出站媒体/按钮/引用。
+- 去重：事件 ID `qq:<message_id|target:timestamp>` 写入 `bot_events`，并记录 event_kind/outcome/detail/target/user/updated_at 供诊断；保留 `BOT_EVENT_RETENTION_DAYS`（7）天。
 - 命令：`/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/ask <问题>`、`/role`（仅私聊）、`/reset`、`/forget confirm`（后两者全用户自助）。
   回复文本清洗内部路径/URL，命令回复 ≤1500 字符；`/files` 最多 10 条、只含名称与大小；`/ask` 需 `BOT_AI_ENABLED=true`，提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`，
-  按 `botId:userId` 每小时限流（`BOT_AI_RATE_PER_HOUR`，默认 10），返回文本清洗后经平台格式化/分段。
-- Chat：非斜杠普通消息在目标 `allow_chat=1` 且 `BOT_AI_ENABLED=true` 时进入 AI；群/频道按 `chatTrigger`（默认仅 @/回复，`all` 才消费全部消息），私聊全部；
+  按 `botId:userId` 每小时限流（`BOT_AI_RATE_PER_HOUR`，默认 10），返回文本清洗后去 Markdown 标记并分段发送。
+- Chat：非斜杠普通消息在目标 `allow_chat=1` 且 `BOT_AI_ENABLED=true` 时进入 AI；C2C 私聊直接进入，群/频道仅 @Bot 事件；
   按入口使用任务/对话两套内置提示或 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖；固定安全边界始终追加，附带该 Bot×用户的长期记忆摘要；
-  `/ask` 与 Chat 使用独立 OpenCode 会话（mode=task/chat）；AI 文本经 sanitize → 平台 Markdown 格式化 → 按平台上限分段（最多 4 段）发送；
-  群/频道引用触发消息（Telegram/Discord）或留在线程（Slack）；发送第二段起失败时回复 `partial_text_sent` 且不自动重试。Chat 不执行命令/写操作；
-  未开启 `allow_chat`、AI 未启用或非 @/回复且目标非 `all` 的群消息返回 `200` 但不调用 AI（写诊断事件 `ignored`）。
-- 图片：`BOT_AI_VISION_ENABLED=true` 时 Telegram/Discord/Slack 入站图片（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、固定平台域名、不落盘）以 OpenCode prompt files 交给 AI；
-  关闭/下载失败/mime 非法时降级为文字回答；QQ 不支持。审计 `bot.ai.image` 只记录 mime/大小/跳过原因。
-- 按钮：`/status`、`/help` 的 Telegram inline keyboard 与 Discord message components 只包含“刷新状态/帮助”；回调需目标 `allow_commands=1` + user 白名单（与命令相同），动作只调用只读 provider，无写操作；Slack/QQ 本轮不返回按钮。
-- 限流：Webhook scope 按 `CF-Connecting-IP`（缺失时 `request.ip`）120 次/分钟；BotService 再按 botId 300 次/分钟；命令按 `botId:userId` 每 `BOT_COMMAND_RATE_PER_MINUTE`（20）次/分钟；Chat 另按每分钟 `BOT_CHAT_RATE_PER_MINUTE`（6）次；Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（10）次。记忆摘要不额外占用每小时 AI 配额（每轮对话只计 1 次）。
-- Bot 关闭（`BOT_ENABLED=false`/无密钥）、Bot 不存在或 `enabled=false` 时统一 `404`，不泄露 Bot 是否存在。Discord Gateway 关闭（`BOT_DISCORD_GATEWAY_ENABLED=false`）时普通消息不会进入 Chat；HTTP Interactions（斜杠命令/按钮）仍可用。
+  `/ask` 与 Chat 使用独立 OpenCode 会话（mode=task/chat）；AI 文本经 sanitize → QQ 纯文本格式化 → 按 2000 字符分段（最多 4 段）发送；
+  第二段起失败时返回错误并记录 `partial_text_sent`，不自动重试。Chat 不执行命令/写操作；未开启 `allow_chat`、AI 未启用或群/频道非 @Bot 的事件返回 `200` 但不调用 AI（写诊断事件 `ignored`）。
+- 图片：`BOT_AI_VISION_ENABLED=true`（默认）时，QQ 入站图片（`d.attachments`）经 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 域名后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、
+  内存下载（不落盘）后以 OpenCode prompt files 交给 AI；`BOT_AI_VISION_ENABLED=false`、下载失败或 mime/大小非法时降级为文字回答。审计 `bot.ai.image` 只记录 mime/大小/跳过原因。
+- 限流：Webhook scope 按 `CF-Connecting-IP`（缺失时 `request.ip`）120 次/分钟；BotService 再按 botId 300 次/分钟；命令按 `botId:userId` 每 `BOT_COMMAND_RATE_PER_MINUTE`（20）次/分钟；
+  Chat 另按每分钟 `BOT_CHAT_RATE_PER_MINUTE`（6）次；Chat/`/ask` 共用每小时 `BOT_AI_RATE_PER_HOUR`（10）次。记忆摘要不额外占用每小时 AI 配额（每轮对话只计 1 次）。
+- Bot 关闭（`BOT_ENABLED=false`/无密钥）、Bot 不存在或 `enabled=false` 时统一 `404`，不泄露 Bot 是否存在。
 
 ### 错误码汇总
 
-`bot_disabled`（503）、`bot_key_missing`（503）、`bot_key_invalid`（500，仅启动/配置阶段）、`invalid_bot_config`（400）、`publish_confirm_required`（400）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`chat_trigger_unsupported`（400，QQ 群/频道不支持“全部消息”）、`invalid_request`（400，静默时段/触发方式/事件结果非法）、`bot_health_unsupported`（400，平台适配器不支持连接自检）、`too_many_media`/`media_too_large`/`media_total_too_large`（400，发布媒体超限）、`qq_media_unsupported`（400，QQ 带媒体）。AI 图片内部错误码 `bot_ai_image_unsupported`/`bot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`、`missing_trigger_id`、`invalid_response_url`。
+`bot_disabled`（503）、`bot_key_missing`（503）、`bot_key_invalid`（500，仅启动/配置阶段）、`invalid_bot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`bot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `bot_ai_image_unsupported`/`bot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。v0.5.8 起删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。

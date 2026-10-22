@@ -1,6 +1,19 @@
 # 路线图
 
-## v0.5.7（当前，已部署；真实平台实发待补）
+## v0.5.8（当前，待部署验收；QQ 单平台 + 图片默认开启 + schema v13）
+
+- **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、目标 `chatTrigger`、Telegram HTML/引用/线程；
+  删除 env `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_*`；schema v13（迁移 13）删除非 QQ Bot 及其级联数据（**生产 Discord Bot 数据迁移前已备份**，迁移不可逆）。
+- **QQ 单平台能力保留**：QQ 官方 Bot 接入、命令（含 `/role`/`/reset`/`/forget confirm`）、C2C/群@/频道 Chat、长期记忆、私聊角色卡、事件诊断、
+  平台连接自检、角色/记忆元数据管理、文本发布（TOTP + `PUBLISH`，≤2000 分段）。
+- **QQ 入站图片默认开启**：`BOT_AI_VISION_ENABLED=true`；`d.attachments` 图片经 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、
+  内存不落盘下载后交给 AI；失败/关闭降级；图片会经 OpenCode 交给模型 provider（SECURITY 明示）。
+- **API/UI 收敛**：`BotPlatform` 仅 `qq`；无 `gateway`/`chatTrigger`/`mediaFileIds`；删除媒体与触发方式错误码；Web `/bots` 去 Gateway/媒体/触发方式，保留 6 分区。
+- **数据/部署**：schema v13；`deploy.ps1` 部署后 smoke 期望 schema 13；迁移前必须备份 Discord 数据 + DB 快照；回滚只能还原快照。
+- **状态**：本地 `node scripts/check-version.mjs` 通过；测试基线（Lead 全量实测 2026-10-22）`npm test` 337（服务端 321 + 脚本 16）、`npm run test:web` 157（30 文件），`npm run check`/coverage/build 通过；**待部署验收**（部署/真实平台证据待在 `docs/ACCEPTANCE.md` 回填）。
+- **下一版**：v0.5.9/v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），具体范围待用户确认。
+
+## v0.5.7（历史，已部署；真实平台实发待补；v0.5.8 起移除多平台能力）
 
 - **群聊触发方式**：目标级 `chatTrigger`（`mention` 默认 / `all`）；QQ 群/频道仅 @，`all` 返回 `chat_trigger_unsupported`；
   `all` 需平台前置（Telegram 关 privacy mode、Discord 开启 Message Content Intent、Slack 订阅 `message.channels`）；未授权 message 触发静默忽略。
@@ -143,11 +156,12 @@
 
 ## 已知限制
 
-- v0.5.7 已部署（当前 release `20261022T131813Z`/schema 12，commit `2f429be`，smoke 24/24；修复了 `lastErrorHint` 错误码识别并生产复验）；真实平台消息级联调（分段/Markdown/引用、触发方式、`/reset`/`/forget confirm`、连接自检、诊断、角色/记忆、图片）待用户实发验收，完成前不声明该部分通过；Discord 需先补注册 `/role` `/reset` `/forget`。
-- v0.5.7 群聊“全部消息”触发依赖平台前置（Telegram 关 privacy mode、Discord Message Content Intent、Slack `message.channels`）；未满足时只有 @/回复进入 Chat；QQ 群/频道仅 @/回复。
-- v0.5.7 图片理解默认关闭且需模型支持 image 输入；生产仅完成只读验证，真实图片识别质量/失败路径待验收；QQ 不支持图片。
+- v0.5.8 待部署验收：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，不可逆）；生产当前仍为 v0.5.7/schema v12；
+  部署前必须备份生产 Discord Bot 数据，部署后按 `docs/DEPLOY.md` §3.1/§9.8 与 `docs/ACCEPTANCE.md` 完成 QQ 真实平台与图片验收。
+- v0.5.8 起仅 QQ 官方 Bot：QQ 仅文本、无媒体/附件/按钮/引用；群/频道只有 @Bot 事件（平台限制，无“全部消息”）；C2C 私聊直接进入 Chat；QQ 平台故障时无备用平台。
+- v0.5.8 图片理解默认开启且需模型支持 image 输入；图片会经 OpenCode 交给模型 provider；生产只读验证过 `opencode-go/deepseek-v4.1-flash` 支持 image，真实图片识别质量/失败路径待在部署后验收。
 - 回复分段最多 4 段，超长内容会截断并标记；partial 失败不自动重试，需人工核对后处理。
-- v0.5.2 已部署，Discord Gateway 已连接，Discord DM、Discord #general @Bot、QQ C2C 普通消息 Chat 已实发确认；多附件/按钮需补充验证，Telegram/Slack/QQ 群/频道待目标开启后联调。
+- v0.5.7 及以前的多平台能力（Telegram/Discord/Slack、Discord Gateway、按钮、媒体发布、chatTrigger、引用/线程）已自 v0.5.8 起移除，历史验收记录保留但不再是当前能力。
 - v0.5.2 多附件部分成功不自动重试（标记 `partial_media_sent`），需人工确认并重建；单次最多 5 个、单 10 MiB、总 50 MiB。
 - 记忆只保留摘要，不保存逐条对话；不提供导出页面，但用户可 `/forget confirm`、管理员可在“角色与记忆”删除；删除 Bot 时 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像需按保留期/人工清理。
 - 企业微信/钉钉/飞书未实现（未排期）；多管理员审批未实现；QQ 媒体未实现；Slack/QQ 按钮未实现。

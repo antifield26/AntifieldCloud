@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.7（已部署；真实平台消息级联调待用户实发）；v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.8（待部署验收）；v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -14,9 +14,41 @@
 >
 > **v0.5.6 已部署**：2026-10-22 部署到生产 Pi（release `20261022T114546Z`，commit `38dfe70`，schema v11，无新迁移）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊/群聊默认 lofii、个人角色覆盖/`off` 回落、简洁 `/role` 文案均已由用户实发确认。
 >
-> **v0.5.7 已部署（含修复发布）**：2026-10-22 首次部署 release `20261022T131121Z`（commit `8dcd10f`，schema v12）后，生产只读验证发现错误提示映射缺陷（适配器包装消息如 `平台请求失败（0:qq_access_token_failed）` 的 `lastErrorHint` 为 null）；修复 commit `2f429be`（`fix(bot): 错误提示识别适配器包装消息中的平台错误码`），重新部署 release `20261022T131813Z`（commit `2f429be`，version 0.5.7/schema v12），current 指向该 release，另保留 `20261022T131121Z`、`20261022T114546Z`。第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`（sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke **16/16**、带 Access token 的完整 smoke **24/24**；重启后 Discord Gateway `已连接`（21:18:48）。生产只读复验通过：服务层 events/roles/memories/metrics/deliveries、`lastErrorHint` 对 `network`/`qq_access_token_failed` 均正确、`/` 与 `/bots` 页面及新 bundle 均 200。**真实平台消息级联调待用户实发验收；Discord 尚缺 `role`/`reset`/`forget` 斜杠命令注册（实测缺口）。**
+> **v0.5.7 已部署（含修复发布）**：2026-10-22 首次部署 release `20261022T131121Z`（commit `8dcd10f`，schema v12）后，生产只读验证发现错误提示映射缺陷（适配器包装消息如 `平台请求失败（0:qq_access_token_failed）` 的 `lastErrorHint` 为 null）；修复 commit `2f429be`（`fix(bot): 错误提示识别适配器包装消息中的平台错误码`），重新部署 release `20261022T131813Z`（commit `2f429be`，version 0.5.7/schema v12），current 指向该 release，另保留 `20261022T131121Z`、`20261022T114546Z`。第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`（sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke **16/16**、带 Access token 的完整 smoke **24/24**；重启后 Discord Gateway `已连接`（21:18:48）。生产只读复验通过：服务层 events/roles/memories/metrics/deliveries、`lastErrorHint` 对 `network`/`qq_access_token_failed` 均正确、`/` 与 `/bots` 页面及新 bundle 均 200。**真实平台消息级联调待用户实发验收；Discord 尚缺 `role`/`reset`/`forget` 斜杠命令注册（实测缺口）。**自 v0.5.8 起 Telegram/Discord/Slack 平台与相关能力移除，本节作为历史记录保留。
+>
+> **v0.5.8 待部署**：2026-10-22 目标 release 为 v0.5.8（schema v13）。平台收敛为 QQ 官方 Bot 单平台，迁移 13 删除非 QQ Bot 及其级联数据（**生产 Discord Bot 数据迁移前已备份**）；QQ 入站图片理解默认开启；
+  详细交付范围、部署验证与待实发项见下方 v0.5.8 段。**部署与真实平台验收完成前不得声明通过。**
 
-## v0.5.7（当前，已部署；真实平台消息级联调待用户实发）
+## v0.5.8（当前，待部署验收；QQ 单平台 + 图片默认开启 + schema v13）
+
+- 日期：2026-10-22（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（目标 version 0.5.8/schema 13）+ Windows 本地工作区
+- **状态**：代码与文档已完成，**待部署与真实平台验收**。部署事实（release/commit/快照/smoke/healthz/备份证据）由 Lead 部署后回填本节，当前不写未证实数据。
+- **交付范围**：
+  - **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、`discord-gateway.ts`、只读按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）、
+    Telegram HTML/引用/线程；公开 Webhook 只接受 QQ。删除 env：`BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`。
+  - **schema v13（迁移 13）**：`DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；迁移 5–12 保留；
+    迁移前必须备份生产 Discord Bot 数据（DB 快照已覆盖）。迁移不可逆，回滚只能还原迁移前快照。
+  - **QQ 单平台能力保留**：QQ 官方 Bot 接入（AppID/AppSecret/op=13 回调与 op=0 Ed25519 验签）、命令（`/help /status /backup /world /mc /files /ask /role /reset /forget`）、
+    C2C/群@/频道 Chat、长期记忆、私聊角色卡、事件诊断、平台连接自检（`access_token`）、角色/记忆元数据管理、文本发布（TOTP + `PUBLISH`，≤2000 分段）。
+  - **QQ 入站图片理解默认开启**：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 中 image/* 附件经 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 域名后缀白名单、
+    image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、内存不落盘下载后，以 OpenCode prompt files 交给模型 provider（图片会外发给模型服务，SECURITY 已写明）；
+    失败/关闭降级为纯文字回答；QQ 群/频道仅 @Bot 事件，图片消息同样受平台限制。
+  - **API/UI 收敛**：`BotPlatform` 仅 `qq`；`BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPublishJob` 无 `mediaFileIds`；
+    删除 `chat_trigger_unsupported` 与媒体相关错误码；Web `/bots` 去掉 Gateway/媒体选择/触发方式，保留 6 分区（概览/配置/目标/投递与发布/角色与记忆/诊断）。
+  - **文档**：BOT.md 重写为 QQ 单平台（含 attachments 字段/域名白名单/腾讯平台限制）；API/UI-SPEC/SECURITY/ARCHITECTURE/DEPLOY/README/AGENTS/CHANGELOG/ROADMAP/PLAN 全量同步；
+    v0.5.0–v0.5.7 历史验收记录保留并标注“v0.5.8 起移除”。
+- **本地验证**（Lead 全量实测 2026-10-22）：`npm test` **337**（服务端 321 + 运维脚本 16）、`npm run test:web` **157**（30 文件）、`node scripts/check-version.mjs` 通过；`npm run check` 通过（typecheck/lint/server/web 全绿）；`npm run test:coverage` 通过（Lines 91.78% / Branches 77.06% / Functions 86.12%）；`npm run build` 通过。**部署事实与 QQ 真实平台验收待回填。**
+- **待部署验收项**（完成后回填证据）：
+  1. 生产 Discord Bot 数据备份记录（DB 快照 + 配置/目标导出）；`deploy.ps1` 迁移前快照 → 部署 v0.5.8 → 迁移 11/12→13。
+  2. `/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke 与带 Access token 的完整 smoke 通过（`-ExpectedSchemaVersion 13`）。
+  3. schema 校验：`bots.platform` 仅 `qq`（非 QQ Bot 已按预期删除）；9 张 `bot*` 表存在；QQ 目标/队列/事件/会话/记忆保留。
+  4. QQ 真实平台：回调 `op=13`/事件订阅、C2C/群@/频道命令与 Chat、连接自检、诊断、角色/记忆管理、长文本分段、文本发布（TOTP+`PUBLISH`）、`/reset`/`/forget confirm`。
+  5. 图片理解：默认开启下 QQ 发图识别或降级；域名/mime/大小限制与不落盘；必要时临时关闭验证。
+  6. 部署后增量备份/密钥包拉取与 ack 证据。
+- **回滚**：迁移 13 删除非 QQ Bot 数据，**只能还原迁移前 DB 快照**并同步还原 `APP_VERSION`；回滚窗口内保持 `BOT_ENABLED`/`BOT_AI_ENABLED=false`。
+
+## v0.5.7（历史，已部署；真实平台消息级联调待用户实发；自 v0.5.8 起移除多平台能力）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T131813Z`，commit `2f429be`，schema 12）+ Windows 本地工作区

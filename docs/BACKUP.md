@@ -222,9 +222,9 @@ sudo rm -rf /home/antifield/minecraft-backups
 ```powershell
 # 应用归档链 + DB + manifest + 可选世界归档
 cd "$env:USERPROFILE\projects\AntifieldCloud"
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 12
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 13
 # 需要解包验证世界（先确认临时盘 ≥3× 世界归档体积）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 12 -IncludeWorld
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 13 -IncludeWorld
 # 将 ASCII 状态回写 Pi（可选；默认不写）
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -PiHost 192.0.2.10
 ```
@@ -338,7 +338,7 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 
 ### 8.4 验证清单
 
-1. `/healthz` 返回 `{"ok":true,"version":"0.5.7","schemaVersion":12,...}`，服务 active；`/api/version` 登录后版本一致且 `botsEnabled` 与 env 一致。
+1. `/healthz` 返回 `{"ok":true,"version":"0.5.8","schemaVersion":13,...}`，服务 active；`/api/version` 登录后版本一致且 `botsEnabled` 与 env 一致。
 2. 登录成功（TOTP 仍有效，因为 DB 快照含用户与 TOTP secret）；恢复码可用。
 3. 文件列表数量、随机抽样文件的 SHA-256 与 API `GET /api/files/:id` 的 `sha256` 字段一致；笔记附件可见。
 4. 图片/文本/PDF/预览正常，回收站内容与备份时一致；多文件分享/笔记版本可打开。
@@ -350,7 +350,7 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 
 > 数据库迁移只向上、无 down 迁移：若回滚到旧 release，务必同时恢复升级前的 `--snapshot-db` 快照
 > （部署脚本在切换前生成，路径 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`）。
-> schema v12 高于旧程序支持版本时旧程序会拒绝启动，必须先还原快照。
+> schema v13 高于旧程序支持版本时旧程序会拒绝启动，必须先还原快照。
 
 ## 9. Web 文件级恢复（不替换运行中的 DB）
 
@@ -371,7 +371,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
 | 现象 | 处理 |
 |---|---|
-| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.5.7/schema 12 |
+| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.5.8/schema 13 |
 | pending 一直不减少 | PC 下载失败：看 `backup.log`；确认直连/SSH；保留 pending 是预期行为，不要手工删 DB 行 |
 | `--ack` 报 SHA 不匹配 | 归档损坏/被替换；对比 PC `.sha256`，从 PC 副本重新确认或重新 `--prepare --full` |
 | `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB；世界备份另需 1.5× 世界体积 |

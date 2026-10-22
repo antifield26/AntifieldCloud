@@ -1,5 +1,43 @@
 # Changelog
 
+## [v0.5.8] - 2026-10-22
+
+### Added
+
+- **QQ 入站图片理解默认开启**：`BOT_AI_VISION_ENABLED=true`（默认）；QQ 事件 `d.attachments` 中首个 `image/*` 附件（`content_type`/`filename`/`size`/`url`）经
+  `.qpic.cn`/`.qq.com`/`.gtimg.cn` 域名后缀白名单、image mime 白名单（jpeg/png/webp/gif）、≤`BOT_AI_IMAGE_MAX_BYTES` 内存下载（不落盘）后，
+  以 OpenCode prompt files data URL 交给模型 provider；仅图片无文字也可进入 Chat；失败/关闭/非法图片降级为纯文字回答。
+- **schema v13（迁移 13）**：`DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；迁移 5–12 保留。
+- **QQ 单平台能力**：保留 QQ 官方 Bot 接入（AppID/AppSecret、`op=13` 回调校验、`op=0` Ed25519 验签）、命令（`/help /status /backup /world /mc /files /ask /role /reset /forget`）、
+  C2C/群@/频道 Chat、长期记忆、私聊角色卡、事件诊断、平台连接自检（`access_token`）、角色/记忆元数据管理、文本发布（TOTP + `PUBLISH`，≤2000 字符分段）。
+
+### Changed
+
+- **平台收敛为 QQ 官方 Bot 单平台**：删除 Telegram/Discord/Slack 适配器、`server/src/bot/discord-gateway.ts`、只读按钮、媒体/多附件发布、目标 `chatTrigger`、
+  Telegram HTML/引用/线程；`BotPlatform` 仅 `qq`；公开 Webhook 只接受 QQ；`BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPublishJob` 无 `mediaFileIds`。
+- **env 收敛**：删除 `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`；保留 QQ/AI/连通性/队列键，`BOT_AI_VISION_ENABLED` 默认改为 `true`。
+- **发布仅文本**：`POST /api/bots/:id/publish` 不再接受媒体；文本 ≤2000 字符，超长由服务端分段；长文本 partial 失败标记 `partial_text_sent` 且不自动重试。
+- **Web `/bots`**：去掉 Discord Gateway/媒体选择器/触发方式，保留 6 分区（概览/配置/目标/投递与发布/角色与记忆/诊断）与“检查连接”、诊断、角色/记忆元数据管理。
+
+### Removed
+
+- 删除 Telegram/Discord/Slack 平台注册与配置说明、Discord Gateway 与 `BOT_DISCORD_GATEWAY_ENABLED`、只读按钮、媒体/多附件发布与 `BOT_PUBLISH_MAX_MEDIA_*`、
+  目标触发方式 `chatTrigger` 与 `chat_trigger_unsupported` 错误码、媒体相关错误码、Telegram HTML/引用/线程、`BotSummary.gateway`。
+- 生产 Discord Bot 及级联数据（迁移 13 删除，迁移前已备份；不可逆，回滚只能还原迁移前 DB 快照）。
+- v0.5.0–v0.5.7 历史验收记录保留，但自 v0.5.8 起不再是当前能力。
+
+### Security
+
+- QQ 入站图片只从固定域名后缀下载、image mime 白名单、大小上限、不落盘；图片会经本机 OpenCode 交给模型 provider，数据外发范围已在 SECURITY 明示。
+- AppSecret 只写不读、AES-256-GCM 落库；管理 API 与诊断只返回元数据；自助 `/reset`/`/forget confirm` 审计不含正文；发布仍为 TOTP + `PUBLISH` 双确认。
+- 迁移 13 删除非 QQ Bot 数据前必须备份；回滚依赖迁移前 DB 快照。
+
+### Deployment
+
+- 版本/文档/`APP_VERSION` 升到 0.5.8；`docs/DEPLOY.md` 的 schema/健康检查/smoke 期望同步为 v0.5.8/schema 13；`scripts/deploy.ps1` 部署后 smoke `-ExpectedSchemaVersion 13`。
+- 部署顺序：**备份生产 Discord Bot 数据** → 迁移前 DB 快照 → 部署（迁移 13）→ `/healthz` 断言 `version=0.5.8`/`schemaVersion=13` → 带 Access token 的 smoke → QQ env/Bot 校验。
+- **待部署验收**：本地测试基线（Lead 全量实测 2026-10-22）`npm test` **337**（服务端 321 + 运维脚本 16）、`npm run test:web` **157**（30 文件）；`npm run check`、coverage（Lines 91.78% / Branches 77.06% / Functions 86.12%）、`npm run build` 均通过。生产部署、schema 13 校验、QQ 真实平台联调与图片验收证据待 Lead 回填 `docs/ACCEPTANCE.md`。
+
 ## [v0.5.7] - 2026-10-22
 
 ### Added

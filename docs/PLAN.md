@@ -1,8 +1,23 @@
 # AntifieldCloud v0.5.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.7**（schema v12，已部署）；生产为 v0.5.7/schema v12（当前 release `20261022T131813Z`，commit `2f429be`，含 `lastErrorHint` 错误码识别修复，smoke 24/24），真实平台消息级联调待用户实发后按 `docs/ACCEPTANCE.md` 回填证据。
+本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.8**（schema v13，待部署验收）；生产当前为 v0.5.7/schema v12（release `20261022T131813Z`，commit `2f429be`），部署后按 `docs/ACCEPTANCE.md` 回填证据。
 
-## v0.5.7 补充（当前）
+## v0.5.8 补充（当前）
+
+- **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、目标 `chatTrigger`、
+  Telegram HTML/引用/线程；删除 env `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`；`BotPlatform` 仅 `qq`。
+- **数据**：schema v13（迁移 13 = `DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡），迁移不可逆；
+  **生产 Discord Bot 数据迁移前必须备份**，回滚只能还原迁移前 DB 快照；迁移 5–12 保留。
+- **QQ 单平台能力保留**：QQ 官方 Bot 接入、命令（含 `/role`/`/reset`/`/forget confirm`）、C2C/群@/频道 Chat、长期记忆、私聊角色卡、事件诊断、
+  平台连接自检（`access_token`）、角色/记忆元数据管理、文本发布（TOTP + `PUBLISH`，≤2000 分段）。
+- **图片默认开启**：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片经 `.qpic.cn`/`.qq.com`/`.gtimg.cn` 后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、
+  内存不落盘下载后交给 AI；失败/关闭降级；图片会经 OpenCode 发给模型 provider（SECURITY 明示）。
+- **API/UI 收敛**：`BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPublishJob` 无 `mediaFileIds`；删除媒体/触发方式错误码；
+  Web `/bots` 去 Gateway/媒体/触发方式，保留 6 分区。
+- **状态**：本地 `node scripts/check-version.mjs` 通过；测试基线 337/157（Lead 全量实测 2026-10-22，`npm run check`/coverage/build 通过）；**待部署验收**。
+- **下一版**：v0.5.9/v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），范围待用户确认。
+
+## v0.5.7 补充（历史；v0.5.8 起移除多平台能力）
 
 - **范围**：群聊触发方式（目标级 `chatTrigger=mention|all`；QQ 群/频道仅 @）、回复引用/线程（Telegram/Discord/Slack）、
   长回复按平台上限分段（最多 4 段、续段前缀、超限截断、Telegram HTML 安全分段）、Markdown 平台化、图片理解（默认关闭）、
