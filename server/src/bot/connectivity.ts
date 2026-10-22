@@ -30,9 +30,6 @@ export interface ConnectivitySnapshot {
 }
 
 const PLATFORM_PROBE_URLS: Record<BotPlatform, string> = {
-  telegram: 'https://api.telegram.org/',
-  discord: 'https://discord.com/api/v10/gateway',
-  slack: 'https://slack.com/api/api.test',
   qq: 'https://bots.qq.com/',
 }
 
@@ -135,8 +132,9 @@ export class BotConnectivityMonitor {
       }
 
       const canProbe = !proxy || portReachable
+      // 外网探测只用中立站点；QQ 平台可达性由下方 platforms.qq 单独探测。
       const internet = canProbe
-        ? await this.probeHttp('https://discord.com/api/v10/gateway', timeoutMs)
+        ? await this.probeHttp('https://www.qq.com/', timeoutMs)
         : { ...EMPTY_PROBE, error: 'proxy_port_unreachable' }
       const platformNames = Array.from(new Set(this.deps.getPlatforms()))
       const platformEntries = await Promise.all(

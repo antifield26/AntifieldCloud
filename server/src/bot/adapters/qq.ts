@@ -1,13 +1,16 @@
 /**
- * QQ 官方 Bot 适配器：Webhook Ed25519 验签、op=13 回调地址校验、命令/普通消息解析、文本分段发送与被动回复。
+ * QQ 官方 Bot 适配器：Webhook Ed25519 验签、op=13 回调地址校验、C2C/群@/频道事件解析、
+ * 命令与普通消息 Chat、被动回复 msg_id、长文本分段发送、入站图片元数据与白名单下载、access_token 自检。
  * 安全边界：AppSecret 只用于本地派生 Ed25519 私钥与换取 access_token，不进入 URL、日志或错误信息；
- * 仅支持文本，发送按 QQ 的 2000 字符上限分段；群/频道仅 @Bot 触发（平台限制），C2C 直接进入 Chat。
+ * 只支持文本发送；入站图片只保存平台 URL 元数据，由 loadImage 在内存下载后交给 AI，不落盘。
+ * 群/频道只有 @Bot 事件进入 Bot（平台限制），C2C 私聊直接进入 Chat。
  */
 import { createHash, createPrivateKey, createPublicKey, randomInt, sign, verify } from 'node:crypto'
 import type {
   BotAdapter,
   BotHealthCheck,
   BotHealthItem,
+  BotInboundImage,
   BotSecret,
   BotTargetRow,
   InboundVerification,
@@ -15,7 +18,14 @@ import type {
   SendResult,
 } from '../types.ts'
 import { splitForPlatform } from '../text.ts'
-import { BotPlatformError, fetchJson, headerValue, markPartialError, parseJsonBody } from './http.ts'
+import {
+  BotPlatformError,
+  downloadImage,
+  fetchJson,
+  headerValue,
+  markPartialError,
+  parseJsonBody,
+} from './http.ts'
 
 const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 const QQ_API_BASE = 'https://api.sgroup.qq.com'
@@ -26,6 +36,8 @@ const DEFAULT_TOKEN_TTL_SECONDS = 7200
 const ED25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex')
 /** QQ 要求事件回调必须返回的确认体。 */
 const QQ_ACK_BODY = { opcode: 12 }
+/** 入站图片允许下载的 QQ CDN 域名后缀；后缀前导点保证完整 DNS 标签边界。 */
+const QQ_IMAGE_HOST_SUFFIXES = ['.qpic.cn', '.qq.com', '.qq.com.cn', '.gtimg.cn'] as const
 
 interface AccessTokenCacheEntry {
   token: string
@@ -119,6 +131,28 @@ function responseExternalId(body: unknown): string | null {
   return null
 }
 
+/** 从事件 d.attachments 取首个 image/* 附件；字段不完整时跳过。 */
+function extractInboundImage(d: Record<string, unknown>): BotInboundImage | undefined {
+  const attachments = d.attachments
+  if (!Array.isArray(attachments)) return undefined
+  for (const raw of attachments) {
+    const attachment = asRecord(raw)
+    if (!attachment) continue
+    const mime = typeof attachment.content_type === 'string' ? attachment.content_type.trim().toLowerCase() : ''
+    const rawUrl = typeof attachment.url === 'string' ? attachment.url.trim() : ''
+    if (!mime.startsWith('image/') || !rawUrl) continue
+    // QQ 文档示例存在协议相对 URL（//host/path），统一补成 https 后再交给下载白名单校验。
+    const url = rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl
+    const image: BotInboundImage = { ref: url, mime }
+    const name = typeof attachment.filename === 'string' ? attachment.filename.trim() : ''
+    if (name) image.name = name
+    const size = Number(attachment.size)
+    if (Number.isFinite(size) && size > 0) image.size = size
+    return image
+  }
+  return undefined
+}
+
 /** 连接自检失败时使用的固定脱敏错误码（绝不返回 token）。 */
 function qqHealthError(error: unknown): string {
   if (error instanceof BotPlatformError) {
@@ -162,8 +196,9 @@ export class QqAdapter implements BotAdapter {
         '在 QQ 开放平台（q.qq.com）创建机器人，取得 AppID 与 AppSecret；AppID 填入公开配置，AppSecret 填入“Token”字段。',
         `在“开发设置 → 回调地址”填上面复制的地址（${webhookUrl}），平台会发送 op=13 验证请求，服务端自动返回签名。`,
         '在事件订阅中勾选 C2C_MESSAGE_CREATE、GROUP_AT_MESSAGE_CREATE、AT_MESSAGE_CREATE（按使用场景选择）。',
-        '在“目标”中登记用户 openid、群 openid 或频道 ID，并开启命令/通知权限。',
+        '在“目标”中登记用户 openid、群 openid 或频道 ID，并开启命令/通知权限；群/频道消息需 @Bot 才会触发。',
         '将机器人加入测试群或频道，发送 /help 验证；回复依赖入站消息的 msg_id，主动通知不带 msg_id。',
+        '如需图片理解，在部署环境开启 BOT_AI_VISION_ENABLED，并使用支持图片输入的模型。',
       ],
     }
   }
@@ -280,11 +315,14 @@ export class QqAdapter implements BotAdapter {
     const rawContent = typeof d.content === 'string' ? d.content.trim() : ''
     // C2C 不包含平台 mention 前缀；群/频道先剥离开头的 @Bot 再判断命令或 Chat。
     const content = isDirect ? rawContent : stripMentionPrefix(rawContent)
+    const image = extractInboundImage(d)
     const messageId = textValue(d.id)
     const eventTs = textValue(d.timestamp) || String(Math.floor(this.now().getTime() / 1000))
     const eventId = messageId || `qq:${targetExternalId}:${eventTs}`
-    // 空消息也必须确认，避免 QQ 反复重推同一事件；带上事件 ID 便于诊断。
-    if (!content) return { kind: 'ignored', eventId, ackBody: QQ_ACK_BODY, detail: 'qq:event:empty_content' }
+    // 空消息也必须确认，避免 QQ 反复重推同一事件；仅图片无正文时仍进入 Chat。
+    if (!content && !image) {
+      return { kind: 'ignored', eventId, ackBody: QQ_ACK_BODY, detail: 'qq:event:empty_content' }
+    }
 
     const replyTarget: QqTarget = { external_id: targetExternalId, kind }
     const userName =
@@ -293,13 +331,12 @@ export class QqAdapter implements BotAdapter {
         : author && typeof author.nickname === 'string'
           ? author.nickname
           : null
-    // QQ 不支持交互按钮；reply 的第二个参数由上层传入，这里只发送文本。
     const reply = async (replyText: string): Promise<void> => {
       await this.sendTextParts(replyTarget, replyText, messageId || null)
     }
-    if (!content.startsWith('/')) {
+    if (content.startsWith('/')) {
       return {
-        kind: 'chat',
+        kind: 'command',
         eventId,
         targetExternalId,
         targetKind: kind,
@@ -307,13 +344,12 @@ export class QqAdapter implements BotAdapter {
         userName,
         text: content,
         isDirect,
-        chatTrigger: isDirect ? 'direct' : 'mention',
         ackBody: QQ_ACK_BODY,
         reply,
       }
     }
-    return {
-      kind: 'command',
+    const chat: Extract<InboundVerification, { kind: 'chat' }> = {
+      kind: 'chat',
       eventId,
       targetExternalId,
       targetKind: kind,
@@ -321,13 +357,15 @@ export class QqAdapter implements BotAdapter {
       userName,
       text: content,
       isDirect,
+      chatTrigger: isDirect ? 'direct' : 'mention',
       ackBody: QQ_ACK_BODY,
       reply,
     }
+    if (image) chat.image = image
+    return chat
   }
 
   async send(target: BotTargetRow, content: OutboundContent): Promise<SendResult> {
-    if ((content.media ?? []).length > 0) throw new BotPlatformError(400, 'qq_media_unsupported')
     return this.sendTextParts({ external_id: target.external_id, kind: target.kind }, content.text)
   }
 
@@ -346,7 +384,7 @@ export class QqAdapter implements BotAdapter {
         if (result.externalId) ids.push(result.externalId)
       }
     } catch (error) {
-      throw markPartialError(error, ids, 'text')
+      throw markPartialError(error, ids)
     }
     if (ids.length === 0) return { externalId: null }
     if (ids.length === 1) return { externalId: ids[0] ?? null }
@@ -364,6 +402,20 @@ export class QqAdapter implements BotAdapter {
       return { ok: false, items }
     }
     return { ok: true, items }
+  }
+
+  /** 下载入站图片：只允许 QQ CDN 域名后缀，内存返回 Buffer，不落盘。 */
+  async loadImage(
+    image: BotInboundImage,
+    options: { maxBytes: number; timeoutMs?: number },
+  ): Promise<{ mime: string; data: Buffer }> {
+    return downloadImage({
+      image,
+      maxBytes: options.maxBytes,
+      timeoutMs: options.timeoutMs,
+      fetch: this.fetchImpl,
+      allowedHostSuffixes: QQ_IMAGE_HOST_SUFFIXES,
+    })
   }
 
   private async sendMessage(target: QqTarget, text: string, messageId: string | null = null): Promise<SendResult> {

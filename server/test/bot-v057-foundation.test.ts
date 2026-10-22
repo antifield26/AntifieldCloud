@@ -1,5 +1,5 @@
 /**
- * v0.5.7 基础模块测试：文本分段、平台化 Markdown 转换、错误提示映射、
+ * v0.5.7/v0.5.8 基础模块测试：文本分段、QQ 纯文本 Markdown 剥离、错误提示映射、
  * 角色卡/长期记忆的管理元数据（不暴露正文）。
  */
 import test from 'node:test'
@@ -50,48 +50,30 @@ test('splitMessage：超过最大段数时截断并带标记，emoji 不被切�
   }
 })
 
-test('splitForPlatform：各平台上限与常量一致', () => {
-  assert.deepEqual(BOT_TEXT_LIMITS, { telegram: 4096, discord: 2000, slack: 4000, qq: 2000 })
+test('splitForPlatform：QQ 上限 2000 且分段正确', () => {
+  assert.deepEqual(BOT_TEXT_LIMITS, { qq: 2000 })
   const parts = splitForPlatform('qq', 'x'.repeat(2001))
   assert.equal(parts.length, 2)
   assert.equal(parts[0]!.total, 2)
+  assert.ok(parts.every((part) => part.text.length <= 2000))
 })
 
-test('formatAiReply：Telegram HTML 转义并转换粗体/代码，Slack/Discord/QQ 各自规则', () => {
+test('formatAiReply：剥离 Markdown 标记，保留可读正文（QQ 纯文本）', () => {
   const markdown = '# 标题\n**粗体** 与 `code` 与 <script>\n*斜体*\n```\nconst a = 1 < 2\n```'
-  const telegram = formatAiReply('telegram', markdown)
-  assert.equal(telegram.textMode, 'html')
-  assert.match(telegram.text, /<b>标题<\/b>/)
-  assert.match(telegram.text, /<b>粗体<\/b>/)
-  assert.match(telegram.text, /<code>code<\/code>/)
-  assert.match(telegram.text, /&lt;script&gt;/)
-  assert.match(telegram.text, /<pre>/)
-  assert.ok(!telegram.text.includes('<script>'))
-
-  const slack = formatAiReply('slack', markdown)
-  assert.equal(slack.textMode, 'plain')
-  assert.match(slack.text, /\*标题\*/)
-  assert.match(slack.text, /&lt;script&gt;/)
-
-  const discord = formatAiReply('discord', markdown)
-  assert.match(discord.text, /\*\*标题\*\*/)
-  assert.match(discord.text, /\*\*粗体\*\*/)
-  assert.ok(!discord.text.includes('# 标题'))
-
-  const qq = formatAiReply('qq', markdown)
-  assert.ok(!qq.text.includes('**'))
-  assert.ok(!qq.text.includes('`'))
-  // QQ 只发纯文本，尖括号不会成为标签；这里只要求 Markdown 标记被剥离。
-  assert.ok(!/^#{1,6}\s/m.test(qq.text))
+  const reply = formatAiReply(markdown)
+  assert.ok(!reply.includes('**'))
+  assert.ok(!reply.includes('`'))
+  assert.ok(!/^#{1,6}\s/m.test(reply))
+  assert.match(reply, /标题/)
+  assert.match(reply, /粗体/)
+  assert.match(reply, /code/)
+  assert.match(reply, /斜体/)
+  // QQ 只发纯文本，尖括号不会成为标签。
+  assert.match(reply, /<script>/)
+  assert.equal(formatAiReply('   '), '')
 })
 
-test('formatAiReply：空回答返回空串；未闭合标记不产生标签注入', () => {
-  assert.deepEqual(formatAiReply('telegram', '   '), { text: '', textMode: 'plain' })
-  const reply = formatAiReply('telegram', '**未闭合 <b>')
-  assert.ok(!reply.text.includes('<b>未闭合 <b>'))
-})
-
-test('describeBotError：已知错误码/常见模式映射，未知返回 null', () => {
+test('describeBotError：QQ/通用错误码与包装消息映射，未知返回 null', () => {
   assert.match(String(describeBotError('qq_access_token_failed')), /QQ access_token/)
   assert.match(String(describeBotError('bot_ai_timeout: 超时')), /AI 响应超时/)
   assert.match(String(describeBotError('Error: connect ECONNREFUSED 127.0.0.1')), /出站网络不可用/)
@@ -99,13 +81,13 @@ test('describeBotError：已知错误码/常见模式映射，未知返回 null'
   // 适配器 BotPlatformError 消息把错误码嵌在“平台请求失败（status:code）”内，也必须命中。
   assert.match(String(describeBotError('平台请求失败（0:qq_access_token_failed）')), /QQ access_token/)
   assert.match(String(describeBotError('平台请求失败（502:bot_ai_unavailable）')), /AI 服务不可达/)
-  assert.match(String(describeBotError('平台请求失败（200:invalid_auth）')), /Slack 凭据无效/)
+  assert.match(String(describeBotError('平台请求失败（401:unauthorized）')), /QQ 凭据无效/)
   assert.equal(describeBotError('some_unknown_failure'), null)
   assert.equal(describeBotError(null), null)
 })
 
 test('角色卡/长期记忆：管理列表只返回元数据，删除同时清理镜像文件', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-v057-store-'))
+  const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-v058-store-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db: DatabaseSync = openDatabase({ path })

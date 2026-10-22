@@ -1,6 +1,5 @@
 // 投递与发布分区：投递状态/重试，发布表单、定时任务与取消。
-// 安全边界：只展示队列状态，不执行 Bot 命令；发布只允许管理员手动创建，媒体最多 5 个。
-import { X } from 'lucide-react'
+// 安全边界：只展示队列状态，不执行 Bot 命令；QQ 仅支持纯文本，发布只允许管理员手动创建并需 TOTP + PUBLISH 双确认。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
@@ -13,7 +12,6 @@ import type {
   BotSummary,
   BotTarget,
 } from '../../api/types'
-import type { FileItem } from '../../api/types'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
@@ -22,7 +20,6 @@ import { EmptyState } from '../EmptyState'
 import { FormField } from '../FormField'
 import { RelativeTime } from '../RelativeTime'
 import { useToast } from '../Toast'
-import { BotMediaPicker } from './BotMediaPicker'
 import {
   BOT_DELIVERY_KIND_LABELS,
   BOT_DELIVERY_STATUS_META,
@@ -31,11 +28,7 @@ import {
   publishableTargets,
   targetLabel,
 } from '../../lib/bots'
-import { formatBytes, formatDateTime, truncateText } from '../../lib/format'
-
-const MEDIA_MAX_FILES = 5
-const MEDIA_MAX_BYTES_PER_FILE = 10 * 1024 * 1024
-const MEDIA_MAX_TOTAL_BYTES = 50 * 1024 * 1024
+import { formatDateTime, truncateText } from '../../lib/format'
 
 interface BotDeliveryPanelProps {
   bot: BotSummary | null
@@ -64,8 +57,6 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
   const [retryingId, setRetryingId] = useState<string | null>(null)
   const [publishTargetId, setPublishTargetId] = useState('')
   const [text, setText] = useState('')
-  const [mediaFiles, setMediaFiles] = useState<FileItem[]>([])
-  const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
   const [scheduledAt, setScheduledAt] = useState('')
   const [totpCode, setTotpCode] = useState('')
   const [confirmText, setConfirmText] = useState('')
@@ -116,7 +107,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
   }, [load, refreshToken])
 
   const eligibleTargets = publishableTargets(targets)
-  const textLimit = bot ? BOT_TEXT_LIMITS[bot.platform] : 4096
+  const textLimit = BOT_TEXT_LIMITS.qq
 
   const handleRetry = async (delivery: BotDelivery): Promise<void> => {
     if (!bot || retryingId) return
@@ -149,23 +140,6 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       setFormError(`内容超过 ${textLimit} 字符上限`)
       return
     }
-    if (mediaFiles.length > MEDIA_MAX_FILES) {
-      setFormError(`最多选择 ${MEDIA_MAX_FILES} 个媒体文件`)
-      return
-    }
-    if (bot.platform === 'qq' && mediaFiles.length > 0) {
-      setFormError('QQ 官方 Bot 暂不支持媒体发布')
-      return
-    }
-    const mediaTotal = mediaFiles.reduce((sum, file) => sum + file.size, 0)
-    if (mediaFiles.some((file) => file.size > MEDIA_MAX_BYTES_PER_FILE)) {
-      setFormError(`单个媒体文件不能超过 ${formatBytes(MEDIA_MAX_BYTES_PER_FILE)}`)
-      return
-    }
-    if (mediaTotal > MEDIA_MAX_TOTAL_BYTES) {
-      setFormError(`媒体文件总大小不能超过 ${formatBytes(MEDIA_MAX_TOTAL_BYTES)}`)
-      return
-    }
     const schedule = scheduleIso(scheduledAt)
     if (schedule.error) {
       setFormError(schedule.error)
@@ -184,13 +158,11 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       const created = await api.bots.publish.create(bot.id, {
         targetId: publishTargetId,
         text: text.trim(),
-        mediaFileIds: mediaFiles.map((file) => file.id),
         scheduledAt: schedule.iso,
         totpCode,
         confirmText: 'PUBLISH',
       })
       setText('')
-      setMediaFiles([])
       setScheduledAt('')
       setTotpCode('')
       setConfirmText('')
@@ -198,7 +170,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       await load(true)
       onChanged()
     } catch (publishError) {
-      setFormError(toErrorMessage(publishError, '创建发布任务失败，请检查目标与媒体文件'))
+      setFormError(toErrorMessage(publishError, '创建发布任务失败，请检查目标与内容'))
     } finally {
       setPublishing(false)
     }
@@ -237,7 +209,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       {metrics ? (
         <Card
           title="近 24 小时指标"
-          description="成功率为已尝试投递中 sent 占比；死信与最近错误用于快速定位退避/Token 问题。"
+          description="成功率为已尝试投递中 sent 占比；死信与最近错误用于快速定位退避/凭据问题。"
           actions={<Badge tone="muted">事件 {metrics.events} 条</Badge>}
         >
           <div className="bot-status-grid">
@@ -324,7 +296,10 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
                     {delivery.nextAttemptAt ? ` · 下次重试 ${formatDateTime(delivery.nextAttemptAt)}` : ''}
                   </p>
                   {delivery.lastError ? (
-                    <p className="bot-queue-error" role="alert">错误：{delivery.lastError}</p>
+                    <p className="bot-queue-error" role="alert">
+                      错误：{delivery.lastError}
+                      {delivery.lastErrorHint ? `（${delivery.lastErrorHint}）` : ''}
+                    </p>
                   ) : null}
                 </li>
               )
@@ -335,7 +310,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
 
       <Card
         title="发布消息"
-        description={`向频道/群组发布文本或最多 ${MEDIA_MAX_FILES} 个媒体文件；${bot.platform === 'discord' ? 'Discord' : bot.platform === 'slack' ? 'Slack' : bot.platform === 'qq' ? 'QQ（仅文本）' : 'Telegram'} 文本上限 ${textLimit} 字符。`}
+        description={`向 QQ 频道/群组发布纯文本；QQ 单条文本上限 ${textLimit} 字符，超长由服务端分段发送。`}
         actions={<Badge tone="accent"><Send size={13} aria-hidden="true" /> 手动发布</Badge>}
         error={error}
         onRetry={() => void load()}
@@ -387,59 +362,20 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
             />
           </FormField>
 
-          <div className="bot-publish-row">
-            <FormField
-              label="媒体文件（可选）"
-              htmlFor="bot-publish-media"
-              hint={`从云端普通文件选择，最多 ${MEDIA_MAX_FILES} 个、单个 ≤${formatBytes(MEDIA_MAX_BYTES_PER_FILE)}、总计 ≤${formatBytes(MEDIA_MAX_TOTAL_BYTES)}；QQ 不支持媒体。`}
-            >
-              <div className="bot-media-input">
-                <div className="bot-media-selected" id="bot-publish-media">
-                  {mediaFiles.length === 0 ? (
-                    <span className="field-hint">未选择媒体</span>
-                  ) : (
-                    mediaFiles.map((file) => (
-                      <span className="bot-media-chip" key={file.id}>
-                        <span title={file.name}>{truncateText(file.name, 28)}</span>
-                        <span className="muted"> {formatBytes(file.size)}</span>
-                        <button
-                          type="button"
-                          className="bot-media-chip-remove"
-                          aria-label={`移除媒体 ${file.name}`}
-                          onClick={() => setMediaFiles((previous) => previous.filter((item) => item.id !== file.id))}
-                          disabled={publishing}
-                        >
-                          <X size={13} aria-hidden="true" />
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => setMediaPickerOpen(true)}
-                  disabled={publishing || bot.platform === 'qq' || mediaFiles.length >= MEDIA_MAX_FILES}
-                >
-                  选择文件
-                </Button>
-              </div>
-            </FormField>
-            <FormField
-              label="定时时间（可选）"
-              htmlFor="bot-publish-schedule"
-              hint="留空立即进入队列；按本地时区选择。"
-            >
-              <input
-                id="bot-publish-schedule"
-                className="input"
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(event) => setScheduledAt(event.target.value)}
-                disabled={publishing}
-              />
-            </FormField>
-          </div>
+          <FormField
+            label="定时时间（可选）"
+            htmlFor="bot-publish-schedule"
+            hint="留空立即进入队列；按本地时区选择。"
+          >
+            <input
+              id="bot-publish-schedule"
+              className="input"
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={(event) => setScheduledAt(event.target.value)}
+              disabled={publishing}
+            />
+          </FormField>
 
           <FormField
             label="TOTP 验证码"
@@ -478,7 +414,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
           </FormField>
 
           <p className="bot-publish-warning" role="note">
-            发布内容与媒体会发送到外部平台；请确认目标与文件均不包含敏感信息。
+            发布内容会发送到外部平台；请确认目标与内容均不包含敏感信息。
           </p>
 
           {formError ? <p className="field-error" role="alert">{formError}</p> : null}
@@ -531,7 +467,6 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
                   <p className="bot-queue-text" title={job.text}>{truncateText(job.text, 160)}</p>
                   <p className="bot-queue-summary">
                     目标：{targetLabel(targets, job.targetId)} · 尝试 {job.attempts} 次
-                    {job.mediaFileIds.length > 0 ? ` · 媒体 ${job.mediaFileIds.join('、')}` : ''}
                   </p>
                   <p className="bot-queue-meta">
                     创建 {formatDateTime(job.createdAt)}
@@ -539,7 +474,10 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
                     {job.sentAt ? ` · 发送 ${formatDateTime(job.sentAt)}` : ''}
                   </p>
                   {job.lastError ? (
-                    <p className="bot-queue-error" role="alert">错误：{job.lastError}</p>
+                    <p className="bot-queue-error" role="alert">
+                      错误：{job.lastError}
+                      {job.lastErrorHint ? `（${job.lastErrorHint}）` : ''}
+                    </p>
                   ) : null}
                 </li>
               )
@@ -547,18 +485,6 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
           </ul>
         )}
       </Card>
-
-      <BotMediaPicker
-        open={mediaPickerOpen}
-        selectedIds={mediaFiles.map((file) => file.id)}
-        maxFiles={MEDIA_MAX_FILES}
-        onClose={() => setMediaPickerOpen(false)}
-        onSelect={(file) => {
-          setMediaFiles((previous) =>
-            previous.some((item) => item.id === file.id) || previous.length >= MEDIA_MAX_FILES ? previous : [...previous, file],
-          )
-        }}
-      />
 
       <ConfirmDialog
         open={cancelTarget !== null}

@@ -96,8 +96,6 @@ export interface Config {
   botEventRetentionDays: number
   /** 每个用户/目标每分钟命令上限。 */
   botCommandRatePerMinute: number
-  /** 发布媒体单文件上限。 */
-  botPublishMaxMediaBytes: number
   /** 定时发布最长提前天数。 */
   botPublishMaxScheduledDays: number
   /** 最多配置的 Bot 数。 */
@@ -117,21 +115,18 @@ export interface Config {
   /** 任务/对话提示词覆盖；空使用内置默认，最长 2000。 */
   botAiTaskPrompt: string
   botAiChatPrompt: string
-  /** AI 回答最大字符数；平台适配器会再按各自上限分段发送。 */
+  /** AI 回答最大字符数；QQ 适配器会按平台上限分段发送。 */
   botAiMaxReplyChars: number
-  /** 图片理解总开关（OpenCode prompt files + 多模态模型）；默认关闭。 */
+  /** 图片理解总开关（OpenCode prompt files + 多模态模型）；默认开启。 */
   botAiVisionEnabled: boolean
   /** 单张入站图片大小上限（字节）。 */
   botAiImageMaxBytes: number
-  botDiscordGatewayEnabled: boolean
   /** v0.5.3 出站连通性探测与自动恢复；默认开启。 */
   botConnectivityEnabled: boolean
   botConnectivityIntervalSeconds: number
   botConnectivityTimeoutSeconds: number
   /** 本机出站代理；空则使用 HTTPS_PROXY/HTTP_PROXY，供连通性探测展示。 */
   botProxyUrl: string
-  botPublishMaxMediaFiles: number
-  botPublishMaxMediaTotalBytes: number
 }
 
 const DEFAULT_ENV_FILE = '/etc/antifieldcloud/env'
@@ -291,7 +286,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botDeliveryMaxAttempts: int(merged, 'BOT_DELIVERY_MAX_ATTEMPTS', 5, 1, 20),
     botEventRetentionDays: int(merged, 'BOT_EVENT_RETENTION_DAYS', 7, 1, 90),
     botCommandRatePerMinute: int(merged, 'BOT_COMMAND_RATE_PER_MINUTE', 20, 1, 600),
-    botPublishMaxMediaBytes: int(merged, 'BOT_PUBLISH_MAX_MEDIA_BYTES', 10 * MIB, 1 * MIB, 50 * MIB),
     botPublishMaxScheduledDays: int(merged, 'BOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),
     botMaxBots: int(merged, 'BOT_MAX_BOTS', 10, 1, 50),
     botAiEnabled: bool(merged, 'BOT_AI_ENABLED', false),
@@ -306,9 +300,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiTaskPrompt: str(merged, 'BOT_AI_TASK_PROMPT', '').slice(0, 2000),
     botAiChatPrompt: str(merged, 'BOT_AI_CHAT_PROMPT', '').slice(0, 2000),
     botAiMaxReplyChars: int(merged, 'BOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
-    botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', false),
+    botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', true),
     botAiImageMaxBytes: int(merged, 'BOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),
-    botDiscordGatewayEnabled: bool(merged, 'BOT_DISCORD_GATEWAY_ENABLED', false),
     botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
     botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
     botConnectivityTimeoutSeconds: int(merged, 'BOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
@@ -317,14 +310,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       'BOT_PROXY_URL',
       str(merged, 'HTTPS_PROXY', str(merged, 'HTTP_PROXY', '')),
     ).trim(),
-    botPublishMaxMediaFiles: int(merged, 'BOT_PUBLISH_MAX_MEDIA_FILES', 5, 1, 10),
-    botPublishMaxMediaTotalBytes: int(
-      merged,
-      'BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES',
-      50 * MIB,
-      1 * MIB,
-      200 * MIB,
-    ),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')

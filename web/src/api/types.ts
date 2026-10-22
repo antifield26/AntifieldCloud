@@ -829,22 +829,16 @@ export interface MetricsResult {
 
 /* ---------- 机器人管理（v0.5.0，GET/POST /api/bots*） ---------- */
 
-export type BotPlatform = 'telegram' | 'discord' | 'slack' | 'qq'
+/** 当前仅支持 QQ 官方 Bot。 */
+export type BotPlatform = 'qq'
 export type BotTargetKind = 'channel' | 'user' | 'group'
-/** 目标内普通消息触发策略：仅 @Bot/回复触发，或全部消息触发（QQ 群/频道仅支持 mention）。 */
-export type BotChatTrigger = 'mention' | 'all'
-export type BotGatewayState = 'disabled' | 'connecting' | 'connected' | 'reconnecting' | 'error'
-export interface BotGatewayStatus {
-  state: BotGatewayState
-  lastError: string | null
-}
 export interface BotConnectivityProbe {
   reachable: boolean
   latencyMs: number | null
   status: number | null
   error: string | null
 }
-/** 出站连通性快照：代理端口 -> 外网 -> 各平台 API；不含凭据。 */
+/** 出站连通性快照：代理端口 -> 外网 -> QQ 平台 API；不含凭据。 */
 export interface BotConnectivitySnapshot {
   checkedAt: string | null
   checking: boolean
@@ -876,13 +870,13 @@ export interface BotStatus {
   lastError: string | null
 }
 
-/** Bot 摘要：不包含 Token/Webhook Secret/Signing Secret 等密钥字段。 */
+/** Bot 摘要：不包含 AppSecret 等密钥字段。 */
 export interface BotSummary {
   id: string
   platform: BotPlatform
   name: string
   enabled: boolean
-  /** 平台公开配置（如 Discord applicationId/publicKey），绝不包含密钥。 */
+  /** 平台公开配置（QQ 为 appId），绝不包含密钥。 */
   config: Record<string, unknown>
   webhookUrl: string
   setupSteps: string[]
@@ -892,7 +886,6 @@ export interface BotSummary {
   createdAt: string
   updatedAt: string
   keyVersion: number
-  gateway: BotGatewayStatus
 }
 
 export interface BotInboundTarget {
@@ -915,8 +908,6 @@ export interface BotTarget {
   allowNotifications: boolean
   /** 是否允许该目标内成员普通消息 Chat；不授予斜杠命令权限。 */
   allowChat: boolean
-  /** 普通消息触发方式；QQ 群/频道固定为 mention。 */
-  chatTrigger: BotChatTrigger
   /** 静默时段（本地分钟 0-1439，Asia/Shanghai）；两者同时为空表示不静默。 */
   quietStartMinute: number | null
   quietEndMinute: number | null
@@ -944,7 +935,6 @@ export interface BotPublishJob {
   botId: string
   targetId: string
   text: string
-  mediaFileIds: string[]
   scheduledAt: string | null
   status: BotPublishStatus
   attempts: number
@@ -955,15 +945,13 @@ export interface BotPublishJob {
   sentAt: string | null
 }
 
-/** 创建 Bot：密钥字段只提交、不回显。Discord 的 applicationId 放 config。 */
+/** 创建 Bot：密钥字段只提交、不回显。QQ 的 AppID 放 config.appId。 */
 export interface BotCreateInput {
   platform: BotPlatform
   name: string
+  /** QQ 官方 Bot AppSecret。 */
   token: string
   config?: Record<string, unknown>
-  webhookSecret?: string
-  publicKey?: string
-  signingSecret?: string
 }
 
 /** 更新 Bot：省略/留空密钥表示保持原值；platform 不可修改。 */
@@ -972,9 +960,6 @@ export interface BotUpdateInput {
   enabled?: boolean
   config?: Record<string, unknown>
   token?: string
-  webhookSecret?: string
-  publicKey?: string
-  signingSecret?: string
 }
 
 export interface BotTargetInput {
@@ -984,21 +969,18 @@ export interface BotTargetInput {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
-  /** 普通消息触发方式；省略时服务端按 mention 处理，QQ 传 all 返回 chat_trigger_unsupported。 */
-  chatTrigger?: BotChatTrigger
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
 
 export type BotTargetPatch = Partial<Omit<BotTargetInput, 'externalId'>>
 
-/** 发布任务：v0.5.2 单次最多 5 个媒体文件；发布属数据外发，必须 TOTP 再认证。 */
+/** 发布任务：QQ 仅支持纯文本；发布属数据外发，必须 TOTP 再认证。 */
 export interface BotPublishInput {
   targetId: string
   text: string
   /** 6 位 TOTP 验证码，服务端校验后立即丢弃，不写入队列。 */
   totpCode: string
-  mediaFileIds?: string[]
   scheduledAt?: string | null
   /** 二次确认文本，必须为 PUBLISH。 */
   confirmText: 'PUBLISH'

@@ -1,11 +1,11 @@
 /**
- * Bot 平台核心类型：平台标识、加密后的凭据、公开配置、队列与命令事件。
+ * Bot 平台核心类型：当前仅支持 QQ 官方 Bot；平台标识、加密后的凭据、公开配置、队列与命令事件。
  * 安全边界：本文件中的 `BotSecret` 只允许在服务端短生命周期使用，禁止序列化到 API/日志。
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 
-export const BOT_PLATFORMS = ['telegram', 'discord', 'slack', 'qq'] as const
+export const BOT_PLATFORMS = ['qq'] as const
 export type BotPlatform = (typeof BOT_PLATFORMS)[number]
 
 export function isBotPlatform(value: unknown): value is BotPlatform {
@@ -13,26 +13,8 @@ export function isBotPlatform(value: unknown): value is BotPlatform {
 }
 
 export interface BotSecret {
-  /** 平台 API token（Discord Bot Token / Telegram Bot Token / Slack Bot Token）。 */
+  /** QQ 官方 Bot AppSecret（旧版本字段名为 token）。 */
   token: string
-  /** Telegram webhook secret token。 */
-  webhookSecret?: string
-  /** Discord application public key（hex）。 */
-  publicKey?: string
-  /** Slack signing secret。 */
-  signingSecret?: string
-  /** QQ 官方 Bot AppSecret（与 AppSecret 对应；token 字段承载）。 */
-  appSecret?: string
-}
-
-export interface BotRuntimeConfig {
-  /** 非敏感配置，允许在 API 返回。 */
-  config: Record<string, unknown>
-  secret: BotSecret
-  botId: string
-  platform: BotPlatform
-  fetch?: typeof fetch
-  now?: () => Date
 }
 
 export interface BotRow {
@@ -61,8 +43,6 @@ export interface BotTargetRow {
   allow_notifications: number
   /** 是否允许该目标内成员进行普通消息 Chat；与 allow_commands 独立。 */
   allow_chat: number
-  /** 群聊触发策略：mention=仅 @/回复（默认），all=全部消息（QQ 群/频道不支持）。 */
-  chat_trigger: 'mention' | 'all'
   /** 静默时段（本地分钟 0-1439）；两者都非空时生效。 */
   quiet_start_minute: number | null
   quiet_end_minute: number | null
@@ -78,7 +58,6 @@ export interface BotTarget {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat: boolean
-  chatTrigger: 'mention' | 'all'
   quietStartMinute: number | null
   quietEndMinute: number | null
   createdAt: string
@@ -137,7 +116,6 @@ export interface BotPublishJob {
   botId: string
   targetId: string
   text: string
-  mediaFileIds: string[]
   scheduledAt: string | null
   status: BotPublishRow['status']
   attempts: number
@@ -147,48 +125,24 @@ export interface BotPublishJob {
   sentAt: string | null
 }
 
-export interface OutboundMedia {
-  filename: string
-  mime: string
-  data: Buffer
-}
-
 export interface OutboundContent {
+  /** QQ 仅支持文本。 */
   text: string
-  /** 单次最多 5 个；QQ 适配器只接受文本。 */
-  media?: OutboundMedia[]
-  /** 群聊引用回复的平台消息 ID（可选；私聊不传）。 */
-  replyTo?: string
-  /** Telegram 使用 HTML parse_mode；其余平台忽略。 */
-  textMode?: 'plain' | 'html'
-}
-
-/** 只读交互按钮；平台适配器负责编码，Service 只认动作 ID。 */
-export type BotAction = 'refresh_status' | 'help'
-
-export interface BotButton {
-  id: BotAction
-  label: string
-}
-
-export interface BotReplyOptions {
-  buttons?: BotButton[]
-  /** Telegram 使用 HTML parse_mode；其余平台忽略。 */
-  textMode?: 'plain' | 'html'
 }
 
 export interface SendResult {
   externalId: string | null
   externalIds?: string[]
-  /** 多附件部分发送失败；队列不得自动重试，避免重复外发。 */
+  /** 长文本分段部分发送失败；队列不得自动重试，避免重复外发。 */
   partial?: boolean
 }
 
-export type ChatTrigger = 'direct' | 'mention' | 'reply' | 'message'
+/** QQ 群/频道只有 @Bot 事件进入 Bot；C2C 私聊直接进入。 */
+export type ChatTrigger = 'direct' | 'mention'
 
 /** 平台入站图片：只保存平台侧引用，实际下载由适配器 loadImage 完成。 */
 export interface BotInboundImage {
-  /** 平台文件 ID / 附件 URL 等适配器可解析的引用。 */
+  /** 平台附件 URL 等适配器可解析的引用。 */
   ref: string
   mime: string
   name?: string
@@ -209,11 +163,9 @@ export type InboundVerification =
       userName: string | null
       text: string
       isDirect: boolean
-      /** 平台要求立即返回的响应体（如 Discord deferred / QQ opcode 12）。 */
-      immediateResponse?: unknown
       /** 平台事件回调必须返回的确认体（QQ `{opcode:12}`）。 */
       ackBody?: unknown
-      reply: (text: string, options?: BotReplyOptions) => Promise<void>
+      reply: (text: string) => Promise<void>
     }
   | {
       kind: 'chat'
@@ -228,26 +180,13 @@ export type InboundVerification =
       /** 入站图片（可选）；由 Service 决定是否下载并交给 AI。 */
       image?: BotInboundImage
       ackBody?: unknown
-      reply: (text: string, options?: BotReplyOptions) => Promise<void>
-    }
-  | {
-      kind: 'action'
-      eventId: string
-      targetExternalId: string
-      targetKind: BotTargetRow['kind']
-      userId: string
-      userName: string | null
-      action: BotAction
-      isDirect: boolean
-      immediateResponse?: unknown
-      ackBody?: unknown
-      reply: (text: string, options?: BotReplyOptions) => Promise<void>
+      reply: (text: string) => Promise<void>
     }
 
 export interface BotHealthItem {
   name: string
   ok: boolean
-  /** 脱敏细节（如平台用户名/错误码），不包含 Token 或内部 URL。 */
+  /** 脱敏细节（如平台身份/错误码），不包含 Token 或内部 URL。 */
   detail: string
 }
 
@@ -268,11 +207,9 @@ export interface BotAdapter {
     botId: string
     headers: Record<string, string | string[] | undefined>
     body: Buffer
-    /** 目标群聊触发策略解析器；未提供等价 mention（仅 @/回复）。 */
-    chatTriggerFor?: (targetExternalId: string) => 'mention' | 'all'
   }): Promise<InboundVerification>
   send(target: BotTargetRow, content: OutboundContent): Promise<SendResult>
-  /** 只读连接自检；未实现时管理页显示不支持。 */
+  /** 只读连接自检。 */
   check?(input: { botId: string; appOrigin: string }): Promise<BotHealthCheck>
   /** 下载入站图片（固定平台域名）；调用方负责 mime 白名单与大小上限。 */
   loadImage?(
@@ -289,14 +226,7 @@ export interface BotCommandProviders {
   files(query: string): Promise<Record<string, unknown>[]>
 }
 
-export interface BotMediaStore {
-  /** 返回用户文件的公开元数据；不存在/非普通文件返回 null。 */
-  stat(fileId: string): { filename: string; mime: string; size: number } | null
-  /** 读取发布内容；调用方必须先 stat 校验。 */
-  load(fileId: string): Promise<OutboundMedia>
-}
-
-/** AI 对话提供方（v0.5.1 通过 OpenCode 本地 HTTP API）。 */
+/** AI 对话提供方（通过 OpenCode 本地 HTTP API）。 */
 export type BotAiMode = 'task' | 'chat'
 
 /** 入站图片转成 OpenCode prompt files 的 data URL；只允许图片 mime。 */
@@ -314,7 +244,7 @@ export interface BotAi {
     /** task=/ask 任务导向；chat=普通消息对话导向。 */
     mode: BotAiMode
     prompt: string
-    /** 可选图片（F9）；未启用/不支持时由调用方降级为纯文本。 */
+    /** 可选图片；未启用/不支持时由调用方降级为纯文本。 */
     image?: BotAiImage
   }): Promise<string>
   /** 每轮对话后滚动摘要长期记忆；未实现时服务端保留旧摘要。 */
@@ -396,13 +326,6 @@ export interface BotMemorySummary {
   updatedAt: string
 }
 
-export type GatewayState = 'disabled' | 'connecting' | 'connected' | 'reconnecting' | 'error'
-
-export interface BotGatewayStatus {
-  state: GatewayState
-  lastError: string | null
-}
-
 export interface BotMetrics {
   hours: number
   deliveries: { total: number; sent: number; failed: number; dead: number; successRate: number }
@@ -419,7 +342,6 @@ export interface BotServiceDeps {
   log: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
   audit: (action: string, target: string | null, detail?: Record<string, unknown> | null) => void
   providers: BotCommandProviders
-  media: BotMediaStore
   /** 可选 AI 对话；未配置时 /ask 返回不可用提示。 */
   ai?: BotAi
   fetch?: typeof fetch
@@ -451,8 +373,6 @@ export interface BotSummary {
   createdAt: string
   updatedAt: string
   keyVersion: number
-  /** Discord Gateway 状态；非 Discord 或无 Gateway 时为 disabled。 */
-  gateway: BotGatewayStatus
 }
 
 export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask', 'role', 'reset', 'forget'] as const

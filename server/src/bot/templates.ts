@@ -1,5 +1,5 @@
 /**
- * Bot 回复模板：把只读 provider 的结构化数据格式化为平台纯文本。
+ * Bot 回复模板：把只读 provider 的结构化数据格式化为 QQ 纯文本。
  * 普通用户可见文案避免技术术语；安全边界：只输出白名单字段/截断后的值，不拼接原始 HTML 或密钥。
  */
 import { DEFAULT_CHAT_ROLE } from './roles.ts'
@@ -46,10 +46,11 @@ export function formatFileList(query: string, files: Record<string, unknown>[]):
   return clip(lines.join('\n'))
 }
 
-export function helpText(platform: string): string {
+/** QQ 官方 Bot 命令帮助；只列当前支持的命令与自助命令权限。 */
+export function helpText(): string {
   return clip(
     [
-      `AntifieldCloud Bot（${platform}）只读命令：`,
+      'AntifieldCloud QQ 官方 Bot 只读命令：',
       '/help 帮助',
       '/status 应用/服务/备份摘要',
       '/backup 备份状态',
@@ -60,8 +61,8 @@ export function helpText(platform: string): string {
       '/role 角色设置（私聊）',
       '/reset 重置当前对话（保留长期记忆）',
       '/forget confirm 清除长期记忆与全部对话',
-      '普通消息 Chat：目标开启允许 Chat 后，私聊直接对话；群/频道 @Bot 或回复 Bot 触发。',
-      '除 /role 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
+      '普通消息 Chat：C2C 私聊直接对话；群/频道 @Bot 触发；图片默认交给 AI 识别。',
+      '除 /role（私聊）、/reset、/forget 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
     ].join('\n'),
   )
 }

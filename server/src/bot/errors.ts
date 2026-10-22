@@ -14,34 +14,25 @@ const EXACT_HINTS: Record<string, string> = {
   qq_access_token_failed: 'QQ access_token 获取失败：检查出站网络/代理与 AppSecret',
   qq_access_token_invalid: 'QQ access_token 响应无效：检查 AppID/AppSecret 与平台状态',
   qq_credentials_missing: 'QQ AppID 或 AppSecret 未配置',
-  qq_media_unsupported: 'QQ 官方 Bot 不支持媒体，请只发文本',
-  media_too_large: '媒体文件超过平台大小限制',
-  media_total_too_large: '媒体总大小超过限制',
+  media_too_large: '媒体文件超过大小限制',
   media_missing: '媒体文件不存在或已移入回收站',
-  too_many_media: '媒体数量超过平台上限',
-  partial_media_sent: '部分附件已外发，需人工确认后重建任务，避免重复发送',
   partial_text_sent: '长消息部分段落已发送，需人工确认后处理，避免重复外发',
   target_missing: '目标不存在或已被删除',
   empty_payload: '投递内容为空',
   rate_limited: '触发限流：稍后重试',
-  invalid_signature: '平台签名校验失败：检查 Secret/Public Key 与平台回调配置',
-  stale_signature: '平台回调时间戳过期：检查服务器时间与时钟同步',
+  invalid_signature: 'QQ 回调签名校验失败：检查 AppSecret 与平台回调配置',
+  stale_signature: 'QQ 回调时间戳过期：检查服务器时间与时钟同步',
 }
 
 const PATTERN_HINTS: Array<[RegExp, string]> = [
   [/partial_text_sent/i, '长消息部分段落已发送，需人工确认后处理，避免重复外发'],
-  [/partial_media_sent/i, '部分附件已外发，需人工确认后重建任务，避免重复发送'],
   [/ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNRESET|fetch failed|network/i, '出站网络不可用：检查 Pi 出站代理/隧道与 BOT_PROXY_URL'],
-  [/telegram.*401|Unauthorized/i, 'Telegram 凭据无效：检查 Bot Token 与 Webhook Secret'],
-  [/discord.*401|401.*discord/i, 'Discord 凭据无效：检查 Bot Token / Application ID / Public Key'],
-  [/invalid_auth|not_authed|slack.*401/i, 'Slack 凭据无效：检查 Bot Token 与 Signing Secret'],
   [/timeout|超时/i, '平台请求超时：稍后重试并检查出站网络'],
-  [/403|forbidden|missing.*permission|权限/i, '平台权限不足：检查 Bot 在频道/群/工作区的发送权限'],
+  [/403|forbidden|missing.*permission|权限/i, 'QQ 平台权限不足：检查 Bot 在群/频道的发送权限'],
   [/429|too many requests|frequency/i, '平台限流：稍后重试'],
-  [/401|unauthorized/i, '平台凭据无效或已过期：检查 Token/Secret'],
+  [/401|unauthorized/i, 'QQ 凭据无效或已过期：检查 AppID/AppSecret'],
 ]
 
-/** 返回中文提示；未知错误返回 null。 */
 export function describeBotError(value: string | null | undefined): string | null {
   const text = typeof value === 'string' ? value.trim() : ''
   if (!text) return null

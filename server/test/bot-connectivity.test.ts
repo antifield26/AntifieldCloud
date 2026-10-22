@@ -10,7 +10,7 @@ function monitor(overrides: Partial<ConnectivityDeps> & { proxyUrl?: string } = 
     intervalSeconds: 60,
     timeoutSeconds: 2,
     proxyUrl: 'http://127.0.0.1:18090',
-    getPlatforms: () => ['discord', 'qq'],
+    getPlatforms: () => ['qq'],
     fetchImpl: async () => new Response('{}', { status: 200 }),
     probePort: async () => true,
     log: (level, message) => events.push(`${level}:${message}`),
@@ -35,10 +35,10 @@ test('v0.5.3 连通性：代理端口不可达时不发起外网探测', async (
   assert.equal(snapshot.internet.reachable, false)
   assert.equal(snapshot.internet.error, 'proxy_port_unreachable')
   assert.equal(fetched, 0)
-  assert.equal(snapshot.platforms.discord?.reachable, false)
+  assert.equal(snapshot.platforms.qq?.reachable, false)
 })
 
-test('v0.5.3 连通性：代理与外网可达时探测各平台，4xx 仍视为网络可达', async () => {
+test('v0.5.3 连通性：代理与外网可达时探测 QQ 平台，4xx 仍视为网络可达', async () => {
   const urls: string[] = []
   const { monitor: m } = monitor({
     fetchImpl: (async (input: string | URL | Request) => {
@@ -50,10 +50,9 @@ test('v0.5.3 连通性：代理与外网可达时探测各平台，4xx 仍视为
   assert.equal(snapshot.proxy.portReachable, true)
   assert.equal(snapshot.internet.reachable, true)
   assert.equal(snapshot.internet.status, 401)
-  assert.equal(snapshot.platforms.discord?.reachable, true)
   assert.equal(snapshot.platforms.qq?.reachable, true)
-  assert.equal(urls.length, 3)
-  assert.ok(urls.some((url) => url.includes('discord.com')))
+  assert.equal(urls.length, 2)
+  assert.ok(urls.some((url) => url.includes('bots.qq.com')))
 })
 
 test('v0.5.3 连通性：网络从不可用恢复时触发一次自动恢复回调', async () => {

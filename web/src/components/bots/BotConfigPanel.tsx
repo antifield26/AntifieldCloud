@@ -1,5 +1,5 @@
-// Bot 配置表单：创建/编辑、平台密钥、启停、测试连接、删除与接入步骤。
-// 安全边界：密钥输入只写不回显；编辑时留空表示保持服务端原值，任何密钥都不会写入列表或 URL。
+// 配置分区：创建/编辑 QQ 官方 Bot、AppID 与 AppSecret、启停、测试/检查连接、删除与接入步骤。
+// 安全边界：AppSecret 只写不回显；编辑时留空表示保持服务端原值，密钥不会写入列表、URL 或浏览器存储。
 
 import { useState } from 'react'
 import type { FormEvent } from 'react'
@@ -8,7 +8,6 @@ import { api, toErrorMessage } from '../../api/client'
 import type {
   BotCreateInput,
   BotHealthCheck,
-  BotPlatform,
   BotSummary,
   BotUpdateInput,
 } from '../../api/types'
@@ -20,21 +19,17 @@ import { CopyButton } from '../CopyButton'
 import { FormField } from '../FormField'
 import { InlineError } from '../InlineError'
 import { useToast } from '../Toast'
-import { BOT_PLATFORMS, BOT_PLATFORM_LABELS, botPlatformLabel } from '../../lib/bots'
+import { BOT_PLATFORMS, BOT_PLATFORM_LABELS } from '../../lib/bots'
 import { formatDate, formatDateTime } from '../../lib/format'
 
-const SECRET_MIN_PATTERN = /.{16,}/
-const DISCORD_APPLICATION_ID_PATTERN = /^\d{5,32}$/
-const DISCORD_PUBLIC_KEY_PATTERN = /^[0-9a-f]{64}$/i
-const TOKEN_MIN_LENGTH = 20
+/** QQ 开放平台 AppID：5–32 位数字；AppSecret 至少 16 个字符。 */
+const APP_ID_PATTERN = /^\d{5,32}$/
+const TOKEN_MIN_LENGTH = 16
 
 interface FieldErrors {
   name?: string
   token?: string
-  webhookSecret?: string
-  applicationId?: string
-  publicKey?: string
-  signingSecret?: string
+  appId?: string
 }
 
 interface BotConfigPanelProps {
@@ -56,13 +51,9 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
   const editing = mode === 'edit' && bot !== null
   const initialBot = editing ? bot : null
   const toast = useToast()
-  const [platformChoice, setPlatformChoice] = useState<BotPlatform>(initialBot?.platform ?? 'telegram')
   const [name, setName] = useState(initialBot?.name ?? '')
   const [token, setToken] = useState('')
-  const [webhookSecret, setWebhookSecret] = useState('')
-  const [applicationId, setApplicationId] = useState(() => configString(initialBot, 'applicationId'))
-  const [publicKey, setPublicKey] = useState('')
-  const [signingSecret, setSigningSecret] = useState('')
+  const [appId, setAppId] = useState(() => configString(initialBot, 'appId'))
   const [enabled, setEnabled] = useState(initialBot?.enabled ?? false)
   const [errors, setErrors] = useState<FieldErrors>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -74,85 +65,35 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
-  const platform: BotPlatform = editing && bot ? bot.platform : platformChoice
-  const existingApplicationId = configString(initialBot, 'applicationId')
-  const existingPublicKey = configString(initialBot, 'publicKey')
-  const resolvedApplicationId = applicationId.trim() || existingApplicationId
-  const resolvedPublicKey = publicKey.trim() || existingPublicKey
+  const existingAppId = configString(initialBot, 'appId')
+  const resolvedAppId = appId.trim() || existingAppId
 
   const validate = (): boolean => {
     const next: FieldErrors = {}
     if (!name.trim()) next.name = '请输入 Bot 名称'
-    if (!editing && !token.trim()) next.token = '请输入 Bot Token'
+    if (!editing && !token.trim()) next.token = '请输入 AppSecret'
     if (token.trim() && token.trim().length < TOKEN_MIN_LENGTH) {
-      next.token = `Bot Token 至少 ${TOKEN_MIN_LENGTH} 个字符`
+      next.token = `AppSecret 至少 ${TOKEN_MIN_LENGTH} 个字符`
     }
-    if (platform === 'telegram') {
-      if (!editing && !webhookSecret.trim()) {
-        next.webhookSecret = '请输入 Telegram Webhook Secret'
-      } else if (webhookSecret.trim() && !SECRET_MIN_PATTERN.test(webhookSecret.trim())) {
-        next.webhookSecret = 'Webhook Secret 至少 16 个字符'
-      }
-    }
-    if (platform === 'discord') {
-      if (!DISCORD_APPLICATION_ID_PATTERN.test(resolvedApplicationId)) {
-        next.applicationId = 'Application ID 应为 5–32 位数字'
-      }
-      if (!resolvedPublicKey) {
-        next.publicKey = '请输入 Discord Public Key'
-      } else if (!DISCORD_PUBLIC_KEY_PATTERN.test(resolvedPublicKey)) {
-        next.publicKey = 'Public Key 应为 64 位十六进制字符串'
-      }
-    }
-    if (platform === 'qq' && !DISCORD_APPLICATION_ID_PATTERN.test(resolvedApplicationId)) {
-      next.applicationId = 'QQ AppID 应为 5–32 位数字'
-    }
-    if (platform === 'slack') {
-      if (!editing && !signingSecret.trim()) {
-        next.signingSecret = '请输入 Slack Signing Secret'
-      } else if (signingSecret.trim() && !SECRET_MIN_PATTERN.test(signingSecret.trim())) {
-        next.signingSecret = 'Signing Secret 至少 16 个字符'
-      }
-    }
+    if (!APP_ID_PATTERN.test(resolvedAppId)) next.appId = 'AppID 应为 5–32 位数字'
     setErrors(next)
     return Object.keys(next).length === 0
   }
 
-  const buildCreateInput = (): BotCreateInput => {
-    const input: BotCreateInput = {
-      platform,
-      name: name.trim(),
-      token: token.trim(),
-    }
-    if (platform === 'telegram') input.webhookSecret = webhookSecret.trim()
-    if (platform === 'discord') {
-      input.config = {
-        applicationId: resolvedApplicationId,
-        publicKey: resolvedPublicKey,
-      }
-      input.publicKey = resolvedPublicKey
-    }
-    if (platform === 'slack') input.signingSecret = signingSecret.trim()
-    if (platform === 'qq') input.config = { appId: resolvedApplicationId }
-    return input
-  }
+  const buildCreateInput = (): BotCreateInput => ({
+    platform: 'qq',
+    name: name.trim(),
+    token: token.trim(),
+    config: { appId: resolvedAppId },
+  })
 
   const buildUpdateInput = (): BotUpdateInput => {
     const input: BotUpdateInput = {
       name: name.trim(),
       enabled,
+      config: { appId: resolvedAppId },
     }
     if (token.trim()) input.token = token.trim()
-    if (platform === 'telegram' && webhookSecret.trim()) input.webhookSecret = webhookSecret.trim()
-    if (platform === 'slack' && signingSecret.trim()) input.signingSecret = signingSecret.trim()
-    if (platform === 'discord') {
-      input.config = {
-        applicationId: resolvedApplicationId,
-        publicKey: resolvedPublicKey,
-      }
-      if (publicKey.trim()) input.publicKey = publicKey.trim()
-    }
-    if (platform === 'qq') input.config = { appId: resolvedApplicationId }
     return input
   }
 
@@ -167,9 +108,6 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
         ? await api.bots.update(bot.id, buildUpdateInput())
         : await api.bots.create(buildCreateInput())
       setToken('')
-      setWebhookSecret('')
-      setSigningSecret('')
-      setPublicKey('')
       toast.success(editing ? 'Bot 配置已保存' : 'Bot 已创建，请配置目标后启用')
       onSaved(saved)
     } catch (submitError) {
@@ -186,7 +124,7 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
       await api.bots.test(bot.id)
       toast.success('测试消息已发送，请在目标中确认')
     } catch (testError) {
-      toast.error(toErrorMessage(testError, '测试连接失败，请检查 Token 与目标配置'))
+      toast.error(toErrorMessage(testError, '测试连接失败，请检查 AppSecret 与目标配置'))
     } finally {
       setTesting(false)
     }
@@ -226,23 +164,14 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
     }
   }
 
-  const platformHint =
-    platform === 'telegram'
-      ? '从 BotFather 获取 Token，并生成至少 16 位的 Webhook Secret。'
-      : platform === 'discord'
-        ? '从 Discord Developer Portal 获取 Bot Token、Application ID 与 Public Key。'
-        : platform === 'qq'
-          ? '从 QQ 开放平台（q.qq.com）获取 AppID 与 AppSecret；回调地址会校验 op=13 签名。'
-          : '从 Slack App 管理页获取 Bot Token 与 Signing Secret。'
-
   return (
     <div className="bot-config-grid">
       <Card
         title={editing && bot ? `编辑「${bot.name}」` : '创建 Bot'}
-        description={editing ? '密钥字段留空表示保持原值；保存后不会再次显示。' : '创建后默认停用，确认接入信息无误再启用。'}
+        description={editing ? 'AppSecret 留空表示保持原值；保存后不会再次显示。' : '创建后默认停用，确认接入信息无误再启用。'}
         actions={
           <Badge tone={editing ? 'accent' : 'muted'}>
-            {editing ? botPlatformLabel(platform) : '新建'}
+            {editing ? BOT_PLATFORM_LABELS.qq : '新建'}
           </Badge>
         }
       >
@@ -250,19 +179,10 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
           <FormField
             label="平台"
             htmlFor="bot-platform"
-            hint={editing ? '平台创建后不可修改；如需更换平台请新建 Bot。' : platformHint}
+            hint="当前仅支持 QQ 官方 Bot；平台创建后不可修改。"
           >
             <div className="select-field bot-field-select">
-              <select
-                id="bot-platform"
-                className="select"
-                value={platform}
-                onChange={(event) => {
-                  setPlatformChoice(event.target.value as BotPlatform)
-                  setErrors({})
-                }}
-                disabled={editing || saving}
-              >
+              <select id="bot-platform" className="select" value="qq" disabled>
                 {BOT_PLATFORMS.map((item) => (
                   <option key={item} value={item}>
                     {BOT_PLATFORM_LABELS[item]}
@@ -289,16 +209,37 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
           </FormField>
 
           <FormField
-            label={platform === 'qq' ? 'AppSecret' : 'Bot Token'}
+            label="AppID"
+            htmlFor="bot-qq-app-id"
+            required
+            error={errors.appId}
+            hint="QQ 开放平台机器人 AppID，5–32 位数字；属于公开配置。"
+          >
+            <input
+              id="bot-qq-app-id"
+              className="input"
+              value={appId}
+              onChange={(event) => {
+                setAppId(event.target.value)
+                setErrors((previous) => ({ ...previous, appId: undefined }))
+              }}
+              inputMode="numeric"
+              autoComplete="off"
+              placeholder="例如：102123456"
+              maxLength={32}
+              disabled={saving}
+            />
+          </FormField>
+
+          <FormField
+            label="AppSecret"
             htmlFor="bot-token"
             required={!editing}
             error={errors.token}
             hint={
               editing
                 ? '留空表示不修改；仅在轮换平台凭据时填写。'
-                : platform === 'qq'
-                  ? 'QQ 开放平台机器人 AppSecret（写在服务端，只用于换 token 与验签）。'
-                  : `平台后台生成的 Token，至少 ${TOKEN_MIN_LENGTH} 个字符；只保存在服务端。`
+                : `QQ 开放平台机器人 AppSecret，至少 ${TOKEN_MIN_LENGTH} 个字符；只保存在服务端。`
             }
           >
             <input
@@ -311,146 +252,11 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
                 setErrors((previous) => ({ ...previous, token: undefined }))
               }}
               autoComplete="new-password"
-              placeholder={editing ? '留空表示不修改' : '粘贴 Bot Token'}
+              placeholder={editing ? '留空表示不修改' : '粘贴 AppSecret'}
               maxLength={500}
               disabled={saving}
             />
           </FormField>
-
-          {platform === 'telegram' ? (
-            <FormField
-              label="Webhook Secret"
-              htmlFor="bot-telegram-webhook-secret"
-              required={!editing}
-              error={errors.webhookSecret}
-              hint={
-                editing
-                  ? '留空表示不修改；Telegram 通过该值校验 Webhook 请求头。'
-                  : '至少 16 个字符；Telegram 通过该值校验 Webhook 请求头。'
-              }
-            >
-              <input
-                id="bot-telegram-webhook-secret"
-                className="input"
-                type="password"
-                value={webhookSecret}
-                onChange={(event) => {
-                  setWebhookSecret(event.target.value)
-                  setErrors((previous) => ({ ...previous, webhookSecret: undefined }))
-                }}
-                autoComplete="new-password"
-                placeholder={editing ? '留空表示不修改' : '至少 16 个字符'}
-                maxLength={500}
-                disabled={saving}
-              />
-            </FormField>
-          ) : null}
-
-          {platform === 'discord' ? (
-            <>
-              <FormField
-                label="Application ID"
-                htmlFor="bot-discord-application-id"
-                required
-                error={errors.applicationId}
-                hint="Discord Application 的 Snowflake ID，5–32 位数字。"
-              >
-                <input
-                  id="bot-discord-application-id"
-                  className="input"
-                  value={applicationId}
-                  onChange={(event) => {
-                    setApplicationId(event.target.value)
-                    setErrors((previous) => ({ ...previous, applicationId: undefined }))
-                  }}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="例如：123456789012345678"
-                  maxLength={32}
-                  disabled={saving}
-                />
-              </FormField>
-              <FormField
-                label="Public Key"
-                htmlFor="bot-discord-public-key"
-                required={!existingPublicKey}
-                error={errors.publicKey}
-                hint={
-                  existingPublicKey
-                    ? '已配置；留空表示不修改。填写时需为 64 位十六进制字符串。'
-                    : '64 位十六进制字符串，用于验证 Discord 交互签名。'
-                }
-              >
-                <input
-                  id="bot-discord-public-key"
-                  className="input"
-                  value={publicKey}
-                  onChange={(event) => {
-                    setPublicKey(event.target.value)
-                    setErrors((previous) => ({ ...previous, publicKey: undefined }))
-                  }}
-                  autoComplete="off"
-                  placeholder={existingPublicKey ? '留空表示不修改' : '64 位十六进制 Public Key'}
-                  maxLength={64}
-                  disabled={saving}
-                />
-              </FormField>
-            </>
-          ) : null}
-
-          {platform === 'qq' ? (
-            <FormField
-              label="AppID"
-              htmlFor="bot-qq-app-id"
-              required
-              error={errors.applicationId}
-              hint="QQ 开放平台机器人 AppID，5–32 位数字；AppSecret 填在上面的凭据字段。"
-            >
-              <input
-                id="bot-qq-app-id"
-                className="input"
-                value={applicationId}
-                onChange={(event) => {
-                  setApplicationId(event.target.value)
-                  setErrors((previous) => ({ ...previous, applicationId: undefined }))
-                }}
-                inputMode="numeric"
-                autoComplete="off"
-                placeholder="例如：102123456"
-                maxLength={32}
-                disabled={saving}
-              />
-            </FormField>
-          ) : null}
-
-          {platform === 'slack' ? (
-            <FormField
-              label="Signing Secret"
-              htmlFor="bot-slack-signing-secret"
-              required={!editing}
-              error={errors.signingSecret}
-              hint={
-                editing
-                  ? '留空表示不修改；Slack 使用该值计算请求签名。'
-                  : '至少 16 个字符；Slack 使用该值计算请求签名。'
-              }
-            >
-              <input
-                id="bot-slack-signing-secret"
-                className="input"
-                type="password"
-                value={signingSecret}
-                onChange={(event) => {
-                  setSigningSecret(event.target.value)
-                  setErrors((previous) => ({ ...previous, signingSecret: undefined }))
-                }}
-                autoComplete="new-password"
-                placeholder={editing ? '留空表示不修改' : '至少 16 个字符'}
-                maxLength={500}
-                disabled={saving}
-              />
-            </FormField>
-          ) : null}
 
           {editing && bot ? (
             <>
@@ -534,7 +340,7 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
             {healthError ? (
               <InlineError message={healthError} onRetry={() => void handleCheck()} retryLabel="重新检查" />
             ) : null}
-            {checking && !health ? <p className="field-hint">正在检查 Token、Webhook 与公开配置…</p> : null}
+            {checking && !health ? <p className="field-hint">正在检查 AppID、AppSecret 与回调配置…</p> : null}
             {health ? (
               <>
                 <div className="bot-health-summary">
@@ -571,7 +377,7 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
 
       <div className="bot-config-side">
         {editing && bot ? (
-          <Card title="接入信息" description="Webhook 地址与平台后台配置步骤，不包含任何密钥。">
+          <Card title="接入信息" description="Webhook 地址与 QQ 开放平台后台配置步骤，不包含任何密钥。">
             <div className="bot-webhook-box">
               <span className="field-label">Webhook URL</span>
               <code className="bot-webhook-url">{bot.webhookUrl}</code>
@@ -589,32 +395,19 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
               ))}
               <li>私聊/群聊均可发送 /reset 重置当前对话；/forget confirm 清除该 Bot 的长期记忆。</li>
             </ol>
-            {bot.platform === 'discord' ? (
-              <div className="notice notice-info">
-                普通消息 Chat 需要 Discord Gateway：在 Developer Portal 开启 <strong>Message Content Intent</strong>，
-                并在服务端设置 <code>BOT_DISCORD_GATEWAY_ENABLED=true</code>。当前 Gateway 状态：
-                {bot.gateway.state === 'connected' ? '已连接' : bot.gateway.state === 'error' ? `错误（${bot.gateway.lastError ?? '未知'}）` : '未连接'}。
-              </div>
-            ) : null}
-            {bot.platform === 'telegram' ? (
-              <div className="notice notice-info">
-                群/频道 Chat 需在 BotFather 关闭 privacy mode（或回复 Bot 消息）；私聊普通消息直接进入 Chat。
-              </div>
-            ) : null}
-            {bot.platform === 'qq' ? (
-              <div className="notice notice-info">
-                QQ 群/频道需先把 Bot 加入群并 @Bot 发送一条消息，再到目标分区从“最近入站目标”一键登记；QQ 仅文本。
-              </div>
-            ) : null}
+            <div className="notice notice-info">
+              QQ 群/频道只有 @Bot 消息进入 Bot（平台限制），C2C 私聊直接进入 Chat；仅支持文本。
+              图片理解默认开启，需要支持 image 输入的模型。
+            </div>
           </Card>
         ) : (
-          <Card title="接入信息" description="创建 Bot 后这里会显示 Webhook URL 与平台后台配置步骤。">
+          <Card title="接入信息" description="创建 Bot 后这里会显示 Webhook URL 与 QQ 开放平台配置步骤。">
             <div className="bot-placeholder-info">
               <KeyRound size={18} aria-hidden="true" />
               <div>
-                <p>选择平台并填写 Token 与平台密钥后创建 Bot。</p>
+                <p>填写 QQ 开放平台的 AppID 与 AppSecret 后创建 Bot。</p>
                 <p className="field-hint">
-                  平台密钥用于校验入站 Webhook；Bot Token 用于发送消息。密钥只提交到服务端，不会写入浏览器存储。
+                  AppSecret 用于派生回调签名并换取 access_token；只提交到服务端，不会写入浏览器存储。
                 </p>
               </div>
             </div>
@@ -626,9 +419,9 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
           actions={<ShieldCheck size={18} className="text-accent" aria-hidden="true" />}
         >
           <ul className="bot-security-list">
-            <li>Bot Token、Webhook Secret、Signing Secret 以 AES-256-GCM 加密保存，接口与前端都不会回显。</li>
-            <li>编辑时密钥输入留空表示保持原值；保存后无法再次查看，只能重新填写覆盖。</li>
-            <li>Webhook 由平台签名/密钥头校验，不依赖登录会话；伪造请求会被拒绝并写入审计。</li>
+            <li>AppSecret 以 AES-256-GCM 加密保存，接口与前端都不会回显。</li>
+            <li>编辑时 AppSecret 输入留空表示保持原值；保存后无法再次查看，只能重新填写覆盖。</li>
+            <li>QQ 回调由平台 Ed25519 签名校验，不依赖登录会话；伪造请求会被拒绝并写入审计。</li>
             <li>命令只读且仅对已开启“允许命令”的目标生效；本页不提供命令执行 UI。</li>
           </ul>
         </Card>

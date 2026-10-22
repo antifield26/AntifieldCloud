@@ -23,7 +23,7 @@ function probeLabel(probe: BotConnectivityProbe | undefined): string {
   return probe.error === 'timeout' ? '超时' : '不可达'
 }
 
-const PLATFORM_ORDER: readonly BotPlatform[] = ['discord', 'telegram', 'slack', 'qq']
+const PLATFORM_ORDER: readonly BotPlatform[] = ['qq']
 
 /** 出站网络状态卡片；每 60 秒自动读取服务端探测快照，不在浏览器发起外部探测。 */
 export function BotConnectivityCard() {
@@ -78,7 +78,7 @@ export function BotConnectivityCard() {
   return (
     <Card
       title="出站网络"
-      description="Bot 依赖本机代理访问平台 API；这里展示代理端口、外网与各平台的最近一次探测结果。"
+      description="Bot 依赖本机代理访问 QQ 平台 API；这里展示代理端口、外网与 QQ 平台的最近一次探测结果。"
       actions={
         <Button
           size="sm"
@@ -149,7 +149,7 @@ export function BotConnectivityCard() {
               })}
             </div>
           ) : (
-            <p className="field-hint">暂无启用的 Bot 平台；启用 Bot 后会自动探测对应平台。</p>
+            <p className="field-hint">暂无启用的 QQ Bot；启用 Bot 后会自动探测 QQ 平台。</p>
           )}
 
           {!data.proxy.configured ? (

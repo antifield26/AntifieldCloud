@@ -32,10 +32,10 @@ vi.mock('../../api/client', () => ({
 function bot(overrides: Partial<BotSummary> = {}): BotSummary {
   return {
     id: 'bot-1',
-    platform: 'telegram',
+    platform: 'qq',
     name: '告警 Bot',
     enabled: true,
-    config: {},
+    config: { appId: '102123456' },
     webhookUrl: 'https://app.example.com/api/bot/webhook/bot-1',
     setupSteps: [],
     targetsCount: 1,
@@ -44,7 +44,6 @@ function bot(overrides: Partial<BotSummary> = {}): BotSummary {
     createdAt: '2026-10-20T00:00:00.000Z',
     updatedAt: '2026-10-21T00:00:00.000Z',
     keyVersion: 1,
-    gateway: { state: 'disabled', lastError: null },
     ...overrides,
   }
 }
@@ -55,7 +54,7 @@ function eventItem(overrides: Partial<BotEventItem> = {}): BotEventItem {
     kind: 'command',
     outcome: 'rate_limited',
     detail: '每用户限流',
-    targetExternalId: '-1001234567890',
+    targetExternalId: '68611590B477339A04302BB23B426244',
     userId: 'user-9',
     receivedAt: '2026-10-22T01:00:00.000Z',
     updatedAt: null,
@@ -72,8 +71,8 @@ function delivery(overrides: Partial<BotDelivery> = {}): BotDelivery {
     status: 'failed',
     attempts: 2,
     nextAttemptAt: null,
-    lastError: 'Telegram API 401 Unauthorized',
-    lastErrorHint: 'Token 可能已失效，请重新录入',
+    lastError: 'QQ API 401 Unauthorized',
+    lastErrorHint: 'AppSecret 可能已失效，请重新录入',
     externalId: null,
     createdAt: '2026-10-21T00:00:00.000Z',
     sentAt: null,
@@ -87,12 +86,11 @@ function job(overrides: Partial<BotPublishJob> = {}): BotPublishJob {
     botId: 'bot-1',
     targetId: 'target-1',
     text: '发布内容测试',
-    mediaFileIds: [],
     scheduledAt: null,
     status: 'failed',
     attempts: 1,
-    lastError: '媒体文件缺失',
-    lastErrorHint: '请重新选择媒体文件',
+    lastError: '发布内容为空',
+    lastErrorHint: '请检查发布内容',
     createdAt: '2026-10-21T02:00:00.000Z',
     sentAt: null,
     ...overrides,
@@ -130,7 +128,7 @@ describe('BotDiagnosticsPanel 诊断', () => {
     // Table 同时渲染桌面表格与移动端卡片，文本会出现两次。
     expect(await screen.findAllByText('command')).not.toHaveLength(0)
     expect(screen.getAllByText('限流').length).toBeGreaterThan(0)
-    expect(screen.getAllByTitle('-1001234567890').length).toBeGreaterThan(0)
+    expect(screen.getAllByTitle('68611590B477339A04302BB23B426244').length).toBeGreaterThan(0)
     expect(screen.getAllByText('每用户限流').length).toBeGreaterThan(0)
     expect(screen.getByText(/不展示消息正文/)).toBeTruthy()
     expect(screen.queryByText(/消息正文-绝密/)).toBeNull()
@@ -189,11 +187,11 @@ describe('BotDiagnosticsPanel 诊断', () => {
     ])
     renderPanel()
 
-    expect(await screen.findByText('Telegram API 401 Unauthorized')).toBeTruthy()
-    expect(screen.getByText('Token 可能已失效，请重新录入')).toBeTruthy()
+    expect(await screen.findByText('QQ API 401 Unauthorized')).toBeTruthy()
+    expect(screen.getByText('AppSecret 可能已失效，请重新录入')).toBeTruthy()
     expect(screen.getByText('网络超时')).toBeTruthy()
-    expect(screen.getByText('媒体文件缺失')).toBeTruthy()
-    expect(screen.getByText('请重新选择媒体文件')).toBeTruthy()
+    expect(screen.getByText('发布内容为空')).toBeTruthy()
+    expect(screen.getByText('请检查发布内容')).toBeTruthy()
     expect(screen.getByText('3 条')).toBeTruthy()
     expect(mocks.deliveriesList).toHaveBeenCalledWith('bot-1')
     expect(mocks.publishList).toHaveBeenCalledWith('bot-1')

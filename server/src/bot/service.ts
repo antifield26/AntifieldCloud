@@ -1,7 +1,8 @@
 /**
- * Bot 平台服务：配置 CRUD、Webhook 验签/命令分发、通知/发布队列与投递重试。
- * 安全边界：凭据只以密文落库；Webhook 无 session/CSRF，签名是唯一鉴权；
- * 命令只读且必须命中 bot_targets.allow_commands；发布只允许登录管理员调用。
+ * Bot 平台服务（QQ 官方 Bot 单平台）：配置 CRUD、Webhook 验签/命令分发、通知/发布队列与投递重试。
+ * 安全边界：AppSecret 只以 AES-256-GCM 密文落库；Webhook 无 session/CSRF，Ed25519 签名是唯一鉴权；
+ * 除自助命令（/role 私聊、/reset、/forget）外，命令必须命中 bot_targets.allow_commands + 显式 user 白名单；
+ * 发布只允许登录管理员调用；通知/命令输出不得包含内部路径、URL 或密钥。
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
@@ -14,13 +15,12 @@ import {
   isBotPlatform,
   type BotAdapter,
   type BotAiImage,
+  type BotAiMode,
   type BotDelivery,
   type BotDeliveryRow,
-  type BotAiMode,
   type BotEventItem,
   type BotEventOutcome,
   type BotHealthCheck,
-  type BotInboundImage,
   type BotInboundTarget,
   type BotInboundTargetRow,
   type BotMemorySummary,
@@ -28,7 +28,6 @@ import {
   type BotPlatform,
   type BotPublishJob,
   type BotPublishRow,
-  type BotReplyOptions,
   type BotRoleSummary,
   type BotRow,
   type BotSecret,
@@ -37,10 +36,7 @@ import {
   type BotSummary,
   type BotTarget,
   type BotTargetRow,
-  type ChatTrigger,
   type InboundVerification,
-  type OutboundContent,
-  type OutboundMedia,
 } from './types.ts'
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { describeBotError } from './errors.ts'
@@ -54,25 +50,27 @@ import {
   type BotChatRole,
   type RoleValidationError,
 } from './roles.ts'
-import { DiscordGatewayManager } from './discord-gateway.ts'
 import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
-import { DiscordAdapter } from './adapters/discord.ts'
 import { QqAdapter } from './adapters/qq.ts'
-import { SlackAdapter } from './adapters/slack.ts'
-import { TelegramAdapter } from './adapters/telegram.ts'
-import { commandDenied, commandFailed, formatFileList, formatPairs, helpText, roleDefaultText, roleGroupHint, roleUsage } from './templates.ts'
+import { BOT_TEXT_LIMITS } from './text.ts'
+import {
+  commandDenied,
+  commandFailed,
+  formatFileList,
+  formatPairs,
+  helpText,
+  roleDefaultText,
+  roleGroupHint,
+  roleUsage,
+} from './templates.ts'
 
 const NAME_MAX = 80
 const TARGET_MAX = 128
-const TEXT_MAX = 4096
 const MAX_TARGETS_PER_BOT = 100
 const MAX_INBOUND_TARGETS_PER_BOT = 500
-const STATUS_BUTTONS = [
-  { id: 'refresh_status' as const, label: '刷新状态' },
-  { id: 'help' as const, label: '帮助' },
-]
-
-/** 诊断事件结果枚举；route/service 共用校验。 */
+/** QQ 单条文本上限；发布内容在入队前先校验。 */
+const PUBLISH_TEXT_MAX = BOT_TEXT_LIMITS.qq
+/** 诊断事件结果枚举；service 与 route 共用校验。 */
 const BOT_EVENT_OUTCOMES = ['received', 'ok', 'denied', 'rate_limited', 'ignored', 'error'] as const
 /** AI 图片理解允许的 mime；超出范围降级为纯文本。 */
 const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
@@ -81,29 +79,8 @@ const IMAGE_DOWNLOAD_TIMEOUT_MS = 15_000
 /** 图片无法处理时附在纯文字回答末尾的说明。 */
 const IMAGE_DEGRADED_NOTE = '（图片未能处理，已按文字回答）'
 const IMAGE_UNSUPPORTED_TEXT = '当前暂不支持处理这张图片，可以用文字描述。'
-
-/** 适配器部分发送失败时挂在错误对象上的已发送 ID；用于禁止自动重试。 */
-function sentExternalIdsOf(error: unknown): string[] {
-  if (!error || typeof error !== 'object') return []
-  const value = (error as { sentExternalIds?: unknown }).sentExternalIds
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string')
-}
-
-/** partial 失败分类：text=长文本分段，media=多附件；缺省按 media 处理。 */
-function botPartialKindOf(error: unknown): 'text' | 'media' {
-  if (error && typeof error === 'object') {
-    const value = (error as { botPartialKind?: unknown }).botPartialKind
-    if (value === 'text' || value === 'media') return value
-  }
-  return 'media'
-}
-
-/** 诊断 detail 只记录短代码：优先 AppError.code，其次通用 failed。 */
-function errorShortCode(error: unknown): string {
-  if (error instanceof AppError) return error.code.slice(0, 60)
-  return 'error'
-}
+/** 仅图片无正文时交给模型的用户消息占位，避免空用户消息。 */
+const IMAGE_ONLY_USER_TEXT = '（用户发送了一张图片）'
 
 interface ParsedCommand {
   command: string
@@ -137,14 +114,27 @@ function roleValidationMessage(error: RoleValidationError): string {
   }
 }
 
+/** 适配器部分发送失败时挂在错误对象上的已发送 ID；用于禁止自动重试。 */
+function sentExternalIdsOf(error: unknown): string[] {
+  if (!error || typeof error !== 'object') return []
+  const value = (error as { sentExternalIds?: unknown }).sentExternalIds
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
+/** 诊断 detail 只记录短代码：优先 AppError.code，其次通用 error。 */
+function errorShortCode(error: unknown): string {
+  if (error instanceof AppError) return error.code.slice(0, 60)
+  return 'error'
+}
+
 export interface CreateBotInput {
   platform: BotPlatform
   name: string
+  /** QQ AppSecret（历史字段名为 token）。 */
   token: string
+  /** 公开配置（QQ 仅 appId）。 */
   config?: Record<string, unknown>
-  webhookSecret?: string
-  publicKey?: string
-  signingSecret?: string
 }
 
 export interface UpdateBotInput {
@@ -152,9 +142,6 @@ export interface UpdateBotInput {
   enabled?: boolean
   config?: Record<string, unknown>
   token?: string
-  webhookSecret?: string
-  publicKey?: string
-  signingSecret?: string
 }
 
 export interface CreateTargetInput {
@@ -164,8 +151,6 @@ export interface CreateTargetInput {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
-  /** 群聊触发策略：mention=仅 @/回复（默认），all=全部消息（QQ 不支持）。 */
-  chatTrigger?: 'mention' | 'all'
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -176,7 +161,6 @@ export interface UpdateTargetInput {
   allowCommands?: boolean
   allowNotifications?: boolean
   allowChat?: boolean
-  chatTrigger?: 'mention' | 'all'
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -184,7 +168,6 @@ export interface UpdateTargetInput {
 export interface CreatePublishInput {
   targetId: string
   text: string
-  mediaFileIds?: string[]
   scheduledAt?: string | null
   /** 二次确认文本，必须为 PUBLISH（服务端校验）。 */
   confirmText?: string
@@ -277,7 +260,6 @@ export class BotService {
   private readonly chatLimiter: SlidingWindowLimiter
   private readonly memory: BotMemoryStore
   private readonly roles: BotChatRoleStore
-  private readonly gateway: DiscordGatewayManager
   private readonly connectivity: BotConnectivityMonitor
   private timer: NodeJS.Timeout | null = null
   private stopped = false
@@ -294,21 +276,6 @@ export class BotService {
     this.chatLimiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botChatRatePerMinute))
     this.memory = new BotMemoryStore(deps.db, deps.config.dataDir, deps.config.botAiMemoryMaxChars)
     this.roles = new BotChatRoleStore(deps.db)
-    this.gateway = new DiscordGatewayManager({
-      enabled: deps.config.botDiscordGatewayEnabled,
-      log: deps.log,
-      getBots: () => this.gatewayBots(),
-      // 群聊是否消费全部消息由目标行决定；Gateway 层只负责解析，默认仅 @/回复。
-      chatTriggerFor: (botId, targetExternalId) => this.targetChatTrigger(botId, targetExternalId),
-      onMessage: (event) => {
-        void this.handleGatewayMessage(event.botId, event).catch((error: unknown) => {
-          this.deps.log('warn', 'Discord Gateway 消息处理失败', {
-            bot: event.botId,
-            error: error instanceof Error ? error.message : 'unknown',
-          })
-        })
-      },
-    })
     this.connectivity = new BotConnectivityMonitor({
       enabled: deps.config.botEnabled && deps.config.botConnectivityEnabled,
       intervalSeconds: deps.config.botConnectivityIntervalSeconds,
@@ -317,7 +284,6 @@ export class BotService {
       getPlatforms: () => this.enabledPlatforms(),
       log: deps.log,
       onRecover: () => {
-        this.gateway.wake()
         this.scheduleTick()
       },
     })
@@ -463,8 +429,8 @@ export class BotService {
     const count = this.db.prepare('SELECT COUNT(*) AS c FROM bots').get() as { c: number }
     if (count.c >= this.config.botMaxBots) throw badRequest(`最多配置 ${this.config.botMaxBots} 个 Bot`)
     const secret = this.normalizeSecret(input)
-    const config = this.normalizeConfig(input.platform, input.config, input.publicKey)
-    this.validateOrThrow(input.platform, config, secret)
+    const config = this.normalizeConfig(input.config)
+    this.validateOrThrow(config, secret)
     const encrypted = encryptBotSecret(this.key!, secret)
     const id = newId()
     const now = nowIso()
@@ -486,25 +452,16 @@ export class BotService {
         now,
       )
     this.deps.audit('bot.create', id, { platform: input.platform, name })
-    this.syncGateway()
     return this.getBot(id)
   }
 
   updateBot(id: string, input: UpdateBotInput): BotSummary {
     this.requireEnabled()
     const row = this.botRow(id)
-    const secret = this.secretOf(row)
-    const nextSecret: BotSecret = {
-      ...secret,
-      token: cleanText(input.token, 500) || secret.token,
-      webhookSecret: input.webhookSecret !== undefined ? cleanText(input.webhookSecret, 500) : secret.webhookSecret,
-      signingSecret: input.signingSecret !== undefined ? cleanText(input.signingSecret, 500) : secret.signingSecret,
-      publicKey: input.publicKey !== undefined ? cleanText(input.publicKey, 200) : secret.publicKey,
-    }
-    const nextConfig = input.config !== undefined ? this.normalizeConfig(row.platform, input.config, input.publicKey) : parseConfig(row.config_json)
-    if (row.platform === 'discord' && input.publicKey) nextConfig.publicKey = cleanText(input.publicKey, 200)
-    this.validateOrThrow(row.platform, nextConfig, nextSecret)
-    const encrypted = encryptBotSecret(this.key!, nextSecret)
+    const secret: BotSecret = { token: cleanText(input.token, 500) || this.secretOf(row).token }
+    const nextConfig = input.config !== undefined ? this.normalizeConfig(input.config) : parseConfig(row.config_json)
+    this.validateOrThrow(nextConfig, secret)
+    const encrypted = encryptBotSecret(this.key!, secret)
     const name = input.name !== undefined ? cleanText(input.name, NAME_MAX) : row.name
     if (!name) throw badRequest('名称不能为空')
     this.db
@@ -524,7 +481,6 @@ export class BotService {
         id,
       )
     this.deps.audit('bot.update', id, { enabled: input.enabled, name })
-    this.syncGateway()
     return this.getBot(id)
   }
 
@@ -533,7 +489,6 @@ export class BotService {
     this.botRow(id)
     this.db.prepare('DELETE FROM bots WHERE id = ?').run(id)
     this.deps.audit('bot.delete', id)
-    this.syncGateway()
   }
 
   listTargets(botId: string): BotTarget[] {
@@ -565,21 +520,20 @@ export class BotService {
 
   createTarget(botId: string, input: CreateTargetInput): BotTarget {
     this.requireEnabled()
-    const bot = this.botRow(botId)
+    this.botRow(botId)
     const externalId = cleanText(input.externalId, TARGET_MAX)
     const label = cleanText(input.label, NAME_MAX)
     if (!externalId || !label) throw badRequest('目标 ID 与名称不能为空')
     const count = this.db.prepare('SELECT COUNT(*) AS c FROM bot_targets WHERE bot_id = ?').get(botId) as { c: number }
     if (count.c >= MAX_TARGETS_PER_BOT) throw badRequest('目标数量过多')
     const quiet = this.normalizeQuiet(input.quietStartMinute, input.quietEndMinute)
-    const chatTrigger = this.normalizeChatTrigger(bot, input.kind, input.chatTrigger, 'mention')
     const id = newId()
     try {
       this.db
         .prepare(
           `INSERT INTO bot_targets
-           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, chat_trigger, quiet_start_minute, quiet_end_minute, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, quiet_start_minute, quiet_end_minute, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -590,7 +544,6 @@ export class BotService {
           input.allowCommands ? 1 : 0,
           input.allowNotifications ? 1 : 0,
           input.allowChat ? 1 : 0,
-          chatTrigger,
           quiet.start,
           quiet.end,
           nowIso(),
@@ -598,13 +551,13 @@ export class BotService {
     } catch {
       throw new AppError(409, 'conflict', '该目标已存在')
     }
-    this.deps.audit('bot.target.create', `${botId}:${id}`, { kind: input.kind, chatTrigger })
+    this.deps.audit('bot.target.create', `${botId}:${id}`, { kind: input.kind })
     return toTarget(this.targetRow(id))
   }
 
   updateTarget(botId: string, targetId: string, input: UpdateTargetInput): BotTarget {
     this.requireEnabled()
-    const bot = this.botRow(botId)
+    this.botRow(botId)
     const row = this.targetRowForBot(botId, targetId)
     const label = input.label !== undefined ? cleanText(input.label, NAME_MAX) : row.label
     if (!label) throw badRequest('目标名称不能为空')
@@ -612,23 +565,19 @@ export class BotService {
       input.quietStartMinute === undefined ? row.quiet_start_minute : input.quietStartMinute,
       input.quietEndMinute === undefined ? row.quiet_end_minute : input.quietEndMinute,
     )
-    const kind = input.kind ?? row.kind
-    // 修改类型/触发方式时按变更后的组合重新校验，避免 user 目标遗留 all 策略。
-    const chatTrigger = this.normalizeChatTrigger(bot, kind, input.chatTrigger, row.chat_trigger)
     this.db
       .prepare(
         `UPDATE bot_targets
-         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?, chat_trigger = ?,
+         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?,
              quiet_start_minute = ?, quiet_end_minute = ?
          WHERE id = ?`,
       )
       .run(
         label,
-        kind,
+        input.kind ?? row.kind,
         input.allowCommands === undefined ? row.allow_commands : input.allowCommands ? 1 : 0,
         input.allowNotifications === undefined ? row.allow_notifications : input.allowNotifications ? 1 : 0,
         input.allowChat === undefined ? row.allow_chat : input.allowChat ? 1 : 0,
-        chatTrigger,
         quiet.start,
         quiet.end,
         targetId,
@@ -667,8 +616,7 @@ export class BotService {
     this.requireEnabled()
     this.botRow(botId)
     const card = this.roles.get(botId, userId)
-    if (!card) throw notFound('角色卡不存在')
-    if (!this.roles.setEnabled(botId, userId, enabled)) throw notFound('角色卡不存在')
+    if (!card || !this.roles.setEnabled(botId, userId, enabled)) throw notFound('角色卡不存在')
     this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
       action: enabled ? 'enable' : 'disable',
       user: userId.slice(0, 64),
@@ -854,11 +802,14 @@ export class BotService {
       .all(botId, Math.max(1, Math.min(200, limit))) as unknown as BotDeliveryRow[]
     return rows.map(toDelivery)
   }
+
   retryDelivery(botId: string, deliveryId: string): void {
     this.requireEnabled()
     this.botRow(botId)
     const result = this.db
-      .prepare("UPDATE bot_deliveries SET status = 'queued', attempts = 0, next_attempt_at = NULL, last_error = NULL WHERE id = ? AND bot_id = ? AND status IN ('failed','dead')")
+      .prepare(
+        "UPDATE bot_deliveries SET status = 'queued', attempts = 0, next_attempt_at = NULL, last_error = NULL WHERE id = ? AND bot_id = ? AND status IN ('failed','dead')",
+      )
       .run(deliveryId, botId)
     if (Number(result.changes) === 0) throw notFound('投递记录不存在或不可重试')
     this.deps.audit('bot.delivery.retry', `${botId}:${deliveryId}`)
@@ -876,39 +827,23 @@ export class BotService {
   createPublish(botId: string, input: CreatePublishInput): BotPublishJob {
     this.requireEnabled()
     if (input.confirmText !== 'PUBLISH') throw badRequest('发布需要输入 PUBLISH 二次确认', 'publish_confirm_required')
-    const bot = this.botRow(botId)
+    this.botRow(botId)
     const target = this.targetRowForBot(botId, input.targetId)
     if (target.kind === 'user') throw badRequest('发布目标必须是频道/群组')
-    const text = cleanText(input.text, TEXT_MAX)
+    // 保留到上限 +1 以便区分「空内容」与「超长内容」，超长直接 400 而不是静默截断。
+    const text = cleanText(input.text, PUBLISH_TEXT_MAX + 1)
     if (!text) throw badRequest('发布内容不能为空')
-    const platformLimit =
-      bot.platform === 'discord' ? 2000 : bot.platform === 'slack' ? 4000 : bot.platform === 'qq' ? 2000 : 4096
-    if (text.length > platformLimit) throw badRequest(`内容超过 ${platformLimit} 字符`)
-    const mediaIds = Array.isArray(input.mediaFileIds) ? input.mediaFileIds.map((id) => cleanText(id, 64)).filter(Boolean) : []
-    if (mediaIds.length > this.config.botPublishMaxMediaFiles) {
-      throw badRequest(`单次发布最多选择 ${this.config.botPublishMaxMediaFiles} 个媒体文件`, 'too_many_media')
-    }
-    if (mediaIds.length > 0 && bot.platform === 'qq') throw badRequest('QQ 官方 Bot 暂不支持媒体发布', 'qq_media_unsupported')
-    let mediaTotal = 0
-    for (const mediaId of mediaIds) {
-      const stat = this.deps.media.stat(mediaId)
-      if (!stat) throw badRequest('媒体文件不存在或不可发布')
-      if (stat.size > this.config.botPublishMaxMediaBytes) throw badRequest('媒体文件超过大小限制', 'media_too_large')
-      mediaTotal += stat.size
-    }
-    if (mediaTotal > this.config.botPublishMaxMediaTotalBytes) {
-      throw badRequest('媒体文件总大小超过限制', 'media_total_too_large')
-    }
+    if (text.length > PUBLISH_TEXT_MAX) throw badRequest(`内容超过 ${PUBLISH_TEXT_MAX} 字符`)
     const scheduledAt = this.parseSchedule(input.scheduledAt)
     const id = newId()
     const now = nowIso()
     this.db
       .prepare(
         `INSERT INTO bot_publish_jobs (id, bot_id, target_id, content_json, media_file_ids_json, scheduled_at, status, attempts, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?)`,
+         VALUES (?, ?, ?, ?, '[]', ?, 'queued', 0, ?, ?)`,
       )
-      .run(id, botId, target.id, JSON.stringify({ text }), JSON.stringify(mediaIds), scheduledAt, now, now)
-    this.deps.audit('bot.publish.create', `${botId}:${id}`, { media: mediaIds.length, scheduled: Boolean(scheduledAt) })
+      .run(id, botId, target.id, JSON.stringify({ text }), scheduledAt, now, now)
+    this.deps.audit('bot.publish.create', `${botId}:${id}`, { scheduled: Boolean(scheduledAt) })
     this.scheduleTick()
     return toPublishJob(this.publishRow(id))
   }
@@ -949,7 +884,6 @@ export class BotService {
     this.timer = setInterval(() => this.scheduleTick(), this.config.botDeliveryIntervalSeconds * 1000)
     this.timer.unref()
     this.scheduleTick()
-    this.gateway.start()
     this.connectivity.start()
   }
 
@@ -960,37 +894,6 @@ export class BotService {
       this.timer = null
     }
     this.connectivity.stop()
-    this.gateway.stop()
-  }
-
-  /** Bot 创建/更新/删除后同步 Gateway 连接集合。 */
-  private syncGateway(): void {
-    try {
-      this.gateway.sync()
-    } catch (error) {
-      this.deps.log('warn', 'Discord Gateway 同步失败', {
-        error: error instanceof Error ? error.message : 'unknown',
-      })
-    }
-  }
-
-  private gatewayBots(): { botId: string; token: string; enabled: boolean; applicationId?: string }[] {
-    const rows = this.db.prepare("SELECT * FROM bots WHERE platform = 'discord'").all() as unknown as BotRow[]
-    const result: { botId: string; token: string; enabled: boolean; applicationId?: string }[] = []
-    for (const row of rows) {
-      try {
-        const config = parseConfig(row.config_json)
-        result.push({
-          botId: row.id,
-          token: this.secretOf(row).token,
-          enabled: row.enabled === 1,
-          applicationId: typeof config.applicationId === 'string' ? config.applicationId : undefined,
-        })
-      } catch {
-        // 单个 Bot 凭据损坏不影响其它 Gateway 连接。
-      }
-    }
-    return result
   }
 
   async tick(): Promise<void> {
@@ -1144,21 +1047,11 @@ export class BotService {
       const target = this.targetRow(job.target_id)
       const content = JSON.parse(job.content_json) as { text?: unknown }
       const text = typeof content.text === 'string' ? content.text : ''
-      const mediaIds = JSON.parse(job.media_file_ids_json) as unknown
-      const media: OutboundMedia[] = []
-      if (Array.isArray(mediaIds)) {
-        for (const mediaId of mediaIds) {
-          if (typeof mediaId !== 'string') continue
-          const stat = this.deps.media.stat(mediaId)
-          if (!stat) throw new AppError(400, 'media_missing', '媒体文件不存在')
-          if (stat.size > this.config.botPublishMaxMediaBytes) throw new AppError(400, 'media_too_large', '媒体文件超过大小限制')
-          media.push(await this.deps.media.load(mediaId))
-        }
-      }
+      if (!text) throw new AppError(400, 'empty_payload', '发布内容为空')
       const adapter = this.adapterFor(bot)
-      const result = await adapter.send(target, { text, media })
+      const result = await adapter.send(target, { text })
       if (result.partial) {
-        const message = 'partial_media_sent：部分媒体已发送，需人工确认后重建发布任务'
+        const message = 'partial_text_sent：部分段落已发送，需人工确认后重建发布任务'
         this.db
           .prepare("UPDATE bot_publish_jobs SET status = 'failed', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
           .run(this.config.botDeliveryMaxAttempts, message, nowIso(), job.id)
@@ -1179,14 +1072,16 @@ export class BotService {
     const partialIds = sentExternalIdsOf(error)
     const message = error instanceof Error ? error.message.slice(0, 500) : '发布失败'
     if (partialIds.length > 0) {
-      // 部分内容已外发，自动重试会重复发送；保留证据交管理员人工重建。
-      // 长文本部分发送与多附件部分发送使用不同前缀，管理页据此给出不同中文提示。
-      const kind = botPartialKindOf(error)
-      const prefix = kind === 'text' ? 'partial_text_sent（已发送部分段落）' : 'partial_media_sent（已发送部分附件）'
+      // 长文本已部分外发，自动重试会重复发送；保留证据交管理员人工重建。
       this.db
         .prepare("UPDATE bot_publish_jobs SET status = 'failed', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
-        .run(this.config.botDeliveryMaxAttempts, `${prefix}：${message}`.slice(0, 500), nowIso(), job.id)
-      this.deps.audit('bot.publish.partial', `${job.bot_id}:${job.id}`, { sent: partialIds.length, kind })
+        .run(
+          this.config.botDeliveryMaxAttempts,
+          `partial_text_sent（已发送 ${partialIds.length} 段）：${message}`.slice(0, 500),
+          nowIso(),
+          job.id,
+        )
+      this.deps.audit('bot.publish.partial', `${job.bot_id}:${job.id}`, { sent: partialIds.length })
       return
     }
     if (attempts >= this.config.botDeliveryMaxAttempts) {
@@ -1223,13 +1118,7 @@ export class BotService {
     }
     let result: InboundVerification
     try {
-      result = await this.adapterFor(bot).verifyInbound({
-        botId,
-        headers,
-        body,
-        // 适配器按目标触发策略决定普通群消息是否进入 Chat（all=message 触发）。
-        chatTriggerFor: (targetExternalId) => this.targetChatTrigger(bot.id, targetExternalId),
-      })
+      result = await this.adapterFor(bot).verifyInbound({ botId, headers, body })
     } catch {
       this.deps.log('warn', 'Bot Webhook 验签异常', { bot: bot.id })
       return { status: 400, body: { error: { code: 'invalid_request' } } }
@@ -1259,64 +1148,7 @@ export class BotService {
     if (!inserted) return { status: 200, body: result.ackBody ?? { ok: true, duplicate: true } }
     this.recordInbound(bot, result)
     if (result.kind === 'command') return this.dispatchCommand(bot, result)
-    if (result.kind === 'chat') return this.dispatchChat(bot, result)
-    return this.dispatchAction(bot, result)
-  }
-
-  /**
-   * Gateway 消息不经 HTTP 验签，由 Gateway 连接层完成 TLS/Token 鉴权；此处复用 Chat 授权与限流。
-   * messageId 用于群聊引用回复（私聊不带 replyTo）；image 交给 AI 图片管线（未启用时降级）。
-   */
-  async handleGatewayMessage(
-    botId: string,
-    event: {
-      eventId: string
-      targetExternalId: string
-      targetKind: BotTargetRow['kind']
-      userId: string
-      userName: string | null
-      text: string
-      isDirect: boolean
-      chatTrigger: ChatTrigger
-      /** Gateway 必带；直接调用/旧调用方可省略（省略时不引用消息）。 */
-      messageId?: string
-      /** 入站图片（可选）；由 Service 决定是否下载并交给 AI。 */
-      image?: BotInboundImage
-    },
-  ): Promise<void> {
-    if (!this.enabled) return
-    let bot: BotRow
-    try {
-      bot = this.botRow(botId)
-    } catch {
-      return
-    }
-    if (!bot.enabled) return
-    if (!this.insertEvent(bot.id, event.eventId, 'chat', 'received', null, event.targetExternalId, event.userId)) return
-    const target = this.inboundTarget(bot.id, event)
-    const reply = async (text: string, options?: BotReplyOptions): Promise<void> => {
-      if (!target) return
-      const content: OutboundContent = { text }
-      if (options?.textMode) content.textMode = options.textMode
-      // 私聊不引用消息；群/频道带平台消息 ID 时按引用回复发送。
-      if (!event.isDirect && event.messageId) content.replyTo = event.messageId
-      await this.adapterFor(bot).send(target, content)
-    }
-    const chat: Extract<InboundVerification, { kind: 'chat' }> = {
-      kind: 'chat',
-      eventId: event.eventId,
-      targetExternalId: event.targetExternalId,
-      targetKind: event.targetKind,
-      userId: event.userId,
-      userName: event.userName,
-      text: event.text,
-      isDirect: event.isDirect,
-      chatTrigger: event.chatTrigger,
-      ...(event.image ? { image: event.image } : {}),
-      reply,
-    }
-    this.recordInbound(bot, chat)
-    await this.dispatchChat(bot, chat)
+    return this.dispatchChat(bot, result)
   }
 
   /** 写入入站事件（按 bot×平台事件 ID 去重）；返回是否首次插入。 */
@@ -1386,19 +1218,7 @@ export class BotService {
     }
   }
 
-  /** 目标群聊触发策略解析（Gateway 注入）；未登记或非 all 一律 mention。 */
-  private targetChatTrigger(botId: string, targetExternalId: string): 'mention' | 'all' {
-    try {
-      const row = this.db
-        .prepare('SELECT chat_trigger FROM bot_targets WHERE bot_id = ? AND external_id = ?')
-        .get(botId, targetExternalId) as { chat_trigger?: string } | undefined
-      return row?.chat_trigger === 'all' ? 'all' : 'mention'
-    } catch {
-      return 'mention'
-    }
-  }
-
-  private recordInbound(bot: BotRow, result: Extract<InboundVerification, { kind: 'command' | 'chat' | 'action' }>): void {
+  private recordInbound(bot: BotRow, result: Extract<InboundVerification, { kind: 'command' | 'chat' }>): void {
     try {
       this.db
         .prepare(
@@ -1441,7 +1261,7 @@ export class BotService {
   ): Promise<{ status: number; body: unknown }> {
     const parsed = parseCommandText(result.text)
     const command = parsed?.command ?? ''
-    const ack = () => result.ackBody ?? result.immediateResponse ?? { ok: true }
+    const ack = () => result.ackBody ?? { ok: true }
     // 群聊里角色统一使用默认 lofii；/role 只做友好提示，不读取或修改任何人的私聊角色。
     if (command === 'role' && !result.isDirect) {
       const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
@@ -1510,21 +1330,10 @@ export class BotService {
         user: result.userId,
       })
     // QQ C2C 的接触面由 QQ 平台“谁可添加 Bot”控制；Chat 对任意 C2C 开放，命令仍走目标白名单。
-    const openQqC2c = bot.platform === 'qq' && result.isDirect && result.targetKind === 'user'
-    if (result.chatTrigger === 'message') {
-      // all 触发只对已登记、已开放 Chat 且目标本身是 all 的群/频道生效；其余静默忽略（不写审计）。
-      if (!target || target.allow_chat !== 1 || target.chat_trigger !== 'all') {
-        mark('ignored', 'trigger_not_allowed')
-        return { status: 200, body: ack() }
-      }
-    } else if ((!target || target.allow_chat !== 1) && !openQqC2c) {
+    const openQqC2c = result.isDirect && result.targetKind === 'user'
+    if ((!target || target.allow_chat !== 1) && !openQqC2c) {
       this.deps.audit('bot.chat.denied', bot.id, { target: result.targetExternalId })
       mark('denied', 'chat_denied')
-      return { status: 200, body: ack() }
-    }
-    // 群/频道必须 @ Bot、回复 Bot 或目标允许全部消息；私聊不受触发限制。
-    if (!result.isDirect && result.chatTrigger === 'direct') {
-      mark('ignored', 'direct_trigger')
       return { status: 200, body: ack() }
     }
     if (!this.config.botAiEnabled || !this.deps.ai) {
@@ -1532,7 +1341,7 @@ export class BotService {
       return { status: 200, body: ack() }
     }
     const text = cleanText(result.text, this.config.botAiMaxPromptChars)
-    // 允许只有图片没有正文的消息进入 AI 管线（F9）。
+    // 允许只有图片没有正文的消息进入 AI 管线。
     if (!text && !result.image) {
       mark('ignored', 'empty_content')
       return { status: 200, body: ack() }
@@ -1565,46 +1374,6 @@ export class BotService {
     return { status: 200, body: ack() }
   }
 
-  private async dispatchAction(
-    bot: BotRow,
-    result: Extract<InboundVerification, { kind: 'action' }>,
-  ): Promise<{ status: number; body: unknown }> {
-    const target = this.inboundTarget(bot.id, result)
-    const ack = () => result.immediateResponse ?? result.ackBody ?? { ok: true }
-    if (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId)) {
-      this.deps.audit('bot.action.denied', bot.id, { target: result.targetExternalId, action: result.action })
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'denied',
-        detail: 'action_denied',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return { status: 200, body: ack() }
-    }
-    const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
-    if (retry > 0) {
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'rate_limited',
-        detail: 'action_rate_limited',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return { status: 200, body: ack() }
-    }
-    const task = this.executeAction(bot, result, target).catch((error: unknown) => {
-      this.deps.log('warn', 'Bot 按钮动作失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'error',
-        detail: sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error),
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-    })
-    this.pending.add(task)
-    void task.finally(() => this.pending.delete(task))
-    return { status: 200, body: ack() }
-  }
-
   private async executeCommand(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
@@ -1626,20 +1395,17 @@ export class BotService {
       })
     try {
       if (!(BOT_COMMANDS as readonly string[]).includes(command)) {
-        await result.reply(helpText(bot.platform), { buttons: STATUS_BUTTONS })
+        await result.reply(helpText())
         finish('ok', 'help')
         return
       }
       let text: string
-      let buttons: typeof STATUS_BUTTONS | undefined
       switch (command) {
         case 'help':
-          text = helpText(bot.platform)
-          buttons = STATUS_BUTTONS
+          text = helpText()
           break
         case 'status':
           text = formatPairs('应用状态', await this.deps.providers.status())
-          buttons = STATUS_BUTTONS
           break
         case 'backup':
           text = formatPairs('备份状态', await this.deps.providers.backup())
@@ -1673,9 +1439,9 @@ export class BotService {
             break
           }
           const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, args, 'task')
-          const formatted = this.formatAiAnswer(bot, answer)
-          await result.reply(formatted.text || 'AI 没有返回内容，请稍后再试。', { textMode: formatted.textMode })
-          this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, args, this.sanitizeAiText(answer))
+          const plain = this.sanitizeAiText(answer)
+          await result.reply(formatAiReply(plain) || 'AI 没有返回内容，请稍后再试。')
+          this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, args, plain)
           finish('ok', 'command_ask')
           return
         }
@@ -1691,7 +1457,7 @@ export class BotService {
         default:
           text = commandDenied()
       }
-      await result.reply(sanitizeExternalText(text), buttons ? { buttons } : undefined)
+      await result.reply(sanitizeExternalText(text))
       finish('ok', command ? `command_${command}` : 'help')
     } catch (error) {
       const sentIds = sentExternalIdsOf(error)
@@ -1858,20 +1624,22 @@ export class BotService {
         finish('ignored', 'image_unsupported')
         return
       }
+      // 仅图片无正文时用中性占位，避免向模型发送空用户消息。
+      const userText = text || (result.image ? IMAGE_ONLY_USER_TEXT : '')
       const answer = await this.chatWithAi(
         bot,
         result.userId,
         result.targetExternalId,
-        text,
+        userText,
         'chat',
         roleCard,
         prepared.image,
       )
       const plain = this.sanitizeAiText(answer)
-      const formatted = formatAiReply(bot.platform, plain)
-      const replyText = prepared.degraded && text ? `${formatted.text}\n${IMAGE_DEGRADED_NOTE}` : formatted.text
-      await result.reply(replyText || '暂时没回应上来，稍后再试。', { textMode: formatted.textMode })
-      if (text) this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, text, plain)
+      const formatted = formatAiReply(plain)
+      const replyText = prepared.degraded && text ? `${formatted}\n${IMAGE_DEGRADED_NOTE}` : formatted
+      await result.reply(replyText || '暂时没回应上来，稍后再试。')
+      if (userText) this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, plain)
       finish('ok', 'chat')
     } catch (error) {
       if (sentExternalIdsOf(error).length > 0) {
@@ -1889,7 +1657,7 @@ export class BotService {
   }
 
   /**
-   * 图片预处理：vision 关闭/适配器不支持/下载失败/mime 非法时降级为纯文本。
+   * 图片预处理：识别关闭/适配器不支持/下载失败/mime 非法时降级为纯文本。
    * - 有文字：继续回答，末尾追加“图片未能处理”说明；
    * - 无文字：返回 unsupported，由调用方提示用户改用文字描述。
    */
@@ -1961,40 +1729,6 @@ export class BotService {
     }
   }
 
-  private async executeAction(
-    bot: BotRow,
-    result: Extract<InboundVerification, { kind: 'action' }>,
-    _target: BotTargetRow,
-  ): Promise<void> {
-    this.deps.audit('bot.action', `${bot.platform}:${result.targetExternalId}`, {
-      action: result.action,
-      bot: bot.id,
-      user: result.userId.slice(0, 64),
-    })
-    const finish = (outcome: BotEventOutcome, detail: string) =>
-      this.markEvent(bot.id, result.eventId, {
-        outcome,
-        detail,
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-    try {
-      if (result.action === 'refresh_status') {
-        const text = formatPairs('应用状态', await this.deps.providers.status())
-        await result.reply(sanitizeExternalText(text), { buttons: STATUS_BUTTONS })
-        finish('ok', 'action_refresh_status')
-        return
-      }
-      await result.reply(helpText(bot.platform), { buttons: STATUS_BUTTONS })
-      finish('ok', 'action_help')
-    } catch (error) {
-      if (sentExternalIdsOf(error).length === 0) {
-        await result.reply(commandFailed('刷新状态')).catch(() => undefined)
-      }
-      finish('error', sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error))
-    }
-  }
-
   /** Chat/`/ask` 的统一模型调用：按模式选择提示词 + 共享长期记忆 + 用户消息（可选图片）。 */
   private async chatWithAi(
     bot: BotRow,
@@ -2036,7 +1770,7 @@ export class BotService {
 
   /**
    * AI 回答清洗：去除内部路径/URL 与控制字符，保留换行/分段，按配置上限截断。
-   * 与 sanitizeExternalText 的固定 1500 截断区分：AI 回答由平台适配器按各自上限分段发送。
+   * 与 sanitizeExternalText 的固定 1500 截断区分：AI 回答由 QQ 适配器按 2000 上限分段发送。
    */
   private sanitizeAiText(value: string): string {
     if (typeof value !== 'string') return ''
@@ -2056,11 +1790,6 @@ export class BotService {
       .join('\n')
       .trim()
     return cleaned.slice(0, this.config.botAiMaxReplyChars)
-  }
-
-  /** AI 回答统一管线：清洗 → 平台化格式（Telegram HTML / Slack mrkdwn / 其余纯文本）。 */
-  private formatAiAnswer(bot: BotRow, answer: string): { text: string; textMode: 'plain' | 'html' } {
-    return formatAiReply(bot.platform, this.sanitizeAiText(answer))
   }
 
   /** 回复已发送后再更新长期记忆，避免摘要模型调用拖慢用户可见回复。 */
@@ -2189,7 +1918,7 @@ export class BotService {
   }
 
   /**
-   * 入站目标解析：优先按平台目标 ID；私聊没有独立频道目标时回退到 user 目标（Discord DM）。
+   * 入站目标解析：优先按平台目标 ID；私聊没有独立频道目标时回退到 user 目标（QQ C2C）。
    * 只改变授权/回复目标，不自动创建目标，也不放开未登记用户。
    */
   private inboundTarget(
@@ -2239,18 +1968,7 @@ export class BotService {
   private adapterFor(row: BotRow): BotAdapter {
     const config = parseConfig(row.config_json)
     const secret = this.secretOf(row)
-    switch (row.platform) {
-      case 'telegram':
-        return new TelegramAdapter(config, secret, { fetch: this.deps.fetch })
-      case 'discord':
-        return new DiscordAdapter(config, secret, { fetch: this.deps.fetch })
-      case 'slack':
-        return new SlackAdapter(config, secret, { fetch: this.deps.fetch })
-      case 'qq':
-        return new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
-      default:
-        throw new AppError(500, 'bot_platform_invalid', 'Bot 平台无效')
-    }
+    return new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
   }
 
   private toSummary(row: BotRow): BotSummary {
@@ -2272,50 +1990,20 @@ export class BotService {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       keyVersion: row.key_version,
-      gateway: this.gatewayStatus(row.id),
     }
-  }
-
-  /** Discord Gateway 状态；由 BotService 生命周期注入，未启用时为 disabled。 */
-  private gatewayStatus(botId: string): BotSummary['gateway'] {
-    return this.gateway.status(botId)
   }
 
   private normalizeSecret(input: CreateBotInput): BotSecret {
-    return {
-      token: cleanText(input.token, 500),
-      webhookSecret: cleanText(input.webhookSecret, 500) || undefined,
-      signingSecret: cleanText(input.signingSecret, 500) || undefined,
-      publicKey: cleanText(input.publicKey, 200) || undefined,
-    }
+    return { token: cleanText(input.token, 500) }
   }
 
-  private normalizeConfig(
-    platform: BotPlatform,
-    raw: Record<string, unknown> | undefined,
-    publicKey?: string,
-  ): Record<string, unknown> {
-    if (platform === 'qq') {
-      const source = raw ?? {}
-      return { appId: cleanText(source.appId ?? source.applicationId, 64) }
-    }
-    if (platform !== 'discord') return {}
+  private normalizeConfig(raw: Record<string, unknown> | undefined): Record<string, unknown> {
     const source = raw ?? {}
-    return {
-      applicationId: cleanText(source.applicationId, 64),
-      publicKey: cleanText(source.publicKey, 200) || cleanText(publicKey, 200),
-    }
+    return { appId: cleanText(source.appId ?? source.applicationId, 64) }
   }
 
-  private validateOrThrow(platform: BotPlatform, config: Record<string, unknown>, secret: BotSecret): void {
-    const adapter =
-      platform === 'telegram'
-        ? new TelegramAdapter(config, secret, { fetch: this.deps.fetch })
-        : platform === 'discord'
-          ? new DiscordAdapter(config, secret, { fetch: this.deps.fetch })
-          : platform === 'qq'
-            ? new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
-            : new SlackAdapter(config, secret, { fetch: this.deps.fetch })
+  private validateOrThrow(config: Record<string, unknown>, secret: BotSecret): void {
+    const adapter = new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
     const errors = adapter.validate(config, secret)
     if (errors.length > 0) throw badRequest(`Bot 配置无效：${errors.join(', ')}`, 'invalid_bot_config')
   }
@@ -2334,20 +2022,6 @@ export class BotService {
     if ((cleanStart === null) !== (cleanEnd === null)) throw badRequest('静默时段起止必须同时设置或同时留空')
     if (cleanStart !== null && cleanStart === cleanEnd) throw badRequest('静默时段起止不能相同')
     return { start: cleanStart, end: cleanEnd }
-  }
-
-  /** 群聊触发策略校验：仅 channel/group 且非 QQ 可设 all，其余组合返回 400。 */
-  private normalizeChatTrigger(
-    bot: BotRow,
-    kind: 'channel' | 'user' | 'group',
-    value: 'mention' | 'all' | undefined,
-    current: 'mention' | 'all',
-  ): 'mention' | 'all' {
-    const trigger = value ?? current
-    if (trigger === 'all' && (kind === 'user' || bot.platform === 'qq')) {
-      throw new AppError(400, 'chat_trigger_unsupported', 'QQ 群/频道仅支持 @Bot 触发')
-    }
-    return trigger
   }
 
   private parseSchedule(scheduledAt: string | null | undefined): string | null {
@@ -2372,7 +2046,6 @@ function toTarget(row: BotTargetRow): BotTarget {
     allowCommands: row.allow_commands === 1,
     allowNotifications: row.allow_notifications === 1,
     allowChat: row.allow_chat === 1,
-    chatTrigger: row.chat_trigger === 'all' ? 'all' : 'mention',
     quietStartMinute: row.quiet_start_minute,
     quietEndMinute: row.quiet_end_minute,
     createdAt: row.created_at,
@@ -2410,14 +2083,6 @@ function toPublishJob(row: BotPublishRow): BotPublishJob {
     botId: row.bot_id,
     targetId: row.target_id,
     text,
-    mediaFileIds: (() => {
-      try {
-        const parsed = JSON.parse(row.media_file_ids_json) as unknown
-        return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string') : []
-      } catch {
-        return []
-      }
-    })(),
     scheduledAt: row.scheduled_at,
     status: row.status,
     attempts: row.attempts,

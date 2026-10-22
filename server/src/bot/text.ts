@@ -1,17 +1,12 @@
 /**
- * Bot 出站文本分段：按平台单条消息上限拆分长文本，避免静默截断。
+ * Bot 出站文本分段：QQ 官方 Bot 单条文本上限 2000 字符，长回答按上限拆分，避免静默截断。
  * 安全边界：只做长度切分与续段标记，不改变正文语义；调用方必须已完成清洗/格式化，
  * 且分段数量有上限，避免超长内容造成大量外发。
  */
-import type { BotPlatform } from './types.ts'
 
-/** 各平台单条文本上限（与适配器一致）。 */
-export const BOT_TEXT_LIMITS: Record<BotPlatform, number> = {
-  telegram: 4096,
-  discord: 2000,
-  slack: 4000,
-  qq: 2000,
-}
+/** QQ 官方 Bot 单条文本上限（与适配器一致）。 */
+export const BOT_TEXT_LIMITS = { qq: 2000 } as const
+export type BotTextPlatform = keyof typeof BOT_TEXT_LIMITS
 
 /** 单次回复最多发送的段数；超出部分截断并标记。 */
 export const MAX_MESSAGE_PARTS = 4
@@ -106,7 +101,7 @@ export function splitMessage(text: string, limit: number, maxParts = MAX_MESSAGE
   }))
 }
 
-/** 平台便捷封装：按该平台文本上限拆分。 */
-export function splitForPlatform(platform: BotPlatform, text: string, maxParts = MAX_MESSAGE_PARTS): MessagePart[] {
-  return splitMessage(text, BOT_TEXT_LIMITS[platform], maxParts)
+/** 平台便捷封装：按 QQ 文本上限拆分。 */
+export function splitForPlatform(_platform: BotTextPlatform, text: string, maxParts = MAX_MESSAGE_PARTS): MessagePart[] {
+  return splitMessage(text, BOT_TEXT_LIMITS.qq, maxParts)
 }

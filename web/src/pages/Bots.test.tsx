@@ -40,8 +40,6 @@ const mocks = vi.hoisted(() => ({
   publishList: vi.fn(),
   publishCreate: vi.fn(),
   publishCancel: vi.fn(),
-  filesList: vi.fn(),
-  filesSearch: vi.fn(),
 }))
 
 vi.mock('../api/client', () => ({
@@ -85,10 +83,6 @@ vi.mock('../api/client', () => ({
         cancel: mocks.publishCancel,
       },
     },
-    files: {
-      list: mocks.filesList,
-      search: mocks.filesSearch,
-    },
   },
   // 测试用错误只需带 code，页面通过 isApiError 判断 503 功能开关。
   isApiError: (error: unknown, code?: string) => {
@@ -120,19 +114,18 @@ function botStatus(overrides: Partial<BotStatus> = {}): BotStatus {
 function bot(overrides: Partial<BotSummary> = {}): BotSummary {
   return {
     id: 'bot-1',
-    platform: 'telegram',
+    platform: 'qq',
     name: '告警 Bot',
     enabled: true,
-    config: {},
+    config: { appId: '102123456' },
     webhookUrl: 'https://app.example.com/api/bot/webhook/bot-1',
-    setupSteps: ['在 BotFather 创建 Bot。', '设置 Webhook。'],
+    setupSteps: ['在 QQ 开放平台创建机器人。', '填写回调地址。'],
     targetsCount: 1,
     lastError: null,
     lastCheckedAt: null,
     createdAt: '2026-10-20T00:00:00.000Z',
     updatedAt: '2026-10-21T00:00:00.000Z',
     keyVersion: 1,
-    gateway: { state: 'disabled', lastError: null },
     ...overrides,
   }
 }
@@ -141,13 +134,12 @@ function target(overrides: Partial<BotTarget> = {}): BotTarget {
   return {
     id: 'target-1',
     botId: 'bot-1',
-    externalId: '-1001234567890',
-    label: '测试频道',
-    kind: 'channel',
+    externalId: 'group-openid-1',
+    label: '测试群',
+    kind: 'group',
     allowCommands: false,
     allowNotifications: true,
     allowChat: false,
-    chatTrigger: 'mention',
     quietStartMinute: null,
     quietEndMinute: null,
     createdAt: '2026-10-20T00:00:00.000Z',
@@ -178,7 +170,6 @@ function job(overrides: Partial<BotPublishJob> = {}): BotPublishJob {
     botId: 'bot-1',
     targetId: 'target-1',
     text: '发布内容测试',
-    mediaFileIds: ['file-1'],
     scheduledAt: null,
     status: 'queued',
     attempts: 0,
@@ -197,7 +188,6 @@ function connectivity(overrides: Partial<BotConnectivitySnapshot> = {}): BotConn
     proxy: { configured: true, host: '127.0.0.1', port: 18090, portReachable: true, latencyMs: 1, error: null },
     internet: { reachable: true, latencyMs: 120, status: 200, error: null },
     platforms: {
-      discord: { reachable: true, latencyMs: 140, status: 200, error: null },
       qq: { reachable: true, latencyMs: 180, status: 404, error: null },
     },
     ...overrides,
@@ -226,8 +216,8 @@ beforeEach(() => {
     ok: true,
     checkedAt: '2026-10-22T00:00:00.000Z',
     items: [
-      { name: 'Token 有效', ok: true, detail: 'getMe 成功' },
-      { name: 'Webhook 已设置', ok: true, detail: 'https://app.example.com/api/bot/webhook/bot-1' },
+      { name: 'AppID 有效', ok: true, detail: 'AppID 格式正确' },
+      { name: 'access_token 获取成功', ok: true, detail: '令牌有效期 7200 秒' },
     ],
   })
   mocks.events.mockResolvedValue({ items: [], total: 0 })
@@ -254,14 +244,6 @@ beforeEach(() => {
   mocks.publishList.mockResolvedValue([])
   mocks.publishCreate.mockResolvedValue(job())
   mocks.publishCancel.mockResolvedValue({ ok: true })
-  mocks.filesList.mockResolvedValue({
-    items: [{ id: 'file-1', name: 'media.png', kind: 'file', size: 1024, mime: 'image/png' }],
-    total: 1,
-  })
-  mocks.filesSearch.mockResolvedValue({
-    items: [{ id: 'file-1', name: 'media.png', kind: 'file', size: 1024, mime: 'image/png' }],
-    total: 1,
-  })
 })
 
 afterEach(() => {
@@ -303,12 +285,13 @@ describe('Bots 机器人管理', () => {
     renderPage()
     expect(await screen.findByRole('heading', { name: '出站网络' })).toBeTruthy()
     expect(await screen.findByText('设备在线')).toBeTruthy()
+    expect((await screen.findAllByText('QQ 官方')).length).toBeGreaterThan(0)
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '检测' }))
     await waitFor(() => expect(mocks.checkConnectivity).toHaveBeenCalledTimes(1))
   })
 
-  it('创建表单校验必填项，填写后可提交公开配置', async () => {
+  it('创建表单校验 QQ 必填项，填写后提交 AppID 与配置', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
     await openConfigTab()
@@ -317,50 +300,53 @@ describe('Bots 机器人管理', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '创建 Bot' }))
     expect(await screen.findByText('请输入 Bot 名称')).toBeTruthy()
-    expect(screen.getByText('请输入 Bot Token')).toBeTruthy()
-    expect(screen.getByText('请输入 Telegram Webhook Secret')).toBeTruthy()
+    expect(screen.getByText('请输入 AppSecret')).toBeTruthy()
+    expect(screen.getByText('AppID 应为 5–32 位数字')).toBeTruthy()
     expect(mocks.create).not.toHaveBeenCalled()
 
     await userEvent.type(screen.getByLabelText(/名称/), '新 Bot')
-    await userEvent.type(screen.getByLabelText(/Bot Token/), 't'.repeat(24))
-    await userEvent.type(screen.getByLabelText(/Webhook Secret/), 's'.repeat(18))
+    await userEvent.type(screen.getByLabelText(/AppID/), '102123456')
+    await userEvent.type(screen.getByLabelText(/AppSecret/), 's'.repeat(20))
     await userEvent.click(screen.getByRole('button', { name: '创建 Bot' }))
 
     await waitFor(() =>
       expect(mocks.create).toHaveBeenCalledWith({
-        platform: 'telegram',
+        platform: 'qq',
         name: '新 Bot',
-        token: 't'.repeat(24),
-        webhookSecret: 's'.repeat(18),
+        token: 's'.repeat(20),
+        config: { appId: '102123456' },
       }),
     )
     expect(await screen.findByRole('heading', { name: /编辑「新 Bot」/ })).toBeTruthy()
   })
 
-  it('编辑时密钥输入不回显，留空表示不修改', async () => {
+  it('编辑时 AppSecret 输入不回显，留空表示不修改', async () => {
     const summary = {
-      ...bot({ config: { applicationId: '123456789012345678', publicKey: 'a'.repeat(64) } }),
-      token: 'super-secret-token',
+      ...bot({ config: { appId: '102123456' } }),
+      token: 'super-secret-app-secret',
     } as BotSummary
     mocks.list.mockResolvedValue([summary])
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
     await openConfigTab()
 
-    const tokenInput = screen.getByLabelText(/Bot Token/) as HTMLInputElement
+    expect((screen.getByLabelText(/AppID/) as HTMLInputElement).value).toBe('102123456')
+    const tokenInput = screen.getByLabelText(/AppSecret/) as HTMLInputElement
     expect(tokenInput.value).toBe('')
     expect(tokenInput.placeholder).toBe('留空表示不修改')
-    const secretInput = screen.getByLabelText(/Webhook Secret/) as HTMLInputElement
-    expect(secretInput.value).toBe('')
-    expect(screen.queryByDisplayValue('super-secret-token')).toBeNull()
-    expect(screen.queryByText('super-secret-token')).toBeNull()
+    expect(screen.queryByDisplayValue('super-secret-app-secret')).toBeNull()
+    expect(screen.queryByText('super-secret-app-secret')).toBeNull()
+    // 其他平台密钥字段已收敛，不再展示。
+    expect(screen.queryByLabelText(/Webhook Secret/)).toBeNull()
+    expect(screen.queryByLabelText(/Public Key/)).toBeNull()
+    expect(screen.queryByLabelText(/Signing Secret/)).toBeNull()
   })
 
   it('目标分区切换允许命令会调用 PATCH 并更新状态', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
     await userEvent.click(screen.getByRole('tab', { name: '目标' }))
-    const checkbox = await screen.findByRole('checkbox', { name: '测试频道 允许命令' })
+    const checkbox = await screen.findByRole('checkbox', { name: '测试群 允许命令' })
     expect(checkbox).not.toBeChecked()
 
     await userEvent.click(checkbox)
@@ -400,7 +386,7 @@ describe('Bots 机器人管理', () => {
     )
   })
 
-  it('发布表单提交目标、文本、单媒体与无排期', async () => {
+  it('发布表单仅提交纯文本与 TOTP 双确认', async () => {
     mocks.publishCreate.mockResolvedValue(job())
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
@@ -409,9 +395,8 @@ describe('Bots 机器人管理', () => {
     const select = (await screen.findByLabelText(/发布目标/)) as HTMLSelectElement
     await waitFor(() => expect(select.value).toBe('target-1'))
     await userEvent.type(screen.getByLabelText(/发布内容/), '发布内容测试')
-    await userEvent.click(screen.getByRole('button', { name: '选择文件' }))
-    await userEvent.click(await screen.findByRole('button', { name: '选择' }))
-    await userEvent.click(screen.getByRole('button', { name: '关闭对话框' }))
+    // 媒体选择器已随 QQ 纯文本收敛移除。
+    expect(screen.queryByRole('button', { name: '选择文件' })).toBeNull()
     await userEvent.type(screen.getByLabelText(/TOTP 验证码/), '123456')
     await userEvent.type(screen.getByLabelText(/二次确认/), 'PUBLISH')
     await userEvent.click(screen.getByRole('button', { name: '创建发布任务' }))
@@ -420,7 +405,6 @@ describe('Bots 机器人管理', () => {
       expect(mocks.publishCreate).toHaveBeenCalledWith('bot-1', {
         targetId: 'target-1',
         text: '发布内容测试',
-        mediaFileIds: ['file-1'],
         scheduledAt: null,
         totpCode: '123456',
         confirmText: 'PUBLISH',
@@ -515,38 +499,33 @@ describe('Bots 机器人管理', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '检查连接' }))
     await waitFor(() => expect(mocks.check).toHaveBeenCalledWith('bot-1'))
-    expect(await screen.findByText('Token 有效')).toBeTruthy()
+    expect(await screen.findByText('AppID 有效')).toBeTruthy()
     expect(screen.getByText('全部通过')).toBeTruthy()
     expect(screen.getByText(/\/reset 重置当前对话/)).toBeTruthy()
   })
 
-  it('目标表单可选择触发方式并提交 chatTrigger', async () => {
+  it('目标表单提交 QQ 目标且不再包含触发方式', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
     await userEvent.click(screen.getByRole('tab', { name: '目标' }))
 
-    await userEvent.type(await screen.findByLabelText(/平台目标 ID/), 'group-1')
+    expect(screen.queryByLabelText('触发方式')).toBeNull()
+    await userEvent.type(await screen.findByLabelText(/平台目标 ID/), 'group-openid-2')
     await userEvent.type(screen.getByLabelText(/^名称/), '新目标')
-    await userEvent.selectOptions(screen.getByLabelText('触发方式'), 'all')
     await userEvent.click(screen.getByRole('button', { name: '添加目标' }))
 
-    await waitFor(() =>
-      expect(mocks.targetCreate).toHaveBeenCalledWith(
-        'bot-1',
-        expect.objectContaining({ externalId: 'group-1', chatTrigger: 'all' }),
-      ),
-    )
+    await waitFor(() => expect(mocks.targetCreate).toHaveBeenCalledTimes(1))
+    const payload = mocks.targetCreate.mock.calls[0]?.[1] as Record<string, unknown>
+    expect(payload).toMatchObject({ externalId: 'group-openid-2', label: '新目标' })
+    expect(Object.keys(payload)).not.toContain('chatTrigger')
   })
 
-  it('QQ 平台禁用触发方式并提示仅支持 @Bot', async () => {
-    mocks.list.mockResolvedValue([bot({ platform: 'qq' })])
+  it('页面不展示多平台与 Gateway 文案', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
-    await userEvent.click(screen.getByRole('tab', { name: '目标' }))
-
-    const select = (await screen.findByLabelText('触发方式')) as HTMLSelectElement
-    expect(select.disabled).toBe(true)
-    expect(select.value).toBe('mention')
-    expect(screen.getAllByText(/QQ 群\/频道仅支持 @Bot 触发/).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Gateway/)).toBeNull()
+    expect(screen.queryByText(/Discord/)).toBeNull()
+    expect(screen.queryByText(/Telegram/)).toBeNull()
+    expect(screen.queryByText(/Slack/)).toBeNull()
   })
 })

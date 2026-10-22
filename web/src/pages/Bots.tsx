@@ -1,4 +1,4 @@
-// 机器人管理页：概览、配置、目标、投递与发布四个分区。
+// 机器人管理页：概览、配置、目标、投递与发布、角色与记忆、诊断六个分区（当前仅 QQ 官方 Bot）。
 // 安全边界：只展示 BotSummary 的公开字段；密钥只提交不回显，不写入 DOM value/本地存储。
 // 功能未启用（botsEnabled=false 或 503 bot_disabled/bot_key_missing）时展示服务端配置指引，不发起列表请求。
 
@@ -82,7 +82,7 @@ function errorCode(error: unknown): string | null {
   return isApiError(error) ? error.code : null
 }
 
-/** 机器人管理页：加载运行状态与 Bot 列表，并把四个分区组合为可键盘操作的标签页。 */
+/** 机器人管理页：加载运行状态与 Bot 列表，并把六个分区组合为可键盘操作的标签页。 */
 export function Bots() {
   const [status, setStatus] = useState<BotStatus | null>(null)
   const [bots, setBots] = useState<BotSummary[]>([])
@@ -223,7 +223,7 @@ export function Bots() {
     <div className="bots-page">
       <PageHeader
         title="机器人"
-        description="Telegram / Discord / Slack / QQ 通知、Chat 与只读命令、角色与记忆、诊断"
+        description="QQ 官方 Bot 通知、Chat 与只读命令、角色与记忆、诊断"
         actions={
           <Button
             variant="secondary"

@@ -37,13 +37,6 @@ function requiredId(value: unknown, name: string): string {
   return id
 }
 
-/** 目标显式触发方式：缺省交给 service；非法值直接 400。 */
-function optionalChatTrigger(value: unknown): 'mention' | 'all' | undefined {
-  if (value === undefined || value === null) return undefined
-  if (value === 'mention' || value === 'all') return value
-  throw badRequest('触发方式无效')
-}
-
 /** 分页 offset：允许 0，非法值回退 0。 */
 function offsetOf(value: unknown): number {
   const parsed = Number(value ?? 0)
@@ -83,9 +76,6 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
       name: text(body.name, 80),
       token: text(body.token, 500),
       config: asRecord(body.config) ?? undefined,
-      webhookSecret: optionalText(body.webhookSecret, 500),
-      publicKey: optionalText(body.publicKey, 200),
-      signingSecret: optionalText(body.signingSecret, 500),
     }
     return { bot: bots.createBot(input) }
   })
@@ -166,9 +156,6 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       config: asRecord(body.config) ?? undefined,
       token: optionalText(body.token, 500),
-      webhookSecret: optionalText(body.webhookSecret, 500),
-      publicKey: optionalText(body.publicKey, 200),
-      signingSecret: optionalText(body.signingSecret, 500),
     }
     return { bot: bots.updateBot(requiredId(params.id, 'id'), input) }
   })
@@ -214,7 +201,6 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         allowCommands: boolean(body.allowCommands),
         allowNotifications: boolean(body.allowNotifications, true),
         allowChat: boolean(body.allowChat),
-        chatTrigger: optionalChatTrigger(body.chatTrigger),
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),
@@ -232,7 +218,6 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         allowCommands: typeof body.allowCommands === 'boolean' ? body.allowCommands : undefined,
         allowNotifications: typeof body.allowNotifications === 'boolean' ? body.allowNotifications : undefined,
         allowChat: typeof body.allowChat === 'boolean' ? body.allowChat : undefined,
-        chatTrigger: optionalChatTrigger(body.chatTrigger),
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),
@@ -273,18 +258,14 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
     const context = authOf(request)
     const retry = publishLimiter.hit(context.user.username)
     if (retry > 0) throw rateLimited(retry)
-    // 发布 = 数据外发，要求 TOTP 再认证（BOT-02）；不能用会话+CSRF 直接外发文件。
+    // 发布 = 数据外发，要求 TOTP 再认证（BOT-02）；不能用会话+CSRF 直接外发内容。
     const totpCode = text(body.totpCode, 16)
     if (!totpCode) throw badRequest('发布需要 TOTP 验证码', 'totp_required')
     await auth.confirmTotp(context, totpCode, request.ip)
-    const media = Array.isArray(body.mediaFileIds)
-      ? body.mediaFileIds.map((id) => text(id, 64)).filter(Boolean)
-      : []
     return {
       job: bots.createPublish(requiredId(params.id, 'id'), {
         targetId: text(body.targetId, 64),
-        text: text(body.text, 4096),
-        mediaFileIds: media,
+        text: text(body.text, 2000),
         scheduledAt: optionalText(body.scheduledAt, 40) ?? null,
         confirmText: text(body.confirmText, 20),
       }),

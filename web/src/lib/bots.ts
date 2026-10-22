@@ -2,7 +2,6 @@
 // 仅做展示映射，不包含任何密钥；状态值以 api/types.ts 的联合类型为准。
 
 import type {
-  BotChatTrigger,
   BotDeliveryKind,
   BotDeliveryStatus,
   BotPlatform,
@@ -12,12 +11,9 @@ import type {
 } from '../api/types'
 import type { BadgeTone } from '../components/Badge'
 
-export const BOT_PLATFORMS: readonly BotPlatform[] = ['telegram', 'discord', 'slack', 'qq']
+export const BOT_PLATFORMS: readonly BotPlatform[] = ['qq']
 
 export const BOT_PLATFORM_LABELS: Record<BotPlatform, string> = {
-  telegram: 'Telegram',
-  discord: 'Discord',
-  slack: 'Slack',
   qq: 'QQ 官方',
 }
 
@@ -26,14 +22,6 @@ export const BOT_TARGET_KIND_LABELS: Record<BotTargetKind, string> = {
   user: '用户',
   group: '群组',
 }
-
-/** 普通消息触发方式文案；QQ 群/频道只支持 mention。 */
-export const BOT_CHAT_TRIGGER_LABELS: Record<BotChatTrigger, string> = {
-  mention: '仅 @/回复触发',
-  all: '全部消息触发',
-}
-
-export const BOT_CHAT_TRIGGER_OPTIONS: readonly BotChatTrigger[] = ['mention', 'all']
 
 export const BOT_DELIVERY_KIND_LABELS: Record<BotDeliveryKind, string> = {
   notification: '通知',
@@ -64,11 +52,8 @@ export const BOT_PUBLISH_STATUS_META: Record<BotPublishStatus, StatusMeta> = {
   canceled: { label: '已取消', tone: 'muted' },
 }
 
-/** 各平台单条消息的文本上限（与服务端适配器一致）。 */
+/** QQ 单条消息的文本上限（与服务端适配器一致）。 */
 export const BOT_TEXT_LIMITS: Record<BotPlatform, number> = {
-  telegram: 4096,
-  discord: 2000,
-  slack: 4000,
   qq: 2000,
 }
 
@@ -89,10 +74,6 @@ export function targetLabel(targets: readonly BotTarget[], targetId: string | nu
 /** 发布表单只允许频道/群组；用户目标仅用于命令回复与通知。 */
 export function publishableTargets(targets: readonly BotTarget[]): BotTarget[] {
   return targets.filter((target) => target.kind !== 'user')
-}
-
-export function chatTriggerLabel(trigger: BotChatTrigger | null | undefined): string {
-  return trigger ? BOT_CHAT_TRIGGER_LABELS[trigger] : '仅 @/回复触发'
 }
 
 /* ---------- 诊断：入站事件结果 ---------- */

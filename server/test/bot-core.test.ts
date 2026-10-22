@@ -1,250 +1,232 @@
 /**
- * Bot 核心回归：凭据加密、三平台验签/命令、队列/去重/发布。
- * 测试不访问真实平台网络，全部使用注入的 fetch 夹具。
+ * Bot 核心回归（QQ 单平台）：凭据加密、Webhook 验签/命令/去重、通知与发布队列。
+ * 测试不访问真实 QQ 网络，全部使用注入的 fetch 夹具与固定 AppSecret。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createHmac, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
-import { rmSync } from 'node:fs'
-import { tempDataDir, testConfig, testDb } from './helpers.ts'
+import { randomBytes, verify } from 'node:crypto'
+import {
+  QQ_TIMESTAMP,
+  c2cWebhook,
+  createQqServiceFixture,
+  deriveQqKeyPair,
+  lastMessageText,
+  sendWebhook,
+  signQqEvent,
+} from './bot-qq-fixtures.ts'
 import { BotService } from '../src/bot/service.ts'
+import type { BotPlatform } from '../src/bot/types.ts'
 import { decryptBotSecret, encryptBotSecret } from '../src/bot/crypto.ts'
-import { TelegramAdapter } from '../src/bot/adapters/telegram.ts'
-import { DiscordAdapter } from '../src/bot/adapters/discord.ts'
-import { SlackAdapter } from '../src/bot/adapters/slack.ts'
 
-interface Captured {
-  url: string
-  init?: RequestInit
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
-}
-
-function makeFetch(responses: Array<Record<string, unknown>> = [{ ok: true, result: { message_id: 1 } }]) {
-  const captured: Captured[] = []
-  let index = 0
-  const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-    captured.push({ url, init })
-    const body = responses[Math.min(index, responses.length - 1)] ?? {}
-    index += 1
-    return jsonResponse(body)
-  }
-  return { fetchImpl: fetchImpl as typeof fetch, captured }
-}
-
-function telegramSetup() {
-  const dir = tempDataDir()
-  const key = randomBytes(32).toString('base64')
-  const config = testConfig(dir, { botEnabled: true, botSecretKey: key })
-  const db = testDb(dir)
-  const { fetchImpl, captured } = makeFetch()
-  const service = new BotService({
-    db,
-    config,
-    log: () => undefined,
-    audit: () => undefined,
-    fetch: fetchImpl,
-    media: {
-      stat: () => ({ filename: 'a.png', mime: 'image/png', size: 3 }),
-      load: async () => ({ filename: 'a.png', mime: 'image/png', data: Buffer.from('png') }),
-    },
-    providers: {
-      status: async () => ({ ok: true }),
-      backup: async () => ({ ok: true }),
-      world: async () => ({ ok: true }),
-      minecraft: async () => ({ online: true }),
-      files: async () => [{ name: 'a.txt', sizeLabel: '1 KB' }],
-    },
-  })
-  const created = service.createBot({
-    platform: 'telegram',
-    name: 'test',
-    token: 'x'.repeat(40),
-    webhookSecret: 'secret-'.repeat(4),
-  })
-  service.updateBot(created.id, { enabled: true })
-  const target = service.createTarget(created.id, {
-    externalId: '123',
-    label: 'chat',
-    kind: 'group',
-    allowCommands: true,
-    allowNotifications: true,
-  })
-  const userTarget = service.createTarget(created.id, {
-    externalId: '456',
-    label: 'admin-user',
-    kind: 'user',
-    allowCommands: true,
-    allowNotifications: false,
-  })
-  return { dir, db, service, created, target, userTarget, captured, config }
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
 }
 
 test('Bot 凭据加密可往返且篡改失败', () => {
   const key = randomBytes(32)
-  const encrypted = encryptBotSecret(key, { token: 'x'.repeat(20), webhookSecret: 'secret' })
+  const encrypted = encryptBotSecret(key, { token: 'x'.repeat(20) })
   const decoded = decryptBotSecret(key, encrypted)
   assert.equal(decoded.token, 'x'.repeat(20))
-  assert.equal(decoded.webhookSecret, 'secret')
   assert.throws(() => decryptBotSecret(randomBytes(32), encrypted))
   assert.throws(() => decryptBotSecret(key, { ...encrypted, ciphertext: 'AAAA' }))
 })
 
-test('Telegram：secret 校验、命令回复、事件去重与通知/发布队列', async () => {
-  const { dir, db, service, created, target, captured } = telegramSetup()
+test('QQ Webhook：op=13 回调校验返回签名，非法签名被拒绝', async () => {
+  const fixture = createQqServiceFixture()
   try {
-    const headers = { 'x-telegram-bot-api-secret-token': 'secret-'.repeat(4), 'content-type': 'application/json' }
-    const body = Buffer.from(
-      JSON.stringify({
-        update_id: 1,
-        message: { text: '/status', chat: { id: 123, type: 'private' }, from: { id: 456, username: 'u' } },
-      }),
+    const challengeBody = Buffer.from(
+      JSON.stringify({ op: 13, d: { plain_token: 'plain-token-abc', event_ts: '1725442341' } }),
     )
-    const result = await service.handleWebhook(created.id, headers, body)
-    assert.equal(result.status, 200)
-    await service.waitForIdle()
-    assert.equal(captured.length, 1)
-    assert.match(captured[0]!.url, /sendMessage/)
-    assert.match(String(captured[0]!.init?.body), /应用状态/)
+    const challenge = await fixture.service.handleWebhook(fixture.botId, {}, challengeBody)
+    assert.equal(challenge.status, 200)
+    const payload = challenge.body as { plain_token: string; signature: string }
+    assert.equal(payload.plain_token, 'plain-token-abc')
+    const { publicKey } = deriveQqKeyPair(fixture.appSecret)
+    assert.equal(
+      verify(
+        null,
+        Buffer.from('1725442341plain-token-abc', 'utf8'),
+        publicKey,
+        Buffer.from(payload.signature, 'hex'),
+      ),
+      true,
+    )
 
-    const duplicate = await service.handleWebhook(created.id, headers, body)
-    assert.deepEqual(duplicate.body, { ok: true, duplicate: true })
-
-    const rejected = await service.handleWebhook(created.id, { ...headers, 'x-telegram-bot-api-secret-token': 'bad' }, body)
+    const rejected = await fixture.service.handleWebhook(
+      fixture.botId,
+      { 'x-signature-ed25519': '00'.repeat(64), 'x-signature-timestamp': QQ_TIMESTAMP },
+      Buffer.from(JSON.stringify({ op: 0, t: 'C2C_MESSAGE_CREATE', d: {} })),
+    )
     assert.equal(rejected.status, 401)
+    assert.deepEqual(rejected.body, { error: { code: 'invalid_signature' } })
 
-    service.notifyAlert({
+    // BOT_ENABLED=false 时公开入口返回 404。
+    const disabled = new BotService({
+      db: fixture.db,
+      config: { ...fixture.config, botEnabled: false },
+      log: () => undefined,
+      audit: () => undefined,
+      providers: {
+        status: async () => ({}),
+        backup: async () => ({}),
+        world: async () => ({}),
+        minecraft: async () => ({}),
+        files: async () => [],
+      },
+    })
+    const hidden = await disabled.handleWebhook(fixture.botId, {}, Buffer.from('{}'))
+    assert.equal(hidden.status, 404)
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('QQ Webhook：命令回复、事件去重与审计', async () => {
+  const fixture = createQqServiceFixture()
+  try {
+    fixture.service.createTarget(fixture.botId, {
+      externalId: 'group-openid-1',
+      label: 'QQ 群',
+      kind: 'group',
+      allowCommands: true,
+      allowNotifications: true,
+      allowChat: false,
+    })
+    fixture.service.createTarget(fixture.botId, {
+      externalId: 'user-openid-1',
+      label: '管理员',
+      kind: 'user',
+      allowCommands: true,
+      allowNotifications: false,
+    })
+    const webhook = c2cWebhook(fixture.appSecret, { id: 'c2c-cmd-1', content: '/status' })
+    const first = await sendWebhook(fixture, webhook)
+    assert.equal(first.status, 200)
+    assert.deepEqual(first.body, { opcode: 12 })
+    assert.match(lastMessageText(fixture), /应用状态/)
+    assert.equal(fixture.fetch.sent.at(-1)?.body.msg_id, 'c2c-cmd-1', 'C2C 被动回复带 msg_id')
+    assert.ok(fixture.audits.some((item) => item.action === 'bot.command'))
+
+    const messageCount = fixture.fetch.sent.length
+    const duplicate = await sendWebhook(fixture, webhook)
+    assert.equal(duplicate.status, 200)
+    assert.deepEqual(duplicate.body, { opcode: 12 })
+    assert.equal(fixture.fetch.sent.length, messageCount, '重复事件不重复外发')
+
+    const events = fixture.service.listEvents(fixture.botId)
+    assert.equal(events.total, 1)
+    assert.equal(events.items[0]?.outcome, 'ok')
+    assert.equal(events.items[0]?.kind, 'command')
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('QQ 通知队列：告警按目标投递，文本已脱敏', async () => {
+  const fixture = createQqServiceFixture()
+  try {
+    fixture.service.updateBot(fixture.botId, { enabled: true })
+    fixture.service.createTarget(fixture.botId, {
+      externalId: 'group-openid-1',
+      label: 'QQ 群',
+      kind: 'group',
+      allowCommands: false,
+      allowNotifications: true,
+    })
+    fixture.service.notifyAlert({
       id: 10,
       event: 'disk_low',
       severity: 'warning',
       status: 'firing',
       title: '磁盘不足',
       message: '失败路径 /home/antifield/secret.txt ssh://internal',
-      createdAt: new Date().toISOString(),
+      createdAt: '2026-10-22T04:00:00.000Z',
     })
-    await service.processDeliveries()
-    assert.ok(captured.some((item) => /sendMessage/.test(item.url) && String(item.init?.body).includes('磁盘不足')))
-    assert.ok(captured.some((item) => !String(item.init?.body).includes('/home/antifield/secret.txt')))
-
-    assert.throws(() => service.createPublish(created.id, { targetId: target.id, text: '无确认' }), /二次确认/)
-    const job = service.createPublish(created.id, { targetId: target.id, text: '发布测试', confirmText: 'PUBLISH' })
-    await service.processPublishJobs()
-    const sent = service.listPublishJobs(created.id).find((item) => item.id === job.id)
-    assert.equal(sent?.status, 'sent')
-    assert.ok(captured.some((item) => String(item.init?.body).includes('发布测试')))
+    await fixture.service.processDeliveries()
+    const body = fixture.fetch.sent.at(-1)?.body
+    assert.equal(typeof body?.content, 'string')
+    assert.match(String(body?.content), /磁盘不足/)
+    assert.equal(String(body?.content).includes('/home/antifield/secret.txt'), false, '通知不得包含内部路径')
+    const delivery = fixture.service.listDeliveries(fixture.botId)[0]
+    assert.equal(delivery?.status, 'sent')
+    assert.equal(delivery?.kind, 'notification')
+    assert.ok(fixture.fetch.captured.every((item) => !item.url.includes(fixture.appSecret)), 'AppSecret 不得进入 URL')
   } finally {
-    db.close()
-    rmSync(dir, { recursive: true, force: true })
+    fixture.cleanup()
   }
 })
 
-test('Telegram：未授权目标不执行命令', async () => {
-  const { dir, db, service, created, userTarget, captured } = telegramSetup()
+test('QQ 发布队列：二次确认后才入队，纯文本发送', async () => {
+  const fixture = createQqServiceFixture()
   try {
-    service.updateTarget(created.id, userTarget.id, { allowCommands: false })
-    const headers = { 'x-telegram-bot-api-secret-token': 'secret-'.repeat(4) }
-    const body = Buffer.from(
-      JSON.stringify({
-        update_id: 2,
-        message: { text: '/status', chat: { id: 123, type: 'private' }, from: { id: 456 } },
-      }),
+    const target = fixture.service.createTarget(fixture.botId, {
+      externalId: 'group-openid-1',
+      label: 'QQ 群',
+      kind: 'group',
+      allowCommands: false,
+      allowNotifications: true,
+    })
+    assert.throws(
+      () => fixture.service.createPublish(fixture.botId, { targetId: target.id, text: '无确认' }),
+      /二次确认/,
     )
-    const result = await service.handleWebhook(created.id, headers, body)
-    assert.equal(result.status, 200)
-    await service.waitForIdle()
-    assert.equal(captured.length, 0)
+    assert.throws(
+      () => fixture.service.createPublish(fixture.botId, { targetId: target.id, text: 'x'.repeat(2001), confirmText: 'PUBLISH' }),
+      /2000/,
+    )
+    const job = fixture.service.createPublish(fixture.botId, {
+      targetId: target.id,
+      text: '发布测试',
+      confirmText: 'PUBLISH',
+    })
+    await fixture.service.processPublishJobs()
+    const sent = fixture.service.listPublishJobs(fixture.botId).find((item) => item.id === job.id)
+    assert.equal(sent?.status, 'sent')
+    assert.equal(sent?.text, '发布测试')
+    assert.match(String(fixture.fetch.sent.at(-1)?.body.content), /发布测试/)
   } finally {
-    db.close()
-    rmSync(dir, { recursive: true, force: true })
+    fixture.cleanup()
   }
 })
 
-test('Discord：Ed25519 PING/命令验签，deferred 响应', async () => {
-  const { publicKey, privateKey } = generateKeyPairSync('ed25519')
-  const rawPublic = publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('hex')
-  const { fetchImpl, captured } = makeFetch([{ id: 'm1' }])
-  const adapter = new DiscordAdapter(
-    { applicationId: '123456789012345678', publicKey: rawPublic },
-    { token: 'x'.repeat(40) },
-    { fetch: fetchImpl },
-  )
-  const timestamp = String(Math.floor(Date.now() / 1000))
-  const ping = Buffer.from(JSON.stringify({ type: 1 }))
-  const signature = sign(null, Buffer.concat([Buffer.from(timestamp), ping]), privateKey).toString('hex')
-  const pong = await adapter.verifyInbound({
-    botId: 'b1',
-    headers: { 'x-signature-ed25519': signature, 'x-signature-timestamp': timestamp },
-    body: ping,
-  })
-  assert.deepEqual(pong, { kind: 'challenge', body: { type: 1 } })
-
-  const command = Buffer.from(
-    JSON.stringify({
-      type: 2,
-      id: 'i1',
-      token: 'interaction-token',
-      channel_id: 'channel1',
-      member: { user: { id: 'u1', username: 'user' } },
-      data: { name: 'status', options: [] },
-    }),
-  )
-  const commandSignature = sign(null, Buffer.concat([Buffer.from(timestamp), command]), privateKey).toString('hex')
-  const verified = await adapter.verifyInbound({
-    botId: 'b1',
-    headers: { 'x-signature-ed25519': commandSignature, 'x-signature-timestamp': timestamp },
-    body: command,
-  })
-  assert.equal(verified.kind, 'command')
-  if (verified.kind !== 'command') throw new Error('expected command')
-  assert.deepEqual(verified.immediateResponse, { type: 5 })
-  await verified.reply('pong')
-  assert.equal(captured.length, 1)
-  assert.match(captured[0]!.url, /webhooks\/123456789012345678\/interaction-token/)
-
-  const bad = await adapter.verifyInbound({
-    botId: 'b1',
-    headers: { 'x-signature-ed25519': '00'.repeat(64), 'x-signature-timestamp': timestamp },
-    body: command,
-  })
-  assert.equal(bad.kind, 'rejected')
+test('QQ 单平台：非 QQ 平台创建被拒绝，发送只走 QQ API', async () => {
+  const fixture = createQqServiceFixture()
+  try {
+    assert.throws(
+      () =>
+        fixture.service.createBot({
+          platform: 'telegram' as unknown as BotPlatform,
+          name: 'legacy',
+          token: 'x'.repeat(20),
+        }),
+      /不支持的平台/,
+    )
+    const bot = fixture.service.listBots()[0]
+    assert.equal(bot?.platform, 'qq')
+    assert.deepEqual(bot?.setupSteps.length ? 'has-setup' : 'no-setup', 'has-setup')
+    void jsonResponse
+  } finally {
+    fixture.cleanup()
+  }
 })
 
-test('Slack：签名 challenge 与命令回复', async () => {
-  const signingSecret = 'slack-signing-secret-123'
-  const { fetchImpl, captured } = makeFetch([{ ok: true }])
-  const adapter = new SlackAdapter({ token: 'x'.repeat(40), signingSecret }, { fetch: fetchImpl })
-  const timestamp = String(Math.floor(Date.now() / 1000))
-  const body = Buffer.from(JSON.stringify({ type: 'url_verification', challenge: 'abc' }))
-  const signature = `v0=${createHmac('sha256', signingSecret).update(`v0:${timestamp}:${body.toString()}`).digest('hex')}`
-  const challenge = await adapter.verifyInbound({
-    botId: 'b1',
-    headers: { 'x-slack-request-timestamp': timestamp, 'x-slack-signature': signature, 'content-type': 'application/json' },
-    body,
-  })
-  assert.deepEqual(challenge, { kind: 'challenge', body: { challenge: 'abc' } })
-
-  const form = Buffer.from(
-    'command=%2Fstatus&text=&channel_id=C1&user_id=U1&trigger_id=T1&response_url=https%3A%2F%2Fhooks.slack.com%2Fcommands%2F1',
-  )
-  const formSignature = `v0=${createHmac('sha256', signingSecret).update(`v0:${timestamp}:${form.toString()}`).digest('hex')}`
-  const command = await adapter.verifyInbound({
-    botId: 'b1',
-    headers: { 'x-slack-request-timestamp': timestamp, 'x-slack-signature': formSignature, 'content-type': 'application/x-www-form-urlencoded' },
-    body: form,
-  })
-  assert.equal(command.kind, 'command')
-  if (command.kind !== 'command') throw new Error('expected command')
-  await command.reply('ok')
-  assert.equal(captured.length, 1)
-  assert.match(captured[0]!.url, /hooks\.slack\.com/)
-})
-
-test('Telegram 适配器 token/secret 校验', () => {
-  const adapter = new TelegramAdapter({ token: 'short', webhookSecret: '' })
-  const errors = adapter.validate({}, { token: 'short', webhookSecret: '' })
-  assert.ok(errors.includes('telegram_token_invalid'))
-  assert.ok(errors.includes('telegram_webhook_secret_required'))
+test('QQ 事件签名时间戳过期时拒绝（stale_signature）', async () => {
+  const fixture = createQqServiceFixture()
+  try {
+    const staleTs = String(Math.floor(new Date('2026-10-22T00:00:00.000Z').getTime() / 1000))
+    const webhook = signQqEvent(
+      fixture.appSecret,
+      {
+        op: 0,
+        t: 'C2C_MESSAGE_CREATE',
+        d: { id: 'stale-1', content: '你好', author: { user_openid: 'u1' } },
+      },
+      staleTs,
+    )
+    const result = await fixture.service.handleWebhook(fixture.botId, webhook.headers, webhook.body)
+    assert.equal(result.status, 401)
+    assert.deepEqual(result.body, { error: { code: 'stale_signature' } })
+  } finally {
+    fixture.cleanup()
+  }
 })

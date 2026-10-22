@@ -35,10 +35,10 @@ vi.mock('../../api/client', () => ({
 function bot(overrides: Partial<BotSummary> = {}): BotSummary {
   return {
     id: 'bot-1',
-    platform: 'telegram',
+    platform: 'qq',
     name: '告警 Bot',
     enabled: true,
-    config: {},
+    config: { appId: '102123456' },
     webhookUrl: 'https://app.example.com/api/bot/webhook/bot-1',
     setupSteps: [],
     targetsCount: 1,
@@ -47,7 +47,6 @@ function bot(overrides: Partial<BotSummary> = {}): BotSummary {
     createdAt: '2026-10-20T00:00:00.000Z',
     updatedAt: '2026-10-21T00:00:00.000Z',
     keyVersion: 1,
-    gateway: { state: 'disabled', lastError: null },
     ...overrides,
   }
 }

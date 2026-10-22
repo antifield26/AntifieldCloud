@@ -1,17 +1,11 @@
-// Bot 目标管理：新增、启停命令/通知权限、删除。
+// Bot 目标管理：新增、启停命令/通知权限、删除 QQ 目标（用户/群组/频道）。
 // 目标 externalId 由平台生成并直接传给服务端；页面不解析其含义，也不发起任何命令。
 
 import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Plus, Radio, Trash2, Users } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
-import type {
-  BotChatTrigger,
-  BotInboundTarget,
-  BotSummary,
-  BotTarget,
-  BotTargetKind,
-} from '../../api/types'
+import type { BotInboundTarget, BotSummary, BotTarget, BotTargetKind } from '../../api/types'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
@@ -19,12 +13,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 import { FormField } from '../FormField'
 import { useToast } from '../Toast'
-import {
-  BOT_CHAT_TRIGGER_LABELS,
-  BOT_CHAT_TRIGGER_OPTIONS,
-  chatTriggerLabel,
-  targetKindLabel,
-} from '../../lib/bots'
+import { targetKindLabel } from '../../lib/bots'
 
 interface BotTargetsPanelProps {
   bot: BotSummary | null
@@ -48,14 +37,12 @@ function minuteToTime(value: number | null): string {
   return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`
 }
 
-function externalIdHint(bot: BotSummary): string {
-  if (bot.platform === 'telegram') return '频道/群组使用负数 chat id（如 -1001234567890），用户使用数字 ID。'
-  if (bot.platform === 'discord') return 'Discord 频道/用户 ID 为数字 Snowflake，可在开发者模式右键复制。'
-  if (bot.platform === 'qq') return 'C2C 用户填 user_openid，群聊填 group_openid，频道填 channel_id。'
-  return 'Slack 频道 ID 形如 C01234567，用户 ID 形如 U01234567。'
+/** QQ 目标 ID 说明：C2C 用 user_openid，群聊用 group_openid，频道用 channel_id。 */
+function externalIdHint(): string {
+  return 'C2C 用户填 user_openid，群聊填 group_openid，频道填 channel_id。'
 }
 
-/** 目标分区：先选 Bot，再维护目标与权限。 */
+/** 目标分区：先选 Bot，再维护 QQ 目标与权限。 */
 export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPanelProps) {
   const toast = useToast()
   const fieldId = useId()
@@ -67,7 +54,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [externalId, setExternalId] = useState('')
   const [label, setLabel] = useState('')
   const [kind, setKind] = useState<BotTargetKind>('channel')
-  const [chatTrigger, setChatTrigger] = useState<BotChatTrigger>('mention')
   const [allowCommands, setAllowCommands] = useState(false)
   const [allowNotifications, setAllowNotifications] = useState(true)
   const [allowChat, setAllowChat] = useState(false)
@@ -140,8 +126,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         allowCommands,
         allowNotifications,
         allowChat,
-        // QQ 群/频道只支持 @Bot 触发，服务端同样会拒绝 all。
-        chatTrigger: bot.platform === 'qq' ? 'mention' : chatTrigger,
         ...(startMinute !== null && endMinute !== null
           ? { quietStartMinute: startMinute, quietEndMinute: endMinute }
           : {}),
@@ -150,7 +134,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       setExternalId('')
       setLabel('')
       setKind('channel')
-      setChatTrigger('mention')
       setAllowCommands(false)
       setAllowNotifications(true)
       setAllowChat(false)
@@ -167,20 +150,16 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
 
   const handleToggle = async (
     target: BotTarget,
-    patch: {
-      allowCommands?: boolean
-      allowNotifications?: boolean
-      allowChat?: boolean
-      chatTrigger?: BotChatTrigger
-    },
-  ): Promise<void> => {    if (!bot || busyIds.has(target.id)) return
+    patch: { allowCommands?: boolean; allowNotifications?: boolean; allowChat?: boolean },
+  ): Promise<void> => {
+    if (!bot || busyIds.has(target.id)) return
     markBusy(target.id, true)
     try {
       const updated = await api.bots.targets.update(bot.id, target.id, patch)
       setTargets((previous) => previous.map((item) => (item.id === updated.id ? updated : item)))
-      toast.success('目标设置已更新')
+      toast.success('目标权限已更新')
     } catch (updateError) {
-      toast.error(toErrorMessage(updateError, '更新目标设置失败，请重试'))
+      toast.error(toErrorMessage(updateError, '更新目标权限失败，请重试'))
     } finally {
       markBusy(target.id, false)
     }
@@ -189,11 +168,16 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const handlePrefillInbound = (item: BotInboundTarget): void => {
     setExternalId(item.targetExternalId)
     setKind(item.targetKind)
-    setLabel(item.userName ? `${item.userName}（${targetKindLabel(item.targetKind)}）` : `${targetKindLabel(item.targetKind)} ${item.targetExternalId.slice(-6)}`)
+    setLabel(
+      item.userName
+        ? `${item.userName}（${targetKindLabel(item.targetKind)}）`
+        : `${targetKindLabel(item.targetKind)} ${item.targetExternalId.slice(-6)}`,
+    )
     toast.info('已填入最近入站目标，请确认后添加')
   }
 
-  const handleRemove = async (): Promise<void> => {    if (!bot || !removeTarget) return
+  const handleRemove = async (): Promise<void> => {
+    if (!bot || !removeTarget) return
     setRemoving(true)
     try {
       await api.bots.targets.remove(bot.id, removeTarget.id)
@@ -224,7 +208,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
     <>
       <Card
         title="目标"
-        description="目标决定哪些频道/群组/用户可以接收通知；允许命令的目标可执行只读命令。"
+        description="目标决定哪些 QQ 频道/群组/用户可以接收通知；允许命令的目标可执行只读命令。"
         actions={<Badge tone="muted"><Users size={13} aria-hidden="true" /> {targets.length} 个</Badge>}
         loading={loading}
         error={error}
@@ -237,7 +221,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
               htmlFor={`${fieldId}-external-id`}
               required
               error={fieldErrors.externalId}
-              hint={externalIdHint(bot)}
+              hint={externalIdHint()}
             >
               <input
                 id={`${fieldId}-external-id`}
@@ -249,7 +233,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                 }}
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="频道/用户/群组 ID"
+                placeholder="openid / group_openid / channel_id"
                 maxLength={128}
                 disabled={adding}
               />
@@ -287,31 +271,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                   {TARGET_KINDS.map((item) => (
                     <option key={item} value={item}>
                       {targetKindLabel(item)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </FormField>
-            <FormField
-              label="触发方式"
-              htmlFor={`${fieldId}-chat-trigger`}
-              hint={
-                bot.platform === 'qq'
-                  ? 'QQ 群/频道仅支持 @Bot 触发，无法选择全部消息。'
-                  : '全部消息仅对 Telegram/Discord/Slack 生效，需平台侧关闭 privacy mode / 开启 Message Content Intent / 订阅 message.channels。'
-              }
-            >
-              <div className="select-field bot-field-select">
-                <select
-                  id={`${fieldId}-chat-trigger`}
-                  className="select"
-                  value={chatTrigger}
-                  onChange={(event) => setChatTrigger(event.target.value as BotChatTrigger)}
-                  disabled={adding || bot.platform === 'qq'}
-                >
-                  {BOT_CHAT_TRIGGER_OPTIONS.map((item) => (
-                    <option key={item} value={item}>
-                      {BOT_CHAT_TRIGGER_LABELS[item]}
                     </option>
                   ))}
                 </select>
@@ -435,9 +394,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                     <div className="bot-target-title-row">
                       <span className="bot-target-name">{target.label}</span>
                       <Badge tone="muted">{targetKindLabel(target.kind)}</Badge>
-                      <Badge tone={target.chatTrigger === 'all' ? 'warning' : 'muted'}>
-                        {chatTriggerLabel(target.chatTrigger)}
-                      </Badge>
                       {target.quietStartMinute !== null && target.quietEndMinute !== null ? (
                         <Badge tone="info">
                           静默 {minuteToTime(target.quietStartMinute)}–{minuteToTime(target.quietEndMinute)}
@@ -477,21 +433,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                       />
                       <span>允许 Chat</span>
                     </label>
-                    {bot.platform === 'qq' ? null : (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`切换目标 ${target.label} 的触发方式`}
-                        onClick={() =>
-                          void handleToggle(target, {
-                            chatTrigger: target.chatTrigger === 'all' ? 'mention' : 'all',
-                          })
-                        }
-                        disabled={busy || removing}
-                      >
-                        {target.chatTrigger === 'all' ? '改为仅 @/回复' : '改为全部消息'}
-                      </Button>
-                    )}
                     <Button
                       size="sm"
                       variant="ghost"
@@ -512,9 +453,8 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         <p className="field-hint">
           命令只读：/help、/status、/backup、/world、/mc、/files、/ask。执行命令需同时满足：当前目标开启“允许命令”，
           且发送者已登记为“用户”类型并开启“允许命令”（管理员白名单）。开启“允许 Chat”后，目标内成员可发送普通消息
-          与 AI 对话，不能执行斜杠命令；每 Bot×用户默认每分钟 6 次、每小时 10 次 AI 调用。触发方式：默认仅 @Bot/回复触发；
-          “全部消息”仅对 Telegram/Discord/Slack 生效，需平台侧关闭 privacy mode / 开启 Message Content Intent / 订阅
-          message.channels；QQ 群/频道仅支持 @Bot 触发。
+          与 AI 对话，不能执行斜杠命令；每 Bot×用户默认每分钟 6 次、每小时 10 次 AI 调用。QQ 群/频道只有 @Bot
+          消息触发（平台限制），C2C 私聊直接进入 Chat；仅支持文本。
         </p>
       </Card>
 

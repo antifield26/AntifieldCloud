@@ -624,6 +624,10 @@ const MIGRATIONS: string[] = [
   ALTER TABLE bot_events ADD COLUMN updated_at TEXT;
   CREATE INDEX idx_bot_events_outcome ON bot_events(bot_id, outcome, received_at);
   `,
+  `
+  -- v0.5.8：Bot 平台收敛为 QQ 单平台；删除非 QQ Bot 配置及其级联数据（目标/队列/事件/会话/记忆/角色）。
+  DELETE FROM bots WHERE platform <> 'qq';
+  `,
 ]
 
 export interface OpenOptions {

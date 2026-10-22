@@ -12,21 +12,6 @@ import { botPlatformLabel } from '../../lib/bots'
 
 export type BotSelectTab = 'config' | 'targets' | 'queue'
 
-function gatewayStateLabel(state: BotSummary['gateway']['state']): string {
-  switch (state) {
-    case 'connected':
-      return '已连接'
-    case 'connecting':
-      return '连接中'
-    case 'reconnecting':
-      return '重连中'
-    case 'error':
-      return '错误'
-    default:
-      return '未启用'
-  }
-}
-
 interface BotOverviewProps {
   status: BotStatus
   bots: BotSummary[]
@@ -117,7 +102,7 @@ export function BotOverview({
           <EmptyState
             icon={<BotIcon size={24} />}
             title="还没有配置 Bot"
-            description="创建 Telegram、Discord、Slack 或 QQ 官方 Bot 后，可登记目标、接收告警通知并发布消息。"
+            description="创建 QQ 官方 Bot 后，可登记目标、接收告警通知并发布消息。"
             action={
               <Button variant="primary" icon={<Plus size={16} aria-hidden="true" />} onClick={onCreate}>
                 创建第一个 Bot
@@ -137,7 +122,6 @@ export function BotOverview({
                       <h3 className="bot-list-title">{bot.name}</h3>
                       <p className="bot-list-meta">
                         {botPlatformLabel(bot.platform)} · {bot.targetsCount} 个目标 · 密钥版本 v{bot.keyVersion}
-                        {bot.platform === 'discord' ? ` · Gateway ${gatewayStateLabel(bot.gateway.state)}` : ''}
                       </p>
                     </div>
                     <Badge tone={bot.enabled ? 'success' : 'muted'} dot>

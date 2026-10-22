@@ -2,7 +2,7 @@
  * Fastify 应用装配：插件、Host 分流、认证上下文、安全头、路由、静态资源与 SPA 回退。
  * 所有安全边界在 app 层显式建立，路由只处理业务。
  */
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import Fastify from 'fastify'
@@ -40,7 +40,6 @@ import { registerUploadRoutes } from './http/routes/uploads.ts'
 import { registerMetricsRoutes } from './http/routes/metrics.ts'
 import { BotService } from './bot/service.ts'
 import { OpenCodeBotAi } from './bot/ai.ts'
-import type { BotMediaStore } from './bot/types.ts'
 import { registerBotRoutes } from './http/routes/bots.ts'
 import { registerBotWebhookRoutes } from './http/routes/bot-webhook.ts'
 import { wantsHtml } from './http/util.ts'
@@ -120,23 +119,6 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     files,
     log: (level, message, detail) => app.log[level](detail ?? {}, message),
   })
-  const botMedia: BotMediaStore = {
-    stat(fileId: string) {
-      try {
-        const row = files.contentInfo(fileId)
-        if (row.kind !== 'file' || row.origin !== 'user' || row.deleted_at) return null
-        return { filename: row.name, mime: row.mime ?? 'application/octet-stream', size: row.size }
-      } catch {
-        return null
-      }
-    },
-    async load(fileId: string) {
-      const row = files.contentInfo(fileId)
-      if (row.kind !== 'file' || row.origin !== 'user' || row.deleted_at) throw new Error('媒体文件不可发布')
-      const data = readFileSync(files.storage.finalPath(row.id))
-      return { filename: row.name, mime: row.mime ?? 'application/octet-stream', data }
-    },
-  }
   const bots = new BotService({
     db,
     config,
@@ -147,7 +129,6 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       else app.log.info(payload, message)
     },
     audit: (action, target, detail) => audit(db, 'bot', action, target, detail, null),
-    media: botMedia,
     ai: new OpenCodeBotAi({
       db,
       config,
