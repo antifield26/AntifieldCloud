@@ -237,17 +237,10 @@ test('v0.5.7：发布任务部分外发标记 partial_text_sent 且不自动重�
 })
 
 test('v0.5.7：AI 回答清洗→QQ 纯文本，解除 1500 截断并按配置上限截断', async () => {
-  // /ask 分支：Markdown 被剥离为纯文本发送。
+  // Chat 分支：Markdown 被剥离为纯文本发送（/ask 已移除）。
   const basic = createQqServiceFixture({ aiEnabled: true, aiHandler: async () => '# 标题\n**粗体** 回复' })
   try {
-    basic.service.createTarget(basic.botId, {
-      externalId: 'user-openid-1',
-      label: '管理员',
-      kind: 'user',
-      allowCommands: true,
-      allowNotifications: false,
-    })
-    await command(basic, '/ask 介绍一下', 'ask-1')
+    await chat(basic, { id: 'chat-md-1', content: '介绍一下' })
     const text = lastMessageText(basic)
     assert.ok(text.includes('标题'))
     assert.ok(text.includes('粗体 回复'))

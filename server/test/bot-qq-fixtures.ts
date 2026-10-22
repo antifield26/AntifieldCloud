@@ -7,7 +7,7 @@ import { rmSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../src/config.ts'
 import { BotService } from '../src/bot/service.ts'
-import type { BotAiImage, BotAiMode } from '../src/bot/types.ts'
+import type { BotAiImage } from '../src/bot/types.ts'
 import { tempDataDir, testConfig, testDb } from './helpers.ts'
 
 export const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
@@ -134,7 +134,6 @@ export function signQqEvent(
 }
 
 export interface AiCall {
-  mode: BotAiMode
   prompt: string
   image?: BotAiImage
 }
@@ -203,9 +202,8 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
     ...(options.aiEnabled
       ? {
           ai: {
-            chat: async (input: { mode: BotAiMode; prompt: string; image?: BotAiImage }) => {
+            chat: async (input: { prompt: string; image?: BotAiImage }) => {
               const call: AiCall = {
-                mode: input.mode,
                 prompt: input.prompt,
                 ...(input.image ? { image: input.image } : {}),
               }

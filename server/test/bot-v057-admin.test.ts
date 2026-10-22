@@ -76,7 +76,7 @@ test('v0.5.7：listRoles 只返回元数据并用最近入站用户名补 userNa
   }
 })
 
-test('v0.5.7：setRoleEnabled/deleteRole 的副作用与审计；删除角色只清 chat 会话', () => {
+test('v0.5.7：setRoleEnabled/deleteRole 的副作用与审计；删除角色清理该用户全部会话', () => {
   const fixture = createQqServiceFixture()
   try {
     const roles = new BotChatRoleStore(fixture.db)
@@ -107,7 +107,7 @@ test('v0.5.7：setRoleEnabled/deleteRole 的副作用与审计；删除角色只
     const taskRows = fixture.db
       .prepare("SELECT COUNT(*) AS c FROM bot_ai_sessions WHERE bot_id = ? AND user_id = 'user-1' AND mode = 'task'")
       .get(fixture.botId) as { c: number }
-    assert.equal(taskRows.c, 1, 'task 会话保留')
+    assert.equal(taskRows.c, 0, '删除角色应清理该用户全部会话映射')
     assert.ok(fixture.audits.some((item) => item.action === 'bot.role.admin' && item.detail?.action === 'delete'))
     assert.throws(
       () => fixture.service.deleteRole(fixture.botId, 'user-1'),

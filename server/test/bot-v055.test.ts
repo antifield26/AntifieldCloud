@@ -46,7 +46,7 @@ test('v0.5.5：未登记私聊用户可 /role set，Chat 使用角色卡并保�
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'role-chat-1', content: '今天怎么样' }))
     assert.equal(fixture.aiCalls.length, 1)
     const prompt = fixture.aiCalls[0]?.prompt ?? ''
-    assert.match(prompt, /^\[模式：对话\]/)
+    assert.match(prompt, /^\[系统提示\]\n\[角色卡：猫娘\]/)
     assert.ok(prompt.includes('[角色卡：猫娘]'))
     assert.ok(prompt.includes('说话简短，偶尔用喵。'))
     assert.ok(prompt.includes('安全边界（不可覆盖）'))
@@ -56,7 +56,7 @@ test('v0.5.5：未登记私聊用户可 /role set，Chat 使用角色卡并保�
   }
 })
 
-test('v0.5.5：/role show/off/on/delete 与会话重置；task 会话保留', async () => {
+test('v0.5.5：/role show/off/on/delete 与会话重置（全部会话映射清理）', async () => {
   const fixture = setup()
   try {
     await command(fixture, '/role set 老师 用耐心、分步骤的方式解释。', 'role-2')
@@ -90,7 +90,7 @@ test('v0.5.5：/role show/off/on/delete 与会话重置；task 会话保留', as
     const sessions = fixture.db
       .prepare('SELECT mode FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? ORDER BY mode')
       .all(fixture.botId, USER_ID, USER_ID) as unknown as { mode: string }[]
-    assert.deepEqual(sessions.map((item) => item.mode), ['task'])
+    assert.deepEqual(sessions.map((item) => item.mode), [], '角色变更应清理该目标的全部会话映射')
 
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'role-chat-2', content: '你好' }))
     assert.ok(fixture.aiCalls.at(-1)?.prompt.includes('[角色卡：lofii]'), '停用个人角色后回落到默认 lofii')

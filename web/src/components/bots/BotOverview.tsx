@@ -81,7 +81,7 @@ export function BotOverview({
           </div>
         ) : null}
         <p className="field-hint">
-          Bot 命令为只读（/help、/status、/backup、/world、/mc、/files、/ask），本页不提供命令执行入口；发布任务由管理员手动创建并需 TOTP + PUBLISH 双确认。
+          Bot 命令为只读（/help、/status、/backup、/world、/mc、/files；AI 对话由普通消息 Chat 承担），本页不提供命令执行入口；发布任务由管理员手动创建并需 TOTP + PUBLISH 双确认。
         </p>
       </Card>
 

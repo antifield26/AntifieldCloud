@@ -227,7 +227,6 @@ export interface BotCommandProviders {
 }
 
 /** AI 对话提供方（通过 OpenCode 本地 HTTP API）。 */
-export type BotAiMode = 'task' | 'chat'
 
 /** 入站图片转成 OpenCode prompt files 的 data URL；只允许图片 mime。 */
 export interface BotAiImage {
@@ -241,8 +240,6 @@ export interface BotAi {
     botId: string
     targetExternalId: string
     userId: string
-    /** task=/ask 任务导向；chat=普通消息对话导向。 */
-    mode: BotAiMode
     prompt: string
     /** 可选图片；未启用/不支持时由调用方降级为纯文本。 */
     image?: BotAiImage
@@ -342,7 +339,7 @@ export interface BotServiceDeps {
   log: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
   audit: (action: string, target: string | null, detail?: Record<string, unknown> | null) => void
   providers: BotCommandProviders
-  /** 可选 AI 对话；未配置时 /ask 返回不可用提示。 */
+  /** 可选 AI 对话；未配置时普通消息 Chat 不调用 AI。 */
   ai?: BotAi
   fetch?: typeof fetch
   now?: () => Date
@@ -375,5 +372,5 @@ export interface BotSummary {
   keyVersion: number
 }
 
-export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask', 'role', 'reset', 'forget'] as const
+export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'role', 'reset', 'forget'] as const
 export type BotCommandName = (typeof BOT_COMMANDS)[number]

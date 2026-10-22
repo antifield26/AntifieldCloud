@@ -451,10 +451,10 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
           </ul>
         )}
         <p className="field-hint">
-          命令只读：/help、/status、/backup、/world、/mc、/files、/ask。执行命令需同时满足：当前目标开启“允许命令”，
-          且发送者已登记为“用户”类型并开启“允许命令”（管理员白名单）。开启“允许 Chat”后，目标内成员可发送普通消息
-          与 AI 对话，不能执行斜杠命令；每 Bot×用户默认每分钟 6 次、每小时 10 次 AI 调用。QQ 群/频道只有 @Bot
-          消息触发（平台限制），C2C 私聊直接进入 Chat；仅支持文本。
+          命令只读：/help、/status、/backup、/world、/mc、/files；/help、/role、/reset、/forget 对普通用户开放。
+          执行管理命令需同时满足：当前目标开启“允许命令”，且发送者已登记为“用户”类型并开启“允许命令”（管理员白名单）。
+          开启“允许 Chat”后，目标内成员可发送普通消息与 AI 对话，不能执行斜杠命令；每 Bot×用户默认每分钟 30 次 Chat、
+          每小时 120 次 AI 调用。QQ 群/频道只有 @Bot 消息触发（平台限制），C2C 私聊直接进入 Chat；仅支持文本。
         </p>
       </Card>
 

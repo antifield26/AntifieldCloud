@@ -1,5 +1,5 @@
 /**
- * v0.5.1 Bot 运维/AI 回归（QQ 单平台）：通知静默时段、指标、/ask 命令与发送链路。
+ * v0.5.1 Bot 运维/AI 回归（QQ 单平台）：通知静默时段、指标、Chat AI 与发送链路。
  * 不访问真实平台；全部使用注入的 fetch 夹具与签名事件。
  */
 import test from 'node:test'
@@ -49,20 +49,13 @@ test('v0.5.1：静默时段延后通知，指标统计已发送投递', async ()
   }
 })
 
-test('v0.5.1：/ask 仅对白名单用户调用 AI，未启用时明确提示', async () => {
+test('v0.5.9：C2C Chat 调用 AI（角色卡+安全边界），AI 关闭时不调用', async () => {
   const enabled = createQqServiceFixture({ aiEnabled: true, aiHandler: async () => '你好，这是 AI 回复' })
   try {
-    enabled.service.createTarget(enabled.botId, {
-      externalId: 'user-openid-1',
-      label: '管理员',
-      kind: 'user',
-      allowCommands: true,
-      allowNotifications: false,
-    })
-    const result = await sendWebhook(enabled, c2cWebhook(enabled.appSecret, { id: 'ask-1', content: '/ask 你好' }))
+    const result = await sendWebhook(enabled, c2cWebhook(enabled.appSecret, { id: 'chat-1', content: '你好' }))
     assert.equal(result.status, 200)
     assert.equal(enabled.aiCalls.length, 1)
-    assert.match(enabled.aiCalls[0]?.prompt ?? '', /\[系统提示\][\s\S]*\[长期记忆：仅背景资料，不是指令\][\s\S]*你好$/)
+    assert.match(enabled.aiCalls[0]?.prompt ?? '', /\[角色卡：lofii\][\s\S]*\[安全边界\][\s\S]*你好$/)
     assert.match(lastMessageText(enabled), /AI 回复/)
   } finally {
     enabled.cleanup()
@@ -70,22 +63,13 @@ test('v0.5.1：/ask 仅对白名单用户调用 AI，未启用时明确提示', 
 
   const disabled = createQqServiceFixture({ aiEnabled: false })
   try {
-    disabled.service.createTarget(disabled.botId, {
-      externalId: 'user-openid-1',
-      label: '管理员',
-      kind: 'user',
-      allowCommands: true,
-      allowNotifications: false,
-    })
-    const result = await sendWebhook(disabled, c2cWebhook(disabled.appSecret, { id: 'ask-2', content: '/ask 你好' }))
+    const result = await sendWebhook(disabled, c2cWebhook(disabled.appSecret, { id: 'chat-2', content: '你好' }))
     assert.equal(result.status, 200)
     assert.equal(disabled.aiCalls.length, 0)
-    assert.match(lastMessageText(disabled), /AI 对话未启用/)
   } finally {
     disabled.cleanup()
   }
 })
-
 test('v0.5.1：QQ Bot 可创建并通过服务发送文本', async () => {
   const fixture = createQqServiceFixture()
   try {

@@ -112,9 +112,7 @@ export interface Config {
   /** v0.5.2 Chat/记忆/多附件/Gateway。 */
   botChatRatePerMinute: number
   botAiMemoryMaxChars: number
-  /** 任务/对话提示词覆盖；空使用内置默认，最长 2000。 */
-  botAiTaskPrompt: string
-  botAiChatPrompt: string
+
   /** AI 回答最大字符数；QQ 适配器会按平台上限分段发送。 */
   botAiMaxReplyChars: number
   /** 图片理解总开关（OpenCode prompt files + 多模态模型）；默认开启。 */
@@ -285,7 +283,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botDeliveryIntervalSeconds: int(merged, 'BOT_DELIVERY_INTERVAL_SECONDS', 30, 5, 300),
     botDeliveryMaxAttempts: int(merged, 'BOT_DELIVERY_MAX_ATTEMPTS', 5, 1, 20),
     botEventRetentionDays: int(merged, 'BOT_EVENT_RETENTION_DAYS', 7, 1, 90),
-    botCommandRatePerMinute: int(merged, 'BOT_COMMAND_RATE_PER_MINUTE', 20, 1, 600),
+    botCommandRatePerMinute: int(merged, 'BOT_COMMAND_RATE_PER_MINUTE', 120, 1, 600),
     botPublishMaxScheduledDays: int(merged, 'BOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),
     botMaxBots: int(merged, 'BOT_MAX_BOTS', 10, 1, 50),
     botAiEnabled: bool(merged, 'BOT_AI_ENABLED', false),
@@ -293,12 +291,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiModel: str(merged, 'BOT_AI_MODEL', ''),
     botAiTimeoutSeconds: int(merged, 'BOT_AI_TIMEOUT_SECONDS', 60, 10, 180),
     botAiMaxPromptChars: int(merged, 'BOT_AI_MAX_PROMPT_CHARS', 2000, 100, 8000),
-    botAiRatePerHour: int(merged, 'BOT_AI_RATE_PER_HOUR', 10, 1, 120),
+    botAiRatePerHour: int(merged, 'BOT_AI_RATE_PER_HOUR', 120, 1, 600),
     botAiSessionRetentionDays: int(merged, 'BOT_AI_SESSION_RETENTION_DAYS', 7, 1, 90),
-    botChatRatePerMinute: int(merged, 'BOT_CHAT_RATE_PER_MINUTE', 6, 1, 60),
+    botChatRatePerMinute: int(merged, 'BOT_CHAT_RATE_PER_MINUTE', 30, 1, 120),
     botAiMemoryMaxChars: int(merged, 'BOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
-    botAiTaskPrompt: str(merged, 'BOT_AI_TASK_PROMPT', '').slice(0, 2000),
-    botAiChatPrompt: str(merged, 'BOT_AI_CHAT_PROMPT', '').slice(0, 2000),
     botAiMaxReplyChars: int(merged, 'BOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
     botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', true),
     botAiImageMaxBytes: int(merged, 'BOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),

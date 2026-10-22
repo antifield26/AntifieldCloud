@@ -1,5 +1,5 @@
 /**
- * OpenCode AI 对话客户端：为 Bot 的 /ask 命令提供带会话复用的文本回复。
+ * OpenCode AI 对话客户端：为 Bot 的普通消息 Chat 提供带会话复用的文本回复。
  *
  * 安全边界：
  * - 只访问 config.opencodeUrl，使用 Basic Auth；密码不进入日志、错误消息或返回值。
@@ -16,7 +16,7 @@
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
-import type { BotAi, BotAiImage, BotAiMode } from './types.ts'
+import type { BotAi, BotAiImage } from './types.ts'
 import { AppError } from '../util/errors.ts'
 
 /** 图片 data URL 仅接受这些 mime；其余由上层降级为纯文本。 */
@@ -136,7 +136,6 @@ export class OpenCodeBotAi implements BotAi {
     botId: string
     targetExternalId: string
     userId: string
-    mode: BotAiMode
     prompt: string
     image?: BotAiImage
   }): Promise<string> {
@@ -145,7 +144,7 @@ export class OpenCodeBotAi implements BotAi {
       targetExternalId: input.targetExternalId,
       userId: input.userId,
     }
-    const sessionId = await this.ensureSession(target, input.mode)
+    const sessionId = await this.ensureSession(target)
     await this.sendPrompt(sessionId, input.prompt, input.image)
 
     const waited = await this.waitForIdle(sessionId)
@@ -215,28 +214,28 @@ export class OpenCodeBotAi implements BotAi {
     return removed
   }
 
-  /** 按 (botId,targetExternalId,userId,mode) 复用会话；task 与 chat 互不污染。 */
-  private async ensureSession(target: ChatTarget, mode: BotAiMode): Promise<string> {
+  /** 按 (botId,targetExternalId,userId) 复用 Chat 会话；数据库 mode 固定写 chat。 */
+  private async ensureSession(target: ChatTarget): Promise<string> {
     const existing = this.db
       .prepare(
-        'SELECT session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = ?',
+        "SELECT session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat'",
       )
-      .get(target.botId, target.targetExternalId, target.userId, mode) as AiSessionRow | undefined
+      .get(target.botId, target.targetExternalId, target.userId) as AiSessionRow | undefined
     if (existing?.session_id) return existing.session_id
 
-    const sessionId = await this.createSession(mode === 'task' ? 'AntifieldCloud Task' : 'AntifieldCloud Chat')
+    const sessionId = await this.createSession('AntifieldCloud Chat')
     const now = new Date().toISOString()
     // 并发首次对话可能同时创建远端会话；以最后一次写入为准，避免主键冲突导致整次对话失败。
     this.db
       .prepare(
         `INSERT INTO bot_ai_sessions (bot_id, target_external_id, user_id, mode, session_id, model, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, 'chat', ?, ?, ?, ?)
          ON CONFLICT(bot_id, target_external_id, user_id, mode) DO UPDATE SET
            session_id = excluded.session_id,
            model = excluded.model,
            updated_at = excluded.updated_at`,
       )
-      .run(target.botId, target.targetExternalId, target.userId, mode, sessionId, this.modelLabel, now, now)
+      .run(target.botId, target.targetExternalId, target.userId, sessionId, this.modelLabel, now, now)
     return sessionId
   }
 

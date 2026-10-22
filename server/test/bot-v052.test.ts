@@ -20,8 +20,7 @@ test('v0.5.2：QQ C2C 未登记用户可直接 Chat，并写入长期记忆与�
   try {
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'c2c-chat-1', content: '记住我喜欢深色模式' }))
     assert.equal(fixture.aiCalls.length, 1)
-    assert.equal(fixture.aiCalls[0]?.mode, 'chat')
-    assert.match(fixture.aiCalls[0]?.prompt ?? '', /\[系统提示\][\s\S]*记住我喜欢深色模式/)
+    assert.match(fixture.aiCalls[0]?.prompt ?? '', /\[系统提示\][\s\S]*\[角色卡：lofii\][\s\S]*记住我喜欢深色模式/)
     assert.deepEqual(fixture.memoryCalls.map((item) => item.userText), ['记住我喜欢深色模式'])
     assert.match(lastMessageText(fixture), /AI 回复/)
 

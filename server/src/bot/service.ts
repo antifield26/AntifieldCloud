@@ -1,7 +1,7 @@
 /**
  * Bot 平台服务（QQ 官方 Bot 单平台）：配置 CRUD、Webhook 验签/命令分发、通知/发布队列与投递重试。
  * 安全边界：AppSecret 只以 AES-256-GCM 密文落库；Webhook 无 session/CSRF，Ed25519 签名是唯一鉴权；
- * 除自助命令（/role 私聊、/reset、/forget）外，命令必须命中 bot_targets.allow_commands + 显式 user 白名单；
+ * 自助命令（/help、/role 私聊、/reset、/forget）对所有用户开放；其余命令必须命中 bot_targets.allow_commands + 显式 user 白名单；
  * 发布只允许登录管理员调用；通知/命令输出不得包含内部路径、URL 或密钥。
  */
 import type { DatabaseSync } from 'node:sqlite'
@@ -15,7 +15,6 @@ import {
   isBotPlatform,
   type BotAdapter,
   type BotAiImage,
-  type BotAiMode,
   type BotDelivery,
   type BotDeliveryRow,
   type BotEventItem,
@@ -59,6 +58,7 @@ import {
   formatFileList,
   formatPairs,
   helpText,
+  publicHelpText,
   roleDefaultText,
   roleGroupHint,
   roleUsage,
@@ -626,13 +626,13 @@ export class BotService {
     })
   }
 
-  /** 删除角色卡，并清理该 Bot×用户的全部 chat 模式会话（task 会话保留）。 */
+  /** 删除角色卡，并清理该 Bot×用户的全部会话映射（下次 Chat 重新创建会话）。 */
   deleteRole(botId: string, userId: string): void {
     this.requireEnabled()
     this.botRow(botId)
     const card = this.roles.get(botId, userId)
     if (!card || !this.roles.remove(botId, userId)) throw notFound('角色卡不存在')
-    this.db.prepare("DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ? AND mode = 'chat'").run(botId, userId)
+    this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(botId, userId)
     this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
       action: 'delete',
       user: userId.slice(0, 64),
@@ -1278,10 +1278,13 @@ export class BotService {
       })
       return { status: 200, body: ack() }
     }
-    // /role（私聊）、/reset、/forget 面向所有用户，不要求目标 allow_commands 或 user 白名单。
-    const openCommand = command === 'role' || command === 'reset' || command === 'forget'
+    // /help、/role（私聊）、/reset、/forget 面向所有用户；其余命令需目标 allow_commands + user 白名单。
+    const openCommand = command === 'help' || command === 'role' || command === 'reset' || command === 'forget'
     const target = this.inboundTarget(bot.id, result)
-    if (!openCommand && (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId))) {
+    const adminAllowed = Boolean(
+      target && target.allow_commands === 1 && this.isCommandUserAllowed(bot.id, result.userId),
+    )
+    if (!openCommand && !adminAllowed) {
       this.deps.audit('bot.command.denied', bot.id, { target: result.targetExternalId, user: result.userId.slice(0, 64) })
       this.markEvent(bot.id, result.eventId, {
         outcome: 'denied',
@@ -1302,7 +1305,7 @@ export class BotService {
       })
       return { status: 200, body: ack() }
     }
-    const task = this.executeCommand(bot, result, parsed).catch((error: unknown) => {
+    const task = this.executeCommand(bot, result, parsed, adminAllowed).catch((error: unknown) => {
       this.deps.log('warn', 'Bot 命令执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
       this.markEvent(bot.id, result.eventId, {
         outcome: 'error',
@@ -1378,6 +1381,7 @@ export class BotService {
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
     parsed: ParsedCommand | null,
+    adminAllowed: boolean,
   ): Promise<void> {
     const command = parsed?.command ?? ''
     const args = parsed?.args ?? ''
@@ -1395,14 +1399,14 @@ export class BotService {
       })
     try {
       if (!(BOT_COMMANDS as readonly string[]).includes(command)) {
-        await result.reply(helpText())
+        await result.reply(adminAllowed ? helpText() : publicHelpText())
         finish('ok', 'help')
         return
       }
       let text: string
       switch (command) {
         case 'help':
-          text = helpText()
+          text = adminAllowed ? helpText() : publicHelpText()
           break
         case 'status':
           text = formatPairs('应用状态', await this.deps.providers.status())
@@ -1423,27 +1427,6 @@ export class BotService {
           }
           text = formatFileList(args, await this.deps.providers.files(args))
           break
-        }
-        case 'ask': {
-          if (!this.config.botAiEnabled || !this.deps.ai) {
-            text = 'AI 对话未启用，请联系管理员开启 BOT_AI_ENABLED。'
-            break
-          }
-          if (!args) {
-            text = '用法：/ask <问题>'
-            break
-          }
-          const retry = this.aiLimiter.hit(`${bot.id}:${result.userId}`)
-          if (retry > 0) {
-            text = `AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`
-            break
-          }
-          const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, args, 'task')
-          const plain = this.sanitizeAiText(answer)
-          await result.reply(formatAiReply(plain) || 'AI 没有返回内容，请稍后再试。')
-          this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, args, plain)
-          finish('ok', 'command_ask')
-          return
         }
         case 'role':
           text = await this.executeRoleCommand(bot, result, args)
@@ -1476,12 +1459,12 @@ export class BotService {
     }
   }
 
-  /** `/reset`：删除当前 Bot×目标×用户的 chat/task 会话映射，长期记忆保留。 */
+  /** `/reset`：删除当前 Bot×目标×用户的会话映射，长期记忆保留。 */
   private resetConversation(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): string {
-    this.deleteSessions(bot.id, result.targetExternalId, result.userId, ['chat', 'task'])
+    this.resetChatSession(bot.id, result.targetExternalId, result.userId)
     this.deps.audit('bot.reset', bot.id, { bot: bot.id, user: result.userId.slice(0, 64) })
     return '已重置当前对话（长期记忆保留）。'
   }
@@ -1581,25 +1564,11 @@ export class BotService {
     return roleUsage()
   }
 
-  /**
-   * 删除会话映射：`/reset` 删 chat+task，角色卡变更只删 chat（task/群会话与远端历史不删除）。
-   * 两条路径复用同一 DELETE 语句，避免会话清理逻辑分叉。
-   */
-  private deleteSessions(
-    botId: string,
-    targetExternalId: string,
-    userId: string,
-    modes: readonly BotAiMode[],
-  ): void {
-    const statement = this.db.prepare(
-      'DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = ?',
-    )
-    for (const mode of modes) statement.run(botId, targetExternalId, userId, mode)
-  }
-
-  /** 角色变更后丢弃当前私聊 Chat 映射；task 会话保留。 */
+  /** 删除当前 Bot×目标×用户的会话映射（保留远端会话历史，下一次 Chat 重新建立映射）。 */
   private resetChatSession(botId: string, targetExternalId: string, userId: string): void {
-    this.deleteSessions(botId, targetExternalId, userId, ['chat'])
+    this.db
+      .prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ?')
+      .run(botId, targetExternalId, userId)
   }
 
   private async executeChat(
@@ -1631,7 +1600,6 @@ export class BotService {
         result.userId,
         result.targetExternalId,
         userText,
-        'chat',
         roleCard,
         prepared.image,
       )
@@ -1729,30 +1697,25 @@ export class BotService {
     }
   }
 
-  /** Chat/`/ask` 的统一模型调用：按模式选择提示词 + 共享长期记忆 + 用户消息（可选图片）。 */
+  /** Chat 的统一模型调用：角色卡 + 共享长期记忆 + 用户消息（可选图片）。 */
   private async chatWithAi(
     bot: BotRow,
     userId: string,
     targetExternalId: string,
     text: string,
-    mode: BotAiMode,
     roleCard?: BotChatRole | null,
     image?: BotAiImage,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     const memory = this.memory.get(bot.id, userId)
-    const customPrompt = mode === 'task' ? this.config.botAiTaskPrompt : this.config.botAiChatPrompt
     const prompt = buildBotPrompt({
-      mode,
-      customPrompt,
-      roleCard: mode === 'chat' ? roleCard : null,
+      roleCard,
       memory: memory.summary,
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
       bot: bot.id,
       user: userId.slice(0, 64),
-      mode,
       chars: text.length,
       ...(roleCard ? { role: true } : {}),
       ...(image ? { image: image.mime.slice(0, 50) } : {}),
@@ -1761,7 +1724,6 @@ export class BotService {
       botId: bot.id,
       targetExternalId,
       userId,
-      mode,
       prompt,
       ...(image ? { image } : {}),
     })
