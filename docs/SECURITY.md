@@ -194,10 +194,15 @@
     镜像文件无自动清理路径，需按保留期/人工清理；不要把该目录挂到 Web 静态目录。
 24. **Discord Gateway 依赖平台 intent 与网络**：未开启 Message Content Intent 会以 close 4014 进入 `error`；Pi 出站网络/代理不可达时无法建连；
     真实 Discord 长连接、MESSAGE_CONTENT 权限与平台限流尚未验收。Gateway 只消费私聊/@/回复，不读取普通频道消息。
+25. **Node.js 运行时安全更新**：生产 `/usr/local/bin/node` 已从 v26.11.1 更新到 **v26.12.1**（2026-10-22，官方 linux-arm64 + SHA-256 校验）；
+    旧二进制保留 `/usr/local/bin/node.v26.11.1` 以便回滚；npm/npx 仍指向 nvm（12.2.0），仅作构建/部署工具。后续安全更新应重复
+    `docs/DEPLOY.md` §3.3 并跑带 Access token 的 smoke；Node 更新不影响 DB/schema。
 
 ## 5. 运维安全清单
 
 - 每月 `sudo apt-get update && sudo apt-get upgrade`（Minecraft 重启需选择窗口）；关注安全更新与 cloudflared 版本提示。
+- 每月/收到 Node.js 安全公告时检查 `/usr/local/bin/node -v` 与 Node.js 官方安全版本；需要更新时按 `docs/DEPLOY.md` §3.3
+  使用官方 linux-arm64 包 + SHA-256 校验，保留旧二进制、重启并跑带 Access token 的 smoke。
 - 每周检查：应用备份 pending 是否堆积、`backup-pull.json` 是否超过 48h、PC 归档 `.sha256`、
   世界备份/世界拉取状态是否新鲜（`world-backup-status.json`/`world-pull-status.json`）、计划任务 `LastTaskResult`；
   日志 `%LOCALAPPDATA%\AntifieldCloud\backup.log`、`world-pull.log`。

@@ -58,6 +58,14 @@ smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access serv
 - **DM 目标**：生产为 Discord DM 登记了独立频道目标（`allow_chat=1`）；代码侧 DM user-target 回退修复已提交但未部署，留待下一版本统一发版。
 - **记忆清理**：删除 Bot 后 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件无自动清理路径，列为已知残留。
 
+### 5. 运行时安全更新（2026-10-22）
+
+- **Node.js v26.11.1 → v26.12.1**：官方 linux-arm64 包，SHA-256 `42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb` 校验通过；
+  安装到 `/usr/local/lib/nodejs/node-v26.12.1-linux-arm64`，`/usr/local/bin/node` 已替换；旧二进制保留 `/usr/local/bin/node.v26.11.1`。
+- 服务重启后 `/healthz` 返回 `0.5.2`/schema `9`；完整 smoke **24/24**；Discord Gateway 在 PC 代理隧道恢复后重新 `connected`。
+- npm/npx 仍指向 nvm v26.11.1 的 npm 12.2.0（仅构建/部署工具）；应用运行时为 v26.12.1。更新步骤/回滚见 `docs/DEPLOY.md` §3.3。
+- 注意：Gateway 依赖 Pi 出站代理；本次更新期间发现 PC 隧道未运行导致短暂重连，恢复隧道后已连接，非 Node 回归。
+
 ## v0.5.1（历史）
 
 - 日期：2026-10-21（Asia/Shanghai）

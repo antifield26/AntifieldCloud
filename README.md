@@ -2,11 +2,11 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.2（生产已部署，release `20261021T114908Z`/commit `abeabc7`/schema v9；Bot Chat/长期记忆/多附件/只读按钮/Discord Gateway；Gateway 已连接，Discord DM/#general @Bot/QQ C2C 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.2（生产已部署，release `20261021T114908Z`/commit `abeabc7`/schema v9；Node.js 运行时已安全更新到 **v26.12.1**；Bot Chat/长期记忆/多附件/只读按钮/Discord Gateway；Gateway 已连接，Discord DM/#general @Bot/QQ C2C 普通消息 Chat 已实发确认；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
-- 服务端：Node.js >= 26（原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
+- 服务端：Node.js >= 26（生产安全更新至 v26.12.1；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
 - Bot：Telegram Bot API、Discord Interactions（Ed25519）+ Gateway 长连接、Slack Events API/Slash Command（HMAC）、QQ 官方 Bot（op=13 Ed25519 回调校验 + op=0 事件回调）；普通消息 Chat 与 `/ask` 共用本地 OpenCode AI，长期记忆落 DB + `DATA_DIR/bot-memory` 镜像；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用平台 API
@@ -60,7 +60,7 @@
 - **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮对话后滚动摘要，失败保留旧摘要；记忆不通过 API/UI 暴露。系统提示内置，`BOT_AI_SYSTEM_PROMPT` 可覆盖；摘要不额外占用对话轮次或 AI 每小时配额。
 - **多附件**：单次最多 5 个、单文件 ≤10 MiB、总 ≤50 MiB；Telegram 全图片走 media group、混合类型逐文件，Discord 单次 multipart，Slack 逐文件上传后一次完成；QQ 仅文本。部分成功不自动重试（标记 `failed`/`partial_media_sent`，需人工重建）。
 - **只读按钮**：Telegram inline keyboard 与 Discord message components 支持 `/status`、`/help` 的“刷新状态/帮助”按钮；按钮动作需目标 `allow_commands` + user 白名单，只调用只读 provider，无写操作；Slack/QQ 本轮不做按钮。
-- **Discord Gateway**：`server/src/bot/discord-gateway.ts` 使用 Node 内置 WebSocket 建立长连接，`intents=37377`（含 `MESSAGE_CONTENT`）；需在 Developer Portal 开启 Message Content Intent；支持 HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避重连与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭，`BotSummary.gateway` 展示连接状态。
+- **Discord Gateway**：`server/src/bot/discord-gateway.ts` 使用 Node 内置 WebSocket 建立长连接，`intents=37377`（含 `MESSAGE_CONTENT`）；需在 Developer Portal 开启 Message Content Intent；支持 HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避重连与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭（生产已设为 true），`BotSummary.gateway` 展示连接状态。
 - 管理 API `/api/bots*` 与页面 `/bots`：概览、配置、目标、投递与发布四个分区；目标支持 `allowChat` 与“最近入站目标”登记；发布表单多选媒体；Token/Webhook Secret/Signing Secret/AppSecret 只写不读，数据库只存 AES-256-GCM 密文（`BOT_SECRET_KEY`，32 字节 base64）。
 - 只读命令 `/help`、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`，以及 AI 命令 `/ask <问题>`：必须同时命中目标的 `allow_commands` 与显式 user 白名单（`kind='user'` 且 `allow_commands=1`）；`/ask` 仅在 `BOT_AI_ENABLED=true` 时可用，按用户每小时限流（默认 10 次），复用 OpenCode 会话，新建会话使用 deny-all 工具权限；不返回文件内容或密钥。
 - 告警通知：告警事件写入后按目标 `allow_notifications` 入队，按告警事件去重；目标可配置 `quietStartMinute`/`quietEndMinute`（Asia/Shanghai 本地分钟，0–1439），静默窗口内的通知延后到结束时刻；通知文本清洗内部路径/URL 后外发。

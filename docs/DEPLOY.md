@@ -264,6 +264,35 @@ curl -sS -o /dev/null -w '%{http_code}\n' https://app.<域名>/healthz
 回滚：`sudo systemctl stop opencode` → 用备份的 `.opencode/bin/opencode` 覆盖 → 恢复 data tar（如需）→
 `sudo systemctl start opencode` → 按上面判据复验；应用侧无需回滚。OpenCode 原生按钮/WS 实时事件仍建议用户浏览器复测。
 
+### 3.3 Node.js 运行时安全更新（v26.12.1）
+
+生产应用使用 `/usr/local/bin/node`（systemd `ExecStart`）；npm/npx 仍指向 nvm（仅构建/部署工具）。
+2026-10-22 按 Node.js 安全补丁把运行时从 v26.11.1 更新到 **v26.12.1**（linux-arm64），未改动应用版本/schema。
+
+```bash
+# 1) 下载并校验官方 arm64 包（在 PC 或 Pi 执行）
+curl -fsSLO https://nodejs.org/dist/v26.12.1/node-v26.12.1-linux-arm64.tar.xz
+curl -fsSLO https://nodejs.org/dist/v26.12.1/SHASUMS256.txt
+sha256sum -c <(grep ' node-v26.12.1-linux-arm64.tar.xz$' SHASUMS256.txt)
+# 期望 sha256=42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb
+
+# 2) 安装到版本化目录，保留旧二进制用于回滚
+sudo mkdir -p /usr/local/lib/nodejs
+sudo tar -xJf node-v26.12.1-linux-arm64.tar.xz -C /usr/local/lib/nodejs
+sudo cp -p /usr/local/bin/node /usr/local/bin/node.v26.11.1
+sudo install -m 0755 /usr/local/lib/nodejs/node-v26.12.1-linux-arm64/bin/node /usr/local/bin/node
+/usr/local/bin/node -v   # v26.12.1
+
+# 3) 重启并验证；npm 仍为 nvm 的 12.2.0，不改其 symlink
+sudo systemctl restart antifieldcloud
+curl -fsS http://127.0.0.1:3000/healthz
+# 带 Access token 的完整 smoke：-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9
+```
+
+验证记录（2026-10-22）：`node -v=v26.12.1`、`/healthz` 0.5.2/schema 9、smoke **24/24**、Discord Gateway 在代理恢复后重新 `connected`。
+回滚：`sudo install -m 0755 /usr/local/bin/node.v26.11.1 /usr/local/bin/node && sudo systemctl restart antifieldcloud`，
+再跑本机 healthz + smoke；旧二进制保留至下一轮确认稳定后删除。Node 更新不触碰 DB，无需 schema 回滚；若同时更新 npm/npx 才需同步 nvm 目录。
+
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 
 在**交互式 SSH** 中运行（不要把密码/二维码发到聊天）：

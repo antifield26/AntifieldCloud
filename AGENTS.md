@@ -127,7 +127,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 ## 8. 已知环境事实（不要重复踩坑）
 
 - Pi：`antifield@192.0.2.10` 直连；WiFi 198.51.100.10 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
-- Pi 上 Node 为 `/usr/local/bin/node`（v26.11.1，世界可执行）；npm 指向 `/home/antifield/.nvm`，部署时以 root 使用。
+- Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；v0.5.2 安全更新，旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
 - opencode：`127.0.0.1:4096`，服务端 **v2.1.1**（2026-10-20 由 v2.0.32 升级；升级/回滚见 `docs/DEPLOY.md`），Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 opencode 与 antifieldcloud）。
 - Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（v0.2.0 已轮换为 32 位随机），
   服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。
