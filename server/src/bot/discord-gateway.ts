@@ -1,17 +1,21 @@
 /**
- * Discord Gateway 长连接管理器（v0.5.2）。
+ * Discord Gateway 长连接管理器（v0.5.2，v0.5.7 增加触发策略与图片附件）。
  * 职责：为每个启用的 Discord Bot 建立 Gateway WebSocket，完成 HELLO/IDENTIFY/RESUME、心跳与
  * MESSAGE_CREATE 解析，并把可对话消息交给注入的回调；异常断开按指数退避重连。
+ * 普通频道消息只有私聊、@Bot、回复 Bot 或目标策略为“全部消息”时才 dispatch；
+ * 图片附件只携带平台 URL 元数据，实际下载由适配器 loadImage 完成。
  * 安全边界：Bot Token 只出现在 IDENTIFY/RESUME 帧中，禁止写入日志；本模块不读写数据库/文件；
  * 测试必须注入假 WebSocket 工厂，禁止访问真实 Discord。
  */
-import type { BotGatewayStatus, ChatTrigger, GatewayState } from './types.ts'
+import type { BotGatewayStatus, BotInboundImage, ChatTrigger, GatewayState } from './types.ts'
 
 export const DISCORD_GATEWAY_URL = 'wss://gateway.discord.gg/?v=10&encoding=json'
 /** GUILDS(1) + GUILD_MESSAGES(512) + DIRECT_MESSAGES(4096) + MESSAGE_CONTENT(32768)。 */
 export const DISCORD_GATEWAY_INTENTS = 37377
 const INITIAL_RECONNECT_DELAY_MS = 1_000
 const MAX_RECONNECT_DELAY_MS = 60_000
+/** 入站图片允许的 mime；与 AI 视觉白名单保持一致。 */
+const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 
 export type DiscordGatewayLogLevel = 'info' | 'warn' | 'error'
 
@@ -29,6 +33,8 @@ export type DiscordGatewayTargetKind = 'channel' | 'user'
 export interface DiscordGatewayMessage {
   botId: string
   eventId: string
+  /** 入站消息 ID；用于群/频道回复时构造 message_reference。 */
+  messageId: string
   targetExternalId: string
   targetKind: DiscordGatewayTargetKind
   userId: string
@@ -36,6 +42,8 @@ export interface DiscordGatewayMessage {
   text: string
   isDirect: boolean
   chatTrigger: ChatTrigger
+  /** 入站图片附件（可选）；仅图片无正文时 text 为空串。 */
+  image?: BotInboundImage
 }
 
 export interface WebSocketCloseEventLike {
@@ -61,6 +69,8 @@ export interface DiscordGatewayManagerDeps {
   getBots: () => DiscordGatewayBot[]
   /** 异步触发；管理器内部捕获同步异常与 Promise 拒绝，避免中断连接。 */
   onMessage: (event: DiscordGatewayMessage) => void
+  /** 目标群/频道的触发策略解析器；未提供等价 mention（仅 @/回复）。 */
+  chatTriggerFor?: (botId: string, targetExternalId: string) => 'mention' | 'all'
   /** 测试注入；默认使用全局 WebSocket。 */
   webSocketFactory?: (url: string) => WebSocketLike
   now?: () => Date
@@ -92,6 +102,45 @@ const FATAL_CLOSE_CODES = new Set<number>([4004, 4010, 4011, 4012, 4013, 4014])
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null
   return value as Record<string, unknown>
+}
+
+/** 扩展名兜底：平台未给 content_type 时按文件名推断图片 mime。 */
+function imageMimeFromFilename(filename: string): string | null {
+  const match = /\.([A-Za-z0-9]+)$/.exec(filename)
+  switch (match?.[1]?.toLowerCase()) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'png':
+      return 'image/png'
+    case 'webp':
+      return 'image/webp'
+    case 'gif':
+      return 'image/gif'
+    default:
+      return null
+  }
+}
+
+/** 从 MESSAGE_CREATE.attachments 提取第一张图片；只保存 CDN URL 与元数据，不下载。 */
+function imageFromAttachments(attachments: unknown): BotInboundImage | undefined {
+  if (!Array.isArray(attachments)) return undefined
+  for (const raw of attachments) {
+    const attachment = asRecord(raw)
+    if (!attachment) continue
+    const url = typeof attachment.url === 'string' ? attachment.url.trim() : ''
+    if (!/^https:\/\//i.test(url)) continue
+    const filename = typeof attachment.filename === 'string' ? attachment.filename : ''
+    const contentType = typeof attachment.content_type === 'string' ? attachment.content_type.toLowerCase() : ''
+    const mime = contentType.startsWith('image/') ? contentType : imageMimeFromFilename(filename)
+    if (!mime || !IMAGE_MIME_ALLOWLIST.has(mime)) continue
+    const image: BotInboundImage = { ref: url, mime }
+    if (filename) image.name = filename
+    const size = Number(attachment.size)
+    if (Number.isFinite(size) && size > 0) image.size = size
+    return image
+  }
+  return undefined
 }
 
 function errorMessage(error: unknown): string {
@@ -147,6 +196,7 @@ export class DiscordGatewayManager {
   private readonly getBots: DiscordGatewayManagerDeps['getBots']
   private readonly onMessage: DiscordGatewayManagerDeps['onMessage']
   private readonly webSocketFactory: (url: string) => WebSocketLike
+  private readonly chatTriggerFor: (botId: string, targetExternalId: string) => 'mention' | 'all'
   private readonly now: () => Date
   private readonly connections = new Map<string, GatewayConnection>()
   private started = false
@@ -156,6 +206,7 @@ export class DiscordGatewayManager {
     this.log = deps.log
     this.getBots = deps.getBots
     this.onMessage = deps.onMessage
+    this.chatTriggerFor = deps.chatTriggerFor ?? (() => 'mention')
     this.webSocketFactory = deps.webSocketFactory ?? defaultWebSocketFactory
     this.now = deps.now ?? (() => new Date())
   }
@@ -579,7 +630,9 @@ export class DiscordGatewayManager {
     if (typeof message.webhook_id === 'string' && message.webhook_id) return
 
     const content = typeof message.content === 'string' ? message.content : ''
-    if (content.trim() === '') return
+    const image = imageFromAttachments(message.attachments)
+    // 仅图片无正文也进入 Chat；两者都没有的消息直接忽略。
+    if (content.trim() === '' && !image) return
     const channelId = typeof message.channel_id === 'string' ? message.channel_id : ''
     if (!channelId) return
     const messageId = typeof message.id === 'string' ? message.id : ''
@@ -595,13 +648,17 @@ export class DiscordGatewayManager {
     const referencedAuthor = referenced ? asRecord(referenced.author) : null
     const isReply = referencedAuthor !== null && referencedAuthor.id === connection.botUserId
 
-    const chatTrigger: ChatTrigger | null = isDirect ? 'direct' : isReply ? 'reply' : isMention ? 'mention' : null
-    // 普通频道消息不进入 Chat，只有私聊、@ Bot 或回复 Bot 才消费。
-    if (chatTrigger === null) return
+    let chatTrigger: ChatTrigger | null = isDirect ? 'direct' : isReply ? 'reply' : isMention ? 'mention' : null
+    // 普通频道消息默认不进入 Chat；目标策略为“全部消息”时按 message 触发继续分发。
+    if (chatTrigger === null) {
+      if (this.chatTriggerFor(connection.botId, channelId) !== 'all') return
+      chatTrigger = 'message'
+    }
 
-    this.dispatch(connection, {
+    const event: DiscordGatewayMessage = {
       botId: connection.botId,
       eventId: `dc_msg:${messageId}`,
+      messageId,
       targetExternalId: channelId,
       targetKind: 'channel',
       userId: author.id,
@@ -609,7 +666,9 @@ export class DiscordGatewayManager {
       text: content,
       isDirect,
       chatTrigger,
-    })
+    }
+    if (image) event.image = image
+    this.dispatch(connection, event)
   }
 
   private dispatch(connection: GatewayConnection, event: DiscordGatewayMessage): void {

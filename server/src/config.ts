@@ -117,6 +117,12 @@ export interface Config {
   /** 任务/对话提示词覆盖；空使用内置默认，最长 2000。 */
   botAiTaskPrompt: string
   botAiChatPrompt: string
+  /** AI 回答最大字符数；平台适配器会再按各自上限分段发送。 */
+  botAiMaxReplyChars: number
+  /** 图片理解总开关（OpenCode prompt files + 多模态模型）；默认关闭。 */
+  botAiVisionEnabled: boolean
+  /** 单张入站图片大小上限（字节）。 */
+  botAiImageMaxBytes: number
   botDiscordGatewayEnabled: boolean
   /** v0.5.3 出站连通性探测与自动恢复；默认开启。 */
   botConnectivityEnabled: boolean
@@ -299,6 +305,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiMemoryMaxChars: int(merged, 'BOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
     botAiTaskPrompt: str(merged, 'BOT_AI_TASK_PROMPT', '').slice(0, 2000),
     botAiChatPrompt: str(merged, 'BOT_AI_CHAT_PROMPT', '').slice(0, 2000),
+    botAiMaxReplyChars: int(merged, 'BOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
+    botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', false),
+    botAiImageMaxBytes: int(merged, 'BOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),
     botDiscordGatewayEnabled: bool(merged, 'BOT_DISCORD_GATEWAY_ENABLED', false),
     botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
     botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),

@@ -78,6 +78,7 @@ function targetRow(kind: 'channel' | 'user' | 'group', externalId: string): BotT
     allow_commands: 1,
     allow_notifications: 1,
     allow_chat: 1,
+    chat_trigger: 'mention',
     quiet_start_minute: null,
     quiet_end_minute: null,
     created_at: '2026-01-01T00:00:00.000Z',
@@ -415,12 +416,21 @@ test('QQ：换取 access_token、C2C 被动回复与群/频道主动发送', asy
 
   const longText = '长'.repeat(2500)
   const channelResult = await adapter.send(targetRow('channel', 'channel-4'), { text: longText })
-  assert.deepEqual(channelResult, { externalId: 'out-channel-1' })
-  const channelRequest = captured.at(-1)!
-  assert.equal(channelRequest.url, 'https://api.sgroup.qq.com/channels/channel-4/messages')
-  const channelPayload = JSON.parse(String(channelRequest.init?.body)) as Record<string, unknown>
-  assert.equal(String(channelPayload.content).length, 2000)
-  assert.equal(channelPayload.msg_id, undefined)
+  assert.deepEqual(channelResult, {
+    externalId: 'out-channel-1',
+    externalIds: ['out-channel-1', 'out-channel-1'],
+  })
+  const channelRequests = captured.filter((item) => item.url === 'https://api.sgroup.qq.com/channels/channel-4/messages')
+  assert.equal(channelRequests.length, 2)
+  const channelPayloads = channelRequests.map(
+    (item) => JSON.parse(String(item.init?.body)) as Record<string, unknown>,
+  )
+  assert.equal(String(channelPayloads[0]?.content).length, 2000)
+  assert.match(String(channelPayloads[1]?.content), /^（续 2\/2）/)
+  for (const payload of channelPayloads) {
+    assert.ok(String(payload.content).length <= 2000)
+    assert.equal(payload.msg_id, undefined)
+  }
 
   // access_token 按 AppID + AppSecret 缓存，三次发送只换取一次。
   assert.equal(tokenCalls, 1)

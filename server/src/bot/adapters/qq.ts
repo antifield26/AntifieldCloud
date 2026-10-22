@@ -1,11 +1,21 @@
 /**
- * QQ 官方 Bot 适配器：Webhook Ed25519 验签、op=13 回调地址校验、命令/普通消息解析、文本发送与被动回复。
+ * QQ 官方 Bot 适配器：Webhook Ed25519 验签、op=13 回调地址校验、命令/普通消息解析、文本分段发送与被动回复。
  * 安全边界：AppSecret 只用于本地派生 Ed25519 私钥与换取 access_token，不进入 URL、日志或错误信息；
- * 仅支持文本，发送与回复统一截断到 QQ 的 2000 字符上限。
+ * 仅支持文本，发送按 QQ 的 2000 字符上限分段；群/频道仅 @Bot 触发（平台限制），C2C 直接进入 Chat。
  */
 import { createHash, createPrivateKey, createPublicKey, randomInt, sign, verify } from 'node:crypto'
-import type { BotAdapter, BotSecret, BotTargetRow, InboundVerification, OutboundContent, SendResult } from '../types.ts'
-import { BotPlatformError, fetchJson, headerValue, parseJsonBody } from './http.ts'
+import type {
+  BotAdapter,
+  BotHealthCheck,
+  BotHealthItem,
+  BotSecret,
+  BotTargetRow,
+  InboundVerification,
+  OutboundContent,
+  SendResult,
+} from '../types.ts'
+import { splitForPlatform } from '../text.ts'
+import { BotPlatformError, fetchJson, headerValue, markPartialError, parseJsonBody } from './http.ts'
 
 const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 const QQ_API_BASE = 'https://api.sgroup.qq.com'
@@ -107,6 +117,15 @@ function responseExternalId(body: unknown): string | null {
   if (typeof raw === 'string' && raw) return raw
   if (typeof raw === 'number' && Number.isFinite(raw)) return String(raw)
   return null
+}
+
+/** 连接自检失败时使用的固定脱敏错误码（绝不返回 token）。 */
+function qqHealthError(error: unknown): string {
+  if (error instanceof BotPlatformError) {
+    if (error.status === 0) return 'network_error'
+    if (error.code === 'qq_credentials_missing') return 'qq_credentials_missing'
+  }
+  return 'qq_access_token_failed'
 }
 
 export class QqAdapter implements BotAdapter {
@@ -242,7 +261,16 @@ export class QqAdapter implements BotAdapter {
         }
         break
       default:
-        return { kind: 'ignored', ackBody: QQ_ACK_BODY, detail: `qq:event:${eventType || 'unknown'}` }
+        {
+          // 未知事件类型也尽量给出诊断 ID：消息 id 优先，其次事件类型:时间戳。
+          const rawId = textValue(d.id)
+          const rawTs = textValue(d.timestamp)
+          const detail = `qq:event:${eventType || 'unknown'}`
+          const ignoredId = rawId || (rawTs ? `${eventType || 'unknown'}:${rawTs}` : '')
+          return ignoredId
+            ? { kind: 'ignored', eventId: ignoredId, ackBody: QQ_ACK_BODY, detail }
+            : { kind: 'ignored', ackBody: QQ_ACK_BODY, detail }
+        }
     }
     const { targetExternalId, userId, kind, isDirect } = route
     if (!targetExternalId || !userId) {
@@ -252,12 +280,12 @@ export class QqAdapter implements BotAdapter {
     const rawContent = typeof d.content === 'string' ? d.content.trim() : ''
     // C2C 不包含平台 mention 前缀；群/频道先剥离开头的 @Bot 再判断命令或 Chat。
     const content = isDirect ? rawContent : stripMentionPrefix(rawContent)
-    // 空消息也必须确认，避免 QQ 反复重推同一事件。
-    if (!content) return { kind: 'ignored', ackBody: QQ_ACK_BODY, detail: 'qq:event:empty_content' }
-
     const messageId = textValue(d.id)
     const eventTs = textValue(d.timestamp) || String(Math.floor(this.now().getTime() / 1000))
     const eventId = messageId || `qq:${targetExternalId}:${eventTs}`
+    // 空消息也必须确认，避免 QQ 反复重推同一事件；带上事件 ID 便于诊断。
+    if (!content) return { kind: 'ignored', eventId, ackBody: QQ_ACK_BODY, detail: 'qq:event:empty_content' }
+
     const replyTarget: QqTarget = { external_id: targetExternalId, kind }
     const userName =
       author && typeof author.username === 'string'
@@ -267,7 +295,7 @@ export class QqAdapter implements BotAdapter {
           : null
     // QQ 不支持交互按钮；reply 的第二个参数由上层传入，这里只发送文本。
     const reply = async (replyText: string): Promise<void> => {
-      await this.sendMessage(replyTarget, replyText, messageId || null)
+      await this.sendTextParts(replyTarget, replyText, messageId || null)
     }
     if (!content.startsWith('/')) {
       return {
@@ -300,7 +328,42 @@ export class QqAdapter implements BotAdapter {
 
   async send(target: BotTargetRow, content: OutboundContent): Promise<SendResult> {
     if ((content.media ?? []).length > 0) throw new BotPlatformError(400, 'qq_media_unsupported')
-    return this.sendMessage({ external_id: target.external_id, kind: target.kind }, content.text)
+    return this.sendTextParts({ external_id: target.external_id, kind: target.kind }, content.text)
+  }
+
+  /** 文本分段发送；中途失败时把已发送消息 ID 挂到错误对象，避免重复外发。 */
+  private async sendTextParts(
+    target: QqTarget,
+    text: string,
+    messageId: string | null = null,
+  ): Promise<SendResult> {
+    const parts = splitForPlatform('qq', text)
+    if (parts.length === 0) return { externalId: null }
+    const ids: string[] = []
+    try {
+      for (const part of parts) {
+        const result = await this.sendMessage(target, part.text, messageId)
+        if (result.externalId) ids.push(result.externalId)
+      }
+    } catch (error) {
+      throw markPartialError(error, ids, 'text')
+    }
+    if (ids.length === 0) return { externalId: null }
+    if (ids.length === 1) return { externalId: ids[0] ?? null }
+    return { externalId: ids[0] ?? null, externalIds: ids }
+  }
+
+  /** 连接自检：换取 access_token 成功即视为可用；detail 固定文案，绝不返回 token。 */
+  async check(_input: { botId: string; appOrigin: string }): Promise<BotHealthCheck> {
+    const items: BotHealthItem[] = []
+    try {
+      await this.accessToken()
+      items.push({ name: 'access_token', ok: true, detail: 'access_token 已获取' })
+    } catch (error) {
+      items.push({ name: 'access_token', ok: false, detail: qqHealthError(error) })
+      return { ok: false, items }
+    }
+    return { ok: true, items }
   }
 
   private async sendMessage(target: QqTarget, text: string, messageId: string | null = null): Promise<SendResult> {

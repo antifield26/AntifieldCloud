@@ -42,6 +42,7 @@ function target(kind: 'channel' | 'user' | 'group', externalId: string): BotTarg
     allow_commands: 1,
     allow_notifications: 1,
     allow_chat: 1,
+    chat_trigger: 'mention',
     quiet_start_minute: null,
     quiet_end_minute: null,
     created_at: '2026-01-01T00:00:00.000Z',
@@ -181,7 +182,7 @@ test('Telegram：群回复 Bot 进入 chat(reply)，无关消息与空 @ 消息�
       from: { id: 8 },
     }),
   })
-  assert.deepEqual(unrelated, { kind: 'ignored' })
+  assert.deepEqual(unrelated, { kind: 'ignored', eventId: 'tg:update:1' })
 
   const otherMention = await adapter.verifyInbound({
     botId: 'bot-1',
@@ -193,7 +194,7 @@ test('Telegram：群回复 Bot 进入 chat(reply)，无关消息与空 @ 消息�
       from: { id: 8 },
     }),
   })
-  assert.deepEqual(otherMention, { kind: 'ignored' })
+  assert.deepEqual(otherMention, { kind: 'ignored', eventId: 'tg:update:1' })
 
   const emptyMention = await adapter.verifyInbound({
     botId: 'bot-1',
@@ -206,7 +207,7 @@ test('Telegram：群回复 Bot 进入 chat(reply)，无关消息与空 @ 消息�
       from: { id: 8 },
     }),
   })
-  assert.deepEqual(emptyMention, { kind: 'ignored' })
+  assert.deepEqual(emptyMention, { kind: 'ignored', eventId: 'tg:update:1' })
 })
 
 test('Telegram：未配置用户名时通过 getMe 缓存解析 @Bot', async () => {
@@ -280,7 +281,7 @@ test('Telegram：callback_query 映射 action，reply 携带按钮；未知 data
       }),
     ),
   })
-  assert.deepEqual(unknown, { kind: 'ignored' })
+  assert.deepEqual(unknown, { kind: 'ignored', eventId: 'tg:update:10' })
 
   const badSecret = await adapter.verifyInbound({
     botId: 'bot-1',
@@ -365,8 +366,10 @@ test('Telegram：多附件相册/逐文件发送、单附件与部分失败', as
 
   const long = await adapter.send(groupTarget, { text: '长'.repeat(5000) })
   assert.equal(long.externalId, '203')
-  const longPayload = JSON.parse(String(captured.at(-1)?.init?.body)) as Record<string, unknown>
-  assert.equal(String(longPayload.text).length, 4096)
+  assert.deepEqual(long.externalIds, ['203', '204'])
+  const longPayloads = captured.slice(-2).map((item) => JSON.parse(String(item.init?.body)) as Record<string, unknown>)
+  assert.equal(String(longPayloads[0]?.text).length, 4096)
+  assert.match(String(longPayloads[1]?.text), /^（续 2\/2）/)
 })
 
 /* -------------------------------- Discord ------------------------------- */
@@ -462,7 +465,7 @@ test('Discord：MESSAGE_COMPONENT 映射 action，deferred update 与按钮 foll
     headers: discordHeaders(keys.privateKey, timestamp, unknownBody),
     body: unknownBody,
   })
-  assert.deepEqual(unknown, { kind: 'ignored' })
+  assert.deepEqual(unknown, { kind: 'ignored', eventId: 'dc:interaction-2' })
 })
 
 test('Discord：命令回复支持按钮 components', async () => {
@@ -674,7 +677,7 @@ test('Slack：app_mention 与消息内 <@BOTID> 进入 chat(mention)，无关消
     text: '普通聊天',
   })
   const unrelated = await adapter.verifyInbound({ botId: 'bot-1', headers: slackHeaders(unrelatedBody), body: unrelatedBody })
-  assert.deepEqual(unrelated, { kind: 'ignored' })
+  assert.deepEqual(unrelated, { kind: 'ignored', eventId: 'slack:Ev-1' })
 
   const botBody = slackEvent({
     type: 'message',
@@ -685,7 +688,7 @@ test('Slack：app_mention 与消息内 <@BOTID> 进入 chat(mention)，无关消
     text: '<@UBOT> 机器人自己',
   })
   const botMessage = await adapter.verifyInbound({ botId: 'bot-1', headers: slackHeaders(botBody), body: botBody })
-  assert.deepEqual(botMessage, { kind: 'ignored' })
+  assert.deepEqual(botMessage, { kind: 'ignored', eventId: 'slack:Ev-1' })
 
   // 无公开配置时使用事件 authorizations 中的 Bot user_id。
   const authorizedBody = slackEvent(

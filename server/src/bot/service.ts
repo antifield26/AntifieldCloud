@@ -12,15 +12,24 @@ import { SlidingWindowLimiter } from '../auth/limiter.ts'
 import {
   BOT_COMMANDS,
   isBotPlatform,
+  type BotAdapter,
+  type BotAiImage,
   type BotDelivery,
   type BotDeliveryRow,
   type BotAiMode,
+  type BotEventItem,
+  type BotEventOutcome,
+  type BotHealthCheck,
+  type BotInboundImage,
   type BotInboundTarget,
   type BotInboundTargetRow,
+  type BotMemorySummary,
   type BotMetrics,
   type BotPlatform,
   type BotPublishJob,
   type BotPublishRow,
+  type BotReplyOptions,
+  type BotRoleSummary,
   type BotRow,
   type BotSecret,
   type BotServiceDeps,
@@ -28,10 +37,14 @@ import {
   type BotSummary,
   type BotTarget,
   type BotTargetRow,
+  type ChatTrigger,
   type InboundVerification,
+  type OutboundContent,
   type OutboundMedia,
 } from './types.ts'
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
+import { describeBotError } from './errors.ts'
+import { formatAiReply } from './format.ts'
 import { BotMemoryStore } from './memory.ts'
 import { buildBotPrompt } from './prompts.ts'
 import {
@@ -58,6 +71,39 @@ const STATUS_BUTTONS = [
   { id: 'refresh_status' as const, label: '刷新状态' },
   { id: 'help' as const, label: '帮助' },
 ]
+
+/** 诊断事件结果枚举；route/service 共用校验。 */
+const BOT_EVENT_OUTCOMES = ['received', 'ok', 'denied', 'rate_limited', 'ignored', 'error'] as const
+/** AI 图片理解允许的 mime；超出范围降级为纯文本。 */
+const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+/** 入站图片下载超时；由适配器 loadImage 执行。 */
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 15_000
+/** 图片无法处理时附在纯文字回答末尾的说明。 */
+const IMAGE_DEGRADED_NOTE = '（图片未能处理，已按文字回答）'
+const IMAGE_UNSUPPORTED_TEXT = '当前暂不支持处理这张图片，可以用文字描述。'
+
+/** 适配器部分发送失败时挂在错误对象上的已发送 ID；用于禁止自动重试。 */
+function sentExternalIdsOf(error: unknown): string[] {
+  if (!error || typeof error !== 'object') return []
+  const value = (error as { sentExternalIds?: unknown }).sentExternalIds
+  if (!Array.isArray(value)) return []
+  return value.filter((item): item is string => typeof item === 'string')
+}
+
+/** partial 失败分类：text=长文本分段，media=多附件；缺省按 media 处理。 */
+function botPartialKindOf(error: unknown): 'text' | 'media' {
+  if (error && typeof error === 'object') {
+    const value = (error as { botPartialKind?: unknown }).botPartialKind
+    if (value === 'text' || value === 'media') return value
+  }
+  return 'media'
+}
+
+/** 诊断 detail 只记录短代码：优先 AppError.code，其次通用 failed。 */
+function errorShortCode(error: unknown): string {
+  if (error instanceof AppError) return error.code.slice(0, 60)
+  return 'error'
+}
 
 interface ParsedCommand {
   command: string
@@ -118,6 +164,8 @@ export interface CreateTargetInput {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
+  /** 群聊触发策略：mention=仅 @/回复（默认），all=全部消息（QQ 不支持）。 */
+  chatTrigger?: 'mention' | 'all'
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -128,6 +176,7 @@ export interface UpdateTargetInput {
   allowCommands?: boolean
   allowNotifications?: boolean
   allowChat?: boolean
+  chatTrigger?: 'mention' | 'all'
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -249,6 +298,8 @@ export class BotService {
       enabled: deps.config.botDiscordGatewayEnabled,
       log: deps.log,
       getBots: () => this.gatewayBots(),
+      // 群聊是否消费全部消息由目标行决定；Gateway 层只负责解析，默认仅 @/回复。
+      chatTriggerFor: (botId, targetExternalId) => this.targetChatTrigger(botId, targetExternalId),
       onMessage: (event) => {
         void this.handleGatewayMessage(event.botId, event).catch((error: unknown) => {
           this.deps.log('warn', 'Discord Gateway 消息处理失败', {
@@ -388,6 +439,7 @@ export class BotService {
       },
       events: events.c,
       lastError: lastError?.last_error ?? null,
+      lastErrorHint: describeBotError(lastError?.last_error ?? null),
       lastSentAt: lastSent?.sent_at ?? null,
     }
   }
@@ -513,20 +565,21 @@ export class BotService {
 
   createTarget(botId: string, input: CreateTargetInput): BotTarget {
     this.requireEnabled()
-    this.botRow(botId)
+    const bot = this.botRow(botId)
     const externalId = cleanText(input.externalId, TARGET_MAX)
     const label = cleanText(input.label, NAME_MAX)
     if (!externalId || !label) throw badRequest('目标 ID 与名称不能为空')
     const count = this.db.prepare('SELECT COUNT(*) AS c FROM bot_targets WHERE bot_id = ?').get(botId) as { c: number }
     if (count.c >= MAX_TARGETS_PER_BOT) throw badRequest('目标数量过多')
     const quiet = this.normalizeQuiet(input.quietStartMinute, input.quietEndMinute)
+    const chatTrigger = this.normalizeChatTrigger(bot, input.kind, input.chatTrigger, 'mention')
     const id = newId()
     try {
       this.db
         .prepare(
           `INSERT INTO bot_targets
-           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, quiet_start_minute, quiet_end_minute, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, chat_trigger, quiet_start_minute, quiet_end_minute, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -537,6 +590,7 @@ export class BotService {
           input.allowCommands ? 1 : 0,
           input.allowNotifications ? 1 : 0,
           input.allowChat ? 1 : 0,
+          chatTrigger,
           quiet.start,
           quiet.end,
           nowIso(),
@@ -544,13 +598,13 @@ export class BotService {
     } catch {
       throw new AppError(409, 'conflict', '该目标已存在')
     }
-    this.deps.audit('bot.target.create', `${botId}:${id}`, { kind: input.kind })
+    this.deps.audit('bot.target.create', `${botId}:${id}`, { kind: input.kind, chatTrigger })
     return toTarget(this.targetRow(id))
   }
 
   updateTarget(botId: string, targetId: string, input: UpdateTargetInput): BotTarget {
     this.requireEnabled()
-    this.botRow(botId)
+    const bot = this.botRow(botId)
     const row = this.targetRowForBot(botId, targetId)
     const label = input.label !== undefined ? cleanText(input.label, NAME_MAX) : row.label
     if (!label) throw badRequest('目标名称不能为空')
@@ -558,18 +612,23 @@ export class BotService {
       input.quietStartMinute === undefined ? row.quiet_start_minute : input.quietStartMinute,
       input.quietEndMinute === undefined ? row.quiet_end_minute : input.quietEndMinute,
     )
+    const kind = input.kind ?? row.kind
+    // 修改类型/触发方式时按变更后的组合重新校验，避免 user 目标遗留 all 策略。
+    const chatTrigger = this.normalizeChatTrigger(bot, kind, input.chatTrigger, row.chat_trigger)
     this.db
       .prepare(
         `UPDATE bot_targets
-         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?, quiet_start_minute = ?, quiet_end_minute = ?
+         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?, chat_trigger = ?,
+             quiet_start_minute = ?, quiet_end_minute = ?
          WHERE id = ?`,
       )
       .run(
         label,
-        input.kind ?? row.kind,
+        kind,
         input.allowCommands === undefined ? row.allow_commands : input.allowCommands ? 1 : 0,
         input.allowNotifications === undefined ? row.allow_notifications : input.allowNotifications ? 1 : 0,
         input.allowChat === undefined ? row.allow_chat : input.allowChat ? 1 : 0,
+        chatTrigger,
         quiet.start,
         quiet.end,
         targetId,
@@ -586,6 +645,207 @@ export class BotService {
     this.deps.audit('bot.target.delete', `${botId}:${targetId}`)
   }
 
+  /**
+   * 角色卡管理列表：只返回元数据（名字/长度/启停/时间），不返回角色设定正文。
+   * userName 取自最近入站目标记录（没有则为 null）。
+   */
+  listRoles(botId: string, options: { limit?: number; offset?: number } = {}): { items: BotRoleSummary[]; total: number } {
+    this.requireEnabled()
+    this.botRow(botId)
+    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(options.limit) ? (options.limit as number) : 20)))
+    const offset = Math.max(0, Math.floor(Number.isFinite(options.offset) ? (options.offset as number) : 0))
+    const names = this.inboundUserNames(botId)
+    const items = this.roles.list(botId, limit, offset).map((item) => ({
+      ...item,
+      userName: names.get(item.userId) ?? null,
+    }))
+    return { items, total: this.roles.count(botId) }
+  }
+
+  /** 启用/停用指定用户的角色卡；不存在时 404。 */
+  setRoleEnabled(botId: string, userId: string, enabled: boolean): void {
+    this.requireEnabled()
+    this.botRow(botId)
+    const card = this.roles.get(botId, userId)
+    if (!card) throw notFound('角色卡不存在')
+    if (!this.roles.setEnabled(botId, userId, enabled)) throw notFound('角色卡不存在')
+    this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
+      action: enabled ? 'enable' : 'disable',
+      user: userId.slice(0, 64),
+      nameLength: card.name.length,
+      promptLength: card.prompt.length,
+      at: nowIso(),
+    })
+  }
+
+  /** 删除角色卡，并清理该 Bot×用户的全部 chat 模式会话（task 会话保留）。 */
+  deleteRole(botId: string, userId: string): void {
+    this.requireEnabled()
+    this.botRow(botId)
+    const card = this.roles.get(botId, userId)
+    if (!card || !this.roles.remove(botId, userId)) throw notFound('角色卡不存在')
+    this.db.prepare("DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ? AND mode = 'chat'").run(botId, userId)
+    this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
+      action: 'delete',
+      user: userId.slice(0, 64),
+      nameLength: card.name.length,
+      promptLength: card.prompt.length,
+      at: nowIso(),
+    })
+  }
+
+  /** 长期记忆管理列表：只返回长度/时间等元数据，不返回摘要正文。 */
+  listMemories(
+    botId: string,
+    options: { limit?: number; offset?: number } = {},
+  ): { items: BotMemorySummary[]; total: number } {
+    this.requireEnabled()
+    this.botRow(botId)
+    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(options.limit) ? (options.limit as number) : 20)))
+    const offset = Math.max(0, Math.floor(Number.isFinite(options.offset) ? (options.offset as number) : 0))
+    const names = this.inboundUserNames(botId)
+    const items = this.memory.list(botId, limit, offset).map((item) => ({
+      ...item,
+      userName: names.get(item.userId) ?? null,
+    }))
+    return { items, total: this.memory.count(botId) }
+  }
+
+  /** 删除指定用户的长期记忆（DB 行 + 镜像文件）；不存在时 404。 */
+  deleteMemory(botId: string, userId: string): void {
+    this.requireEnabled()
+    this.botRow(botId)
+    const row = this.db
+      .prepare('SELECT length(summary) AS len FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
+      .get(botId, userId) as { len: number } | undefined
+    if (!row || !this.memory.remove(botId, userId)) throw notFound('长期记忆不存在')
+    this.deps.audit('bot.memory.admin', `${botId}:${userId.slice(0, 64)}`, {
+      action: 'delete',
+      user: userId.slice(0, 64),
+      summaryLength: row.len,
+      at: nowIso(),
+    })
+  }
+
+  /**
+   * 平台连接自检：需要启用中的 Bot + 可解密凭据 + 适配器实现 check。
+   * 无论成功失败都刷新 last_checked_at；不触碰 last_error（投递错误由队列负责）。
+   */
+  async checkBot(botId: string): Promise<BotHealthCheck> {
+    this.requireEnabled()
+    const bot = this.botRow(botId)
+    let adapter: BotAdapter
+    try {
+      adapter = this.adapterFor(bot)
+    } catch (error) {
+      this.deps.log('warn', 'Bot 自检无法构造适配器', { bot: bot.id, code: errorShortCode(error) })
+      return this.finishCheck(bot, {
+        ok: false,
+        items: [{ name: '凭据', ok: false, detail: '凭据读取失败，请重新保存平台凭据' }],
+      })
+    }
+    if (!adapter.check) throw new AppError(400, 'bot_health_unsupported', '该平台暂不支持连接自检')
+    let health: BotHealthCheck
+    try {
+      health = await adapter.check({ botId: bot.id, appOrigin: this.config.appOrigin })
+    } catch (error) {
+      // 兜底结果只保留脱敏短描述，避免异常消息里的 URL/凭据进入 API。
+      const detail = sanitizeExternalText(error instanceof Error ? error.message : '').slice(0, 120)
+      health = {
+        ok: false,
+        items: [{ name: '连接自检', ok: false, detail: detail || '自检请求失败' }],
+      }
+    }
+    return this.finishCheck(bot, health)
+  }
+
+  /** 自检收尾：刷新 last_checked_at 并审计（ok/detail 短码）。 */
+  private finishCheck(bot: BotRow, health: BotHealthCheck): BotHealthCheck {
+    const checkedAt = nowIso()
+    try {
+      this.db.prepare('UPDATE bots SET last_checked_at = ? WHERE id = ?').run(checkedAt, bot.id)
+    } catch {
+      // 时间戳写入失败不影响自检结果返回。
+    }
+    const failed = health.items.filter((item) => !item.ok).map((item) => item.name).join(',')
+    this.deps.audit('bot.check', bot.id, {
+      ok: health.ok,
+      items: health.items.length,
+      ...(failed ? { detail: failed.slice(0, 120) } : {}),
+    })
+    return {
+      ok: health.ok,
+      items: health.items.map((item) => ({ name: item.name, ok: item.ok, detail: item.detail })),
+      checkedAt,
+    }
+  }
+
+  /** 最近入站身份表：userId → 平台显示名（同一用户多目标时取最近一次）。 */
+  private inboundUserNames(botId: string): Map<string, string | null> {
+    const rows = this.db
+      .prepare('SELECT user_id, user_name FROM bot_inbound_targets WHERE bot_id = ? ORDER BY last_seen_at DESC')
+      .all(botId) as unknown as { user_id: string; user_name: string | null }[]
+    const names = new Map<string, string | null>()
+    for (const row of rows) {
+      if (!names.has(row.user_id)) names.set(row.user_id, row.user_name)
+    }
+    return names
+  }
+
+  /**
+   * 诊断事件列表：按 received_at DESC 分页；只含元数据（事件 ID/类型/结果/短码/目标/用户/时间）。
+   * outcome 缺省返回全部，非法值直接 400。
+   */
+  listEvents(
+    botId: string,
+    options: { hours?: number; limit?: number; offset?: number; outcome?: string } = {},
+  ): { items: BotEventItem[]; total: number } {
+    this.requireEnabled()
+    this.botRow(botId)
+    const rawHours = Number(options.hours)
+    const hours = Math.max(1, Math.min(720, Math.floor(Number.isFinite(rawHours) ? rawHours : 24)))
+    const rawLimit = Number(options.limit)
+    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(rawLimit) ? rawLimit : 50)))
+    const rawOffset = Number(options.offset)
+    const offset = Math.max(0, Math.floor(Number.isFinite(rawOffset) ? rawOffset : 0))
+    const outcome = typeof options.outcome === 'string' && options.outcome.trim() ? options.outcome.trim() : null
+    if (outcome !== null && !(BOT_EVENT_OUTCOMES as readonly string[]).includes(outcome)) {
+      throw badRequest('事件结果筛选值无效')
+    }
+    const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString()
+    const where = outcome === null ? 'bot_id = ? AND received_at >= ?' : 'bot_id = ? AND received_at >= ? AND outcome = ?'
+    const params: (string | number)[] = outcome === null ? [botId, cutoff] : [botId, cutoff, outcome]
+    const totalRow = this.db.prepare(`SELECT COUNT(*) AS c FROM bot_events WHERE ${where}`).get(...params) as { c: number }
+    const rows = this.db
+      .prepare(
+        `SELECT platform_event_id, event_kind, outcome, detail, target_external_id, user_id, received_at, updated_at
+         FROM bot_events WHERE ${where} ORDER BY received_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(...params, limit, offset) as unknown as Array<{
+      platform_event_id: string
+      event_kind: string | null
+      outcome: string | null
+      detail: string | null
+      target_external_id: string | null
+      user_id: string | null
+      received_at: string
+      updated_at: string | null
+    }>
+    return {
+      total: totalRow.c,
+      items: rows.map((row) => ({
+        eventId: row.platform_event_id,
+        kind: row.event_kind,
+        outcome: row.outcome,
+        detail: row.detail,
+        targetExternalId: row.target_external_id,
+        userId: row.user_id,
+        receivedAt: row.received_at,
+        updatedAt: row.updated_at,
+      })),
+    }
+  }
+
   listDeliveries(botId: string, limit = 50): BotDelivery[] {
     this.requireEnabled()
     this.botRow(botId)
@@ -594,7 +854,6 @@ export class BotService {
       .all(botId, Math.max(1, Math.min(200, limit))) as unknown as BotDeliveryRow[]
     return rows.map(toDelivery)
   }
-
   retryDelivery(botId: string, deliveryId: string): void {
     this.requireEnabled()
     this.botRow(botId)
@@ -788,9 +1047,10 @@ export class BotService {
     const rows = this.db
       .prepare(
         `SELECT * FROM bot_deliveries WHERE status IN ('queued','failed')
-         AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY created_at ASC LIMIT 20`,
+         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+         AND attempts < ? ORDER BY created_at ASC LIMIT 20`,
       )
-      .all(now) as unknown as BotDeliveryRow[]
+      .all(now, this.config.botDeliveryMaxAttempts) as unknown as BotDeliveryRow[]
     for (const row of rows) {
       await this.deliverOne(row)
     }
@@ -824,6 +1084,25 @@ export class BotService {
   private failDelivery(delivery: BotDeliveryRow, error: unknown): void {
     const attempts = delivery.attempts + 1
     const message = error instanceof Error ? error.message.slice(0, 500) : '投递失败'
+    const sentIds = sentExternalIdsOf(error)
+    if (sentIds.length > 0) {
+      // 长消息已部分外发：自动重试会重复发送，标记 failed 且 attempts 用尽，交人工确认。
+      this.db
+        .prepare("UPDATE bot_deliveries SET status = 'failed', attempts = ?, last_error = ?, next_attempt_at = NULL, updated_at = ? WHERE id = ?")
+        .run(
+          this.config.botDeliveryMaxAttempts,
+          `partial_text_sent（已发送 ${sentIds.length} 段）：${message}`.slice(0, 500),
+          nowIso(),
+          delivery.id,
+        )
+      this.deps.log('warn', 'Bot 投递部分外发，停止自动重试', {
+        bot: delivery.bot_id,
+        delivery: delivery.id,
+        sent: sentIds.length,
+      })
+      this.deps.audit('bot.delivery.partial', `${delivery.bot_id}:${delivery.id}`, { sent: sentIds.length })
+      return
+    }
     if (attempts >= this.config.botDeliveryMaxAttempts) {
       this.db
         .prepare("UPDATE bot_deliveries SET status = 'dead', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
@@ -879,7 +1158,7 @@ export class BotService {
       const adapter = this.adapterFor(bot)
       const result = await adapter.send(target, { text, media })
       if (result.partial) {
-        const message = '部分媒体已发送，需人工确认后重建发布任务'
+        const message = 'partial_media_sent：部分媒体已发送，需人工确认后重建发布任务'
         this.db
           .prepare("UPDATE bot_publish_jobs SET status = 'failed', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
           .run(this.config.botDeliveryMaxAttempts, message, nowIso(), job.id)
@@ -897,22 +1176,17 @@ export class BotService {
 
   private failPublish(job: BotPublishRow, error: unknown): void {
     const attempts = job.attempts + 1
-    const partialIds =
-      error && typeof error === 'object' && Array.isArray((error as { sentExternalIds?: unknown }).sentExternalIds)
-        ? (error as { sentExternalIds: unknown[] }).sentExternalIds.filter((id): id is string => typeof id === 'string')
-        : []
+    const partialIds = sentExternalIdsOf(error)
     const message = error instanceof Error ? error.message.slice(0, 500) : '发布失败'
     if (partialIds.length > 0) {
-      // 多附件已部分外发，自动重试会重复发送；保留证据交管理员人工重建。
+      // 部分内容已外发，自动重试会重复发送；保留证据交管理员人工重建。
+      // 长文本部分发送与多附件部分发送使用不同前缀，管理页据此给出不同中文提示。
+      const kind = botPartialKindOf(error)
+      const prefix = kind === 'text' ? 'partial_text_sent（已发送部分段落）' : 'partial_media_sent（已发送部分附件）'
       this.db
         .prepare("UPDATE bot_publish_jobs SET status = 'failed', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
-        .run(
-          this.config.botDeliveryMaxAttempts,
-          `partial_media_sent（已发送 ${partialIds.length} 个）：${message}`.slice(0, 500),
-          nowIso(),
-          job.id,
-        )
-      this.deps.audit('bot.publish.partial', `${job.bot_id}:${job.id}`, { sent: partialIds.length })
+        .run(this.config.botDeliveryMaxAttempts, `${prefix}：${message}`.slice(0, 500), nowIso(), job.id)
+      this.deps.audit('bot.publish.partial', `${job.bot_id}:${job.id}`, { sent: partialIds.length, kind })
       return
     }
     if (attempts >= this.config.botDeliveryMaxAttempts) {
@@ -949,7 +1223,13 @@ export class BotService {
     }
     let result: InboundVerification
     try {
-      result = await this.adapterFor(bot).verifyInbound({ botId, headers, body })
+      result = await this.adapterFor(bot).verifyInbound({
+        botId,
+        headers,
+        body,
+        // 适配器按目标触发策略决定普通群消息是否进入 Chat（all=message 触发）。
+        chatTriggerFor: (targetExternalId) => this.targetChatTrigger(bot.id, targetExternalId),
+      })
     } catch {
       this.deps.log('warn', 'Bot Webhook 验签异常', { bot: bot.id })
       return { status: 400, body: { error: { code: 'invalid_request' } } }
@@ -961,19 +1241,32 @@ export class BotService {
     if (result.kind === 'challenge') return { status: 200, body: result.body }
     if (result.kind === 'ignored') {
       if (result.detail) this.deps.audit('bot.event.ignored', bot.id, { event: result.detail.slice(0, 80) })
+      // 适配器可给出去重事件 ID；带 ID 时记录 ignored 结果供诊断查询。
+      if (result.eventId) {
+        this.insertEvent(bot.id, result.eventId, 'ignored', 'ignored', result.detail ?? null, null, null)
+      }
       return { status: 200, body: result.ackBody ?? { ok: true } }
     }
-    const inserted = this.db
-      .prepare('INSERT OR IGNORE INTO bot_events (bot_id, platform_event_id, received_at) VALUES (?, ?, ?)')
-      .run(bot.id, result.eventId, nowIso())
-    if (Number(inserted.changes) === 0) return { status: 200, body: result.ackBody ?? { ok: true, duplicate: true } }
+    const inserted = this.insertEvent(
+      bot.id,
+      result.eventId,
+      result.kind,
+      'received',
+      null,
+      result.targetExternalId,
+      result.userId,
+    )
+    if (!inserted) return { status: 200, body: result.ackBody ?? { ok: true, duplicate: true } }
     this.recordInbound(bot, result)
     if (result.kind === 'command') return this.dispatchCommand(bot, result)
     if (result.kind === 'chat') return this.dispatchChat(bot, result)
     return this.dispatchAction(bot, result)
   }
 
-  /** Gateway 消息不经 HTTP 验签，由 Gateway 连接层完成 TLS/Token 鉴权；此处复用 Chat 授权与限流。 */
+  /**
+   * Gateway 消息不经 HTTP 验签，由 Gateway 连接层完成 TLS/Token 鉴权；此处复用 Chat 授权与限流。
+   * messageId 用于群聊引用回复（私聊不带 replyTo）；image 交给 AI 图片管线（未启用时降级）。
+   */
   async handleGatewayMessage(
     botId: string,
     event: {
@@ -984,18 +1277,32 @@ export class BotService {
       userName: string | null
       text: string
       isDirect: boolean
-      chatTrigger: 'direct' | 'mention' | 'reply'
+      chatTrigger: ChatTrigger
+      /** Gateway 必带；直接调用/旧调用方可省略（省略时不引用消息）。 */
+      messageId?: string
+      /** 入站图片（可选）；由 Service 决定是否下载并交给 AI。 */
+      image?: BotInboundImage
     },
   ): Promise<void> {
     if (!this.enabled) return
-    const bot = this.botRow(botId)
+    let bot: BotRow
+    try {
+      bot = this.botRow(botId)
+    } catch {
+      return
+    }
     if (!bot.enabled) return
-    const inserted = this.db
-      .prepare('INSERT OR IGNORE INTO bot_events (bot_id, platform_event_id, received_at) VALUES (?, ?, ?)')
-      .run(bot.id, event.eventId, nowIso())
-    if (Number(inserted.changes) === 0) return
+    if (!this.insertEvent(bot.id, event.eventId, 'chat', 'received', null, event.targetExternalId, event.userId)) return
     const target = this.inboundTarget(bot.id, event)
-    this.recordInbound(bot, {
+    const reply = async (text: string, options?: BotReplyOptions): Promise<void> => {
+      if (!target) return
+      const content: OutboundContent = { text }
+      if (options?.textMode) content.textMode = options.textMode
+      // 私聊不引用消息；群/频道带平台消息 ID 时按引用回复发送。
+      if (!event.isDirect && event.messageId) content.replyTo = event.messageId
+      await this.adapterFor(bot).send(target, content)
+    }
+    const chat: Extract<InboundVerification, { kind: 'chat' }> = {
       kind: 'chat',
       eventId: event.eventId,
       targetExternalId: event.targetExternalId,
@@ -1005,26 +1312,90 @@ export class BotService {
       text: event.text,
       isDirect: event.isDirect,
       chatTrigger: event.chatTrigger,
-      reply: async (text: string) => {
-        if (!target) return
-        await this.adapterFor(bot).send(target, { text })
-      },
-    })
-    await this.dispatchChat(bot, {
-      kind: 'chat',
-      eventId: event.eventId,
-      targetExternalId: event.targetExternalId,
-      targetKind: event.targetKind,
-      userId: event.userId,
-      userName: event.userName,
-      text: event.text,
-      isDirect: event.isDirect,
-      chatTrigger: event.chatTrigger,
-      reply: async (text: string) => {
-        if (!target) return
-        await this.adapterFor(bot).send(target, { text })
-      },
-    })
+      ...(event.image ? { image: event.image } : {}),
+      reply,
+    }
+    this.recordInbound(bot, chat)
+    await this.dispatchChat(bot, chat)
+  }
+
+  /** 写入入站事件（按 bot×平台事件 ID 去重）；返回是否首次插入。 */
+  private insertEvent(
+    botId: string,
+    eventId: string,
+    kind: string,
+    outcome: BotEventOutcome,
+    detail: string | null,
+    targetExternalId: string | null,
+    userId: string | null,
+  ): boolean {
+    try {
+      const now = nowIso()
+      const inserted = this.db
+        .prepare(
+          `INSERT OR IGNORE INTO bot_events
+           (bot_id, platform_event_id, received_at, event_kind, outcome, detail, target_external_id, user_id, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          botId,
+          eventId,
+          now,
+          kind.slice(0, 32),
+          outcome,
+          detail === null ? null : detail.slice(0, 120),
+          targetExternalId === null ? null : targetExternalId.slice(0, 128),
+          userId === null ? null : userId.slice(0, 64),
+          now,
+        )
+      return Number(inserted.changes) > 0
+    } catch {
+      // 诊断记录失败不影响消息主路径（按新事件继续处理）。
+      return true
+    }
+  }
+
+  /**
+   * 更新事件最终结果。detail 只允许短码（如 command_denied/chat_ok/error code），
+   * 禁止写入消息正文、文件路径或外部 ID 以外的内容。
+   */
+  private markEvent(
+    botId: string,
+    eventId: string,
+    update: { outcome: BotEventOutcome; detail?: string; target?: string; user?: string },
+  ): void {
+    try {
+      this.db
+        .prepare(
+          `UPDATE bot_events SET outcome = ?, detail = ?,
+             target_external_id = COALESCE(?, target_external_id),
+             user_id = COALESCE(?, user_id), updated_at = ?
+           WHERE bot_id = ? AND platform_event_id = ?`,
+        )
+        .run(
+          update.outcome,
+          update.detail === undefined ? null : update.detail.slice(0, 120),
+          update.target === undefined ? null : update.target.slice(0, 128),
+          update.user === undefined ? null : update.user.slice(0, 64),
+          nowIso(),
+          botId,
+          eventId,
+        )
+    } catch {
+      // 诊断更新失败不影响处理。
+    }
+  }
+
+  /** 目标群聊触发策略解析（Gateway 注入）；未登记或非 all 一律 mention。 */
+  private targetChatTrigger(botId: string, targetExternalId: string): 'mention' | 'all' {
+    try {
+      const row = this.db
+        .prepare('SELECT chat_trigger FROM bot_targets WHERE bot_id = ? AND external_id = ?')
+        .get(botId, targetExternalId) as { chat_trigger?: string } | undefined
+      return row?.chat_trigger === 'all' ? 'all' : 'mention'
+    } catch {
+      return 'mention'
+    }
   }
 
   private recordInbound(bot: BotRow, result: Extract<InboundVerification, { kind: 'command' | 'chat' | 'action' }>): void {
@@ -1069,33 +1440,60 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): Promise<{ status: number; body: unknown }> {
     const parsed = parseCommandText(result.text)
+    const command = parsed?.command ?? ''
+    const ack = () => result.ackBody ?? result.immediateResponse ?? { ok: true }
     // 群聊里角色统一使用默认 lofii；/role 只做友好提示，不读取或修改任何人的私聊角色。
-    if (parsed?.command === 'role' && !result.isDirect) {
+    if (command === 'role' && !result.isDirect) {
       const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
       if (retry === 0) void result.reply(roleGroupHint()).catch(() => undefined)
       this.deps.audit('bot.role.hint', bot.id, {
         target: result.targetExternalId,
         user: result.userId.slice(0, 64),
       })
-      return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'ok',
+        detail: 'role_hint',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return { status: 200, body: ack() }
     }
-    const roleDm = parsed?.command === 'role' && result.isDirect
+    // /role（私聊）、/reset、/forget 面向所有用户，不要求目标 allow_commands 或 user 白名单。
+    const openCommand = command === 'role' || command === 'reset' || command === 'forget'
     const target = this.inboundTarget(bot.id, result)
-    if (!roleDm && (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId))) {
+    if (!openCommand && (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId))) {
       this.deps.audit('bot.command.denied', bot.id, { target: result.targetExternalId, user: result.userId.slice(0, 64) })
-      return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'denied',
+        detail: 'command_denied',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return { status: 200, body: ack() }
     }
     const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
     if (retry > 0) {
       void result.reply('命令过于频繁，请稍后再试。').catch(() => undefined)
-      return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'rate_limited',
+        detail: 'command_rate_limited',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return { status: 200, body: ack() }
     }
     const task = this.executeCommand(bot, result, parsed).catch((error: unknown) => {
       this.deps.log('warn', 'Bot 命令执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'error',
+        detail: sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error),
+        target: result.targetExternalId,
+        user: result.userId,
+      })
     })
     this.pending.add(task)
     void task.finally(() => this.pending.delete(task))
-    return { status: 200, body: result.ackBody ?? result.immediateResponse ?? { ok: true } }
+    return { status: 200, body: ack() }
   }
 
   private async dispatchChat(
@@ -1103,43 +1501,68 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'chat' }>,
   ): Promise<{ status: number; body: unknown }> {
     const target = this.inboundTarget(bot.id, result)
+    const ack = () => result.ackBody ?? { ok: true }
+    const mark = (outcome: BotEventOutcome, detail: string) =>
+      this.markEvent(bot.id, result.eventId, {
+        outcome,
+        detail,
+        target: result.targetExternalId,
+        user: result.userId,
+      })
     // QQ C2C 的接触面由 QQ 平台“谁可添加 Bot”控制；Chat 对任意 C2C 开放，命令仍走目标白名单。
     const openQqC2c = bot.platform === 'qq' && result.isDirect && result.targetKind === 'user'
-    if ((!target || target.allow_chat !== 1) && !openQqC2c) {
+    if (result.chatTrigger === 'message') {
+      // all 触发只对已登记、已开放 Chat 且目标本身是 all 的群/频道生效；其余静默忽略（不写审计）。
+      if (!target || target.allow_chat !== 1 || target.chat_trigger !== 'all') {
+        mark('ignored', 'trigger_not_allowed')
+        return { status: 200, body: ack() }
+      }
+    } else if ((!target || target.allow_chat !== 1) && !openQqC2c) {
       this.deps.audit('bot.chat.denied', bot.id, { target: result.targetExternalId })
-      return { status: 200, body: result.ackBody ?? { ok: true } }
+      mark('denied', 'chat_denied')
+      return { status: 200, body: ack() }
     }
-    // 群/频道必须 @ Bot 或回复 Bot；私聊不受触发限制。
+    // 群/频道必须 @ Bot、回复 Bot 或目标允许全部消息；私聊不受触发限制。
     if (!result.isDirect && result.chatTrigger === 'direct') {
-      return { status: 200, body: result.ackBody ?? { ok: true } }
+      mark('ignored', 'direct_trigger')
+      return { status: 200, body: ack() }
     }
     if (!this.config.botAiEnabled || !this.deps.ai) {
-      return { status: 200, body: result.ackBody ?? { ok: true } }
+      mark('ignored', 'ai_disabled')
+      return { status: 200, body: ack() }
     }
     const text = cleanText(result.text, this.config.botAiMaxPromptChars)
-    if (!text) return { status: 200, body: result.ackBody ?? { ok: true } }
+    // 允许只有图片没有正文的消息进入 AI 管线（F9）。
+    if (!text && !result.image) {
+      mark('ignored', 'empty_content')
+      return { status: 200, body: ack() }
+    }
     const chatRetry = this.chatLimiter.hit(`${bot.id}:${result.userId}`)
     if (chatRetry > 0) {
       void result.reply(`对话过于频繁（每分钟 ${this.config.botChatRatePerMinute} 次），请稍后再试。`).catch(() => undefined)
-      return { status: 200, body: result.ackBody ?? { ok: true } }
+      mark('rate_limited', 'chat_rate_limited')
+      return { status: 200, body: ack() }
     }
     const aiRetry = this.aiLimiter.hit(`${bot.id}:${result.userId}`)
     if (aiRetry > 0) {
       void result.reply(`AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`).catch(() => undefined)
-      return { status: 200, body: result.ackBody ?? { ok: true } }
+      mark('rate_limited', 'ai_rate_limited')
+      return { status: 200, body: ack() }
     }
     this.deps.audit('bot.chat', `${bot.platform}:${result.targetExternalId}`, {
       bot: bot.id,
       user: result.userId.slice(0, 64),
       chars: text.length,
+      ...(result.image ? { image: result.image.mime.slice(0, 50) } : {}),
       ...(target ? {} : { open: 'qq_c2c' }),
     })
     const task = this.executeChat(bot, result, text).catch((error: unknown) => {
       this.deps.log('warn', 'Bot Chat 执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
+      mark('error', sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error))
     })
     this.pending.add(task)
     void task.finally(() => this.pending.delete(task))
-    return { status: 200, body: result.ackBody ?? { ok: true } }
+    return { status: 200, body: ack() }
   }
 
   private async dispatchAction(
@@ -1147,20 +1570,39 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'action' }>,
   ): Promise<{ status: number; body: unknown }> {
     const target = this.inboundTarget(bot.id, result)
+    const ack = () => result.immediateResponse ?? result.ackBody ?? { ok: true }
     if (!target || target.allow_commands !== 1 || !this.isCommandUserAllowed(bot.id, result.userId)) {
       this.deps.audit('bot.action.denied', bot.id, { target: result.targetExternalId, action: result.action })
-      return { status: 200, body: result.immediateResponse ?? result.ackBody ?? { ok: true } }
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'denied',
+        detail: 'action_denied',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return { status: 200, body: ack() }
     }
     const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
     if (retry > 0) {
-      return { status: 200, body: result.immediateResponse ?? result.ackBody ?? { ok: true } }
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'rate_limited',
+        detail: 'action_rate_limited',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return { status: 200, body: ack() }
     }
     const task = this.executeAction(bot, result, target).catch((error: unknown) => {
       this.deps.log('warn', 'Bot 按钮动作失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'error',
+        detail: sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error),
+        target: result.targetExternalId,
+        user: result.userId,
+      })
     })
     this.pending.add(task)
     void task.finally(() => this.pending.delete(task))
-    return { status: 200, body: result.immediateResponse ?? result.ackBody ?? { ok: true } }
+    return { status: 200, body: ack() }
   }
 
   private async executeCommand(
@@ -1175,15 +1617,21 @@ export class BotService {
       bot: bot.id,
       user: result.userId.slice(0, 64),
     })
-    if (!(BOT_COMMANDS as readonly string[]).includes(command)) {
-      await result.reply(helpText(bot.platform), { buttons: STATUS_BUTTONS })
-      return
-    }
+    const finish = (outcome: BotEventOutcome, detail: string) =>
+      this.markEvent(bot.id, result.eventId, {
+        outcome,
+        detail,
+        target: result.targetExternalId,
+        user: result.userId,
+      })
     try {
+      if (!(BOT_COMMANDS as readonly string[]).includes(command)) {
+        await result.reply(helpText(bot.platform), { buttons: STATUS_BUTTONS })
+        finish('ok', 'help')
+        return
+      }
       let text: string
       let buttons: typeof STATUS_BUTTONS | undefined
-      let memoryPrompt: string | null = null
-      let memoryAnswer: string | null = null
       switch (command) {
         case 'help':
           text = helpText(bot.platform)
@@ -1224,24 +1672,67 @@ export class BotService {
             text = `AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`
             break
           }
-          text = await this.chatWithAi(bot, result.userId, result.targetExternalId, args, 'task')
-          memoryPrompt = args
-          memoryAnswer = text
-          break
+          const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, args, 'task')
+          const formatted = this.formatAiAnswer(bot, answer)
+          await result.reply(formatted.text || 'AI 没有返回内容，请稍后再试。', { textMode: formatted.textMode })
+          this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, args, this.sanitizeAiText(answer))
+          finish('ok', 'command_ask')
+          return
         }
         case 'role':
           text = await this.executeRoleCommand(bot, result, args)
+          break
+        case 'reset':
+          text = this.resetConversation(bot, result)
+          break
+        case 'forget':
+          text = this.forgetMemory(bot, result, args)
           break
         default:
           text = commandDenied()
       }
       await result.reply(sanitizeExternalText(text), buttons ? { buttons } : undefined)
-      if (memoryPrompt !== null && memoryAnswer !== null) {
-        this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, memoryPrompt, memoryAnswer)
+      finish('ok', command ? `command_${command}` : 'help')
+    } catch (error) {
+      const sentIds = sentExternalIdsOf(error)
+      if (sentIds.length > 0) {
+        // 命令回复已部分外发：不再补发失败提示，避免重复外发。
+        this.deps.log('warn', 'Bot 命令回复部分外发', {
+          bot: bot.id,
+          command: command.slice(0, 32),
+          sent: sentIds.length,
+        })
+        finish('error', 'partial_reply')
+        return
       }
-    } catch {
-      await result.reply(commandFailed(command || '命令'))
+      await result.reply(commandFailed(command || '命令')).catch(() => undefined)
+      finish('error', errorShortCode(error))
     }
+  }
+
+  /** `/reset`：删除当前 Bot×目标×用户的 chat/task 会话映射，长期记忆保留。 */
+  private resetConversation(
+    bot: BotRow,
+    result: Extract<InboundVerification, { kind: 'command' }>,
+  ): string {
+    this.deleteSessions(bot.id, result.targetExternalId, result.userId, ['chat', 'task'])
+    this.deps.audit('bot.reset', bot.id, { bot: bot.id, user: result.userId.slice(0, 64) })
+    return '已重置当前对话（长期记忆保留）。'
+  }
+
+  /** `/forget confirm`：清除长期记忆（DB+镜像）与该 Bot×用户的全部会话上下文；幂等。 */
+  private forgetMemory(
+    bot: BotRow,
+    result: Extract<InboundVerification, { kind: 'command' }>,
+    args: string,
+  ): string {
+    if (args.trim().toLowerCase() !== 'confirm') {
+      return '用法：/forget confirm（将清除长期记忆与全部对话上下文，此操作不可恢复）。'
+    }
+    const removed = this.memory.remove(bot.id, result.userId)
+    this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
+    this.deps.audit('bot.memory.forget', bot.id, { bot: bot.id, user: result.userId.slice(0, 64), removed: removed ? 1 : 0 })
+    return '已清除长期记忆与全部对话上下文。'
   }
 
   private async executeRoleCommand(
@@ -1324,13 +1815,25 @@ export class BotService {
     return roleUsage()
   }
 
-  /** 角色变更后丢弃当前私聊 Chat 映射；task/群会话与远端历史不删除。 */
+  /**
+   * 删除会话映射：`/reset` 删 chat+task，角色卡变更只删 chat（task/群会话与远端历史不删除）。
+   * 两条路径复用同一 DELETE 语句，避免会话清理逻辑分叉。
+   */
+  private deleteSessions(
+    botId: string,
+    targetExternalId: string,
+    userId: string,
+    modes: readonly BotAiMode[],
+  ): void {
+    const statement = this.db.prepare(
+      'DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = ?',
+    )
+    for (const mode of modes) statement.run(botId, targetExternalId, userId, mode)
+  }
+
+  /** 角色变更后丢弃当前私聊 Chat 映射；task 会话保留。 */
   private resetChatSession(botId: string, targetExternalId: string, userId: string): void {
-    this.db
-      .prepare(
-        "DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat'",
-      )
-      .run(botId, targetExternalId, userId)
+    this.deleteSessions(botId, targetExternalId, userId, ['chat'])
   }
 
   private async executeChat(
@@ -1338,14 +1841,123 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'chat' }>,
     text: string,
   ): Promise<void> {
+    const finish = (outcome: BotEventOutcome, detail: string) =>
+      this.markEvent(bot.id, result.eventId, {
+        outcome,
+        detail,
+        target: result.targetExternalId,
+        user: result.userId,
+      })
     try {
       const role = result.isDirect ? this.roles.get(bot.id, result.userId) : null
       const roleCard = role?.enabled ? role : null
-      const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, text, 'chat', roleCard)
-      await result.reply(sanitizeExternalText(answer))
-      this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, text, answer)
-    } catch {
+      const prepared = await this.prepareAiImage(bot, result)
+      if (prepared.kind === 'unsupported') {
+        // 图片无法处理且用户没有可用文字：直接提示，不调用模型。
+        await result.reply(IMAGE_UNSUPPORTED_TEXT)
+        finish('ignored', 'image_unsupported')
+        return
+      }
+      const answer = await this.chatWithAi(
+        bot,
+        result.userId,
+        result.targetExternalId,
+        text,
+        'chat',
+        roleCard,
+        prepared.image,
+      )
+      const plain = this.sanitizeAiText(answer)
+      const formatted = formatAiReply(bot.platform, plain)
+      const replyText = prepared.degraded && text ? `${formatted.text}\n${IMAGE_DEGRADED_NOTE}` : formatted.text
+      await result.reply(replyText || '暂时没回应上来，稍后再试。', { textMode: formatted.textMode })
+      if (text) this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, text, plain)
+      finish('ok', 'chat')
+    } catch (error) {
+      if (sentExternalIdsOf(error).length > 0) {
+        // 长回复已部分外发：只记日志，不补发失败提示。
+        this.deps.log('warn', 'Bot Chat 回复部分外发', {
+          bot: bot.id,
+          sent: sentExternalIdsOf(error).length,
+        })
+        finish('error', 'partial_reply')
+        return
+      }
+      finish('error', errorShortCode(error))
       await result.reply('暂时没回应上来，稍后再试。').catch(() => undefined)
+    }
+  }
+
+  /**
+   * 图片预处理：vision 关闭/适配器不支持/下载失败/mime 非法时降级为纯文本。
+   * - 有文字：继续回答，末尾追加“图片未能处理”说明；
+   * - 无文字：返回 unsupported，由调用方提示用户改用文字描述。
+   */
+  private async prepareAiImage(
+    bot: BotRow,
+    result: Extract<InboundVerification, { kind: 'chat' }>,
+  ): Promise<{ kind: 'ok'; image?: BotAiImage; degraded: boolean } | { kind: 'unsupported' }> {
+    const inbound = result.image
+    if (!inbound) return { kind: 'ok', degraded: false }
+    const degrade = () =>
+      result.text.trim()
+        ? ({ kind: 'ok', degraded: true } as const)
+        : ({ kind: 'unsupported' } as const)
+    if (!this.config.botAiVisionEnabled) {
+      this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
+        bot: bot.id,
+        mime: inbound.mime.slice(0, 50),
+        size: inbound.size ?? null,
+        skipped: 'vision_disabled',
+      })
+      return degrade()
+    }
+    const adapter = this.adapterFor(bot)
+    if (!adapter.loadImage) {
+      this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
+        bot: bot.id,
+        mime: inbound.mime.slice(0, 50),
+        size: inbound.size ?? null,
+        skipped: 'unsupported',
+      })
+      return degrade()
+    }
+    try {
+      const loaded = await adapter.loadImage(inbound, {
+        maxBytes: this.config.botAiImageMaxBytes,
+        timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
+      })
+      const mime = loaded.mime.toLowerCase()
+      if (!IMAGE_MIME_ALLOWLIST.has(mime) || loaded.data.length === 0 || loaded.data.length > this.config.botAiImageMaxBytes) {
+        this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
+          bot: bot.id,
+          mime: mime.slice(0, 50),
+          size: loaded.data.length,
+          skipped: 'invalid',
+        })
+        return degrade()
+      }
+      // 审计只记录 mime/大小，不记录图片内容或 base64。
+      this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
+        bot: bot.id,
+        mime: mime.slice(0, 50),
+        size: loaded.data.length,
+      })
+      return {
+        kind: 'ok',
+        degraded: false,
+        image: {
+          mime,
+          base64: loaded.data.toString('base64'),
+          ...(inbound.name ? { name: inbound.name.slice(0, 80) } : {}),
+        },
+      }
+    } catch (error) {
+      this.deps.log('warn', 'Bot 入站图片处理失败，降级为纯文本', {
+        bot: bot.id,
+        code: errorShortCode(error),
+      })
+      return degrade()
     }
   }
 
@@ -1359,19 +1971,31 @@ export class BotService {
       bot: bot.id,
       user: result.userId.slice(0, 64),
     })
+    const finish = (outcome: BotEventOutcome, detail: string) =>
+      this.markEvent(bot.id, result.eventId, {
+        outcome,
+        detail,
+        target: result.targetExternalId,
+        user: result.userId,
+      })
     try {
       if (result.action === 'refresh_status') {
         const text = formatPairs('应用状态', await this.deps.providers.status())
         await result.reply(sanitizeExternalText(text), { buttons: STATUS_BUTTONS })
+        finish('ok', 'action_refresh_status')
         return
       }
       await result.reply(helpText(bot.platform), { buttons: STATUS_BUTTONS })
-    } catch {
-      await result.reply(commandFailed('刷新状态'))
+      finish('ok', 'action_help')
+    } catch (error) {
+      if (sentExternalIdsOf(error).length === 0) {
+        await result.reply(commandFailed('刷新状态')).catch(() => undefined)
+      }
+      finish('error', sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error))
     }
   }
 
-  /** Chat/`/ask` 的统一模型调用：按模式选择提示词 + 共享长期记忆 + 用户消息。 */
+  /** Chat/`/ask` 的统一模型调用：按模式选择提示词 + 共享长期记忆 + 用户消息（可选图片）。 */
   private async chatWithAi(
     bot: BotRow,
     userId: string,
@@ -1379,6 +2003,7 @@ export class BotService {
     text: string,
     mode: BotAiMode,
     roleCard?: BotChatRole | null,
+    image?: BotAiImage,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     const memory = this.memory.get(bot.id, userId)
@@ -1396,6 +2021,7 @@ export class BotService {
       mode,
       chars: text.length,
       ...(roleCard ? { role: true } : {}),
+      ...(image ? { image: image.mime.slice(0, 50) } : {}),
     })
     const answer = await this.deps.ai.chat({
       botId: bot.id,
@@ -1403,8 +2029,38 @@ export class BotService {
       userId,
       mode,
       prompt,
+      ...(image ? { image } : {}),
     })
     return answer
+  }
+
+  /**
+   * AI 回答清洗：去除内部路径/URL 与控制字符，保留换行/分段，按配置上限截断。
+   * 与 sanitizeExternalText 的固定 1500 截断区分：AI 回答由平台适配器按各自上限分段发送。
+   */
+  private sanitizeAiText(value: string): string {
+    if (typeof value !== 'string') return ''
+    const replaced = value
+      .replace(/\r\n?/g, '\n')
+      .replace(/(?:[A-Za-z]:\\|\/(?:home|var|etc|opt|run|proc|sys|tmp)\/)[^\s"'`]+/g, '[path]')
+      .replace(/(?:ssh|https?):\/\/[^\s"'`]+/g, '[url]')
+    let cleaned = ''
+    for (const char of replaced) {
+      const code = char.codePointAt(0) ?? 0
+      if (code === 10 || code === 9 || (code >= 32 && code !== 127)) cleaned += char
+    }
+    // 保留换行/分段，仅收敛行内多余空白；不要压缩空行。
+    cleaned = cleaned
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+/g, ' ').trimEnd())
+      .join('\n')
+      .trim()
+    return cleaned.slice(0, this.config.botAiMaxReplyChars)
+  }
+
+  /** AI 回答统一管线：清洗 → 平台化格式（Telegram HTML / Slack mrkdwn / 其余纯文本）。 */
+  private formatAiAnswer(bot: BotRow, answer: string): { text: string; textMode: 'plain' | 'html' } {
+    return formatAiReply(bot.platform, this.sanitizeAiText(answer))
   }
 
   /** 回复已发送后再更新长期记忆，避免摘要模型调用拖慢用户可见回复。 */
@@ -1580,7 +2236,7 @@ export class BotService {
     })
   }
 
-  private adapterFor(row: BotRow) {
+  private adapterFor(row: BotRow): BotAdapter {
     const config = parseConfig(row.config_json)
     const secret = this.secretOf(row)
     switch (row.platform) {
@@ -1680,7 +2336,22 @@ export class BotService {
     return { start: cleanStart, end: cleanEnd }
   }
 
-  private parseSchedule(scheduledAt: string | null | undefined): string | null {    if (!scheduledAt) return null
+  /** 群聊触发策略校验：仅 channel/group 且非 QQ 可设 all，其余组合返回 400。 */
+  private normalizeChatTrigger(
+    bot: BotRow,
+    kind: 'channel' | 'user' | 'group',
+    value: 'mention' | 'all' | undefined,
+    current: 'mention' | 'all',
+  ): 'mention' | 'all' {
+    const trigger = value ?? current
+    if (trigger === 'all' && (kind === 'user' || bot.platform === 'qq')) {
+      throw new AppError(400, 'chat_trigger_unsupported', 'QQ 群/频道仅支持 @Bot 触发')
+    }
+    return trigger
+  }
+
+  private parseSchedule(scheduledAt: string | null | undefined): string | null {
+    if (!scheduledAt) return null
     const time = Date.parse(scheduledAt)
     if (!Number.isFinite(time)) throw badRequest('定时时间格式无效')
     if (time < Date.now() - 30_000) throw badRequest('定时时间必须晚于当前时间')
@@ -1701,6 +2372,7 @@ function toTarget(row: BotTargetRow): BotTarget {
     allowCommands: row.allow_commands === 1,
     allowNotifications: row.allow_notifications === 1,
     allowChat: row.allow_chat === 1,
+    chatTrigger: row.chat_trigger === 'all' ? 'all' : 'mention',
     quietStartMinute: row.quiet_start_minute,
     quietEndMinute: row.quiet_end_minute,
     createdAt: row.created_at,
@@ -1717,6 +2389,7 @@ function toDelivery(row: BotDeliveryRow): BotDelivery {
     attempts: row.attempts,
     nextAttemptAt: row.next_attempt_at,
     lastError: row.last_error,
+    lastErrorHint: describeBotError(row.last_error),
     externalId: row.external_id,
     createdAt: row.created_at,
     sentAt: row.sent_at,
@@ -1749,6 +2422,7 @@ function toPublishJob(row: BotPublishRow): BotPublishJob {
     status: row.status,
     attempts: row.attempts,
     lastError: row.last_error,
+    lastErrorHint: describeBotError(row.last_error),
     createdAt: row.created_at,
     sentAt: row.sent_at,
   }

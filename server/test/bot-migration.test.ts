@@ -1,6 +1,7 @@
 /**
- * v6→v11 迁移测试：v0.4.x 生产库（schema v6）升级必须依次创建 Bot 表（v7）、
- * QQ/静默/AI 会话（v8）、Chat/记忆/入站发现（v9）、AI 会话 mode（v10）与私聊角色卡（v11）。
+ * v6→v12 迁移测试：v0.4.x 生产库（schema v6）升级必须依次创建 Bot 表（v7）、
+ * QQ/静默/AI 会话（v8）、Chat/记忆/入站发现（v9）、AI 会话 mode（v10）、
+ * 私聊角色卡（v11）与群聊触发策略/事件诊断列（v12）。
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
@@ -9,13 +10,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SUPPORTED_SCHEMA_VERSION, openDatabase } from '../src/db.ts'
 
-test('v6 库升级到 v11：创建 Bot/QQ/AI/Chat/角色卡表、保留迁移 6 修复并升级会话 mode', () => {
+test('v6 库升级到 v12：创建 Bot/QQ/AI/Chat/角色卡表，并补齐触发策略与事件诊断列', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db = openDatabase({ path })
-    assert.equal(SUPPORTED_SCHEMA_VERSION, 11)
-    // 模拟 v0.4.2 已升级到 v6、尚无 Bot 表的生产库；v9/v10/v11 新增表必须先删除，避免迁移建表冲突。
+    assert.equal(SUPPORTED_SCHEMA_VERSION, 12)
+    // 模拟 v0.4.2 已升级到 v6、尚无 Bot 表的生产库；v7+ 新增表必须先删除，避免迁移建表冲突。
     db.exec(`
       DROP TABLE bot_chat_roles;
       DROP TABLE bot_inbound_targets;
@@ -33,7 +34,7 @@ test('v6 库升级到 v11：创建 Bot/QQ/AI/Chat/角色卡表、保留迁移 6 
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '11')
+      assert.equal(version.value, '12')
       const tables = (
         upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
       ).map((row) => row.name)
@@ -60,6 +61,13 @@ test('v6 库升级到 v11：创建 Bot/QQ/AI/Chat/角色卡表、保留迁移 6 
       assert.ok(targetColumns.includes('quiet_start_minute'))
       assert.ok(targetColumns.includes('quiet_end_minute'))
       assert.ok(targetColumns.includes('allow_chat'))
+      assert.ok(targetColumns.includes('chat_trigger'))
+      const eventColumns = (
+        upgraded.prepare('PRAGMA table_info(bot_events)').all() as unknown as { name: string }[]
+      ).map((row) => row.name)
+      for (const column of ['event_kind', 'outcome', 'detail', 'target_external_id', 'user_id', 'updated_at']) {
+        assert.ok(eventColumns.includes(column), `bot_events 缺少 ${column}`)
+      }
       // v8 的 bots 表 CHECK 必须接受 qq；用最小合法行验证约束已重建。
       upgraded
         .prepare(
@@ -67,7 +75,7 @@ test('v6 库升级到 v11：创建 Bot/QQ/AI/Chat/角色卡表、保留迁移 6 
            VALUES ('migration-qq', 'qq', 'QQ', 0, '{}', 'x', 'x', 'x', 1, '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z')`,
         )
         .run()
-      // 既有目标升级后 Chat 默认关闭。
+      // 既有目标升级后 Chat 默认关闭、触发策略默认 mention。
       upgraded
         .prepare(
           `INSERT INTO bot_targets (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, created_at)
@@ -75,9 +83,10 @@ test('v6 库升级到 v11：创建 Bot/QQ/AI/Chat/角色卡表、保留迁移 6 
         )
         .run()
       const target = upgraded
-        .prepare("SELECT allow_chat FROM bot_targets WHERE id = 'migration-target'")
-        .get() as { allow_chat: number }
+        .prepare("SELECT allow_chat, chat_trigger FROM bot_targets WHERE id = 'migration-target'")
+        .get() as { allow_chat: number; chat_trigger: string }
       assert.equal(target.allow_chat, 0)
+      assert.equal(target.chat_trigger, 'mention')
     } finally {
       upgraded.close()
     }
@@ -86,7 +95,53 @@ test('v6 库升级到 v11：创建 Bot/QQ/AI/Chat/角色卡表、保留迁移 6 
   }
 })
 
-test('v9 库升级到 v11：旧会话归为 Chat，主键允许 task/chat 两行', () => {
+test('v11 库升级到 v12：追加触发策略与事件诊断列，旧行按默认值可读', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-v12-'))
+  const path = join(dir, 'db.sqlite')
+  try {
+    const db = openDatabase({ path })
+    // 删除 v12 新增的列/索引，构造 v11 结构后回退版本号。
+    db.exec(`
+      DROP INDEX idx_bot_events_outcome;
+      ALTER TABLE bot_targets DROP COLUMN chat_trigger;
+      ALTER TABLE bot_events DROP COLUMN event_kind;
+      ALTER TABLE bot_events DROP COLUMN outcome;
+      ALTER TABLE bot_events DROP COLUMN detail;
+      ALTER TABLE bot_events DROP COLUMN target_external_id;
+      ALTER TABLE bot_events DROP COLUMN user_id;
+      ALTER TABLE bot_events DROP COLUMN updated_at;
+      INSERT INTO bots (id, platform, name, enabled, config_json, secret_ciphertext, secret_iv, secret_tag, key_version, created_at, updated_at)
+        VALUES ('bot-v11', 'qq', 'QQ', 0, '{}', 'x', 'x', 'x', 1, '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
+      INSERT INTO bot_targets (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, created_at)
+        VALUES ('target-v11', 'bot-v11', 'group-1', '群', 'group', 0, 1, '2026-10-21T00:00:00.000Z');
+      INSERT INTO bot_events (bot_id, platform_event_id, received_at) VALUES ('bot-v11', 'evt-1', '2026-10-21T00:00:00.000Z');
+      UPDATE meta SET value = '11' WHERE key = 'schema_version';
+    `)
+    db.close()
+
+    const upgraded = openDatabase({ path })
+    try {
+      const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
+      assert.equal(version.value, '12')
+      const target = upgraded
+        .prepare("SELECT chat_trigger FROM bot_targets WHERE id = 'target-v11'")
+        .get() as { chat_trigger: string }
+      assert.equal(target.chat_trigger, 'mention')
+      const event = upgraded
+        .prepare("SELECT outcome, event_kind, detail FROM bot_events WHERE platform_event_id = 'evt-1'")
+        .get() as { outcome: string | null; event_kind: string | null; detail: string | null }
+      assert.equal(event.outcome, null)
+      assert.equal(event.event_kind, null)
+      assert.equal(event.detail, null)
+    } finally {
+      upgraded.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+  }
+})
+
+test('v9 库升级到 v12：旧会话归为 Chat，主键允许 task/chat 两行', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-session-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -94,6 +149,14 @@ test('v9 库升级到 v11：旧会话归为 Chat，主键允许 task/chat 两行
     db.exec(`
       DROP TABLE bot_chat_roles;
       DROP TABLE bot_ai_sessions;
+      DROP INDEX idx_bot_events_outcome;
+      ALTER TABLE bot_targets DROP COLUMN chat_trigger;
+      ALTER TABLE bot_events DROP COLUMN event_kind;
+      ALTER TABLE bot_events DROP COLUMN outcome;
+      ALTER TABLE bot_events DROP COLUMN detail;
+      ALTER TABLE bot_events DROP COLUMN target_external_id;
+      ALTER TABLE bot_events DROP COLUMN user_id;
+      ALTER TABLE bot_events DROP COLUMN updated_at;
       CREATE TABLE bot_ai_sessions (
         bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
         target_external_id TEXT NOT NULL,
@@ -142,13 +205,21 @@ test('v9 库升级到 v11：旧会话归为 Chat，主键允许 task/chat 两行
   }
 })
 
-test('v10 库升级到 v11：新增角色卡表且保留会话 mode', () => {
+test('v10 库升级到 v12：新增角色卡表、触发策略与事件诊断列', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-role-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db = openDatabase({ path })
     db.exec(`
       DROP TABLE bot_chat_roles;
+      DROP INDEX idx_bot_events_outcome;
+      ALTER TABLE bot_targets DROP COLUMN chat_trigger;
+      ALTER TABLE bot_events DROP COLUMN event_kind;
+      ALTER TABLE bot_events DROP COLUMN outcome;
+      ALTER TABLE bot_events DROP COLUMN detail;
+      ALTER TABLE bot_events DROP COLUMN target_external_id;
+      ALTER TABLE bot_events DROP COLUMN user_id;
+      ALTER TABLE bot_events DROP COLUMN updated_at;
       UPDATE meta SET value = '10' WHERE key = 'schema_version';
     `)
     db.close()
@@ -156,7 +227,7 @@ test('v10 库升级到 v11：新增角色卡表且保留会话 mode', () => {
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '11')
+      assert.equal(version.value, '12')
       const columns = (
         upgraded.prepare('PRAGMA table_info(bot_chat_roles)').all() as unknown as { name: string }[]
       ).map((row) => row.name)

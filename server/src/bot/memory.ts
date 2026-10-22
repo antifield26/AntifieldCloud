@@ -1,13 +1,14 @@
 /**
  * Bot 长期记忆存储：DB 为权威摘要，DATA_DIR/bot-memory 下的 Markdown 为镜像文件。
  * 安全边界：文件路径只由服务端生成的 memory UUID 组成；目录 0700、文件 0600；
- * 记忆正文不经过任何 HTTP API/前端读取；文件写入使用临时文件 + 原子 rename。
+ * 记忆正文不经过任何 HTTP API/前端读取（管理接口只返回长度等元数据）；文件写入使用临时文件 + 原子 rename。
  */
 import { DatabaseSync } from 'node:sqlite'
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
+import type { BotMemorySummary } from './types.ts'
 
 const MEMORY_TITLE = '# AntifieldCloud Bot Memory'
 const FILE_READ_LIMIT = 32 * 1024
@@ -28,6 +29,13 @@ interface MemoryRow {
   memory_id: string
   summary: string
   summary_session_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface MemoryListRow {
+  user_id: string
+  summary: string
   created_at: string
   updated_at: string
 }
@@ -127,6 +135,49 @@ export class BotMemoryStore {
       // 镜像失败不影响 DB 权威记忆。
     }
     return memory
+  }
+
+  /** 管理页元数据分页：只返回长度/时间，不返回摘要正文。 */
+  list(botId: string, limit = 20, offset = 0): BotMemorySummary[] {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
+    const safeOffset = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0))
+    const rows = this.db
+      .prepare(
+        `SELECT user_id, summary, created_at, updated_at FROM bot_ai_memories
+         WHERE bot_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(botId, safeLimit, safeOffset) as unknown as MemoryListRow[]
+    return rows.map((row) => ({
+      userId: row.user_id,
+      userName: null,
+      summaryLength: row.summary.length,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+  }
+
+  count(botId: string): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS c FROM bot_ai_memories WHERE bot_id = ?')
+      .get(botId) as { c: number }
+    return row.c
+  }
+
+  /** 删除指定用户记忆（DB 行 + 镜像文件）；不存在返回 false。 */
+  remove(botId: string, userId: string): boolean {
+    const row = this.db
+      .prepare('SELECT memory_id FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
+      .get(botId, userId) as { memory_id: string } | undefined
+    if (!row) return false
+    try {
+      rmSync(this.pathFor(row.memory_id), { force: true })
+    } catch {
+      // 镜像文件已不存在或不可删时仍继续删 DB 行。
+    }
+    const result = this.db
+      .prepare('DELETE FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
+      .run(botId, userId)
+    return Number(result.changes) > 0
   }
 
   /** 清理超过保留期的映射与文件；摘要不再可用时静默跳过。 */

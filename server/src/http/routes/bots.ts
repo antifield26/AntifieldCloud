@@ -37,11 +37,31 @@ function requiredId(value: unknown, name: string): string {
   return id
 }
 
+/** 目标显式触发方式：缺省交给 service；非法值直接 400。 */
+function optionalChatTrigger(value: unknown): 'mention' | 'all' | undefined {
+  if (value === undefined || value === null) return undefined
+  if (value === 'mention' || value === 'all') return value
+  throw badRequest('触发方式无效')
+}
+
+/** 分页 offset：允许 0，非法值回退 0。 */
+function offsetOf(value: unknown): number {
+  const parsed = Number(value ?? 0)
+  if (!Number.isFinite(parsed)) return 0
+  return Math.max(0, Math.floor(parsed))
+}
+
+/** 事件结果筛选：只接受已知 outcome，其余交给 service 校验。 */
+function optionalOutcome(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 32) : undefined
+}
+
 export function registerBotRoutes(app: FastifyInstance, config: Config, bots: BotService, auth: AuthService): void {
   const csrf = csrfGuard(config)
   const publishLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
   const testLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
   const connectivityLimiter = new SlidingWindowLimiter(60_000, 30)
+  const checkLimiter = new SlidingWindowLimiter(60_000, 30)
 
   app.get('/api/bots/status', { preHandler: [requireAuth] }, async () => bots.status())
 
@@ -79,6 +99,63 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
     const params = request.params as Record<string, string>
     const query = asRecord(request.query) ?? {}
     return { metrics: bots.metrics(requiredId(params.id, 'id'), parsePositiveInt(query.hours, 24, 1, 720)) }
+  })
+
+  app.post('/api/bots/:id/check', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const context = authOf(request)
+    const retry = checkLimiter.hit(`${context.user.username}:${requiredId(params.id, 'id')}`)
+    if (retry > 0) throw rateLimited(retry)
+    return { health: await bots.checkBot(requiredId(params.id, 'id')) }
+  })
+
+  app.get('/api/bots/:id/events', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const query = asRecord(request.query) ?? {}
+    return bots.listEvents(requiredId(params.id, 'id'), {
+      hours: parsePositiveInt(query.hours, 24, 1, 720),
+      limit: parsePositiveInt(query.limit, 50, 1, 200),
+      offset: offsetOf(query.offset),
+      outcome: optionalOutcome(query.outcome),
+    })
+  })
+
+  app.get('/api/bots/:id/roles', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const query = asRecord(request.query) ?? {}
+    return bots.listRoles(requiredId(params.id, 'id'), {
+      limit: parsePositiveInt(query.limit, 20, 1, 200),
+      offset: offsetOf(query.offset),
+    })
+  })
+
+  app.patch('/api/bots/:id/roles/:userId', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const body = asRecord(request.body) ?? {}
+    if (typeof body.enabled !== 'boolean') throw badRequest('enabled 必须是布尔值')
+    bots.setRoleEnabled(requiredId(params.id, 'id'), requiredId(params.userId, 'userId'), body.enabled)
+    return { ok: true }
+  })
+
+  app.delete('/api/bots/:id/roles/:userId', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    bots.deleteRole(requiredId(params.id, 'id'), requiredId(params.userId, 'userId'))
+    return { ok: true }
+  })
+
+  app.get('/api/bots/:id/memories', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const query = asRecord(request.query) ?? {}
+    return bots.listMemories(requiredId(params.id, 'id'), {
+      limit: parsePositiveInt(query.limit, 20, 1, 200),
+      offset: offsetOf(query.offset),
+    })
+  })
+
+  app.delete('/api/bots/:id/memories/:userId', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    bots.deleteMemory(requiredId(params.id, 'id'), requiredId(params.userId, 'userId'))
+    return { ok: true }
   })
 
   app.patch('/api/bots/:id', { preHandler: [requireAuth, csrf] }, async (request) => {
@@ -137,6 +214,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         allowCommands: boolean(body.allowCommands),
         allowNotifications: boolean(body.allowNotifications, true),
         allowChat: boolean(body.allowChat),
+        chatTrigger: optionalChatTrigger(body.chatTrigger),
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),
@@ -154,6 +232,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         allowCommands: typeof body.allowCommands === 'boolean' ? body.allowCommands : undefined,
         allowNotifications: typeof body.allowNotifications === 'boolean' ? body.allowNotifications : undefined,
         allowChat: typeof body.allowChat === 'boolean' ? body.allowChat : undefined,
+        chatTrigger: optionalChatTrigger(body.chatTrigger),
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),

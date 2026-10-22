@@ -1,7 +1,33 @@
 /**
- * Bot 适配器 HTTP 工具：超时、JSON 解析、平台错误归一化。
- * 安全边界：错误对象只含平台/状态码/脱敏错误码，不包含完整 URL（可能含 token）。
+ * Bot 适配器 HTTP 工具：超时、JSON 解析、平台错误归一化、入站图片下载与 partial 标记。
+ * 安全边界：错误对象只含平台/状态码/脱敏错误码，不包含完整 URL（可能含 token）；
+ * 图片下载只允许调用方给定的固定平台域名，且错误码固定，不把 URL/响应正文带出。
  */
+import type { BotInboundImage } from '../types.ts'
+
+/** 入站图片允许的 mime；仅这些类型会进入 AI 视觉链路（与 ai.ts 的 Data URL 白名单一致）。 */
+export const INBOUND_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+
+/** 归一化图片 mime；不在白名单内返回 null。 */
+export function normalizeImageMime(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const mime = value.trim().toLowerCase()
+  return INBOUND_IMAGE_MIMES.has(mime) ? mime : null
+}
+
+/** partial 失败类型：text=长文本已部分外发，media=附件已部分外发。 */
+export type BotPartialKind = 'text' | 'media'
+
+/** 把已外发的平台 ID 挂到错误对象上；服务端据此禁止自动重试，避免重复外发。 */
+export function markPartialError<T>(error: T, sentExternalIds: string[], kind: BotPartialKind): T {
+  if (error !== null && typeof error === 'object') {
+    const target = error as { sentExternalIds?: string[]; botPartialKind?: BotPartialKind }
+    if (sentExternalIds.length > 0) target.sentExternalIds = sentExternalIds
+    target.botPartialKind = kind
+  }
+  return error
+}
+
 export class BotPlatformError extends Error {
   readonly status: number
   readonly code: string
@@ -87,4 +113,73 @@ export function parseJsonBody(body: Buffer): Record<string, unknown> | null {
   } catch {
     return null
   }
+}
+
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 15_000
+
+export interface DownloadImageOptions {
+  /** 调用方声明的图片 mime；不在白名单内直接 image_unsupported。 */
+  image: BotInboundImage
+  /** 允许下载的最大字节数；平台声明或实际响应超限都返回 image_too_large。 */
+  maxBytes: number
+  timeoutMs?: number
+  fetch?: typeof fetch
+  headers?: Record<string, string>
+  /** 固定平台域名白名单；必须 https 且主机名精确匹配。 */
+  allowedHosts: readonly string[]
+}
+
+/**
+ * 下载入站图片：固定域名 + https + mime 白名单 + 大小上限。
+ * 失败统一抛 BotPlatformError 固定错误码（image_unsupported/image_too_large/image_download_failed），
+ * 不透出 URL、host 或平台响应正文。
+ */
+export async function downloadImage(options: DownloadImageOptions): Promise<{ mime: string; data: Buffer }> {
+  const declaredMime = normalizeImageMime(options.image.mime)
+  if (!declaredMime) throw new BotPlatformError(400, 'image_unsupported')
+  const maxBytes = Number(options.maxBytes)
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) throw new BotPlatformError(400, 'image_too_large')
+  const declaredSize = Number(options.image.size)
+  if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
+    throw new BotPlatformError(413, 'image_too_large')
+  }
+  let target: URL
+  try {
+    target = new URL(options.image.ref)
+  } catch {
+    throw new BotPlatformError(400, 'image_unsupported')
+  }
+  if (target.protocol !== 'https:' || !options.allowedHosts.includes(target.hostname)) {
+    throw new BotPlatformError(400, 'image_unsupported')
+  }
+  const timeoutMs =
+    Number.isFinite(options.timeoutMs) && Number(options.timeoutMs) > 0
+      ? Math.floor(Number(options.timeoutMs))
+      : IMAGE_DOWNLOAD_TIMEOUT_MS
+  const fetcher = options.fetch ?? fetch
+  let response: Response
+  try {
+    response = await fetcher(target.toString(), {
+      method: 'GET',
+      redirect: 'error',
+      headers: options.headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+  } catch {
+    throw new BotPlatformError(0, 'image_download_failed')
+  }
+  if (!response.ok) throw new BotPlatformError(response.status, 'image_download_failed')
+  const contentLength = Number(response.headers.get('content-length') ?? '')
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new BotPlatformError(413, 'image_too_large')
+  }
+  let data: Buffer
+  try {
+    data = Buffer.from(await response.arrayBuffer())
+  } catch {
+    throw new BotPlatformError(0, 'image_download_failed')
+  }
+  if (data.length > maxBytes) throw new BotPlatformError(413, 'image_too_large')
+  if (data.length === 0) throw new BotPlatformError(400, 'image_download_failed')
+  return { mime: declaredMime, data }
 }

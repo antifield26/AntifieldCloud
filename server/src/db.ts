@@ -613,6 +613,17 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_bot_chat_roles_updated ON bot_chat_roles(updated_at);
   `,
+  `
+  -- v0.5.7：目标群聊触发策略；入站事件结果用于诊断（只追加列/索引）。
+  ALTER TABLE bot_targets ADD COLUMN chat_trigger TEXT NOT NULL DEFAULT 'mention' CHECK (chat_trigger IN ('mention', 'all'));
+  ALTER TABLE bot_events ADD COLUMN event_kind TEXT;
+  ALTER TABLE bot_events ADD COLUMN outcome TEXT;
+  ALTER TABLE bot_events ADD COLUMN detail TEXT;
+  ALTER TABLE bot_events ADD COLUMN target_external_id TEXT;
+  ALTER TABLE bot_events ADD COLUMN user_id TEXT;
+  ALTER TABLE bot_events ADD COLUMN updated_at TEXT;
+  CREATE INDEX idx_bot_events_outcome ON bot_events(bot_id, outcome, received_at);
+  `,
 ]
 
 export interface OpenOptions {
@@ -673,12 +684,22 @@ export function openDatabase(options: OpenOptions): DatabaseSync {
   // 直接迁移会因 share_items 外键失败。只删除这类不可达分享行（无任何可恢复内容）。
   repairOrphanShares(db, options.verbose ?? false)
   // 迁移前外键一致性检查：其它损坏数据先暴露，避免迁移中才失败或写入更混乱的数据。
-  const violations = db.prepare('PRAGMA foreign_key_check').all() as unknown as { table?: string }[]
-  if (violations.length > 0) {
-    const sample = violations[0] as Record<string, unknown>
-    throw new Error(`数据库外键一致性检查失败（${violations.length} 条），请从备份恢复：${JSON.stringify(sample)}`)
+  try {
+    const violations = db.prepare('PRAGMA foreign_key_check').all() as unknown as { table?: string }[]
+    if (violations.length > 0) {
+      const sample = violations[0] as Record<string, unknown>
+      throw new Error(`数据库外键一致性检查失败（${violations.length} 条），请从备份恢复：${JSON.stringify(sample)}`)
+    }
+    migrate(db, options.verbose ?? false)
+  } catch (error) {
+    // 打开/迁移失败时关闭句柄，避免 Windows 上临时库文件被占用导致清理失败。
+    try {
+      db.close()
+    } catch {
+      // 句柄可能已不可用，忽略并抛出原始错误。
+    }
+    throw error
   }
-  migrate(db, options.verbose ?? false)
   return db
 }
 

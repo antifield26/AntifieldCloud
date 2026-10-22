@@ -61,6 +61,8 @@ export interface BotTargetRow {
   allow_notifications: number
   /** 是否允许该目标内成员进行普通消息 Chat；与 allow_commands 独立。 */
   allow_chat: number
+  /** 群聊触发策略：mention=仅 @/回复（默认），all=全部消息（QQ 群/频道不支持）。 */
+  chat_trigger: 'mention' | 'all'
   /** 静默时段（本地分钟 0-1439）；两者都非空时生效。 */
   quiet_start_minute: number | null
   quiet_end_minute: number | null
@@ -76,6 +78,7 @@ export interface BotTarget {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat: boolean
+  chatTrigger: 'mention' | 'all'
   quietStartMinute: number | null
   quietEndMinute: number | null
   createdAt: string
@@ -107,6 +110,8 @@ export interface BotDelivery {
   attempts: number
   nextAttemptAt: string | null
   lastError: string | null
+  /** 服务端按 last_error 计算的中文提示；未知错误为 null。 */
+  lastErrorHint?: string | null
   externalId: string | null
   createdAt: string
   sentAt: string | null
@@ -137,6 +142,7 @@ export interface BotPublishJob {
   status: BotPublishRow['status']
   attempts: number
   lastError: string | null
+  lastErrorHint?: string | null
   createdAt: string
   sentAt: string | null
 }
@@ -151,6 +157,10 @@ export interface OutboundContent {
   text: string
   /** 单次最多 5 个；QQ 适配器只接受文本。 */
   media?: OutboundMedia[]
+  /** 群聊引用回复的平台消息 ID（可选；私聊不传）。 */
+  replyTo?: string
+  /** Telegram 使用 HTML parse_mode；其余平台忽略。 */
+  textMode?: 'plain' | 'html'
 }
 
 /** 只读交互按钮；平台适配器负责编码，Service 只认动作 ID。 */
@@ -163,6 +173,8 @@ export interface BotButton {
 
 export interface BotReplyOptions {
   buttons?: BotButton[]
+  /** Telegram 使用 HTML parse_mode；其余平台忽略。 */
+  textMode?: 'plain' | 'html'
 }
 
 export interface SendResult {
@@ -172,10 +184,20 @@ export interface SendResult {
   partial?: boolean
 }
 
-export type ChatTrigger = 'direct' | 'mention' | 'reply'
+export type ChatTrigger = 'direct' | 'mention' | 'reply' | 'message'
+
+/** 平台入站图片：只保存平台侧引用，实际下载由适配器 loadImage 完成。 */
+export interface BotInboundImage {
+  /** 平台文件 ID / 附件 URL 等适配器可解析的引用。 */
+  ref: string
+  mime: string
+  name?: string
+  /** 平台声明的字节数（可选，用于提前拒绝超限文件）。 */
+  size?: number
+}
 
 export type InboundVerification =
-  | { kind: 'ignored'; ackBody?: unknown; detail?: string }
+  | { kind: 'ignored'; ackBody?: unknown; detail?: string; eventId?: string }
   | { kind: 'challenge'; body: unknown }
   | { kind: 'rejected'; status: number; code: string }
   | {
@@ -203,6 +225,8 @@ export type InboundVerification =
       text: string
       isDirect: boolean
       chatTrigger: ChatTrigger
+      /** 入站图片（可选）；由 Service 决定是否下载并交给 AI。 */
+      image?: BotInboundImage
       ackBody?: unknown
       reply: (text: string, options?: BotReplyOptions) => Promise<void>
     }
@@ -220,6 +244,20 @@ export type InboundVerification =
       reply: (text: string, options?: BotReplyOptions) => Promise<void>
     }
 
+export interface BotHealthItem {
+  name: string
+  ok: boolean
+  /** 脱敏细节（如平台用户名/错误码），不包含 Token 或内部 URL。 */
+  detail: string
+}
+
+export interface BotHealthCheck {
+  ok: boolean
+  items: BotHealthItem[]
+  /** 自检时间（ISO 8601）；由 Service 注入，adapter 可不返回。 */
+  checkedAt?: string
+}
+
 export interface BotAdapter {
   platform: BotPlatform
   /** 校验公开配置与密钥，返回错误码数组；空数组表示通过。 */
@@ -230,8 +268,17 @@ export interface BotAdapter {
     botId: string
     headers: Record<string, string | string[] | undefined>
     body: Buffer
+    /** 目标群聊触发策略解析器；未提供等价 mention（仅 @/回复）。 */
+    chatTriggerFor?: (targetExternalId: string) => 'mention' | 'all'
   }): Promise<InboundVerification>
   send(target: BotTargetRow, content: OutboundContent): Promise<SendResult>
+  /** 只读连接自检；未实现时管理页显示不支持。 */
+  check?(input: { botId: string; appOrigin: string }): Promise<BotHealthCheck>
+  /** 下载入站图片（固定平台域名）；调用方负责 mime 白名单与大小上限。 */
+  loadImage?(
+    image: BotInboundImage,
+    options: { maxBytes: number; timeoutMs?: number },
+  ): Promise<{ mime: string; data: Buffer }>
 }
 
 export interface BotCommandProviders {
@@ -252,6 +299,13 @@ export interface BotMediaStore {
 /** AI 对话提供方（v0.5.1 通过 OpenCode 本地 HTTP API）。 */
 export type BotAiMode = 'task' | 'chat'
 
+/** 入站图片转成 OpenCode prompt files 的 data URL；只允许图片 mime。 */
+export interface BotAiImage {
+  mime: string
+  base64: string
+  name?: string
+}
+
 export interface BotAi {
   chat(input: {
     botId: string
@@ -260,6 +314,8 @@ export interface BotAi {
     /** task=/ask 任务导向；chat=普通消息对话导向。 */
     mode: BotAiMode
     prompt: string
+    /** 可选图片（F9）；未启用/不支持时由调用方降级为纯文本。 */
+    image?: BotAiImage
   }): Promise<string>
   /** 每轮对话后滚动摘要长期记忆；未实现时服务端保留旧摘要。 */
   summarizeMemory?(input: {
@@ -306,6 +362,40 @@ export interface BotInboundTarget {
   lastSeenAt: string
 }
 
+/** 诊断事件结果：received=已接收待处理，其余为最终处理结果。 */
+export type BotEventOutcome = 'received' | 'ok' | 'denied' | 'rate_limited' | 'ignored' | 'error'
+
+export interface BotEventItem {
+  eventId: string
+  kind: string | null
+  outcome: string | null
+  detail: string | null
+  targetExternalId: string | null
+  userId: string | null
+  receivedAt: string
+  updatedAt: string | null
+}
+
+/** 角色卡管理元数据（不含正文）。 */
+export interface BotRoleSummary {
+  userId: string
+  userName: string | null
+  name: string
+  enabled: boolean
+  promptLength: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 长期记忆管理元数据（不含正文）。 */
+export interface BotMemorySummary {
+  userId: string
+  userName: string | null
+  summaryLength: number
+  createdAt: string
+  updatedAt: string
+}
+
 export type GatewayState = 'disabled' | 'connecting' | 'connected' | 'reconnecting' | 'error'
 
 export interface BotGatewayStatus {
@@ -319,6 +409,7 @@ export interface BotMetrics {
   publishes: { total: number; sent: number; failed: number }
   events: number
   lastError: string | null
+  lastErrorHint?: string | null
   lastSentAt: string | null
 }
 
@@ -364,5 +455,5 @@ export interface BotSummary {
   gateway: BotGatewayStatus
 }
 
-export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask', 'role'] as const
+export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'ask', 'role', 'reset', 'forget'] as const
 export type BotCommandName = (typeof BOT_COMMANDS)[number]

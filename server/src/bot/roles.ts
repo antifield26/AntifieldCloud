@@ -1,9 +1,10 @@
 /**
  * 私聊 Chat 角色卡存储：每个 Bot×用户一张卡，DB 为唯一权威来源。
  * 安全边界：角色卡正文不通过 HTTP API/UI 暴露，只由 /role show 返回给本人；
- * 正文只允许改变人设/语气，不能移除提示词中的固定安全边界。
+ * 管理接口只返回名字/长度/启停/时间等元数据；正文只允许改变人设/语气，不能移除提示词中的固定安全边界。
  */
 import type { DatabaseSync } from 'node:sqlite'
+import type { BotRoleSummary } from './types.ts'
 
 export const ROLE_NAME_MAX = 32
 export const ROLE_PROMPT_MAX = 1000
@@ -38,6 +39,15 @@ interface RoleRow {
   name: string
   prompt: string
   enabled: number
+  created_at: string
+  updated_at: string
+}
+
+interface RoleListRow {
+  user_id: string
+  name: string
+  enabled: number
+  prompt_length: number
   created_at: string
   updated_at: string
 }
@@ -130,5 +140,33 @@ export class BotChatRoleStore {
       .prepare('DELETE FROM bot_chat_roles WHERE bot_id = ? AND user_id = ?')
       .run(botId, userId)
     return Number(result.changes) > 0
+  }
+
+  /** 管理页元数据分页：只返回名字/长度/启停/时间，不返回角色设定正文。 */
+  list(botId: string, limit = 20, offset = 0): BotRoleSummary[] {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
+    const safeOffset = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0))
+    const rows = this.db
+      .prepare(
+        `SELECT user_id, name, enabled, length(prompt) AS prompt_length, created_at, updated_at
+         FROM bot_chat_roles WHERE bot_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(botId, safeLimit, safeOffset) as unknown as RoleListRow[]
+    return rows.map((row) => ({
+      userId: row.user_id,
+      userName: null,
+      name: row.name,
+      enabled: row.enabled === 1,
+      promptLength: row.prompt_length,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+  }
+
+  count(botId: string): number {
+    const row = this.db
+      .prepare('SELECT COUNT(*) AS c FROM bot_chat_roles WHERE bot_id = ?')
+      .get(botId) as { c: number }
+    return row.c
   }
 }

@@ -289,6 +289,7 @@ test('Discord Gateway：MESSAGE_CREATE 解析频道/DM/mention/reply 并忽略 b
     assert.deepEqual(byId.get('dc_msg:msg-mention'), {
       botId: 'bot-1',
       eventId: 'dc_msg:msg-mention',
+      messageId: 'msg-mention',
       targetExternalId: 'chan-1',
       targetKind: 'channel',
       userId: 'user-1',

@@ -5,7 +5,7 @@
  * - 只访问 config.opencodeUrl，使用 Basic Auth；密码不进入日志、错误消息或返回值。
  * - 新建会话时用 deny-all 的 OpenCode Permission.Ruleset 关闭工具，避免 Bot 用户借 AI 执行主机操作；
  *   仅当服务端明确以 400 拒绝 permissions 字段时降级为默认权限，并记录“未隔离”警告，绝不假装已隔离。
- * - 只返回 assistant 的 text 内容段，忽略 reasoning/tool；单次回复截断到 4000 字符，平台层还会再处理。
+ * - 只返回 assistant 的 text 内容段，忽略 reasoning/tool；单次回复上限由 BOT_AI_MAX_REPLY_CHARS 控制，平台层再按各自上限分段。
  *
  * 兼容性假设（依据 OpenCode 服务端 v2.1.1 的 OpenAPI 快照）：
  * - POST /api/session 返回 { data: { id } }，请求体支持 title/model/permissions；
@@ -16,11 +16,11 @@
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
-import type { BotAi, BotAiMode } from './types.ts'
+import type { BotAi, BotAiImage, BotAiMode } from './types.ts'
 import { AppError } from '../util/errors.ts'
 
-/** 返回给 Bot 服务的文本上限；更长的平台截断由 service 负责。 */
-const MAX_REPLY_CHARS = 4000
+/** 图片 data URL 仅接受这些 mime；其余由上层降级为纯文本。 */
+const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 /** wait 接口不可用时的轮询间隔，避免忙等。 */
 const POLL_INTERVAL_MS = 500
 /** OpenCode Permission.Ruleset：拒绝一切工具动作。 */
@@ -94,6 +94,8 @@ export class OpenCodeBotAi implements BotAi {
   private readonly baseUrl: string
   private readonly basicAuth: string
   private readonly timeoutMs: number
+  /** AI 文本回答上限（BOT_AI_MAX_REPLY_CHARS）；平台层再按各自上限分段。 */
+  private readonly maxReplyChars: number
   private readonly retentionDays: number
   /** 仅在 provider 与 model 都配置时传入；否则使用 OpenCode 默认模型。 */
   private readonly modelRef: { providerID: string; id: string } | null
@@ -114,6 +116,8 @@ export class OpenCodeBotAi implements BotAi {
     ).toString('base64')}`
     const timeoutSeconds = Number(config.botAiTimeoutSeconds)
     this.timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? Math.round(timeoutSeconds * 1000) : 60_000
+    const maxReplyChars = Number(config.botAiMaxReplyChars)
+    this.maxReplyChars = Number.isFinite(maxReplyChars) && maxReplyChars > 0 ? Math.floor(maxReplyChars) : 4000
     const retentionDays = Number(config.botAiSessionRetentionDays)
     this.retentionDays = Number.isFinite(retentionDays) && retentionDays > 0 ? retentionDays : 7
 
@@ -134,6 +138,7 @@ export class OpenCodeBotAi implements BotAi {
     userId: string
     mode: BotAiMode
     prompt: string
+    image?: BotAiImage
   }): Promise<string> {
     const target: ChatTarget = {
       botId: input.botId,
@@ -141,7 +146,7 @@ export class OpenCodeBotAi implements BotAi {
       userId: input.userId,
     }
     const sessionId = await this.ensureSession(target, input.mode)
-    await this.sendPrompt(sessionId, input.prompt)
+    await this.sendPrompt(sessionId, input.prompt, input.image)
 
     const waited = await this.waitForIdle(sessionId)
     let text: string | null
@@ -154,7 +159,7 @@ export class OpenCodeBotAi implements BotAi {
     }
 
     this.touch(target, sessionId)
-    return text.slice(0, MAX_REPLY_CHARS)
+    return text.slice(0, this.maxReplyChars)
   }
 
   /**
@@ -260,10 +265,20 @@ export class OpenCodeBotAi implements BotAi {
     }
   }
 
-  private async sendPrompt(sessionId: string, prompt: string): Promise<void> {
-    const result = await this.request('POST', `/api/session/${encodeURIComponent(sessionId)}/prompt`, {
-      text: prompt,
-    })
+  private async sendPrompt(sessionId: string, prompt: string, image?: BotAiImage): Promise<void> {
+    const body: Record<string, unknown> = { text: prompt }
+    if (image) {
+      const mime = typeof image.mime === 'string' ? image.mime.toLowerCase() : ''
+      if (!IMAGE_MIME_ALLOWLIST.has(mime)) {
+        throw new AppError(400, 'bot_ai_image_unsupported', 'AI 不支持该图片类型')
+      }
+      if (!/^[A-Za-z0-9+/=]+$/.test(image.base64)) {
+        throw new AppError(400, 'bot_ai_image_invalid', '图片编码无效')
+      }
+      // OpenCode prompt files 接受 uri；data URL 由上游解析为 inline 附件（v0.5.7 已在生产验证）。
+      body.files = [{ uri: `data:${mime};base64,${image.base64}`, name: image.name ?? 'image' }]
+    }
+    const result = await this.request('POST', `/api/session/${encodeURIComponent(sessionId)}/prompt`, body)
     if (!this.isOk(result.status)) throw this.httpError(result.status)
   }
 

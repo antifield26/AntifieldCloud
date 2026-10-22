@@ -1,13 +1,17 @@
 /**
- * Discord 适配器：Interactions Endpoint（Ed25519）、命令与消息组件交互、deferred 响应、频道文本/多附件发送。
+ * Discord 适配器：Interactions Endpoint（Ed25519）、命令与消息组件交互、deferred 响应、频道文本分段/多附件发送。
  * 安全边界：验证原始 body 签名与时间戳；Bot Token 仅用于 Authorization，不记录；交互 follow-up 只用 interaction token。
- * 普通频道消息的 Gateway 入站由独立模块处理，本适配器只覆盖 HTTP Interactions。
+ * 普通频道消息的 Gateway 入站由独立模块处理，本适配器只覆盖 HTTP Interactions；
+ * Telegram 之外的平台不解释 parse_mode，textMode 一律忽略。
  */
 import { createPublicKey, verify as verifySignature } from 'node:crypto'
 import type {
   BotAction,
   BotAdapter,
   BotButton,
+  BotHealthCheck,
+  BotHealthItem,
+  BotInboundImage,
   BotReplyOptions,
   BotSecret,
   BotTargetRow,
@@ -15,13 +19,24 @@ import type {
   OutboundContent,
   SendResult,
 } from '../types.ts'
-import { BotPlatformError, fetchJson, headerValue, parseJsonBody } from './http.ts'
+import { splitForPlatform } from '../text.ts'
+import {
+  BotPlatformError,
+  downloadImage,
+  fetchJson,
+  headerValue,
+  markPartialError,
+  normalizeImageMime,
+  parseJsonBody,
+} from './http.ts'
 
 const DISCORD_API = 'https://discord.com/api/v10'
 const TEXT_LIMIT = 2000
 const COMMAND_TEXT_MAX = 2048
 const MAX_MEDIA_FILES = 5
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
+/** 入站图片允许下载的固定 CDN 域名。 */
+const DISCORD_IMAGE_HOSTS = ['cdn.discordapp.com', 'media.discordapp.net'] as const
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null
@@ -76,6 +91,27 @@ function attachmentIds(body: unknown, count: number, fallback: string | null): s
   }
   if (!fallback) return []
   return Array.from({ length: count }, () => fallback)
+}
+
+/** ignored 事件的诊断 ID：交互事件 ID（拿不到则不带）。 */
+function ignoredEvent(payload: Record<string, unknown>): InboundVerification {
+  const id = typeof payload.id === 'string' ? payload.id.trim() : ''
+  return id ? { kind: 'ignored', eventId: `dc:${id}` } : { kind: 'ignored' }
+}
+
+/** 连接自检失败时使用的固定脱敏错误码。 */
+function discordHealthError(error: unknown): string {
+  const status = error instanceof BotPlatformError ? error.status : 0
+  if (status === 0) return 'network_error'
+  if (status === 401 || status === 403) return 'discord_unauthorized'
+  const text = `${error instanceof BotPlatformError ? error.code : ''}`.toLowerCase()
+  if (text.includes('unauthorized') || text.includes('401')) return 'discord_unauthorized'
+  return 'discord_api_error'
+}
+
+/** 引用回复失效（被引用消息已删除/不可见）时平台返回 400/404。 */
+function isReferenceRejected(error: unknown): boolean {
+  return error instanceof BotPlatformError && (error.status === 400 || error.status === 404)
 }
 
 export class DiscordAdapter implements BotAdapter {
@@ -150,7 +186,7 @@ export class DiscordAdapter implements BotAdapter {
     if (type === 1) return { kind: 'challenge', body: { type: 1 } }
     if (type === 2) return this.parseCommand(payload)
     if (type === 3) return this.parseComponent(payload)
-    return { kind: 'ignored' }
+    return ignoredEvent(payload)
   }
 
   private parseCommand(payload: Record<string, unknown>): InboundVerification {
@@ -189,7 +225,7 @@ export class DiscordAdapter implements BotAdapter {
     const author = user ?? (member ? asRecord(member.user) : null)
     const customId = data && typeof data.custom_id === 'string' ? data.custom_id : ''
     const action = actionFromCustomId(customId)
-    if (!action) return { kind: 'ignored' }
+    if (!action) return ignoredEvent(payload)
     if (!author || typeof payload.channel_id !== 'string' || typeof payload.id !== 'string') {
       return { kind: 'rejected', status: 400, code: 'missing_fields' }
     }
@@ -232,33 +268,87 @@ export class DiscordAdapter implements BotAdapter {
       if (typeof opened?.id !== 'string' || !opened.id) throw new BotPlatformError(200, 'discord_dm_channel_missing')
       channelId = opened.id
     }
+    // 私聊不引用入站消息；频道引用失败时降级一次无引用重发。
+    const replyTo = content.replyTo && target.kind !== 'user' ? content.replyTo : undefined
     const media = content.media ?? []
-    if (media.length === 0) {
+    if (media.length === 0) return this.sendText(channelId, content.text, replyTo, auth)
+    if (media.length > MAX_MEDIA_FILES) throw new BotPlatformError(400, 'too_many_media')
+    const firstPayload: Record<string, unknown> = { content: content.text.slice(0, TEXT_LIMIT) }
+    if (replyTo) firstPayload.message_reference = { message_id: replyTo, fail_if_not_exists: false }
+    const buildForm = (payload: Record<string, unknown>): FormData => {
+      const form = new FormData()
+      form.set('payload_json', JSON.stringify(payload))
+      media.forEach((item, index) => {
+        form.set(`files[${index}]`, new Blob([item.data as unknown as ArrayBuffer], { type: item.mime }), item.filename)
+      })
+      return form
+    }
+    const postMessage = async (payload: Record<string, unknown>): Promise<unknown> => {
       const { body } = await fetchJson(
         `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`,
-        {
-          method: 'POST',
-          headers: { ...auth, 'content-type': 'application/json' },
-          body: JSON.stringify({ content: content.text.slice(0, TEXT_LIMIT) }),
-        },
+        { method: 'POST', headers: auth, body: buildForm(payload) },
         { fetch: this.fetchImpl },
       )
-      return { externalId: messageId(body) }
+      return body
     }
-    if (media.length > MAX_MEDIA_FILES) throw new BotPlatformError(400, 'too_many_media')
-    const form = new FormData()
-    form.set('payload_json', JSON.stringify({ content: content.text.slice(0, TEXT_LIMIT) }))
-    media.forEach((item, index) => {
-      form.set(`files[${index}]`, new Blob([item.data as unknown as ArrayBuffer], { type: item.mime }), item.filename)
-    })
-    const { body } = await fetchJson(
-      `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`,
-      { method: 'POST', headers: auth, body: form },
-      { fetch: this.fetchImpl },
-    )
+    let body: unknown
+    try {
+      body = await postMessage(firstPayload)
+    } catch (error) {
+      if (!replyTo || !isReferenceRejected(error)) throw error
+      body = await postMessage({ content: content.text.slice(0, TEXT_LIMIT) })
+    }
     const externalId = messageId(body)
     if (media.length === 1) return { externalId }
     return { externalId, externalIds: attachmentIds(body, media.length, externalId) }
+  }
+
+  /** 文本分段发送：引用只挂在首段，失败降级一次无引用重发；中途失败带已发送 ID。 */
+  private async sendText(
+    channelId: string,
+    text: string,
+    replyTo: string | undefined,
+    auth: Record<string, string>,
+  ): Promise<SendResult> {
+    const parts = splitForPlatform('discord', text)
+    if (parts.length === 0) return { externalId: null }
+    const ids: string[] = []
+    let reference = replyTo
+    try {
+      for (const part of parts) {
+        const post = async (withReference: boolean): Promise<unknown> => {
+          const payload: Record<string, unknown> = { content: part.text }
+          if (withReference && reference) {
+            payload.message_reference = { message_id: reference, fail_if_not_exists: false }
+          }
+          const { body } = await fetchJson(
+            `${DISCORD_API}/channels/${encodeURIComponent(channelId)}/messages`,
+            {
+              method: 'POST',
+              headers: { ...auth, 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            },
+            { fetch: this.fetchImpl },
+          )
+          return body
+        }
+        let body: unknown
+        try {
+          body = await post(true)
+        } catch (error) {
+          if (!reference || !isReferenceRejected(error)) throw error
+          reference = undefined
+          body = await post(false)
+        }
+        const id = messageId(body)
+        if (id) ids.push(id)
+      }
+    } catch (error) {
+      throw markPartialError(error, ids, 'text')
+    }
+    if (ids.length === 0) return { externalId: null }
+    if (ids.length === 1) return { externalId: ids[0] ?? null }
+    return { externalId: ids[0] ?? null, externalIds: ids }
   }
 
   /** 按钮编码为 Discord action row（type 1），按钮为 secondary（style 2）。 */
@@ -277,6 +367,7 @@ export class DiscordAdapter implements BotAdapter {
     return [{ type: 1, components: row }]
   }
 
+  /** follow-up 文本按 Discord 上限分段，按钮只在最后一段；中途失败带已发送 ID。 */
   private async interactionFollowUp(
     applicationId: string,
     interactionToken: string,
@@ -284,17 +375,70 @@ export class DiscordAdapter implements BotAdapter {
     options?: BotReplyOptions,
   ): Promise<void> {
     if (!applicationId || !interactionToken) return
-    const payload: Record<string, unknown> = { content: text.slice(0, TEXT_LIMIT) }
-    const components = this.buttonComponents(options?.buttons)
-    if (components) payload.components = components
-    await fetchJson(
-      `${DISCORD_API}/webhooks/${applicationId}/${interactionToken}`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload),
-      },
-      { fetch: this.fetchImpl },
-    )
+    const parts = splitForPlatform('discord', text)
+    if (parts.length === 0) return
+    const ids: string[] = []
+    try {
+      for (const part of parts) {
+        const payload: Record<string, unknown> = { content: part.text }
+        if (part.index === part.total) {
+          const components = this.buttonComponents(options?.buttons)
+          if (components) payload.components = components
+        }
+        const { body } = await fetchJson(
+          `${DISCORD_API}/webhooks/${applicationId}/${interactionToken}`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          },
+          { fetch: this.fetchImpl },
+        )
+        const id = messageId(body)
+        if (id) ids.push(id)
+      }
+    } catch (error) {
+      throw markPartialError(error, ids, 'text')
+    }
+  }
+
+  /** 连接自检：GET /users/@me 校验 Bot Token。不抛原始异常，也不回显 Token。 */
+  async check(_input: { botId: string; appOrigin: string }): Promise<BotHealthCheck> {
+    const items: BotHealthItem[] = []
+    try {
+      const { body } = await fetchJson(
+        `${DISCORD_API}/users/@me`,
+        { method: 'GET', headers: { authorization: `Bot ${this.secret.token}` } },
+        { fetch: this.fetchImpl },
+      )
+      const record = asRecord(body)
+      const username = record && typeof record.username === 'string' ? record.username : ''
+      const id = record && typeof record.id === 'string' ? record.id : ''
+      if (!username && !id) throw new BotPlatformError(200, 'invalid_response')
+      items.push({
+        name: 'Bot 账号',
+        ok: true,
+        detail: username ? `@${username}${id ? `（${id}）` : ''}` : id,
+      })
+    } catch (error) {
+      items.push({ name: 'Bot 账号', ok: false, detail: discordHealthError(error) })
+      return { ok: false, items }
+    }
+    return { ok: true, items }
+  }
+
+  /** 下载入站图片：只允许 Discord CDN 固定域名，mime 与大小上限由调用方传入。 */
+  async loadImage(
+    image: BotInboundImage,
+    options: { maxBytes: number; timeoutMs?: number },
+  ): Promise<{ mime: string; data: Buffer }> {
+    if (!normalizeImageMime(image.mime)) throw new BotPlatformError(400, 'image_unsupported')
+    return downloadImage({
+      image,
+      maxBytes: options.maxBytes,
+      timeoutMs: options.timeoutMs,
+      fetch: this.fetchImpl,
+      allowedHosts: DISCORD_IMAGE_HOSTS,
+    })
   }
 }

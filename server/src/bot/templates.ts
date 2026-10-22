@@ -58,6 +58,8 @@ export function helpText(platform: string): string {
       '/files <关键词> 文件元数据（最多 10 条）',
       '/ask <问题> AI 对话（需管理员启用并限流）',
       '/role 角色设置（私聊）',
+      '/reset 重置当前对话（保留长期记忆）',
+      '/forget confirm 清除长期记忆与全部对话',
       '普通消息 Chat：目标开启允许 Chat 后，私聊直接对话；群/频道 @Bot 或回复 Bot 触发。',
       '除 /role 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
     ].join('\n'),

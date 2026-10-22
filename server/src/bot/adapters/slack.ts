@@ -1,23 +1,39 @@
 /**
  * Slack 适配器：Events API / Slash Command 的 HMAC 签名校验、URL challenge、普通消息 Chat 与多文件上传。
  * 安全边界：Signing Secret 只用于验签；Bot Token 只进 Authorization；response_url 仅允许 hooks.slack.com。
- * 普通频道消息仅在 app_mention 或明确 <@BOTID> 时进入 Chat，DM 直接进入 Chat；Bot 自身消息一律忽略。
+ * 普通频道消息仅在 app_mention、明确 <@BOTID> 或目标策略为“全部消息”时进入 Chat，DM 直接进入 Chat；
+ * Bot 自身消息一律忽略。频道回复使用 thread_ts 留在原消息线程，线程失效时降级一次无 thread_ts 重发。
  */
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type {
   BotAdapter,
+  BotHealthCheck,
+  BotHealthItem,
+  BotInboundImage,
   BotSecret,
   BotTargetRow,
+  ChatTrigger,
   InboundVerification,
   OutboundContent,
   OutboundMedia,
   SendResult,
 } from '../types.ts'
-import { BotPlatformError, fetchJson, headerValue, parseJsonBody } from './http.ts'
+import { splitForPlatform } from '../text.ts'
+import {
+  BotPlatformError,
+  downloadImage,
+  fetchJson,
+  headerValue,
+  markPartialError,
+  normalizeImageMime,
+  parseJsonBody,
+} from './http.ts'
 
 const SLACK_API = 'https://slack.com/api'
 const TEXT_LIMIT = 4000
 const COMMAND_TEXT_MAX = 2048
+/** 入站图片只允许从 Slack 文件域名下载。 */
+const SLACK_IMAGE_HOSTS = ['files.slack.com'] as const
 const BOT_USER_CACHE_TTL_MS = 60 * 60 * 1000
 const BOT_USER_FAILURE_TTL_MS = 30 * 1000
 
@@ -94,6 +110,51 @@ function slackError(body: Record<string, unknown> | null): string {
   return 'slack_error'
 }
 
+/** 提取入站图片：event.files 中第一个 image/* 文件；ref 用 url_private。 */
+function extractInboundImage(event: Record<string, unknown>): BotInboundImage | undefined {
+  const files = event.files
+  if (!Array.isArray(files)) return undefined
+  for (const raw of files) {
+    const file = asRecord(raw)
+    if (!file) continue
+    const mime = typeof file.mimetype === 'string' ? file.mimetype.trim().toLowerCase() : ''
+    const ref = typeof file.url_private === 'string' ? file.url_private.trim() : ''
+    if (!mime.startsWith('image/') || !ref) continue
+    const image: BotInboundImage = { ref, mime }
+    const name = typeof file.name === 'string' ? file.name : typeof file.title === 'string' ? file.title : ''
+    if (name) image.name = name
+    const size = Number(file.size)
+    if (Number.isFinite(size) && size > 0) image.size = size
+    return image
+  }
+  return undefined
+}
+
+/** ignored 事件的诊断 ID：Slack event_id（拿不到则不带）。 */
+function ignoredEvent(payload: Record<string, unknown>): InboundVerification {
+  const eventId = typeof payload.event_id === 'string' ? payload.event_id.trim() : ''
+  return eventId ? { kind: 'ignored', eventId: `slack:${eventId}` } : { kind: 'ignored' }
+}
+
+/** 连接自检失败时使用的固定脱敏错误码。 */
+function slackHealthError(error: unknown): string {
+  const status = error instanceof BotPlatformError ? error.status : 0
+  if (status === 0) return 'network_error'
+  const code = error instanceof BotPlatformError ? error.code : ''
+  if (/invalid_auth|not_authed|invalid_token|account_inactive|token_revoked|team_disabled/i.test(code)) {
+    return 'slack_invalid_auth'
+  }
+  if (status === 401 || status === 403) return 'slack_invalid_auth'
+  return 'slack_api_error'
+}
+
+/** 线程已失效（被删除/不可见）时 Slack 返回 thread_not_found 等错误。 */
+function isMissingThreadError(error: unknown): boolean {
+  const code = error instanceof BotPlatformError ? error.code : ''
+  const message = error instanceof Error ? error.message : ''
+  return /thread.*(not_found|invalid)|(not_found|invalid).*thread/i.test(`${code} ${message}`)
+}
+
 export class SlackAdapter implements BotAdapter {
   readonly platform = 'slack' as const
   private readonly config: Record<string, unknown>
@@ -143,6 +204,7 @@ export class SlackAdapter implements BotAdapter {
     botId: string
     headers: Record<string, string | string[] | undefined>
     body: Buffer
+    chatTriggerFor?: (targetExternalId: string) => 'mention' | 'all'
   }): Promise<InboundVerification> {
     const timestamp = headerValue(input.headers, 'x-slack-request-timestamp')
     const signature = headerValue(input.headers, 'x-slack-signature')
@@ -166,8 +228,8 @@ export class SlackAdapter implements BotAdapter {
     if (payload.type === 'url_verification' && typeof payload.challenge === 'string') {
       return { kind: 'challenge', body: { challenge: payload.challenge } }
     }
-    if (payload.type !== 'event_callback') return { kind: 'ignored' }
-    return this.parseEvent(payload)
+    if (payload.type !== 'event_callback') return ignoredEvent(payload)
+    return this.parseEvent(payload, input.chatTriggerFor)
   }
 
   private parseSlashCommand(form: URLSearchParams): InboundVerification {
@@ -205,23 +267,31 @@ export class SlackAdapter implements BotAdapter {
       text,
       isDirect: channelId.startsWith('D'),
       reply: async (replyText: string) => {
-        await fetchJson(
-          responseUrl,
-          {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ text: replyText.slice(0, TEXT_LIMIT), response_type: 'in_channel' }),
-          },
-          { fetch: this.fetchImpl },
-        )
+        // response_url 为一次性回调地址，长回复按 Slack 上限分段顺序 POST。
+        const parts = splitForPlatform('slack', replyText)
+        for (const part of parts) {
+          await fetchJson(
+            responseUrl,
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ text: part.text, response_type: 'in_channel' }),
+            },
+            { fetch: this.fetchImpl },
+          )
+        }
       },
     }
   }
 
-  private async parseEvent(payload: Record<string, unknown>): Promise<InboundVerification> {
+  private async parseEvent(
+    payload: Record<string, unknown>,
+    chatTriggerFor?: (targetExternalId: string) => 'mention' | 'all',
+  ): Promise<InboundVerification> {
     const event = asRecord(payload.event)
-    if (!event || (event.type !== 'message' && event.type !== 'app_mention')) return { kind: 'ignored' }
-    if (event.subtype || typeof event.bot_id === 'string') return { kind: 'ignored' }
+    if (!event || (event.type !== 'message' && event.type !== 'app_mention')) return ignoredEvent(payload)
+    if (event.subtype || typeof event.bot_id === 'string') return ignoredEvent(payload)
+    const image = extractInboundImage(event)
     const rawText = typeof event.text === 'string' ? event.text.trim() : ''
     const channelId = typeof event.channel === 'string' ? event.channel : ''
     const userId = typeof event.user === 'string' ? event.user : ''
@@ -235,7 +305,9 @@ export class SlackAdapter implements BotAdapter {
     if (!eventId) return { kind: 'rejected', status: 400, code: 'missing_event_id' }
     const channelType = typeof event.channel_type === 'string' ? event.channel_type : ''
     const isDirect = channelType === 'im' || channelId.startsWith('D')
-    const command = event.type === 'message' ? extractCommand(rawText) : null
+    // 频道回复留在线程：用入站消息 ts 作为 thread_ts；私聊不带线程。
+    const threadTs = !isDirect && typeof event.ts === 'string' && event.ts ? event.ts : null
+    const command = event.type === 'message' && rawText ? extractCommand(rawText) : null
     if (command) {
       return {
         kind: 'command',
@@ -247,25 +319,34 @@ export class SlackAdapter implements BotAdapter {
         text: `/${command.name}${command.args.length ? ` ${command.args.join(' ')}` : ''}`.slice(0, COMMAND_TEXT_MAX),
         isDirect,
         reply: async (replyText: string) => {
-          await this.sendMessage(channelId, replyText.slice(0, TEXT_LIMIT))
+          await this.sendMessage(channelId, replyText, threadTs)
         },
       }
     }
     if (event.type === 'app_mention') {
       const text = stripLeadingMentions(rawText)
-      if (!text) return { kind: 'ignored' }
-      return this.chatResult(channelId, userId, eventId, text, false, 'mention')
+      if (!text && !image) return ignoredEvent(payload)
+      return this.chatResult(channelId, userId, eventId, text, false, 'mention', image, threadTs)
     }
     if (isDirect) {
       const text = stripLeadingMentions(rawText)
-      if (!text) return { kind: 'ignored' }
-      return this.chatResult(channelId, userId, eventId, text, true, 'direct')
+      if (!text && !image) return ignoredEvent(payload)
+      return this.chatResult(channelId, userId, eventId, text, true, 'direct', image, null)
     }
     const botUserId = await this.resolveBotUserId(payload)
-    if (!containsBotMention(rawText, botUserId)) return { kind: 'ignored' }
+    const mentioned = containsBotMention(rawText, botUserId)
+    if (!mentioned) {
+      const text = stripLeadingMentions(rawText)
+      if (!text && !image) return ignoredEvent(payload)
+      // 目标策略为“全部消息”时，未 mention 的频道普通消息也进入 Chat。
+      if (chatTriggerFor?.(channelId) === 'all') {
+        return this.chatResult(channelId, userId, eventId, text, false, 'message', image, threadTs)
+      }
+      return ignoredEvent(payload)
+    }
     const text = stripLeadingMentions(rawText)
-    if (!text) return { kind: 'ignored' }
-    return this.chatResult(channelId, userId, eventId, text, false, 'mention')
+    if (!text && !image) return ignoredEvent(payload)
+    return this.chatResult(channelId, userId, eventId, text, false, 'mention', image, threadTs)
   }
 
   private chatResult(
@@ -274,9 +355,11 @@ export class SlackAdapter implements BotAdapter {
     eventId: string,
     text: string,
     isDirect: boolean,
-    chatTrigger: 'direct' | 'mention',
+    chatTrigger: ChatTrigger,
+    image?: BotInboundImage,
+    threadTs?: string | null,
   ): InboundVerification {
-    return {
+    const result: Extract<InboundVerification, { kind: 'chat' }> = {
       kind: 'chat',
       eventId: `slack:${eventId}`,
       targetExternalId: channelId,
@@ -287,9 +370,11 @@ export class SlackAdapter implements BotAdapter {
       isDirect,
       chatTrigger,
       reply: async (replyText: string) => {
-        await this.sendMessage(channelId, replyText.slice(0, TEXT_LIMIT))
+        await this.sendMessage(channelId, replyText, threadTs ?? null)
       },
     }
+    if (image) result.image = image
+    return result
   }
 
   /** 优先公开配置；其次事件 authorizations；最后按 token 缓存 auth.test 结果。 */
@@ -325,23 +410,22 @@ export class SlackAdapter implements BotAdapter {
 
   async send(target: BotTargetRow, content: OutboundContent): Promise<SendResult> {
     const media = content.media ?? []
+    const threadTs = content.replyTo ?? null
     if (media.length === 0) {
-      return this.sendMessage(target.external_id, content.text.slice(0, TEXT_LIMIT))
+      return this.sendMessage(target.external_id, content.text, threadTs)
     }
+    // 附件消息保持既有行为：正文作为 initial_comment，限长后随文件一起提交。
     const text = content.text.slice(0, TEXT_LIMIT)
     const fileIds: string[] = []
     try {
       for (const item of media) {
         fileIds.push(await this.uploadFile(item))
       }
-      const completed = await this.completeUpload(fileIds, media, target.external_id, text)
+      const completed = await this.completeUpload(fileIds, media, target.external_id, text, threadTs)
       if (media.length === 1) return { externalId: fileIds[0] ?? null }
       return { externalId: fileIds[0] ?? null, externalIds: completed ?? fileIds }
     } catch (error) {
-      if (error && typeof error === 'object') {
-        ;(error as { sentExternalIds?: string[] }).sentExternalIds = fileIds
-      }
-      throw error
+      throw markPartialError(error, fileIds, 'media')
     }
   }
 
@@ -375,28 +459,41 @@ export class SlackAdapter implements BotAdapter {
     return uploadBody.file_id
   }
 
-  /** 完成上传并挂到频道；返回平台响应中的文件 ID（若存在）。 */
+  /** 完成上传并挂到频道；频道可带 thread_ts 留在原线程，线程失效时降级一次无 thread_ts。 */
   private async completeUpload(
     fileIds: string[],
     media: OutboundMedia[],
     channelId: string,
     text: string,
+    threadTs: string | null = null,
   ): Promise<string[] | null> {
-    const complete = await fetchJson(
-      `${SLACK_API}/files.completeUploadExternal`,
-      {
-        method: 'POST',
-        headers: { authorization: `Bearer ${this.secret.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          files: fileIds.map((id, index) => ({ id, title: media[index]?.filename ?? 'file' })),
-          channel_id: channelId,
-          initial_comment: text,
-        }),
-      },
-      { fetch: this.fetchImpl },
-    )
-    const completeBody = asRecord(complete.body)
-    if (!completeBody || completeBody.ok !== true) throw new BotPlatformError(200, slackError(completeBody))
+    const post = async (withThread: boolean): Promise<Record<string, unknown>> => {
+      const payload: Record<string, unknown> = {
+        files: fileIds.map((id, index) => ({ id, title: media[index]?.filename ?? 'file' })),
+        channel_id: channelId,
+        initial_comment: text,
+      }
+      if (withThread && threadTs) payload.thread_ts = threadTs
+      const complete = await fetchJson(
+        `${SLACK_API}/files.completeUploadExternal`,
+        {
+          method: 'POST',
+          headers: { authorization: `Bearer ${this.secret.token}`, 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        },
+        { fetch: this.fetchImpl },
+      )
+      const completeBody = asRecord(complete.body)
+      if (!completeBody || completeBody.ok !== true) throw new BotPlatformError(200, slackError(completeBody))
+      return completeBody
+    }
+    let completeBody: Record<string, unknown>
+    try {
+      completeBody = await post(true)
+    } catch (error) {
+      if (!threadTs || !isMissingThreadError(error)) throw error
+      completeBody = await post(false)
+    }
     const files = completeBody.files
     if (!Array.isArray(files)) return null
     const ids = files
@@ -408,18 +505,89 @@ export class SlackAdapter implements BotAdapter {
     return ids.length === fileIds.length ? ids : null
   }
 
-  private async sendMessage(channelId: string, text: string): Promise<SendResult> {
-    const { body } = await fetchJson(
-      `${SLACK_API}/chat.postMessage`,
-      {
-        method: 'POST',
-        headers: { authorization: `Bearer ${this.secret.token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ channel: channelId, text, unfurl_links: false }),
-      },
-      { fetch: this.fetchImpl },
-    )
-    const record = asRecord(body)
-    if (!record || record.ok !== true) throw new BotPlatformError(200, slackError(record))
-    return { externalId: typeof record.ts === 'string' ? record.ts : null }
+  /**
+   * 文本发送：按 Slack 上限分段；频道首段起都带 thread_ts 留在线程内，线程失效时降级一次无 thread_ts。
+   * 中途失败时把已发送的 ts 挂到错误对象，避免上层自动重试造成重复外发。
+   */
+  private async sendMessage(
+    channelId: string,
+    text: string,
+    threadTs?: string | null,
+  ): Promise<SendResult> {
+    const parts = splitForPlatform('slack', text)
+    if (parts.length === 0) return { externalId: null }
+    const ids: string[] = []
+    let thread = threadTs ?? null
+    try {
+      for (const part of parts) {
+        const post = async (withThread: boolean): Promise<Record<string, unknown>> => {
+          const payload: Record<string, unknown> = { channel: channelId, text: part.text, unfurl_links: false }
+          if (withThread && thread) payload.thread_ts = thread
+          const { body } = await fetchJson(
+            `${SLACK_API}/chat.postMessage`,
+            {
+              method: 'POST',
+              headers: { authorization: `Bearer ${this.secret.token}`, 'content-type': 'application/json' },
+              body: JSON.stringify(payload),
+            },
+            { fetch: this.fetchImpl },
+          )
+          const record = asRecord(body)
+          if (!record || record.ok !== true) throw new BotPlatformError(200, slackError(record))
+          return record
+        }
+        let record: Record<string, unknown>
+        try {
+          record = await post(true)
+        } catch (error) {
+          if (!thread || !isMissingThreadError(error)) throw error
+          thread = null
+          record = await post(false)
+        }
+        if (typeof record.ts === 'string') ids.push(record.ts)
+      }
+    } catch (error) {
+      throw markPartialError(error, ids, 'text')
+    }
+    if (ids.length === 0) return { externalId: null }
+    if (ids.length === 1) return { externalId: ids[0] ?? null }
+    return { externalId: ids[0] ?? null, externalIds: ids }
+  }
+
+  /** 连接自检：auth.test 校验 Bot Token 与工作区归属。不抛原始异常，也不回显 Token。 */
+  async check(_input: { botId: string; appOrigin: string }): Promise<BotHealthCheck> {
+    const items: BotHealthItem[] = []
+    try {
+      const { body } = await fetchJson(
+        `${SLACK_API}/auth.test`,
+        { method: 'POST', headers: { authorization: `Bearer ${this.secret.token}` } },
+        { fetch: this.fetchImpl },
+      )
+      const record = asRecord(body)
+      if (!record || record.ok !== true) throw new BotPlatformError(200, slackError(record))
+      const team = typeof record.team === 'string' ? record.team : ''
+      const user = typeof record.user === 'string' ? record.user : ''
+      items.push({ name: 'Bot 账号', ok: true, detail: [team, user].filter(Boolean).join('/') || 'auth.test ok' })
+    } catch (error) {
+      items.push({ name: 'Bot 账号', ok: false, detail: slackHealthError(error) })
+      return { ok: false, items }
+    }
+    return { ok: true, items }
+  }
+
+  /** 下载入站图片：只允许 files.slack.com，用 Bot Token 鉴权；mime 与大小上限由调用方传入。 */
+  async loadImage(
+    image: BotInboundImage,
+    options: { maxBytes: number; timeoutMs?: number },
+  ): Promise<{ mime: string; data: Buffer }> {
+    if (!normalizeImageMime(image.mime)) throw new BotPlatformError(400, 'image_unsupported')
+    return downloadImage({
+      image,
+      maxBytes: options.maxBytes,
+      timeoutMs: options.timeoutMs,
+      fetch: this.fetchImpl,
+      headers: { authorization: `Bearer ${this.secret.token}` },
+      allowedHosts: SLACK_IMAGE_HOSTS,
+    })
   }
 }
