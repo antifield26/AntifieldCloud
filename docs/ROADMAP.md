@@ -1,6 +1,6 @@
 # 路线图
 
-## v0.5.8（当前，已部署；真实平台消息级联调待用户实发；QQ 单平台 + 图片默认开启 + schema v13）
+## v0.5.8（当前，已部署并验收通过；QQ 单平台 + 图片默认开启 + schema v13）
 
 - **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、目标 `chatTrigger`、Telegram HTML/引用/线程；
   删除 env `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_*`；schema v13（迁移 13）删除非 QQ Bot 及其级联数据（**生产 Discord Bot 数据迁移前已备份**，迁移不可逆）。
@@ -11,7 +11,7 @@
 - **API/UI 收敛**：`BotPlatform` 仅 `qq`；无 `gateway`/`chatTrigger`/`mediaFileIds`；删除媒体与触发方式错误码；Web `/bots` 去 Gateway/媒体/触发方式，保留 6 分区。
 - **数据/部署**：schema v13；`deploy.ps1` 部署后 smoke 期望 schema 13；迁移前必须备份 Discord 数据 + DB 快照；回滚只能还原快照。
 - **状态**：已部署 v0.5.8/schema v13（2026-10-22，release `20261022T134852Z`/commit `96294e4`；上一 release `20261022T131813Z`（v0.5.7）保留；`/healthz` v0.5.8/schema 13；部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；迁移 13 后 `bots` 仅 1 行 QQ Bot、原 Discord 数据 0 行、QQ 数据保留）；
-  本地测试基线（Lead 全量实测 2026-10-22）`npm test` 337（服务端 321 + 脚本 16）、`npm run test:web` 157（30 文件），`npm run check`/coverage/build 通过；**真实 QQ 消息级联调待用户实发**（证据待在 `docs/ACCEPTANCE.md` 回填）。
+  本地测试基线（Lead 全量实测 2026-10-22）`npm test` 337（服务端 321 + 脚本 16）、`npm run test:web` 157（30 文件），`npm run check`/coverage/build 通过；**真实 QQ 消息已由用户实发验收通过**（2026-10-22 21:59–22:08 CST，13 条入站事件符合预期、图片端到端通过；证据见 `docs/ACCEPTANCE.md`）。
 - **下一版**：v0.5.9/v0.6 候选（企业微信/钉钉/飞书、多管理员审批、QQ 平台更多能力），具体范围待用户确认。
 
 ## v0.5.7（历史，已部署；真实平台实发待补；v0.5.8 起移除多平台能力）
@@ -158,7 +158,7 @@
 ## 已知限制
 
 - v0.5.8 已部署（2026-10-22）：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，迁移前快照 `db-predeploy-20261022T134921798Z.sqlite` 可回滚，迁移不可逆）；生产已无 Discord Bot 数据；QQ 数据保留；
-  真实 QQ 消息/图片识别与降级/自助命令/诊断/角色记忆/文本发布仍待用户实发验收，完成前不声明该部分通过。
+  真实 QQ 消息/图片识别与降级/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
 - v0.5.8 起仅 QQ 官方 Bot：QQ 仅文本、无媒体/附件/按钮/引用；群/频道只有 @Bot 事件（平台限制，无“全部消息”）；C2C 私聊直接进入 Chat；QQ 平台故障时无备用平台。
 - v0.5.8 图片理解默认开启且需模型支持 image 输入；图片会经 OpenCode 交给模型 provider；生产只读验证过 `opencode-go/deepseek-v4.1-flash` 支持 image，真实图片识别质量/失败路径待在部署后验收。
 - 回复分段最多 4 段，超长内容会截断并标记；partial 失败不自动重试，需人工核对后处理。

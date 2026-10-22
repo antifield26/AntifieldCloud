@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、QQ 官方机器人（v0.5.8 起单平台：Chat/长期记忆/自助命令/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.8，数据库 schema v13（迁移 5–12 保留，迁移 13 删除非 QQ Bot 及级联数据）；生产已部署 v0.5.8/schema v13（release `20261022T134852Z`，commit `96294e4`，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；上一 release `20261022T131813Z`（v0.5.7）保留；迁移前快照 `db-predeploy-20261022T134921798Z.sqlite`），真实 QQ 消息级联调待用户实发。v0.5.8 平台收敛为 QQ 官方 Bot 单平台、QQ 入站图片理解默认开启；保留命令/Chat/长期记忆/角色卡/事件诊断/连接自检/角色与记忆元数据管理/文本发布。OpenCode 服务端 v2.1.2。
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、QQ 官方机器人（v0.5.8 起单平台：Chat/长期记忆/自助命令/出站连通性自动恢复）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.8，数据库 schema v13（迁移 5–12 保留，迁移 13 删除非 QQ Bot 及级联数据）；生产已部署 v0.5.8/schema v13（release `20261022T134852Z`，commit `96294e4`，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；上一 release `20261022T131813Z`（v0.5.7）保留；迁移前快照 `db-predeploy-20261022T134921798Z.sqlite`），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，13 条入站事件符合预期、图片端到端通过；用户 22:10 CST 确认“验收通过”）。v0.5.8 平台收敛为 QQ 官方 Bot 单平台、QQ 入站图片理解默认开启；保留命令/Chat/长期记忆/角色卡/事件诊断/连接自检/角色与记忆元数据管理/文本发布。OpenCode 服务端 v2.1.2。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -175,10 +175,10 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - Bot 平台注册（QQ 开放平台）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；v0.5.8 起仅 QQ 官方 Bot。
   v0.5.1 生产已配置 QQ 官方 Bot 与 OpenCode `/ask` 真实模型（`opencode-go/deepseek-v4.1-flash`）并已验证命令回复；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并通过带 token 的 smoke。
   v0.5.2 已部署 v0.5.2/schema v9；v0.5.3 已部署 release `20261022T065126Z`/schema v9；v0.5.4 已部署 release `20261022T085120Z`/schema v10；v0.5.5 私聊角色卡 `/role` 已上线并由用户实发确认；v0.5.6 内置默认角色 lofii 与简洁 `/role` 文案已上线；v0.5.7 已部署 release `20261022T131813Z`/schema v12（commit `2f429be`，含 `lastErrorHint` 错误码识别修复）。
-  **v0.5.8 已部署**（2026-10-22，schema v13）：release `20261022T134852Z`/commit `96294e4`，`/healthz` version 0.5.8/schemaVersion 13，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；迁移 13 后 `bots` 仅 1 行 QQ Bot，原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留；图片默认开启（`botAiVisionEnabled=true`），连通性仅 `qq`，新进程无 Discord Gateway；真实 QQ 消息级联调待用户实发。
+  **v0.5.8 已部署**（2026-10-22，schema v13）：release `20261022T134852Z`/commit `96294e4`，`/healthz` version 0.5.8/schemaVersion 13，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24；迁移 13 后 `bots` 仅 1 行 QQ Bot，原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留；图片默认开启（`botAiVisionEnabled=true`），连通性仅 `qq`，新进程无 Discord Gateway；真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST：/reset、/forget confirm、/role、/help、文本 Chat、图片 148563 B jpeg 端到端均有生产证据；用户 22:10 CST 确认“验收通过”）。
   QQ 群/频道仅 @Bot 事件进入、C2C 私聊直接进入；QQ C2C 无需登记即可 Chat，但命令仍需白名单；`/role`、`/reset`、`/forget confirm` 对全部私聊/群聊用户开放（自助命令不要求目标或用户白名单）。
 - 测试证据边界：QQ Bot 适配器、Chat/记忆、AI 对话、图片下载、自检/诊断、备份 tar、告警投递等以进程内 mock/夹具为主（mock-only），
-  未做真实 QQ 平台/真实模型/真实网络的负路径验收；发布前按 `docs/DEPLOY.md` §3.1/§9.8 做手工平台联调。
+  未做真实 QQ 平台限流/签名漂移/故障等负路径验收；真实 QQ 消息已于 2026-10-22 21:59–22:08 CST 实发验收通过（13 条入站事件、图片端到端），证据见 `docs/ACCEPTANCE.md`。
 - Windows 世界拉取（`scripts/world-pull.ps1`，周度）与恢复演练（`scripts/drill.ps1`）计划任务由用户手动安装；
   `install-backup-task.ps1` 只安装每日应用归档拉取任务。
 - Cloudflare：zone `example.com`；tunnel 名称 `pi`；`mc.example.com` CNAME 到 SakuraFRP，**不要改**；

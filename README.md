@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.8（**已部署**，release `20261022T134852Z`/commit `96294e4`/schema v13；`/healthz` = version 0.5.8/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；迁移 13 验证 `bots` 仅剩 QQ Bot、原 Discord Bot 级联数据 0 行；**真实 QQ 消息级联调待用户实发**）。v0.5.8 平台收敛为 QQ 官方 Bot 单平台（迁移前已备份生产 Discord Bot 数据），QQ 入站图片理解默认开启，移除 Discord Gateway/多平台适配器/媒体与多附件发布/按钮/群聊触发方式；
+> 状态：v0.5.8（**已部署并验收通过**，release `20261022T134852Z`/commit `96294e4`/schema v13；`/healthz` = version 0.5.8/schemaVersion 13；部署内只读 smoke **16/16**、带 Cloudflare Access service token 的完整 smoke **24/24**；迁移 13 验证 `bots` 仅剩 QQ Bot、原 Discord Bot 级联数据 0 行；**用户已实发验收通过**：2026-10-22 21:59–22:08 CST 13 条真实入站事件全部符合预期，图片端到端通过；22:10 CST 用户原话“验收通过”）。v0.5.8 平台收敛为 QQ 官方 Bot 单平台（迁移前已备份生产 Discord Bot 数据），QQ 入站图片理解默认开启，移除 Discord Gateway/多平台适配器/媒体与多附件发布/按钮/群聊触发方式；
 > 保留 QQ 命令、Chat、长期记忆、角色卡、事件诊断、连接自检、角色/记忆元数据管理与文本发布。测试基线（Lead 全量实测 2026-10-22）：`npm test` 337（服务端 321 + 脚本 16）/`npm run test:web` 157（30 文件），`npm run check`/coverage/build 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 > 保留 QQ 命令、Chat、长期记忆、角色卡、事件诊断、连接自检、角色/记忆元数据管理与文本发布。测试基线（Lead 全量实测 2026-10-22）：`npm test` 337（服务端 321 + 脚本 16）、`npm run test:web` 157（30 文件），`npm run check`/coverage/build 均通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
@@ -161,10 +161,10 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
 - Bot 已知限制：v0.5.8 起仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件，无“全部消息”；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批留待下一版。
 - v0.5.8（已部署 2026-10-22）：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，迁移前已备份生产 Discord Bot 数据，回滚只能还原快照）、QQ 入站图片理解默认开启、`/bots` 去 Gateway/媒体/触发方式；
-  `/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24；真实 QQ 消息、图片识别/降级、自助命令、诊断/角色记忆面板与文本发布待用户实发验收。
+  `/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24；真实 QQ 消息/图片识别/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
 - 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，QQ 官方 Bot 当前不提供该能力。
-- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 QQ C2C 与 QQ 群 @Bot Chat；v0.5.8 的图片能力/自助命令/诊断/角色记忆/文本发布真实消息级联调待用户实发验收（部署与迁移 13 验证已通过）。
+- `/ask` 生产已验证 `opencode-go/deepseek-v4.1-flash` 真实回复；v0.5.3 已实发确认 QQ C2C 与 QQ 群 @Bot Chat；v0.5.8 的真实消息/图片能力/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片端到端成功；部署与迁移 13 验证已通过）。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。

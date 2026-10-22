@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.8（已部署；真实平台消息级联调待用户实发）；v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.8（已部署并验收通过；用户实发，2026-10-22 21:59–22:08 CST）；v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -16,14 +16,13 @@
 >
 > **v0.5.7 已部署（含修复发布）**：2026-10-22 首次部署 release `20261022T131121Z`（commit `8dcd10f`，schema v12）后，生产只读验证发现错误提示映射缺陷（适配器包装消息如 `平台请求失败（0:qq_access_token_failed）` 的 `lastErrorHint` 为 null）；修复 commit `2f429be`（`fix(bot): 错误提示识别适配器包装消息中的平台错误码`），重新部署 release `20261022T131813Z`（commit `2f429be`，version 0.5.7/schema v12），current 指向该 release，另保留 `20261022T131121Z`、`20261022T114546Z`。第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`（sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke **16/16**、带 Access token 的完整 smoke **24/24**；重启后 Discord Gateway `已连接`（21:18:48）。生产只读复验通过：服务层 events/roles/memories/metrics/deliveries、`lastErrorHint` 对 `network`/`qq_access_token_failed` 均正确、`/` 与 `/bots` 页面及新 bundle 均 200。**真实平台消息级联调待用户实发验收；Discord 尚缺 `role`/`reset`/`forget` 斜杠命令注册（实测缺口）。**自 v0.5.8 起 Telegram/Discord/Slack 平台与相关能力移除，本节作为历史记录保留。
 >
-> **v0.5.8 已部署**：2026-10-22 部署到生产 Pi（release `20261022T134852Z`，commit `96294e4`，version 0.5.8/schema v13）；current 指向该 release，保留上一 release `20261022T131813Z`（v0.5.7）。迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）`db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）；`/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。迁移 13 后 `bots` 仅 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留（目标 2/投递 4/事件 44/会话 4/记忆 3/角色 1/入站 4）。前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ 连接自检 `access_token 已获取`。**真实 QQ 消息级验收（文本命令/Chat、图片识别/降级、自助命令、诊断/角色记忆面板、文本发布）待用户实发验收。**
+> **v0.5.8 已部署**：2026-10-22 部署到生产 Pi（release `20261022T134852Z`，commit `96294e4`，version 0.5.8/schema v13）；current 指向该 release，保留上一 release `20261022T131813Z`（v0.5.7）。迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）`db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）；`/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。迁移 13 后 `bots` 仅 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留（目标 2/投递 4/事件 44/会话 4/记忆 3/角色 1/入站 4）。前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ 连接自检 `access_token 已获取`。**真实 QQ 消息级验收已由用户实发并于 2026-10-22 22:10 CST 确认通过**（21:59–22:08 CST 共 13 条真实入站事件全部符合预期；命令/自助命令/权限拒绝/文本 Chat 与图片端到端均有生产证据，详见下方“用户实发验收”）；用户原话“验收通过”。
 
-## v0.5.8（当前，已部署；真实平台消息级联调待用户实发）
+## v0.5.8（当前，已部署并验收通过；用户实发 2026-10-22 21:59–22:08 CST）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T134852Z`，commit `96294e4`，schema 13）+ Windows 本地工作区
-- **状态**：已部署 v0.5.8/schema v13，部署验证（迁移 13、健康检查、两次 smoke、运行时配置、QQ 连通性、前端产物、webhook 负路径）通过。
-  **真实 QQ 消息级验收（文本命令/Chat、图片识别/降级、自助命令、诊断/角色记忆面板、文本发布）尚未由用户实发验收**，完成前不得声明该部分通过。
+- **状态**：已部署 v0.5.8/schema v13，部署验证（迁移 13、健康检查、两次 smoke、运行时配置、QQ 连通性、前端产物、webhook 负路径）通过；**用户实发验收已于 2026-10-22 22:10 CST 确认通过**（21:59–22:08 CST 真实 QQ 消息，13 条入站事件全部符合预期，图片端到端通过），详见下方“用户实发验收”。
 - **交付范围**：
   - **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、`discord-gateway.ts`、只读按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）、
     Telegram HTML/引用/线程；公开 Webhook 只接受 QQ。删除 env：`BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`。
@@ -50,16 +49,16 @@
   - **QQ Webhook 真实网络负路径**：`op=0` 无签名 → **401 `invalid_signature`**；`op=99` → **200 `{"ok":true}`**（仅确认不处理）；未知 bot → **404**。
   - **QQ 连接自检（真实网络）**：`access_token 已获取`，ok（经 PC 代理隧道）。
   - **QQ Webhook 端到端合成自检（非真实平台消息，2026-10-22 21:56）**：用生产 QQ AppSecret 派生密钥对合成事件签名后 POST 本机 webhook——① op=13 回调校验返回 **200** 且签名格式正确；② 合成 `/help` C2C 事件返回 **200 `{"opcode":12}`**，事件记录为 `command/denied`（假 openid 未登记命令白名单，符合预期）；③ 合成“仅图片无正文”C2C 事件返回 **200**，审计 `bot.chat` 记录 `chars:0, image:"image/png", open:qq_c2c`，日志出现“Bot 入站图片处理失败，降级为纯文本”（探测 URL 不存在，验证降级路径），因假 `msg_id` 回复发送失败属预期。自检后已清理探测事件/入站记录（仅保留审计），**该自检不能替代用户真实 QQ 消息验收**。
-  - **OpenCode 视觉链路复验（2026-10-22 21:56）**：在生产 OpenCode 上用临时会话发送 data URL 图片，模型正确返回颜色（“粉色”），随后删除会话；说明“图片→模型”路径可用，QQ 真实入站图片仍待用户实发。
+  - **OpenCode 视觉链路复验（2026-10-22 21:56）**：在生产 OpenCode 上用临时会话发送 data URL 图片，模型正确返回颜色（“粉色”），随后删除会话；说明“图片→模型”路径可用；QQ 真实入站图片已于 2026-10-22 21:59–22:08 CST 实发验收通过。
   - **QQ attachments 契约核对**：对照 QQ 官方文档（[单聊消息事件](https://bot.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html) / 群@事件），`attachments[]` 字段为 `url/filename/width/height/size/content_type`（`image/jpeg|image/png|image/gif` 等），与适配器实现一致；图床域名后缀白名单覆盖 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（实际图床如 `multimedia.nt.qq.com.cn`）。实现只取首个 `image/*`、仅图片无正文也进入 Chat、内存下载不落盘、失败降级为纯文字。
   - 部署后增量备份：`snapshot-20261022T135052128Z-inc.tar.gz`（126419 bytes，sha256 `262afd2d4cbd39c2ae12ab5ae152517f0ff470e59cfc9b641aed5982b56fb78a`）已由 PC `backup-pull` 拉取并 ack（PC 侧 `daily/2026-10-22` 目录）；密钥包 `secrets-20261022T135053Z.tar.age` 拉取成功，`secrets=ok`。
-- **待用户实发验收项**（用户实际发送消息/操作后回填证据）：
-  1. **文本命令与 Chat**：QQ C2C 私聊、QQ 群 @Bot、频道 @Bot 发送文本命令（`/help`、`/status` 等）与普通消息 Chat，确认 AI 回复、长文本按 2000 字符分段/续段前缀/截断标记、限流与审计；非 @ 群消息不触发（平台限制，仅 @ 事件进入）。
-  2. **图片理解（默认开启）**：QQ C2C/群 @Bot 发送图片（含**仅图片无正文**）；覆盖两种实际图床 `.qpic.cn` 与 `multimedia.nt.qq.com.cn`（域名后缀白名单 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`）；
-     确认模型识别或降级提示、图片失败/关闭/非法 mime 时降级为纯文字、图片不落盘；需用户同意时可临时 `BOT_AI_VISION_ENABLED=false` 复验关闭态。
-  3. **自助命令**：实际发送 `/reset` 与 `/forget confirm`（确认会话/记忆清理与审计；`/forget` 无参数时只返回用法）。
-  4. **诊断/角色与记忆面板**：`/bots` 诊断分区事件/筛选/`lastErrorHint` 与“检查连接”实际交互；角色与记忆面板启停/删除（仅元数据）。
-  5. **文本发布**：`/bots` 投递与发布创建纯文本任务（长文本分段）、TOTP + `PUBLISH` 双确认、定时/取消与失败重试。
+- **用户实发验收（通过，2026-10-22 21:59–22:08 CST）**：生产 13 条真实 QQ 入站事件全部符合预期（来源 C2C 管理员 `5B7B32E7…` 与 `6B7DAC9B…`）；用户于 22:10 CST 确认“验收通过”。证据逐条如下：
+  1. **文本命令**：`/help` → ok（14:08:04Z）；`/forget`（confirm）→ `command_forget` ok + 审计 `bot.memory.forget removed:1`（14:00:04Z）；`/reset` → ok + 审计 `bot.reset`（13:59:47Z、14:07:43Z）；`/role`（show/set/off/on/delete）→ ok + 审计 `bot.role` delete（14:07:34Z）。
+  2. **权限边界**：`6B7DAC9B…` 于 14:06:26Z 一条命令被拒（`bot.command.denied`），随后 `/role` 正常开放（自助命令绕过白名单），符合目标 `allow_commands` + 用户双白名单与自助命令例外设计。
+  3. **文本 Chat**：14:01:01Z、14:03:25Z 两条普通消息 → `bot.ai.chat`（`mode=chat`）并写入 `bot.ai.memory`；`bot_ai_sessions` 更新 14:03:53Z、`bot_ai_memories` 更新 14:03:59Z，会话/记忆链路正常。
+  4. **QQ 图片理解端到端**：14:03:36Z 真实图片消息（仅图片、`chars:0`）→ `bot.chat` 记录 `chars:0, image:"image/jpeg"`；`bot.ai.image` 记录 `mime=image/jpeg, size=148563`；`bot.ai.chat` 记录 `image` 标志；事件 outcome=`ok`；随后 `bot.ai.memory` 更新（14:03:59Z）——证明 attachments 解析 → 域名/大小/mime 校验 → 内存下载 → OpenCode 视觉 → 回复 → 记忆整条链路成功。
+  5. 实测期间无 `bot_deliveries` 失败、无 `bot_publish_jobs` 记录。
+  6. **诊断/角色与记忆/检查连接面板与文本发布**：用户确认整体验收通过；服务端未单独留存 UI 面板交互与发布任务证据（`bot_publish_jobs` 无记录），此处按“用户确认验收通过”如实记录，不写成自动验证通过。
 - **回滚**：schema 13 迁移不可逆（非 QQ Bot 数据已删除），回滚必须恢复迁移前快照 `db-predeploy-20261022T134921798Z.sqlite` 并同步还原 `APP_VERSION`、切回 `20261022T131813Z`；回滚窗口内保持 `BOT_ENABLED`/`BOT_AI_ENABLED=false`。
 
 ## v0.5.7（历史，已部署；真实平台消息级联调待用户实发；自 v0.5.8 起移除多平台能力）

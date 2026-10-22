@@ -200,7 +200,7 @@
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
 17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
 18. **Bot 测试为 mock-only**：QQ 适配器/队列/发布/Chat/记忆/文本分段/图片下载/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 HTTP，未对真实 QQ 平台做限流、签名漂移、平台故障的负路径验收；
-    上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.7 已部署并完成生产只读验证；v0.5.8 已部署（release `20261022T134852Z`/schema v13，迁移 13 后仅剩 QQ Bot），图片/自助命令/诊断/角色记忆的真实消息级联调待用户实发验收。
+    上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与 `/ask` 真实模型已验证；v0.5.7 已部署并完成生产只读验证；v0.5.8 已部署（release `20261022T134852Z`/schema v13，迁移 13 后仅剩 QQ Bot），图片/自助命令等真实消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板按用户确认整体通过。
 19. **Bot 仅文本、单平台**：QQ 官方 Bot 只支持文本（单条 ≤2000），无媒体/附件/按钮/引用；平台收敛后不再有 Telegram/Discord/Slack 备选通道，QQ 平台故障时 Bot 不可用；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
     长文本分段发送，partial 失败不自动重试，需人工核对后处理。
 20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
@@ -290,7 +290,7 @@
 - v0.5.7 Bot（历史；已部署并保留部分能力）：`/reset`、`/forget confirm` 对所有用户开放但不越权影响其他用户；`/forget` 只清本人记忆+会话；
   角色/记忆管理接口只返回元数据、删除需 CSRF、审计不含正文；诊断接口不返回正文/用户名且 outcome 白名单；连接自检结果不含 AppSecret/access_token；
   分段/引用/HTML/chatTrigger 等平台相关能力自 v0.5.8 起收敛为 QQ 单平台（见下条）。
-- v0.5.8 Bot（当前，本地测试覆盖）：平台仅 `qq`；schema v13 删除非 QQ Bot 及级联数据（生产 Discord 数据迁移前已备份）；`BOT_AI_VISION_ENABLED` 默认 true；
+- v0.5.8 Bot（当前；本地测试 + 2026-10-22 21:59–22:08 CST 真实 QQ 消息实发验收通过）：平台仅 `qq`；schema v13 删除非 QQ Bot 及级联数据（生产 Discord 数据迁移前已备份）；`BOT_AI_VISION_ENABLED` 默认 true；
   QQ 入站图片只从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；图片会交给模型 provider（SECURITY §3/§4 明示）；
   文本发布禁止媒体；长文本分段每段 ≤2000、partial 不自动重试；`lastErrorHint` 能识别适配器包装消息中的平台错误码（如 `qq_access_token_failed`）。
 - 外部 25575 阻断；22/25565 仅允许网段；`sshd -T` 显示 `passwordauthentication no`、`pubkeyauthentication yes`；`fail2ban-client status sshd`
