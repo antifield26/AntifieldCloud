@@ -23,6 +23,8 @@ test('v0.5.4 提示词：普通 Chat 使用对话模式默认', () => {
   const prompt = buildBotPrompt({ mode: 'chat', memory: '用户喜欢深色模式', userText: '今天有点累' })
   assert.match(prompt, /^\[模式：对话\]/)
   assert.ok(prompt.includes(DEFAULT_CHAT_PROMPT))
+  assert.ok(!prompt.includes('AntifieldCloud'))
+  assert.ok(!prompt.includes('助手'))
   assert.ok(!prompt.includes(DEFAULT_TASK_PROMPT))
   assert.ok(prompt.includes('用户喜欢深色模式'))
   assert.ok(prompt.includes(SAFETY_BOUNDARY))

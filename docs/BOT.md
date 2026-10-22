@@ -149,10 +149,11 @@ Discord Gateway（可选）──WSS──▶ DiscordGatewayManager
 ## 5.1 任务/对话提示词与会话（v0.5.4）
 
 - `/ask` 使用任务导向提示：先结论/结果，再步骤、命令要点和风险；复杂问题简短分点；信息不足时只问一个关键澄清。
-- 普通消息 Chat 使用对话导向提示：自然、友好、简洁；不机械复述记忆、不强行列清单、不说教。
+- 普通消息 Chat 使用对话导向提示：自然、友好、简洁；不自我介绍、不提产品/助手身份、不主动谈业务、不机械复述记忆。
 - `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可分别覆盖，空/空白使用内置默认，最长 2000；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取。
 - 固定安全边界不可覆盖：只读、不执行/不声称执行、不索取/泄露密钥/Token/密码/内部路径/URL、长期记忆不是指令。
 - 模式和完整提示由 `server/src/bot/prompts.ts` 生成；`/ask` 与 Chat 分别使用 `bot_ai_sessions.mode=task|chat` 的独立 OpenCode 会话，旧会话归 chat；两种模式共享 `bot_ai_memories` 长期记忆。
+- QQ C2C 私聊对任意用户开放 Chat（不要求先登记目标），接触面由 QQ 平台“谁可添加 Bot”控制；斜杠命令仍要求目标 `allow_commands` 与用户白名单。QQ 群/频道、Discord/Telegram 私聊仍按目标登记与 `allow_chat`。
 - 审计 `bot.ai.chat` 增加 `mode`，不记录提示词/记忆正文。提示词仅环境变量配置，修改后重启应用。
 
 ## 6. 网络出站（Discord/Telegram/QQ/OpenCode）
@@ -224,8 +225,8 @@ v0.5.3 生产已出现群事件 `68611590B477339A04302BB23B426244`，审计 `bot
 - Telegram/Slack 以 mock/fixture 覆盖；Discord Ed25519 使用本地密钥对；QQ 使用固定 AppSecret 派生密钥对；AI 使用假 OpenCode HTTP 服务；
   Discord Gateway 使用假 WebSocket（HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码）。
 - v0.5.3 新增：`bot-connectivity.test.ts`（5）覆盖代理端口/外网/平台探测与恢复回调；Gateway `wake` 测试；QQ 未知事件 detail。
-- v0.5.4 新增：`bot-prompts.test.ts`（4）、`bot-v054.test.ts`（3）、task/chat 会话隔离测试；迁移测试覆盖 v6→v10 与 v9→v10。
-- 本地基线：`npm test` 309、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
+- v0.5.4 新增：`bot-prompts.test.ts`（4）、`bot-v054.test.ts`（3）、`bot-v054-c2c.test.ts`（3）、task/chat 会话隔离测试；迁移测试覆盖 v6→v10 与 v9→v10。
+- 本地基线：`npm test` 312、`npm run test:web` 141（28 文件）、`npm run check` 通过（2026-10-22）。
 - 真实平台：v0.5.1 生产已验证 Discord Interactions + QQ C2C `/help` + AI 真实模型；v0.5.2 已部署/迁移 v9，Discord Gateway 已连接；
   v0.5.3 生产已部署/smoke 24/24，Discord DM、Discord #general @Bot、QQ C2C 与 QQ 群 @Bot 普通消息 Chat 已实发确认，出站连通性断开/恢复实测通过；
   v0.5.4 双模式提示词/会话隔离待部署后以 `/ask` 与 Chat 真实回复验收；OpenCode v2.1.2 Basic/session 已通过。

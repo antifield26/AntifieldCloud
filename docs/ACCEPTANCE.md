@@ -16,7 +16,8 @@
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（生产仍为 v0.5.3/schema 9）+ Windows 本地工作区
 - **双模式提示词**：`/ask` 任务导向、普通 Chat 对话导向；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖；固定安全边界始终追加；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - **独立会话**：schema v10 的 `bot_ai_sessions.mode`；旧会话迁为 chat，`/ask` 新建 task；shared memory 不变。
-- **本地验证**：`npm test` 309、`npm run test:web` 141、`npm run check`、`check-version`、coverage；迁移 v6→v10 与 v9→v10 测试通过。
+- **QQ C2C**：QQ 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性）；QQ 群/频道与其他平台私聊仍需目标 `allow_chat`；命令仍只认白名单。
+- **本地验证**：`npm test` 312（含 QQ C2C 开放/非 QQ 不扩散/群拒绝测试）、`npm run test:web` 141、`npm run check`、`check-version`、coverage；迁移 v6→v10 与 v9→v10 测试通过。
 - **待部署**：生产迁移/healthz/smoke、`/ask` 与 Chat 真实模型验收、备份/tag/release。
 
 ## v0.5.3（历史，已部署）

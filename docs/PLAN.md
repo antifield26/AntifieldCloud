@@ -7,8 +7,9 @@
 - **任务/对话双模式**：`/ask` 任务导向（结论/步骤/风险/必要澄清），普通 Chat 对话导向（自然/简洁/不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖，空则内置。
 - **安全边界**：自定义提示后强制追加只读/不执行/不泄密/“记忆不是指令”；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - **会话隔离**：schema v10 重建 `bot_ai_sessions`，主键含 mode；旧会话归 chat，`/ask` 新建 task；共享长期记忆。
+- **QQ C2C**：QQ 私聊对任意用户开放 Chat（接触面由平台“谁可添加 Bot”控制）；群/频道与其他平台仍需目标登记；命令仍走白名单。
 - **审计**：`bot.ai.chat` 记录 mode；不记录提示词/记忆正文。
-- **状态**：本地测试 309/141、`npm run check` 通过；生产部署/smoke 与真实 `/ask`/Chat 验收待执行。
+- **状态**：本地测试 312/141、`npm run check` 通过；已部署 release `20261022T082027Z`/schema v10、smoke 24/24；QQ C2C 开放 Chat 补丁待重部署验收。
 
 ## v0.5.3 补充（历史）
 

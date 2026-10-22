@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、Telegram/Discord/Slack/QQ 官方机器人、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.4（生产部署待执行；生产仍为 v0.5.3 release `20261022T065126Z`/commit `df06383`/schema v9；Node.js 运行时 **v26.12.1**；Bot 任务/对话双模式提示词、独立 OpenCode 会话、共享长期记忆；OpenCode **v2.1.2**；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
+> 状态：v0.5.4（已部署，release `20261022T082027Z`/schema v10；Node.js 运行时 **v26.12.1**；Bot 任务/对话双模式提示词、独立 OpenCode 会话、共享长期记忆、QQ C2C 开放 Chat；OpenCode **v2.1.2**；带 Cloudflare Access token 的完整 smoke 24/24）。部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
 
@@ -11,7 +11,7 @@
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
 - Bot：Telegram Bot API、Discord Interactions（Ed25519）+ Gateway 长连接、Slack Events API/Slash Command（HMAC）、QQ 官方 Bot（op=13 Ed25519 回调校验 + op=0 事件回调）；普通消息 Chat 与 `/ask` 共用本地 OpenCode AI，长期记忆落 DB + `DATA_DIR/bot-memory` 镜像；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用平台 API
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 309）+ Vitest/jsdom（前端 141），ESLint，`tsc --noEmit`，覆盖率门禁
+- 测试：`node --test`（服务端 + 运维脚本 312）+ Vitest/jsdom（前端 141），ESLint，`tsc --noEmit`，覆盖率门禁
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -58,7 +58,7 @@
 - Telegram、Discord、Slack、QQ 官方 Bot 四个适配器：Telegram 用 `X-Telegram-Bot-Api-Secret-Token`，Discord 用 Ed25519 + 时间戳，Slack 用 HMAC-SHA256 + 时间戳，QQ 用 AppSecret 派生 Ed25519（op=13 回调地址校验、op=0 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。QQ 仅支持文本（C2C/群@/频道，单条 ≤2000 字符），不支持媒体。
 - **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话（Telegram/Slack/QQ Webhook 与 Discord Gateway）；群/频道仅 @Bot 或回复 Bot（Slack 为 `app_mention`/显式 `<@BOTID>`），私聊直接进入；非管理员只能 Chat，管理员斜杠命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读，不执行写操作。每 Bot×用户每分钟默认 6 次，并与 `/ask` 共用每小时 10 次 AI 配额。
 - **长期记忆**：每 Bot×用户一份，DB `bot_ai_memories` 为权威摘要，`DATA_DIR/bot-memory/memory-<uuid>.md` 为镜像（0700/0600）；每轮对话后滚动摘要，失败保留旧摘要；记忆不通过 API/UI 暴露。两种 AI 模式共享记忆；摘要不额外占用对话轮次或 AI 每小时配额。
-- **双模式提示词（v0.5.4）**：`/ask` 使用任务导向提示（结论/步骤/风险/必要澄清），普通 Chat 使用对话导向提示（自然/简洁/不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定只读安全边界始终追加；`/ask` 与 Chat 分别使用独立 OpenCode 会话，共享长期记忆；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
+- **双模式提示词（v0.5.4）**：`/ask` 使用任务导向提示（结论/步骤/风险/必要澄清），普通 Chat 使用无产品身份限定的自然对话提示（不自我介绍、不主动谈业务）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，固定只读安全边界始终追加；`/ask` 与 Chat 分别使用独立 OpenCode 会话，共享长期记忆；QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - **多附件**：单次最多 5 个、单文件 ≤10 MiB、总 ≤50 MiB；Telegram 全图片走 media group、混合类型逐文件，Discord 单次 multipart，Slack 逐文件上传后一次完成；QQ 仅文本。部分成功不自动重试（标记 `failed`/`partial_media_sent`，需人工重建）。
 - **只读按钮**：Telegram inline keyboard 与 Discord message components 支持 `/status`、`/help` 的“刷新状态/帮助”按钮；按钮动作需目标 `allow_commands` + user 白名单，只调用只读 provider，无写操作；Slack/QQ 本轮不做按钮。
 - **Discord Gateway**：`server/src/bot/discord-gateway.ts` 使用 Node 内置 WebSocket 建立长连接，`intents=37377`（含 `MESSAGE_CONTENT`）；需在 Developer Portal 开启 Message Content Intent；支持 HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避重连与致命关闭码；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭（生产已设为 true），`BotSummary.gateway` 展示连接状态。

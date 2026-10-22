@@ -6,6 +6,8 @@
 
 - **任务/对话双模式提示词**：`/ask` 使用任务导向提示（先结论、步骤、风险、必要澄清），普通 Chat 使用对话导向提示（自然、简洁、不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，空则使用内置默认；固定安全边界始终追加，自定义不能移除只读/防泄密/“记忆不是指令”约束。
 - **独立 AI 会话**：`bot_ai_sessions` 新增 `mode`（chat/task），旧会话迁移为 chat；`/ask` 首次新建 task 会话，普通 Chat 保留原 chat 会话；两种模式共享每 Bot×用户的长期记忆。
+- **QQ C2C 开放 Chat**：QQ C2C 私聊对任意用户开放（不要求先登记目标，接触面由 QQ 平台“谁可添加 Bot”控制）；QQ 群/频道、Discord/Telegram 私聊仍按目标 `allow_chat`；斜杠命令仍要求目标 `allow_commands` + 用户白名单。
+- **Chat 提示词去身份**：普通 Chat 不再声明 AntifieldCloud/助手身份，转向自然对话、不主动谈业务、不自我介绍。
 - **schema v10**：迁移 10 重建 `bot_ai_sessions`，主键改为 `(bot_id,target_external_id,user_id,mode)`；迁移 5–9 保留；旧 v0.5.3 无法直接读取 v10。
 - **审计可观测**：`bot.ai.chat` 审计增加 `mode`（不含提示词/记忆正文），便于区分 `/ask` 与 Chat。
 - **提示词模块**：新增 `server/src/bot/prompts.ts` 与单元测试；旧 `BOT_AI_SYSTEM_PROMPT` 废弃，不再读取。

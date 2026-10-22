@@ -1050,7 +1050,9 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'chat' }>,
   ): Promise<{ status: number; body: unknown }> {
     const target = this.inboundTarget(bot.id, result)
-    if (!target || target.allow_chat !== 1) {
+    // QQ C2C 的接触面由 QQ 平台“谁可添加 Bot”控制；Chat 对任意 C2C 开放，命令仍走目标白名单。
+    const openQqC2c = bot.platform === 'qq' && result.isDirect && result.targetKind === 'user'
+    if ((!target || target.allow_chat !== 1) && !openQqC2c) {
       this.deps.audit('bot.chat.denied', bot.id, { target: result.targetExternalId })
       return { status: 200, body: result.ackBody ?? { ok: true } }
     }
@@ -1077,8 +1079,9 @@ export class BotService {
       bot: bot.id,
       user: result.userId.slice(0, 64),
       chars: text.length,
+      ...(target ? {} : { open: 'qq_c2c' }),
     })
-    const task = this.executeChat(bot, result, target, text).catch((error: unknown) => {
+    const task = this.executeChat(bot, result, text).catch((error: unknown) => {
       this.deps.log('warn', 'Bot Chat 执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
     })
     this.pending.add(task)
@@ -1110,7 +1113,7 @@ export class BotService {
   private async executeCommand(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
-    target: BotTargetRow,
+    _target: BotTargetRow,
   ): Promise<void> {
     const parsed = /^\/([a-z0-9_]{1,32})(?:\s+([\s\S]*))?$/.exec(result.text.trim())
     const command = parsed?.[1] ?? ''
@@ -1169,7 +1172,7 @@ export class BotService {
             text = `AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`
             break
           }
-          text = await this.chatWithAi(bot, result.userId, result.targetExternalId, args, target, 'task')
+          text = await this.chatWithAi(bot, result.userId, result.targetExternalId, args, 'task')
           memoryPrompt = args
           memoryAnswer = text
           break
@@ -1189,11 +1192,10 @@ export class BotService {
   private async executeChat(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'chat' }>,
-    target: BotTargetRow,
     text: string,
   ): Promise<void> {
     try {
-      const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, text, target, 'chat')
+      const answer = await this.chatWithAi(bot, result.userId, result.targetExternalId, text, 'chat')
       await result.reply(sanitizeExternalText(answer))
       this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, text, answer)
     } catch {
@@ -1229,7 +1231,6 @@ export class BotService {
     userId: string,
     targetExternalId: string,
     text: string,
-    _target: BotTargetRow,
     mode: BotAiMode,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')

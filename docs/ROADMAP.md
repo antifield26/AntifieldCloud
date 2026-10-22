@@ -4,7 +4,8 @@
 
 - **双模式提示词**：`/ask` 任务导向、Chat 对话导向；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 覆盖，固定安全边界始终追加；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
 - **会话/记忆**：schema v10 `bot_ai_sessions.mode`；旧会话归 chat，`/ask` 新 task；共享长期记忆；审计 mode。
-- **状态**：本地测试/检查通过；生产 v0.5.3/schema 9，v0.5.4 部署/smoke 与真实 `/ask`/Chat 验收待执行。
+- **QQ C2C**：QQ 私聊任意用户可 Chat，群/频道与其他平台仍按目标登记；命令仍白名单。
+- **状态**：本地测试 312/141；已部署 release `20261022T082027Z`/schema v10，QQ C2C 开放补丁待重部署验收。
 - **下一版**：v0.5.5 企业微信/钉钉/飞书；多管理员/审批仍不做。
 
 ## v0.5.3（历史，已部署）
