@@ -49,6 +49,7 @@
   - **前端产物**：带 Access token 访问 `https://app.antifield.work/` 与 `/bots`（Accept: text/html）均 **200**；新 bundle `/assets/index-C-fPrxEf.js`（644795 bytes）与 `/assets/index-BJSYA4Y6.css`；bundle 含「AppID/检查连接/角色与记忆/诊断」，**不含**「Discord Gateway/Telegram/Slack」。
   - **QQ Webhook 真实网络负路径**：`op=0` 无签名 → **401 `invalid_signature`**；`op=99` → **200 `{"ok":true}`**（仅确认不处理）；未知 bot → **404**。
   - **QQ 连接自检（真实网络）**：`access_token 已获取`，ok（经 PC 代理隧道）。
+  - **QQ attachments 契约核对**：对照 QQ 官方文档（[单聊消息事件](https://bot.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html) / 群@事件），`attachments[]` 字段为 `url/filename/width/height/size/content_type`（`image/jpeg|image/png|image/gif` 等），与适配器实现一致；图床域名后缀白名单覆盖 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（实际图床如 `multimedia.nt.qq.com.cn`）。实现只取首个 `image/*`、仅图片无正文也进入 Chat、内存下载不落盘、失败降级为纯文字。
   - 部署后增量备份：`snapshot-20261022T135052128Z-inc.tar.gz`（126419 bytes，sha256 `262afd2d4cbd39c2ae12ab5ae152517f0ff470e59cfc9b641aed5982b56fb78a`）已由 PC `backup-pull` 拉取并 ack（PC 侧 `daily/2026-10-22` 目录）；密钥包 `secrets-20261022T135053Z.tar.age` 拉取成功，`secrets=ok`。
 - **待用户实发验收项**（用户实际发送消息/操作后回填证据）：
   1. **文本命令与 Chat**：QQ C2C 私聊、QQ 群 @Bot、频道 @Bot 发送文本命令（`/help`、`/status` 等）与普通消息 Chat，确认 AI 回复、长文本按 2000 字符分段/续段前缀/截断标记、限流与审计；非 @ 群消息不触发（平台限制，仅 @ 事件进入）。
