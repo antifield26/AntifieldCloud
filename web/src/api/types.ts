@@ -831,6 +831,8 @@ export interface MetricsResult {
 
 export type BotPlatform = 'telegram' | 'discord' | 'slack' | 'qq'
 export type BotTargetKind = 'channel' | 'user' | 'group'
+/** 目标内普通消息触发策略：仅 @Bot/回复触发，或全部消息触发（QQ 群/频道仅支持 mention）。 */
+export type BotChatTrigger = 'mention' | 'all'
 export type BotGatewayState = 'disabled' | 'connecting' | 'connected' | 'reconnecting' | 'error'
 export interface BotGatewayStatus {
   state: BotGatewayState
@@ -913,6 +915,8 @@ export interface BotTarget {
   allowNotifications: boolean
   /** 是否允许该目标内成员普通消息 Chat；不授予斜杠命令权限。 */
   allowChat: boolean
+  /** 普通消息触发方式；QQ 群/频道固定为 mention。 */
+  chatTrigger: BotChatTrigger
   /** 静默时段（本地分钟 0-1439，Asia/Shanghai）；两者同时为空表示不静默。 */
   quietStartMinute: number | null
   quietEndMinute: number | null
@@ -928,6 +932,8 @@ export interface BotDelivery {
   attempts: number
   nextAttemptAt: string | null
   lastError: string | null
+  /** 服务端根据 lastError 映射的中文提示（可能为空）。 */
+  lastErrorHint?: string | null
   externalId: string | null
   createdAt: string
   sentAt: string | null
@@ -943,6 +949,8 @@ export interface BotPublishJob {
   status: BotPublishStatus
   attempts: number
   lastError: string | null
+  /** 服务端根据 lastError 映射的中文提示（可能为空）。 */
+  lastErrorHint?: string | null
   createdAt: string
   sentAt: string | null
 }
@@ -976,6 +984,8 @@ export interface BotTargetInput {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
+  /** 普通消息触发方式；省略时服务端按 mention 处理，QQ 传 all 返回 chat_trigger_unsupported。 */
+  chatTrigger?: BotChatTrigger
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -1001,5 +1011,57 @@ export interface BotMetrics {
   publishes: { total: number; sent: number; failed: number }
   events: number
   lastError: string | null
+  /** 服务端根据 lastError 映射的中文提示（可能为空）。 */
+  lastErrorHint?: string | null
   lastSentAt: string | null
+}
+
+/* ---------- 机器人诊断与用户数据（v0.5.7） ---------- */
+
+/** 单项连接检查结果：只描述凭据/Webhook/配置是否可用，不含任何密钥。 */
+export interface BotHealthItem {
+  name: string
+  ok: boolean
+  detail: string
+}
+
+/** POST /api/bots/:id/check 的脱敏结果。 */
+export interface BotHealthCheck {
+  ok: boolean
+  items: BotHealthItem[]
+  checkedAt: string
+}
+
+/** 入站事件元数据：不含消息正文、用户名等个人数据。 */
+export interface BotEventItem {
+  eventId: string
+  kind: string | null
+  outcome: string | null
+  detail: string | null
+  targetExternalId: string | null
+  userId: string | null
+  receivedAt: string
+  updatedAt: string | null
+}
+
+/** 私聊角色卡摘要：服务端只返回元数据，正文不通过 Web 暴露。 */
+export interface BotRoleSummary {
+  userId: string
+  userName: string | null
+  name: string
+  enabled: boolean
+  /** 角色设定字符数，仅用于展示规模，不返回正文。 */
+  promptLength: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 长期记忆摘要：服务端只返回元数据，正文不通过 Web 暴露。 */
+export interface BotMemorySummary {
+  userId: string
+  userName: string | null
+  /** 摘要字符数，仅用于展示规模，不返回正文。 */
+  summaryLength: number
+  createdAt: string
+  updatedAt: string
 }

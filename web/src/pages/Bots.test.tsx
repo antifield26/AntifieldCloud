@@ -22,6 +22,13 @@ const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   remove: vi.fn(),
   test: vi.fn(),
+  check: vi.fn(),
+  events: vi.fn(),
+  rolesList: vi.fn(),
+  roleSetEnabled: vi.fn(),
+  roleRemove: vi.fn(),
+  memoriesList: vi.fn(),
+  memoryRemove: vi.fn(),
   targetList: vi.fn(),
   targetInbound: vi.fn(),
   targetCreate: vi.fn(),
@@ -49,6 +56,17 @@ vi.mock('../api/client', () => ({
       update: mocks.update,
       remove: mocks.remove,
       test: mocks.test,
+      check: mocks.check,
+      events: mocks.events,
+      roles: {
+        list: mocks.rolesList,
+        setEnabled: mocks.roleSetEnabled,
+        remove: mocks.roleRemove,
+      },
+      memories: {
+        list: mocks.memoriesList,
+        remove: mocks.memoryRemove,
+      },
       metrics: mocks.metrics,
       targets: {
         list: mocks.targetList,
@@ -129,6 +147,7 @@ function target(overrides: Partial<BotTarget> = {}): BotTarget {
     allowCommands: false,
     allowNotifications: true,
     allowChat: false,
+    chatTrigger: 'mention',
     quietStartMinute: null,
     quietEndMinute: null,
     createdAt: '2026-10-20T00:00:00.000Z',
@@ -203,6 +222,20 @@ beforeEach(() => {
   mocks.update.mockResolvedValue(bot())
   mocks.remove.mockResolvedValue({ ok: true })
   mocks.test.mockResolvedValue({ ok: true })
+  mocks.check.mockResolvedValue({
+    ok: true,
+    checkedAt: '2026-10-22T00:00:00.000Z',
+    items: [
+      { name: 'Token 有效', ok: true, detail: 'getMe 成功' },
+      { name: 'Webhook 已设置', ok: true, detail: 'https://app.example.com/api/bot/webhook/bot-1' },
+    ],
+  })
+  mocks.events.mockResolvedValue({ items: [], total: 0 })
+  mocks.rolesList.mockResolvedValue({ items: [], total: 0 })
+  mocks.roleSetEnabled.mockResolvedValue(undefined)
+  mocks.roleRemove.mockResolvedValue(undefined)
+  mocks.memoriesList.mockResolvedValue({ items: [], total: 0 })
+  mocks.memoryRemove.mockResolvedValue(undefined)
   mocks.targetList.mockResolvedValue([target()])
   mocks.targetInbound.mockResolvedValue([])
   mocks.targetCreate.mockResolvedValue(target({ id: 'target-2', label: '新目标' }))
@@ -404,5 +437,116 @@ describe('Bots 机器人管理', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '重试' }))
     await waitFor(() => expect(mocks.deliveryRetry).toHaveBeenCalledWith('bot-1', 'delivery-1'))
+  })
+
+  it('标签扩展为六个分区，角色与记忆分区展示元数据', async () => {
+    mocks.rolesList.mockResolvedValue({
+      items: [
+        {
+          userId: 'user-1',
+          userName: '小明',
+          name: '运维助手',
+          enabled: true,
+          promptLength: 120,
+          createdAt: '2026-10-20T00:00:00.000Z',
+          updatedAt: '2026-10-21T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+    })
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+
+    const labels = ['概览', '配置', '目标', '投递与发布', '角色与记忆', '诊断']
+    for (const label of labels) expect(screen.getByRole('tab', { name: label })).toBeTruthy()
+    expect(screen.getAllByRole('tab')).toHaveLength(6)
+
+    await userEvent.click(screen.getByRole('tab', { name: '角色与记忆' }))
+    expect(await screen.findByRole('heading', { name: '角色卡' })).toBeTruthy()
+    expect((await screen.findAllByText('小明')).length).toBeGreaterThan(0)
+    expect(screen.getByText(/仅显示元数据，正文不通过 Web 暴露/)).toBeTruthy()
+    expect(mocks.rolesList).toHaveBeenCalledWith('bot-1', { limit: 20, offset: 0 })
+    expect(mocks.memoriesList).toHaveBeenCalledWith('bot-1', { limit: 20, offset: 0 })
+  })
+
+  it('诊断分区展示事件元数据并支持筛选', async () => {
+    mocks.events.mockResolvedValue({
+      items: [
+        {
+          eventId: 'evt-1',
+          kind: 'command',
+          outcome: 'rate_limited',
+          detail: '每用户限流',
+          targetExternalId: '-1001234567890',
+          userId: 'user-9',
+          receivedAt: '2026-10-22T01:00:00.000Z',
+          updatedAt: null,
+        },
+      ],
+      total: 1,
+    })
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await userEvent.click(screen.getByRole('tab', { name: '诊断' }))
+
+    expect((await screen.findAllByText('限流')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('command').length).toBeGreaterThan(0)
+    expect(mocks.events).toHaveBeenCalledWith('bot-1', {
+      hours: 24,
+      outcome: undefined,
+      limit: 20,
+      offset: 0,
+    })
+
+    await userEvent.selectOptions(screen.getByLabelText('事件结果筛选'), 'denied')
+    await waitFor(() =>
+      expect(mocks.events).toHaveBeenLastCalledWith('bot-1', expect.objectContaining({ outcome: 'denied' })),
+    )
+    await userEvent.selectOptions(screen.getByLabelText('事件时间范围'), '168')
+    await waitFor(() =>
+      expect(mocks.events).toHaveBeenLastCalledWith('bot-1', expect.objectContaining({ hours: 168 })),
+    )
+  })
+
+  it('配置分区可检查连接并展示脱敏结果与 /reset 文案', async () => {
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await openConfigTab()
+
+    await userEvent.click(screen.getByRole('button', { name: '检查连接' }))
+    await waitFor(() => expect(mocks.check).toHaveBeenCalledWith('bot-1'))
+    expect(await screen.findByText('Token 有效')).toBeTruthy()
+    expect(screen.getByText('全部通过')).toBeTruthy()
+    expect(screen.getByText(/\/reset 重置当前对话/)).toBeTruthy()
+  })
+
+  it('目标表单可选择触发方式并提交 chatTrigger', async () => {
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await userEvent.click(screen.getByRole('tab', { name: '目标' }))
+
+    await userEvent.type(await screen.findByLabelText(/平台目标 ID/), 'group-1')
+    await userEvent.type(screen.getByLabelText(/^名称/), '新目标')
+    await userEvent.selectOptions(screen.getByLabelText('触发方式'), 'all')
+    await userEvent.click(screen.getByRole('button', { name: '添加目标' }))
+
+    await waitFor(() =>
+      expect(mocks.targetCreate).toHaveBeenCalledWith(
+        'bot-1',
+        expect.objectContaining({ externalId: 'group-1', chatTrigger: 'all' }),
+      ),
+    )
+  })
+
+  it('QQ 平台禁用触发方式并提示仅支持 @Bot', async () => {
+    mocks.list.mockResolvedValue([bot({ platform: 'qq' })])
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await userEvent.click(screen.getByRole('tab', { name: '目标' }))
+
+    const select = (await screen.findByLabelText('触发方式')) as HTMLSelectElement
+    expect(select.disabled).toBe(true)
+    expect(select.value).toBe('mention')
+    expect(screen.getAllByText(/QQ 群\/频道仅支持 @Bot 触发/).length).toBeGreaterThan(0)
   })
 })

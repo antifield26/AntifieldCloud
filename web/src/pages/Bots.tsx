@@ -16,17 +16,21 @@ import { SkeletonText } from '../components/Skeleton'
 import { BotConfigPanel } from '../components/bots/BotConfigPanel'
 import { BotConnectivityCard } from '../components/bots/BotConnectivityCard'
 import { BotDeliveryPanel } from '../components/bots/BotDeliveryPanel'
+import { BotDiagnosticsPanel } from '../components/bots/BotDiagnosticsPanel'
 import { BotOverview } from '../components/bots/BotOverview'
 import type { BotSelectTab } from '../components/bots/BotOverview'
 import { BotTargetsPanel } from '../components/bots/BotTargetsPanel'
+import { BotUserDataPanel } from '../components/bots/BotUserDataPanel'
 
-type BotsTab = 'overview' | 'config' | 'targets' | 'queue'
+type BotsTab = 'overview' | 'config' | 'targets' | 'queue' | 'userdata' | 'diagnostics'
 
 const TABS: readonly { id: BotsTab; label: string }[] = [
   { id: 'overview', label: '概览' },
   { id: 'config', label: '配置' },
   { id: 'targets', label: '目标' },
   { id: 'queue', label: '投递与发布' },
+  { id: 'userdata', label: '角色与记忆' },
+  { id: 'diagnostics', label: '诊断' },
 ]
 
 const DISABLED_CODES = new Set(['bot_disabled', 'bot_key_missing', 'bot_key_invalid'])
@@ -219,7 +223,7 @@ export function Bots() {
     <div className="bots-page">
       <PageHeader
         title="机器人"
-        description="Telegram / Discord / Slack 通知、只读命令回复与消息发布"
+        description="Telegram / Discord / Slack / QQ 通知、Chat 与只读命令、角色与记忆、诊断"
         actions={
           <Button
             variant="secondary"
@@ -357,6 +361,22 @@ export function Bots() {
                 bot={selectedBot}
                 refreshToken={refreshToken}
                 onChanged={() => void refreshStatus()}
+              />
+            ) : null}
+
+            {tab === 'userdata' ? (
+              <BotUserDataPanel
+                key={selectedBot?.id ?? 'none'}
+                bot={selectedBot}
+                refreshToken={refreshToken}
+              />
+            ) : null}
+
+            {tab === 'diagnostics' ? (
+              <BotDiagnosticsPanel
+                key={selectedBot?.id ?? 'none'}
+                bot={selectedBot}
+                refreshToken={refreshToken}
               />
             ) : null}
           </div>

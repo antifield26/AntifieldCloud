@@ -21,11 +21,15 @@ import type {
   BookmarkPatch,
   BotCreateInput,
   BotDelivery,
+  BotEventItem,
+  BotHealthCheck,
   BotInboundTarget,
+  BotMemorySummary,
   BotMetrics,
   BotConnectivitySnapshot,
   BotPublishInput,
   BotPublishJob,
+  BotRoleSummary,
   BotStatus,
   BotSummary,
   BotTarget,
@@ -1095,6 +1099,59 @@ export const api = {
         `/api/bots/${encodeId(id)}/test`,
         targetId ? { targetId } : {},
       )
+    },
+    /**
+     * 连接自检（v0.5.7）：服务端校验 Token/Webhook/公开配置并更新 last_checked_at。
+     * 返回项只描述可用性与脱敏原因，不含任何密钥。
+     */
+    async check(id: string): Promise<BotHealthCheck> {
+      const result = await post<{ health: BotHealthCheck }>(`/api/bots/${encodeId(id)}/check`)
+      return result.health
+    },
+    /** 入站事件元数据（v0.5.7）：支持时间范围/结果筛选与分页，不返回消息正文。 */
+    events(
+      id: string,
+      options: { hours?: number; outcome?: string; limit?: number; offset?: number } = {},
+    ): Promise<{ items: BotEventItem[]; total: number }> {
+      return get<{ items: BotEventItem[]; total: number }>(
+        `/api/bots/${encodeId(id)}/events${buildQuery({
+          hours: options.hours,
+          outcome: options.outcome,
+          limit: options.limit,
+          offset: options.offset,
+        })}`,
+      )
+    },
+    /** 私聊角色卡与长期记忆管理（v0.5.7）：只操作元数据，正文不通过 Web 读写。 */
+    roles: {
+      list(
+        id: string,
+        options: { limit?: number; offset?: number } = {},
+      ): Promise<{ items: BotRoleSummary[]; total: number }> {
+        return get<{ items: BotRoleSummary[]; total: number }>(
+          `/api/bots/${encodeId(id)}/roles${buildQuery({ limit: options.limit, offset: options.offset })}`,
+        )
+      },
+      /** 启用/停用某个用户的角色卡，不修改角色正文。 */
+      async setEnabled(id: string, userId: string, enabled: boolean): Promise<void> {
+        await patch<OkResult>(`/api/bots/${encodeId(id)}/roles/${encodeId(userId)}`, { enabled })
+      },
+      async remove(id: string, userId: string): Promise<void> {
+        await del<OkResult>(`/api/bots/${encodeId(id)}/roles/${encodeId(userId)}`)
+      },
+    },
+    memories: {
+      list(
+        id: string,
+        options: { limit?: number; offset?: number } = {},
+      ): Promise<{ items: BotMemorySummary[]; total: number }> {
+        return get<{ items: BotMemorySummary[]; total: number }>(
+          `/api/bots/${encodeId(id)}/memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
+        )
+      },
+      async remove(id: string, userId: string): Promise<void> {
+        await del<OkResult>(`/api/bots/${encodeId(id)}/memories/${encodeId(userId)}`)
+      },
     },
     targets: {
       async list(botId: string, signal?: AbortSignal): Promise<BotTarget[]> {

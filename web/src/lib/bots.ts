@@ -2,6 +2,7 @@
 // 仅做展示映射，不包含任何密钥；状态值以 api/types.ts 的联合类型为准。
 
 import type {
+  BotChatTrigger,
   BotDeliveryKind,
   BotDeliveryStatus,
   BotPlatform,
@@ -25,6 +26,14 @@ export const BOT_TARGET_KIND_LABELS: Record<BotTargetKind, string> = {
   user: '用户',
   group: '群组',
 }
+
+/** 普通消息触发方式文案；QQ 群/频道只支持 mention。 */
+export const BOT_CHAT_TRIGGER_LABELS: Record<BotChatTrigger, string> = {
+  mention: '仅 @/回复触发',
+  all: '全部消息触发',
+}
+
+export const BOT_CHAT_TRIGGER_OPTIONS: readonly BotChatTrigger[] = ['mention', 'all']
 
 export const BOT_DELIVERY_KIND_LABELS: Record<BotDeliveryKind, string> = {
   notification: '通知',
@@ -80,4 +89,38 @@ export function targetLabel(targets: readonly BotTarget[], targetId: string | nu
 /** 发布表单只允许频道/群组；用户目标仅用于命令回复与通知。 */
 export function publishableTargets(targets: readonly BotTarget[]): BotTarget[] {
   return targets.filter((target) => target.kind !== 'user')
+}
+
+export function chatTriggerLabel(trigger: BotChatTrigger | null | undefined): string {
+  return trigger ? BOT_CHAT_TRIGGER_LABELS[trigger] : '仅 @/回复触发'
+}
+
+/* ---------- 诊断：入站事件结果 ---------- */
+
+export interface BotOutcomeMeta {
+  label: string
+  tone: BadgeTone
+}
+
+/** 事件结果类型的中文文案与徽章配色（服务端返回字符串，未知值按原样展示）。 */
+export const BOT_EVENT_OUTCOME_META: Record<string, BotOutcomeMeta> = {
+  received: { label: '已接收', tone: 'info' },
+  ok: { label: '成功', tone: 'success' },
+  denied: { label: '拒绝', tone: 'warning' },
+  rate_limited: { label: '限流', tone: 'warning' },
+  ignored: { label: '忽略', tone: 'muted' },
+  error: { label: '错误', tone: 'danger' },
+  rejected: { label: '签名拒绝', tone: 'danger' },
+}
+
+export function botOutcomeMeta(outcome: string | null): BotOutcomeMeta {
+  if (!outcome) return { label: '未知', tone: 'muted' }
+  return BOT_EVENT_OUTCOME_META[outcome] ?? { label: outcome, tone: 'muted' }
+}
+
+/** 平台外部 ID 的短展示：只截断显示，完整值放 title。 */
+export function shortenId(value: string | null | undefined, max = 12): string {
+  if (!value) return '—'
+  if (value.length <= max) return value
+  return `${value.slice(0, max)}…`
 }

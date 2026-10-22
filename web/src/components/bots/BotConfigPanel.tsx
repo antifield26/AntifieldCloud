@@ -3,10 +3,11 @@
 
 import { useState } from 'react'
 import type { FormEvent } from 'react'
-import { KeyRound, PlugZap, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react'
+import { CircleCheck, KeyRound, PlugZap, Plus, Save, ShieldCheck, Stethoscope, Trash2, TriangleAlert } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type {
   BotCreateInput,
+  BotHealthCheck,
   BotPlatform,
   BotSummary,
   BotUpdateInput,
@@ -17,9 +18,10 @@ import { Card } from '../Card'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { CopyButton } from '../CopyButton'
 import { FormField } from '../FormField'
+import { InlineError } from '../InlineError'
 import { useToast } from '../Toast'
 import { BOT_PLATFORMS, BOT_PLATFORM_LABELS, botPlatformLabel } from '../../lib/bots'
-import { formatDate } from '../../lib/format'
+import { formatDate, formatDateTime } from '../../lib/format'
 
 const SECRET_MIN_PATTERN = /.{16,}/
 const DISCORD_APPLICATION_ID_PATTERN = /^\d{5,32}$/
@@ -66,6 +68,9 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const [health, setHealth] = useState<BotHealthCheck | null>(null)
+  const [healthError, setHealthError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -184,6 +189,25 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
       toast.error(toErrorMessage(testError, '测试连接失败，请检查 Token 与目标配置'))
     } finally {
       setTesting(false)
+    }
+  }
+
+  /** 连接自检：只调用服务端脱敏检查接口，不读取或回显任何密钥。 */
+  const handleCheck = async (): Promise<void> => {
+    if (!bot || checking) return
+    setChecking(true)
+    setHealthError(null)
+    try {
+      const result = await api.bots.check(bot.id)
+      setHealth(result)
+      toast.success(result.ok ? '连接检查通过' : '连接检查完成，存在异常项')
+    } catch (checkError) {
+      const message = toErrorMessage(checkError, '连接检查失败，请稍后重试')
+      setHealth(null)
+      setHealthError(message)
+      toast.error(message)
+    } finally {
+      setChecking(false)
     }
   }
 
@@ -466,6 +490,15 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
                 </Button>
                 <Button
                   variant="secondary"
+                  icon={<Stethoscope size={15} aria-hidden="true" />}
+                  loading={checking}
+                  onClick={() => void handleCheck()}
+                  disabled={saving || deleting}
+                >
+                  检查连接
+                </Button>
+                <Button
+                  variant="secondary"
                   icon={<PlugZap size={15} aria-hidden="true" />}
                   loading={testing}
                   onClick={() => void handleTest()}
@@ -494,6 +527,46 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
             <p className="field-hint">测试连接需要至少一个目标，请先到“目标”分区添加。</p>
           ) : null}
         </form>
+
+        {editing && bot && (health || healthError || checking) ? (
+          <section className="bot-health" aria-label="连接检查结果">
+            <h3 className="subsection-title">连接检查结果</h3>
+            {healthError ? (
+              <InlineError message={healthError} onRetry={() => void handleCheck()} retryLabel="重新检查" />
+            ) : null}
+            {checking && !health ? <p className="field-hint">正在检查 Token、Webhook 与公开配置…</p> : null}
+            {health ? (
+              <>
+                <div className="bot-health-summary">
+                  <Badge tone={health.ok ? 'success' : 'warning'} dot>
+                    {health.ok ? '全部通过' : '存在异常项'}
+                  </Badge>
+                  <span className="field-hint">
+                    {health.checkedAt ? `检查于 ${formatDateTime(health.checkedAt)} · ` : ''}
+                    共 {health.items.length} 项，不含任何密钥。
+                  </span>
+                </div>
+                <ul className="bot-health-list">
+                  {health.items.map((item) => (
+                    <li
+                      key={item.name}
+                      className={item.ok ? 'bot-health-item' : 'bot-health-item bot-health-item-warning'}
+                    >
+                      {item.ok ? (
+                        <CircleCheck size={16} className="text-success" aria-hidden="true" />
+                      ) : (
+                        <TriangleAlert size={16} className="text-warning" aria-hidden="true" />
+                      )}
+                      <span className="bot-health-name">{item.name}</span>
+                      <Badge tone={item.ok ? 'success' : 'warning'}>{item.ok ? '通过' : '异常'}</Badge>
+                      <span className="bot-health-detail">{item.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </section>
+        ) : null}
       </Card>
 
       <div className="bot-config-side">
@@ -514,6 +587,7 @@ export function BotConfigPanel({ bot, mode, onModeChange, onSaved, onDeleted }: 
               {bot.setupSteps.map((step) => (
                 <li key={step}>{step}</li>
               ))}
+              <li>私聊/群聊均可发送 /reset 重置当前对话；/forget confirm 清除该 Bot 的长期记忆。</li>
             </ol>
             {bot.platform === 'discord' ? (
               <div className="notice notice-info">
