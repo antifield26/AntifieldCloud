@@ -204,7 +204,7 @@ export class QqAdapter implements BotAdapter {
       steps: [
         '在 QQ 开放平台（q.qq.com）创建机器人，取得 AppID 与 AppSecret；AppID 填入公开配置，AppSecret 填入“Token”字段。',
         `在“开发设置 → 回调地址”填上面复制的地址（${webhookUrl}），平台会发送 op=13 验证请求，服务端自动返回签名。`,
-        '在事件订阅中勾选 C2C_MESSAGE_CREATE、GROUP_AT_MESSAGE_CREATE、AT_MESSAGE_CREATE；如需全量群消息，再勾选 GROUP_MESSAGE_CREATE，并在目标中把群消息模式设为“接受全部消息”。',
+        '在事件订阅中勾选 C2C_MESSAGE_CREATE、GROUP_AT_MESSAGE_CREATE、AT_MESSAGE_CREATE；如需全量群消息，再勾选 GROUP_MESSAGE_CREATE，并在目标中把群消息模式设为“接受全部消息”；群主还需在 QQ 群设置 → 机器人 → 可获取的群聊消息范围选择“获取群内全部消息”。',
         '在“目标”中登记用户 openid、群 openid 或频道 ID，并开启命令/通知权限；C2C 私聊可直接 Chat，群/频道消息需 @Bot 才会触发（全量模式除外）。',
         '将机器人加入测试群后，私聊发送 /help 验证；群聊自 v0.6.3 起不再接受斜杠命令。',
         '如需图片理解，在部署环境开启 BOT_AI_VISION_ENABLED，并使用支持图片输入的模型。',

@@ -83,7 +83,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 
 1. 在 QQ 开放平台（q.qq.com）创建机器人，取得 **AppID** 与 **AppSecret**；AppID 填公开配置（`config.appId`，5–32 位数字），AppSecret 只提交保存为密文。
 2. “开发设置 → 回调地址”填 `https://app.example.com/api/bot/webhook/<botId>`；平台会发送 `op=13` 校验，服务端用 AppSecret 派生 Ed25519 私钥返回 `{plain_token, signature}`；`plain_token` 只接受字母数字/下划线/连字符 1–128、`event_ts` 只接受 1–12 位数字，否则 `400 invalid_payload`（防止签名预言机）；成功 challenge 写审计 `bot.webhook.challenge`。
-3. 事件订阅按场景勾选 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；如需“接受全部消息”，再勾选 `GROUP_MESSAGE_CREATE`（需在 QQ 后台开启接收所有消息）。
+3. 事件订阅按场景勾选 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；如需“接受全部消息”，再勾选 `GROUP_MESSAGE_CREATE`（需在 QQ 后台开启接收所有消息）；群主还需在 QQ 群设置 → 机器人 → 可获取的群聊消息范围选择“获取群内全部消息”，否则平台不会推送非 @ 消息。
 4. 目标登记：C2C 填 `user_openid`、群聊填 `group_openid`、频道填 `channel_id`；命令用户另建 `kind=user` 且允许命令的目标。QQ 官方回调不提供真实 QQ 号/群号；v0.6.2 起可在目标行点“测试”发送测试消息，在 QQ 收到消息的会话即对应目标，再用“编辑名称”改为易识别的名称。v0.6.3 起每个群聊目标可在“角色与记忆”配置独立共享角色卡；“目标”页可设置仅 @/名字提及（默认）或全部消息（实验性）。
 5. 命令（无需平台注册，仅 C2C 私聊可用）：`/help`（动态）、`/memory`（查看/`off|on`）、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/role`（仅私聊）、`/reset`、`/forget confirm`；v0.5.9 起 `/ask` 已移除；v0.6.3 起群聊/频道不再接受任何斜杠命令。
 6. 触发：C2C 私聊普通文本直接进入 Chat；群/频道默认仅 @Bot 事件；群目标设为“接受全部消息”且平台开启全量消息后，`GROUP_MESSAGE_CREATE` 事件按 externalId 查配置：仅@/名字模式未命中则静默忽略，全量模式交由模型判断，模型输出 `NO_REPLY` 时不发送。
