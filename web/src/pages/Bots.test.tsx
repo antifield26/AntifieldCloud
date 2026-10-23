@@ -373,7 +373,7 @@ describe('Bots 机器人管理', () => {
   })
 
   it('目标分区可创建允许 Chat 的目标并展示最近入站目标', async () => {
-    mocks.targetCreate.mockResolvedValue(target({ externalId: 'new-group', label: '聊天目标' }))
+    mocks.targetCreate.mockResolvedValue(target({ id: 'target-2', externalId: 'new-group', label: '聊天目标' }))
     mocks.targetInbound.mockResolvedValue([
       {
         botId: 'bot-1',
