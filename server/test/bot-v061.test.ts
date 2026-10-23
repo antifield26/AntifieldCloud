@@ -225,12 +225,35 @@ test('联网搜索：mcp 模式不在服务端预取，提示模型使用 SearXN
     },
   })
   try {
-    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'search-mcp-1', content: '最近有什么 AI 新闻？' }))
-    assert.equal(searchCalls, 0, 'mcp 模式由模型调用工具，服务端不预取')
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'search-mcp-1', content: '介绍一下量子计算' }))
+    assert.equal(searchCalls, 0, '非关键词问句由模型决定是否通过 MCP 搜索')
     const prompt = fixture.aiCalls[0]?.prompt ?? ''
     assert.match(prompt, /\[联网搜索工具\]/)
     assert.match(prompt, /searxng_web_search/)
     assert.equal(prompt.includes('[联网搜索结果'), false)
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('联网搜索：追问“再搜搜看”复用上一轮归一化查询', async () => {
+  const queries: string[] = []
+  const fixture = createQqServiceFixture({
+    aiEnabled: true,
+    configOverrides: { botChatBurstWindowMs: 0, botSearchEnabled: true, botSearchMode: 'prefetch', botSearchAuto: true },
+    search: {
+      search: async (query) => {
+        queries.push(query)
+        return SEARCH_RESULTS
+      },
+    },
+  })
+  try {
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'search-follow-1', content: '最近有什么AI新闻？' }))
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'search-follow-2', content: '再搜搜看' }))
+    assert.deepEqual(queries, ['AI新闻', 'AI新闻'])
+    assert.equal(fixture.aiCalls.length, 2)
+    assert.match(fixture.aiCalls[1]?.prompt ?? '', /参考来源|\[联网搜索结果/)
   } finally {
     fixture.cleanup()
   }

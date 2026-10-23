@@ -50,6 +50,7 @@ import { BurstMerger } from './burst.ts'
 import {
   formatSearchPromptContext,
   formatSearchSources,
+  isSearchFollowUp,
   needsWebSearch,
   normalizeSearchQuery,
   type WebSearchClient,
@@ -321,6 +322,8 @@ export class BotService {
    * 在途抽取写回前校验版本，避免被取消的批次把旧数据写回。
    */
   private readonly memoryGenerations = new Map<string, number>()
+  /** 上次搜索查询（按 Bot×用户），用于“再搜搜看”等追问；进程内、验证后清理。 */
+  private readonly lastSearchQueries = new Map<string, string>()
   /** 上次观察到的 AI 工具隔离降级次数：用于把降级写成一次性审计而不是只留日志。 */
   private lastAiFallbackCount = 0
 
@@ -1620,6 +1623,7 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): string {
     this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
+    this.lastSearchQueries.delete(`${bot.id}:${result.userId}`)
     this.resetChatSession(bot.id, result.targetExternalId, result.userId)
     this.deps.audit('bot.reset', bot.id, { bot: bot.id, user: result.userId.slice(0, 64) })
     return '已重置当前对话（长期记忆保留）。'
@@ -1639,6 +1643,7 @@ export class BotService {
     }
     this.cancelUserMemory(bot.id, result.userId)
     this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
+    this.lastSearchQueries.delete(`${bot.id}:${result.userId}`)
     this.deleteRemoteSessions(bot.id, { userId: result.userId })
     const removed = this.memory.deleteUser(bot.id, result.userId)
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
@@ -1942,10 +1947,18 @@ export class BotService {
     force: boolean,
   ): Promise<SearchResolution> {
     if (!this.config.botSearchEnabled || !this.webSearch) return { kind: 'ok', context: null }
-    // mcp 模式由模型通过 SearXNG MCP 工具自行决定是否搜索；服务端只保留 /search 的强制预取。
-    if (!force && this.config.botSearchMode === 'mcp') return { kind: 'ok', context: null }
-    if (!force && (!this.config.botSearchAuto || !needsWebSearch(text))) return { kind: 'ok', context: null }
+    const followUp = isSearchFollowUp(text)
+    // mcp 模式：模型可通过 MCP 工具自行搜索；命中关键词/追问时服务端先预取，保证常见问句稳定。
+    if (!force && this.config.botSearchMode === 'mcp' && !followUp && !needsWebSearch(text)) {
+      return { kind: 'ok', context: null }
+    }
+    if (!force && (!this.config.botSearchAuto || (!needsWebSearch(text) && !followUp))) {
+      return { kind: 'ok', context: null }
+    }
     const key = `${bot.id}:${userId}`
+    const normalized = normalizeSearchQuery(text)
+    const query = followUp ? this.lastSearchQueries.get(key) ?? normalized : normalized
+    if (!query) return { kind: 'ok', context: null }
     const retry = this.searchLimiter.hit(key)
     if (retry > 0) {
       this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
@@ -1957,13 +1970,14 @@ export class BotService {
       return force ? { kind: 'rate_limited' } : { kind: 'ok', context: null }
     }
     try {
-      const query = normalizeSearchQuery(text)
       const results = await this.webSearch.search(query)
+      this.lastSearchQueries.set(key, query)
       this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
         bot: bot.id,
         user: userId.slice(0, 64),
         results: results.length,
         forced: force,
+        followUp,
       })
       if (results.length === 0 && !force) return { kind: 'ok', context: null }
       return { kind: 'ok', context: { query, results } }
@@ -2131,7 +2145,7 @@ export class BotService {
       roleCard,
       memory: memoryContext.text || undefined,
       searchContext,
-      webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp',
+      webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext,
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
@@ -2167,6 +2181,10 @@ export class BotService {
     if (typeof value !== 'string') return ''
     const replaced = value
       .replace(/\r\n?/g, '\n')
+      // 某些模型在工具 schema 不可用时会输出 DSML 工具调用文本；不能把内部语法回显给用户。
+      .replace(/<\|DSML\|>[\s\S]*?<\/\|DSML\|>/gi, '')
+      .replace(/｜｜DSML｜｜[\s\S]*?<\/｜｜DSML｜｜>/g, '')
+      .replace(/[｜|]{2}DSML[｜|]{2}/g, '')
       .replace(/(?:[A-Za-z]:\\|\/(?:home|var|etc|opt|run|proc|sys|tmp)\/)[^\s"'`]+/g, '[path]')
       .replace(/(?:ssh|https?):\/\/[^\s"'`]+/g, '[url]')
     let cleaned = ''
