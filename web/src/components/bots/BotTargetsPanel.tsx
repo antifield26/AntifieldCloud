@@ -3,7 +3,7 @@
 
 import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Plus, Radio, Trash2, Users } from 'lucide-react'
+import { Plus, Radio, Send, Trash2, Users } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type { BotInboundTarget, BotSummary, BotTarget, BotTargetKind } from '../../api/types'
 import { Badge } from '../Badge'
@@ -73,6 +73,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [fieldErrors, setFieldErrors] = useState<{ externalId?: string; label?: string; qqNumber?: string; quiet?: string }>({})
   const [adding, setAdding] = useState(false)
   const [savingQqId, setSavingQqId] = useState<string | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set())
   const [removeTarget, setRemoveTarget] = useState<BotTarget | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -213,6 +214,19 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       toast.error(toErrorMessage(updateError, '更新 QQ 号/群号失败，请重试'))
     } finally {
       setSavingQqId(null)
+    }
+  }
+
+  const handleTestTarget = async (target: BotTarget): Promise<void> => {
+    if (!bot || testingId) return
+    setTestingId(target.id)
+    try {
+      await api.bots.test(bot.id, target.id)
+      toast.success(`测试消息已发送到「${target.label}」；请在收到消息的 QQ 会话中确认对应号码`)
+    } catch (testError) {
+      toast.error(toErrorMessage(testError, '发送测试消息失败，请检查该目标与 Bot 配置'))
+    } finally {
+      setTestingId(null)
     }
   }
 
@@ -535,12 +549,23 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                     </label>
                     <Button
                       size="sm"
+                      variant="secondary"
+                      icon={<Send size={14} aria-hidden="true" />}
+                      aria-label={`向 ${target.label} 发送测试消息`}
+                      loading={testingId === target.id}
+                      onClick={() => void handleTestTarget(target)}
+                      disabled={busy || savingQqId === target.id || testingId !== null}
+                    >
+                      测试
+                    </Button>
+                    <Button
+                      size="sm"
                       variant="ghost"
                       className="text-danger"
                       icon={<Trash2 size={15} aria-hidden="true" />}
                       aria-label={`删除目标 ${target.label}`}
                       onClick={() => setRemoveTarget(target)}
-                      disabled={busy || removing}
+                      disabled={busy || removing || testingId !== null}
                     >
                       删除
                     </Button>
@@ -551,6 +576,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
           </ul>
         )}
         <p className="field-hint">
+          无法确定 openid 与真实 QQ 号/群号的对应关系时，点击目标行的“测试”向该目标发送一条测试消息；在 QQ 中收到消息的会话即该目标，再填写上方 QQ 号/群号。
           命令只读：/help、/status、/backup、/world、/mc、/files；/help、/role、/reset、/forget 对普通用户开放。
           执行管理命令需同时满足：当前目标开启“允许命令”，且发送者已登记为“用户”类型并开启“允许命令”（管理员白名单）。
           开启“允许 Chat”后，目标内成员可发送普通消息与 AI 对话，不能执行斜杠命令；每 Bot×用户默认每分钟 30 次 Chat、

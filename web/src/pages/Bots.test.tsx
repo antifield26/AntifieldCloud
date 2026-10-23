@@ -598,6 +598,14 @@ describe('Bots 机器人管理', () => {
     expect(screen.getByText(/\/reset 重置当前对话/)).toBeTruthy()
   })
 
+  it('目标行可向指定目标发送测试消息以确认号码对应关系', async () => {
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await userEvent.click(screen.getByRole('tab', { name: '目标' }))
+    await userEvent.click(await screen.findByRole('button', { name: '向 测试群 发送测试消息' }))
+    await waitFor(() => expect(mocks.test).toHaveBeenCalledWith('bot-1', 'target-1'))
+  })
+
   it('目标表单提交 QQ 目标且不再包含触发方式', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })

@@ -5,7 +5,7 @@
 ### Added
 
 - **目标 QQ 号/群号（`qqNumber`）**：Bot 目标新增可选页面识别号码；添加用户/群组目标时可填写，已配置目标可在行内更新/清空；频道目标不接受该字段。QQ 官方 Bot 回调不提供真实 QQ 号/群号，号码仅用于页面展示，不参与平台发送。
-- **目标管理展示**：列表同时展示“平台目标 ID”（`user_openid`/`group_openid`/`channel_id`）与 QQ 号/群号，内联保存后即时刷新。
+- **目标管理展示**：列表同时展示“平台目标 ID”（`user_openid`/`group_openid`/`channel_id`）与 QQ 号/群号，内联保存后即时刷新；每行“测试”按钮向指定目标发送测试消息，便于确认 openid 与真实 QQ 号/群号的对应关系。
 
 ### Changed
 
@@ -16,7 +16,7 @@
 - 版本升到 **0.6.2**；schema **v15**（迁移 15：`ALTER TABLE bot_targets ADD COLUMN qq_number TEXT`，可空；迁移不可逆，回滚需迁移前快照）。
 - `deploy.ps1` 期望 schema 改为 **15**；`deploy/env.example` `APP_VERSION=0.6.2`。
 - 迁移 15 只加可空列，已有目标 `qqNumber=null`，不影响投递/发布/命令；旧版本 v0.6.1 不支持 schema v15，回滚必须恢复迁移前 DB 快照并切回 v0.6.1 release。
-- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **394**、`npm run test:web` **178**；覆盖率 Lines **92.16%** / Branches **77.28%** / Functions **86.87%**（coverage 门禁 exit 0）；build 通过（bundle `index-BQPh2YVh.js` 682.72 kB）；check-version 通过。生产部署/验收证据待回填。
+- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **394**、`npm run test:web` **179**；覆盖率 Lines **92.16%** / Branches **77.25%** / Functions **86.87%**（coverage 门禁 exit 0）；build 通过（bundle `index-YaqZr2_8.js` 683.49 kB）；check-version 通过。生产部署/验收证据待回填。
 
 ## [v0.6.1] - 2026-10-23（已发布：Tag/Release v0.6.1）
 
