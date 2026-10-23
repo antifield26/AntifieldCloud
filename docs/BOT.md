@@ -16,7 +16,8 @@ QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`），图片经 
 > 生产 env 实测（3 个记忆变量就位、代理变量与 `BOT_PROXY_URL` 均无、运行时 365/3/120/7、config 无 proxy 字段）；无代理环境 QQ `checkBot` ok、连通性日志 detail 仅 `internet:true, platforms:["qq"]`；PC 隧道任务/进程已移除、PC/Pi 无 18090 监听；前端 `/`、`/bots` 200（bundle `index-Bx6EBCIp.js` 644262 bytes，含“Pi 直连”，不含“代理端口/设备在线”）。
 > **用户已实发验收通过**（2026-10-22 23:26–23:29 CST：合并摘要 rounds=3、远端会话删除 404 两例、图片 145172 B 有服务端证据；`/bots` 卡片用户确认；23:29 完成验收）；回滚切回 `20261022T143451Z` 并恢复 env（含代理变量/旧隧道脚本）后重启。
 >
-> **v0.5.11 待部署验收**（schema **v14**，迁移 14 不可逆）：结构化长期记忆（7 类条目、抽取/TTL/容量、分层召回、`/memory` 与 off/on、管理 API 元数据、legacy 转换与清理 CLI）；生产 env 新增 5 个 `BOT_MEMORY_*`；v0.5.10 不支持 v14，回滚必须恢复迁移前 DB 快照。
+> **v0.5.11 已部署并验收通过**（2026-10-23，最终 release `20261023T022831Z`/commit `931b10d`，schema **v14**，迁移 14 不可逆；同版本早前 release `20261023T021339Z`/`20261023T014328Z` 保留）：`/healthz` version 0.5.11/schemaVersion 14，smoke 16/16 与 24/24；生产 env 5 个 `BOT_MEMORY_*`、运行配置 365/3/120/3000/12/90/30。
+> **用户实发验收通过**（2026-10-23 10:39 CST）：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory` 成功、`/forget confirm` items=2 legacy=0 且未误删其他用户；早前 `/memory off`→Chat 无新 extract→`on`→`/forget` 亦通过；`/bots` 面板用户确认；首次短消息 ops=0 判定提示词过保守，commit `931b10d` 修正后重试 ops=2；legacy 清理 users=0 files=0；回滚必须恢复最终迁移前快照 + v0.5.10 release。
 
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
@@ -282,5 +283,6 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
   前端 bundle `index-CFrhFtH2.js` 含“每分钟 30 次”与“AI 对话由普通消息 Chat 承担”、不含 `/ask`。**用户实发验收（通过，2026-10-22 22:39–22:41 CST）**：非管理员 `/help` 有服务端事件证据（22:39:52 `command/ok/command_help`）；管理员 `/help` 全量、`/ask` 只回帮助不调用 AI、放宽后限速体验、Chat/图片回归为用户口头确认通过（服务端无单独事件证据）；22:41 原话“验收通过”。
 - **v0.5.10 部署验证（通过）**：release `20261022T152053Z`/commit `4619c91`，`/healthz` v0.5.10/schema 13，smoke 16/16 与 24/24；生产 env 实测（3 记忆变量就位、代理变量/`BOT_PROXY_URL` 均无、运行时 365/3/120/7、config 无 proxy 字段）；无代理环境 QQ `checkBot` ok、连通性日志仅 `internet:true, platforms:["qq"]`；PC 隧道任务/进程已移除、无 18090 监听；前端 bundle `index-Bx6EBCIp.js` 含“Pi 直连”，不含“代理端口/设备在线”。
   **用户实发验收（通过，2026-10-22 23:26–23:29 CST）**：8 条事件全部 ok（4 Chat 含 1 条仅图片 145172 B、3 `/forget` 含 2 次 confirm、1 `/reset`）；4 条 Chat 仅 1 次 `bot.ai.memory`（`rounds:3`）；部署前快照会话 `ses_e9c15b42…`/`ses_e9c15a6f…` 在 `/forget confirm` 后经 OpenCode API 均 404，该用户本地会话/记忆清空、其他用户不受影响、无删除失败日志；图片端到端成功；`/bots` 出站卡片用户确认；23:29 CST 完成验收。
-- **v0.5.11 待部署验收**（schema **v14**，迁移 14 不可逆）：生产部署事实（release/commit/healthz v0.5.11/schema 14/smoke）、迁移前快照；真实 Chat 抽取/召回（7 类、TTL/容量、敏感过滤、审计计数）；`/memory` 与 off/on；`/forget confirm` 清空 items/state/legacy/会话（含远端）；管理 API 只返回元数据；legacy 迁移/fallback 与清理 CLI（dry-run → `--confirm`）。
+- **v0.5.11 部署验证（通过）**：最终 release `20261023T022831Z`/commit `931b10d`，schema v14；`/healthz` v0.5.11/schema 14，smoke 16/16 与 24/24；env 5 个 `BOT_MEMORY_*`、运行配置 365/3/120/3000/12/90/30；迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc8…76a98d3c`）；部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，secrets=ok）。
+  **用户实发验收（通过，2026-10-23 10:39 CST）**：三条 Chat → `bot.memory.extract` rounds=3 ops=2（偏好+资料）；`/memory` 成功；`/forget confirm` items=2 legacy=0、回复含“记忆条目 2 条”，之后 items=0/state=0 且其他用户 legacy/sessions 未误删；早前 `/memory off`→Chat 无新 extract→`on`→`/forget confirm` 亦通过；`/bots` 面板用户确认；首次短消息 ops=0 判定提示词过保守，commit `931b10d` 修正后重试 ops=2；legacy 清理 dry-run/`--confirm` 均 users=0 files=0。
 - 发布前请确认 Cloudflare Access 对 `/api/bot/webhook/*` 做 bypass，见 `docs/DEPLOY.md` §5.2。

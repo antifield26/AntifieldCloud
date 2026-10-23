@@ -2,14 +2,14 @@
 
 本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.9**（schema v13，**已部署并验收通过 2026-10-22**，release `20261022T143451Z`/commit `97996dc`，无迁移；上一 release `20261022T134852Z`（v0.5.8）保留；`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24；生产 env 迁移完成），用户实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
 
-## v0.5.11 补充（当前，待部署验收）
+## v0.5.11 补充（当前，已部署并验收通过；用户实发 2026-10-23 10:39 CST）
 
 - **结构化记忆**：schema **v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_state`；旧 `bot_ai_memories` 保留为 legacy 来源）；7 类条目（profile/preference/fact/project/task/relationship/episode），key/value/confidence/importance/source/时间/expires_at，唯一键 `(bot,user,kind,key)`。
 - **抽取/召回**：3 条或空闲 120s 批处理 + 同用户串行，一次性会话、严格 JSON ops、敏感过滤、容量/TTL（profile/preference 不过期；fact/project 365、episode 90、task 30）；召回核心层优先 + 关键词相关层，3000 字/12 条预算，legacy fallback。
 - **自助/管理**：`/memory`（计数/类型/启停/最近更新，不含 key/value；`off|on`）；`/forget confirm` 清空 items/state/legacy/会话（含远端）；管理 API 用户级/条目元数据/单条删除/整用户删除（绝不返回 key/value）。
 - **Legacy 清理**：验收后 `node scripts/cleanup-legacy-memory.mjs`（默认 dry-run，`--confirm` 删除已迁移用户旧摘要行+镜像）。
 - **数据/部署**：version 0.5.11；schema v14（迁移 14，不可逆，v0.5.10 不支持，回滚必须恢复迁移前快照）；`deploy.ps1` 期望 14；生产 env 新增 5 个 `BOT_MEMORY_*`。
-- **状态**：代码与文档完成，待部署验收；测试基线 `npm test` **360**（341+19）、`npm run test:web` **162**（30 文件，+5）；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**、`npm run build` 通过。
+- **状态**：已部署 v0.5.11/schema v14（最终 release `20261023T022831Z`/commit `931b10d`，smoke 16/16 与 24/24，env 5 个 `BOT_MEMORY_*` 就位）；用户实发验收通过（2026-10-23 10:39 CST：三条 Chat → extract rounds=3 ops=2、`/memory`、`/forget confirm` items=2 legacy=0；legacy 清理 users=0 files=0）；测试基线 `npm test` **360**（341+19）、`npm run test:web` **162**（30 文件，+5）；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**、`npm run build` 通过。
 
 ## v0.5.10 补充（历史，已部署并验收通过；v0.5.11 起升级 schema v14）
 

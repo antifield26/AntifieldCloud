@@ -35,7 +35,16 @@
 - **v0.5.10 不支持 schema v14**：回滚必须恢复迁移前快照（不能仅切回旧 release）。
 - 生产 env 需新增 5 个 `BOT_MEMORY_*`；部署步骤：env → deploy（迁移 14 + 快照）→ `/healthz` v0.5.11/schema 14 → smoke（`-ExpectedSchemaVersion 14`）→ 真实记忆验收 → `cleanup-legacy-memory.mjs --confirm` → 部署后备份。
 - 测试基线（Lead 实测 2026-10-23）：`npm test` **360**（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，+5）、`npm run typecheck` 通过；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**（`npm run test:coverage` exit 0）、`npm run build` 通过。
-- **待部署验收**。
+- **已部署并验收通过（2026-10-23，最终 release `20261023T022831Z`/commit `931b10d`，schema v14）**：同版本早前 release `20261023T021339Z`（fix forget 回复）与 `20261023T014328Z`（首次 v0.5.11 部署）保留。
+  `/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；部署内只读 smoke **16/16**、完整 Access smoke **24/24**；运行配置 `365/3/120/3000/12/90/30`；生产 env 5 个 `BOT_MEMORY_*`、权限 `640 root:antifieldcloud`；
+  最终迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）。
+- **部署后备份**：`snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）。
+- **真实 QQ 验收（用户实发，2026-10-23 10:39 CST 通过）**：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；
+  10:39:15 `/forget confirm` 审计 `items=2 legacy=0`、回复含“记忆条目 2 条”，之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。同版本早前 A/B：`/memory off`（10:06:47）→ off 期间 Chat 无新 extract（10:07:14）→ `/memory on`（10:09:54）→ `/forget confirm`（10:10:12，items=1 legacy=1）均成功；`/bots` 记忆面板由用户确认可用。
+  诚实记录：首次短消息测试抽取 `ops=0`（10:18:47、10:21:17），判定提示词过保守；修正提示词（commit `931b10d`）并重新部署后重试得到 `ops=2`。
+- **Legacy 清理**：10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰），审计 `bot.memory.legacy_cleanup`。
+- **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24（环境事件，不计应用问题）。
+- **回滚**：v0.5.10 不支持 schema v14；必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10）。本地提交 `0b1dd03`（feat）/`dc912bb`（docs）/`a62eb34`（fix）/`931b10d`（prompt fix），尚未推送/打 Tag。
 
 ## [v0.5.10] - 2026-10-22
 

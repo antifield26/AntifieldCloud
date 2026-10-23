@@ -16,7 +16,7 @@
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：**v0.5.11 待部署验收**（目标 schema **v14**，迁移 14 不可逆）；当前生产为 **v0.5.10/schema v13 已部署并验收通过**（release `20261022T152053Z`，commit `4619c91`；上一 release `20261022T143451Z`（v0.5.9）保留）。
+- 生产现状：**v0.5.11/schema v14 已部署并验收通过**（最终 release `20261023T022831Z`，commit `931b10d`，迁移 14 不可逆；同版本早前 release `20261023T021339Z`/`20261023T014328Z` 保留）。
   `/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**；迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）
   `db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）。
   迁移 13 后 `bots` 仅剩 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；
@@ -26,8 +26,12 @@
 - **v0.5.10 已部署**（2026-10-22 23:20–23:23 CST，release `20261022T152053Z`/commit `4619c91`，version 0.5.10/schema v13 无迁移；上一 release `20261022T143451Z`（v0.5.9）保留）：`/healthz` = `{"ok":true,"version":"0.5.10","schemaVersion":13}`，smoke 16/16 与 24/24；
   迁移前快照 `db-predeploy-20261022T152150860Z.sqlite`（sha256 `3e48eb3359c00408903adde5ac642dd9f2b190e106e2d502112c3ff3ce7078e6`）；生产 env 实测（3 个记忆变量就位、代理变量与 `BOT_PROXY_URL` 均无、运行时 365/3/120/7、config 无 proxy 字段）；
   无代理环境 QQ `checkBot` ok、连通性日志 detail 仅 `internet:true, platforms:["qq"]`；PC 隧道任务/进程已移除、PC/Pi 无 `18090` 监听；前端 `/`、`/bots` 200（bundle `index-Bx6EBCIp.js` 644262 bytes，含“Pi 直连”，不含“代理端口/设备在线”）；
-  部署后备份 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）+ 密钥包 secrets=ok。**用户已实发验收通过**（2026-10-22 23:26–23:29 CST：合并摘要 rounds=3、远端会话删除 404 两例、图片 145172 B 有服务端证据；`/bots` 卡片用户确认；23:29 完成验收）。+
-- **v0.5.11 待部署验收**（schema 升到 **v14**，迁移 14 新增 `bot_memory_items`/`bot_memory_state`，不可逆；旧 `bot_ai_memories` 保留为 legacy 来源）：结构化长期记忆（7 类条目、抽取/TTL/容量、分层召回、`/memory` 与 off/on、管理 API 元数据、legacy 转换与清理 CLI）；生产 env 需新增 5 个 `BOT_MEMORY_*`；**v0.5.10 不支持 v14，回滚必须恢复迁移前快照**。
+  部署后备份 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）+ 密钥包 secrets=ok。**用户已实发验收通过**（2026-10-22 23:26–23:29 CST：合并摘要 rounds=3、远端会话删除 404 两例、图片 145172 B 有服务端证据；`/bots` 卡片用户确认；23:29 完成验收）。
+- **v0.5.11 已部署并验收通过**（2026-10-23，最终 release `20261023T022831Z`/commit `931b10d`，schema **v14**，迁移 14 不可逆；同版本早前 release `20261023T021339Z`（fix forget 回复）与 `20261023T014328Z`（首次 v0.5.11 部署）保留）：
+  `/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；部署内只读 smoke **16/16**、完整 Access smoke **24/24**；生产 env 5 个 `BOT_MEMORY_*`、权限 `640 root:antifieldcloud`；运行配置 `365/3/120/3000/12/90/30`；
+  最终迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）；部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）。
+  用户实发验收通过（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory` 成功、`/forget confirm` items=2 legacy=0 且未误删其他用户；早前 `/memory off`→Chat 无新 extract→`on`→`/forget` 亦通过；`/bots` 面板用户确认）。首次短消息抽取 ops=0 判定提示词过保守，已由 commit `931b10d` 修正后重试得到 ops=2。
+  Legacy 清理 dry-run/`--confirm` 均 users=0 files=0（未迁移用户 2 条未触碰）。**回滚必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10，不支持 v14）。**
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。
 
@@ -136,7 +140,7 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650）：fact/project/relationship 条目 TTL 天数（v0.5.11 起），独立于 7 天会话保留。
   - `BOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）：累计多少轮对话触发一次记忆抽取。
   - `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600）：用户空闲多少秒触发记忆抽取；0 关闭空闲触发。
-  - v0.5.10 同时删除 `BOT_PROXY_URL`（Pi 直连），生产 env 需删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`。+
+  - v0.5.10 同时删除 `BOT_PROXY_URL`（Pi 直连），生产 env 需删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`。
 - v0.5.11 新增结构化记忆 env（`bootstrap-env.sh` 已纳管，生产需在部署前写入）：
   - `BOT_MEMORY_MAX_ITEMS=200`（20–1000）：每 Bot×用户条目容量上限；超限先淘汰低重要度非核心条目（profile/preference 受保护）。
   - `BOT_MEMORY_PROMPT_MAX_CHARS=3000`（500–8000）：召回注入字符预算。
@@ -231,6 +235,14 @@ v0.5.11 **schema 升到 v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_
    - 按 `docs/ACCEPTANCE.md` v0.5.11 填写部署/测试/验收证据（不要提前声明通过）。
    - PC 重装每日任务：`.\scripts\install-backup-task.ps1 -PiHost <直连 IP> -BackupRoot <目录>`，确认 `backup-task.json` 脚本 SHA 更新；手跑一次确认 `secrets=ok`。
    - 世界拉取/演练：任务参数不变；演练改用 `-ExpectedSchemaVersion 14`。
+**本次部署与验收证据（2026-10-23）**：
+
+- 最终 release `20261023T022831Z`/commit `931b10d`；同版本早前 release `20261023T021339Z`/`20261023T014328Z` 保留；`/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；部署内只读 smoke 16/16、完整 Access smoke 24/24。
+- 最终迁移前快照：`/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）；生产 env 5 个 `BOT_MEMORY_*`（640 root:antifieldcloud），运行配置 365/3/120/3000/12/90/30。
+- 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）。
+- 用户实发验收通过（10:39 CST）：三条 Chat → `bot.memory.extract` rounds=3 ops=2；`/memory` 成功；`/forget confirm` items=2 legacy=0 且未误删其他用户；早前 `/memory off`→Chat 无新 extract→`on`→`/forget` 亦通过；`/bots` 面板用户确认；首次短消息 ops=0 判定提示词过保守，commit `931b10d` 修正后重试 ops=2。
+- Legacy 清理 dry-run/`--confirm` 均 users=0 files=0（未迁移用户 2 条未触碰）；环境事件：01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 恢复，公共 smoke 24/24。
+
 **回滚**：**schema v14 不可逆且 v0.5.10 不支持 v14**；回滚必须 stop → 用迁移前 DB 快照（`db-predeploy-*.sqlite`）恢复 DB → 把 `APP_VERSION` 改回上一 release 版本 → 切回 previous release `20261022T152053Z`（v0.5.10）→ start → 健康检查；手工顺序见 §11。
 **不要用未恢复快照的旧 release 启动**（schema 高于程序支持会拒绝启动）。回滚前保留当前 `bot_memory_items`/`bot_memory_state`/`bot_ai_memories` 导出便于核查；`BOT_SECRET_KEY` 不要轮换。
 回滚窗口内 `BOT_ENABLED`/`BOT_AI_ENABLED` 保持 false；`BOT_AI_VISION_ENABLED` 可保持 true。fail2ban 的 nftables drop-in 与业务版本无关，回滚应用时无需删除；如需回滚该安全项见 §9.7。
@@ -463,7 +475,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 
 ### 6.1 v0.5.11 备份/灾备/迁移
 
-- **v0.5.11 待部署**（schema 升到 **v14**，迁移 14 新增 `bot_memory_items`/`bot_memory_state`，不可逆；旧 `bot_ai_memories` 保留为 legacy 来源）：结构化记忆（7 类条目、抽取/TTL/容量、分层召回、`/memory` 与 off/on、管理 API 元数据、legacy 转换与清理 CLI）；生产 env 新增 5 个 `BOT_MEMORY_*`；
+- **v0.5.11 已部署并验收通过**（schema **v14**，迁移 14 新增 `bot_memory_items`/`bot_memory_state`，不可逆；旧 `bot_ai_memories` 保留为 legacy 来源）：最终 release `20261023T022831Z`/commit `931b10d`，healthz v0.5.11/schema 14，smoke 16/16 与 24/24；env 5 个 `BOT_MEMORY_*` 就位；用户实发验收通过（10:39 CST）；legacy 清理 users=0 files=0；回滚必须恢复最终迁移前快照 + v0.5.10 release。
   回滚必须恢复迁移前快照（v0.5.10 不支持 v14）。
 - （历史）**v0.5.10 已部署**（schema 保持 v13、无迁移）：生产 env 实测已清理代理变量（`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`）并确认 `BOT_AI_MEMORY_RETENTION_DAYS=365`/`BOT_AI_MEMORY_BATCH_MESSAGES=3`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；
   同时 PC 计划任务 `AntifieldCloudDiscordTunnel` 已移除（仓库不再含隧道脚本）；记忆摘要改为一次性会话+远端删除、更新串行、记忆 365 天/会话 7 天保留分离。回滚切回 v0.5.9 release 并恢复旧 env（如需代理链路还要取回旧隧道脚本/计划任务）。
@@ -486,12 +498,12 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
 - Web 恢复：只允许导入/校验/文件级恢复到新目录（`skippedMissing` 会剔除并在结果报告）；整库恢复仍按 `docs/BACKUP.md` §8 离线执行。
 - 媒体：mp4/webm/mp3/m4a/ogg/flac/wav 可内联播放；mkv/avi 等回退下载（与 Bot 无关）。
 - Bot 发布：v0.5.8 起仅文本（≤2000，超长分段）；不再支持媒体附件；QQ 无媒体。
-- 验收：`npm run check`（测试基线 **341/157**）、`npm run build`、`npm run test:coverage`（Lines **91.98%** / Branches **76.92%** / Functions **85.99%**）、`npm run test:web:coverage`、
+- 验收：`npm run check`（测试基线 **360/162**）、`npm run build`、`npm run test:coverage`（Lines **92.05%** / Branches **77.43%** / Functions **86.39%**）、`npm run test:web:coverage`、
   `smoke.ps1 -ExpectedVersion 0.5.11 -ExpectedSchemaVersion 14`、QQ 平台联调（§9.8；C2C/群@/频道、命令、`/help`、`/memory`、Chat、图片、发布、诊断、自检、角色/记忆元数据、结构化记忆抽取/召回）、
   备份导入/校验/恢复（临时 DATA_DIR）、世界备份/PC 拉取、`drill.ps1 -ExpectedSchemaVersion 14` 演练通过；OpenCode 升级后按 §3.2 复验。
   v0.5.7 及以前已部署/smoke 24/24；**v0.5.8 已部署**（release `20261022T134852Z`/commit `96294e4`，`/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24，迁移 13 后 `bots` 仅 1 行 QQ Bot），真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，证据见 `docs/ACCEPTANCE.md`）。 **v0.5.9 已部署**（release `20261022T143451Z`/commit `97996dc`，`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24，env 迁移完成；**用户已实发验收通过**（2026-10-22 22:39–22:41 CST；仅非管理员 `/help` 有服务端事件证据，其余为用户确认）。
   **v0.5.10 已部署**（release `20261022T152053Z`/commit `4619c91`，`/healthz` v0.5.10/schema 13，smoke 16/16 与 24/24，env 实测与直连载通性通过、PC 计划任务已移除；用户已实发验收通过（23:26–23:29 CST，证据见 `docs/ACCEPTANCE.md`））。
-  **v0.5.11 待部署**（version 0.5.11/schema **v14**，迁移 14 不可逆；生产 env 新增 5 个 `BOT_MEMORY_*`；回滚必须恢复迁移前快照）。
+  **v0.5.11 已部署并验收通过**（最终 release `20261023T022831Z`/commit `931b10d`，`/healthz` v0.5.11/schema 14，smoke 16/16 与 24/24，env 5 个 `BOT_MEMORY_*` 就位；用户实发验收通过 2026-10-23 10:39 CST；legacy 清理 users=0 files=0；回滚必须恢复最终迁移前快照）。
 
 ## 7. 主机健康探针（vcgencmd → /run JSON）
 
@@ -763,6 +775,7 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 | 记忆未生成/未召回 | 看 `bot.memory.extract` 审计计数与 `bot_memory_items`/`bot_memory_state` 行数；确认用户未 `/memory off`、OpenCode 可达、批处理阈值 `BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`、召回预算 `BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`；不要打印 key/value 正文 |
 | legacy 清理未执行/残留 | v0.5.11 验收后需执行 `node scripts/cleanup-legacy-memory.mjs`（dry-run 核对）再 `--confirm`；只清理 `legacy_migrated_at` 已置位用户的 `bot_ai_memories`+镜像；看审计 `bot.memory.legacy_cleanup` |
 | 回滚后启动报 schema 过高 | v0.5.10 不支持 schema v14；必须先用迁移前快照 `db-predeploy-*.sqlite` 恢复 DB，再切回 v0.5.10 release；不要只切 release |
+| Cloudflare 边缘/tunnel 中断 | 查看 Cloudflare 状态与 cloudflared 日志；本例 2026-10-23 01:08–01:13 CST 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复（环境事件，非应用问题） |
 | 连通性快照仍含设备/代理 | v0.5.10 起快照仅 `checkedAt/checking/internet/platforms`；若仍有 `deviceOnline/proxy` 说明运行的是旧版本或旧 bundle，检查 release/bundle 版本并重启 |
 | PC 仍有 DiscordTunnel 计划任务 | v0.5.10 已移除隧道；`Get-ScheduledTask -TaskName AntifieldCloudDiscordTunnel` 若存在请手动删除，仓库不再包含安装脚本 |
 | 通知被延后 | 目标配置了静默时段且在窗口内；属预期，`next_attempt_at` 为窗口结束；如非预期检查 `quietStartMinute/quietEndMinute` |
