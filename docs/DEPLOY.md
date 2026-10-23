@@ -322,6 +322,30 @@ curl -fsS http://127.0.0.1:3000/healthz
 v0.5.10 起 Bot 出站改为 Pi 直连，仓库已删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1`，PC 计划任务 `AntifieldCloudDiscordTunnel` 已移除；
 生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`（空值）。不需要再安装/维护任何 Windows 隧道任务；
 若外网不可达，请检查 Pi 路由/DNS/出站防火墙，而不是恢复旧代理变量（新版本不再读取）。
+
+### 3.5 SearXNG 私有搜索（v0.6.1，Bot 联网搜索）
+
+目标：只在本机 `127.0.0.1:8888` 提供 JSON 搜索，不暴露公网；使用系统 Python venv + systemd，不引入 Docker。
+
+```bash
+# 1) 在仓库根目录执行安装脚本（Pi 上以 root）；幂等，不覆盖已有 settings.yml。
+sudo bash scripts/install-searxng.sh
+# 2) 验证 JSON 搜索（生产网络仅启用 Bing；Google/DuckDuckGo/Brave 会超时，不要启用）
+curl -fsS --max-time 20 \
+  'http://127.0.0.1:8888/search?q=AntifieldCloud&format=json&engines=bing' | head -c 500
+# 3) 应用 env（/etc/antifieldcloud/env）追加/修改；然后重启应用
+BOT_SEARCH_ENABLED=true
+BOT_SEARCH_URL=http://127.0.0.1:8888
+BOT_SEARCH_ENGINES=bing
+# 其余 BOT_SEARCH_* 使用 deploy/env.example 默认值；bootstrap-env.sh 已纳管。
+sudo systemctl restart antifieldcloud
+```
+
+- 安装内容：`/opt/searxng`（git，当前 commit 记录在安装输出）、`/opt/searxng-venv`、`/etc/searxng/settings.yml`（0600/0640 root:searxng，随机 secret）、`/etc/systemd/system/searxng.service`、用户 `searxng`；模板见 `deploy/searxng/settings.yml.example` 与 `deploy/systemd/searxng.service`。
+- 网络边界：SearXNG 仅监听 loopback；`BOT_SEARCH_URL` 只接受 http/https、拒绝凭据；应用不抓取搜索结果网页，不保存查询正文；生产只启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
+- 验证：SearXNG `systemctl is-active searxng` = active；JSON 返回 `results` 数组；应用重启后 `/healthz` normal；QQ 发 `/search 关键词` 或“最近有什么新闻？”应有 AI 回答 + `参考来源`。
+- 回滚：`sudo systemctl disable --now searxng`（或设 `BOT_SEARCH_ENABLED=false` 后重启应用）；不需要恢复 schema/DB；卸载可选删除 `/opt/searxng`、`/opt/searxng-venv`、`/etc/searxng`。
+- 故障：`journalctl -u searxng -n 80 --no-pager`；若 `Permission denied /etc/searxng/settings.yml` 检查目录为 `root:searxng 0750`、文件 `0640`；若引擎全 timeout，确认 `BOT_SEARCH_ENGINES=bing` 且 `cn.bing.com` 可达；不要开启被墙引擎。
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 
 在**交互式 SSH** 中运行（不要把密码/二维码发到聊天）：

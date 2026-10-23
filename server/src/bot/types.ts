@@ -406,6 +406,8 @@ export interface BotServiceDeps {
   providers: BotCommandProviders
   /** 可选 AI 对话；未配置时普通消息 Chat 不调用 AI。 */
   ai?: BotAi
+  /** 可选联网搜索；未配置或关闭时 /search 返回未启用，自动搜索跳过。 */
+  search?: import('./search.ts').WebSearchClient
   fetch?: typeof fetch
   now?: () => Date
 }
@@ -439,5 +441,17 @@ export interface BotSummary {
   keyVersion: number
 }
 
-export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'role', 'reset', 'forget', 'memory'] as const
+export const BOT_COMMANDS = [
+  'help',
+  'status',
+  'backup',
+  'world',
+  'mc',
+  'files',
+  'role',
+  'reset',
+  'forget',
+  'memory',
+  'search',
+] as const
 export type BotCommandName = (typeof BOT_COMMANDS)[number]

@@ -46,6 +46,14 @@ import { describeBotError } from './errors.ts'
 import { formatAiReply } from './format.ts'
 import { BotMemoryStore } from './memory.ts'
 import { buildBotPrompt } from './prompts.ts'
+import { BurstMerger } from './burst.ts'
+import {
+  formatSearchPromptContext,
+  formatSearchSources,
+  needsWebSearch,
+  type WebSearchClient,
+  type WebSearchResult,
+} from './search.ts'
 import {
   BotChatRoleStore,
   normalizeRolePrompt,
@@ -76,6 +84,21 @@ const MAX_INBOUND_TARGETS_PER_BOT = 500
 const PUBLISH_TEXT_MAX = BOT_TEXT_LIMITS.qq
 /** 诊断事件结果枚举；service 与 route 共用校验。 */
 const BOT_EVENT_OUTCOMES = ['received', 'ok', 'denied', 'rate_limited', 'ignored', 'error'] as const
+
+interface ChatBurstItem {
+  bot: BotRow
+  result: Extract<InboundVerification, { kind: 'chat' }>
+  text: string
+}
+
+interface WebSearchContext {
+  query: string
+  results: WebSearchResult[]
+  /** 搜索失败时保留原因类别（不记录查询正文）。 */
+  failed?: boolean
+}
+
+type SearchResolution = { kind: 'ok'; context: WebSearchContext | null } | { kind: 'rate_limited' }
 /** AI 图片理解允许的 mime；超出范围降级为纯文本。 */
 const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 /** 入站图片下载超时；由适配器 loadImage 执行。 */
@@ -274,9 +297,12 @@ export class BotService {
   private readonly webhookLimiter: SlidingWindowLimiter
   private readonly aiLimiter: SlidingWindowLimiter
   private readonly chatLimiter: SlidingWindowLimiter
+  private readonly searchLimiter: SlidingWindowLimiter
   private readonly memory: BotMemoryStore
   private readonly roles: BotChatRoleStore
   private readonly connectivity: BotConnectivityMonitor
+  private readonly chatBursts: BurstMerger<ChatBurstItem>
+  private readonly webSearch: WebSearchClient | null
   private timer: NodeJS.Timeout | null = null
   private stopped = false
   private ticking = false
@@ -305,6 +331,24 @@ export class BotService {
     this.webhookLimiter = new SlidingWindowLimiter(60_000, 300)
     this.aiLimiter = new SlidingWindowLimiter(3_600_000, Math.max(1, deps.config.botAiRatePerHour))
     this.chatLimiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botChatRatePerMinute))
+    this.searchLimiter = new SlidingWindowLimiter(3_600_000, Math.max(1, deps.config.botSearchRatePerHour))
+    this.webSearch = deps.search ?? null
+    this.chatBursts = new BurstMerger<ChatBurstItem>({
+      windowMs: deps.config.botChatBurstWindowMs,
+      maxWaitMs: deps.config.botChatBurstMaxWaitMs,
+      maxItems: deps.config.botChatBurstMaxMessages,
+      onFlush: (_key, items) => {
+        const task = this.executeChatBatch(items)
+        this.pending.add(task)
+        void task.finally(() => this.pending.delete(task))
+        return task
+      },
+      onError: (error) => {
+        this.deps.log('warn', 'Bot 连续消息批次处理失败', {
+          error: error instanceof Error ? error.message : 'unknown',
+        })
+      },
+    })
     this.memory = new BotMemoryStore(deps.db, deps.config.dataDir, {
       maxItems: deps.config.botMemoryMaxItems,
       promptMaxChars: deps.config.botMemoryPromptMaxChars,
@@ -965,6 +1009,9 @@ export class BotService {
 
   async waitForIdle(): Promise<void> {
     await Promise.allSettled([...this.pending])
+    // 连续消息缓冲可能仍在防抖计时；一并排空，保证测试/关闭能看到最终回复。
+    await this.chatBursts.drain()
+    await Promise.allSettled([...this.pending])
   }
 
   /** 调度一轮 tick 并纳入 pending，便于测试/关闭等待异步队列完全结束。 */
@@ -987,6 +1034,7 @@ export class BotService {
   stop(): void {
     this.stopped = true
     this.flushPendingMemory()
+    this.chatBursts.stop()
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
@@ -1380,9 +1428,14 @@ export class BotService {
       })
       return { status: 200, body: ack() }
     }
-    // /help、/role（私聊）、/reset、/forget、/memory 面向所有用户；其余命令需目标 allow_commands + user 白名单。
+    // /help、/role（私聊）、/reset、/forget、/memory、/search 面向所有用户；其余命令需目标 allow_commands + user 白名单。
     const openCommand =
-      command === 'help' || command === 'role' || command === 'reset' || command === 'forget' || command === 'memory'
+      command === 'help' ||
+      command === 'role' ||
+      command === 'reset' ||
+      command === 'forget' ||
+      command === 'memory' ||
+      command === 'search'
     const target = this.inboundTarget(bot.id, result)
     const adminAllowed = Boolean(
       target && target.allow_commands === 1 && this.isCommandUserAllowed(bot.id, result.userId),
@@ -1452,18 +1505,6 @@ export class BotService {
       mark('ignored', 'empty_content')
       return { status: 200, body: ack() }
     }
-    const chatRetry = this.chatLimiter.hit(`${bot.id}:${result.userId}`)
-    if (chatRetry > 0) {
-      void result.reply(`对话过于频繁（每分钟 ${this.config.botChatRatePerMinute} 次），请稍后再试。`).catch(() => undefined)
-      mark('rate_limited', 'chat_rate_limited')
-      return { status: 200, body: ack() }
-    }
-    const aiRetry = this.aiLimiter.hit(`${bot.id}:${result.userId}`)
-    if (aiRetry > 0) {
-      void result.reply(`AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`).catch(() => undefined)
-      mark('rate_limited', 'ai_rate_limited')
-      return { status: 200, body: ack() }
-    }
     this.deps.audit('bot.chat', `${bot.platform}:${result.targetExternalId}`, {
       bot: bot.id,
       user: result.userId.slice(0, 64),
@@ -1471,13 +1512,17 @@ export class BotService {
       ...(result.image ? { image: result.image.mime.slice(0, 50) } : {}),
       ...(target ? {} : { open: 'qq_c2c' }),
     })
-    const task = this.executeChat(bot, result, text).catch((error: unknown) => {
-      this.deps.log('warn', 'Bot Chat 执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
-      mark('error', sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error))
+    // 连续消息合并 + 同会话串行由 BurstMerger 负责；Webhook 仍立即 ack。
+    this.chatBursts.enqueue(this.chatBurstKey(bot.id, result.targetExternalId, result.userId), {
+      bot,
+      result,
+      text,
     })
-    this.pending.add(task)
-    void task.finally(() => this.pending.delete(task))
     return { status: 200, body: ack() }
+  }
+
+  private chatBurstKey(botId: string, targetExternalId: string, userId: string): string {
+    return `${botId}:${targetExternalId}:${userId}`
   }
 
   private async executeCommand(
@@ -1508,6 +1553,9 @@ export class BotService {
       }
       let text: string
       switch (command) {
+        case 'search':
+          await this.executeSearchChat(bot, result, args)
+          return
         case 'help':
           text = adminAllowed ? helpText() : publicHelpText()
           break
@@ -1570,6 +1618,7 @@ export class BotService {
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): string {
+    this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
     this.resetChatSession(bot.id, result.targetExternalId, result.userId)
     this.deps.audit('bot.reset', bot.id, { bot: bot.id, user: result.userId.slice(0, 64) })
     return '已重置当前对话（长期记忆保留）。'
@@ -1588,6 +1637,7 @@ export class BotService {
       return '用法：/forget confirm（将清除长期记忆与全部对话上下文，此操作不可恢复）。'
     }
     this.cancelUserMemory(bot.id, result.userId)
+    this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
     this.deleteRemoteSessions(bot.id, { userId: result.userId })
     const removed = this.memory.deleteUser(bot.id, result.userId)
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
@@ -1787,44 +1837,84 @@ export class BotService {
     }
   }
 
-  private async executeChat(
-    bot: BotRow,
-    result: Extract<InboundVerification, { kind: 'chat' }>,
-    text: string,
-  ): Promise<void> {
-    const finish = (outcome: BotEventOutcome, detail: string) =>
-      this.markEvent(bot.id, result.eventId, {
-        outcome,
-        detail,
-        target: result.targetExternalId,
-        user: result.userId,
-      })
+  /**
+   * 执行一批连续消息：合并文本、串行调用 AI、只回复一次。
+   * 同一会话由 BurstMerger 串行；不同会话可并行。
+   */
+  private async executeChatBatch(items: ChatBurstItem[], forceSearch = false): Promise<void> {
+    if (items.length === 0) return
+    const first = items[0]
+    const last = items[items.length - 1]
+    if (!first || !last) return
+    const bot = first.bot
+    const result = last.result
+    const finishAll = (outcome: BotEventOutcome, detail: string) => {
+      for (const item of items) {
+        this.markEvent(bot.id, item.result.eventId, {
+          outcome,
+          detail,
+          target: item.result.targetExternalId,
+          user: item.result.userId,
+        })
+      }
+    }
     try {
+      const chatRetry = this.chatLimiter.hit(`${bot.id}:${result.userId}`)
+      if (chatRetry > 0) {
+        await result.reply(`对话过于频繁（每分钟 ${this.config.botChatRatePerMinute} 次），请稍后再试。`).catch(() => undefined)
+        finishAll('rate_limited', 'chat_rate_limited')
+        return
+      }
+      const aiRetry = this.aiLimiter.hit(`${bot.id}:${result.userId}`)
+      if (aiRetry > 0) {
+        await result.reply(`AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`).catch(() => undefined)
+        finishAll('rate_limited', 'ai_rate_limited')
+        return
+      }
       const role = result.isDirect ? this.roles.get(bot.id, result.userId) : null
       const roleCard = role?.enabled ? role : null
       const prepared = await this.prepareAiImage(bot, result)
-      if (prepared.kind === 'unsupported') {
-        // 图片无法处理且用户没有可用文字：直接提示，不调用模型。
+      const texts = items.map((item) => item.text).filter(Boolean)
+      const limit = Math.max(1, this.config.botAiMaxPromptChars)
+      let merged = texts.join('\n').trim()
+      if (merged.length > limit) merged = merged.slice(-limit)
+      if (prepared.kind === 'unsupported' && !merged) {
+        // 图片无法处理且本批没有任何可用文字：直接提示，不调用模型。
         await result.reply(IMAGE_UNSUPPORTED_TEXT)
-        finish('ignored', 'image_unsupported')
+        finishAll('ignored', 'image_unsupported')
         return
       }
       // 仅图片无正文时用中性占位，避免向模型发送空用户消息。
-      const userText = text || (result.image ? IMAGE_ONLY_USER_TEXT : '')
+      const userText = merged || (result.image ? IMAGE_ONLY_USER_TEXT : '')
+      if (!userText) {
+        finishAll('ignored', 'empty_content')
+        return
+      }
+      const search = await this.resolveWebSearch(bot, result.userId, userText, forceSearch)
+      if (search.kind === 'rate_limited') {
+        await result.reply(`联网搜索过于频繁（每小时 ${this.config.botSearchRatePerHour} 次），请稍后再试。`).catch(() => undefined)
+        finishAll('rate_limited', 'search_rate_limited')
+        return
+      }
+      const searchContext = search.context ? formatSearchPromptContext(search.context.query, search.context.results) : undefined
       const answer = await this.chatWithAi(
         bot,
         result.userId,
         result.targetExternalId,
         userText,
         roleCard,
-        prepared.image,
+        prepared.kind === 'ok' ? prepared.image : undefined,
+        searchContext,
+        search.context?.results.length ?? 0,
       )
       const plain = this.sanitizeAiText(answer)
       const formatted = formatAiReply(plain)
-      const replyText = prepared.degraded && text ? `${formatted}\n${IMAGE_DEGRADED_NOTE}` : formatted
+      const imageNote = prepared.kind === 'ok' && prepared.degraded && merged ? `\n${IMAGE_DEGRADED_NOTE}` : ''
+      const sourceNote = search.context && search.context.results.length > 0 ? formatSearchSources(search.context.results) : ''
+      const replyText = `${formatted}${sourceNote}${imageNote}`
       await result.reply(replyText || '暂时没回应上来，稍后再试。')
       if (userText) this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, plain)
-      finish('ok', 'chat')
+      finishAll('ok', 'chat')
     } catch (error) {
       if (sentExternalIdsOf(error).length > 0) {
         // 长回复已部分外发：只记日志，不补发失败提示。
@@ -1832,12 +1922,118 @@ export class BotService {
           bot: bot.id,
           sent: sentExternalIdsOf(error).length,
         })
-        finish('error', 'partial_reply')
+        finishAll('error', 'partial_reply')
         return
       }
-      finish('error', errorShortCode(error))
+      finishAll('error', errorShortCode(error))
       await result.reply('暂时没回应上来，稍后再试。').catch(() => undefined)
     }
+  }
+
+  /**
+   * 解析本批是否需要联网搜索：显式 /search 强制；自动模式用保守关键词判断。
+   * 搜索失败不阻断 Chat，返回空结果并在提示词中说明不可用；绝不记录查询正文。
+   */
+  private async resolveWebSearch(
+    bot: BotRow,
+    userId: string,
+    text: string,
+    force: boolean,
+  ): Promise<SearchResolution> {
+    if (!this.config.botSearchEnabled || !this.webSearch) return { kind: 'ok', context: null }
+    if (!force && (!this.config.botSearchAuto || !needsWebSearch(text))) return { kind: 'ok', context: null }
+    const key = `${bot.id}:${userId}`
+    const retry = this.searchLimiter.hit(key)
+    if (retry > 0) {
+      this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
+        bot: bot.id,
+        user: userId.slice(0, 64),
+        rateLimited: true,
+        forced: force,
+      })
+      return force ? { kind: 'rate_limited' } : { kind: 'ok', context: null }
+    }
+    try {
+      const results = await this.webSearch.search(text)
+      this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
+        bot: bot.id,
+        user: userId.slice(0, 64),
+        results: results.length,
+        forced: force,
+      })
+      if (results.length === 0 && !force) return { kind: 'ok', context: null }
+      return { kind: 'ok', context: { query: text, results } }
+    } catch (error) {
+      this.deps.log('warn', 'Bot 联网搜索失败', {
+        bot: bot.id,
+        error: errorShortCode(error),
+        forced: force,
+      })
+      this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
+        bot: bot.id,
+        user: userId.slice(0, 64),
+        error: errorShortCode(error),
+        forced: force,
+      })
+      return { kind: 'ok', context: { query: text, results: [], failed: true } }
+    }
+  }
+
+  /** `/search <关键词>`：复用 Chat 管线强制搜索，结果由 AI 总结并附来源。 */
+  private async executeSearchChat(
+    bot: BotRow,
+    result: Extract<InboundVerification, { kind: 'command' }>,
+    args: string,
+  ): Promise<void> {
+    const target = this.inboundTarget(bot.id, result)
+    const openQqC2c = result.isDirect && result.targetKind === 'user'
+    if ((!target || target.allow_chat !== 1) && !openQqC2c) {
+      await result.reply('当前会话未开启普通消息对话，无法使用联网搜索。').catch(() => undefined)
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'denied',
+        detail: 'search_chat_denied',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return
+    }
+    if (!args.trim()) {
+      await result.reply('用法：/search <关键词>（联网搜索并由 AI 总结，附来源）').catch(() => undefined)
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'ignored',
+        detail: 'search_empty',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return
+    }
+    if (!this.config.botAiEnabled || !this.deps.ai) {
+      await result.reply('AI 未启用，无法使用联网搜索。').catch(() => undefined)
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'ignored',
+        detail: 'ai_disabled',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return
+    }
+    if (!this.config.botSearchEnabled || !this.webSearch) {
+      await result.reply('联网搜索未启用，请联系管理员配置 SearXNG。').catch(() => undefined)
+      this.markEvent(bot.id, result.eventId, {
+        outcome: 'ignored',
+        detail: 'search_disabled',
+        target: result.targetExternalId,
+        user: result.userId,
+      })
+      return
+    }
+    const chatResult: Extract<InboundVerification, { kind: 'chat' }> = {
+      ...result,
+      kind: 'chat',
+      text: args,
+      chatTrigger: result.isDirect ? 'direct' : 'mention',
+    }
+    await this.executeChatBatch([{ bot, result: chatResult, text: args }], true)
   }
 
   /**
@@ -1921,6 +2117,8 @@ export class BotService {
     text: string,
     roleCard?: BotChatRole | null,
     image?: BotAiImage,
+    searchContext?: string,
+    searchResults = 0,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     // 结构化记忆按相关性召回；关闭记忆或没有可用条目时不注入。
@@ -1928,6 +2126,7 @@ export class BotService {
     const prompt = buildBotPrompt({
       roleCard,
       memory: memoryContext.text || undefined,
+      searchContext,
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
@@ -1937,6 +2136,7 @@ export class BotService {
       ...(roleCard ? { role: true } : {}),
       ...(image ? { image: image.mime.slice(0, 50) } : {}),
       ...(memoryContext.usedItemIds.length > 0 ? { memoryItems: memoryContext.usedItemIds.length } : {}),
+      ...(searchContext ? { search: true, searchResults } : {}),
     })
     let answer: string
     try {

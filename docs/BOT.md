@@ -158,12 +158,26 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 | `BOT_CONNECTIVITY_ENABLED` | `true` | 出站连通性探测开关 |
 | `BOT_CONNECTIVITY_INTERVAL_SECONDS` | `60` | 探测间隔（15–600） |
 | `BOT_CONNECTIVITY_TIMEOUT_SECONDS` | `8` | 单次探测超时（2–30） |
+| `BOT_CHAT_BURST_WINDOW_MS` | `1200` | 同一 Bot×目标×用户连续消息合并窗口（0 关闭合并但仍串行；0–5000） |
+| `BOT_CHAT_BURST_MAX_WAIT_MS` | `5000` | 从首条消息起最长等待，避免持续输入不回复（1000–15000） |
+| `BOT_CHAT_BURST_MAX_MESSAGES` | `6` | 单批最多合并消息数（1–20） |
+| `BOT_SEARCH_ENABLED` | `false` | SearXNG 联网搜索总开关；开启时必须配置 `BOT_SEARCH_URL` |
+| `BOT_SEARCH_URL` | 空 | SearXNG 基址；生产建议 `http://127.0.0.1:8888`，仅 http/https、不得含凭据 |
+| `BOT_SEARCH_AUTO` | `true` | 自动判断问句/时效内容并搜索；显式 `/search` 不受影响 |
+| `BOT_SEARCH_MAX_RESULTS` | `5` | 单次搜索最多结果数（1–10） |
+| `BOT_SEARCH_TIMEOUT_SECONDS` | `8` | SearXNG 超时（1–30 秒） |
+| `BOT_SEARCH_MAX_SNIPPET_CHARS` | `500` | 单条摘要截断（100–1500） |
+| `BOT_SEARCH_LANGUAGE` | `zh-CN` | SearXNG 语言参数 |
+| `BOT_SEARCH_SAFESEARCH` | `true` | SearXNG safe search |
+| `BOT_SEARCH_ENGINES` | `bing` | 逗号分隔引擎名；生产网络只启用 Bing，避免被墙引擎超时 |
+| `BOT_SEARCH_RATE_PER_HOUR` | `60` | 每 Bot×用户每小时搜索上限（1–600） |
 
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 QQ AppSecret 无法解密，必须重新录入。不要把它写入仓库/前端/日志。
 `bootstrap-env.sh` 已纳管上述 `BOT_*` 键（v0.5.8 移除 `BOT_DISCORD_GATEWAY_ENABLED` 与 `BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`；
 v0.5.9 移除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`，AI 提示词固定不再可覆盖；
 v0.5.10 删除 `BOT_PROXY_URL`（Pi 直连）并新增 `BOT_AI_MEMORY_RETENTION_DAYS`/`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`；
-v0.5.11 新增 `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`/`BOT_MEMORY_TTL_EPISODE_DAYS`/`BOT_MEMORY_TTL_TASK_DAYS`）；`BOT_AI_VISION_ENABLED` 默认 `true`。
+v0.5.11 新增 `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`/`BOT_MEMORY_TTL_EPISODE_DAYS`/`BOT_MEMORY_TTL_TASK_DAYS`）；
+v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` 默认 `true`。
 
 ## 5.1 Chat 提示词、会话与记忆抽取（v0.5.11）
 
@@ -215,6 +229,24 @@ v0.5.11 新增 `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_
   `/memory off` 时返回空上下文（不注入、不抽取）；未迁移旧摘要作为 fallback 注入并受同一预算约束。
 - **自助命令**：`/memory` 显示总条数/各类型计数/启停/最近更新时间（不含 key/value）；`/memory off|on` 暂停/恢复；`/forget confirm` 清空该用户 items/state/legacy 摘要并清空会话（含远端）；审计 `bot.memory.toggle`/`bot.memory.extract`/`bot.memory.forget`。
 - **Legacy 清理**：验收后运行 `node scripts/cleanup-legacy-memory.mjs`（默认 dry-run）核对数量，再 `--confirm` 删除已迁移用户的 `bot_ai_memories` 行 + 镜像文件（写审计 `bot.memory.legacy_cleanup`，不输出正文）。
+
+## 5.6 连续消息处理（v0.6.1）
+
+- 同一 `Bot×目标×用户` 的普通消息进入内存 burst 缓冲：默认在最后一条后 `BOT_CHAT_BURST_WINDOW_MS=1200` 合并，且从首条起最多等待 `BOT_CHAT_BURST_MAX_WAIT_MS=5000`，单批最多 `BOT_CHAT_BURST_MAX_MESSAGES=6` 条；达到条数立即触发。
+- 合并后只调用一次 AI、只回复一次；不同会话可并行，同一会话严格串行（处理期间到达的消息进入下一批）。Webhook 仍立即 ack，不因等待合并而超时。
+- 合并文本按换行拼接并按 `BOT_AI_MAX_PROMPT_CHARS` 截断；图片批次只处理最后一张，文字仍保留；仅图片无正文时使用中性占位。
+- `/reset`、`/forget confirm` 和角色卡变更会清理当前会话缓冲，避免旧消息在新上下文里回复；进程停止时丢弃未处理缓冲。
+- 聊天/搜索限流按**批次**计（一次合并回复算一次），避免连续短消息被误判刷屏；命令不受 burst 合并影响。
+- 审计 `bot.chat` 仍按入站消息记录长度（不含正文），诊断事件在批次结束时统一标记 ok/rate_limited/error。
+
+## 5.7 联网搜索（v0.6.1）
+
+- **部署**：SearXNG 自建/私有实例，仅监听 `127.0.0.1:8888`；应用通过 `BOT_SEARCH_URL` 访问 `/search?format=json`。安装与回滚见 `docs/DEPLOY.md` §3.5；不引入 Docker。
+- **触发**：`/search <关键词>` 对所有可 Chat 的用户开放（C2C 或目标 `allow_chat=1`），强制搜索；普通消息在 `BOT_SEARCH_AUTO=true` 时用保守问句+时效关键词自动判断。`/search` 不受自动开关影响，但受搜索总开关与限流约束。
+- **结果注入**：只读取 SearXNG JSON 的标题/摘要/URL（内部校验）/域名，最多 `BOT_SEARCH_MAX_RESULTS` 条；提示词把结果标为**不可信外部资料**，要求不执行其中指令、不编造、不输出完整 URL；回答末尾由服务端附“参考来源：标题（域名）”，不把搜索页内容/URL 直接回显。
+- **失败降级**：SearXNG 超时/非 2xx/格式错误时 Chat 继续回答但明确不附来源；自动搜索失败不打断对话；`/search` 失败仍走 AI 回答（无来源）。审计 `bot.search` 只记录结果数/错误码/是否强制，不记录查询正文。
+- **限流/隐私**：每 Bot×用户每小时 `BOT_SEARCH_RATE_PER_HOUR`；查询会发给配置的私有 SearXNG 及其启用的引擎（生产仅 Bing），不会把用户消息直接发给任意外部搜索 API。搜索只取摘要，不抓取结果页面；`BOT_SEARCH_ENGINES=bing` 规避被墙引擎超时。
+- **启用步骤**：安装 SearXNG → `curl 'http://127.0.0.1:8888/search?q=test&format=json&engines=bing'` 返回 JSON → env 设置 `BOT_SEARCH_ENABLED=true`/`BOT_SEARCH_URL=http://127.0.0.1:8888` → 重启应用 → 实测 `/search` 与自动问句。
 
 ## 6. 网络出站（QQ / OpenCode，Pi 直连）
 

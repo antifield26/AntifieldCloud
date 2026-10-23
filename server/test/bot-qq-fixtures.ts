@@ -8,6 +8,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../src/config.ts'
 import { BotService } from '../src/bot/service.ts'
 import type { BotAiImage, BotMemoryItemPrompt, BotMemoryOperation } from '../src/bot/types.ts'
+import type { WebSearchResult } from '../src/bot/search.ts'
 import { tempDataDir, testConfig, testDb } from './helpers.ts'
 
 export const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
@@ -187,6 +188,8 @@ export interface QqServiceOptions {
   extractHandler?: (input: MemoryExtractInput) => Promise<BotMemoryOperation[]>
   configOverrides?: Partial<Config>
   fetchOptions?: QQServiceFetchOptions
+  /** 可选搜索桩；未提供时 BOT_SEARCH_ENABLED=true 也按未配置搜索处理。 */
+  search?: { search(query: string): Promise<WebSearchResult[]> }
 }
 
 /** 默认抽取桩：把本批用户文本记成一条 fact，便于断言结构化落库。 */
@@ -258,6 +261,7 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
           },
         }
       : {}),
+    ...(options.search ? { search: options.search } : {}),
     providers: {
       status: async () => ({ ok: true }),
       backup: async () => ({ ok: true }),

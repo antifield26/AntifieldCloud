@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.6.1（已部署并由用户复核通过，release `20261023T063020Z`/commit `23d5ec4`；备份状态误报修复 + host-only 过渡清理，schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.6.1（**开发中，未发布**；生产仅预部署备份状态 hotfix；计划新增 Bot 连续消息 + SearXNG 联网搜索；schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -39,14 +39,14 @@
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
 
-## v0.6.1（已部署并由用户复核通过；备份状态误报修复 + host-only 过渡清理，schema 保持 v14、无迁移）
+## v0.6.1（开发中，未发布；Bot 连续消息 + 联网搜索 + 备份状态 hotfix 预部署）
 
-- **触发问题**：用户反馈 Dashboard 备份状态显示“应用归档文件缺失”。根因是 PC 拉取 ack 后会删除 Pi 上归档文件，而 `toArchiveItem` 先按文件存在性标记 `missing`，优先级高于 `acked`，导致已确认归档被误报缺失。
-- **修复**：`acked_at` 优先返回 `acked`；新增 `available` 字段（服务端文件是否存在）；Dashboard 按 acked 显示“已确认”；Backups 页对 `available=false` 显示“副本已清理”，恢复按钮禁用并给出明确 title；`isArchiveRestorable` 要求 `available !== false`。
-- **附带**：`GET /api/auth/me` 清理旧父域 Cookie，降低 host-only 过渡期残留；BOT-04 deny-all 生产只读负路径验证（模型返回 `TOOLS_UNAVAILABLE`、无 tool 段、目标文件未创建）。
-- **本地门禁（2026-10-23）**：`npm run check` 通过；`npm test` **383**、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`node scripts/check-version.mjs` 通过。
-- **部署与复核（2026-10-23，已通过）**：release `20261023T063020Z`/commit `23d5ec4`；`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；最终迁移前快照 `db-predeploy-20261023T063052547Z.sqlite`（sha256 `94535865a5be06511d39029e00cc35361763fc22aaca68b169adef823744e206`）；生产 25 个 acked 归档文件均已被 PC 清理（此前会被标为 missing），用户刷新 Dashboard/备份页确认显示“已确认/副本已清理”，不再误报；部署后备份 `snapshot-20261023T063321997Z-inc.tar.gz`（168622 bytes，sha256 `0eca4a03a724d7887a6d43b03f59584a503642587392bebf789903159de0f2f0`，PC ack）+ 密钥包 `secrets-20261023T063324Z.tar.age`（1733483 bytes，secretsOk=true）。
-- **发布（已通过）**：main/Tag `v0.6.1`，GitHub Release [AntifieldCloud v0.6.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.1)（Latest）；生产保留 3 个 release（`20261023T063020Z` current、`20261023T053539Z`、`20261023T052315Z`）。
+- **发布状态**：用户要求不着急发布 v0.6.1；此前误打的 Tag/Release 已撤回（GitHub Release 删除、远端/本地 tag 删除）。生产保留 hotfix 预部署，但不对外称为 v0.6.1 发布；连续消息/联网搜索、SearXNG 生产验证与用户验收完成后再打 Tag/Release。
+- **连续消息（已实现，待真实 QQ 验收）**：同一 Bot×目标×用户 burst 合并 + 同会话串行；默认窗口 1200ms/最长 5000ms/上限 6 条；Webhook 立即 ack、只调用一次 AI/回复一次；`/reset`/`/forget` 清缓冲；不同会话并行。
+- **联网搜索（已实现，待 SearXNG/真实 QQ 验收）**：自建 SearXNG（loopback JSON API）自动判断 + `/search`；结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文；失败降级、每小时限流、不可信外部资料边界；生产网络仅启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
+- **备份状态 hotfix（已预部署并经用户复核）**：`acked` + `available=false` 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核通过。
+- **本地门禁（2026-10-23，功能代码）**：`npm run check` 通过；`npm test` **390**（含 burst/搜索回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**（`npm run test:coverage` exit 0）；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`scripts/install-searxng.sh`/`bootstrap-env.sh` bash 语法通过。
+- **待完成**：本地全量/覆盖率/CI、SearXNG 安装后只读 JSON 验证、应用部署与 smoke、真实 QQ 连续消息/`/search` 用户验收、Tag/Release。未完成前不发布。
 
 ## v0.6.0（已部署并验收通过；质量与安全加固，schema 保持 v14、无迁移；最终 release `20261023T053539Z`/commit `6349617`）
 

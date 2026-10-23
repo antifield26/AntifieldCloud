@@ -1,10 +1,12 @@
 # 路线图
 
-## v0.6.1（已部署并由用户复核通过；备份状态误报修复 + host-only 过渡清理）
+## v0.6.1（开发中，未发布；Bot 连续消息 + 联网搜索 + 备份状态 hotfix 预部署）
 
-- **修复**：PC ack 清理服务端归档文件后，`/api/backups` 返回 `status=acked` + `available=false`，Dashboard 不再显示“应用归档文件缺失”，恢复按钮禁用；API v13。
-- **残余处理**：`/api/auth/me` 补清旧父域 Cookie；BOT-04 deny-all 生产只读负路径验证（无 tool 段、无文件创建）；`__Host-` 前缀、SSO ticket IP/UA 绑定、记忆过滤启发式保留为后续项。
-- **版本/数据**：version 0.6.1，schema v14 无迁移；已部署 release `20261023T063020Z`/smoke 16/16 与 24/24/备份与密钥包拉取/用户 Dashboard 复核通过。
+- **发布状态**：Tag/Release 已撤回；生产预部署备份状态 hotfix（release `20261023T063020Z`），不对外发布；待功能/验收完成后再发 v0.6.1。
+- **连续消息**：同一 Bot×目标×用户 burst 合并 + 同会话串行；Webhook 立即 ack、最终只回复一次；默认窗口 1200ms/最长 5000ms/上限 6 条；`/reset`/`/forget` 清缓冲；不同会话并行。
+- **联网搜索**：自建/私有 SearXNG（loopback JSON API）+ 自动判断 + `/search`；结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文；失败降级、限流、不可信外部资料边界；配置 `BOT_SEARCH_*`。
+- **备份状态 hotfix（预部署）**：acked 归档 `status=acked` + `available=false`，Dashboard/备份页不再误报文件缺失；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档与用户复核通过。
+- **数据/版本**：schema v14 无迁移；新增配置无 schema；发布前完成本地/CI 门禁、SearXNG 生产只读验证、smoke 与真实 QQ 用户验收。
 
 ## v0.6.0（已部署并验收通过；质量/安全加固，schema 保持 v14 + OpenCode v2.1.3）
 

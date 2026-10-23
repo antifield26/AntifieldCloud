@@ -139,6 +139,27 @@ export interface Config {
   botAiVisionEnabled: boolean
   /** 单张入站图片大小上限（字节）。 */
   botAiImageMaxBytes: number
+  /** v0.6.1：同一会话连续消息合并窗口（毫秒）；0 关闭合并但仍串行。 */
+  botChatBurstWindowMs: number
+  /** 从首条消息起最长等待（毫秒），避免持续输入导致不回复。 */
+  botChatBurstMaxWaitMs: number
+  /** 单批最大消息数；达到后立即触发。 */
+  botChatBurstMaxMessages: number
+  /** v0.6.1：SearXNG 联网搜索总开关；开启时必须配置 BOT_SEARCH_URL。 */
+  botSearchEnabled: boolean
+  /** SearXNG 基址（生产建议 loopback 私有实例），仅 http/https。 */
+  botSearchUrl: string
+  /** 自动判断并搜索（显式 /search 不受此开关影响）。 */
+  botSearchAuto: boolean
+  botSearchMaxResults: number
+  botSearchTimeoutSeconds: number
+  botSearchMaxSnippetChars: number
+  botSearchLanguage: string
+  botSearchSafeSearch: boolean
+  /** 逗号分隔的 SearXNG 引擎名；默认 bing（网络受限环境避免无谓 timeout）。 */
+  botSearchEngines: string
+  /** 每 Bot×用户每小时搜索次数上限。 */
+  botSearchRatePerHour: number
   /** v0.5.3 出站连通性探测与自动恢复；默认开启。 */
   botConnectivityEnabled: boolean
   botConnectivityIntervalSeconds: number
@@ -326,6 +347,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiMaxReplyChars: int(merged, 'BOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
     botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', true),
     botAiImageMaxBytes: int(merged, 'BOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),
+    botChatBurstWindowMs: int(merged, 'BOT_CHAT_BURST_WINDOW_MS', 1200, 0, 5000),
+    botChatBurstMaxWaitMs: int(merged, 'BOT_CHAT_BURST_MAX_WAIT_MS', 5000, 1000, 15000),
+    botChatBurstMaxMessages: int(merged, 'BOT_CHAT_BURST_MAX_MESSAGES', 6, 1, 20),
+    botSearchEnabled: bool(merged, 'BOT_SEARCH_ENABLED', false),
+    botSearchUrl: str(merged, 'BOT_SEARCH_URL', ''),
+    botSearchAuto: bool(merged, 'BOT_SEARCH_AUTO', true),
+    botSearchMaxResults: int(merged, 'BOT_SEARCH_MAX_RESULTS', 5, 1, 10),
+    botSearchTimeoutSeconds: int(merged, 'BOT_SEARCH_TIMEOUT_SECONDS', 8, 1, 30),
+    botSearchMaxSnippetChars: int(merged, 'BOT_SEARCH_MAX_SNIPPET_CHARS', 500, 100, 1500),
+    botSearchLanguage: str(merged, 'BOT_SEARCH_LANGUAGE', 'zh-CN'),
+    botSearchSafeSearch: bool(merged, 'BOT_SEARCH_SAFESEARCH', true),
+    botSearchEngines: str(merged, 'BOT_SEARCH_ENGINES', 'bing'),
+    botSearchRatePerHour: int(merged, 'BOT_SEARCH_RATE_PER_HOUR', 60, 1, 600),
     botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
     botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
     botConnectivityTimeoutSeconds: int(merged, 'BOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
@@ -338,6 +372,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   if (config.alertWebhookType !== 'generic') {
     throw new Error('ALERT_WEBHOOK_TYPE 目前只支持 generic')
+  }
+  if (config.botSearchEnabled) {
+    if (!config.botSearchUrl) throw new Error('BOT_SEARCH_ENABLED=true 时必须配置 BOT_SEARCH_URL')
+    validateHttpUrl(config.botSearchUrl, 'BOT_SEARCH_URL')
+  }
+  if (config.botChatBurstWindowMs > config.botChatBurstMaxWaitMs) {
+    throw new Error('BOT_CHAT_BURST_WINDOW_MS 不能大于 BOT_CHAT_BURST_MAX_WAIT_MS')
   }
   validateOrigin(config.appOrigin, 'APP_ORIGIN')
   validateOrigin(config.aiOrigin, 'AI_ORIGIN')

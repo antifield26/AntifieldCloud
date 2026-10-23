@@ -40,6 +40,7 @@ import { registerUploadRoutes } from './http/routes/uploads.ts'
 import { registerMetricsRoutes } from './http/routes/metrics.ts'
 import { BotService } from './bot/service.ts'
 import { OpenCodeBotAi } from './bot/ai.ts'
+import { SearxngSearchClient } from './bot/search.ts'
 import { registerBotRoutes } from './http/routes/bots.ts'
 import { registerBotWebhookRoutes } from './http/routes/bot-webhook.ts'
 import { wantsHtml } from './http/util.ts'
@@ -139,6 +140,19 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
         else app.log.info(payload, message)
       },
     }),
+    ...(config.botSearchEnabled
+      ? {
+          search: new SearxngSearchClient({
+            baseUrl: config.botSearchUrl,
+            timeoutMs: config.botSearchTimeoutSeconds,
+            maxResults: config.botSearchMaxResults,
+            language: config.botSearchLanguage,
+            safeSearch: config.botSearchSafeSearch,
+            maxSnippetChars: config.botSearchMaxSnippetChars,
+            engines: config.botSearchEngines,
+          }),
+        }
+      : {}),
     providers: {
       status: async () => {
         const data = await dashboard.get()

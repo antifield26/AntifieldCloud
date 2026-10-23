@@ -1,6 +1,13 @@
 # Changelog
 
-## [v0.6.1] - 2026-10-23
+## [v0.6.1] - 2026-10-23（开发中，未发布）
+
+### Added
+
+- **Bot 连续消息处理**：同一 Bot×目标×用户短窗口 burst 合并（`BOT_CHAT_BURST_WINDOW_MS`/`BOT_CHAT_BURST_MAX_WAIT_MS`/`BOT_CHAT_BURST_MAX_MESSAGES`），同会话严格串行，Webhook 立即 ack、每批只调用一次 AI/回复一次；`/reset`/`/forget` 清理待处理缓冲。
+- **Bot 联网搜索**：自建/私有 SearXNG（仅 loopback）自动判断 + `/search` 命令；JSON 结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文、失败降级；配置 `BOT_SEARCH_*`（含 `BOT_SEARCH_ENGINES=bing`）。
+- **部署资产**：`scripts/install-searxng.sh`、`deploy/searxng/settings.yml.example`、`deploy/systemd/searxng.service`；Pi 原生 venv + systemd，不引入 Docker。
+- **前置 hotfix**（预部署，不属于本版功能主线）：已 ack 且 PC 清理服务端文件的归档返回 `status=acked` + `available=false`，Dashboard 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie。
 
 ### Fixed
 
@@ -21,9 +28,9 @@
 ### Deployment
 
 - 版本/`APP_VERSION` 升到 **0.6.1**；schema 保持 **v14**（无迁移）；`deploy.ps1` 期望 schema 仍为 14。
-- 生产部署后需验证 `/healthz` v0.6.1/schema14、smoke 16/16 与 24/24、备份状态 Dashboard 不再显示“应用归档文件缺失”；部署前仍做 DB 快照。
-- **已部署并由用户复核通过（2026-10-23）**：release `20261023T063020Z`/commit `23d5ec4`；`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；迁移前快照 `db-predeploy-20261023T063052547Z.sqlite`（sha256 `94535865a5be06511d39029e00cc35361763fc22aaca68b169adef823744e206`）；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示已确认，用户确认 Dashboard/备份页不再误报；部署后备份 `snapshot-20261023T063321997Z-inc.tar.gz`（168622 bytes，sha256 `0eca4a03a724d7887a6d43b03f59584a503642587392bebf789903159de0f2f0`，PC ack）+ 密钥包 `secrets-20261023T063324Z.tar.age`（1733483 bytes，secretsOk=true）；生产保留 release `20261023T063020Z`/`20261023T053539Z`/`20261023T052315Z`。
-- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **383**、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过。已推送 main、annotated Tag `v0.6.1`、GitHub Release [AntifieldCloud v0.6.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.1)（Latest）；v0.6.0 历史发布记录保留。
+- **状态：开发中，未发布**。此前误打的 Tag/Release `v0.6.1` 已撤回；生产保留 hotfix 预部署（release `20261023T063020Z`/commit `23d5ec4`），不作为发布版本。连续消息/联网搜索、SearXNG 生产验证、smoke 与真实 QQ 用户验收完成后再打 Tag/Release。
+- **预部署 hotfix 证据（2026-10-23）**：`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；迁移前快照 `db-predeploy-20261023T063052547Z.sqlite`（sha256 `94535865a5be06511d39029e00cc35361763fc22aaca68b169adef823744e206`）；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示已确认，用户确认 Dashboard/备份页不再误报；部署后备份 `snapshot-20261023T063321997Z-inc.tar.gz`（168622 bytes，sha256 `0eca4a03a724d7887a6d43b03f59584a503642587392bebf789903159de0f2f0`，PC ack）+ 密钥包 `secrets-20261023T063324Z.tar.age`（1733483 bytes，secretsOk=true）。
+- 本地门禁（功能代码，2026-10-23）：`npm run check` 通过；`npm test` **390**（含 burst/搜索回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过；`scripts/install-searxng.sh`/`bootstrap-env.sh` bash 语法通过。新功能部署/验收证据待回填；v0.6.0 历史发布记录保留。
 
 ## [v0.6.0] - 2026-10-23
 

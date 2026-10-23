@@ -61,8 +61,9 @@ export function helpText(): string {
       '/reset 重置当前对话（保留长期记忆）',
       '/forget confirm 清除长期记忆与全部对话',
       '/memory 查看长期记忆（/memory off|on 暂停/恢复）',
-      '普通消息 Chat：C2C 私聊直接对话；群/频道 @Bot 触发；图片默认交给 AI 识别。',
-      '除 /help、/memory、/role（私聊）、/reset、/forget 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
+      '/search <关键词> 联网搜索并由 AI 总结（附来源）',
+      '普通消息 Chat：C2C 私聊直接对话；群/频道 @Bot 触发；连续短消息会合并处理；图片默认交给 AI 识别。',
+      '除 /help、/memory、/role（私聊）、/reset、/forget、/search 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
     ].join('\n'),
   )
 }
@@ -77,7 +78,8 @@ export function publicHelpText(): string {
       '/reset 重置当前对话（保留长期记忆）',
       '/forget confirm 清除长期记忆与全部对话',
       '/memory 查看长期记忆（/memory off|on 暂停/恢复）',
-      '普通消息 Chat：C2C 私聊直接对话；群/频道 @Bot 触发；图片默认交给 AI 识别。',
+      '/search <关键词> 联网搜索并由 AI 总结（附来源）',
+      '普通消息 Chat：C2C 私聊直接对话；群/频道 @Bot 触发；连续短消息会合并处理；图片默认交给 AI 识别。',
       '更多状态/备份/文件命令需管理员授权。',
     ].join('\n'),
   )

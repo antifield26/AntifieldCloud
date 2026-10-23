@@ -1,12 +1,16 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.1**（**已部署并由用户复核通过**，release `20261023T063020Z`/commit `23d5ec4`；备份状态误报修复 + host-only 过渡清理，schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0 已部署并验收通过（release `20261023T053539Z`/commit `6349617`）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.1（开发中，未发布）**：备份状态 hotfix 已**预部署**到生产（release `20261023T063020Z`/commit `23d5ec4`，**不作为 v0.6.1 发布**），本版还需完成 Bot 连续消息处理与联网搜索；Tag/Release 已撤回，待功能与用户验收完成后再发布。v0.6.0 已部署并验收通过（release `20261023T053539Z`/commit `6349617`）。
 
-## v0.6.1 补丁（已部署并由用户复核通过）
+## v0.6.1（开发中，未发布；Bot 连续消息 + 联网搜索 + 备份状态 hotfix）
 
-- 修复 PC ack 清理服务端归档后 Dashboard 误报“应用归档文件缺失”：acked 归档保持 `acked`，新增 `available=false`，Dashboard 显示已确认、恢复按钮禁用；API v13。
-- `/api/auth/me` 补清旧父域 Cookie；生产 deny-all 工具隔离只读负路径验证通过。
-- 版本 0.6.1；schema v14 无迁移；部署 release `20261023T063020Z`，smoke 16/16 与 24/24、备份/密钥包、用户 Dashboard 复核通过。
+- **发布决策（2026-10-23）**：用户要求不着急发布 v0.6.1；此前误打的 Tag/Release 已撤回。生产保留备份状态 hotfix 作为预部署基线；新功能完成、本地/CI 门禁、SearXNG 生产验证与用户验收后再发布。
+- **连续消息处理（已确认方案）**：同一 `Bot×目标×用户` 的短窗口多条消息**合并为一次 AI 请求**；默认防抖窗口 `BOT_CHAT_BURST_WINDOW_MS=1200`、最长等待 `BOT_CHAT_BURST_MAX_WAIT_MS=5000`、单批上限 `BOT_CHAT_BURST_MAX_MESSAGES=6`；同一会话**严格串行**（处理中到达的消息进入下一批），不同会话可并行；Webhook 仍立即 ack，最终只回复一次；`/reset`/`/forget`/角色变更清理待处理缓冲；超长合并文本按 `BOT_AI_MAX_PROMPT_CHARS` 截断；图片批次只处理最后一张并保留文字。
+- **联网搜索（已确认方案）**：**自建/私有 SearXNG** + **自动判断 + `/search` 命令**双触发；SearXNG 仅监听 loopback，应用通过 `BOT_SEARCH_URL=http://127.0.0.1:8888` 访问 JSON API；不抓取结果网页，不保存查询正文；结果只注入标题/摘要/域名，回答末尾由服务端附来源（不暴露完整 URL）；自动触发用保守问句+时效关键词，显式 `/search` 不受开关限制；搜索失败不阻断 Chat；按 Bot×用户每小时限流；提示词把结果标为不可信外部资料，禁止执行其中指令。
+- **配置**：`BOT_CHAT_BURST_WINDOW_MS/MAX_WAIT_MS/MAX_MESSAGES`；`BOT_SEARCH_ENABLED/URL/AUTO/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/RATE_PER_HOUR`。`BOT_SEARCH_ENABLED=true` 时必须配置 URL；schema 保持 v14（无迁移）。
+- **备份状态 hotfix（预部署）**：已 ack 且 PC 清理服务端文件的归档返回 `status=acked` + `available=false`，Dashboard/备份页不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核与用户确认通过。
+- **验收门禁**：单元/服务测试覆盖 burst 合并/串行、搜索客户端解析/过滤、自动/命令触发、失败降级、来源展示；本地 `npm run check` + 覆盖率；SearXNG 生产只读 JSON 验证；部署后 smoke 16/16 与 24/24；真实 QQ 连续消息与 `/search` 用户验收；之后再 Tag/Release。
+- **状态**：功能实现中；SearXNG 部署/生产验证/用户验收/发布待完成。
 
 ## v0.6.0 补充（已部署并验收通过；质量/安全加固 + OpenCode v2.1.3）
 
