@@ -190,6 +190,8 @@ export interface CreateTargetInput {
   externalId: string
   label: string
   kind: 'channel' | 'user' | 'group'
+  /** 页面识别的 QQ 号/群号；仅 user/group 可填。 */
+  qqNumber?: string | null
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
@@ -200,6 +202,7 @@ export interface CreateTargetInput {
 export interface UpdateTargetInput {
   label?: string
   kind?: 'channel' | 'user' | 'group'
+  qqNumber?: string | null
   allowCommands?: boolean
   allowNotifications?: boolean
   allowChat?: boolean
@@ -643,6 +646,8 @@ export class BotService {
     const externalId = cleanText(input.externalId, TARGET_MAX)
     const label = cleanText(input.label, NAME_MAX)
     if (!externalId || !label) throw badRequest('目标 ID 与名称不能为空')
+    const qqNumber = normalizeTargetQqNumber(input.qqNumber)
+    if (input.kind === 'channel' && qqNumber) throw badRequest('QQ 号/群号仅适用于用户或群组目标')
     const count = this.db.prepare('SELECT COUNT(*) AS c FROM bot_targets WHERE bot_id = ?').get(botId) as { c: number }
     if (count.c >= MAX_TARGETS_PER_BOT) throw badRequest('目标数量过多')
     const quiet = this.normalizeQuiet(input.quietStartMinute, input.quietEndMinute)
@@ -651,8 +656,8 @@ export class BotService {
       this.db
         .prepare(
           `INSERT INTO bot_targets
-           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, quiet_start_minute, quiet_end_minute, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, bot_id, external_id, label, kind, qq_number, allow_commands, allow_notifications, allow_chat, quiet_start_minute, quiet_end_minute, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -660,6 +665,7 @@ export class BotService {
           externalId,
           label,
           input.kind,
+          qqNumber,
           input.allowCommands ? 1 : 0,
           input.allowNotifications ? 1 : 0,
           input.allowChat ? 1 : 0,
@@ -680,6 +686,13 @@ export class BotService {
     const row = this.targetRowForBot(botId, targetId)
     const label = input.label !== undefined ? cleanText(input.label, NAME_MAX) : row.label
     if (!label) throw badRequest('目标名称不能为空')
+    const kind = input.kind ?? row.kind
+    const qqNumber =
+      kind === 'channel'
+        ? null
+        : input.qqNumber === undefined
+          ? row.qq_number
+          : normalizeTargetQqNumber(input.qqNumber)
     const quiet = this.normalizeQuiet(
       input.quietStartMinute === undefined ? row.quiet_start_minute : input.quietStartMinute,
       input.quietEndMinute === undefined ? row.quiet_end_minute : input.quietEndMinute,
@@ -687,13 +700,14 @@ export class BotService {
     this.db
       .prepare(
         `UPDATE bot_targets
-         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?,
+         SET label = ?, kind = ?, qq_number = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?,
              quiet_start_minute = ?, quiet_end_minute = ?
          WHERE id = ?`,
       )
       .run(
         label,
-        input.kind ?? row.kind,
+        kind,
+        qqNumber,
         input.allowCommands === undefined ? row.allow_commands : input.allowCommands ? 1 : 0,
         input.allowNotifications === undefined ? row.allow_notifications : input.allowNotifications ? 1 : 0,
         input.allowChat === undefined ? row.allow_chat : input.allowChat ? 1 : 0,
@@ -2632,6 +2646,15 @@ export class BotService {
   }
 }
 
+/** 目标 QQ 号/群号只作页面识别；不参与平台发送，QQ 官方回调也不提供真实号码。 */
+function normalizeTargetQqNumber(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null
+  const qqNumber = cleanText(value, 20)
+  if (!qqNumber) return null
+  if (!/^\d{5,12}$/.test(qqNumber)) throw badRequest('QQ 号/群号需为 5–12 位数字')
+  return qqNumber
+}
+
 function toTarget(row: BotTargetRow): BotTarget {
   return {
     id: row.id,
@@ -2639,6 +2662,7 @@ function toTarget(row: BotTargetRow): BotTarget {
     externalId: row.external_id,
     label: row.label,
     kind: row.kind,
+    qqNumber: row.qq_number,
     allowCommands: row.allow_commands === 1,
     allowNotifications: row.allow_notifications === 1,
     allowChat: row.allow_chat === 1,

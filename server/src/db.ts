@@ -659,6 +659,10 @@ const MIGRATIONS: string[] = [
     PRIMARY KEY (bot_id, user_id)
   );
   `,
+  `
+  -- v0.6.2：目标可选 QQ 号/群号，仅用于页面识别；QQ 官方 Bot 回调不含真实号码。
+  ALTER TABLE bot_targets ADD COLUMN qq_number TEXT;
+  `,
 ]
 
 export interface OpenOptions {

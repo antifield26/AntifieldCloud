@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$PiHost = "192.0.2.10",
   [string]$PiUser = "antifield",
   [switch]$SkipChecks,
@@ -385,7 +385,7 @@ fi
   $smokePath = Join-Path $PSScriptRoot "smoke.ps1"
   if (Test-Path $smokePath) {
     Write-Host "== 部署后只读 smoke =="
-    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -ExpectedVersion $expectedVersion -ExpectedSchemaVersion 14
+    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -ExpectedVersion $expectedVersion -ExpectedSchemaVersion 15
     if ($LASTEXITCODE -ne 0) {
       if ($AllowSmokeFailure) {
         Write-Warning "部署后 smoke 失败（已使用 -AllowSmokeFailure，部署保留；请根据上方 FAIL 项排查）"

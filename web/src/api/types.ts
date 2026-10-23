@@ -944,6 +944,8 @@ export interface BotTarget {
   externalId: string
   label: string
   kind: BotTargetKind
+  /** 页面识别的 QQ 号/群号；平台回调不提供真实号码，仅展示用。 */
+  qqNumber: string | null
   allowCommands: boolean
   allowNotifications: boolean
   /** 是否允许该目标内成员普通消息 Chat；不授予斜杠命令权限。 */
@@ -1006,6 +1008,8 @@ export interface BotTargetInput {
   externalId: string
   label: string
   kind: BotTargetKind
+  /** 页面识别的 QQ 号/群号；仅用户/群组可填。 */
+  qqNumber?: string | null
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean

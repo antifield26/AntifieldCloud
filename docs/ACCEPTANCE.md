@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.6.1（**已发布：Tag/Release v0.6.1**；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix；schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.6.2（**开发中，未发布**；Bot 目标 QQ 号/群号 + 投递与发布单列；schema v15、需迁移；OpenCode v2.1.3）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -38,6 +38,13 @@
 > 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
+
+## v0.6.2（开发中，未发布；目标 QQ 号/群号 + 投递与发布单列；schema v15）
+
+- **范围**：Web “Bot/投递与发布”主网格由双列改单列；目标添加/管理展示并可编辑 QQ 号/群号（`qqNumber`，仅页面识别；QQ 官方 Bot 回调不含真实号码）。
+- **数据**：schema v15（迁移 15 新增 `bot_targets.qq_number TEXT` 可空）；已有目标 `qqNumber=null`；旧版本 v0.6.1 不支持 v15，回滚必须恢复迁移前快照。
+- **本地门禁**：`npm run check` 通过；`npm test` **394**（含 v0.6.2 目标 QQ 号/群号与迁移 15 用例）、`npm run test:web` **178**；服务端覆盖率 Lines **92.16%** / Branches **77.28%** / Functions **86.87%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-BQPh2YVh.js` 682.72 kB）；check-version 通过。
+- **部署/验收**：待生产部署、smoke 与用户验收；完成后再决定 Tag/Release。
 
 ## v0.6.1（已发布：Tag/Release v0.6.1；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）
 

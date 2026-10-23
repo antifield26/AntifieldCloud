@@ -1,6 +1,13 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.1（已发布：Tag/Release v0.6.1）**：最终生产 release `20261023T094819Z`/commit `ceb2e8f`；Bot 连续消息 + SearXNG MCP 联网搜索 + 会话清理 + `/help` 简化已实现并验收，备份状态 hotfix 已生效。v0.6.0 已部署并验收通过（release `20261023T053539Z`/commit `6349617`）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.2（开发中，未发布）**：Bot/投递与发布页面单列；目标可填写/展示 QQ 号/群号（`qqNumber`，schema v15）；待部署与用户验收。v0.6.1 已发布（Tag/Release，生产 release `20261023T094819Z`/commit `ceb2e8f`）；v0.6.0 已部署并验收通过（release `20261023T053539Z`/commit `6349617`）。
+
+## v0.6.2（开发中，未发布；目标 QQ 号/群号 + 投递与发布单列）
+
+- **范围**：Web “Bot/投递与发布”主网格由双列改单列；目标添加/管理展示并可编辑 QQ 号/群号。
+- **数据**：schema **v15**（迁移 15 新增 `bot_targets.qq_number TEXT` 可空）；QQ 官方 Bot 回调不含真实号码，`qqNumber` 仅页面识别、不参与平台发送；频道目标不填。
+- **验收门禁**：本地 `npm run check`、覆盖率、build、CI 全绿；生产部署 smoke、迁移前快照、备份/密钥包；用户确认布局与号码展示后发布。
+- **状态**：实现/本地测试完成，部署与验收待完成。
 
 ## v0.6.1（已发布：Tag/Release v0.6.1；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）
 

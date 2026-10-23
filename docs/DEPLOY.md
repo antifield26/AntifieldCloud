@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.6.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.6.2）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -12,16 +12,12 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_state`，迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
+- 当前 schema **v15**（迁移 15 新增 `bot_targets.qq_number`；迁移 14 新增 `bot_memory_items`/`bot_memory_state`，迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：**v0.5.11/schema v14 已部署并验收通过**（最终 release `20261023T022831Z`，commit `931b10d`；annotated Tag `v0.5.11`；GitHub Release [AntifieldCloud v0.5.11](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.5.11)（Latest，2026-10-23 10:46 CST）；同版本早前 release `20261023T021339Z`/`20261023T014328Z` 保留）。
-  `/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；部署内只读 smoke **16/16**、完整 Access smoke **24/24**；生产 env 5 个 `BOT_MEMORY_*`（权限 `640 root:antifieldcloud`），运行配置 `365/3/120/3000/12/90/30`。
-  最终迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）；部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）。
-  用户实发验收通过（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory` 成功、`/forget confirm` items=2 legacy=0 且未误删其他用户；早前 `/memory off`→Chat 无新 extract→`on`→`/forget` 亦通过；`/bots` 面板用户确认）；首次短消息抽取 ops=0 判定提示词过保守，已由 commit `931b10d` 修正后重试得到 ops=2。
-  Legacy 清理 dry-run/`--confirm` 均 users=0 files=0（未迁移用户 2 条未触碰）。**回滚必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10，不支持 v14）。**
-- **v0.6.1 已部署并由用户复核通过**：release `20261023T063020Z`/commit `23d5ec4`（当前）；`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；生产 25 个 acked 归档复核显示已确认，用户确认 Dashboard 不再误报；部署后备份/密钥包已拉取；生产保留 `20261023T063020Z`/`20261023T053539Z`/`20261023T052315Z`。
+- 生产现状：**v0.6.1 已发布**（最终 release `20261023T094819Z`/commit `ceb2e8f`，schema v14；annotated Tag `v0.6.1`；GitHub Release [AntifieldCloud v0.6.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.1)）。`/healthz` v0.6.1/schema14，部署 smoke 16/16、完整 Access smoke 24/24；用户 2026-10-23 17:32 CST 复测通过并确认发布。**v0.6.2（schema v15）待部署验收。**
+- **v0.6.2 部署**：`deploy.ps1 -PiHost <直连 IP>` 会自动做迁移前 DB 快照并执行迁移 15（`bot_targets.qq_number`）；预期 `/healthz` = `{"ok":true,"version":"0.6.2","schemaVersion":15}`；smoke 使用 `-ExpectedVersion 0.6.2 -ExpectedSchemaVersion 15`。迁移不可逆：回滚需恢复 `db-predeploy-*.sqlite` 并切回 v0.6.1 release `20261023T094819Z`（旧版不支持 schema v15）。
 - **v0.6.0 已部署并验收通过**：最终 release `20261023T053539Z`/commit `6349617`；`/healthz` version 0.6.0/schema 14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill schema14 通过；部署后备份+密钥包已拉取；用户确认验收通过。详见 §3.0。
 - 历史部署（详细证据见 `docs/ACCEPTANCE.md`/`CHANGELOG.md`）：v0.5.10 release `20261022T152053Z`（schema v13、无迁移）、v0.5.9 `20261022T143451Z`（v13）、v0.5.8 `20261022T134852Z`（v13，QQ 单平台收敛）；这些历史 release 保留用于回滚对照。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；

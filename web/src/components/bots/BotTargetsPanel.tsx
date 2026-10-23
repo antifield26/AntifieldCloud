@@ -13,7 +13,7 @@ import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
 import { FormField } from '../FormField'
 import { useToast } from '../Toast'
-import { targetKindLabel } from '../../lib/bots'
+import { targetKindLabel, targetQqLabel } from '../../lib/bots'
 
 interface BotTargetsPanelProps {
   bot: BotSummary | null
@@ -42,6 +42,16 @@ function externalIdHint(): string {
   return 'C2C 用户填 user_openid，群聊填 group_openid，频道填 channel_id。'
 }
 
+/** QQ 号/群号只作页面识别；平台回调不含真实号码，不用于发送。 */
+function normalizeQqNumberInput(value: string): string | null {
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function validQqNumber(value: string): boolean {
+  return /^\d{5,12}$/.test(value)
+}
+
 /** 目标分区：先选 Bot，再维护 QQ 目标与权限。 */
 export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPanelProps) {
   const toast = useToast()
@@ -54,13 +64,15 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [externalId, setExternalId] = useState('')
   const [label, setLabel] = useState('')
   const [kind, setKind] = useState<BotTargetKind>('channel')
+  const [qqNumber, setQqNumber] = useState('')
   const [allowCommands, setAllowCommands] = useState(false)
   const [allowNotifications, setAllowNotifications] = useState(true)
   const [allowChat, setAllowChat] = useState(false)
   const [quietStart, setQuietStart] = useState('')
   const [quietEnd, setQuietEnd] = useState('')
-  const [fieldErrors, setFieldErrors] = useState<{ externalId?: string; label?: string; quiet?: string }>({})
+  const [fieldErrors, setFieldErrors] = useState<{ externalId?: string; label?: string; qqNumber?: string; quiet?: string }>({})
   const [adding, setAdding] = useState(false)
+  const [savingQqId, setSavingQqId] = useState<string | null>(null)
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set())
   const [removeTarget, setRemoveTarget] = useState<BotTarget | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -107,9 +119,11 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const handleAdd = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     if (!bot || adding) return
-    const nextErrors: { externalId?: string; label?: string; quiet?: string } = {}
+    const nextErrors: { externalId?: string; label?: string; qqNumber?: string; quiet?: string } = {}
     if (!externalId.trim()) nextErrors.externalId = '请输入平台目标 ID'
     if (!label.trim()) nextErrors.label = '请输入目标名称'
+    const nextQqNumber = kind === 'channel' ? null : normalizeQqNumberInput(qqNumber)
+    if (nextQqNumber && !validQqNumber(nextQqNumber)) nextErrors.qqNumber = 'QQ 号/群号需为 5–12 位数字'
     const startMinute = timeToMinute(quietStart)
     const endMinute = timeToMinute(quietEnd)
     if ((quietStart && !quietEnd) || (!quietStart && quietEnd)) nextErrors.quiet = '静默时段起止必须同时填写'
@@ -123,6 +137,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         externalId: externalId.trim(),
         label: label.trim(),
         kind,
+        qqNumber: nextQqNumber,
         allowCommands,
         allowNotifications,
         allowChat,
@@ -134,6 +149,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       setExternalId('')
       setLabel('')
       setKind('channel')
+      setQqNumber('')
       setAllowCommands(false)
       setAllowNotifications(true)
       setAllowChat(false)
@@ -174,6 +190,30 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         : `${targetKindLabel(item.targetKind)} ${item.targetExternalId.slice(-6)}`,
     )
     toast.info('已填入最近入站目标，请确认后添加')
+  }
+
+  const handleSaveQqNumber = async (event: FormEvent<HTMLFormElement>, target: BotTarget): Promise<void> => {
+    event.preventDefault()
+    if (!bot || savingQqId === target.id) return
+    const form = event.currentTarget
+    const raw = form.elements.namedItem('qqNumber')
+    const value = raw instanceof HTMLInputElement ? raw.value.trim() : ''
+    if (value && !validQqNumber(value)) {
+      toast.error('QQ 号/群号需为 5–12 位数字')
+      return
+    }
+    setSavingQqId(target.id)
+    try {
+      const updated = await api.bots.targets.update(bot.id, target.id, {
+        qqNumber: value || null,
+      })
+      setTargets((previous) => previous.map((item) => (item.id === updated.id ? updated : item)))
+      toast.success('QQ 号/群号已更新')
+    } catch (updateError) {
+      toast.error(toErrorMessage(updateError, '更新 QQ 号/群号失败，请重试'))
+    } finally {
+      setSavingQqId(null)
+    }
   }
 
   const handleRemove = async (): Promise<void> => {
@@ -276,6 +316,30 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                 </select>
               </div>
             </FormField>
+            {kind !== 'channel' ? (
+              <FormField
+                label={`${targetQqLabel(kind)}（可选）`}
+                htmlFor={`${fieldId}-qq-number`}
+                error={fieldErrors.qqNumber}
+                hint="仅用于页面识别；QQ 官方 Bot 回调不含真实号码，不会用于平台发送。"
+              >
+                <input
+                  id={`${fieldId}-qq-number`}
+                  className="input mono"
+                  value={qqNumber}
+                  onChange={(event) => {
+                    setQqNumber(event.target.value)
+                    setFieldErrors((previous) => ({ ...previous, qqNumber: undefined }))
+                  }}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={12}
+                  autoComplete="off"
+                  placeholder="例如：123456789"
+                  disabled={adding}
+                />
+              </FormField>
+            ) : null}
             <FormField
               label="静默开始（可选）"
               htmlFor={`${fieldId}-quiet-start`}
@@ -400,7 +464,43 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                         </Badge>
                       ) : null}
                     </div>
-                    <code className="bot-target-id">{target.externalId}</code>
+                    <p className="bot-target-meta">
+                      <span className="bot-target-meta-label">平台目标 ID</span>
+                      <code className="bot-target-id">{target.externalId}</code>
+                    </p>
+                    {target.kind !== 'channel' ? (
+                      <form
+                        className="bot-target-qq-form"
+                        onSubmit={(event) => void handleSaveQqNumber(event, target)}
+                      >
+                        <label className="bot-target-qq-label" htmlFor={`${fieldId}-qq-${target.id}`}>
+                          {targetQqLabel(target.kind)}
+                        </label>
+                        <input
+                          key={`${target.id}:${target.qqNumber ?? ''}`}
+                          id={`${fieldId}-qq-${target.id}`}
+                          name="qqNumber"
+                          className="input mono bot-target-qq-input"
+                          defaultValue={target.qqNumber ?? ''}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={12}
+                          autoComplete="off"
+                          placeholder="未填写"
+                          aria-label={`${target.label} ${targetQqLabel(target.kind)}`}
+                          disabled={busy || savingQqId === target.id}
+                        />
+                        <Button
+                          type="submit"
+                          size="sm"
+                          variant="secondary"
+                          loading={savingQqId === target.id}
+                          disabled={busy}
+                        >
+                          保存
+                        </Button>
+                      </form>
+                    ) : null}
                   </div>
                   <div className="bot-target-flags">
                     <label className="checkbox-field">

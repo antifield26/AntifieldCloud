@@ -1,5 +1,11 @@
 # 路线图
 
+## v0.6.2（开发中，未发布；目标 QQ 号/群号 + 投递与发布单列）
+
+- **范围**：Bot“投递与发布”主网格双列改单列；目标添加/管理展示并可编辑 QQ 号/群号（`qqNumber`，仅页面识别）。
+- **数据**：schema v15（迁移 15 新增 `bot_targets.qq_number` 可空，不可逆，回滚需迁移前快照）；频道目标不接受号码。
+- **状态**：实现/本地测试完成；生产部署、smoke、备份与用户验收待完成，验收后再决定 Tag/Release。
+
 ## v0.6.1（已发布：Tag/Release v0.6.1；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）
 
 - **发布状态**：annotated Tag `v0.6.1` + GitHub Release；生产最终 release `20261023T094819Z`/commit `ceb2e8f`（v0.6.1/schema 14），用户 2026-10-23 17:32 CST 实发复测通过、17:56 CST 确认 `/help` 简化并发布。

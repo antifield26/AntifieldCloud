@@ -10,12 +10,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SUPPORTED_SCHEMA_VERSION, openDatabase } from '../src/db.ts'
 
-test('v6 库升级到 v14：创建 Bot/AI/Chat/角色卡表，并补齐触发策略与事件诊断列', () => {
+test('v6 库升级到 v15：创建 Bot/AI/Chat/角色卡表，并补齐触发策略、事件诊断与目标 QQ 号列', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db = openDatabase({ path })
-    assert.equal(SUPPORTED_SCHEMA_VERSION, 14)
+    assert.equal(SUPPORTED_SCHEMA_VERSION, 15)
     // 模拟 v0.4.2 已升级到 v6、尚无 Bot 表的生产库；v7+ 新增表必须先删除，避免迁移建表冲突。
     db.exec(`
       DROP TABLE bot_chat_roles;
@@ -34,7 +34,7 @@ test('v6 库升级到 v14：创建 Bot/AI/Chat/角色卡表，并补齐触发策
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '14')
+      assert.equal(version.value, '15')
       const tables = (
         upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
       ).map((row) => row.name)
@@ -61,6 +61,7 @@ test('v6 库升级到 v14：创建 Bot/AI/Chat/角色卡表，并补齐触发策
       assert.ok(targetColumns.includes('quiet_start_minute'))
       assert.ok(targetColumns.includes('quiet_end_minute'))
       assert.ok(targetColumns.includes('allow_chat'))
+      assert.ok(targetColumns.includes('qq_number'))
       const eventColumns = (
         upgraded.prepare('PRAGMA table_info(bot_events)').all() as unknown as { name: string }[]
       ).map((row) => row.name)
@@ -131,6 +132,7 @@ test('v12 库升级到 v14：删除非 QQ Bot 及其级联数据，保留 QQ Bot
         VALUES ('bot-qq', 'qq-user', 'user', 'u1', 1, '2026-10-21T00:00:00.000Z');
       INSERT INTO bot_inbound_targets (bot_id, target_external_id, target_kind, user_id, is_direct, last_seen_at)
         VALUES ('bot-discord', 'dc-channel', 'channel', 'u2', 0, '2026-10-21T00:00:00.000Z');
+      ALTER TABLE bot_targets DROP COLUMN qq_number;
       UPDATE meta SET value = '12' WHERE key = 'schema_version';
     `)
     db.close()
@@ -138,7 +140,7 @@ test('v12 库升级到 v14：删除非 QQ Bot 及其级联数据，保留 QQ Bot
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '14')
+      assert.equal(version.value, '15')
       const bots = upgraded.prepare('SELECT id FROM bots ORDER BY id').all() as unknown as { id: string }[]
       assert.deepEqual(bots.map((row) => row.id), ['bot-qq'])
       const count = (table: string): number => {
@@ -181,6 +183,7 @@ test('v11 库升级到 v14：追加触发策略与事件诊断列，旧行按默
       INSERT INTO bot_targets (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, created_at)
         VALUES ('target-v11', 'bot-v11', 'group-1', '群', 'group', 0, 1, '2026-10-21T00:00:00.000Z');
       INSERT INTO bot_events (bot_id, platform_event_id, received_at) VALUES ('bot-v11', 'evt-1', '2026-10-21T00:00:00.000Z');
+      ALTER TABLE bot_targets DROP COLUMN qq_number;
       UPDATE meta SET value = '11' WHERE key = 'schema_version';
     `)
     db.close()
@@ -188,7 +191,7 @@ test('v11 库升级到 v14：追加触发策略与事件诊断列，旧行按默
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '14')
+      assert.equal(version.value, '15')
       const target = upgraded
         .prepare("SELECT chat_trigger FROM bot_targets WHERE id = 'target-v11'")
         .get() as { chat_trigger: string }
@@ -238,6 +241,7 @@ test('v9/v10 库升级到 v14：旧会话归 Chat，主键允许 task/chat 两�
         VALUES ('bot-1', 'qq', 'QQ', 0, '{}', 'x', 'x', 'x', 1, '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
       INSERT INTO bot_ai_sessions (bot_id, target_external_id, user_id, session_id, model, created_at, updated_at)
         VALUES ('bot-1', 'group-1', 'user-1', 'old-chat-session', 'm', '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
+      ALTER TABLE bot_targets DROP COLUMN qq_number;
       UPDATE meta SET value = '9' WHERE key = 'schema_version';
     `)
     db.close()
@@ -283,6 +287,7 @@ test('v13 库升级到 v14：创建结构化记忆表并保留旧滚动摘要', 
         VALUES ('bot-qq', 'qq', 'QQ', 1, '{}', 'x', 'x', 'x', 1, '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
       INSERT INTO bot_ai_memories (bot_id, user_id, memory_id, summary, summary_session_id, created_at, updated_at)
         VALUES ('bot-qq', 'user-1', '11111111-1111-4111-8111-111111111111', '旧摘要正文', NULL, '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
+      ALTER TABLE bot_targets DROP COLUMN qq_number;
       UPDATE meta SET value = '13' WHERE key = 'schema_version';
     `)
     db.close()
@@ -290,7 +295,7 @@ test('v13 库升级到 v14：创建结构化记忆表并保留旧滚动摘要', 
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '14')
+      assert.equal(version.value, '15')
       const tables = (
         upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
       ).map((row) => row.name)

@@ -488,6 +488,36 @@
   word-break: break-all;
 }
 
+.bot-target-meta {
+  margin: 0;
+}
+
+.bot-target-meta-label {
+  margin-right: 5px;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.bot-target-qq-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
+}
+
+.bot-target-qq-label {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.bot-target-qq-input {
+  width: 132px;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .bot-target-flags {
   display: flex;
   flex-wrap: wrap;
@@ -503,7 +533,7 @@
 
 .bot-delivery-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: 16px;
   min-width: 0;
@@ -630,8 +660,7 @@
 /* ================= 响应式 ================= */
 
 @media (max-width: 1100px) {
-  .bot-config-grid,
-  .bot-delivery-grid {
+  .bot-config-grid {
     grid-template-columns: 1fr;
   }
 
