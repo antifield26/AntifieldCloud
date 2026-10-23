@@ -1,11 +1,12 @@
 # Changelog
 
-## [v0.6.1] - 2026-10-23（开发中，未发布）
+## [v0.6.1] - 2026-10-23（已预部署并验收通过，未发布）
 
 ### Added
 
 - **Bot 连续消息处理**：同一 Bot×目标×用户短窗口 burst 合并（`BOT_CHAT_BURST_WINDOW_MS`/`BOT_CHAT_BURST_MAX_WAIT_MS`/`BOT_CHAT_BURST_MAX_MESSAGES`），同会话严格串行，Webhook 立即 ack、每批只调用一次 AI/回复一次；`/reset`/`/forget` 清理待处理缓冲。
-- **Bot 联网搜索**：自建/私有 SearXNG（仅 loopback）自动判断 + `/search` 命令；JSON 结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文、失败降级；配置 `BOT_SEARCH_*`（含 `BOT_SEARCH_ENGINES=bing`）。
+- **Bot 联网搜索**：自建/私有 SearXNG（仅 loopback）+ OpenCode MCP 工具 `searxng_web_search`（`codemode=false`）；命中关键词/追问时服务端预取，未命中由 MCP 语义决定；`/search` 命令强制预取；JSON 结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文、失败降级；配置 `BOT_SEARCH_*`（含 `BOT_SEARCH_MODE=mcp`、`BOT_SEARCH_ENGINES=bing`）。
+- **MCP 接入与隔离**：`scripts/searxng-mcp.mjs`、`scripts/install-searxng-mcp.sh`；Bot 会话 permissions 仅放行 `searxng_*`，其余工具仍 deny；工具模式变化时一次性重置旧会话，启动/`/reset`/`/forget` 清理无映射孤儿会话。
 - **部署资产**：`scripts/install-searxng.sh`、`deploy/searxng/settings.yml.example`、`deploy/systemd/searxng.service`；Pi 原生 venv + systemd，不引入 Docker。
 - **前置 hotfix**（预部署，不属于本版功能主线）：已 ack 且 PC 清理服务端文件的归档返回 `status=acked` + `available=false`，Dashboard 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie。
 
@@ -22,15 +23,15 @@
 
 ### Security
 
-- 生产只读负路径验证 BOT-04：OpenCode deny-all 会话中要求执行 shell 写 `/tmp`，模型返回 `TOOLS_UNAVAILABLE`，无 `tool` 内容段，目标文件未创建；仍保留“模型行为非强保证”的残余说明。
+- 生产只读负路径验证 BOT-04：OpenCode deny-all（搜索模式为 deny-all + 仅 allow `searxng_*`）会话中要求执行 shell 写 `/tmp`，模型返回 `TOOLS_UNAVAILABLE`，无 `tool` 内容段，目标文件未创建；仍保留“模型行为非强保证”的残余说明。
 - host-only 过渡期 `/me` 清理；`__Host-` 前缀与 SSO ticket 绑定 IP/UA 仍记录为后续版本项。
 
 ### Deployment
 
 - 版本/`APP_VERSION` 升到 **0.6.1**；schema 保持 **v14**（无迁移）；`deploy.ps1` 期望 schema 仍为 14。
-- **状态：开发中，未发布**。此前误打的 Tag/Release `v0.6.1` 已撤回；生产保留 hotfix 预部署（release `20261023T063020Z`/commit `23d5ec4`），不作为发布版本。连续消息/联网搜索、SearXNG 生产验证、smoke 与真实 QQ 用户验收完成后再打 Tag/Release。
-- **预部署 hotfix 证据（2026-10-23）**：`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；迁移前快照 `db-predeploy-20261023T063052547Z.sqlite`（sha256 `94535865a5be06511d39029e00cc35361763fc22aaca68b169adef823744e206`）；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示已确认，用户确认 Dashboard/备份页不再误报；部署后备份 `snapshot-20261023T063321997Z-inc.tar.gz`（168622 bytes，sha256 `0eca4a03a724d7887a6d43b03f59584a503642587392bebf789903159de0f2f0`，PC ack）+ 密钥包 `secrets-20261023T063324Z.tar.age`（1733483 bytes，secretsOk=true）。
-- 本地门禁（功能代码，2026-10-23）：`npm run check` 通过；`npm test` **392**（含 burst/搜索/MCP/会话清理回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过；`scripts/install-searxng.sh`/`install-searxng-mcp.sh`/`bootstrap-env.sh` bash 语法通过。新功能部署/验收证据待回填；v0.6.0 历史发布记录保留。
+- **状态：已预部署并验收通过，未发布**。最终预部署 release `20261023T092740Z`/commit `f038eb5`（version 0.6.1/schema 14），Tag/Release 未打；用户 2026-10-23 17:32 CST 实发复测通过。连续消息、SearXNG MCP 自动/追问搜索、`/reset`/`/forget` 会话清理均已验收；发布决策待用户确认。
+- **预部署证据（2026-10-23）**：`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；迁移前快照 `db-predeploy-20261023T092812687Z.sqlite`（sha256 `63ed973a16f5f6b3d31b267a257c067bf2b0e404f68ca09f19f39846abb37100`）；启动清理 11 个孤儿 OpenCode 会话；部署后备份 `snapshot-20261023T093412821Z-inc.tar.gz`（180736 bytes，sha256 `f9b5ab93e3adfaea9547acf0ae072570a113b44ac99dccfb6260facd17a8d916`，PC ack）+ 密钥包 `secrets-20261023T093414Z.tar.age`（1771979 bytes，secretsOk=true）。
+- 本地门禁（功能代码，2026-10-23）：`npm run check` 通过；`npm test` **392**（含 burst/搜索/MCP/会话清理回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.18%** / Branches **77.29%** / Functions **86.86%**（`npm run test:coverage` exit 0、`npm run test:web:coverage` exit 0）；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过；`scripts/install-searxng.sh`/`install-searxng-mcp.sh`/`bootstrap-env.sh` bash 语法通过。
 
 ## [v0.6.0] - 2026-10-23
 

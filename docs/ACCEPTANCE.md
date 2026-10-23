@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.6.1（**开发中，未发布**；生产仅预部署备份状态 hotfix；计划新增 Bot 连续消息 + SearXNG 联网搜索；schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.6.1（**已预部署并验收通过，未发布**；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix；schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -39,14 +39,18 @@
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
 
-## v0.6.1（开发中，未发布；Bot 连续消息 + 联网搜索 + 备份状态 hotfix 预部署）
+## v0.6.1（已预部署并验收通过，未发布；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）
 
-- **发布状态**：用户要求不着急发布 v0.6.1；此前误打的 Tag/Release 已撤回（GitHub Release 删除、远端/本地 tag 删除）。生产保留 hotfix 预部署，但不对外称为 v0.6.1 发布；连续消息/联网搜索、SearXNG 生产验证与用户验收完成后再打 Tag/Release。
-- **连续消息（已实现，待真实 QQ 验收）**：同一 Bot×目标×用户 burst 合并 + 同会话串行；默认窗口 3000ms/最长 10000ms/上限 10 条；Webhook 立即 ack、只调用一次 AI/回复一次；`/reset`/`/forget` 清缓冲；不同会话并行。
-- **联网搜索（已实现，待 SearXNG/真实 QQ 验收）**：自建 SearXNG（loopback JSON API）自动判断 + `/search`；结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文；失败降级、每小时限流、不可信外部资料边界；生产网络仅启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
-- **备份状态 hotfix（已预部署并经用户复核）**：`acked` + `available=false` 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核通过。
-- **本地门禁（2026-10-23，功能代码）**：`npm run check` 通过；`npm test` **392**（含 burst/搜索/MCP/会话清理回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**（`npm run test:coverage` exit 0）；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`scripts/install-searxng.sh`/`bootstrap-env.sh` bash 语法通过。
-- **待完成**：本地全量/覆盖率/CI、SearXNG 安装后只读 JSON 验证、应用部署与 smoke、真实 QQ 连续消息/`/search` 用户验收、Tag/Release。未完成前不发布。
+- **发布状态**：功能/搜索/连续消息/会话清理已由用户于 2026-10-23 17:32 CST 实发复测通过；按用户要求仍**未打 Tag/Release**，生产为预部署。此前误打的 Tag/Release 已撤回；发布决策待用户确认。
+- **连续消息（已验收）**：同一 Bot×目标×用户 burst 合并 + 同会话串行；默认窗口 3000ms/最长 10000ms/上限 10 条；Webhook 立即 ack、只调用一次 AI/回复一次；`/reset`/`/forget` 清缓冲；不同会话并行；用户复测通过。
+- **联网搜索（已验收）**：SearXNG 自建 loopback + OpenCode MCP `searxng_web_search`（`codemode=false`）；Bot 会话 permissions 仅放行 `searxng_*`，负路径验证 shell 不可用；命中关键词/追问时服务端预取，未命中由 MCP 语义决定；`/search` 强制预取；追问复用上一轮查询；结果标题/摘要/域名注入并附来源；不抓网页、不记录查询正文；失败降级、每小时限流、不可信外部资料边界；生产仅启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
+- **会话清理**：工具模式变化一次性重置旧会话映射；启动/`/reset`/`/forget` 清理无映射的 OpenCode Bot 会话；本次启动清理 11 个旧会话，验收后 `/reset` 映射为空。
+- **备份状态 hotfix**：`acked` + `available=false` 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核通过。
+- **本地门禁（2026-10-23，最终功能代码）**：`npm run check` 通过；`npm test` **392**（含 burst/搜索/MCP/会话清理回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.18%** / Branches **77.29%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`scripts/install-searxng.sh`/`install-searxng-mcp.sh`/`bootstrap-env.sh` bash 语法通过；`node scripts/check-version.mjs` 通过。
+- **部署证据（2026-10-23）**：最终 release `20261023T092740Z`/commit `f038eb5`（version 0.6.1/schema 14）；`/healthz` = `{"ok":true,"version":"0.6.1","schemaVersion":14}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24（0 失败/0 警告）**；迁移前 DB 快照 `db-predeploy-20261023T092812687Z.sqlite`（sha256 `63ed973a16f5f6b3d31b267a257c067bf2b0e404f68ca09f19f39846abb37100`）。
+- **备份证据**：部署后应用增量备份 `snapshot-20261023T093412821Z-inc.tar.gz`（180736 bytes，sha256 `F9B5AB93E3ADFAEA9547ACF0AE072570A113B44AC99DCCFB6260FACD17A8D916`，PC 已拉取/ack）；密钥包 `secrets-20261023T093414Z.tar.age`（1771979 bytes，`secretsOk=true`）。
+- **用户实发验收（通过，2026-10-23 17:30–17:32 CST）**：`bot_events` 记录 Chat/`/role`/`/reset` outcome=ok；09:30:50Z 与 09:30:58Z 两条 Chat、09:31:04Z `bot.search` results=5（自动搜索生效）、09:31:48Z `/reset`；用户随后在受控选项中确认“复测通过”。
+- **残余/注意**：OpenCode 会话按 Bot×目标×用户 维度隔离，C2C 与群聊各自一个会话；工具模式变化会重置一次会话映射（上下文重建一次）；MCP 工具调用依赖模型选择，已用预取兜底常见问句。
 
 ## v0.6.0（已部署并验收通过；质量与安全加固，schema 保持 v14、无迁移；最终 release `20261023T053539Z`/commit `6349617`）
 

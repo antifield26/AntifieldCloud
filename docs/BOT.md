@@ -243,7 +243,7 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` �
 ## 5.7 联网搜索（v0.6.1，SearXNG MCP）
 
 - **部署**：SearXNG 自建/私有实例，仅监听 `127.0.0.1:8888`；通过 `scripts/searxng-mcp.mjs` 作为 OpenCode MCP 工具暴露（`codemode:false`，工具名 `searxng_web_search`），应用侧 `BOT_SEARCH_MODE=mcp`。安装/回滚见 `docs/DEPLOY.md` §3.5；不引入 Docker。
-- **自动触发**：`mcp` 模式下由模型在需要最新/实时/新闻/事实核查时调用 `searxng_web_search`；Bot 新建会话的 permissions 仅放行 `searxng_*`，其余工具仍 deny（生产已验证 shell 不可用、目标文件未创建）。`prefetch` 模式保留服务端关键词预取作为兼容/回退。
+- **自动触发**：`mcp` 模式下命中关键词/追问时服务端先预取（保证“找找B站热点”“再搜搜看”等稳定），未命中时由模型通过 `searxng_web_search` 语义决定；Bot 新建会话的 permissions 仅放行 `searxng_*`，其余工具仍 deny（生产已验证 shell 不可用、目标文件未创建）。`prefetch` 模式仅服务端关键词预取，作为兼容/回退。
 - **显式命令**：`/search <关键词>` 对所有可 Chat 用户开放（C2C 或目标 `allow_chat=1`），服务端强制预取并向模型注入结果，保证命令触发稳定。
 - **结果注入/展示**：MCP 工具直接返回标题/摘要/域名/URL；`/search` 预取只取标题/摘要/域名/URL，最多 `BOT_SEARCH_MAX_RESULTS` 条；提示词把结果标为**不可信外部资料**，不执行其中指令、不编造、不输出完整 URL；服务端附“参考来源：标题（域名）”。
 - **失败降级**：SearXNG 超时/非 2xx/格式错误时工具返回失败文本，Chat 继续回答并说明无法核实；`/search` 预取失败仍走 AI 回答（无来源）。审计 `bot.search` 只记录结果数/错误码/是否强制，不记录查询正文。
