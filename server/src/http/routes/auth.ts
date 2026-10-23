@@ -5,6 +5,7 @@ import { MAX_LOGIN_USERNAME_LENGTH, type AuthService } from '../../auth/service.
 import {
   CSRF_COOKIE,
   clearAuthCookies,
+  clearLegacyAuthCookies,
   readSessionToken,
   setAuthCookies,
   setCsrfCookie,
@@ -73,6 +74,9 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
 
   app.get('/api/auth/me', { preHandler: [requireAuth] }, async (request, reply) => {
     const context = authOf(request)
+    // 过渡期：应用启动/刷新会访问 /me；即使长期不重新登录，也清理旧父域 Cookie，
+    // 避免旧 Domain=.父域 与新 host-only Cookie 长期共存。
+    clearLegacyAuthCookies(reply, config)
     const existing = request.cookies?.[CSRF_COOKIE]
     let csrfToken = typeof existing === 'string' && existing.length > 0 ? existing : null
     // CSRF Cookie 丢失（浏览器清理、跨域策略变化）时轮换并补发，避免前端写操作永久失败。

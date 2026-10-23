@@ -78,7 +78,12 @@ export function isArchiveVerified(archive: BackupArchive): boolean {
 }
 
 export function isArchiveRestorable(archive: BackupArchive): boolean {
-  return isArchiveVerified(archive) && normalizedArchiveStatus(archive.status) !== 'missing'
+  return (
+    isArchiveVerified(archive) &&
+    normalizedArchiveStatus(archive.status) !== 'missing' &&
+    // acked 归档在 PC 拉取确认后可能已删除服务端文件；后端显式 available=false 时不可恢复。
+    archive.available !== false
+  )
 }
 
 export function backupOriginLabel(origin: string): string {

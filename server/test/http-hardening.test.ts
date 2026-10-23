@@ -233,6 +233,14 @@ test('Cookie host-only：登录响应无 Domain，并在同一响应清理旧父
     const me = await fx.context.app.inject({ method: 'GET', url: '/api/auth/me', headers: { host: 'app.test', cookie: session.cookie } })
     assert.equal(me.statusCode, 200)
     assert.equal(me.json().session.ip, '203.0.113.9')
+    // /me 也会清理旧父域 Cookie：长期不重新登录的浏览器刷新时仍能清除过渡期残留。
+    const meRaw = me.headers['set-cookie']
+    const meCookies = Array.isArray(meRaw) ? meRaw.join('\n') : String(meRaw ?? '')
+    const meLegacy = meCookies.split('\n').filter((line) => /Domain=\.test/i.test(line))
+    assert.equal(meLegacy.length, 2, meCookies)
+    for (const name of ['af_session', 'af_csrf']) {
+      assert.ok(meLegacy.some((line) => line.startsWith(`${name}=`)), `缺少 /me 旧父域 ${name} 清理：${meCookies}`)
+    }
   } finally {
     await fx.close()
   }

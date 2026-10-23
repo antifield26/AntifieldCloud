@@ -1,5 +1,11 @@
 # 路线图
 
+## v0.6.1（本地修复/测试完成，待部署与用户复核；备份状态误报修复 + host-only 过渡清理）
+
+- **修复**：PC ack 清理服务端归档文件后，`/api/backups` 返回 `status=acked` + `available=false`，Dashboard 不再显示“应用归档文件缺失”，恢复按钮禁用；API v13。
+- **残余处理**：`/api/auth/me` 补清旧父域 Cookie；BOT-04 deny-all 生产只读负路径验证（无 tool 段、无文件创建）；`__Host-` 前缀、SSO ticket IP/UA 绑定、记忆过滤启发式保留为后续项。
+- **版本/数据**：version 0.6.1，schema v14 无迁移；待部署 smoke/用户复核后回填。
+
 ## v0.6.0（已部署并验收通过；质量/安全加固，schema 保持 v14 + OpenCode v2.1.3）
 
 - **定位**：Minor 版本的质量/安全加固，不新增功能主线；第五轮多切入点审计的 P0–P2 全部修复，P3 记录。

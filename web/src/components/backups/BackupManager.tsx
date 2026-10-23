@@ -118,6 +118,11 @@ export function BackupManager({ backupStatus = null }: BackupManagerProps) {
       render: (archive) => (
         <div className="backup-status-cell">
           <Badge tone={archiveStatusTone(archive)}>{archiveStatusLabel(archive)}</Badge>
+          {archive.available === false && archive.ackedAt ? (
+            <span className="backup-verified" title="PC 已拉取确认，服务端归档文件已清理">
+              副本已清理
+            </span>
+          ) : null}
           {archive.verifiedAt ? (
             <span className="backup-verified" title={`校验于 ${formatDateTime(archive.verifiedAt)}`}>
               <ShieldCheck size={13} aria-hidden="true" />
@@ -157,9 +162,11 @@ export function BackupManager({ backupStatus = null }: BackupManagerProps) {
             title={
               !meta.backupRestoreEnabled
                 ? '恢复向导未启用'
-                : !isArchiveRestorable(archive)
-                  ? '请先校验归档'
-                  : '从此归档恢复'
+                : archive.available === false
+                  ? '服务端副本已清理，无法从此归档恢复'
+                  : !isArchiveRestorable(archive)
+                    ? '请先校验归档'
+                    : '从此归档恢复'
             }
             onClick={() => setRestoreArchive(archive)}
           >

@@ -49,6 +49,9 @@ deleted_at / origin / verified_at / manifest_json / last_error`；`origin` 区�
 `import`（Web 导入，不参与 ack 游标）。`backup_state.last_backup_at` 只在 `--ack` 后推进。
 `restore_plans` 记录文件级恢复计划（归档链、选择、目标名、状态、操作者、过期、`skippedMissing`）。
 `meta.backup_missing_files` 记录上次缺失、等待恢复后补入增量的文件 id。
+**归档状态语义（v0.6.1）**：已 ack 的 Pi 归档在 PC 拉取确认后可能主动删除服务端文件；API 对这类行返回
+`status=acked`、`available=false`，Dashboard 显示“已确认”而不是“文件缺失”，Backups 页恢复按钮禁用并提示“服务端副本已清理”。
+只有未 ack 的 Pi 归档或缺失的导入归档才会返回 `status=missing`。
 
 `--prepare` 先写 `snapshot-*.tar.gz.part`，tar 成功后才原子改名为正式归档；失败/超时清理本次 `.part` 与陈旧锁。
 Web `prepare` 超时由 `BACKUP_PREPARE_TIMEOUT_SEC` 控制（默认 3300 秒，允许 60–7200），与 CLI/PC 侧 55 分钟对齐，避免大归档中途被杀。

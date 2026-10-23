@@ -60,7 +60,7 @@
 - scrypt（N=2^15, r=8, p=1，64 B key，16 B 随机盐），恒定时间比较；用户不存在时执行等价哈希。
 - TOTP：RFC 6238 SHA-1/6 位/30 秒，±1 步，记录 `totp_last_step` 防重放；恢复码 10 个，一次性，SHA-256 存储。
 - 挑战 5 分钟一次性；会话 7 天；Cookie 属性按协议严格设置；密码最少 12 字符；改密注销其它会话。
-- Cookie 作用域：app 主机 host-only `af_session`/`af_csrf`（不设 `Domain`，HttpOnly/Secure/SameSite=Lax）；ai 主机通过 app 签发的 60 秒一次性 ticket（`/api/auth/ai-ticket` → `/__af/sso/<ticket>`）获得自己的 host-only `af_session`，不再使用父域共享 Cookie；app 写请求与公开 unlock 的受信 Origin 只保留 appOrigin（+ loopback 开发例外）。登录/退出响应会清理 v0.6.0 前的旧父域 Cookie。
+- Cookie 作用域：app 主机 host-only `af_session`/`af_csrf`（不设 `Domain`，HttpOnly/Secure/SameSite=Lax）；ai 主机通过 app 签发的 60 秒一次性 ticket（`/api/auth/ai-ticket` → `/__af/sso/<ticket>`）获得自己的 host-only `af_session`，不再使用父域共享 Cookie；app 写请求与公开 unlock 的受信 Origin 只保留 appOrigin（+ loopback 开发例外）。登录/退出响应及每次 `/api/auth/me` 都会清理 v0.6.0 前的旧父域 Cookie。
 - 限流：登录每 IP 5 次/15 分钟、全局 60 次/小时（loopback 不占全局桶）；TOTP 全局 120 次/小时；
   再认证每 IP 5 次/15 分钟 + 全局 30 次/小时 + TOTP 共享桶；失败审计与恒定延迟。
 - 未认证用户名 ≤64 字符（超长直接 400）；审计写入 actor≤64、target≤256、detail≤4 KiB，读取时再次截断。
@@ -182,7 +182,7 @@
 20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
     不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
 21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；若 OpenCode 以 400 拒绝该字段，会降级为默认工具权限并在日志标注“未隔离”。
-    当前生产 OpenCode v2.1.3 的 OpenAPI 声明支持该字段（2026-10-23 已实测创建会话返回 200、生产模型 assistant text 正常）；真实工具拦截仍需在真实对话中负路径验证，降级状态下不应把 Chat 当作强隔离沙箱。
+    当前生产 OpenCode v2.1.3 的 OpenAPI 声明支持该字段（2026-10-23 已实测创建会话返回 200、生产模型 assistant text 正常）；2026-10-23 已完成生产只读负路径：deny-all 会话中要求执行 shell 写 `/tmp`，模型返回 `TOOLS_UNAVAILABLE`、无 `tool` 内容段、目标文件未创建；仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
 22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
     生产已安装并实测封禁恢复；Cloudflare Access 也已配置并纳入带 token 的 smoke，剩余为 service token/API Token 轮换与季度演练。
 23. **Bot 记忆镜像文件**：DB 摘要为权威且随 DB 备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 不通过 API/UI 暴露，用户 `/forget confirm` 与管理员删除记忆会同时删除对应镜像；
@@ -201,7 +201,7 @@
     不影响其他用户；误删需从 DB 备份恢复。管理员操作前应确认用户与影响范围。
 30. **图片理解默认开启的隐私/外发风险**：`BOT_AI_VISION_ENABLED=true`（v0.5.8 默认），QQ 入站图片会以 OpenCode prompt files data URL 经本机 OpenCode API 交给配置的模型 provider（可能为本地或外部模型服务）；
     图片不落盘、不写日志，但模型 provider 可能记录请求内容。启用即表示接受该外发范围；如需关闭可在 env 设 `BOT_AI_VISION_ENABLED=false` 并重启。
-31. **Cookie/SSO 过渡残余（v0.6.0）**：app/ai 已改为 host-only Cookie + 一次性 AI SSO ticket；旧父域 Cookie 仅在登录/退出响应清理，长期不重新登录的浏览器可能最多 7 天继续发送旧 Cookie（与同名新 Cookie 共存时浏览器发送顺序不保证）。未采用 `__Host-` 前缀；ticket 未绑定 IP/UA（一次性、60s、绑定 aiOrigin、no-store/no-referrer）。发布说明应提示用户清理站点 Cookie；后续可评估 `__Host-` 前缀与签发审计。
+31. **Cookie/SSO 过渡残余（v0.6.1）**：app/ai 已改为 host-only Cookie + 一次性 AI SSO ticket；旧父域 Cookie 在登录/退出及每次 `/api/auth/me` 响应清理，长期不重新登录的浏览器仍可能最多 7 天继续发送旧 Cookie（与同名新 Cookie 共存时浏览器发送顺序不保证）。未采用 `__Host-` 前缀；ticket 未绑定 IP/UA（一次性、60s、绑定 aiOrigin、no-store/no-referrer）。发布说明应提示用户清理站点 Cookie；后续可评估 `__Host-` 前缀与签发审计。
 
 ## 5. 运维安全清单
 

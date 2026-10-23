@@ -2,8 +2,29 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BackupStatusCard } from './BackupStatusCard'
+import type { BackupArchive } from '../../api/types'
 
 afterEach(cleanup)
+
+function archive(overrides: Partial<BackupArchive> = {}): BackupArchive {
+  return {
+    id: 'snapshot-20261023T000000Z-inc.tar.gz',
+    name: 'snapshot-20261023T000000Z-inc.tar.gz',
+    mode: 'inc',
+    createdAt: '2026-10-23T00:00:00.000Z',
+    sizeBytes: 163398,
+    sha256: 'a'.repeat(64),
+    status: 'acked',
+    origin: 'pi',
+    available: false,
+    verifiedAt: '2026-10-23T00:01:00.000Z',
+    pulledAt: '2026-10-23T00:02:00.000Z',
+    ackedAt: '2026-10-23T00:02:00.000Z',
+    lastError: null,
+    manifest: null,
+    ...overrides,
+  }
+}
 
 describe('BackupStatusCard 降级态', () => {
   it('没有数据时显示空态与“未运行/未知”，不渲染错误', () => {
@@ -63,6 +84,13 @@ describe('BackupStatusCard 降级态', () => {
     expect(screen.getByText('2 个')).toBeTruthy()
     // 世界备份归档名作为说明展示，但不展示本机绝对路径
     expect(screen.queryByText(/\/var\/lib\//)).toBeNull()
+  })
+
+  it('已确认归档服务端副本被清理时显示已确认，不误报文件缺失', () => {
+    render(<BackupStatusCard archives={[archive()]} />)
+    expect(screen.getByText(/已确认 ·/)).toBeTruthy()
+    expect(screen.queryByText('文件缺失')).toBeNull()
+    expect(screen.queryByText('存在异常')).toBeNull()
   })
 
   it('加载中显示骨架屏', () => {

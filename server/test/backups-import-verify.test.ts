@@ -163,6 +163,7 @@ test('Pi 归档清单状态：pending/acked/missing 与孤儿/inbox/清理', asy
     const names = {
       pending: 'snapshot-20260601T000000Z-full.tar.gz',
       acked: 'snapshot-20260602T000000Z-inc.tar.gz',
+      ackedMissing: 'snapshot-20260602T010000Z-inc.tar.gz',
       missing: 'snapshot-20260603T000000Z-full.tar.gz',
     }
     writeFileSync(join(backupsDir, names.pending), Buffer.alloc(16))
@@ -173,15 +174,19 @@ test('Pi 归档清单状态：pending/acked/missing 与孤儿/inbox/清理', asy
     )
     insert.run(names.pending, 'full', '2026-06-01T00:00:00.000Z', 'a'.repeat(64), null)
     insert.run(names.acked, 'inc', '2026-06-02T00:00:00.000Z', 'b'.repeat(64), '2026-06-02T01:00:00.000Z')
+    // PC ack 后主动删除服务端归档：仍是已确认，不应误报文件缺失。
+    insert.run(names.ackedMissing, 'inc', '2026-06-02T01:00:00.000Z', 'd'.repeat(64), '2026-06-02T02:00:00.000Z')
     insert.run(names.missing, 'full', '2026-06-03T00:00:00.000Z', 'c'.repeat(64), null)
 
     const list = fx.service.list()
-    const byName = new Map(list.items.map((item) => [item.name, item.status]))
-    assert.equal(byName.get(names.pending), 'pending')
-    assert.equal(byName.get(names.acked), 'acked')
-    assert.equal(byName.get(names.missing), 'missing')
+    const byName = new Map(list.items.map((item) => [item.name, item]))
+    assert.equal(byName.get(names.pending)?.status, 'pending')
+    assert.equal(byName.get(names.acked)?.status, 'acked')
+    assert.equal(byName.get(names.ackedMissing)?.status, 'acked')
+    assert.equal(byName.get(names.ackedMissing)?.available, false)
+    assert.equal(byName.get(names.missing)?.status, 'missing')
     assert.equal(list.state.pendingCount, 1)
-    assert.equal(list.state.ackedCount, 1)
+    assert.equal(list.state.ackedCount, 2)
 
     // 孤儿归档只报告不删除；pull 状态从 backup-pull.json 读取。
     mkdirSync(fx.importsDir, { recursive: true })

@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.6.0（本地修复与门禁完成，待部署/用户验收；质量与安全加固，schema 保持 v14、无迁移；OpenCode 已先升级 v2.1.3）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.6.1（本地修复/测试完成，待部署与用户复核；备份状态误报修复 + host-only 过渡清理，schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -38,6 +38,14 @@
 > 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
+
+## v0.6.1（本地修复/测试完成，待部署与用户复核；备份状态误报修复 + host-only 过渡清理，schema 保持 v14、无迁移）
+
+- **触发问题**：用户反馈 Dashboard 备份状态显示“应用归档文件缺失”。根因是 PC 拉取 ack 后会删除 Pi 上归档文件，而 `toArchiveItem` 先按文件存在性标记 `missing`，优先级高于 `acked`，导致已确认归档被误报缺失。
+- **修复**：`acked_at` 优先返回 `acked`；新增 `available` 字段（服务端文件是否存在）；Dashboard 按 acked 显示“已确认”；Backups 页对 `available=false` 显示“副本已清理”，恢复按钮禁用并给出明确 title；`isArchiveRestorable` 要求 `available !== false`。
+- **附带**：`GET /api/auth/me` 清理旧父域 Cookie，降低 host-only 过渡期残留；BOT-04 deny-all 生产只读负路径验证（模型返回 `TOOLS_UNAVAILABLE`、无 tool 段、目标文件未创建）。
+- **本地门禁（2026-10-23）**：`npm run check` 通过；`npm test` **383**、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`node scripts/check-version.mjs` 通过。
+- **部署（待执行/回填）**：v0.6.1/schema14、smoke 16/16 与 24/24、Dashboard 实机复核、备份/密钥包、Tag/Release。
 
 ## v0.6.0（已部署并验收通过；质量与安全加固，schema 保持 v14、无迁移；最终 release `20261023T053539Z`/commit `6349617`）
 

@@ -1,4 +1,4 @@
-# AntifieldCloud HTTP API 契约（v12，2026-10-23）
+# AntifieldCloud HTTP API 契约（v13，2026-10-23）
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源。
 
@@ -447,7 +447,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 全部需要会话；写操作需 CSRF；危险操作另需 TOTP（body `totpCode` 或请求头 `X-TOTP-Code`）和 typed confirmation。整库恢复不通过 Web 执行。
 
-- `GET /api/backups` → `{items:[Archive],inbox,orphans,state,world,worldPull,drill}`。Archive 含 `name/mode/createdAt/sizeBytes/sha256/status/origin/verifiedAt/pulledAt/ackedAt/lastError/manifest`；不返回归档路径或下载 URL。`world`/`worldPull`/`drill` 为只读状态对象（见 §12），`state` 可含 `pendingBytes/ackedBytes` 统计（缺失时前端按 0 降级）。
+- `GET /api/backups` → `{items:[Archive],inbox,orphans,state,world,worldPull,drill}`。Archive 含 `name/mode/createdAt/sizeBytes/sha256/status/origin/available/verifiedAt/pulledAt/ackedAt/lastError/manifest`；`available=false` 表示服务端文件已被 PC ack 清理（acked 后正常），此状态不可用于恢复；不返回归档路径或下载 URL。`world`/`worldPull`/`drill` 为只读状态对象（见 §12），`state` 可含 `pendingBytes/ackedBytes` 统计（缺失时前端按 0 降级）。
 - `POST /api/backups/prepare` body `{totpCode,full?,confirmText:"PREPARE"}`（3 次/小时）→ 只生成 Pi pending 归档，不 ack、不推进游标；输出可带 `warnings`/`skippedMissing`/`missingFiles`/`missingFileCount`/`partials`（物理文件缺失但已跳过，游标不会越过缺失项；下次 prepare 自动补入已恢复文件）。超时由 `BACKUP_PREPARE_TIMEOUT_SEC`（默认 3300s）控制。
 - `POST /api/backups/import`（multipart 字段 `file`，TOTP 走 `X-TOTP-Code`；10 次/小时）→ 201 `{archive,verify,warnings?}`。归档名必须匹配 `^snapshot-[0-9TZ]+(?:-[0-9]+)?-(full|inc)\.tar\.gz$`；落盘 `DATA_DIR/backups/imports` 0700，拒绝覆盖；单请求 ≤ min(MAX_UPLOAD_BYTES, 100 MiB)。导入归档（origin=import）不计入 pending，也不影响 Pi 增量水位。
 - `POST /api/backups/verify` body `{name}` → 流式 SHA-256 + tar 安全解析；409 checksum_mismatch、422 invalid_archive/unsafe_archive、404 archive_not_found。

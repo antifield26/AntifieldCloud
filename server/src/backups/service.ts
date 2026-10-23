@@ -143,6 +143,8 @@ export interface BackupArchiveItem {
   sha256: string
   status: 'pending' | 'acked' | 'imported' | 'missing'
   origin: 'pi' | 'import' | 'legacy'
+  /** 服务端归档文件当前是否存在；acked 后 PC 拉取确认可能主动删除远端文件，此时仍为 acked。 */
+  available: boolean
   verifiedAt: string | null
   pulledAt: string | null
   ackedAt: string | null
@@ -436,10 +438,12 @@ export class BackupService {
   private toArchiveItem(row: ArchiveRow): BackupArchiveItem {
     const exists = existsSync(this.storedPath(row))
     const origin: BackupArchiveItem['origin'] = row.origin === 'import' || row.origin === 'legacy' ? row.origin : 'pi'
+    // acked 表示 PC 已拉取确认；PC ack 后会删除远端归档文件，因此“文件不存在”对 acked 是正常状态，
+    // 不能显示成 missing（否则 Dashboard 会误报应用归档文件缺失）。只有未 ack 的 Pi 归档文件缺失才是异常。
     let status: BackupArchiveItem['status']
-    if (!exists) status = 'missing'
-    else if (origin === 'import') status = 'imported'
-    else if (row.acked_at) status = 'acked'
+    if (row.acked_at) status = 'acked'
+    else if (origin === 'import') status = exists ? 'imported' : 'missing'
+    else if (!exists) status = 'missing'
     else status = 'pending'
     return {
       id: row.name,
@@ -450,6 +454,7 @@ export class BackupService {
       sha256: row.sha256,
       status,
       origin,
+      available: exists,
       verifiedAt: row.verified_at,
       pulledAt: row.pulled_at,
       ackedAt: row.acked_at,

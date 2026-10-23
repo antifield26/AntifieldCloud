@@ -1,6 +1,12 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.0**（**已部署并验收通过**，最终 release `20261023T053539Z`/commit `6349617`；schema 保持 v14、无迁移；OpenCode 已先升级 v2.1.3）：Minor 版本的质量/安全加固，不引入新功能主线。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.1**（**本地修复/测试完成，待部署与用户复核**；备份状态误报修复 + host-only 过渡清理，schema 保持 v14、无迁移；OpenCode v2.1.3）；v0.6.0 已部署并验收通过（release `20261023T053539Z`/commit `6349617`）。
+
+## v0.6.1 补丁（本地修复/测试完成，待部署与用户复核）
+
+- 修复 PC ack 清理服务端归档后 Dashboard 误报“应用归档文件缺失”：acked 归档保持 `acked`，新增 `available=false`，Dashboard 显示已确认、恢复按钮禁用；API v13。
+- `/api/auth/me` 补清旧父域 Cookie；生产 deny-all 工具隔离只读负路径验证通过。
+- 版本 0.6.1；schema v14 无迁移；待部署 smoke/用户复核后更新证据。
 
 ## v0.6.0 补充（已部署并验收通过；质量/安全加固 + OpenCode v2.1.3）
 

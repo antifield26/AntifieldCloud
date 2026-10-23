@@ -713,6 +713,8 @@ export interface BackupArchive {
   sha256: string
   status: BackupArchiveStatus
   origin: BackupOrigin
+  /** 服务端归档文件是否存在；acked 后 PC 拉取确认可能主动删除远端文件，此时仍为 acked 但 available=false。 */
+  available?: boolean
   verifiedAt: string | null
   pulledAt: string | null
   ackedAt: string | null

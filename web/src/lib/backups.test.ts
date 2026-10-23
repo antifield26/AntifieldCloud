@@ -24,6 +24,7 @@ function makeArchive(overrides: Partial<BackupArchive> = {}): BackupArchive {
     verifiedAt: '2026-10-19T01:00:00.000Z',
     pulledAt: null,
     ackedAt: null,
+    available: true,
     lastError: null,
     manifest: null,
     ...overrides,
@@ -44,6 +45,8 @@ describe('备份归档 helpers', () => {
     expect(isArchiveRestorable(makeArchive())).toBe(true)
     expect(isArchiveRestorable(makeArchive({ verifiedAt: null }))).toBe(false)
     expect(isArchiveRestorable(makeArchive({ status: 'missing' }))).toBe(false)
+    // acked 后服务端副本被 PC 拉取清理：展示为已确认，但不可恢复。
+    expect(isArchiveRestorable(makeArchive({ status: 'acked', available: false }))).toBe(false)
   })
 
   it('上传前校验文件名和大小', () => {

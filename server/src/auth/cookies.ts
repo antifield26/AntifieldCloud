@@ -22,10 +22,12 @@ export function cookieSecurity(request: FastifyRequest): { secure: boolean } {
 }
 
 /**
- * 删除旧版本父域共享的 af_session/af_csrf（v0.6.0 过渡期，仅当配置了清理域时）。
+ * 删除旧版本父域共享的 af_session/af_csrf（过渡期，仅当配置了清理域时）。
+ * 供登录/退出以及 /api/auth/me 调用：长期不重新登录的浏览器在启动时也会被清理一次，
+ * 避免旧父域 Cookie 与新 host-only Cookie 长期共存。
  * 删除请求固定带 Secure（旧 Cookie 是 Secure 的，非 Secure 的删除请求不会覆盖它）。
  */
-function clearLegacyDomainCookies(reply: FastifyReply, config: Config): void {
+export function clearLegacyAuthCookies(reply: FastifyReply, config: Config): void {
   const domain = config.legacyCookieDomain
   if (!domain) return
   const base = { path: '/', sameSite: 'lax' as const, secure: true, domain }
@@ -46,7 +48,7 @@ export function setAuthCookies(
   const base = { path: '/', sameSite: 'lax' as const, secure }
   reply.setCookie(SESSION_COOKIE, sessionToken, { ...base, httpOnly: true, maxAge })
   reply.setCookie(CSRF_COOKIE, csrfToken, { ...base, httpOnly: false, maxAge })
-  clearLegacyDomainCookies(reply, config)
+  clearLegacyAuthCookies(reply, config)
 }
 
 /** 仅补发 CSRF Cookie（会话存在但 af_csrf 丢失时使用）。 */
@@ -67,7 +69,7 @@ export function clearAuthCookies(reply: FastifyReply, request: FastifyRequest, c
   const base = { path: '/', sameSite: 'lax' as const, secure }
   reply.clearCookie(SESSION_COOKIE, { ...base, httpOnly: true })
   reply.clearCookie(CSRF_COOKIE, { ...base, httpOnly: false })
-  clearLegacyDomainCookies(reply, config)
+  clearLegacyAuthCookies(reply, config)
 }
 
 export function readSessionToken(request: FastifyRequest): string | null {

@@ -406,8 +406,8 @@
 
 ### 6. 残余风险（明确）
 
-1. **host-only/SSO 过渡**：旧父域 Cookie 仅在登录/退出响应清理，长期不重登录的浏览器最多 7 天内可能仍发送旧 Cookie；未采用 `__Host-` 前缀；SSO ticket 未绑定 IP/UA（一次性/60s/aiOrigin/no-store/no-referrer）。发布说明提示清理站点 Cookie。
-2. **BOT-04 工具拦截未 e2e**：已实现降级审计/状态，但 await 生产负路径（deny-all 会话内要求执行 shell/读文件，确认无 tool 段）后才可声明隔离有效；仍不得把 Chat 当强沙箱。
+1. **host-only/SSO 过渡**：旧父域 Cookie 在登录/退出及每次 `/api/auth/me` 响应清理，长期不重登录的浏览器最多 7 天内仍可能发送旧 Cookie；未采用 `__Host-` 前缀；SSO ticket 未绑定 IP/UA（一次性/60s/aiOrigin/no-store/no-referrer）。发布说明提示清理站点 Cookie。
+2. **BOT-04 工具拦截已做生产只读负路径（v0.6.1）**：deny-all 会话中要求 shell 写 `/tmp`，模型返回 `TOOLS_UNAVAILABLE`、无 `tool` 内容段、目标文件未创建；降级审计/状态仍保留。模型行为非强保证，仍不得把 Chat 当强沙箱。
 3. **记忆过滤是启发式**：新格式密钥可能漏过；旧版本已落库敏感行仍存在 DB，读取侧已不注入/不迁移，可用 `/forget`/管理删除/后续 CLI 清理。
 4. **密钥包硬失败语义**：opencode 快照瞬时失败会跳过当天密钥包（旧包保留、次日重试）；如希望保留部分包需改备份拉取状态模型（P3）。
 5. **恢复性能**：measureContents 多一次只读解压，大归档恢复耗时增加约一次解压时间；换预算可信。
@@ -420,3 +420,10 @@
 - 审计未发现新的未关闭 P0/P1；无 schema 迁移（保持 v14）；OpenCode 已先升级 v2.1.3。
 - 本版为质量/安全加固 Minor，不是第三方独立审计；生产最终结论以 Step 6 部署、smoke、用户验收与发布证据为准：最终 release `20261023T053539Z`/commit `6349617`，smoke 24/24、0 警告，用户确认验收通过。
 - 用户追加：默认 `lofii` 角色卡简化为名字 + 用户指定对话风格（不注入详细人设），`/role set` 个人卡仍可覆盖；最终部署已包含（commit `6349617`）。
+
+## 第五轮补丁（v0.6.1，2026-10-23）
+
+- **已知问题**：Dashboard 备份状态显示“应用归档文件缺失”。根因：PC ack 删除服务端归档文件后，`toArchiveItem` 先按文件存在性标记 `missing`，优先级高于 `acked`。
+- **修复**：acked 优先返回 `acked`；新增 `available: boolean` 表示服务端文件是否存在；Dashboard 显示“已确认”；Backups 页显示“副本已清理”、恢复按钮禁用并提示；`isArchiveRestorable` 要求 `available !== false`；API 文档 v13。
+- **残余处理**：`/api/auth/me` 增加旧父域 Cookie 清理；生产 deny-all 工具隔离负路径验证通过（无 tool 段、无文件创建）。仍保留 `__Host-` 前缀、SSO ticket IP/UA 绑定、记忆过滤启发式等后续项。
+- 证据：服务端 `backups-import-verify`/`http-hardening` 用例、前端 `backups`/`BackupStatusCard` 用例；原始记录见 `.local/audit/round6-residuals.md`。

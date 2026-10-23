@@ -1,4 +1,4 @@
-# AntifieldCloud UI 规范（v12，2026-10-23）
+# AntifieldCloud UI 规范（v13，2026-10-23）
 
 ## 1. 定位与基调
 
@@ -295,6 +295,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 ### 备份状态
 
 - Dashboard 与 Settings 备份区增加四类状态：应用归档链（最近拉取/pending/孤儿/已确认）、密钥包、世界备份（最近成功/大小/待拉取/错误）、最近恢复演练（时间/结果/`latestDb` + `schemaVersion` + 世界归档是否校验）。
+- 应用归档已 ack 后 PC 可能清理服务端文件：状态仍显示“已确认”，Backups 页额外显示“副本已清理”，恢复按钮禁用并提示“服务端副本已清理”；不得把这类已确认归档误报为“文件缺失”。
 - 世界备份/PC 拉取“保留份数”按脚本的 `keptCount` 展示（`kept` 是归档名数组）；文案注明世界备份的 `kept` 是“上次运行保留，PC 拉取确认后远端会删除”，不代表 Pi 当前副本数。
 - 演练时间超过 35 天或 schemaVersion 与当前部署不一致时显示 warning 并提示重跑 `drill.ps1 -ExpectedSchemaVersion <当前>`；不伪造 DB 完整性。
 - 状态缺失显示 unknown/未运行；异常（超期、失败、pending 堆积）红色/黄色提示并给出下一步；不展示归档路径。

@@ -1,5 +1,29 @@
 # Changelog
 
+## [v0.6.1] - 2026-10-23
+
+### Fixed
+
+- **备份状态误报应用归档文件缺失**：`/api/backups` 不再把已 ack 且服务端文件已被 PC 拉取清理的归档标记为 `missing`；这类归档保持 `status=acked`，新增 `available=false` 表示服务端副本不可用。Dashboard 显示“已确认”而不是“文件缺失”；Backups 页恢复按钮对 `available=false` 明确禁用并提示“服务端副本已清理”，避免误点恢复失败。
+- **恢复选择安全**：前端 `isArchiveRestorable` 要求 `available !== false`；导入归档仍按文件存在性标记 `imported/missing`，未 ack 的 Pi 归档文件缺失仍为 `missing`。
+- **host-only Cookie 过渡期清理**：`GET /api/auth/me` 也会清理旧父域 `af_session`/`af_csrf`（登录/退出之外再补一次），降低长期不重新登录用户的旧 Cookie 共存窗口。
+
+### Changed
+
+- `BackupArchive` 新增 `available: boolean`（Web 类型为可选 `available?: boolean` 以兼容旧服务端）；`docs/API.md` v13 同步。
+- Backups 页状态列对 acked 且 `available=false` 显示“副本已清理”提示；恢复按钮 title 区分“请先校验归档”和“服务端副本已清理”。
+
+### Security
+
+- 生产只读负路径验证 BOT-04：OpenCode deny-all 会话中要求执行 shell 写 `/tmp`，模型返回 `TOOLS_UNAVAILABLE`，无 `tool` 内容段，目标文件未创建；仍保留“模型行为非强保证”的残余说明。
+- host-only 过渡期 `/me` 清理；`__Host-` 前缀与 SSO ticket 绑定 IP/UA 仍记录为后续版本项。
+
+### Deployment
+
+- 版本/`APP_VERSION` 升到 **0.6.1**；schema 保持 **v14**（无迁移）；`deploy.ps1` 期望 schema 仍为 14。
+- 生产部署后需验证 `/healthz` v0.6.1/schema14、smoke 16/16 与 24/24、备份状态 Dashboard 不再显示“应用归档文件缺失”；部署前仍做 DB 快照。
+- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **383**、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过。部署证据待回填；v0.6.0 历史发布记录保留。
+
 ## [v0.6.0] - 2026-10-23
 
 ### Added
