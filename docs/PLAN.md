@@ -1,13 +1,13 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.3（开发中，未发布）**：每个群聊目标一张共享角色卡（管理员编辑）；群消息模式 `mention|all`；全量 `GROUP_MESSAGE_CREATE` 由模型 `NO_REPLY` 决定是否发送；群聊/频道禁用斜杠命令；schema v16。上一版 v0.6.2 已发布（Tag/Release v0.6.2，生产 release `20261023T123055Z`/commit `77e42c7`，schema v15 兼容列）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.3（已发布：Tag/Release v0.6.3）**：每个群聊目标一张共享角色卡（管理员编辑）；群消息模式 `mention|all`；全量 `GROUP_MESSAGE_CREATE` 由模型 `NO_REPLY` 决定是否发送；群聊/频道禁用斜杠命令；schema v16。生产 release `20261023T142411Z`/commit `7ac1d27`；上一版 v0.6.2 已发布（Tag/Release v0.6.2，release `20261023T123055Z`/commit `77e42c7`，schema v15 兼容列）。
 
-## v0.6.3（开发中，未发布：群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用命令；schema v16）
+## v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用命令；schema v16）
 
 - **范围**：群聊目标独立共享角色卡（管理员在“角色与记忆”新建/编辑正文/启停/删除，覆盖群成员私聊个人卡）；群目标独立设置“仅接受 @/名字提及”（默认）或“接受全部消息并由模型选择是否发送”（实验性）；适配器支持 `GROUP_MESSAGE_CREATE`；模型以 `NO_REPLY` 表示本轮不发送；群聊/频道不再接受任何斜杠命令（C2C 保留）。
 - **决策（2026-10-23 用户确认）**：每个群一张共享卡（推荐）；群聊+频道都禁用命令（推荐）；按官方全量事件实现 `GROUP_MESSAGE_CREATE`，QQ 后台需开启“接收所有消息”，仅@/名字模式用 Bot 名称文本匹配，全量模式模型输出 `NO_REPLY` 保持静默。
 - **数据**：schema v16（迁移 16 新增 `bot_group_roles`，`target_id` 主键 FK 级联；群消息模式复用 `bot_targets.chat_trigger`，默认 `mention`，不新增列）。
-- **状态**：开发/本地验证中；待生产部署、smoke、备份与用户验收后决定发布。
+- **状态**：已发布（生产 release `20261023T142411Z`/commit `7ac1d27`，schema16；smoke 16/16 + 24/24，drill schema16 通过；用户 2026-10-23 23:09 CST 验收通过；annotated Tag `v0.6.3` + GitHub Release）。
 
 ## v0.6.2（已发布：Tag/Release v0.6.2；目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列）
 

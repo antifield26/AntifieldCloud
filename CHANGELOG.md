@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.6.3] - 2026-10-23（已部署，待用户验收；未发布）
+## [v0.6.3] - 2026-10-23（已发布：Tag/Release v0.6.3）
 
 ### Added
 
@@ -18,7 +18,9 @@
 - `deploy.ps1` 期望 schema 改为 **16**；`deploy/env.example` `APP_VERSION=0.6.3`。
 - 迁移 16 只新增表，已有目标/投递/命令不受影响；旧版本 v0.6.2 不支持 schema v16，回滚必须恢复迁移前 DB 快照并切回 v0.6.2 release。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **399**、`npm run test:web` **180**；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**；build bundle `index-BHmn1DCi.js` 691.34 kB。
-- 生产部署（2026-10-23）：最终 release `20261023T142411Z`/commit `7ac1d27`（v0.6.3/schema 16，含全量消息平台配置提示）；迁移前快照 `db-predeploy-20261023T142445335Z.sqlite`（sha256 `256e34ac…3098`）；`/healthz` v0.6.3/schema16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过；部署后备份 `snapshot-20261023T142611502Z-inc.tar.gz`（195705 bytes，sha256 `89cbf7c6…c449`，secrets=ok）。用户验收：群角色卡已生效；全量消息非 @ 无响应定位为 QQ 平台侧未完成“接收所有消息”/`GROUP_MESSAGE_CREATE`/群主“获取群内全部消息”配置，待用户开启后重测。
+- 生产部署（2026-10-23）：最终 release `20261023T142411Z`/commit `7ac1d27`（v0.6.3/schema 16，含全量消息平台配置提示）；迁移前快照 `db-predeploy-20261023T142445335Z.sqlite`（sha256 `256e34ac…3098`）；`/healthz` v0.6.3/schema16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过；部署后备份 `snapshot-20261023T142611502Z-inc.tar.gz`（195705 bytes，sha256 `89cbf7c6…c449`，secrets=ok）。
+- 验收（2026-10-23 23:08 CST）：群角色卡「大肥鱼」在群聊实际生效（`role:true`）；QQ 平台完成“接收所有消息”/`GROUP_MESSAGE_CREATE`/群主“获取群内全部消息”后，非 @ 群消息入站并正常 Chat（`bot_events` `15:08:21Z` chat/ok，`bot.ai.chat`）；群聊斜杠命令静默；用户确认验收通过。
+- 发布（2026-10-23）：annotated Tag `v0.6.3` + GitHub Release [AntifieldCloud v0.6.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.3)（Latest）。
 
 ## [v0.6.2] - 2026-10-23（已发布：Tag/Release v0.6.2）
 
