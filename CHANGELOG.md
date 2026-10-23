@@ -17,8 +17,8 @@
 - 版本升到 **0.6.3**；schema **v16**（迁移 16 新增 `bot_group_roles` 群聊角色卡表；群消息模式复用既有 `bot_targets.chat_trigger`，默认 `mention`）。
 - `deploy.ps1` 期望 schema 改为 **16**；`deploy/env.example` `APP_VERSION=0.6.3`。
 - 迁移 16 只新增表，已有目标/投递/命令不受影响；旧版本 v0.6.2 不支持 schema v16，回滚必须恢复迁移前 DB 快照并切回 v0.6.2 release。
-- 本地门禁：`npm run check`/`check-version` 通过；`npm test` **399**、`npm run test:web` **180**；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**；build bundle `index-beLvg53v.js` 691.15 kB。
-- 生产部署（2026-10-23）：release `20261023T135852Z`/commit `aede7f6`（v0.6.3/schema 16）；迁移前快照 `db-predeploy-20261023T135925309Z.sqlite`（sha256 `ec50b50a…2ac1`）；`/healthz` v0.6.3/schema16；只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过；部署后备份 `snapshot-20261023T140233488Z-inc.tar.gz`（193286 bytes，sha256 `b8933604…ef4b5f`，secrets=ok）。用户验收待完成。生产 `bot_group_roles` 初始 0 行（4 个目标/1 个 Bot 保留）。
+- 本地门禁：`npm run check`/`check-version` 通过；`npm test` **399**、`npm run test:web` **180**；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**；build bundle `index-BHmn1DCi.js` 691.34 kB。
+- 生产部署（2026-10-23）：最终 release `20261023T142411Z`/commit `7ac1d27`（v0.6.3/schema 16，含全量消息平台配置提示）；迁移前快照 `db-predeploy-20261023T142445335Z.sqlite`（sha256 `256e34ac…3098`）；`/healthz` v0.6.3/schema16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过；部署后备份 `snapshot-20261023T142611502Z-inc.tar.gz`（195705 bytes，sha256 `89cbf7c6…c449`，secrets=ok）。用户验收：群角色卡已生效；全量消息非 @ 无响应定位为 QQ 平台侧未完成“接收所有消息”/`GROUP_MESSAGE_CREATE`/群主“获取群内全部消息”配置，待用户开启后重测。
 
 ## [v0.6.2] - 2026-10-23（已发布：Tag/Release v0.6.2）
 
