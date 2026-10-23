@@ -44,7 +44,7 @@
   诚实记录：首次短消息测试抽取 `ops=0`（10:18:47、10:21:17），判定提示词过保守；修正提示词（commit `931b10d`）并重新部署后重试得到 `ops=2`。
 - **Legacy 清理**：10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰），审计 `bot.memory.legacy_cleanup`。
 - **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24（环境事件，不计应用问题）。
-- **回滚**：v0.5.10 不支持 schema v14；必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10）。本地提交 `0b1dd03`（feat）/`dc912bb`（docs）/`a62eb34`（fix）/`931b10d`（prompt fix），尚未推送/打 Tag。
+- **回滚**：v0.5.10 不支持 schema v14；必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10）。本地提交 `0b1dd03`（feat）/`dc912bb`（docs）/`a62eb34`（fix）/`931b10d`（prompt fix）；已推送 main `c16a39b`、annotated Tag `v0.5.11`、GitHub Release `AntifieldCloud v0.5.11`（Latest，2026-10-23 10:46 CST）。
 
 ## [v0.5.10] - 2026-10-22
 

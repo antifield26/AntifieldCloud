@@ -3,6 +3,7 @@
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
 > 状态：v0.5.11（**已部署并验收通过**，release `20261023T022831Z`/commit `931b10d`/schema **v14**（迁移 14 不可逆）；`/healthz` = version 0.5.11/schemaVersion 14；部署 smoke 16/16、完整 Access smoke **24/24**；生产 env 5 个 `BOT_MEMORY_*` 就位（640 root:antifieldcloud），运行配置 365/3/120/3000/12/90/30；**用户实发验收通过**（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory` 成功、`/forget confirm` items=2 legacy=0 且回复含“记忆条目 2 条”，之后 items/state 清空且未误删其他用户；`/bots` 面板用户确认））。v0.5.11 结构化长期记忆：schema v14（新增 `bot_memory_items`/`bot_memory_state`，旧 `bot_ai_memories` 保留为 legacy 来源）、7 类条目、抽取/TTL/容量、分层召回、`/memory` 与 off|on、管理 API 元数据、legacy 清理 CLI；**回滚必须恢复最终迁移前快照 + v0.5.10 release**（v0.5.10 不支持 schema v14）。
+> 发布：main `c16a39b` 已推送，annotated Tag `v0.5.11`，GitHub Release [AntifieldCloud v0.5.11](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.5.11)（Latest，2026-10-23 10:46 CST）。
 > 测试基线（Lead 实测 2026-10-23，v0.5.11）：`npm test` **360**（v0.5.10 的 341 + 新增 19）、`npm run test:web` **162**（30 文件，+5）、`npm run typecheck` 通过；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**（`npm run test:coverage` exit 0）、`npm run build` 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 

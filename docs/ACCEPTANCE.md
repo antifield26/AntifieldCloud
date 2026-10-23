@@ -33,7 +33,7 @@
 > **合并摘要生效**：4 条 Chat 仅产生 1 次 `bot.ai.memory`，detail `rounds:3`（15:28:37Z）；**远端会话删除生效**：部署前快照会话 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要）在 `/forget confirm` 后经 OpenCode API 查询均为 404，该用户本地会话/记忆已清空，其他用户（`E259399F…`、`6B7DAC9B…`）会话/记忆保持 200 未受影响，无“删除远端 AI 会话失败”日志。
 > 图片回归通过（真实 145172 B JPEG 端到端）；`/bots` 出站网络卡片按用户确认验收通过（服务端无单独 UI 证据）；23:29 CST 用户明确“完成验收”。详见下方 v0.5.10 段。
 
-> **v0.5.11 已部署并验收通过**：2026-10-23 最终部署 release `20261023T022831Z`（commit `931b10d`，v0.5.11/schema **v14**）；同版本早前 release `20261023T021339Z`（fix forget 回复）与 `20261023T014328Z`（首次 v0.5.11 部署）保留。
+> **v0.5.11 已部署并验收通过**：2026-10-23 最终部署 release `20261023T022831Z`（commit `931b10d`，v0.5.11/schema **v14**）；同版本早前 release `20261023T021339Z`（fix forget 回复）与 `20261023T014328Z`（首次 v0.5.11 部署）保留；已推送 main `c16a39b`、annotated Tag `v0.5.11`、GitHub Release [AntifieldCloud v0.5.11](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.5.11)（Latest，2026-10-23 10:46 CST）。
 > 最终部署 smoke 16/16、完整 Access smoke **24/24**；`/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；运行配置 `365/3/120/3000/12/90/30`；生产 env 5 个 `BOT_MEMORY_*`，权限 `640 root:antifieldcloud`；迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）。
 > 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
@@ -72,7 +72,7 @@
   - 迁移 14 不可逆；v0.5.10 不支持 schema v14，回滚必须恢复最终迁移前快照 + 切回 v0.5.10 release。
   - 剩余 2 条 legacy 属其他未迁移用户（未触碰）；后续用户迁移后可再跑清理 CLI。
   - 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 恢复（环境事件，不计应用问题）。
-  - 本地 git 提交 `0b1dd03`（feat）/`dc912bb`（docs）/`a62eb34`（fix）/`931b10d`（prompt fix），尚未推送/打 Tag（文档不声明已发布 Tag）。
+  - 本地 git 提交 `0b1dd03`（feat）/`dc912bb`（docs）/`a62eb34`（fix）/`931b10d`（prompt fix）；已推送 main `c16a39b`、annotated Tag `v0.5.11`、GitHub Release [AntifieldCloud v0.5.11](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.5.11)（Latest，2026-10-23 10:46 CST）。
 - **回滚**：**v0.5.10 不支持 schema v14**；迁移 14 不可逆，回滚只能 stop → 恢复最终迁移前 DB 快照（`/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`，sha256 `937a0bc8…76a98d3c`）→ 把 `APP_VERSION` 改回 v0.5.10 → 切回 release `20261022T152053Z` → start → 健康检查；不要用未恢复快照的旧 release 启动。
 ## v0.5.10（历史，已部署并验收通过；用户实发 2026-10-22 23:26–23:29 CST；v0.5.11 起升级 schema v14）
 
@@ -895,7 +895,7 @@ release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.1
 | `npm run build`（Vite + PWA 资源） | 通过；产出 manifest/sw/offline/icons/assets |
 | `scripts/smoke.ps1`（公网 + Pi） | 16/16 通过（含 PWA、分享、告警、cgroup、备份 pending/旁文件） |
 | `npm ci --omit=dev` + `check-prod-deps.mjs` | 通过 |
-| CI（shellcheck / nftables / PowerShell Parse+BOM） | 配置已加入，待推送后跑 |
+| CI（shellcheck / nftables / PowerShell Parse+BOM） | 配置已加入；仓库已推送至 GitHub，运行结果以 Actions 为准 |
 
 ### 2. 部署与数据库
 
