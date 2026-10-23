@@ -7,6 +7,7 @@
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import { AppError, badRequest, notFound } from '../util/errors.ts'
+import { getMeta, setMeta } from '../db.ts'
 import { newId } from '../util/ids.ts'
 import { isoAfterSeconds, nowIso } from '../util/time.ts'
 import { SlidingWindowLimiter } from '../auth/limiter.ts'
@@ -364,6 +365,7 @@ export class BotService {
       legacyMaxChars: deps.config.botAiMemoryMaxChars,
     })
     this.roles = new BotChatRoleStore(deps.db)
+    this.resetSessionsForToolMode()
     this.connectivity = new BotConnectivityMonitor({
       enabled: deps.config.botEnabled && deps.config.botConnectivityEnabled,
       intervalSeconds: deps.config.botConnectivityIntervalSeconds,
@@ -1009,6 +1011,28 @@ export class BotService {
     const target = targetId ? this.targetRowForBot(botId, targetId) : this.firstTarget(botId)
     if (!target) throw badRequest('请先配置目标')
     return this.sendTest(bot, target)
+  }
+
+  /**
+   * OpenCode 的工具权限在会话创建时固定；搜索工具模式变化后，旧会话即使映射仍在也没有新工具。
+   * 用 meta 记录上次工具模式，模式变化时一次性清空会话映射（新 Chat 会重新建会话），避免旧会话
+   * 出现“提示词说有搜索工具、实际不可用”或不安全地沿用 deny-all 之外的权限。
+   */
+  private resetSessionsForToolMode(): void {
+    const mode = this.config.botSearchEnabled ? this.config.botSearchMode : 'off'
+    const previous = getMeta(this.db, 'bot_ai_tool_mode')
+    if (previous === mode) return
+    try {
+      const changes = Number(this.db.prepare('DELETE FROM bot_ai_sessions').run().changes)
+      setMeta(this.db, 'bot_ai_tool_mode', mode)
+      if (changes > 0) {
+        this.deps.audit('bot.ai.tool_mode_reset', null, { mode, sessions: changes })
+      }
+    } catch (error) {
+      this.deps.log('warn', 'Bot AI 工具模式切换清理会话失败', {
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
   }
 
   async waitForIdle(): Promise<void> {
