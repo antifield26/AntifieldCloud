@@ -22,6 +22,19 @@ test('分享 token URL 脱敏：/s/ 与 /api/public/shares/', () => {
   assert.equal(redactSensitiveRequestUrl(''), '')
 })
 
+test('Bot Webhook 路径中的 botId 脱敏，不误伤 /api/bots 管理接口', () => {
+  assert.equal(
+    redactSensitiveRequestUrl('/api/bot/webhook/123e4567-e89b-12d3-a456-426614174000'),
+    '/api/bot/webhook/[REDACTED]',
+  )
+  assert.equal(
+    redactSensitiveRequestUrl('/api/bot/webhook/123e4567-e89b-12d3-a456-426614174000?op=13'),
+    '/api/bot/webhook/[REDACTED]?op=13',
+  )
+  assert.equal(redactSensitiveRequestUrl('/api/bots'), '/api/bots')
+  assert.equal(redactSensitiveRequestUrl('/api/bots/status'), '/api/bots/status')
+})
+
 test('req serializer 保留排障字段且脱敏分享 token', () => {
   const serialized = serializeRequest({
     method: 'GET',

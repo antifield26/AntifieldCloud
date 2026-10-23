@@ -9,13 +9,16 @@ import type { Config } from './config.ts'
 const CENSOR = '[REDACTED]'
 const SHARE_PAGE_PATTERN = /^\/s\/[^/?#]+/
 const PUBLIC_SHARE_API_PATTERN = /^\/api\/public\/shares\/[^/?#]+/
+/** Bot Webhook 路径包含 botId；虽然它不是凭据，但避免通过 journal 扩散可定位入口。 */
+const BOT_WEBHOOK_PATTERN = /^\/api\/bot\/webhook\/[^/?#]+/
 
-/** 把 URL 路径中的分享 token 替换为 [REDACTED]，其余部分保持不变。 */
+/** 把 URL 路径中的分享 token / Bot Webhook botId 替换为 [REDACTED]，其余部分保持不变。 */
 export function redactSensitiveRequestUrl(rawUrl: string): string {
   if (typeof rawUrl !== 'string' || rawUrl.length === 0) return ''
   return rawUrl
     .replace(SHARE_PAGE_PATTERN, `/s/${CENSOR}`)
     .replace(PUBLIC_SHARE_API_PATTERN, `/api/public/shares/${CENSOR}`)
+    .replace(BOT_WEBHOOK_PATTERN, `/api/bot/webhook/${CENSOR}`)
 }
 
 interface RawRequestLike {
