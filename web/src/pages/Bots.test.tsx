@@ -145,6 +145,7 @@ function target(overrides: Partial<BotTarget> = {}): BotTarget {
     allowCommands: false,
     allowNotifications: true,
     allowChat: false,
+    groupReplyMode: 'mention',
     quietStartMinute: null,
     quietEndMinute: null,
     createdAt: '2026-10-20T00:00:00.000Z',
@@ -358,18 +359,17 @@ describe('Bots 机器人管理', () => {
     expect(screen.queryByLabelText(/Signing Secret/)).toBeNull()
   })
 
-  it('目标分区切换允许命令会调用 PATCH 并更新状态', async () => {
+  it('目标分区切换群消息模式会调用 PATCH 并更新状态', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
     await userEvent.click(screen.getByRole('tab', { name: '目标' }))
-    const checkbox = await screen.findByRole('checkbox', { name: '测试群 允许命令' })
-    expect(checkbox).not.toBeChecked()
+    const select = (await screen.findByLabelText('测试群 群消息模式')) as HTMLSelectElement
+    expect(select.value).toBe('mention')
 
-    await userEvent.click(checkbox)
+    await userEvent.selectOptions(select, 'all')
     await waitFor(() =>
-      expect(mocks.targetUpdate).toHaveBeenCalledWith('bot-1', 'target-1', { allowCommands: true }),
+      expect(mocks.targetUpdate).toHaveBeenCalledWith('bot-1', 'target-1', { groupReplyMode: 'all' }),
     )
-    await waitFor(() => expect(checkbox).toBeChecked())
   })
 
   it('目标分区可创建允许 Chat 的目标并展示最近入站目标', async () => {
@@ -395,12 +395,13 @@ describe('Bots 机器人管理', () => {
     expect(screen.getByText('测试成员')).toBeTruthy()
 
     await userEvent.type(screen.getByLabelText(/^名称/), '聊天目标')
+    await userEvent.selectOptions(screen.getByLabelText('新建群消息模式'), 'all')
     await userEvent.click(screen.getByRole('checkbox', { name: '允许 Chat' }))
     await userEvent.click(screen.getByRole('button', { name: '添加目标' }))
     await waitFor(() =>
       expect(mocks.targetCreate).toHaveBeenCalledWith(
         'bot-1',
-        expect.objectContaining({ externalId: 'new-group', allowChat: true }),
+        expect.objectContaining({ externalId: 'new-group', allowChat: true, groupReplyMode: 'all' }),
       ),
     )
     await waitFor(() => expect(screen.queryByText('测试成员')).toBeNull())
@@ -485,7 +486,7 @@ describe('Bots 机器人管理', () => {
     expect((await screen.findAllByText('3 条')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('记忆启用').length).toBeGreaterThan(0)
     expect(Array.from(document.querySelectorAll('.bot-memory-kind')).map((el) => el.textContent)).toContain('资料2')
-    expect(screen.getByText(/仅显示元数据，正文不通过 Web 暴露/)).toBeTruthy()
+    expect(screen.getByText(/私聊角色卡正文不通过 Web 暴露/)).toBeTruthy()
     expect(mocks.rolesList).toHaveBeenCalledWith('bot-1', { limit: 20, offset: 0 })
     expect(mocks.memoriesList).toHaveBeenCalledWith('bot-1', { limit: 20, offset: 0 })
   })

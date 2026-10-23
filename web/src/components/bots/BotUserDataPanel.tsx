@@ -3,9 +3,10 @@
 // 停用与删除只提交 userId / itemId，删除前必须二次确认。
 
 import { useCallback, useEffect, useState } from 'react'
-import { Brain, IdCard, ListTree, ShieldCheck, Trash2 } from 'lucide-react'
+import { BookOpen, Brain, IdCard, ListTree, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type {
+  BotGroupRoleSummary,
   BotMemoryItemSummary,
   BotMemoryUserSummary,
   BotRoleSummary,
@@ -16,6 +17,7 @@ import { Button } from '../Button'
 import { Card } from '../Card'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
+import { FormField } from '../FormField'
 import { InlineError } from '../InlineError'
 import { Modal } from '../Modal'
 import { Table } from '../Table'
@@ -91,6 +93,16 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
   const [rolesError, setRolesError] = useState<string | null>(null)
   const [rolesReloadKey, setRolesReloadKey] = useState(0)
 
+  const [groupRoles, setGroupRoles] = useState<BotGroupRoleSummary[]>([])
+  const [groupRolesLoading, setGroupRolesLoading] = useState(true)
+  const [groupRolesError, setGroupRolesError] = useState<string | null>(null)
+  const [groupRolesReloadKey, setGroupRolesReloadKey] = useState(0)
+  const [groupEditor, setGroupEditor] = useState<{ targetId: string; targetLabel: string } | null>(null)
+  const [groupDraft, setGroupDraft] = useState<{ name: string; prompt: string; enabled: boolean } | null>(null)
+  const [groupEditorLoading, setGroupEditorLoading] = useState(false)
+  const [groupSaving, setGroupSaving] = useState(false)
+  const [groupConfirm, setGroupConfirm] = useState<{ targetId: string; targetLabel: string } | null>(null)
+
   const [memories, setMemories] = useState<BotMemoryUserSummary[]>([])
   const [memoriesTotal, setMemoriesTotal] = useState(0)
   const [memoriesPage, setMemoriesPage] = useState(1)
@@ -134,6 +146,24 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
       setRolesLoading(false)
     }
   }, [botId, rolesPage])
+
+  const loadGroupRoles = useCallback(async (): Promise<void> => {
+    if (!botId) {
+      setGroupRoles([])
+      setGroupRolesLoading(false)
+      return
+    }
+    setGroupRolesLoading(true)
+    setGroupRolesError(null)
+    try {
+      const result = await api.bots.groupRoles.list(botId)
+      setGroupRoles(result.items)
+    } catch (loadError) {
+      setGroupRolesError(toErrorMessage(loadError, '读取群聊角色卡失败'))
+    } finally {
+      setGroupRolesLoading(false)
+    }
+  }, [botId])
 
   const loadMemories = useCallback(async (): Promise<void> => {
     if (!botId) {
@@ -187,6 +217,10 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
   }, [loadRoles, refreshToken, rolesReloadKey])
 
   useEffect(() => {
+    void loadGroupRoles()
+  }, [loadGroupRoles, refreshToken, groupRolesReloadKey])
+
+  useEffect(() => {
     void loadMemories()
   }, [loadMemories, refreshToken, memoriesReloadKey])
 
@@ -205,6 +239,88 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
       toast.success(role.enabled ? '角色卡已停用' : '角色卡已启用')
     } catch (updateError) {
       toast.error(toErrorMessage(updateError, '更新角色卡状态失败，请重试'))
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  const openGroupEditor = async (item: BotGroupRoleSummary): Promise<void> => {
+    if (!bot) return
+    setGroupEditor({ targetId: item.targetId, targetLabel: item.targetLabel })
+    setGroupEditorLoading(true)
+    setGroupDraft(null)
+    try {
+      const result = await api.bots.groupRoles.get(bot.id, item.targetId)
+      setGroupDraft(
+        result.groupRole
+          ? {
+              name: result.groupRole.name,
+              prompt: result.groupRole.prompt,
+              enabled: result.groupRole.enabled,
+            }
+          : { name: '', prompt: '', enabled: true },
+      )
+    } catch (loadError) {
+      toast.error(toErrorMessage(loadError, '读取群聊角色卡失败'))
+    } finally {
+      setGroupEditorLoading(false)
+    }
+  }
+
+  const handleSaveGroupRole = async (): Promise<void> => {
+    if (!bot || !groupEditor || !groupDraft || groupSaving) return
+    const name = groupDraft.name.trim()
+    const prompt = groupDraft.prompt.trim()
+    if (!name) {
+      toast.error('请输入角色名字')
+      return
+    }
+    if (!prompt) {
+      toast.error('请输入角色设定')
+      return
+    }
+    setGroupSaving(true)
+    try {
+      await api.bots.groupRoles.save(bot.id, groupEditor.targetId, { name, prompt })
+      toast.success('群聊角色卡已保存')
+      setGroupEditor(null)
+      setGroupDraft(null)
+      setGroupRolesReloadKey((value) => value + 1)
+    } catch (saveError) {
+      toast.error(toErrorMessage(saveError, '保存群聊角色卡失败，请重试'))
+    } finally {
+      setGroupSaving(false)
+    }
+  }
+
+  const handleToggleGroupRole = async (item: BotGroupRoleSummary): Promise<void> => {
+    if (!bot || busyKey || !item.name) return
+    setBusyKey(`group-role:${item.targetId}`)
+    try {
+      await api.bots.groupRoles.setEnabled(bot.id, item.targetId, !item.enabled)
+      setGroupRoles((previous) =>
+        previous.map((candidate) =>
+          candidate.targetId === item.targetId ? { ...candidate, enabled: !item.enabled } : candidate,
+        ),
+      )
+      toast.success(item.enabled ? '群聊角色卡已停用' : '群聊角色卡已启用')
+    } catch (updateError) {
+      toast.error(toErrorMessage(updateError, '更新群聊角色卡状态失败，请重试'))
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
+  const handleDeleteGroupRole = async (): Promise<void> => {
+    if (!bot || !groupConfirm) return
+    setBusyKey(`group-role:${groupConfirm.targetId}`)
+    try {
+      await api.bots.groupRoles.remove(bot.id, groupConfirm.targetId)
+      toast.success(`已删除「${groupConfirm.targetLabel}」的群聊角色卡`)
+      setGroupConfirm(null)
+      setGroupRolesReloadKey((value) => value + 1)
+    } catch (deleteError) {
+      toast.error(toErrorMessage(deleteError, '删除群聊角色卡失败，请重试'))
     } finally {
       setBusyKey(null)
     }
@@ -331,6 +447,99 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
             >
               删除
             </Button>
+          </div>
+        )
+      },
+    },
+  ]
+
+  const groupRoleColumns: Column<BotGroupRoleSummary>[] = [
+    {
+      key: 'target',
+      header: '群聊目标',
+      primary: true,
+      render: (item) => (
+        <span className="bot-userdata-name" title={item.targetExternalId}>
+          {item.targetLabel}
+        </span>
+      ),
+    },
+    {
+      key: 'name',
+      header: '角色名',
+      render: (item) =>
+        item.name ? (
+          <span className="bot-userdata-name" title={item.name}>
+            {truncateText(item.name, 24)}
+          </span>
+        ) : (
+          <span className="cell-detail">未配置</span>
+        ),
+    },
+    {
+      key: 'status',
+      header: '状态',
+      render: (item) =>
+        !item.name ? (
+          <Badge tone="muted">未配置</Badge>
+        ) : item.enabled ? (
+          <Badge tone="success" dot>
+            已启用
+          </Badge>
+        ) : (
+          <Badge tone="muted">已停用</Badge>
+        ),
+    },
+    {
+      key: 'updatedAt',
+      header: '更新时间',
+      render: (item) => (
+        <span className="cell-time">{item.updatedAt ? formatDateTime(item.updatedAt) : '—'}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      className: 'cell-actions',
+      render: (item) => {
+        const rowBusy = busyKey === `group-role:${item.targetId}`
+        return (
+          <div className="bot-userdata-actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={item.name ? <Pencil size={13} aria-hidden="true" /> : <Plus size={13} aria-hidden="true" />}
+              disabled={busyKey !== null && !rowBusy}
+              aria-label={`${item.name ? '编辑' : '新建'}群聊角色卡 ${item.targetLabel}`}
+              onClick={() => void openGroupEditor(item)}
+            >
+              {item.name ? '编辑' : '新建'}
+            </Button>
+            {item.name ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                loading={rowBusy}
+                disabled={busyKey !== null && !rowBusy}
+                aria-label={`${item.enabled ? '停用' : '启用'}群聊角色卡 ${item.targetLabel}`}
+                onClick={() => void handleToggleGroupRole(item)}
+              >
+                {item.enabled ? '停用' : '启用'}
+              </Button>
+            ) : null}
+            {item.name ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-danger"
+                icon={<Trash2 size={14} aria-hidden="true" />}
+                disabled={busyKey !== null}
+                aria-label={`删除群聊角色卡 ${item.targetLabel}`}
+                onClick={() => setGroupConfirm({ targetId: item.targetId, targetLabel: item.targetLabel })}
+              >
+                删除
+              </Button>
+            ) : null}
           </div>
         )
       },
@@ -476,8 +685,37 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
     <div className="bot-userdata">
       <div className="notice notice-muted bot-privacy-note" role="note">
         <ShieldCheck size={16} aria-hidden="true" />
-        仅显示元数据，正文不通过 Web 暴露：角色设定与记忆条目的 key/value 只在服务端对话中使用，本页不提供查看或编辑入口。
+        私聊角色卡正文不通过 Web 暴露，用户可用 /role 自助管理；群聊角色卡由管理员在本页编辑，只在对应群聊的对话提示词中使用。
       </div>
+
+      <Card
+        title="群聊角色卡"
+        description="每个群聊目标一张共享角色卡，用于该群所有成员；停止/删除后回退到内置角色。群聊独立模式与全量消息在“目标”分区配置。"
+        actions={
+          <Badge tone="muted">
+            <BookOpen size={13} aria-hidden="true" /> {groupRoles.filter((item) => item.name).length} / {groupRoles.length} 已配置
+          </Badge>
+        }
+        loading={groupRolesLoading}
+        error={groupRolesError}
+        onRetry={() => setGroupRolesReloadKey((value) => value + 1)}
+      >
+        <Table
+          className="bots-table-scroll"
+          columns={groupRoleColumns}
+          rows={groupRoles}
+          rowKey={(item) => item.targetId}
+          caption="群聊目标角色卡管理"
+          empty={
+            <EmptyState
+              compact
+              icon={<BookOpen size={22} />}
+              title="暂无群聊目标"
+              description="在“目标”分区添加群聊目标后，可在这里为每个群配置独立角色卡。"
+            />
+          }
+        />
+      </Card>
 
       <Card
         title="角色卡"
@@ -574,6 +812,100 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
           </div>
         ) : null}
       </Card>
+
+      <Modal
+        open={groupEditor !== null}
+        size="lg"
+        title={groupEditor ? `群聊角色卡 · ${groupEditor.targetLabel}` : '群聊角色卡'}
+        description="该角色卡只用于对应群聊的 AI 对话，覆盖群成员的个人私聊角色卡；正文不会展示给普通用户。"
+        onClose={() => {
+          if (!groupSaving) {
+            setGroupEditor(null)
+            setGroupDraft(null)
+          }
+        }}
+        footer={
+          <>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setGroupEditor(null)
+                setGroupDraft(null)
+              }}
+              disabled={groupSaving}
+            >
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              loading={groupSaving}
+              disabled={groupEditorLoading || !groupDraft}
+              onClick={() => void handleSaveGroupRole()}
+            >
+              保存角色卡
+            </Button>
+          </>
+        }
+      >
+        {groupEditorLoading ? (
+          <p className="field-hint">正在读取角色卡…</p>
+        ) : groupDraft ? (
+          <div className="bot-group-role-editor">
+            <FormField
+              label="角色名字"
+              htmlFor="bot-group-role-name"
+              required
+              hint="1–32 个字符，不能包含空格、方括号或换行。"
+            >
+              <input
+                id="bot-group-role-name"
+                className="input"
+                value={groupDraft.name}
+                onChange={(event) =>
+                  setGroupDraft((previous) => (previous ? { ...previous, name: event.target.value } : previous))
+                }
+                maxLength={32}
+                disabled={groupSaving}
+                placeholder="例如：运维助手"
+              />
+            </FormField>
+            <FormField
+              label="角色设定"
+              htmlFor="bot-group-role-prompt"
+              required
+              hint={`${groupDraft.prompt.length} / 1000 字符；只改变人设/语气，固定安全边界仍会追加。`}
+            >
+              <textarea
+                id="bot-group-role-prompt"
+                className="input bot-textarea"
+                value={groupDraft.prompt}
+                onChange={(event) =>
+                  setGroupDraft((previous) => (previous ? { ...previous, prompt: event.target.value } : previous))
+                }
+                maxLength={1000}
+                rows={7}
+                disabled={groupSaving}
+                placeholder="例如：你是本群的运维助手，回答简洁、先给结论。"
+              />
+            </FormField>
+          </div>
+        ) : (
+          <p className="field-hint">未能读取角色卡，请关闭后重试。</p>
+        )}
+      </Modal>
+
+      <ConfirmDialog
+        open={groupConfirm !== null}
+        title="删除群聊角色卡"
+        message={groupConfirm ? `确定删除「${groupConfirm.targetLabel}」的群聊角色卡？` : ''}
+        details="删除后该群聊回退到内置角色；不影响群目标、权限或历史消息。此操作不可撤销。"
+        confirmText="删除角色卡"
+        loading={busyKey === `group-role:${groupConfirm?.targetId ?? ''}`}
+        onConfirm={() => void handleDeleteGroupRole()}
+        onClose={() => {
+          if (busyKey === null) setGroupConfirm(null)
+        }}
+      />
 
       <Modal
         open={itemsTarget !== null}

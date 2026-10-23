@@ -20,6 +20,8 @@ import {
   type BotDeliveryRow,
   type BotEventItem,
   type BotEventOutcome,
+  type BotGroupRoleDetail,
+  type BotGroupRoleSummary,
   type BotHealthCheck,
   type BotInboundTarget,
   type BotInboundTargetRow,
@@ -40,6 +42,7 @@ import {
   type BotTarget,
   type BotTargetRow,
   type BotToolIsolationStatus,
+  type GroupReplyMode,
   type InboundVerification,
 } from './types.ts'
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
@@ -64,6 +67,7 @@ import {
   type BotChatRole,
   type RoleValidationError,
 } from './roles.ts'
+import { BotGroupRoleStore } from './group-roles.ts'
 import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
 import { QqAdapter } from './adapters/qq.ts'
 import { BOT_TEXT_LIMITS } from './text.ts'
@@ -193,6 +197,8 @@ export interface CreateTargetInput {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
+  /** 仅群聊目标：mention=仅 @/名字提及；all=全部消息（实验性）。 */
+  groupReplyMode?: GroupReplyMode
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -203,6 +209,7 @@ export interface UpdateTargetInput {
   allowCommands?: boolean
   allowNotifications?: boolean
   allowChat?: boolean
+  groupReplyMode?: GroupReplyMode
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -233,6 +240,34 @@ function cleanText(value: unknown, max: number): string {
     if (code >= 32 && code !== 127) text += char
   }
   return text.trim().slice(0, max)
+}
+
+/** 群消息模式只允许 mention/all；非群聊目标固定 mention。 */
+function normalizeGroupReplyMode(value: unknown, kind: BotTargetRow['kind']): GroupReplyMode {
+  const mode = value === 'all' ? 'all' : value === 'mention' ? 'mention' : value === undefined ? undefined : null
+  if (mode === null) throw badRequest('群消息模式无效')
+  if (kind !== 'group') {
+    if (mode === 'all') throw badRequest('仅群聊目标支持接收全部消息')
+    return 'mention'
+  }
+  return mode ?? 'mention'
+}
+
+/** 仅@/名字提及模式：用 Bot 名称做保守文本匹配（大小写不敏感）。 */
+function isBotNameMentioned(botName: string, text: string): boolean {
+  const name = botName.trim().toLowerCase()
+  if (!name) return false
+  return text.toLowerCase().includes(name)
+}
+
+/** 全量群消息模式：模型以 NO_REPLY（允许 []/标点包裹）表示本轮不发言。 */
+function isNoReplyAnswer(answer: string): boolean {
+  const trimmed = answer.trim().toUpperCase()
+  const unpadded = trimmed.replace(/^[\s"'`]+|[\s"'`]+$/g, '')
+  const normalized = unpadded.startsWith('[') && unpadded.endsWith(']')
+    ? unpadded.slice(1, -1).trim()
+    : unpadded
+  return normalized === 'NO_REPLY' || normalized === 'NOREPLY'
 }
 
 /** 通知/命令回复只保留用户可见文本，去除内部路径与 URL（审计 BOT-04）。 */
@@ -303,6 +338,7 @@ export class BotService {
   private readonly searchLimiter: SlidingWindowLimiter
   private readonly memory: BotMemoryStore
   private readonly roles: BotChatRoleStore
+  private readonly groupRoles: BotGroupRoleStore
   private readonly connectivity: BotConnectivityMonitor
   private readonly chatBursts: BurstMerger<ChatBurstItem>
   private readonly webSearch: WebSearchClient | null
@@ -365,6 +401,7 @@ export class BotService {
       legacyMaxChars: deps.config.botAiMemoryMaxChars,
     })
     this.roles = new BotChatRoleStore(deps.db)
+    this.groupRoles = new BotGroupRoleStore(deps.db)
     this.resetSessionsForToolMode()
     this.connectivity = new BotConnectivityMonitor({
       enabled: deps.config.botEnabled && deps.config.botConnectivityEnabled,
@@ -646,13 +683,14 @@ export class BotService {
     const count = this.db.prepare('SELECT COUNT(*) AS c FROM bot_targets WHERE bot_id = ?').get(botId) as { c: number }
     if (count.c >= MAX_TARGETS_PER_BOT) throw badRequest('目标数量过多')
     const quiet = this.normalizeQuiet(input.quietStartMinute, input.quietEndMinute)
+    const groupReplyMode = normalizeGroupReplyMode(input.groupReplyMode, input.kind)
     const id = newId()
     try {
       this.db
         .prepare(
           `INSERT INTO bot_targets
-           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, quiet_start_minute, quiet_end_minute, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, chat_trigger, quiet_start_minute, quiet_end_minute, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           id,
@@ -663,6 +701,7 @@ export class BotService {
           input.allowCommands ? 1 : 0,
           input.allowNotifications ? 1 : 0,
           input.allowChat ? 1 : 0,
+          groupReplyMode,
           quiet.start,
           quiet.end,
           nowIso(),
@@ -681,6 +720,14 @@ export class BotService {
     const label = input.label !== undefined ? cleanText(input.label, NAME_MAX) : row.label
     if (!label) throw badRequest('目标名称不能为空')
     const kind = input.kind ?? row.kind
+    const groupReplyMode = normalizeGroupReplyMode(
+      input.groupReplyMode === undefined
+        ? kind === row.kind
+          ? row.chat_trigger
+          : undefined
+        : input.groupReplyMode,
+      kind,
+    )
     const quiet = this.normalizeQuiet(
       input.quietStartMinute === undefined ? row.quiet_start_minute : input.quietStartMinute,
       input.quietEndMinute === undefined ? row.quiet_end_minute : input.quietEndMinute,
@@ -688,7 +735,7 @@ export class BotService {
     this.db
       .prepare(
         `UPDATE bot_targets
-         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?,
+         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?, chat_trigger = ?,
              quiet_start_minute = ?, quiet_end_minute = ?
          WHERE id = ?`,
       )
@@ -698,10 +745,12 @@ export class BotService {
         input.allowCommands === undefined ? row.allow_commands : input.allowCommands ? 1 : 0,
         input.allowNotifications === undefined ? row.allow_notifications : input.allowNotifications ? 1 : 0,
         input.allowChat === undefined ? row.allow_chat : input.allowChat ? 1 : 0,
+        groupReplyMode,
         quiet.start,
         quiet.end,
         targetId,
       )
+    if (kind !== 'group') this.groupRoles.remove(botId, targetId)
     this.deps.audit('bot.target.update', `${botId}:${targetId}`)
     return toTarget(this.targetRowForBot(botId, targetId))
   }
@@ -757,6 +806,92 @@ export class BotService {
     this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
       action: 'delete',
       user: userId.slice(0, 64),
+      nameLength: card.name.length,
+      promptLength: card.prompt.length,
+      at: nowIso(),
+    })
+  }
+
+  /** 群聊角色卡列表：始终列出群聊目标，未配置时 role 元数据为空。 */
+  listGroupRoles(botId: string): { items: BotGroupRoleSummary[] } {
+    this.requireEnabled()
+    this.botRow(botId)
+    return { items: this.groupRoles.list(botId) }
+  }
+
+  /** 群聊角色卡正文仅供管理员编辑；目标必须是群聊。 */
+  getGroupRole(botId: string, targetId: string): BotGroupRoleDetail | null {
+    this.requireEnabled()
+    this.botRow(botId)
+    const target = this.targetRowForBot(botId, targetId)
+    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
+    const card = this.groupRoles.getByTargetId(botId, targetId)
+    if (!card) return null
+    return {
+      targetId: target.id,
+      targetLabel: target.label,
+      targetExternalId: target.external_id,
+      name: card.name,
+      prompt: card.prompt,
+      enabled: card.enabled,
+      createdAt: card.createdAt,
+      updatedAt: card.updatedAt,
+    }
+  }
+
+  /** 新建/覆盖群聊角色卡；正文只保存在 DB，不写入日志/审计。 */
+  saveGroupRole(botId: string, targetId: string, name: string, prompt: string): BotGroupRoleDetail {
+    this.requireEnabled()
+    this.botRow(botId)
+    const target = this.targetRowForBot(botId, targetId)
+    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
+    const normalizedPrompt = normalizeRolePrompt(prompt)
+    const trimmedName = name.trim()
+    const error = validateRole(trimmedName, normalizedPrompt)
+    if (error) throw badRequest(roleValidationMessage(error))
+    const card = this.groupRoles.save(target, trimmedName, normalizedPrompt)
+    this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
+      action: 'save',
+      nameLength: card.name.length,
+      promptLength: card.prompt.length,
+      at: nowIso(),
+    })
+    return {
+      targetId: target.id,
+      targetLabel: target.label,
+      targetExternalId: target.external_id,
+      name: card.name,
+      prompt: card.prompt,
+      enabled: card.enabled,
+      createdAt: card.createdAt,
+      updatedAt: card.updatedAt,
+    }
+  }
+
+  setGroupRoleEnabled(botId: string, targetId: string, enabled: boolean): void {
+    this.requireEnabled()
+    this.botRow(botId)
+    const target = this.targetRowForBot(botId, targetId)
+    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
+    const card = this.groupRoles.getByTargetId(botId, targetId)
+    if (!card || !this.groupRoles.setEnabled(botId, targetId, enabled)) throw notFound('群聊角色卡不存在')
+    this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
+      action: enabled ? 'enable' : 'disable',
+      nameLength: card.name.length,
+      promptLength: card.prompt.length,
+      at: nowIso(),
+    })
+  }
+
+  deleteGroupRole(botId: string, targetId: string): void {
+    this.requireEnabled()
+    this.botRow(botId)
+    const target = this.targetRowForBot(botId, targetId)
+    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
+    const card = this.groupRoles.getByTargetId(botId, targetId)
+    if (!card || !this.groupRoles.remove(botId, targetId)) throw notFound('群聊角色卡不存在')
+    this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
+      action: 'delete',
       nameLength: card.name.length,
       promptLength: card.prompt.length,
       at: nowIso(),
@@ -1364,7 +1499,23 @@ export class BotService {
     )
     if (!inserted) return { status: 200, body: result.ackBody ?? { ok: true, duplicate: true } }
     this.recordInbound(bot, result)
-    if (result.kind === 'command') return this.dispatchCommand(bot, result)
+    if (result.kind === 'command') {
+      if (!result.isDirect) {
+        // v0.6.3 起群聊/频道不再接受斜杠命令；静默确认，避免平台重推。
+        this.deps.audit('bot.command.disabled', bot.id, {
+          target: result.targetExternalId,
+          user: result.userId.slice(0, 64),
+        })
+        this.markEvent(bot.id, result.eventId, {
+          outcome: 'ignored',
+          detail: 'commands_disabled',
+          target: result.targetExternalId,
+          user: result.userId,
+        })
+        return { status: 200, body: result.ackBody ?? { ok: true } }
+      }
+      return this.dispatchCommand(bot, result)
+    }
     return this.dispatchChat(bot, result)
   }
 
@@ -1479,22 +1630,6 @@ export class BotService {
     const parsed = parseCommandText(result.text)
     const command = parsed?.command ?? ''
     const ack = () => result.ackBody ?? { ok: true }
-    // 群聊里角色统一使用默认 lofii；/role 只做友好提示，不读取或修改任何人的私聊角色。
-    if (command === 'role' && !result.isDirect) {
-      const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
-      if (retry === 0) void result.reply(roleGroupHint()).catch(() => undefined)
-      this.deps.audit('bot.role.hint', bot.id, {
-        target: result.targetExternalId,
-        user: result.userId.slice(0, 64),
-      })
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'ok',
-        detail: 'role_hint',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return { status: 200, body: ack() }
-    }
     // /help、/role（私聊）、/reset、/forget、/memory、/search 面向所有用户；其余命令需目标 allow_commands + user 白名单。
     const openCommand =
       command === 'help' ||
@@ -1572,17 +1707,31 @@ export class BotService {
       mark('ignored', 'empty_content')
       return { status: 200, body: ack() }
     }
+    let effective = result
+    if (result.targetKind === 'group' && target) {
+      // 全量模式消息进入后，再按目标设置过滤：仅@/名字模式未命中则静默忽略；
+      // 命中 @/名字时标记为 mention（必回复），未命中且目标为 all 时交给模型决策。
+      if (result.chatTrigger === 'all') {
+        const addressed = result.mentionedBot === true || isBotNameMentioned(bot.name, result.text)
+        if (target.chat_trigger === 'mention' && !addressed) {
+          mark('ignored', 'mention_filtered')
+          return { status: 200, body: ack() }
+        }
+        if (addressed) effective = { ...result, chatTrigger: 'mention' }
+      }
+    }
     this.deps.audit('bot.chat', `${bot.platform}:${result.targetExternalId}`, {
       bot: bot.id,
       user: result.userId.slice(0, 64),
       chars: text.length,
       ...(result.image ? { image: result.image.mime.slice(0, 50) } : {}),
       ...(target ? {} : { open: 'qq_c2c' }),
+      ...(target?.kind === 'group' ? { replyMode: target.chat_trigger } : {}),
     })
     // 连续消息合并 + 同会话串行由 BurstMerger 负责；Webhook 仍立即 ack。
     this.chatBursts.enqueue(this.chatBurstKey(bot.id, result.targetExternalId, result.userId), {
       bot,
-      result,
+      result: effective,
       text,
     })
     return { status: 200, body: ack() }
@@ -1784,7 +1933,7 @@ export class BotService {
     result: Extract<InboundVerification, { kind: 'command' }>,
     args: string,
   ): Promise<string> {
-    // dispatchCommand 已把群聊引导到 roleGroupHint；这里再做一次防御，避免未来路由变化导致群内写角色卡。
+    // Webhook 已在群聊/频道拦截命令；这里保留防御，避免未来路由变化导致群内写角色卡。
     if (!result.isDirect) return roleGroupHint()
     const card = this.roles.get(bot.id, result.userId)
     const parsed = /^(\S+)(?:\s+([\s\S]*))?$/.exec(args.trim())
@@ -1919,6 +2068,7 @@ export class BotService {
     if (!first || !last) return
     const bot = first.bot
     const result = last.result
+    const silent = result.chatTrigger === 'all'
     const finishAll = (outcome: BotEventOutcome, detail: string) => {
       for (const item of items) {
         this.markEvent(bot.id, item.result.eventId, {
@@ -1932,17 +2082,19 @@ export class BotService {
     try {
       const chatRetry = this.chatLimiter.hit(`${bot.id}:${result.userId}`)
       if (chatRetry > 0) {
-        await result.reply(`对话过于频繁（每分钟 ${this.config.botChatRatePerMinute} 次），请稍后再试。`).catch(() => undefined)
+        if (!silent) await result.reply(`对话过于频繁（每分钟 ${this.config.botChatRatePerMinute} 次），请稍后再试。`).catch(() => undefined)
         finishAll('rate_limited', 'chat_rate_limited')
         return
       }
       const aiRetry = this.aiLimiter.hit(`${bot.id}:${result.userId}`)
       if (aiRetry > 0) {
-        await result.reply(`AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`).catch(() => undefined)
+        if (!silent) await result.reply(`AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`).catch(() => undefined)
         finishAll('rate_limited', 'ai_rate_limited')
         return
       }
-      const role = result.isDirect ? this.roles.get(bot.id, result.userId) : null
+      const target = this.inboundTarget(bot.id, result)
+      const groupRole = target?.kind === 'group' ? this.groupRoles.getByTargetId(bot.id, target.id) : null
+      const role = result.isDirect ? this.roles.get(bot.id, result.userId) : groupRole
       const roleCard = role?.enabled ? role : null
       const prepared = await this.prepareAiImage(bot, result)
       const texts = items.map((item) => item.text).filter(Boolean)
@@ -1951,7 +2103,7 @@ export class BotService {
       if (merged.length > limit) merged = merged.slice(-limit)
       if (prepared.kind === 'unsupported' && !merged) {
         // 图片无法处理且本批没有任何可用文字：直接提示，不调用模型。
-        await result.reply(IMAGE_UNSUPPORTED_TEXT)
+        if (!silent) await result.reply(IMAGE_UNSUPPORTED_TEXT)
         finishAll('ignored', 'image_unsupported')
         return
       }
@@ -1963,7 +2115,7 @@ export class BotService {
       }
       const search = await this.resolveWebSearch(bot, result.userId, userText, forceSearch)
       if (search.kind === 'rate_limited') {
-        await result.reply(`联网搜索过于频繁（每小时 ${this.config.botSearchRatePerHour} 次），请稍后再试。`).catch(() => undefined)
+        if (!silent) await result.reply(`联网搜索过于频繁（每小时 ${this.config.botSearchRatePerHour} 次），请稍后再试。`).catch(() => undefined)
         finishAll('rate_limited', 'search_rate_limited')
         return
       }
@@ -1977,13 +2129,22 @@ export class BotService {
         prepared.kind === 'ok' ? prepared.image : undefined,
         searchContext,
         search.context?.results.length ?? 0,
+        silent,
       )
+      if (silent && isNoReplyAnswer(answer)) {
+        finishAll('ignored', 'no_reply')
+        return
+      }
       const plain = this.sanitizeAiText(answer)
       const formatted = formatAiReply(plain)
       const imageNote = prepared.kind === 'ok' && prepared.degraded && merged ? `\n${IMAGE_DEGRADED_NOTE}` : ''
       const sourceNote = search.context && search.context.results.length > 0 ? formatSearchSources(search.context.results) : ''
       const replyText = `${formatted}${sourceNote}${imageNote}`
-      await result.reply(replyText || '暂时没回应上来，稍后再试。')
+      if (!replyText) {
+        finishAll('ignored', 'empty_reply')
+        return
+      }
+      await result.reply(replyText)
       if (userText) this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, plain)
       finishAll('ok', 'chat')
     } catch (error) {
@@ -1997,7 +2158,7 @@ export class BotService {
         return
       }
       finishAll('error', errorShortCode(error))
-      await result.reply('暂时没回应上来，稍后再试。').catch(() => undefined)
+      if (!silent) await result.reply('暂时没回应上来，稍后再试。').catch(() => undefined)
     }
   }
 
@@ -2198,10 +2359,11 @@ export class BotService {
     userId: string,
     targetExternalId: string,
     text: string,
-    roleCard?: BotChatRole | null,
+    roleCard?: Pick<BotChatRole, 'name' | 'prompt'> | null,
     image?: BotAiImage,
     searchContext?: string,
     searchResults = 0,
+    replyDecision = false,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     // 结构化记忆按相关性召回；关闭记忆或没有可用条目时不注入。
@@ -2211,6 +2373,7 @@ export class BotService {
       memory: memoryContext.text || undefined,
       searchContext,
       webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext,
+      replyDecision,
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
@@ -2221,6 +2384,7 @@ export class BotService {
       ...(image ? { image: image.mime.slice(0, 50) } : {}),
       ...(memoryContext.usedItemIds.length > 0 ? { memoryItems: memoryContext.usedItemIds.length } : {}),
       ...(searchContext ? { search: true, searchResults } : {}),
+      ...(replyDecision ? { replyDecision: true } : {}),
     })
     let answer: string
     try {
@@ -2644,6 +2808,7 @@ function toTarget(row: BotTargetRow): BotTarget {
     allowCommands: row.allow_commands === 1,
     allowNotifications: row.allow_notifications === 1,
     allowChat: row.allow_chat === 1,
+    groupReplyMode: row.chat_trigger === 'all' ? 'all' : 'mention',
     quietStartMinute: row.quiet_start_minute,
     quietEndMinute: row.quiet_end_minute,
     createdAt: row.created_at,

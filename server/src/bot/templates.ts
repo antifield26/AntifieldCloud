@@ -46,10 +46,11 @@ export function formatFileList(query: string, files: Record<string, unknown>[]):
   return clip(lines.join('\n'))
 }
 
-/** 管理员完整命令帮助：只列命令及功能/用法。 */
+/** 管理员完整命令帮助：只列命令及功能/用法；命令仅在 C2C 私聊可用。 */
 export function helpText(): string {
   return clip(
     [
+      '命令仅在 C2C 私聊可用；群聊/频道自 v0.6.3 起不再接受斜杠命令。',
       '/help 查看帮助',
       '/status 应用/服务/备份摘要',
       '/backup 备份状态',
@@ -65,10 +66,11 @@ export function helpText(): string {
   )
 }
 
-/** 面向非管理员的公开帮助：只列可用命令及功能/用法。 */
+/** 面向非管理员的公开帮助：只列可用命令及功能/用法；命令仅在 C2C 私聊可用。 */
 export function publicHelpText(): string {
   return clip(
     [
+      '命令仅在 C2C 私聊可用；群聊/频道自 v0.6.3 起不再接受斜杠命令。',
       '/help 查看帮助',
       '/role set|show|off|on|delete 角色设置（私聊）',
       '/reset 重置当前对话（保留长期记忆）',
@@ -88,7 +90,7 @@ export function roleUsage(): string {
     '/role off 暂停专属角色',
     '/role on 启用专属角色',
     '/role delete 删除专属角色',
-    '专属角色只影响私聊；群聊使用默认 lofii。',
+    '专属角色只影响私聊；群聊由管理员在 Web 配置独立角色卡。',
   ].join('\n')
 }
 
@@ -97,7 +99,7 @@ export function roleDefaultText(): string {
 }
 
 export function roleGroupHint(): string {
-  return `群聊使用默认角色 ${DEFAULT_CHAT_ROLE.name}。专属角色请私聊发 /role 设置。`
+  return '群聊角色由管理员在 Web“角色与记忆”中配置；群聊/频道不再接受斜杠命令。'
 }
 
 export function commandDenied(): string {

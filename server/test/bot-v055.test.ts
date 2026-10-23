@@ -109,7 +109,7 @@ test('v0.5.5：/role show/off/on/delete 与会话重置（全部会话映射清�
   }
 })
 
-test('v0.5.6：/role 不扩大其他命令权限，群内 /role 只给友好提示', async () => {
+test('v0.5.6：/role 不扩大其他命令权限，群内斜杠命令全部禁用', async () => {
   const fixture = setup()
   try {
     fixture.service.createTarget(fixture.botId, {
@@ -129,8 +129,8 @@ test('v0.5.6：/role 不扩大其他命令权限，群内 /role 只给友好提�
       (fixture.db.prepare('SELECT COUNT(*) AS n FROM bot_chat_roles WHERE bot_id = ?').get(fixture.botId) as { n: number }).n,
       0,
     )
-    assert.ok(lastMessageText(fixture).includes('默认角色 lofii'))
-    assert.ok(fixture.audits.some((item) => item.action === 'bot.role.hint'))
+    assert.equal(fixture.fetch.sent.length, 0, '群聊斜杠命令不再回复提示')
+    assert.ok(fixture.audits.some((item) => item.action === 'bot.command.disabled'))
   } finally {
     fixture.cleanup()
   }

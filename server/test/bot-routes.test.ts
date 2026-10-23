@@ -205,10 +205,12 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
         allowChat: true,
         allowCommands: true,
         allowNotifications: true,
+        groupReplyMode: 'all',
       },
     })
     assert.equal(target.statusCode, 200)
     assert.equal('chatTrigger' in target.json().target, false)
+    assert.equal(target.json().target.groupReplyMode, 'all')
     const targetId = target.json().target.id as string
     const patched = await context.app.inject({
       method: 'PATCH',
@@ -218,6 +220,7 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
     })
     assert.equal(patched.statusCode, 200)
     assert.equal(patched.json().target.label, '新群名')
+    assert.equal(patched.json().target.groupReplyMode, 'all')
     const listed = await context.app.inject({ method: 'GET', url: `/api/bots/${botId}/targets`, headers: { cookie } })
     assert.equal(listed.json().items.length, 1)
 
@@ -328,6 +331,48 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
       payload: { enabled: 'no' },
     })
     assert.equal(roleBadPatch.statusCode, 400)
+
+    // v0.6.3 群聊角色卡：列表/编辑/启停/删除；管理员可读写正文。
+    const groupRoleList = await context.app.inject({
+      method: 'GET',
+      url: `/api/bots/${botId}/group-roles`,
+      headers: { cookie },
+    })
+    assert.equal(groupRoleList.statusCode, 200)
+    const groupRoleItem = (groupRoleList.json().items as Array<Record<string, unknown>>).find(
+      (item) => item.targetId === targetId,
+    )
+    assert.ok(groupRoleItem)
+    assert.equal(groupRoleItem.name, null)
+    const groupRoleSaved = await context.app.inject({
+      method: 'PUT',
+      url: `/api/bots/${botId}/group-roles/${targetId}`,
+      headers: { cookie, 'x-csrf-token': csrf },
+      payload: { name: '群助手', prompt: '群聊角色设定正文' },
+    })
+    assert.equal(groupRoleSaved.statusCode, 200)
+    assert.equal(groupRoleSaved.json().groupRole.name, '群助手')
+    assert.equal(groupRoleSaved.json().groupRole.prompt, '群聊角色设定正文')
+    const groupRoleDetail = await context.app.inject({
+      method: 'GET',
+      url: `/api/bots/${botId}/group-roles/${targetId}`,
+      headers: { cookie },
+    })
+    assert.equal(groupRoleDetail.statusCode, 200)
+    assert.equal(groupRoleDetail.json().groupRole.prompt, '群聊角色设定正文')
+    const groupRoleDisabled = await context.app.inject({
+      method: 'PATCH',
+      url: `/api/bots/${botId}/group-roles/${targetId}`,
+      headers: { cookie, 'x-csrf-token': csrf },
+      payload: { enabled: false },
+    })
+    assert.deepEqual(groupRoleDisabled.json(), { ok: true })
+    const groupRoleRemoved = await context.app.inject({
+      method: 'DELETE',
+      url: `/api/bots/${botId}/group-roles/${targetId}`,
+      headers: { cookie, 'x-csrf-token': csrf },
+    })
+    assert.deepEqual(groupRoleRemoved.json(), { ok: true })
 
     // 记忆管理：用户级/条目元数据与删除返回 { ok: true }，绝不包含 key/value。
     const insertItem = (id: string, kind: string, key: string, value: string): void => {

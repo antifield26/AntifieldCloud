@@ -938,6 +938,8 @@ export interface BotInboundTarget {
   lastSeenAt: string
 }
 
+export type GroupReplyMode = 'mention' | 'all'
+
 export interface BotTarget {
   id: string
   botId: string
@@ -948,6 +950,7 @@ export interface BotTarget {
   allowNotifications: boolean
   /** 是否允许该目标内成员普通消息 Chat；不授予斜杠命令权限。 */
   allowChat: boolean
+  groupReplyMode: GroupReplyMode
   /** 静默时段（本地分钟 0-1439，Asia/Shanghai）；两者同时为空表示不静默。 */
   quietStartMinute: number | null
   quietEndMinute: number | null
@@ -1009,6 +1012,7 @@ export interface BotTargetInput {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
+  groupReplyMode?: GroupReplyMode
   quietStartMinute?: number | null
   quietEndMinute?: number | null
 }
@@ -1074,6 +1078,29 @@ export interface BotRoleSummary {
   enabled: boolean
   /** 角色设定字符数，仅用于展示规模，不返回正文。 */
   promptLength: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 群聊角色卡列表项：未配置时 name/enabled/updatedAt 为空。 */
+export interface BotGroupRoleSummary {
+  targetId: string
+  targetLabel: string
+  targetExternalId: string
+  name: string | null
+  enabled: boolean
+  promptLength: number
+  updatedAt: string | null
+}
+
+/** 群聊角色卡编辑详情（管理员可编辑正文）。 */
+export interface BotGroupRoleDetail {
+  targetId: string
+  targetLabel: string
+  targetExternalId: string
+  name: string
+  prompt: string
+  enabled: boolean
   createdAt: string
   updatedAt: string
 }

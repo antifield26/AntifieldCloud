@@ -588,7 +588,7 @@ v0.5.11 变更（结构化记忆）：记忆从滚动摘要改为结构化条目
 **所有记忆接口均不返回 key/value**。自助命令新增 `/memory`（查看计数/类型/启停/最近更新；`/memory off|on` 暂停/恢复抽取与注入）；`/forget confirm` 清空 items/state/legacy 与全部会话（含远端）。
 审计新增 `bot.memory.extract`（仅计数）、`bot.memory.toggle`、`bot.memory.delete_item`、`bot.memory.delete_user`、`bot.memory.legacy_cleanup`。 { "reachable": true, "latencyMs": 230, "status": 200, "error": null }, "platforms": { "qq": { "reachable": true, "latencyMs": 180, "status": 404, "error": null } } }
 BotSummary: { "id": "uuid", "platform": "qq", "name": "运维通知", "enabled": true, "config": { "appId": "1029…" }, "webhookUrl": "https://app.example.com/api/bot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1 }
-BotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "user_openid/group_openid/channel_id", "label": "运维告警群", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
+BotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "user_openid/group_openid/channel_id", "label": "运维告警群", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "groupReplyMode": "mention|all", "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
 BotInboundTarget: { "botId": "uuid", "targetExternalId": "QQ 目标 ID", "targetKind": "channel|user|group", "userId": "QQ 用户 openid", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
 BotDelivery:{ "id": "uuid", "botId": "uuid", "targetId": "uuid|null", "kind": "notification|command_reply|publish|test", "status": "queued|sending|sent|failed|dead", "attempts": 0, "nextAttemptAt": null, "lastError": null, "lastErrorHint": "中文提示|null", "externalId": null, "createdAt": "…", "sentAt": null }
 BotPublishJob: { "id": "uuid", "botId": "uuid", "targetId": "uuid", "text": "…", "scheduledAt": null, "status": "draft|queued|sending|sent|failed|canceled", "attempts": 0, "lastError": null, "lastErrorHint": "中文提示|null", "createdAt": "…", "sentAt": null }
@@ -596,13 +596,16 @@ BotMetrics: { "hours": 24, "deliveries": { "total": 10, "sent": 8, "failed": 1, 
 BotHealthCheck: { "ok": true, "items": [{ "name": "access_token", "ok": true, "detail": "access_token 已获取" }], "checkedAt": "…" }
 BotEventItem: { "eventId": "qq:message_id", "kind": "command|chat|ignored", "outcome": "received|ok|denied|rate_limited|ignored|error", "detail": "短码|null（如 command_denied/chat_rate_limited）", "targetExternalId": "…|null", "userId": "…|null", "receivedAt": "…", "updatedAt": "…|null" }
 BotRoleSummary: { "userId": "…", "userName": "…|null", "name": "角色名", "enabled": true, "promptLength": 320, "createdAt": "…", "updatedAt": "…" }
+BotGroupRoleSummary: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手|null", "enabled": true, "promptLength": 120, "updatedAt": "…|null" }
+BotGroupRoleDetail: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手", "prompt": "管理员可编辑正文", "enabled": true, "createdAt": "…", "updatedAt": "…" }
 BotMemoryUserSummary: { "userId": "…", "userName": "…|null", "itemCount": 7, "kinds": { "profile": 2, "preference": 3, "task": 2 }, "memoryEnabled": true, "updatedAt": "…|null" }
 BotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|project|task|relationship|episode", "importance": 3, "confidence": 0.8, "updatedAt": "…", "expiresAt": "…|null" }
 ```
 
 `BotSummary.config` 只含公开配置（QQ `appId`）；QQ AppSecret 永不返回，也不出现在审计/日志中。`webhookUrl` 与 `setupSteps` 由服务端按 `APP_ORIGIN` 和 QQ 平台模板生成。
 `BotMetrics.deliveries.successRate = sent / (sent + failed) × 100`（保留 1 位小数，无尝试时为 0）；`lastError`/`lastErrorHint`/`lastSentAt` 取投递与发布的最近值。
-v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPublishJob` 无 `mediaFileIds`；`BotDelivery` 的 `partial` 语义仅针对长文本分段。
+v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无旧 `chatTrigger` 字段、`BotPublishJob` 无 `mediaFileIds`；`BotDelivery` 的 `partial` 语义仅针对长文本分段。
+v0.6.3 起 `BotTarget.groupReplyMode` 仅群聊目标可设为 `all`（实验性全量消息），其余目标固定 `mention`；群聊/频道不再执行斜杠命令。
 
 ### 管理端点
 
@@ -619,6 +622,11 @@ v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPubl
 - `GET /api/bots/:id/roles?limit=20&offset=0` → `{ "items": [BotRoleSummary], "total": n }`；需要会话；只返回元数据（用户/名字/长度/启停/时间），不返回角色设定正文。
   - `PATCH /api/bots/:id/roles/:userId` body `{enabled:boolean}` → `{ "ok": true }`；需要会话 + CSRF；启停指定用户角色卡，不存在/非布尔值 `404/400`。
   - `DELETE /api/bots/:id/roles/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除角色卡并清理该用户 chat 会话（task 会话与记忆保留），不存在 `404`。
+  - `GET /api/bots/:id/group-roles` → `{ "items": [BotGroupRoleSummary] }`；需要会话；列出全部群聊目标及角色卡元数据（未配置时 name/updatedAt 为 null）。
+  - `GET /api/bots/:id/group-roles/:targetId` → `{ "groupRole": BotGroupRoleDetail|null }`；需要会话；群聊角色卡正文仅管理员可读；目标不是群聊 `400`，不存在 `404`。
+  - `PUT /api/bots/:id/group-roles/:targetId` body `{name,prompt}` → `{ "groupRole": BotGroupRoleDetail }`；需要会话 + CSRF；新建/覆盖并启用角色卡；名字 1–32、正文 1–1000，非法 `400`；目标必须为群聊。
+  - `PATCH /api/bots/:id/group-roles/:targetId` body `{enabled:boolean}` → `{ "ok": true }`；需要会话 + CSRF；启停群聊角色卡，不存在 `404`。
+  - `DELETE /api/bots/:id/group-roles/:targetId` → `{ "ok": true }`；需要会话 + CSRF；删除群聊角色卡，不存在 `404`。
 - `GET /api/bots/:id/memories?limit=20&offset=0` → `{ "items": [BotMemoryUserSummary], "total": n }`；需要会话；用户级元数据（itemCount/kinds/memoryEnabled/updatedAt），**不返回 key/value 或摘要正文**。
   - `GET /api/bots/:id/memories/:userId/items?limit=20&offset=0` → `{ "items": [BotMemoryItemSummary], "total": n }`；需要会话；条目元数据（id/kind/importance/confidence/updatedAt/expiresAt），不过期条目的 `expiresAt` 为 null。
   - `DELETE /api/bots/:id/memories/:userId/items/:itemId` → `{ "ok": true }`；需要会话 + CSRF；删除单条结构化记忆（审计 `bot.memory.delete_item`），不存在 `404`。
@@ -635,13 +643,13 @@ v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPubl
 - `POST /api/bots/:id/test` body `{targetId?}` → `{ "ok": true }`；缺目标 `400`；未配置目标时使用最早登记的目标；限流 20 次/小时。
 - 目标：
   - `GET /api/bots/:id/targets` → `{ "items": [BotTarget] }`。
-  - `POST /api/bots/:id/targets` body `{externalId,label,kind,allowCommands?,allowNotifications?,allowChat?,quietStartMinute?,quietEndMinute?}` → `200 { "target": BotTarget }`；`allowCommands` 默认 false、`allowNotifications` 默认 true、`allowChat` 默认 false；每 Bot ≤100；`(bot_id, external_id)` 唯一，重复 `409 conflict`。
+  - `POST /api/bots/:id/targets` body `{externalId,label,kind,allowCommands?,allowNotifications?,allowChat?,groupReplyMode?,quietStartMinute?,quietEndMinute?}` → `200 { "target": BotTarget }`；`allowCommands` 默认 false、`allowNotifications` 默认 true、`allowChat` 默认 false、`groupReplyMode` 默认 `mention`；每 Bot ≤100；`(bot_id, external_id)` 唯一，重复 `409 conflict`。
     `quietStartMinute`/`quietEndMinute` 为 Asia/Shanghai 本地分钟（0–1439），必须同时设置或同时留空，不能相同；窗口跨午夜（start > end）按跨越处理；设置后该目标的告警通知在窗口内延后到结束时刻。
-    v0.5.8 起不再有 `chatTrigger`（QQ 群/频道仅 @Bot，C2C 直接进入），传该字段忽略/400。
-  - `PATCH /api/bots/:id/targets/:targetId` body `{label?,kind?,allowCommands?,allowNotifications?,allowChat?,quietStartMinute?,quietEndMinute?}` → `{ "target": BotTarget }`；`null` 表示清空，未传字段沿用当前值；合并后静默起止必须同时有值或同时为空且不能相同，否则 `400`；`DELETE` → `{ "ok": true }`。
-  - 命令必须同时满足：命令所在会话的 `externalId` 已登记为 `allow_commands=1` 的目标，且发送者 `userId` 已登记为 `kind='user'` 且 `allow_commands=1` 的目标；否则不执行（仍返回 200）并写 `bot.command.denied` 审计。例外：`/help`、`/role`（仅私聊）、`/reset`、`/forget confirm` 为自助命令，不要求目标/用户白名单；`/ask` 为未知命令（非管理员被拒、管理员回全量帮助）。
+    `groupReplyMode=all` 仅 `kind=group` 可传（实验性）；非群聊传 `all` 返回 `400`。全量消息需 QQ 后台开启“接收所有消息”并订阅 `GROUP_MESSAGE_CREATE`；默认 `mention` 仅接受 @Bot 或文本包含 Bot 名称的消息。
+  - `PATCH /api/bots/:id/targets/:targetId` body `{label?,kind?,allowCommands?,allowNotifications?,allowChat?,groupReplyMode?,quietStartMinute?,quietEndMinute?}` → `{ "target": BotTarget }`；`null` 表示清空，未传字段沿用当前值；合并后静默起止必须同时有值或同时为空且不能相同，否则 `400`；`all` 仅群聊目标可用；`DELETE` → `{ "ok": true }`。
+  - v0.6.3 起群聊/频道目标不再执行任何斜杠命令（含自助命令）；收到 `/` 开头消息只写 `bot.command.disabled` 审计并返回 200，不回复。C2C 私聊命令仍需目标 `allow_commands=1` + 用户白名单；`/help`、`/role`（仅私聊）、`/reset`、`/forget confirm`、`/memory`、`/search` 为自助命令，不要求目标/用户白名单；`/ask` 为未知命令（非管理员被拒、管理员回全量帮助）。
   v0.5.10 起 `/reset`、`/forget confirm`、角色卡变更（含管理员删除角色）在清理本地映射时尽力删除对应远端 OpenCode 会话与旧摘要会话（删除失败只记日志，不影响响应）。
-  - `allowChat` 只授权普通消息 Chat，不授予斜杠命令：Chat 只需目标 `allow_chat=1`（不要求用户白名单）；C2C 私聊直接进入，群/频道仅 @Bot 事件进入。非管理员因此只能 Chat，不能借 Chat 执行命令。Chat 仍受 `BOT_CHAT_RATE_PER_MINUTE` 与 `BOT_AI_RATE_PER_HOUR` 限制。
+  - `allowChat` 只授权普通消息 Chat，不授予斜杠命令：Chat 只需目标 `allow_chat=1`（不要求用户白名单）；C2C 私聊直接进入；群/频道默认仅 @Bot 事件进入，群目标设为 `groupReplyMode=all` 且 QQ 后台开启全量消息后进入 `GROUP_MESSAGE_CREATE`。非管理员只能 Chat，不能借 Chat 执行命令；Chat 仍受 `BOT_CHAT_RATE_PER_MINUTE` 与 `BOT_AI_RATE_PER_HOUR` 限制。
 - 投递：
   - `GET /api/bots/:id/deliveries?limit=50`（1–200）→ `{ "items": [BotDelivery] }`，按创建时间倒序。
   - `POST /api/bots/:id/deliveries/:deliveryId/retry` → `{ "ok": true }`；仅 `failed|dead` 可重投，其它 `404`。

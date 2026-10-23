@@ -204,9 +204,9 @@ export class QqAdapter implements BotAdapter {
       steps: [
         '在 QQ 开放平台（q.qq.com）创建机器人，取得 AppID 与 AppSecret；AppID 填入公开配置，AppSecret 填入“Token”字段。',
         `在“开发设置 → 回调地址”填上面复制的地址（${webhookUrl}），平台会发送 op=13 验证请求，服务端自动返回签名。`,
-        '在事件订阅中勾选 C2C_MESSAGE_CREATE、GROUP_AT_MESSAGE_CREATE、AT_MESSAGE_CREATE（按使用场景选择）。',
-        '在“目标”中登记用户 openid、群 openid 或频道 ID，并开启命令/通知权限；群/频道消息需 @Bot 才会触发。',
-        '将机器人加入测试群或频道，发送 /help 验证；回复依赖入站消息的 msg_id，主动通知不带 msg_id。',
+        '在事件订阅中勾选 C2C_MESSAGE_CREATE、GROUP_AT_MESSAGE_CREATE、AT_MESSAGE_CREATE；如需全量群消息，再勾选 GROUP_MESSAGE_CREATE，并在目标中把群消息模式设为“接受全部消息”。',
+        '在“目标”中登记用户 openid、群 openid 或频道 ID，并开启命令/通知权限；C2C 私聊可直接 Chat，群/频道消息需 @Bot 才会触发（全量模式除外）。',
+        '将机器人加入测试群后，私聊发送 /help 验证；群聊自 v0.6.3 起不再接受斜杠命令。',
         '如需图片理解，在部署环境开启 BOT_AI_VISION_ENABLED，并使用支持图片输入的模型。',
       ],
     }
@@ -288,6 +288,10 @@ export class QqAdapter implements BotAdapter {
     const d = asRecord(payload.d)
     if (!d) return { kind: 'ignored', ackBody: QQ_ACK_BODY, detail: `qq:event:${eventType || 'unknown'}` }
     const author = asRecord(d.author)
+    // 全量群消息可能包含其他机器人消息；忽略机器人自身/其它 Bot，避免自回环。
+    if (author && author.bot === true) {
+      return { kind: 'ignored', ackBody: QQ_ACK_BODY, detail: 'qq:event:bot_message' }
+    }
 
     let route: { targetExternalId: string; userId: string; kind: QqTarget['kind']; isDirect: boolean }
     switch (eventType) {
@@ -297,6 +301,15 @@ export class QqAdapter implements BotAdapter {
         break
       }
       case 'GROUP_AT_MESSAGE_CREATE':
+        route = {
+          targetExternalId: textValue(d.group_openid),
+          userId: author ? textValue(author.member_openid) : '',
+          kind: 'group',
+          isDirect: false,
+        }
+        break
+      case 'GROUP_MESSAGE_CREATE':
+        // 全量模式：需在 QQ 开放平台后台开启“接收所有消息”，事件体与 @ 事件一致。
         route = {
           targetExternalId: textValue(d.group_openid),
           userId: author ? textValue(author.member_openid) : '',
@@ -333,6 +346,9 @@ export class QqAdapter implements BotAdapter {
     // C2C 不包含平台 mention 前缀；群/频道先剥离开头的 @Bot 再判断命令或 Chat。
     const content = isDirect ? rawContent : stripMentionPrefix(rawContent)
     const image = extractInboundImage(d)
+    const isFullGroup = eventType === 'GROUP_MESSAGE_CREATE'
+    const mentions = Array.isArray(d.mentions) ? d.mentions : []
+    const mentionedBot = mentions.some((mention) => asRecord(mention)?.bot === true)
     const messageId = textValue(d.id)
     const eventTs = textValue(d.timestamp) || String(Math.floor(this.now().getTime() / 1000))
     const eventId = messageId || `qq:${targetExternalId}:${eventTs}`
@@ -374,7 +390,8 @@ export class QqAdapter implements BotAdapter {
       userName,
       text: content,
       isDirect,
-      chatTrigger: isDirect ? 'direct' : 'mention',
+      chatTrigger: isDirect ? 'direct' : isFullGroup ? 'all' : 'mention',
+      ...(isFullGroup && mentionedBot ? { mentionedBot: true } : {}),
       ackBody: QQ_ACK_BODY,
       reply,
     }

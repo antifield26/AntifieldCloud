@@ -105,6 +105,7 @@ function targetRow(kind: 'channel' | 'user' | 'group', externalId: string): BotT
     allow_commands: 1,
     allow_notifications: 1,
     allow_chat: 1,
+    chat_trigger: 'mention',
     quiet_start_minute: null,
     quiet_end_minute: null,
     created_at: '2026-01-01T00:00:00.000Z',

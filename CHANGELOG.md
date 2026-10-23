@@ -1,5 +1,24 @@
 # Changelog
 
+## [v0.6.3] - 2026-10-23（开发中，未发布）
+
+### Added
+
+- **群聊独立角色卡**：每个群聊目标一张共享角色卡，管理员可在“角色与记忆”分区新建、编辑正文、启停、删除；群聊 Chat 使用该卡并覆盖群成员私聊角色，停用/删除后回退内置 `lofii`。API 新增 `GET/PUT/PATCH/DELETE /api/bots/:id/group-roles/:targetId`。
+- **群消息模式**：群目标新增 `groupReplyMode`（`mention` 默认 / `all` 实验性）。`mention` 仅接受 @Bot 或文本包含 Bot 名称的消息；`all` 需 QQ 后台开启“接收所有消息”并订阅 `GROUP_MESSAGE_CREATE`，由模型输出 `NO_REPLY` 决定不发送。
+- **全量消息事件**：适配器支持 `GROUP_MESSAGE_CREATE`，忽略其它机器人消息；全量消息按目标 externalId 查配置过滤，命中 @/名字时标记为必回复。
+
+### Changed
+
+- **群聊/频道禁用斜杠命令**：v0.6.3 起群聊/频道收到 `/` 开头消息只审计 `bot.command.disabled` 并静默忽略，不执行、不回复；命令仅在 C2C 私聊可用。目标页对非用户目标隐藏“允许命令”开关。
+
+### Deployment
+
+- 版本升到 **0.6.3**；schema **v16**（迁移 16 新增 `bot_group_roles` 群聊角色卡表；群消息模式复用既有 `bot_targets.chat_trigger`，默认 `mention`）。
+- `deploy.ps1` 期望 schema 改为 **16**；`deploy/env.example` `APP_VERSION=0.6.3`。
+- 迁移 16 只新增表，已有目标/投递/命令不受影响；旧版本 v0.6.2 不支持 schema v16，回滚必须恢复迁移前 DB 快照并切回 v0.6.2 release。
+- 本地门禁/生产部署证据待回填。
+
 ## [v0.6.2] - 2026-10-23（已发布：Tag/Release v0.6.2）
 
 ### Added

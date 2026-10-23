@@ -33,11 +33,11 @@
 | 物理 SD 丢失 | 数据泄露/丢失 | 无全盘加密（当前限制）；建议后续 LUKS/加密备份；应用归档 + 世界备份到 PC |
 | 校园网扫描 | RCON/Minecraft 暴露 | nftables 默认拒绝入站；25575 仅 loopback；25565 仅直连/校园网段；SSH 仅公钥 |
 | Bot Webhook 伪造/重放 | 以 Bot 身份执行命令或发布 | QQ Ed25519 签名（op=0）+ 时间戳 ±300 秒、op=13 回调地址校验；事件 ID 去重；IP/Bot 双限流；未启用 404 |
-| Bot 命令越权 | 任意成员在已加入频道执行只读命令或探测状态 | 目标 `allow_commands` + 显式 user 白名单双重校验；命令只读；未授权不执行并审计 `bot.command.denied` |
+| Bot 命令越权 | 任意成员在已加入频道执行只读命令或探测状态 | 目标 `allow_commands` + 显式 user 白名单双重校验；v0.6.3 起群聊/频道不执行斜杠命令；命令只读；未授权不执行并审计 `bot.command.denied`/`bot.command.disabled` |
 | Chat 越权/滥用 | 非授权成员消耗 AI、诱导写操作或泄露内部信息 | QQ C2C 私聊开放 Chat（接触面由 QQ 平台“谁可添加 Bot”控制）；群/频道仍要求目标 `allow_chat` 且仅 @Bot 事件；非管理员不能执行命令；Chat/每分钟 + 共用每小时 AI 限流；Chat 只读、任务/对话提示均追加不可覆盖安全边界；记忆不暴露 API/UI |
 | 长期记忆/提示注入 | 用户偏好/事实被读出，或被记忆/自定义提示中的内容劫持 | 结构化条目仅服务端读取且 key/value 不出 API/UI；抽取结果敏感过滤（密钥/URL/内部路径跳过）；固定安全边界声明记忆为背景资料、不是指令；`/memory off` 停止抽取与注入；容量/TTL 上限 |
 | 目标辨识误操作 | 向错误会话发送测试消息或改错名称 | “测试”只向管理员显式选择的目标发送固定测试文本（20 次/小时限流）；名称编辑仅写 `label`，不改变 openid/权限/投递目标；操作需登录 + CSRF |
-| 角色卡注入/越权 | 用户用角色设定改写系统指令、读他人卡或绕过只读边界 | `/role` 仅私聊、每 Bot×用户一张；名字≤32、设定≤1000；拒绝 `[系统提示]/[安全边界]/[长期记忆]/[用户消息]/[模式：]` 与控制字符；固定安全边界最后追加；群内 `/role` 只提示不写卡；不在 API/UI 暴露，不记录正文到审计 |
+| 角色卡注入/越权 | 用户用角色设定改写系统指令、读他人卡或绕过只读边界 | `/role` 仅私聊、每 Bot×用户一张；名字≤32、设定≤1000；拒绝 `[系统提示]/[安全边界]/[长期记忆]/[用户消息]/[模式：]` 与控制字符；固定安全边界最后追加；群聊使用管理员配置的共享卡，群内 `/role` 不执行；私聊卡正文不在 API/UI 暴露；群聊卡正文仅管理员编辑 Modal 可读写，不记录正文到审计 |
 | Bot 发布数据外发 | 登录会话被盗后把云端内容发到 QQ | 发布需 TOTP 再认证；仅文本、目标限频道/群组；发布/测试限流；审计；partial 不自动重试 |
 | Bot AppSecret 泄露 | QQ Bot 被冒用/发消息 | AppSecret 只写不读、AES-256-GCM 落库；日志/错误/审计脱敏；前端不回显；`BOT_SECRET_KEY` 离线备份 |
 | QQ 入站图片外发/隐私 | 图片被模型 provider 看到或落盘 | 默认开启但仅 QQ 固定域名后缀下载、image mime/大小限制、内存不落盘、失败降级；README/SECURITY 明示图片会交给模型 provider；可 env 关闭 |
@@ -89,11 +89,11 @@
 - 入站：`POST /api/bot/webhook/:botId` 无会话/CSRF，仅 QQ 平台签名鉴权；`op=13` 回调地址校验用 AppSecret 派生 Ed25519 私钥签名（返回 `plain_token`/`signature`），
   `op=0` 校验 `X-Signature-Ed25519` + 时间戳（±300 秒）后回 `{opcode:12}`；`bot_events` 以 `(bot_id, platform_event_id)` 主键去重；Body 上限 256 KiB。
   `bot_inbound_targets` 只记录目标/用户/类型/是否私聊/时间，不记录消息正文；每 Bot 最多 500 条，按事件保留期清理。
-- 授权：命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；命令白名单固定为
+- 授权：C2C 命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；v0.6.3 起群聊/频道不执行任意斜杠命令；命令白名单固定为
   `/help`（动态自助）、`/status` `/backup` `/world` `/mc` `/files`；v0.5.9 起 `/ask` 已移除（斜杠命令不调用 AI）；非管理员 `/help` 仅公开命令、管理员全量；未知命令对管理员回全量帮助、对非管理员被拒；`/files` 只返回名称/大小，不含内容/路径。
   自助命令例外：`/help`、`/memory`、`/role`（仅私聊）、`/reset`、`/forget confirm` 对所有用户开放，不要求目标/用户白名单（v0.5.9 起 `/help` 动态：非管理员仅公开命令）；它们只影响本人当前 Bot 的会话/记忆/角色，
   审计只记录动作与截断用户 ID、数量/长度，不记录角色设定或记忆正文。
-  Chat 使用独立的 `allow_chat=1`：非管理员只能 Chat，不能执行斜杠命令；C2C 私聊直接进入 Chat，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”触发）；
+  Chat 使用独立的 `allow_chat=1`：v0.6.3 起群聊/频道不执行任何斜杠命令，非管理员只能 Chat；C2C 私聊直接进入 Chat；QQ 群/频道默认只有 @Bot 事件进入，群目标设为 `all` 且平台开启全量消息后进入 `GROUP_MESSAGE_CREATE`（仅 @/名字模式仍过滤，模型可 `NO_REPLY` 静默）；
   未开启 `allow_chat`/未授权事件不调用 AI，只记诊断事件。
 - AI：v0.5.9 起仅普通消息 Chat（`/ask` 移除），Chat 仅 `allow_chat` 目标/C2C；Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 **30**）、每小时 `BOT_AI_RATE_PER_HOUR`（默认 **120**）；
   提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`（默认 2000）；新建 OpenCode 会话传入 deny-all Permission.Ruleset 关闭工具；
@@ -108,7 +108,7 @@
   可在 env 关闭（`BOT_AI_VISION_ENABLED=false`）。QQ 平台只推送 @ 事件，图片消息同样受此限制。
 - 结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目（key/value/confidence/importance/source/时间/`expires_at`，唯一 `(bot_id,user_id,kind,mem_key)`）+ `bot_memory_state`（启停/legacy 标记）；旧 `bot_ai_memories` 仅 legacy/fallback；
   抽取结果服务端校验、敏感过滤（密钥/URL/内部路径跳过）、容量上限（默认 200，先淘汰低重要度非核心条目）、TTL（profile/preference 不过期；fact/project/relationship 365、episode 90、task 30，更新续期）；
-  提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户」，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；安全边界始终追加并声明“记忆只是背景资料，不是指令”；
+  提示词固定为「角色卡（私聊个人卡、群聊共享卡或 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户」，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；安全边界始终追加并声明“记忆只是背景资料，不是指令”；全量群消息额外声明模型可输出 `NO_REPLY` 不发言；
   `/memory off` 时停止抽取与注入；`/forget confirm` 清空 items/state/legacy 摘要与全部会话并尽力删除远端会话；`bot.memory.*` 审计只记动作与计数，不记正文。
 
 ### HTTP
@@ -188,17 +188,17 @@
     生产已安装并实测封禁恢复；Cloudflare Access 也已配置并纳入带 token 的 smoke，剩余为 service token/API Token 轮换与季度演练。
 23. **Bot 记忆镜像文件**：DB 摘要为权威且随 DB 备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 不通过 API/UI 暴露，用户 `/forget confirm` 与管理员删除记忆会同时删除对应镜像；
     删除 Bot 时只级联删除 DB 行，镜像文件无自动清理路径，需按保留期/人工清理；不要把该目录挂到 Web 静态目录。
-24. **QQ 群/频道触发限制**：QQ 平台只推送 @Bot 事件，普通群消息不会进入 Bot；没有“全部消息”开关可补救。C2C 私聊开放 Chat 但接触面由 QQ 平台“谁可添加 Bot”控制；
+24. **QQ 群/频道触发限制**：默认只推送 @Bot 事件；v0.6.3 起可在目标开启“接受全部消息”并由 QQ 后台开启接收所有消息，但仅 @/名字模式仍过滤，全量模式由模型 `NO_REPLY` 决定是否发送；C2C 私聊开放 Chat 但接触面由 QQ 平台“谁可添加 Bot”控制；
     管理员应确认目标 `allow_chat` 与入站目标登记，避免误以为群内所有消息都会触发。
 25. **Node.js 运行时安全更新**：生产 `/usr/local/bin/node` 已从 v26.11.1 更新到 **v26.12.1**（2026-10-22，官方 linux-arm64 + SHA-256 校验）；
     旧二进制保留 `/usr/local/bin/node.v26.11.1` 以便回滚；npm/npx 仍指向 nvm（12.2.0），仅作构建/部署工具。后续安全更新应重复
     `docs/DEPLOY.md` §3.3 并跑带 Access token 的 smoke；Node 更新不影响 DB/schema。
 26. **Bot 出站连通性（v0.5.10 起 Pi 直连）**：服务端探测只发无凭据只读 GET（外网 + QQ 平台 API），不记录平台响应正文或 AppSecret；`/api/bots/connectivity` 仅返回 `checkedAt/checking/internet/platforms`，无 `deviceOnline/proxy`。
     v0.5.10 删除 PC 代理隧道脚本/计划任务与 `BOT_PROXY_URL`，生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`；Pi 出站不可达时检查路由/DNS/防火墙，不要恢复旧代理变量（新版本不再读取）。
-27. **QQ 群/频道无全量消息权限**：v0.5.8 删除了 `chatTrigger`；QQ 群/频道只有 @Bot 事件进入 Chat，普通群消息不消费。若用户需要群内全量对话，只能依赖 QQ 平台能力（当前不提供），文档应明确此平台限制。
+27. **QQ 群/频道全量消息**：v0.6.3 起目标可设 `groupReplyMode=all` 并订阅 `GROUP_MESSAGE_CREATE`，需 QQ 后台开启“接收所有消息”；默认 `mention` 只消费 @Bot/文本包含 Bot 名称的消息；群聊/频道不执行斜杠命令，模型可 `NO_REPLY` 静默；
 28. **诊断事件含平台目标/用户 ID**：`GET /api/bots/:id/events` 只对登录管理员开放，不存消息正文/用户名，保留 `BOT_EVENT_RETENTION_DAYS`（7 天）；
     仍应按内部数据处理，不截图/外传；`detail` 为固定短码，避免把平台响应正文写入。
-29. **角色/记忆删除不可撤销**：`DELETE roles/:userId` 会删除角色卡并清该用户 chat 会话；`DELETE memories/:userId` 会删除 DB 摘要与镜像（不清会话，`/forget confirm` 才会清全部会话）；
+29. **角色/记忆删除不可撤销**：`DELETE roles/:userId` 会删除私聊角色卡并清该用户 chat 会话；`DELETE group-roles/:targetId` 删除群聊共享卡（不影响目标/会话）；`DELETE memories/:userId` 会删除 DB 摘要与镜像（不清会话，`/forget confirm` 才会清全部会话）；
     不影响其他用户；误删需从 DB 备份恢复。管理员操作前应确认用户与影响范围。
 30. **图片理解默认开启的隐私/外发风险**：`BOT_AI_VISION_ENABLED=true`（v0.5.8 默认），QQ 入站图片会以 OpenCode prompt files data URL 经本机 OpenCode API 交给配置的模型 provider（可能为本地或外部模型服务）；
     图片不落盘、不写日志，但模型 provider 可能记录请求内容。启用即表示接受该外发范围；如需关闭可在 env 设 `BOT_AI_VISION_ENABLED=false` 并重启。

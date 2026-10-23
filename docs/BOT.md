@@ -21,7 +21,7 @@ QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`），图片经 
 
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
-> 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；记忆/角色正文不通过 API/UI 暴露；
+> 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；
 > 诊断只存事件元数据、不存消息正文；入站图片只从 QQ 固定域名后缀下载、mime 白名单与大小上限处理且不落盘；Bot 默认关闭（`BOT_ENABLED=false`），Webhook 关闭时返回 404。
 
 ## 1. 架构
@@ -30,9 +30,9 @@ QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`），图片经 
 QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
                                │ op=13 回调地址校验 / op=0 Ed25519 验签 + 时间戳 + IP/Bot 限流
                                ├─ 事件去重 → bot_events(received/ignored 诊断) + bot_inbound_targets（目标/用户，不存正文）
-                               ├─ 斜杠命令 → 自助命令(/help、/memory、/role 私聊、/reset、/forget confirm) 或 目标 allow_commands + 用户白名单
+                               ├─ 斜杠命令（仅 C2C） → 自助命令(/help、/memory、/role 私聊、/reset、/forget confirm) 或 目标 allow_commands + 用户白名单；群聊/频道审计 command.disabled
                                │              → 只读 provider / OpenCode AI → 平台回复
-                               ├─ 普通消息 → 目标 allow_chat（C2C 私聊直接进入；群/频道仅 @Bot 事件）
+                               ├─ 普通消息 → 目标 allow_chat（C2C 私聊直接进入；群/频道默认仅 @Bot 事件；全量模式按目标/NO_REPLY 过滤）
                                │              → 文本或入站图片 → OpenCode AI → 清洗/格式化/分段 → 平台回复
                                └─ 入站错误 → 401/404/429（不执行业务）
 
@@ -45,7 +45,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 
 平台连接自检 ──▶ POST /api/bots/:id/check → 适配器换取 access_token（detail 不含 token）
 诊断查询 ──▶ GET /api/bots/:id/events（bot_events 元数据，无正文）
-角色/记忆管理 ──▶ GET/PATCH/DELETE roles；GET memories（用户级）、GET memories/:userId/items、DELETE 单条/整用户（仅元数据）
+角色/记忆管理 ──▶ GET/PATCH/DELETE roles；GET/PUT/PATCH/DELETE group-roles（群聊角色卡，管理员可编辑正文）；GET memories（用户级）、GET memories/:userId/items、DELETE 单条/整用户（仅元数据）
 
 告警/管理 API ──▶ BotService ──▶ bot_deliveries / bot_publish_jobs
                                   │ 每 30s 队列 tick、静默延后、指数退避、死信；长文本 partial 不自动重试
@@ -64,10 +64,11 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、deny-all 工具、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；兼容性基于 OpenCode v2.1.3）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
 - `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；v0.6.0 起 key/value/legacy 均过滤敏感内容，读取侧也排除旧版本已落库的敏感条目；旧摘要仅作 legacy 来源与 fallback，抽取 ops=0 不置迁移标记。
 - `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。内置默认角色 `lofii` 自 v0.6.0 起只保留名字与简短对话风格，不注入详细人设/背景。
-- `server/src/bot/prompts.ts`：任务/对话提示与固定安全边界；Chat 默认个人角色或内置 lofii，群聊固定默认。
-- `server/src/bot/service.ts`：CRUD、Webhook、Chat/命令分发、回复管线（sanitize→format→split）、图片降级、事件诊断、连接自检、角色/记忆管理、指标、静默时段、通知/发布队列、重试、清理、限流。
+- `server/src/bot/group-roles.ts`：每 Bot×群聊目标一张共享角色卡（v0.6.3）；仅管理员可编辑正文，用于该群所有成员的 Chat 提示词，停用/删除后回退 `lofii`。
+- `server/src/bot/prompts.ts`：任务/对话提示与固定安全边界；Chat 使用私聊个人卡或群聊共享卡，缺失时回退内置 lofii；全量群消息追加“可输出 NO_REPLY”的回复决策段。
+- `server/src/bot/service.ts`：CRUD、Webhook、Chat/命令分发、群消息模式过滤、回复管线（sanitize→format→split）、图片降级、事件诊断、连接自检、角色/记忆管理、指标、静默时段、通知/发布队列、重试、清理、限流。
 - `server/src/http/routes/bots.ts`：管理 API；`bot-webhook.ts`：公开回调入口。
-- web `/bots`：概览、配置、目标、投递与发布、角色与记忆、诊断六个分区；配置页“检查连接”，目标页 `allowChat`，角色/记忆与诊断面板只展示元数据/脱敏错误。
+- web `/bots`：概览、配置、目标、投递与发布、角色与记忆、诊断六个分区；配置页“检查连接”，目标页 `allowChat`/群消息模式，角色/记忆与诊断面板只展示元数据/脱敏错误（群聊角色卡正文仅管理员编辑 Modal 可见）。
 
 ### 1.1 v0.5.8 平台收敛（移除清单）
 
@@ -82,24 +83,25 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 
 1. 在 QQ 开放平台（q.qq.com）创建机器人，取得 **AppID** 与 **AppSecret**；AppID 填公开配置（`config.appId`，5–32 位数字），AppSecret 只提交保存为密文。
 2. “开发设置 → 回调地址”填 `https://app.example.com/api/bot/webhook/<botId>`；平台会发送 `op=13` 校验，服务端用 AppSecret 派生 Ed25519 私钥返回 `{plain_token, signature}`；`plain_token` 只接受字母数字/下划线/连字符 1–128、`event_ts` 只接受 1–12 位数字，否则 `400 invalid_payload`（防止签名预言机）；成功 challenge 写审计 `bot.webhook.challenge`。
-3. 事件订阅按场景勾选 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）。
-4. 目标登记：C2C 填 `user_openid`、群聊填 `group_openid`、频道填 `channel_id`；命令用户另建 `kind=user` 且允许命令的目标。QQ 官方回调不提供真实 QQ 号/群号；v0.6.2 起可在目标行点“测试”发送测试消息，在 QQ 收到消息的会话即对应目标，再用“编辑名称”改为易识别的名称。
-5. 命令（无需平台注册，直接发送）：`/help`（动态）、`/memory`（查看/`off|on`）、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/role`（仅私聊）、`/reset`、`/forget confirm`；v0.5.9 起 `/ask` 已移除。
-6. 触发：C2C 私聊普通文本直接进入 Chat；群/频道只有 @Bot 事件进入（平台本身只推送 @ 消息），**不支持“全部消息”触发**。
+3. 事件订阅按场景勾选 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；如需“接受全部消息”，再勾选 `GROUP_MESSAGE_CREATE`（需在 QQ 后台开启接收所有消息）。
+4. 目标登记：C2C 填 `user_openid`、群聊填 `group_openid`、频道填 `channel_id`；命令用户另建 `kind=user` 且允许命令的目标。QQ 官方回调不提供真实 QQ 号/群号；v0.6.2 起可在目标行点“测试”发送测试消息，在 QQ 收到消息的会话即对应目标，再用“编辑名称”改为易识别的名称。v0.6.3 起每个群聊目标可在“角色与记忆”配置独立共享角色卡；“目标”页可设置仅 @/名字提及（默认）或全部消息（实验性）。
+5. 命令（无需平台注册，仅 C2C 私聊可用）：`/help`（动态）、`/memory`（查看/`off|on`）、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/role`（仅私聊）、`/reset`、`/forget confirm`；v0.5.9 起 `/ask` 已移除；v0.6.3 起群聊/频道不再接受任何斜杠命令。
+6. 触发：C2C 私聊普通文本直接进入 Chat；群/频道默认仅 @Bot 事件；群目标设为“接受全部消息”且平台开启全量消息后，`GROUP_MESSAGE_CREATE` 事件按 externalId 查配置：仅@/名字模式未命中则静默忽略，全量模式交由模型判断，模型输出 `NO_REPLY` 时不发送。
 7. **入站图片（默认开启）**：QQ 事件 `d.attachments` 提供 `content_type`/`filename`/`size`/`url`；只取首个 `image/*` 附件，仅图片无文字也可进入 Chat。
    适配器只从固定域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载，校验 image mime 白名单（jpeg/png/webp/gif）与 `BOT_AI_IMAGE_MAX_BYTES`；
    图片在内存中转 base64，以 OpenCode prompt files data URL 随本轮 prompt 发送给模型 provider（本地 AI 服务），**不落盘、不写日志/审计正文**。
    `BOT_AI_VISION_ENABLED=false`、无图片权限、下载失败或 mime/大小不合规时降级为文字回答（有文字时附“图片未能处理”说明；无文字时提示改用文字）。
 8. 文本输出：单条 ≤2000 字符；被动回复带入站 `msg_id`，主动通知/发布不带 `msg_id`；长回复按 2000 字符分段（最多 4 段、续段前缀、超限截断）；
    QQ 仅支持文本，**不支持媒体/附件/按钮/引用回复**。
-9. QQ 真实回调需用户后台配置；未配置前只能做进程内契约测试。平台限制：群/频道必须 @Bot、无普通消息全量推送、无按钮/媒体、无编辑消息。
+9. QQ 真实回调需用户后台配置；未配置前只能做进程内契约测试。平台限制：群/频道默认需 @Bot；开启“接收所有消息”后才推 `GROUP_MESSAGE_CREATE`；仅文本、无按钮/媒体/编辑消息。
 
 ## 3. 权限模型
 
-- **命令目标**：`bot_targets` 中 `allow_commands=1` 的频道/群组/私聊。
-- **用户白名单**：发送者必须是 `kind='user'` 且 `allow_commands=1` 的目标；频道/群里的普通成员即使目标开启命令也无法执行。
-- **自助命令（所有用户）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停/最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊，管理个人角色卡）、
+- **命令目标（仅 C2C 私聊）**：`bot_targets` 中 `kind='user'` 且 `allow_commands=1` 的私聊目标；v0.6.3 起群聊/频道目标不再接受任何斜杠命令（服务端审计 `bot.command.disabled` 并静默忽略）。
+- **用户白名单**：私聊发送者必须登记为 `kind='user'` 且 `allow_commands=1` 的目标；群/频道里的成员即使目标开启命令也无法执行（且命令本身已在群聊禁用）。
+- **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停/最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊，管理个人角色卡）、
 `/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目/状态/legacy 旧摘要与该 Bot×用户的全部会话，含远端）。五条不需要目标 `allow_commands` 或 user 白名单；
+- **群聊角色卡**：每个群聊目标一张共享卡（管理员在 Web 编辑）；群聊 Chat 使用该卡，不再使用成员私聊个人卡；群聊不接受 `/role`。`groupReplyMode=mention` 仅处理 @Bot/文本包含 Bot 名称的全量消息；`all` 为实验性，模型可输出 `NO_REPLY` 决定不发送。
 
 ## 4. 队列、回复管线与失败处理
 
@@ -182,7 +184,7 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` �
 
 ## 5.1 Chat 提示词、会话与记忆抽取（v0.5.11）
 
-- 提示词固定由四部分组成：**角色卡（私聊个人卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息**；不再提供任务/对话提示词覆盖。默认 `lofii` 自 v0.6.0 起只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设；
+- 提示词固定由四部分组成：**角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息**；群聊共享卡覆盖群内成员私聊卡；全量群消息额外追加回复决策段（`NO_REPLY` 表示不发言）；不再提供任务/对话提示词覆盖。默认 `lofii` 自 v0.6.0 起只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设；
   `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取。
 - AI 仅在普通消息 Chat 中调用（`allow_chat` 目标 / QQ C2C 私聊）；斜杠命令不调用 AI，`/ask` 已移除（非管理员被拒、管理员回全量帮助）。
 - 会话：`bot_ai_sessions` 按 `(bot_id, target_external_id, user_id, mode)` 复用 OpenCode 会话；v0.5.9 起 `mode` 只写 `chat`（列保留，旧 `task` 行为历史遗留）；
@@ -214,7 +216,8 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` �
 
 - 事件诊断：见 §4；`outcome` 缺省返回全部，非法值 400；`hours` 1–720（默认 24）、`limit` 1–200（默认 50）、`offset` ≥0。
 - 错误提示：`server/src/bot/errors.ts` 把队列 `last_error`/事件短码映射为中文提示；未知错误返回 null。`BotDelivery`/`BotPublishJob`/`BotMetrics` 增加 `lastErrorHint`。
-- 角色管理：`GET /api/bots/:id/roles?limit&offset` 返回元数据（userId/userName/name/enabled/promptLength/时间）；`PATCH` body `{enabled}` 启停；`DELETE` 删除并清理该用户 chat 会话。
+- 角色管理：`GET /api/bots/:id/roles?limit&offset` 返回私聊角色卡元数据（userId/userName/name/enabled/promptLength/时间）；`PATCH` body `{enabled}` 启停；`DELETE` 删除并清理该用户 chat 会话。
+  群聊角色卡：`GET /api/bots/:id/group-roles` 列出全部群聊目标；`GET/PUT/PATCH/DELETE /api/bots/:id/group-roles/:targetId` 读取/编辑正文、启停、删除；名字 1–32、正文 1–1000，仅管理员可读写。
 - 记忆管理（v0.5.11）：`GET /api/bots/:id/memories?limit&offset` 返回用户级元数据（userId/userName/itemCount/kinds/memoryEnabled/updatedAt）；`GET /api/bots/:id/memories/:userId/items?limit&offset` 返回条目元数据（id/kind/importance/confidence/updatedAt/expiresAt）；
   `DELETE /api/bots/:id/memories/:userId/items/:itemId` 删除单条；`DELETE /api/bots/:id/memories/:userId` 删除整用户；均只操作元数据，**绝不返回 key/value**；审计 `bot.memory.delete_item`/`bot.memory.delete_user`。
 - 审计：`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin` 只记录动作、数量/长度与截断 ID，不含正文。
@@ -278,10 +281,10 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 
 按顺序确认，避免把平台配置问题误判为代码问题：
 
-1. QQ 开放平台已订阅群事件 `GROUP_AT_MESSAGE_CREATE`（频道为 `AT_MESSAGE_CREATE`），回调地址为 `https://app.<域名>/api/bot/webhook/<botId>`，且回调校验 `op=13` 已通过。
-2. Bot 已被拉入该群/频道；QQ 群/频道消息必须 **@Bot** 才会推送给机器人，普通群聊不会产生事件（也不支持“全部消息”触发）。
+1. QQ 开放平台已订阅群事件 `GROUP_AT_MESSAGE_CREATE`（频道为 `AT_MESSAGE_CREATE`；全量消息另订阅 `GROUP_MESSAGE_CREATE` 并开启接收所有消息），回调地址为 `https://app.<域名>/api/bot/webhook/<botId>`，且回调校验 `op=13` 已通过。
+2. Bot 已被拉入该群/频道；QQ 群/频道默认必须 **@Bot** 才会推送事件；v0.6.3 可在目标中设为“接受全部消息”，并在 QQ 后台开启接收所有消息（推送 `GROUP_MESSAGE_CREATE`）。
 3. 发送后查看服务端：`bot_events` 是否有新事件（`GET /api/bots/:id/events` 可查元数据）；若事件到达但正文为空/未知，会记录 `audit_log.action='bot.event.ignored'`（只含事件类型，不含正文）。
-   若 `bot_inbound_targets` 出现 `target_kind='group'`，到 `/bots` 目标分区从“最近入站目标”登记该 group_openid，再开启 `allow_chat`（命令另开 `allow_commands`）。
+   若 `bot_inbound_targets` 出现 `target_kind='group'`，到 `/bots` 目标分区从“最近入站目标”登记该 group_openid，再开启 `allow_chat`；群聊/频道不执行斜杠命令，命令用户请在 C2C 私聊登记 `kind='user'` 且允许命令的目标。
 4. 若没有新事件，优先检查开放平台事件订阅、Bot 入群状态与 @ 方式；入站 Webhook 不依赖出站代理。
 5. 有事件但无回复：查看 `/bots` 出站网络卡片（外网/QQ 平台状态与延迟）和投递 `lastError`/`lastErrorHint`；QQ 回复需 Pi 直连 `bots.qq.com`/`api.sgroup.qq.com`（v0.5.10 起不再经 PC 代理隧道）。
 6. 图片无响应/提示不支持：确认 `BOT_AI_VISION_ENABLED=true`、`BOT_AI_ENABLED=true`、模型支持 image；附件 URL 域名在 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 白名单内、mime 与大小合规；看审计 `bot.ai.image`（只含 mime/大小/跳过原因）。

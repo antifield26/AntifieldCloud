@@ -663,6 +663,21 @@ const MIGRATIONS: string[] = [
   -- v0.6.2：保留 qq_number 列（手填号码功能已回滚），已升级生产库的 schema 15 兼容；API/发送不使用该列。
   ALTER TABLE bot_targets ADD COLUMN qq_number TEXT;
   `,
+  `
+  -- v0.6.3：群聊目标独立角色卡（管理员编辑，覆盖群内私聊角色）；群消息模式复用 chat_trigger。
+  CREATE TABLE IF NOT EXISTS bot_group_roles (
+    target_id TEXT PRIMARY KEY REFERENCES bot_targets(id) ON DELETE CASCADE,
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    target_external_id TEXT NOT NULL,
+    name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 32),
+    prompt TEXT NOT NULL CHECK (length(prompt) BETWEEN 1 AND 1000),
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (bot_id, target_external_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_bot_group_roles_updated ON bot_group_roles(updated_at);
+  `,
 ]
 
 export interface OpenOptions {

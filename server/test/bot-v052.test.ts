@@ -114,28 +114,20 @@ test('v0.5.2：QQ 群普通消息（非 @ 事件）不进入 Chat，仅被忽略
   }
 })
 
-test('v0.5.2：命令仍走目标白名单 + 用户白名单', async () => {
+test('v0.5.2：命令仍走目标白名单 + 用户白名单（仅 C2C 私聊）', async () => {
   const fixture = createQqServiceFixture({ aiEnabled: false })
   try {
-    fixture.service.createTarget(fixture.botId, {
-      externalId: 'group-openid-1',
-      label: 'QQ 群',
-      kind: 'group',
-      allowCommands: true,
-      allowNotifications: false,
-      allowChat: false,
-    })
-    // 目标允许命令，但该用户未在 user 白名单（kind=user allow_commands=1）。
+    // 未登记 C2C 目标：命令被拒绝。
     const denied = await sendWebhook(
       fixture,
-      groupWebhook(fixture.appSecret, { id: 'cmd-1', content: '<@!102345000> /status', groupOpenid: 'group-openid-1' }),
+      c2cWebhook(fixture.appSecret, { id: 'cmd-1', content: '/status', userOpenid: 'user-openid-1' }),
     )
     assert.equal(denied.status, 200)
     assert.equal(fixture.fetch.sent.length, 0)
     assert.ok(fixture.audits.some((item) => item.action === 'bot.command.denied'))
 
     fixture.service.createTarget(fixture.botId, {
-      externalId: 'member-openid-1',
+      externalId: 'user-openid-1',
       label: '管理员',
       kind: 'user',
       allowCommands: true,
@@ -143,7 +135,7 @@ test('v0.5.2：命令仍走目标白名单 + 用户白名单', async () => {
     })
     await sendWebhook(
       fixture,
-      groupWebhook(fixture.appSecret, { id: 'cmd-2', content: '<@!102345000> /status', groupOpenid: 'group-openid-1' }),
+      c2cWebhook(fixture.appSecret, { id: 'cmd-2', content: '/status', userOpenid: 'user-openid-1' }),
     )
     assert.match(lastMessageText(fixture), /应用状态/)
     const okEvent = fixture.service.listEvents(fixture.botId, { outcome: 'ok' }).items.at(-1)

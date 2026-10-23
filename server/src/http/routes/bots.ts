@@ -24,6 +24,13 @@ function boolean(value: unknown, fallback = false): boolean {
   return typeof value === 'boolean' ? value : fallback
 }
 
+/** 群消息模式：undefined 表示沿用，非法值交给路由 400。 */
+function optionalGroupReplyMode(value: unknown): 'mention' | 'all' | undefined {
+  if (value === undefined || value === null) return undefined
+  if (value === 'mention' || value === 'all') return value
+  throw badRequest('群消息模式无效')
+}
+
 /** 静默时段分钟：null 表示清空；非法值交给 service 统一校验。 */
 function optionalMinute(value: unknown): number | null | undefined {
   if (value === null) return null
@@ -133,6 +140,49 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
     return { ok: true }
   })
 
+  app.get('/api/bots/:id/group-roles', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    return bots.listGroupRoles(requiredId(params.id, 'id'))
+  })
+
+  app.get('/api/bots/:id/group-roles/:targetId', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    return {
+      groupRole: bots.getGroupRole(requiredId(params.id, 'id'), requiredId(params.targetId, 'targetId')),
+    }
+  })
+
+  app.put('/api/bots/:id/group-roles/:targetId', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const body = asRecord(request.body) ?? {}
+    return {
+      groupRole: bots.saveGroupRole(
+        requiredId(params.id, 'id'),
+        requiredId(params.targetId, 'targetId'),
+        text(body.name, 32),
+        text(body.prompt, 1000),
+      ),
+    }
+  })
+
+  app.patch('/api/bots/:id/group-roles/:targetId', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const body = asRecord(request.body) ?? {}
+    if (typeof body.enabled !== 'boolean') throw badRequest('enabled 必须是布尔值')
+    bots.setGroupRoleEnabled(
+      requiredId(params.id, 'id'),
+      requiredId(params.targetId, 'targetId'),
+      body.enabled,
+    )
+    return { ok: true }
+  })
+
+  app.delete('/api/bots/:id/group-roles/:targetId', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    bots.deleteGroupRole(requiredId(params.id, 'id'), requiredId(params.targetId, 'targetId'))
+    return { ok: true }
+  })
+
   app.get('/api/bots/:id/memories', { preHandler: [requireAuth] }, async (request) => {
     const params = request.params as Record<string, string>
     const query = asRecord(request.query) ?? {}
@@ -220,6 +270,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         allowCommands: boolean(body.allowCommands),
         allowNotifications: boolean(body.allowNotifications, true),
         allowChat: boolean(body.allowChat),
+        groupReplyMode: optionalGroupReplyMode(body.groupReplyMode),
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),
@@ -237,6 +288,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         allowCommands: typeof body.allowCommands === 'boolean' ? body.allowCommands : undefined,
         allowNotifications: typeof body.allowNotifications === 'boolean' ? body.allowNotifications : undefined,
         allowChat: typeof body.allowChat === 'boolean' ? body.allowChat : undefined,
+        groupReplyMode: optionalGroupReplyMode(body.groupReplyMode),
         quietStartMinute: optionalMinute(body.quietStartMinute),
         quietEndMinute: optionalMinute(body.quietEndMinute),
       }),

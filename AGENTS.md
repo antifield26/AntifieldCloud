@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.6.2（已发布：Tag/Release v0.6.2，生产 release `20261023T123055Z`/commit `77e42c7`，schema v15 兼容列；OpenCode v2.1.3）**：v0.6.1 已发布（Tag/Release v0.6.1，生产 release `20261023T094819Z`/commit `ceb2e8f`，schema v14），包含 Bot 连续消息、SearXNG MCP 联网搜索、孤儿会话清理与 `/help` 简化。v0.6.2 新增：目标名可内联编辑；目标行“测试”消息用于确认 openid 对应 QQ 用户/群；“最近入站目标”按已配置目标 externalId 查重隐藏；投递与发布主网格改单列；手填 QQ 号/群号功能已回滚，schema v15 的 `qq_number` 列保留为兼容列（API/发送不使用）。
+**当前版本 v0.6.3（开发中，未发布；群聊独立角色卡 + 群消息模式 + 全量消息模型决策 + 群聊禁用斜杠命令；schema v16；OpenCode v2.1.3）**：v0.6.2 已发布（Tag/Release v0.6.2，生产 release `20261023T123055Z`/commit `77e42c7`，schema v15 兼容列），包含投递与发布单列、目标名称编辑、目标测试消息、入站查重。v0.6.3 计划：每个群聊目标一张共享角色卡（管理员编辑，覆盖群成员私聊卡）；群目标 `groupReplyMode=mention|all`，全量消息由模型选择是否发送（`NO_REPLY`）；`GROUP_MESSAGE_CREATE` 需 QQ 后台开启接收所有消息；群聊/频道不再接受任何斜杠命令；schema v16 迁移 16 新增 `bot_group_roles`。
 
 在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、QQ 官方机器人（v0.5.8 起单平台；v0.5.9 起 AI 仅普通消息 Chat、自助 `/help` 动态开放；v0.5.10 记忆/会话修复并移除代理隧道依赖；v0.5.11 结构化长期记忆 + schema v14）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。上一版 v0.5.11，数据库 schema **v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_state`，旧 `bot_ai_memories` 保留为 legacy 来源；迁移 5–13 保留）；生产已部署 v0.5.11/schema v14（release `20261023T022831Z`，commit `931b10d`，迁移 14 不可逆；同版本早前 release `20261023T021339Z`/`20261023T014328Z` 保留；`/healthz` v0.5.11/schema 14，smoke 16/16 与 24/24；生产 env 5 个 `BOT_MEMORY_*` 就位），用户已实发验收通过（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory`、`/forget confirm` items=2 legacy=0 有服务端证据；`/bots` 面板用户确认）。v0.5.11 结构化记忆：7 类条目（profile/preference/fact/project/task/relationship/episode，唯一 `(bot,user,kind,key)`）；抽取 3 条/空闲 120s 批量 + 串行 + 一次性会话 + 严格 JSON ops + 敏感过滤 + 容量 200；TTL（资料/偏好不过期、事实/项目/关系 365、事件 90、任务 30，更新续期）；分层召回 3000 字/12 条 + legacy fallback；自助 `/memory` 与 `/memory off|on`；`/forget confirm` 清空 items/state/legacy/会话（含远端）；管理 API 只返回元数据；生产 env 新增 5 个 `BOT_MEMORY_*`；**迁移 14 不可逆，v0.5.10 不支持 v14，回滚必须恢复迁移前快照**。OpenCode 服务端 v2.1.3。
 
@@ -47,7 +47,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY 标题及 lock 根版本一致
 ```
 
-当前基线（v0.5.10 实测：`npm test` 341、`npm run test:web` 157、coverage Lines 91.98% / Branches 76.92% / Functions 85.99%、build 通过）。**v0.5.11：`npm test` 360**（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，+5）。**v0.6.0（2026-10-23 本地门禁）**：`npm test` **383**（server+scripts，含 op=13/SSO/上传/备份/Bot/日志脱敏回归）、`npm run test:web` **176**（32 文件）；覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。**v0.6.1（2026-10-23 已发布）**：`npm test` **393**（+10 burst/搜索/MCP/会话清理/help 用例）、`npm run test:web` **177**；覆盖率 Lines **92.15%** / Branches **77.30%** / Functions **86.86%**；build bundle `index-a2xJNvfJ.js` 680.71 kB（仅服务端变更）。**v0.6.2（2026-10-23 已发布）**：`npm test` **393**、`npm run test:web` **179**；覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**；build bundle `index-BdeajuIF.js` 682.91 kB。生产 release `20261023T123055Z`/commit `77e42c7`（v0.6.2/schema 15），smoke 16/16 + 24/24，用户验收通过。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）与备份 tar、告警投递等同样只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
+当前基线（v0.5.10 实测：`npm test` 341、`npm run test:web` 157、coverage Lines 91.98% / Branches 76.92% / Functions 85.99%、build 通过）。**v0.5.11：`npm test` 360**（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，+5）。**v0.6.0（2026-10-23 本地门禁）**：`npm test` **383**（server+scripts，含 op=13/SSO/上传/备份/Bot/日志脱敏回归）、`npm run test:web` **176**（32 文件）；覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。**v0.6.1（2026-10-23 已发布）**：`npm test` **393**（+10 burst/搜索/MCP/会话清理/help 用例）、`npm run test:web` **177**；覆盖率 Lines **92.15%** / Branches **77.30%** / Functions **86.86%**；build bundle `index-a2xJNvfJ.js` 680.71 kB（仅服务端变更）。**v0.6.2（2026-10-23 已发布）**：`npm test` **393**、`npm run test:web` **179**；覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**；build bundle `index-BdeajuIF.js` 682.91 kB。生产 release `20261023T123055Z`/commit `77e42c7`（v0.6.2/schema 15），smoke 16/16 + 24/24，用户验收通过。**v0.6.3（2026-10-23 开发中）**：`npm test` **399**、`npm run test:web` **180**（群角色卡/群消息模式/全量事件/命令禁用）；覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-beLvg53v.js` 691.15 kB）；schema v16，待部署验收/发布。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）与备份 tar、告警投递等同样只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
 
 ## 4. 目录与模块边界
 
@@ -56,13 +56,13 @@ server/src/
   main.ts            进程入口：配置、DB、Fastify、信号退出、启动指标采样
   config.ts          环境变量解析与校验（失败即退出）
   logger.ts          Fastify/pino 日志与脱敏
-  db.ts              SQLite 打开、迁移（当前 schema v15）、事务辅助
+  db.ts              SQLite 打开、迁移（当前 schema v16）、事务辅助
   auth/              scrypt、TOTP、会话、CSRF、限流、恢复码、审计（字段截断）、Bot 发布 TOTP 再认证
   files/             存储、上传、配额、搜索、预览、回收站、files.origin 可见性
   uploads/           分片上传会话/块索引、配额预留、拼接与过期清理
   mc/                SLP、RCON、白名单
   opencode/          ai.* Host 的认证反代 + HTML 模式（shim/attributes/passthrough）+ Origin 校验
-  bot/               QQ 官方 Bot 适配器、Chat AI（v0.5.9 起 AI 仅 Chat，`/ask` 与 task 提示词已移除）、结构化长期记忆（v0.5.11：7 类条目、抽取/召回、TTL/容量、legacy fallback；`memory.ts`/`ai.ts`）、私聊角色卡、出站连通性探测、AES-256-GCM 凭据、Webhook 验签/去重、命令（含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 2000 字符分段/`format.ts` QQ 纯文本/`errors.ts` 错误提示）、QQ 入站图片下载（默认开启）、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试
+  bot/               QQ 官方 Bot 适配器、Chat AI（v0.6.3 起群聊共享角色卡 + 群消息模式 + 全量事件过滤；v0.5.9 起 AI 仅 Chat，`/ask` 与 task 提示词已移除）、结构化长期记忆（7 类条目、抽取/召回、TTL/容量、legacy fallback；`memory.ts`/`ai.ts`）、私聊角色卡、群聊角色卡（`group-roles.ts`）、出站连通性探测、AES-256-GCM 凭据、Webhook 验签/去重、命令（v0.6.3 起仅 C2C；含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 2000 字符分段/`format.ts` QQ 纯文本/`errors.ts` 错误提示）、QQ 入站图片下载（默认开启）、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试
   backups/           归档导入/校验、文件级恢复（skippedMissing）、世界/拉取/演练状态只读
   dashboard/         主机指标、服务状态、备份状态、Bot 开关、轻量存储用量（/api/storage）
   metrics/           60s 主机指标采样、按范围分桶聚合、30 天保留清理
@@ -94,13 +94,13 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 8. 部署、备份脚本必须幂等、可重试；失败要留下可诊断日志，不得静默吞错。
 9. 世界备份/拉取/演练状态文件由 root/PC 脚本写入，应用只读；状态文件不得包含密钥或路径敏感信息。
 10. Bot 凭据（QQ AppSecret）只写不读，数据库只存 AES-256-GCM 密文；
-    Webhook 只以 QQ Ed25519 签名/时间戳（含 op=13 回调校验）鉴权；除自助命令（`/help`、`/memory`、`/role` 仅私聊、`/reset`、`/forget confirm`）外，命令需目标 `allow_commands` + 显式 user 白名单；
+    Webhook 只以 QQ Ed25519 签名/时间戳（含 op=13 回调校验）鉴权；v0.6.3 起除 C2C 私聊外（群聊/频道）不执行任何斜杠命令；C2C 命令除自助命令（`/help`、`/memory`、`/role` 仅私聊、`/reset`、`/forget confirm`）外，需目标 `allow_commands` + 显式 user 白名单；
     发布必须 TOTP 再认证；通知/命令输出不得包含内部路径、URL 或密钥；`BOT_ENABLED=false` 时 Webhook 返回 404。
 
 ## 6. 数据库与数据
 
 - schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，
-  当前 schema **v15**（迁移 5：`files.origin`、唯一索引含 origin、`note_attachments`/`note_versions`/`share_items`/`metrics_samples`；
+  当前 schema **v16**（迁移 5：`files.origin`、唯一索引含 origin、`note_attachments`/`note_versions`/`share_items`/`metrics_samples`；
   迁移 6：删除孤儿 shares 并回填 `share_items`，不改表结构；迁移 7：新增 `bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events`；
   迁移 8：重建 Bot 表把 `bots.platform` CHECK 扩到 `qq`，`bot_targets` 增加 `quiet_start_minute`/`quiet_end_minute`，新增 `bot_ai_sessions`；
   迁移 9：`bot_targets.allow_chat`（默认 0）、`bot_ai_memories`（DB 摘要权威 + `summary_session_id`）、`bot_inbound_targets`（最近入站目标）；
@@ -110,6 +110,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   迁移 13：`DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡（迁移不可逆，只能靠迁移前 DB 快照恢复）；
   迁移 14：新增 `bot_memory_items`（结构化记忆条目：7 类 kind、key/value、confidence/importance/source、时间戳、`expires_at`，唯一 `(bot_id,user_id,kind,mem_key)`）与 `bot_memory_state`（每用户启停 + legacy 迁移标记）；旧 `bot_ai_memories` 保留为 legacy 迁移来源，验收后 CLI 清理；迁移不可逆，只能靠迁移前 DB 快照恢复；
   迁移 15：`bot_targets.qq_number TEXT`（可空兼容列；手填号码功能已回滚，API/发送不使用；迁移不可逆，只能靠迁移前 DB 快照恢复）；
+  迁移 16：新增 `bot_group_roles`（群聊目标共享角色卡，target_id FK 级联；目标群消息模式复用 `bot_targets.chat_trigger`，默认 mention；迁移不可逆，只能靠迁移前 DB 快照恢复）；
   Bot 凭据只存密文）。数据库 schema 高于程序支持版本时拒绝启动。
 - 时间统一存 ISO 8601 UTC 字符串；展示用 `Asia/Shanghai`。
 - 文件物理路径 `DATA_DIR/files/<id 前两位>/<id>`；上传先写 `DATA_DIR/tmp/` 再原子 rename。
@@ -117,10 +118,11 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - `files.origin`：`user`（普通云盘）/`note`（笔记附件，不出现在列表/搜索/回收站）/`system`（保留）。
 - `bots`：平台（v0.5.8 起仅 `qq`）/名称/启用/公开配置 + `secret_ciphertext/secret_iv/secret_tag/key_version`；`bot_targets` 唯一 `(bot_id, external_id)`，
   `allow_commands`/`allow_notifications` 默认关闭/开启、`allow_chat` 默认关闭（与命令权限独立），静默时段 `quiet_start_minute`/`quiet_end_minute`（0–1439，成对设置）；
-  `chat_trigger` 列保留但 v0.5.8 逻辑不再读写；`bot_deliveries` 队列（`dedupe_key` 唯一）、`bot_publish_jobs` 仅文本发布（`media_file_ids_json` 写空）、
+  `chat_trigger` 复用为群消息模式（v0.6.3：mention/all，默认 mention）；`bot_deliveries` 队列（`dedupe_key` 唯一）、`bot_publish_jobs` 仅文本发布（`media_file_ids_json` 写空）、
   `bot_events` 按 `(bot_id, platform_event_id)` 去重，记录 event_kind/outcome/detail/target_external_id/user_id/updated_at 供诊断（不存正文；outcome ∈ received/ok/denied/rate_limited/ignored/error）、`bot_ai_sessions` 按 `(bot_id,target_external_id,user_id,mode)` 复用 AI 会话（v0.5.9 起 mode 只写 chat，列保留）、
   `bot_ai_memories` 为 legacy 滚动摘要（`summary_session_id` 保留列；v0.5.11 起仅作迁移来源/未迁移 fallback，镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`）；
   `bot_memory_items` 按 `(bot_id,user_id,kind,mem_key)` 唯一保存结构化记忆，`bot_memory_state` 按 `(bot_id,user_id)` 保存 `memory_enabled` 与 `legacy_migrated_at`；
+  `bot_group_roles` 按 `target_id` 保存群聊目标共享角色卡（名字 1–32、正文 1–1000，可停用；FK 级联删除）；
   `bot_inbound_targets` 按 `(bot_id,target_external_id,user_id)` 记录最近入站目标/用户名/类型/时间（不存正文）。QQ AppSecret 不落在日志/API 响应。
 - 审计只记录元数据，不记录文件内容、密码、TOTP、Cookie、Authorization；单条 actor≤64、target≤256、detail≤4 KiB。
 
@@ -211,7 +213,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
    v0.5.2 更新仓库后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。
 4. 离线保存 age 私钥；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
 5. 手动安装 Windows 周度世界拉取任务（调用 `scripts/world-pull.ps1`，`-PiHost/-BackupRoot`）与恢复演练任务/手跑
-   （`scripts/drill.ps1 -ExpectedSchemaVersion 14`，建议季度或升级前）；确认直连网线可通。
+   （`scripts/drill.ps1 -ExpectedSchemaVersion 16`，建议季度或升级前）；确认直连网线可通。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在 `169.254.77.0/24` 或 `172.23.88.0/21` 内（否则会锁死）；
    保留物理键鼠/已建立 SSH 作为回滚通道。
 7. 旧 `minecraft-backups` cron 已停用、legacy 归档已清理；如后续手工重建 cron 或旧目录，按 `docs/DEPLOY.md` 处理并再次确认迁移。

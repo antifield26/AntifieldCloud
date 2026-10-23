@@ -5,7 +5,7 @@ import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Pencil, Plus, Radio, Send, Trash2, Users } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
-import type { BotInboundTarget, BotSummary, BotTarget, BotTargetKind } from '../../api/types'
+import type { BotInboundTarget, BotSummary, BotTarget, BotTargetKind, GroupReplyMode } from '../../api/types'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
@@ -54,6 +54,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [externalId, setExternalId] = useState('')
   const [label, setLabel] = useState('')
   const [kind, setKind] = useState<BotTargetKind>('channel')
+  const [groupReplyMode, setGroupReplyMode] = useState<GroupReplyMode>('mention')
   const [allowCommands, setAllowCommands] = useState(false)
   const [allowNotifications, setAllowNotifications] = useState(true)
   const [allowChat, setAllowChat] = useState(false)
@@ -127,9 +128,10 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         externalId: externalId.trim(),
         label: label.trim(),
         kind,
-        allowCommands,
+        allowCommands: kind === 'user' ? allowCommands : false,
         allowNotifications,
         allowChat,
+        ...(kind === 'group' ? { groupReplyMode } : {}),
         ...(startMinute !== null && endMinute !== null
           ? { quietStartMinute: startMinute, quietEndMinute: endMinute }
           : {}),
@@ -138,6 +140,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       setExternalId('')
       setLabel('')
       setKind('channel')
+      setGroupReplyMode('mention')
       setAllowCommands(false)
       setAllowNotifications(true)
       setAllowChat(false)
@@ -155,8 +158,7 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const handleToggle = async (
     target: BotTarget,
     patch: { allowCommands?: boolean; allowNotifications?: boolean; allowChat?: boolean },
-  ): Promise<void> => {
-    if (!bot || busyIds.has(target.id)) return
+  ): Promise<void> => {    if (!bot || busyIds.has(target.id)) return
     markBusy(target.id, true)
     try {
       const updated = await api.bots.targets.update(bot.id, target.id, patch)
@@ -164,6 +166,20 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       toast.success('目标权限已更新')
     } catch (updateError) {
       toast.error(toErrorMessage(updateError, '更新目标权限失败，请重试'))
+    } finally {
+      markBusy(target.id, false)
+    }
+  }
+
+  const handleGroupReplyMode = async (target: BotTarget, mode: GroupReplyMode): Promise<void> => {
+    if (!bot || busyIds.has(target.id) || target.groupReplyMode === mode) return
+    markBusy(target.id, true)
+    try {
+      const updated = await api.bots.targets.update(bot.id, target.id, { groupReplyMode: mode })
+      setTargets((previous) => previous.map((item) => (item.id === updated.id ? updated : item)))
+      toast.success(mode === 'all' ? '已切换为接受全部消息（实验性）' : '已切换为仅接受 @/名字提及')
+    } catch (updateError) {
+      toast.error(toErrorMessage(updateError, '更新群消息模式失败，请重试'))
     } finally {
       markBusy(target.id, false)
     }
@@ -309,7 +325,11 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                   id={`${fieldId}-kind`}
                   className="select"
                   value={kind}
-                  onChange={(event) => setKind(event.target.value as BotTargetKind)}
+                  onChange={(event) => {
+                    const nextKind = event.target.value as BotTargetKind
+                    setKind(nextKind)
+                    if (nextKind !== 'user') setAllowCommands(false)
+                  }}
                   disabled={adding}
                 >
                   {TARGET_KINDS.map((item) => (
@@ -320,6 +340,27 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                 </select>
               </div>
             </FormField>
+            {kind === 'group' ? (
+              <FormField
+                label="群消息模式"
+                htmlFor={`${fieldId}-group-reply-mode`}
+                hint="默认仅接收 @Bot 或文本包含 Bot 名称的消息；全量模式需在 QQ 后台开启“接收所有消息”，由模型决定是否回复（实验性）。"
+              >
+                <div className="select-field bot-field-select">
+                  <select
+                    id={`${fieldId}-group-reply-mode`}
+                    className="select"
+                    value={groupReplyMode}
+                    aria-label="新建群消息模式"
+                    onChange={(event) => setGroupReplyMode(event.target.value as GroupReplyMode)}
+                    disabled={adding}
+                  >
+                    <option value="mention">仅接受 @ / 名字提及（默认）</option>
+                    <option value="all">接受全部消息，由模型决定是否回复（实验性）</option>
+                  </select>
+                </div>
+              </FormField>
+            ) : null}
             <FormField
               label="静默开始（可选）"
               htmlFor={`${fieldId}-quiet-start`}
@@ -353,15 +394,17 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
             </FormField>
           </div>
           <div className="bot-target-form-flags">
-            <label className="checkbox-field">
-              <input
-                type="checkbox"
-                checked={allowCommands}
-                onChange={(event) => setAllowCommands(event.target.checked)}
-                disabled={adding}
-              />
-              <span>允许命令</span>
-            </label>
+            {kind === 'user' ? (
+              <label className="checkbox-field">
+                <input
+                  type="checkbox"
+                  checked={allowCommands}
+                  onChange={(event) => setAllowCommands(event.target.checked)}
+                  disabled={adding}
+                />
+                <span>允许命令</span>
+              </label>
+            ) : null}
             <label className="checkbox-field">
               <input
                 type="checkbox"
@@ -499,16 +542,35 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                     </p>
                   </div>
                   <div className="bot-target-flags">
-                    <label className="checkbox-field">
-                      <input
-                        type="checkbox"
-                        checked={target.allowCommands}
-                        onChange={(event) => void handleToggle(target, { allowCommands: event.target.checked })}
-                        disabled={busy}
-                        aria-label={`${target.label} 允许命令`}
-                      />
-                      <span>允许命令</span>
-                    </label>
+                    {target.kind === 'user' ? (
+                      <label className="checkbox-field">
+                        <input
+                          type="checkbox"
+                          checked={target.allowCommands}
+                          onChange={(event) => void handleToggle(target, { allowCommands: event.target.checked })}
+                          disabled={busy}
+                          aria-label={`${target.label} 允许命令`}
+                        />
+                        <span>允许命令</span>
+                      </label>
+                    ) : null}
+                    {target.kind === 'group' ? (
+                      <label className="bot-target-mode-field">
+                        <span>群消息模式</span>
+                        <select
+                          className="select bot-target-mode-select"
+                          value={target.groupReplyMode}
+                          onChange={(event) =>
+                            void handleGroupReplyMode(target, event.target.value as GroupReplyMode)
+                          }
+                          disabled={busy}
+                          aria-label={`${target.label} 群消息模式`}
+                        >
+                          <option value="mention">仅 @ / 名字</option>
+                          <option value="all">全部消息（实验）</option>
+                        </select>
+                      </label>
+                    ) : null}
                     <label className="checkbox-field">
                       <input
                         type="checkbox"
@@ -559,10 +621,9 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         )}
         <p className="field-hint">
           无法确定 openid 对应哪个 QQ 用户/群时，点击目标行的“测试”发送一条测试消息；在 QQ 收到消息的会话即该目标，随后可用“编辑名称”改为易识别的名称。
-          命令只读：/help、/status、/backup、/world、/mc、/files；/help、/role、/reset、/forget 对普通用户开放。
-          执行管理命令需同时满足：当前目标开启“允许命令”，且发送者已登记为“用户”类型并开启“允许命令”（管理员白名单）。
-          开启“允许 Chat”后，目标内成员可发送普通消息与 AI 对话，不能执行斜杠命令；每 Bot×用户默认每分钟 30 次 Chat、
-          每小时 120 次 AI 调用。QQ 群/频道只有 @Bot 消息触发（平台限制），C2C 私聊直接进入 Chat；仅支持文本。
+          v0.6.3 起群聊/频道不再接受斜杠命令；命令仅在 C2C 私聊可用。
+          开启“允许 Chat”后，目标内成员可发送普通消息与 AI 对话；每 Bot×用户默认每分钟 30 次 Chat、每小时 120 次 AI 调用。
+          群消息模式“仅 @ / 名字”只接收 @Bot 或文本包含 Bot 名称的消息；“全部消息（实验）”需 QQ 后台开启“接收所有消息”，由模型决定是否回复。
         </p>
       </Card>
 

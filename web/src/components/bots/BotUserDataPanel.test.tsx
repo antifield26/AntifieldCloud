@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
+  BotGroupRoleSummary,
   BotMemoryItemSummary,
   BotMemoryUserSummary,
   BotRoleSummary,
@@ -15,6 +16,11 @@ const mocks = vi.hoisted(() => ({
   rolesList: vi.fn(),
   roleSetEnabled: vi.fn(),
   roleRemove: vi.fn(),
+  groupRolesList: vi.fn(),
+  groupRoleGet: vi.fn(),
+  groupRoleSave: vi.fn(),
+  groupRoleSetEnabled: vi.fn(),
+  groupRoleRemove: vi.fn(),
   memoriesList: vi.fn(),
   memoryItems: vi.fn(),
   memoryRemoveItem: vi.fn(),
@@ -28,6 +34,13 @@ vi.mock('../../api/client', () => ({
         list: mocks.rolesList,
         setEnabled: mocks.roleSetEnabled,
         remove: mocks.roleRemove,
+      },
+      groupRoles: {
+        list: mocks.groupRolesList,
+        get: mocks.groupRoleGet,
+        save: mocks.groupRoleSave,
+        setEnabled: mocks.groupRoleSetEnabled,
+        remove: mocks.groupRoleRemove,
       },
       memories: {
         list: mocks.memoriesList,
@@ -73,8 +86,20 @@ function roleSummary(overrides: Partial<BotRoleSummary> = {}): BotRoleSummary {
   }
 }
 
-function memoryUserSummary(overrides: Partial<BotMemoryUserSummary> = {}): BotMemoryUserSummary {
+function groupRoleSummary(overrides: Partial<BotGroupRoleSummary> = {}): BotGroupRoleSummary {
   return {
+    targetId: 'target-group-1',
+    targetLabel: '测试群',
+    targetExternalId: 'group-openid-1',
+    name: '群聊助手',
+    enabled: true,
+    promptLength: 80,
+    updatedAt: '2026-10-21T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
+function memoryUserSummary(overrides: Partial<BotMemoryUserSummary> = {}): BotMemoryUserSummary {  return {
     userId: 'user-1',
     userName: '小明',
     itemCount: 3,
@@ -115,6 +140,20 @@ beforeEach(() => {
   mocks.rolesList.mockResolvedValue({ items: [roleSummary()], total: 1 })
   mocks.roleSetEnabled.mockResolvedValue(undefined)
   mocks.roleRemove.mockResolvedValue(undefined)
+  mocks.groupRolesList.mockResolvedValue({ items: [groupRoleSummary()] })
+  mocks.groupRoleGet.mockResolvedValue({ groupRole: null })
+  mocks.groupRoleSave.mockResolvedValue({
+    targetId: 'target-group-1',
+    targetLabel: '测试群',
+    targetExternalId: 'group-openid-1',
+    name: '群聊助手',
+    prompt: '群聊角色设定',
+    enabled: true,
+    createdAt: '2026-10-20T00:00:00.000Z',
+    updatedAt: '2026-10-21T00:00:00.000Z',
+  })
+  mocks.groupRoleSetEnabled.mockResolvedValue(undefined)
+  mocks.groupRoleRemove.mockResolvedValue(undefined)
   mocks.memoriesList.mockResolvedValue({ items: [memoryUserSummary()], total: 1 })
   mocks.memoryItems.mockResolvedValue({
     items: [memoryItemSummary()],
@@ -152,7 +191,7 @@ describe('BotUserDataPanel 角色与记忆', () => {
     expect(screen.getAllByText('记忆启用').length).toBeGreaterThan(0)
     expect(kindDistributionText()).toContain('资料2')
     expect(kindDistributionText()).toContain('偏好1')
-    expect(screen.getByText(/仅显示元数据，正文不通过 Web 暴露/)).toBeTruthy()
+    expect(screen.getByText(/私聊角色卡正文不通过 Web 暴露/)).toBeTruthy()
 
     // 打开条目对话框后同样不渲染 key/value。
     await userEvent.click(screen.getAllByRole('button', { name: '查看记忆条目 小明' })[0]!)
@@ -166,6 +205,40 @@ describe('BotUserDataPanel 角色与记忆', () => {
     expect(document.body.textContent).not.toContain('示例长期记忆正文')
     expect(document.body.textContent).not.toContain('示例条目key')
     expect(document.body.textContent).not.toContain('示例条目正文')
+  })
+
+  it('群聊角色卡可打开编辑并保存名字与正文', async () => {
+    mocks.groupRoleGet.mockResolvedValue({
+      groupRole: {
+        targetId: 'target-group-1',
+        targetLabel: '测试群',
+        targetExternalId: 'group-openid-1',
+        name: '群聊助手',
+        prompt: '群聊专用角色设定',
+        enabled: true,
+        createdAt: '2026-10-20T00:00:00.000Z',
+        updatedAt: '2026-10-21T00:00:00.000Z',
+      },
+    })
+    renderPanel()
+    const editButtons = await screen.findAllByRole('button', { name: '编辑群聊角色卡 测试群' })
+    await userEvent.click(editButtons[0]!)
+    expect(await screen.findByRole('dialog')).toBeTruthy()
+    const name = (await screen.findByLabelText(/角色名字/)) as HTMLInputElement
+    expect(name.value).toBe('群聊助手')
+    const prompt = screen.getByLabelText(/角色设定/) as HTMLTextAreaElement
+    expect(prompt.value).toBe('群聊专用角色设定')
+    await userEvent.clear(name)
+    await userEvent.type(name, '新群助手')
+    await userEvent.clear(prompt)
+    await userEvent.type(prompt, '新的群聊设定')
+    await userEvent.click(screen.getByRole('button', { name: '保存角色卡' }))
+    await waitFor(() =>
+      expect(mocks.groupRoleSave).toHaveBeenCalledWith('bot-1', 'target-group-1', {
+        name: '新群助手',
+        prompt: '新的群聊设定',
+      }),
+    )
   })
 
   it('记忆列表展示条目数、类型分布与启用状态', async () => {

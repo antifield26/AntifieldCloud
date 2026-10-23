@@ -342,6 +342,27 @@ export function groupWebhook(appSecret: string, input: GroupInput): SignedWebhoo
   })
 }
 
+export interface GroupFullInput extends GroupInput {
+  /** 全量群消息的 mentions（含 bot:true 表示 @Bot）。 */
+  mentions?: Array<Record<string, unknown>>
+}
+
+/** 构造并签名全量群消息事件（需 QQ 后台开启“接收所有消息”）。 */
+export function groupFullWebhook(appSecret: string, input: GroupFullInput): SignedWebhook {
+  return signQqEvent(appSecret, {
+    op: 0,
+    t: 'GROUP_MESSAGE_CREATE',
+    d: {
+      id: input.id ?? 'group-full-msg-1',
+      content: input.content,
+      timestamp: QQ_TIMESTAMP,
+      group_openid: input.groupOpenid,
+      author: { member_openid: input.memberOpenid ?? 'member-openid-1' },
+      ...(input.mentions ? { mentions: input.mentions } : {}),
+    },
+  })
+}
+
 /** 发送一条已签名的 QQ Webhook；默认等待异步 Chat/命令处理结束。 */
 export async function sendWebhook(
   fixture: QqServiceFixture,

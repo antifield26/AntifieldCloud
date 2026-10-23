@@ -524,6 +524,25 @@
   padding-bottom: 0;
 }
 
+.bot-target-mode-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.bot-target-mode-select {
+  min-height: 28px;
+  padding: 2px 7px;
+  font-size: 12px;
+}
+
+.bot-group-role-editor {
+  display: grid;
+  gap: 14px;
+}
+
 /* ================= 投递与发布 ================= */
 
 .bot-delivery-grid {

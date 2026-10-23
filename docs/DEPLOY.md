@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.6.2）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.6.3）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -12,12 +12,12 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v15**（迁移 15 保留 `bot_targets.qq_number` 兼容列，手填号码功能已回滚、API/发送不读写；迁移 14 新增 `bot_memory_items`/`bot_memory_state`，迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
+- 当前 schema **v16**（迁移 16 新增 `bot_group_roles` 群聊角色卡表，群消息模式复用 `bot_targets.chat_trigger`；迁移 15 保留 `bot_targets.qq_number` 兼容列；迁移 14 新增 `bot_memory_items`/`bot_memory_state`，迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- 生产现状：**v0.6.2 已发布**（最终 release `20261023T123055Z`/commit `77e42c7`，schema v15；annotated Tag `v0.6.2`；GitHub Release [AntifieldCloud v0.6.2](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.2)）。`/healthz` v0.6.2/schema15，部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；恢复演练 `20261023T103520Z` schema15 通过；用户验收通过。上一版 v0.6.1（release `20261023T094819Z`/commit `ceb2e8f`，schema v14）。
-- **v0.6.2 部署**：`deploy.ps1 -PiHost <直连 IP>` 会自动做迁移前 DB 快照并保持 schema 15（`bot_targets.qq_number` 为兼容列）；预期 `/healthz` = `{"ok":true,"version":"0.6.2","schemaVersion":15}`；smoke 使用 `-ExpectedVersion 0.6.2 -ExpectedSchemaVersion 15`。迁移不可逆：回滚需恢复 `db-predeploy-*.sqlite` 并切回 v0.6.1 release `20261023T094819Z`（旧版不支持 schema v15）。
+- 生产现状：**v0.6.2 已发布**（最终 release `20261023T123055Z`/commit `77e42c7`，schema v15；annotated Tag `v0.6.2`；GitHub Release [AntifieldCloud v0.6.2](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.2)）。`/healthz` v0.6.2/schema15，部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；用户验收通过。**v0.6.3（schema v16）待部署验收。**
+- **v0.6.3 部署**：`deploy.ps1 -PiHost <直连 IP>` 会自动做迁移前 DB 快照并执行迁移 16（新增 `bot_group_roles`）；预期 `/healthz` = `{"ok":true,"version":"0.6.3","schemaVersion":16}`；smoke 使用 `-ExpectedVersion 0.6.3 -ExpectedSchemaVersion 16`。迁移不可逆：回滚需恢复 `db-predeploy-*.sqlite` 并切回 v0.6.2 release `20261023T123055Z`（旧版不支持 schema v16）。
 - **v0.6.0 已部署并验收通过**：最终 release `20261023T053539Z`/commit `6349617`；`/healthz` version 0.6.0/schema 14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill schema14 通过；部署后备份+密钥包已拉取；用户确认验收通过。详见 §3.0。
 - 历史部署（详细证据见 `docs/ACCEPTANCE.md`/`CHANGELOG.md`）：v0.5.10 release `20261022T152053Z`（schema v13、无迁移）、v0.5.9 `20261022T143451Z`（v13）、v0.5.8 `20261022T134852Z`（v13，QQ 单平台收敛）；这些历史 release 保留用于回滚对照。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
@@ -767,9 +767,9 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
    AppSecret 只提交保存为密文（不回显）。**v0.5.8 起仅支持 QQ 官方 Bot**，不再提供 Telegram/Discord/Slack 入口或 Gateway 配置。
 2. **回调地址**：QQ 开放平台“开发设置 → 回调地址”填 `https://app.example.com/api/bot/webhook/<botId>`；平台发送 `op=13` 校验，
    服务端用 AppSecret 派生 Ed25519 私钥返回 `{plain_token, signature}`；随后校验 `op=0` 事件签名（`X-Signature-Ed25519` + 时间戳 ±300 秒）。
-3. **事件订阅**：至少订阅 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；QQ 群/频道只有 @Bot 消息会推送，无“全部消息”权限。
+3. **事件订阅**：至少订阅 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；如需全量群消息，在 QQ 后台开启“接收所有消息”并订阅 `GROUP_MESSAGE_CREATE`，目标设 `groupReplyMode=all`（实验性）。
 4. **应用侧**：`/bots` 中 Bot 默认 `enabled=false`；先保存 AppID/AppSecret 与目标（可设静默时段），再开启 `BOT_ENABLED=true` 并重启，最后逐个 `PATCH enabled=true`。
-   目标填写：C2C 用 `user_openid`、群聊用 `group_openid`、频道用 `channel_id`；命令用户另建 `kind=user` 且允许命令的目标；Chat 目标勾选 `allow_chat`。
+   目标填写：C2C 用 `user_openid`、群聊用 `group_openid`、频道用 `channel_id`；C2C 命令用户另建 `kind=user` 且允许命令的目标（群聊/频道自 v0.6.3 起不执行斜杠命令）；Chat 目标勾选 `allow_chat`；群目标可选群消息模式。
    用“测试连接”发一条测试消息（20 次/小时）；配置页“检查连接”确认 QQ `access_token` 自检通过。
 5. **Chat/触发**：C2C 私聊普通文本直接进入 Chat；QQ 群/频道先 @Bot，再从“最近入站目标”登记并勾选 `allow_chat`。非管理员只能 Chat，不能执行斜杠命令。
 6. **图片（默认开启）**：`BOT_AI_VISION_ENABLED=true`（默认）、`BOT_AI_ENABLED=true` 且模型支持 image 输入时，QQ `d.attachments` 中 image/* 附件经
@@ -792,12 +792,12 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 | Webhook 302 到 cloudflareaccess.com | Access 未对 `/api/bot/webhook/*` bypass（§5.2） |
 | Webhook 404 | `BOT_ENABLED=false`/无 `BOT_SECRET_KEY`/Bot `enabled=false`/botId 错；看 `/api/bots/status` 与审计 `bot.webhook.rejected` |
 | Webhook 401 | QQ Ed25519 签名/时间戳（±300s）或 AppSecret 不匹配；核对 QQ 开放平台回调与 Secret；`op=13` 校验需返回签名体 |
-| 命令无回复 | 目标未勾选 `allow_commands`、用户未登记为 `kind=user` 且允许命令、命令限流、平台 API 失败；看 `bot.command.denied`、`bot_deliveries.last_error` |
+| 命令无回复 | v0.6.3 起群聊/频道命令一律忽略（`bot.command.disabled`）；C2C 需目标勾选 `allow_commands`、用户登记为 `kind=user` 且允许命令、命令未限流、平台 API 正常；看 `bot.command.denied`、`bot_deliveries.last_error` |
 | `/ask` 已移除 | v0.5.9 起 `/ask` 不是有效命令：非管理员按未知命令被拒（`bot.command.denied`、无回复），管理员回全量帮助且不调用 AI；AI 请用普通消息 Chat |
 | Chat AI 超时/502/504 | OpenCode 不可达、Basic 密码不一致、模型未配置或超时；`curl -u` 探测 4096，检查 `OPENCODE_PASSWORD` 与 `BOT_AI_TIMEOUT_SECONDS`；不要打印密码 |
 | 发布 400/401 | 缺 `totpCode` 或 `confirmText:'PUBLISH'`、TOTP 过期/重放、目标是 user、文本超 2000 字符、定时超 30 天；v0.5.8 起无媒体字段 |
 | 发布 `partial_text_sent` | 长文本部分段落已外发后失败；任务标记 `failed` 且不自动重试，避免重复外发。核对平台消息后人工重建任务 |
-| Chat 无回复 | 目标未勾选 `allow_chat`、`BOT_AI_ENABLED=false`、QQ 群/频道未 @Bot、限流（30/min 或 120/h）；看 `bot.chat.denied`/`bot.chat`/`bot.ai.chat` 审计 |
+| Chat 无回复 | 目标未勾选 `allow_chat`、`BOT_AI_ENABLED=false`、QQ 群/频道未 @Bot、全量模式下仅@/名字未命中或模型输出 `NO_REPLY`、限流（30/min 或 120/h）；看 `bot.chat.denied`/`bot.chat`/`bot.ai.chat` 审计与 `mention_filtered`/`no_reply` 事件 |
 | 群/频道不消费未 @ 的消息 | 属 QQ 平台限制：群/频道只有 @Bot 事件进入 Bot，不支持“全部消息”；C2C 私聊直接进入 |
 | 图片提示暂不支持/未处理 | `BOT_AI_VISION_ENABLED=false`、附件 mime/大小/域名不合规或下载失败；看审计 `bot.ai.image`（只含 mime/大小/跳过原因）与日志（不含图片内容） |
 | 检查连接失败 | 按 QQ AppID/AppSecret、Pi 直连出站网络核对（v0.5.10 起无代理隧道）；`bot_health_unsupported` 表示适配器未实现自检；结果只含脱敏项 |

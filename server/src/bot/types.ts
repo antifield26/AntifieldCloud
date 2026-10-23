@@ -43,6 +43,8 @@ export interface BotTargetRow {
   allow_notifications: number
   /** 是否允许该目标内成员进行普通消息 Chat；与 allow_commands 独立。 */
   allow_chat: number
+  /** 群消息模式：mention=仅 @/名字提及；all=全部消息由模型决定是否回复（仅群聊目标）。 */
+  chat_trigger: GroupReplyMode
   /** 静默时段（本地分钟 0-1439）；两者都非空时生效。 */
   quiet_start_minute: number | null
   quiet_end_minute: number | null
@@ -58,6 +60,8 @@ export interface BotTarget {
   allowCommands: boolean
   allowNotifications: boolean
   allowChat: boolean
+  /** 群消息模式；仅群聊目标可设为 all，其余固定 mention。 */
+  groupReplyMode: GroupReplyMode
   quietStartMinute: number | null
   quietEndMinute: number | null
   createdAt: string
@@ -138,7 +142,10 @@ export interface SendResult {
 }
 
 /** QQ 群/频道只有 @Bot 事件进入 Bot；C2C 私聊直接进入。 */
-export type ChatTrigger = 'direct' | 'mention'
+export type ChatTrigger = 'direct' | 'mention' | 'all'
+
+/** 群消息模式：默认仅 @/名字提及；all 为实验性全量消息。 */
+export type GroupReplyMode = 'mention' | 'all'
 
 /** 平台入站图片：只保存平台侧引用，实际下载由适配器 loadImage 完成。 */
 export interface BotInboundImage {
@@ -177,6 +184,8 @@ export type InboundVerification =
       text: string
       isDirect: boolean
       chatTrigger: ChatTrigger
+      /** 全量群消息事件中，mentions 是否包含机器人账号。 */
+      mentionedBot?: boolean
       /** 入站图片（可选）；由 Service 决定是否下载并交给 AI。 */
       image?: BotInboundImage
       ackBody?: unknown
@@ -386,6 +395,29 @@ export interface BotRoleSummary {
   name: string
   enabled: boolean
   promptLength: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** 群聊角色卡列表项：始终列出群聊目标，role=null 表示尚未配置。 */
+export interface BotGroupRoleSummary {
+  targetId: string
+  targetLabel: string
+  targetExternalId: string
+  name: string | null
+  enabled: boolean
+  promptLength: number
+  updatedAt: string | null
+}
+
+/** 群聊角色卡编辑详情（管理员可编辑正文）；target 不存在或非群聊时返回 404/400。 */
+export interface BotGroupRoleDetail {
+  targetId: string
+  targetLabel: string
+  targetExternalId: string
+  name: string
+  prompt: string
+  enabled: boolean
   createdAt: string
   updatedAt: string
 }

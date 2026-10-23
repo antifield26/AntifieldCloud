@@ -138,16 +138,16 @@ test('v0.5.7：/forget 必须 confirm；清除结构化记忆+旧摘要镜像+�
   }
 })
 
-test('v0.5.7：群聊 /reset /forget 对未授权目标开放，但 /status 仍被白名单拦截', async () => {
+test('v0.6.3：群聊不再接受任何斜杠命令（含 /reset /forget /role）', async () => {
   const fixture = createQqServiceFixture()
   try {
     fixture.service.createTarget(fixture.botId, {
       externalId: GROUP_ID,
       label: '群',
       kind: 'group',
-      allowCommands: false,
+      allowCommands: true,
       allowNotifications: false,
-      allowChat: false,
+      allowChat: true,
     })
     fixture.db
       .prepare(
@@ -159,30 +159,23 @@ test('v0.5.7：群聊 /reset /forget 对未授权目标开放，但 /status 仍�
       .run(fixture.botId)
     seedSession(fixture, GROUP_ID, 'member-openid-1', 'chat', 'group-chat')
 
-    await groupCommand(fixture, '/status', 'group-1')
-    assert.equal(fixture.fetch.sent.length, 0, '未授权群不应执行 /status')
-    assert.ok(fixture.audits.some((item) => item.action === 'bot.command.denied'))
-
-    await groupCommand(fixture, '/reset', 'group-2')
-    assert.equal(lastMessageText(fixture), '已重置当前对话（长期记忆保留）。')
-    assert.deepEqual(sessionModes(fixture, GROUP_ID, 'member-openid-1'), [])
-
-    await groupCommand(fixture, '/forget confirm', 'group-3')
-    assert.match(lastMessageText(fixture), /^已清除长期记忆与全部对话上下文（记忆条目 1 条/)
+    for (const [index, text] of ['/status', '/reset', '/forget confirm', '/role set 群角色 不应生效'].entries()) {
+      await groupCommand(fixture, text, `group-${index + 1}`)
+      assert.equal(fixture.fetch.sent.length, 0, `${text} 不应回复`)
+    }
+    assert.deepEqual(sessionModes(fixture, GROUP_ID, 'member-openid-1'), ['chat'], '群聊命令不应清理会话')
     assert.equal(
       (fixture.db.prepare("SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = 'member-openid-1'").get(
         fixture.botId,
       ) as { c: number }).c,
-      0,
+      1,
+      '群聊 /forget 不应清除记忆',
     )
-
-    // 群内 /role 仍只给友好提示，不读改角色卡。
-    await groupCommand(fixture, '/role set 群角色 不应生效', 'group-4')
-    assert.match(lastMessageText(fixture), /默认角色/)
     assert.equal(
       (fixture.db.prepare('SELECT COUNT(*) AS c FROM bot_chat_roles WHERE bot_id = ?').get(fixture.botId) as { c: number }).c,
       0,
     )
+    assert.ok(fixture.audits.some((item) => item.action === 'bot.command.disabled'))
   } finally {
     fixture.cleanup()
   }

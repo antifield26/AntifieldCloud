@@ -28,6 +28,8 @@ import type {
   BotMemoryUserSummary,
   BotMetrics,
   BotConnectivitySnapshot,
+  BotGroupRoleDetail,
+  BotGroupRoleSummary,
   BotPublishInput,
   BotPublishJob,
   BotRoleSummary,
@@ -291,7 +293,7 @@ async function readJsonBody(response: Response): Promise<unknown> {
 }
 
 export interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
   /** 认证类/公开接口不触发全局 401 跳转。 */
@@ -358,6 +360,10 @@ function post<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'me
 
 function patch<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
   return request<T>(path, { ...options, method: 'PATCH', body })
+}
+
+function put<T>(path: string, body?: unknown, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
+  return request<T>(path, { ...options, method: 'PUT', body })
 }
 
 function del<T>(path: string, options: Omit<RequestOptions, 'method' | 'body'> = {}): Promise<T> {
@@ -1139,6 +1145,30 @@ export const api = {
       },
       async remove(id: string, userId: string): Promise<void> {
         await del<OkResult>(`/api/bots/${encodeId(id)}/roles/${encodeId(userId)}`)
+      },
+    },
+    /** 群聊角色卡：管理员可读写名字与正文；普通用户不可见。 */
+    groupRoles: {
+      list(id: string): Promise<{ items: BotGroupRoleSummary[] }> {
+        return get<{ items: BotGroupRoleSummary[] }>(`/api/bots/${encodeId(id)}/group-roles`)
+      },
+      get(id: string, targetId: string): Promise<{ groupRole: BotGroupRoleDetail | null }> {
+        return get<{ groupRole: BotGroupRoleDetail | null }>(
+          `/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
+        )
+      },
+      async save(id: string, targetId: string, input: { name: string; prompt: string }): Promise<BotGroupRoleDetail> {
+        const result = await put<{ groupRole: BotGroupRoleDetail }>(
+          `/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
+          input,
+        )
+        return result.groupRole
+      },
+      async setEnabled(id: string, targetId: string, enabled: boolean): Promise<void> {
+        await patch<OkResult>(`/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`, { enabled })
+      },
+      async remove(id: string, targetId: string): Promise<void> {
+        await del<OkResult>(`/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`)
       },
     },
     memories: {

@@ -70,12 +70,13 @@ test('v0.5.9：个人角色卡覆盖默认 lofii', async () => {
   }
 })
 
-test('v0.6.1：/help 只输出命令与功能/用法，不含额外声明', () => {
+test('v0.6.3：/help 说明命令仅私聊可用，随后只列命令与功能/用法', () => {
   for (const text of [helpText(), publicHelpText()]) {
     const lines = text.split('\n')
-    assert.ok(lines.length > 0)
-    assert.ok(lines.every((line) => line.startsWith('/')), text)
-    assert.equal(lines[0], '/help 查看帮助')
+    assert.ok(lines.length > 1)
+    assert.match(lines[0] ?? '', /命令仅在 C2C 私聊可用/)
+    assert.ok(lines.slice(1).every((line) => line.startsWith('/')), text)
+    assert.equal(lines[1], '/help 查看帮助')
     assert.equal(text.includes('AntifieldCloud'), false)
     assert.equal(text.includes('普通消息 Chat'), false)
     assert.equal(text.includes('管理员授权'), false)
