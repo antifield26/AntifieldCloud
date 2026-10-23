@@ -4,7 +4,7 @@
 
 > 状态：v0.6.2（**开发中，未发布**）。本版新增：Bot“投递与发布”分区改为单列；目标名支持内联编辑；目标行“测试”按钮可向指定目标发送测试消息，用于确认 openid 对应的 QQ 用户/群并改为易识别名称。手填 QQ 号/群号方案已回滚（用户可通过测试消息 + 目标名称识别）；schema **v15** 保留 `qq_number` 兼容列，不参与 API/发送。OpenCode v2.1.3。
 > 发布：最新公开版本为 v0.6.1（release `20261023T094819Z`/commit `ceb2e8f`，Tag `v0.6.1`，GitHub Release [AntifieldCloud v0.6.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.1)）。
-> 测试基线（Lead 实测 2026-10-23，v0.6.2）：`npm test` **393**（server+scripts，含 schema v15 回归）、`npm run test:web` **179**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-DSsnlXHJ.js` 682.80 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
+> 测试基线（Lead 实测 2026-10-23，v0.6.2）：`npm test` **393**（server+scripts，含 schema v15 回归）、`npm run test:web` **179**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-vbaLI-Ns.js` 683.10 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈

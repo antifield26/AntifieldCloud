@@ -41,9 +41,9 @@
 
 ## v0.6.2（开发中，未发布；目标名称编辑 + 测试消息辨识 + 投递与发布单列；schema v15 兼容列）
 
-- **范围**：Web “Bot/投递与发布”主网格由双列改单列；已配置目标支持内联编辑名称；目标行“测试”按钮向指定目标发送测试消息，用于确认 openid 对应的 QQ 用户/群。手填 QQ 号/群号功能已按用户意见回滚。
+- **范围**：Web “Bot/投递与发布”主网格由双列改单列；已配置目标支持内联编辑名称；目标行“测试”按钮向指定目标发送测试消息，用于确认 openid 对应的 QQ 用户/群；“最近入站目标”登记后移除该入站记录（添加失败恢复、成功后同外部 ID/类型记录一并清理）。手填 QQ 号/群号功能已按用户意见回滚。
 - **数据**：schema v15 保留迁移 15 的 `bot_targets.qq_number TEXT` 可空列（兼容列，API/发送不读写）；旧版本 v0.6.1 不支持 v15，回滚必须恢复迁移前快照。
-- **本地门禁**：`npm run check` 通过；`npm test` **393**（含 schema v15 迁移回归）、`npm run test:web` **179**；服务端覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-DSsnlXHJ.js` 682.80 kB）；check-version 通过。
+- **本地门禁**：`npm run check` 通过；`npm test` **393**（含 schema v15 迁移回归）、`npm run test:web` **179**；服务端覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-vbaLI-Ns.js` 683.10 kB）；check-version 通过。
 - **部署/验收**：待生产部署、smoke 与用户验收；完成后再决定 Tag/Release。
 
 ## v0.6.1（已发布：Tag/Release v0.6.1；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）

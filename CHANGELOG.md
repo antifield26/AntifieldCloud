@@ -6,6 +6,7 @@
 
 - **目标名称内联编辑**：已配置目标可在列表中点击“编辑名称”，输入并保存新名称，方便把 openid 目标改为易识别的 QQ 用户/群名称。
 - **目标测试消息**：目标行“测试”按钮调用 `POST /api/bots/:id/test`，向指定目标发送测试消息；在 QQ 收到消息的会话即该 openid 目标，配合名称编辑完成辨识。
+- **入站记录清理**：“最近入站目标”的“登记”按钮填入表单后立即移除该条；添加失败恢复，添加成功后同外部 ID/类型的入站记录一并移除。
 
 ### Changed
 
@@ -20,7 +21,7 @@
 - 版本升到 **0.6.2**；schema **v15** 保留迁移 15 的 `bot_targets.qq_number` 可空列（手填功能已回滚，列不再读写）；迁移不可逆，回滚需迁移前快照。
 - `deploy.ps1` 期望 schema 改为 **15**；`deploy/env.example` `APP_VERSION=0.6.2`。
 - 已有目标仅多了未使用的可空列，不影响投递/发布/命令；旧版本 v0.6.1 不支持 schema v15，回滚必须恢复迁移前 DB 快照并切回 v0.6.1 release。
-- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **393**、`npm run test:web` **179**；覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（coverage 门禁 exit 0）；build 通过（bundle `index-DSsnlXHJ.js` 682.80 kB）；check-version 通过。生产部署/验收证据待回填。
+- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **393**、`npm run test:web` **179**；覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（coverage 门禁 exit 0）；build 通过（bundle `index-vbaLI-Ns.js` 683.10 kB）；check-version 通过。生产部署/验收证据待回填。
 
 ## [v0.6.1] - 2026-10-23（已发布：Tag/Release v0.6.1）
 
