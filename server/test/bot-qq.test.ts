@@ -171,6 +171,63 @@ test('QQ：固定 AppSecret 生成 Ed25519 密钥，op=13 校验签名可被同�
   )
 })
 
+test('QQ：op=13 只接受合法 token/时间戳，阻止签名预言机伪造事件', async () => {
+  const { publicKey } = deriveKeyPair(VALIDATION_SECRET)
+  const adapter = new QqAdapter({ appId: '102345001' }, { token: VALIDATION_SECRET })
+  const forgedEvent = JSON.stringify({
+    op: 0,
+    t: 'C2C_MESSAGE_CREATE',
+    d: { id: 'forged-1', content: '/status', author: { user_openid: 'attacker' }, timestamp: '1725442341' },
+  })
+
+  // 关键回归：任何包含 JSON 结构字符的 plain_token 都必须被拒绝，不能换取签名。
+  const jsonAsToken = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: {},
+    body: Buffer.from(JSON.stringify({ op: 13, d: { plain_token: forgedEvent, event_ts: '1725442341' } })),
+  })
+  assert.equal(jsonAsToken.kind, 'rejected')
+  if (jsonAsToken.kind !== 'rejected') throw new Error('expected rejected')
+  assert.equal(jsonAsToken.status, 400)
+  assert.equal(jsonAsToken.code, 'invalid_payload')
+
+  const badTimestamp = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: {},
+    body: Buffer.from(JSON.stringify({ op: 13, d: { plain_token: 'plain-token-abc', event_ts: '1725442341abc' } })),
+  })
+  assert.equal(badTimestamp.kind, 'rejected')
+
+  const badToken = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: {},
+    body: Buffer.from(JSON.stringify({ op: 13, d: { plain_token: '{"op":0}', event_ts: '1725442341' } })),
+  })
+  assert.equal(badToken.kind, 'rejected')
+
+  // 官方示例形状仍可用：20 位字母数字 token + 10 位秒级时间戳。
+  const official = await adapter.verifyInbound({
+    botId: 'bot-1',
+    headers: {},
+    body: Buffer.from(
+      JSON.stringify({ op: 13, d: { plain_token: 'Arq0D5A61EgUu4OxUvOp', event_ts: '1725442341' } }),
+    ),
+  })
+  assert.equal(official.kind, 'challenge')
+  if (official.kind !== 'challenge') throw new Error('expected challenge')
+  const challenge = official.body as { plain_token: string; signature: string }
+  assert.equal(challenge.plain_token, 'Arq0D5A61EgUu4OxUvOp')
+  assert.equal(
+    verify(
+      null,
+      Buffer.from('1725442341Arq0D5A61EgUu4OxUvOp', 'utf8'),
+      publicKey,
+      Buffer.from(challenge.signature, 'hex'),
+    ),
+    true,
+  )
+})
+
 test('QQ：C2C/群/频道命令解析出字段、确认体与回退事件 ID', async () => {
   const appSecret = 'qq-events-app-secret-fixed-0002'
   const { privateKey } = deriveKeyPair(appSecret)

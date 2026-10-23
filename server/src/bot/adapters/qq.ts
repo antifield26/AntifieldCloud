@@ -31,6 +31,15 @@ const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 const QQ_API_BASE = 'https://api.sgroup.qq.com'
 const TEXT_LIMIT = 2000
 const CLOCK_SKEW_SECONDS = 300
+/**
+ * 回调地址校验（op=13）允许的 plain_token/event_ts 形状。
+ * 该接口会对调用方给出的字符串直接签名，若不限制字符集，可被用来把任意 op=0 原始 JSON
+ * 当作 plain_token 请求签名，从而绕过事件验签（签名预言机）。官方示例为 20 位字母数字
+ * token 与 10 位秒级时间戳；这里允许字母数字/下划线/连字符与 1–12 位数字，足以兼容官方格式，
+ * 同时排除 JSON 结构字符（{ } " : ,）与超长输入。
+ */
+const CHALLENGE_PLAIN_TOKEN_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+const CHALLENGE_EVENT_TS_PATTERN = /^\d{1,12}$/
 const TOKEN_EXPIRY_MARGIN_SECONDS = 60
 const DEFAULT_TOKEN_TTL_SECONDS = 7200
 const ED25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex')
@@ -222,7 +231,15 @@ export class QqAdapter implements BotAdapter {
     const d = asRecord(payload.d)
     const plainToken = d ? textValue(d.plain_token) : ''
     const eventTs = d ? textValue(d.event_ts) : ''
-    if (!plainToken || !eventTs) return { kind: 'rejected', status: 400, code: 'invalid_payload' }
+    // 只允许平台回调校验的固定形状：不能把事件 JSON 体放进 plain_token 换取签名。
+    if (
+      !plainToken ||
+      !eventTs ||
+      !CHALLENGE_PLAIN_TOKEN_PATTERN.test(plainToken) ||
+      !CHALLENGE_EVENT_TS_PATTERN.test(eventTs)
+    ) {
+      return { kind: 'rejected', status: 400, code: 'invalid_payload' }
+    }
     if (!this.secret.token) return { kind: 'rejected', status: 401, code: 'invalid_signature' }
     try {
       const signature = sign(

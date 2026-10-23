@@ -60,6 +60,23 @@ test('QQ Webhook：op=13 回调校验返回签名，非法签名被拒绝', asyn
     assert.equal(rejected.status, 401)
     assert.deepEqual(rejected.body, { error: { code: 'invalid_signature' } })
 
+    // op=13 不得把任意事件 JSON 当作 plain_token 签名（签名预言机回归）。
+    const oracle = await fixture.service.handleWebhook(
+      fixture.botId,
+      {},
+      Buffer.from(
+        JSON.stringify({
+          op: 13,
+          d: {
+            plain_token: JSON.stringify({ op: 0, t: 'C2C_MESSAGE_CREATE', d: { id: 'forged' } }),
+            event_ts: QQ_TIMESTAMP,
+          },
+        }),
+      ),
+    )
+    assert.equal(oracle.status, 400)
+    assert.deepEqual(oracle.body, { error: { code: 'invalid_payload' } })
+
     // BOT_ENABLED=false 时公开入口返回 404。
     const disabled = new BotService({
       db: fixture.db,
