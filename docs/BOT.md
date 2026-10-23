@@ -158,9 +158,9 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 | `BOT_CONNECTIVITY_ENABLED` | `true` | 出站连通性探测开关 |
 | `BOT_CONNECTIVITY_INTERVAL_SECONDS` | `60` | 探测间隔（15–600） |
 | `BOT_CONNECTIVITY_TIMEOUT_SECONDS` | `8` | 单次探测超时（2–30） |
-| `BOT_CHAT_BURST_WINDOW_MS` | `1200` | 同一 Bot×目标×用户连续消息合并窗口（0 关闭合并但仍串行；0–5000） |
-| `BOT_CHAT_BURST_MAX_WAIT_MS` | `5000` | 从首条消息起最长等待，避免持续输入不回复（1000–15000） |
-| `BOT_CHAT_BURST_MAX_MESSAGES` | `6` | 单批最多合并消息数（1–20） |
+| `BOT_CHAT_BURST_WINDOW_MS` | `3000` | 同一 Bot×目标×用户连续消息合并窗口（0 关闭合并但仍串行；0–8000） |
+| `BOT_CHAT_BURST_MAX_WAIT_MS` | `10000` | 从首条消息起最长等待，避免持续输入不回复（1000–20000） |
+| `BOT_CHAT_BURST_MAX_MESSAGES` | `10` | 单批最多合并消息数（1–20） |
 | `BOT_SEARCH_ENABLED` | `false` | SearXNG 联网搜索总开关；开启时必须配置 `BOT_SEARCH_URL` |
 | `BOT_SEARCH_URL` | 空 | SearXNG 基址；生产建议 `http://127.0.0.1:8888`，仅 http/https、不得含凭据 |
 | `BOT_SEARCH_AUTO` | `true` | 自动判断问句/时效内容并搜索；显式 `/search` 不受影响 |
@@ -232,7 +232,7 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` �
 
 ## 5.6 连续消息处理（v0.6.1）
 
-- 同一 `Bot×目标×用户` 的普通消息进入内存 burst 缓冲：默认在最后一条后 `BOT_CHAT_BURST_WINDOW_MS=1200` 合并，且从首条起最多等待 `BOT_CHAT_BURST_MAX_WAIT_MS=5000`，单批最多 `BOT_CHAT_BURST_MAX_MESSAGES=6` 条；达到条数立即触发。
+- 同一 `Bot×目标×用户` 的普通消息进入内存 burst 缓冲：默认在最后一条后 `BOT_CHAT_BURST_WINDOW_MS=3000` 合并，且从首条起最多等待 `BOT_CHAT_BURST_MAX_WAIT_MS=10000`，单批最多 `BOT_CHAT_BURST_MAX_MESSAGES=10` 条；达到条数立即触发。
 - 合并后只调用一次 AI、只回复一次；不同会话可并行，同一会话严格串行（处理期间到达的消息进入下一批）。Webhook 仍立即 ack，不因等待合并而超时。
 - 合并文本按换行拼接并按 `BOT_AI_MAX_PROMPT_CHARS` 截断；图片批次只处理最后一张，文字仍保留；仅图片无正文时使用中性占位。
 - `/reset`、`/forget confirm` 和角色卡变更会清理当前会话缓冲，避免旧消息在新上下文里回复；进程停止时丢弃未处理缓冲。

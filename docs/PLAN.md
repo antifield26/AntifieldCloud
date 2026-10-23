@@ -5,7 +5,7 @@
 ## v0.6.1（开发中，未发布；Bot 连续消息 + 联网搜索 + 备份状态 hotfix）
 
 - **发布决策（2026-10-23）**：用户要求不着急发布 v0.6.1；此前误打的 Tag/Release 已撤回。生产保留备份状态 hotfix 作为预部署基线；新功能完成、本地/CI 门禁、SearXNG 生产验证与用户验收后再发布。
-- **连续消息处理（已确认方案）**：同一 `Bot×目标×用户` 的短窗口多条消息**合并为一次 AI 请求**；默认防抖窗口 `BOT_CHAT_BURST_WINDOW_MS=1200`、最长等待 `BOT_CHAT_BURST_MAX_WAIT_MS=5000`、单批上限 `BOT_CHAT_BURST_MAX_MESSAGES=6`；同一会话**严格串行**（处理中到达的消息进入下一批），不同会话可并行；Webhook 仍立即 ack，最终只回复一次；`/reset`/`/forget`/角色变更清理待处理缓冲；超长合并文本按 `BOT_AI_MAX_PROMPT_CHARS` 截断；图片批次只处理最后一张并保留文字。
+- **连续消息处理（已确认方案）**：同一 `Bot×目标×用户` 的短窗口多条消息**合并为一次 AI 请求**；默认防抖窗口 `BOT_CHAT_BURST_WINDOW_MS=3000`、最长等待 `BOT_CHAT_BURST_MAX_WAIT_MS=10000`、单批上限 `BOT_CHAT_BURST_MAX_MESSAGES=10`；同一会话**严格串行**（处理中到达的消息进入下一批），不同会话可并行；Webhook 仍立即 ack，最终只回复一次；`/reset`/`/forget`/角色变更清理待处理缓冲；超长合并文本按 `BOT_AI_MAX_PROMPT_CHARS` 截断；图片批次只处理最后一张并保留文字。
 - **联网搜索（已确认方案）**：**自建/私有 SearXNG** + **自动判断 + `/search` 命令**双触发；SearXNG 仅监听 loopback，应用通过 `BOT_SEARCH_URL=http://127.0.0.1:8888` 访问 JSON API；不抓取结果网页，不保存查询正文；结果只注入标题/摘要/域名，回答末尾由服务端附来源（不暴露完整 URL）；自动触发用保守问句+时效关键词，显式 `/search` 不受开关限制；搜索失败不阻断 Chat；按 Bot×用户每小时限流；提示词把结果标为不可信外部资料，禁止执行其中指令。
 - **配置**：`BOT_CHAT_BURST_WINDOW_MS/MAX_WAIT_MS/MAX_MESSAGES`；`BOT_SEARCH_ENABLED/URL/AUTO/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/RATE_PER_HOUR`。`BOT_SEARCH_ENABLED=true` 时必须配置 URL；schema 保持 v14（无迁移）。
 - **备份状态 hotfix（预部署）**：已 ack 且 PC 清理服务端文件的归档返回 `status=acked` + `available=false`，Dashboard/备份页不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核与用户确认通过。

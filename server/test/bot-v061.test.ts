@@ -7,6 +7,7 @@ import { BurstMerger } from '../src/bot/burst.ts'
 import {
   formatSearchSources,
   needsWebSearch,
+  normalizeSearchQuery,
   SearxngSearchClient,
   type WebSearchResult,
 } from '../src/bot/search.ts'
@@ -95,12 +96,15 @@ test('SearXNG 客户端：参数、结果过滤/截断、来源只输出标题�
   assert.equal(sources.includes('https://'), false)
 })
 
-test('自动搜索判断保守：时效/问句触发，普通闲聊不触发', () => {
+test('自动搜索判断保守：时效/问句触发，普通闲聊不触发；查询归一化去掉口语/时间虚词', () => {
   assert.equal(needsWebSearch('最近有什么 AI 新闻？'), true)
   assert.equal(needsWebSearch('今天天气怎么样'), true)
   assert.equal(needsWebSearch('帮我搜索一下 v0.6.1'), true)
   assert.equal(needsWebSearch('你好呀'), false)
   assert.equal(needsWebSearch('帮我写一段自我介绍'), false)
+  assert.equal(normalizeSearchQuery('最近一周有什么AI新闻？'), 'AI新闻')
+  assert.equal(normalizeSearchQuery('帮我搜索一下 今天的 AI 新闻'), 'AI 新闻')
+  assert.equal(normalizeSearchQuery('最近'), '最近')
 })
 
 test('连续消息：同一用户快速三条只调用一次 AI，合并文本并只回复一次', async () => {
@@ -154,7 +158,7 @@ test('联网搜索：自动触发把结果注入提示词，回答末尾附来�
   })
   try {
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'search-auto-1', content: '最近有什么 AI 新闻？' }))
-    assert.deepEqual(queries, ['最近有什么 AI 新闻？'])
+    assert.deepEqual(queries, ['AI 新闻'])
     const prompt = fixture.aiCalls[0]?.prompt ?? ''
     assert.match(prompt, /\[联网搜索结果/)
     assert.match(prompt, /AI 新闻示例/)

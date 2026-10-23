@@ -42,7 +42,7 @@
 ## v0.6.1（开发中，未发布；Bot 连续消息 + 联网搜索 + 备份状态 hotfix 预部署）
 
 - **发布状态**：用户要求不着急发布 v0.6.1；此前误打的 Tag/Release 已撤回（GitHub Release 删除、远端/本地 tag 删除）。生产保留 hotfix 预部署，但不对外称为 v0.6.1 发布；连续消息/联网搜索、SearXNG 生产验证与用户验收完成后再打 Tag/Release。
-- **连续消息（已实现，待真实 QQ 验收）**：同一 Bot×目标×用户 burst 合并 + 同会话串行；默认窗口 1200ms/最长 5000ms/上限 6 条；Webhook 立即 ack、只调用一次 AI/回复一次；`/reset`/`/forget` 清缓冲；不同会话并行。
+- **连续消息（已实现，待真实 QQ 验收）**：同一 Bot×目标×用户 burst 合并 + 同会话串行；默认窗口 3000ms/最长 10000ms/上限 10 条；Webhook 立即 ack、只调用一次 AI/回复一次；`/reset`/`/forget` 清缓冲；不同会话并行。
 - **联网搜索（已实现，待 SearXNG/真实 QQ 验收）**：自建 SearXNG（loopback JSON API）自动判断 + `/search`；结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文；失败降级、每小时限流、不可信外部资料边界；生产网络仅启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
 - **备份状态 hotfix（已预部署并经用户复核）**：`acked` + `available=false` 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核通过。
 - **本地门禁（2026-10-23，功能代码）**：`npm run check` 通过；`npm test` **390**（含 burst/搜索回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**（`npm run test:coverage` exit 0）；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`scripts/install-searxng.sh`/`bootstrap-env.sh` bash 语法通过。

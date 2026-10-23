@@ -51,6 +51,7 @@ import {
   formatSearchPromptContext,
   formatSearchSources,
   needsWebSearch,
+  normalizeSearchQuery,
   type WebSearchClient,
   type WebSearchResult,
 } from './search.ts'
@@ -1954,7 +1955,8 @@ export class BotService {
       return force ? { kind: 'rate_limited' } : { kind: 'ok', context: null }
     }
     try {
-      const results = await this.webSearch.search(text)
+      const query = normalizeSearchQuery(text)
+      const results = await this.webSearch.search(query)
       this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
         bot: bot.id,
         user: userId.slice(0, 64),
@@ -1962,7 +1964,7 @@ export class BotService {
         forced: force,
       })
       if (results.length === 0 && !force) return { kind: 'ok', context: null }
-      return { kind: 'ok', context: { query: text, results } }
+      return { kind: 'ok', context: { query, results } }
     } catch (error) {
       this.deps.log('warn', 'Bot 联网搜索失败', {
         bot: bot.id,
