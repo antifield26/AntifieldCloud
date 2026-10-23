@@ -373,6 +373,7 @@ describe('Bots 机器人管理', () => {
   })
 
   it('目标分区可创建允许 Chat 的目标并展示最近入站目标', async () => {
+    mocks.targetCreate.mockResolvedValue(target({ externalId: 'new-group', label: '聊天目标' }))
     mocks.targetInbound.mockResolvedValue([
       {
         botId: 'bot-1',
@@ -390,7 +391,8 @@ describe('Bots 机器人管理', () => {
     expect(await screen.findByText('测试成员')).toBeTruthy()
     await userEvent.click(screen.getByRole('button', { name: '登记' }))
     expect((screen.getByLabelText(/平台目标 ID/) as HTMLInputElement).value).toBe('new-group')
-    await waitFor(() => expect(screen.queryByText('测试成员')).toBeNull())
+    // 登记只填入表单，不立即移除；添加成功后按 externalId 查重隐藏。
+    expect(screen.getByText('测试成员')).toBeTruthy()
 
     await userEvent.type(screen.getByLabelText(/^名称/), '聊天目标')
     await userEvent.click(screen.getByRole('checkbox', { name: '允许 Chat' }))
@@ -401,6 +403,7 @@ describe('Bots 机器人管理', () => {
         expect.objectContaining({ externalId: 'new-group', allowChat: true }),
       ),
     )
+    await waitFor(() => expect(screen.queryByText('测试成员')).toBeNull())
   })
 
   it('发布表单仅提交纯文本与 TOTP 双确认', async () => {

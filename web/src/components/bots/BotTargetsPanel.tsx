@@ -66,7 +66,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [nameDraft, setNameDraft] = useState('')
   const [savingNameId, setSavingNameId] = useState<string | null>(null)
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set())
-  const [prefilledInbound, setPrefilledInbound] = useState<BotInboundTarget | null>(null)
   const [removeTarget, setRemoveTarget] = useState<BotTarget | null>(null)
   const [removing, setRemoving] = useState(false)
 
@@ -136,12 +135,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
           : {}),
       })
       setTargets((previous) => [...previous, created])
-      setInboundTargets((previous) =>
-        previous.filter(
-          (item) => !(item.targetExternalId === externalId.trim() && item.targetKind === kind),
-        ),
-      )
-      setPrefilledInbound(null)
       setExternalId('')
       setLabel('')
       setKind('channel')
@@ -153,17 +146,6 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
       toast.success(`已添加目标「${created.label}」`)
       onChanged(targets.length + 1)
     } catch (addError) {
-      if (prefilledInbound) {
-        setInboundTargets((previous) =>
-          previous.some(
-            (item) =>
-              item.targetExternalId === prefilledInbound.targetExternalId &&
-              item.userId === prefilledInbound.userId,
-          )
-            ? previous
-            : [prefilledInbound, ...previous],
-        )
-      }
       toast.error(toErrorMessage(addError, '添加目标失败，请检查 ID 是否重复'))
     } finally {
       setAdding(false)
@@ -195,15 +177,13 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         ? `${item.userName}（${targetKindLabel(item.targetKind)}）`
         : `${targetKindLabel(item.targetKind)} ${item.targetExternalId.slice(-6)}`,
     )
-    setInboundTargets((previous) =>
-      previous.filter(
-        (candidate) =>
-          !(candidate.targetExternalId === item.targetExternalId && candidate.userId === item.userId),
-      ),
-    )
-    setPrefilledInbound(item)
-    toast.info('已登记到下方表单；添加失败时该入站记录会恢复')
+    toast.info('已填入最近入站目标，请确认后添加')
   }
+
+  // 查重：已登记为目标的 externalId 不再出现在“最近入站目标”，删除目标后自动恢复显示。
+  const unregisteredInboundTargets = inboundTargets.filter(
+    (item) => !targets.some((target) => target.externalId === item.targetExternalId),
+  )
 
   const handleSaveName = async (event: FormEvent<HTMLFormElement>, target: BotTarget): Promise<void> => {
     event.preventDefault()
@@ -411,12 +391,12 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
           </div>
         </form>
 
-        {inboundTargets.length > 0 ? (
+        {unregisteredInboundTargets.length > 0 ? (
           <div className="bot-inbound-targets">
             <h3 className="subsection-title">最近入站目标</h3>
-            <p className="field-hint">来自最近的命令或 Chat 事件，只显示平台 ID 与用户；点击「登记」填入上方表单。</p>
+            <p className="field-hint">来自最近的命令或 Chat 事件，只显示平台 ID 与用户；点击「登记」填入上方表单，已登记为目标的 externalId 会自动隐藏。</p>
             <ul className="bot-target-list">
-              {inboundTargets.slice(0, 8).map((item) => (
+              {unregisteredInboundTargets.slice(0, 8).map((item) => (
                 <li
                   key={`${item.targetExternalId}:${item.userId}`}
                   className="bot-target-item"
