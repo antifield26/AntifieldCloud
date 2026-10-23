@@ -46,7 +46,7 @@
 - **附带**：`GET /api/auth/me` 清理旧父域 Cookie，降低 host-only 过渡期残留；BOT-04 deny-all 生产只读负路径验证（模型返回 `TOOLS_UNAVAILABLE`、无 tool 段、目标文件未创建）。
 - **本地门禁（2026-10-23）**：`npm run check` 通过；`npm test` **383**、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`node scripts/check-version.mjs` 通过。
 - **部署与复核（2026-10-23，已通过）**：release `20261023T063020Z`/commit `23d5ec4`；`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；最终迁移前快照 `db-predeploy-20261023T063052547Z.sqlite`（sha256 `94535865a5be06511d39029e00cc35361763fc22aaca68b169adef823744e206`）；生产 25 个 acked 归档文件均已被 PC 清理（此前会被标为 missing），用户刷新 Dashboard/备份页确认显示“已确认/副本已清理”，不再误报；部署后备份 `snapshot-20261023T063321997Z-inc.tar.gz`（168622 bytes，sha256 `0eca4a03a724d7887a6d43b03f59584a503642587392bebf789903159de0f2f0`，PC ack）+ 密钥包 `secrets-20261023T063324Z.tar.age`（1733483 bytes，secretsOk=true）。
-- **发布（待回填）**：main/Tag `v0.6.1`/GitHub Release；生产保留 3 个 release（`20261023T063020Z` current、`20261023T053539Z`、`20261023T052315Z`）。
+- **发布（已通过）**：main/Tag `v0.6.1`，GitHub Release [AntifieldCloud v0.6.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.1)（Latest）；生产保留 3 个 release（`20261023T063020Z` current、`20261023T053539Z`、`20261023T052315Z`）。
 
 ## v0.6.0（已部署并验收通过；质量与安全加固，schema 保持 v14、无迁移；最终 release `20261023T053539Z`/commit `6349617`）
 
