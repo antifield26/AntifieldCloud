@@ -477,6 +477,21 @@
   font-weight: 550;
 }
 
+.bot-target-name-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bot-target-name-input {
+  width: min(220px, 48vw);
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .bot-target-id {
   display: block;
   margin-top: 3px;

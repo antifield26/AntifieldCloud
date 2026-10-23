@@ -41,9 +41,9 @@
 
 ## v0.6.2（开发中，未发布；目标 QQ 号/群号 + 投递与发布单列；schema v15）
 
-- **范围**：Web “Bot/投递与发布”主网格由双列改单列；目标添加/管理展示并可编辑 QQ 号/群号（`qqNumber`，仅页面识别；QQ 官方 Bot 回调不含真实号码）；目标行新增“测试”按钮，向指定目标发送测试消息以确认号码对应关系。
+- **范围**：Web “Bot/投递与发布”主网格由双列改单列；目标添加/管理展示并可编辑 QQ 号/群号（`qqNumber`，仅页面识别；QQ 官方 Bot 回调不含真实号码）；目标名支持内联编辑；目标行新增“测试”按钮，向指定目标发送测试消息以确认号码对应关系。
 - **数据**：schema v15（迁移 15 新增 `bot_targets.qq_number TEXT` 可空）；已有目标 `qqNumber=null`；旧版本 v0.6.1 不支持 v15，回滚必须恢复迁移前快照。
-- **本地门禁**：`npm run check` 通过；`npm test` **394**（含 v0.6.2 目标 QQ 号/群号与迁移 15 用例）、`npm run test:web` **179**；服务端覆盖率 Lines **92.16%** / Branches **77.25%** / Functions **86.87%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-YaqZr2_8.js` 683.49 kB）；check-version 通过。
+- **本地门禁**：`npm run check` 通过；`npm test` **394**（含 v0.6.2 目标 QQ 号/群号与迁移 15 用例）、`npm run test:web` **180**；服务端覆盖率 Lines **92.16%** / Branches **77.25%** / Functions **86.87%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-V7O8HWYr.js` 684.69 kB）；check-version 通过。
 - **部署/验收**：待生产部署、smoke 与用户验收；完成后再决定 Tag/Release。
 
 ## v0.6.1（已发布：Tag/Release v0.6.1；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）

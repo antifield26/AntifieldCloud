@@ -598,6 +598,21 @@ describe('Bots 机器人管理', () => {
     expect(screen.getByText(/\/reset 重置当前对话/)).toBeTruthy()
   })
 
+  it('已配置目标可编辑名称并保存', async () => {
+    mocks.targetUpdate.mockResolvedValue(target({ label: '新名称' }))
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await userEvent.click(screen.getByRole('tab', { name: '目标' }))
+    await userEvent.click(await screen.findByRole('button', { name: '编辑目标名称 测试群' }))
+    const input = screen.getByLabelText('编辑目标名称 测试群') as HTMLInputElement
+    expect(input.value).toBe('测试群')
+    await userEvent.clear(input)
+    await userEvent.type(input, '新名称{Enter}')
+    await waitFor(() =>
+      expect(mocks.targetUpdate).toHaveBeenCalledWith('bot-1', 'target-1', { label: '新名称' }),
+    )
+  })
+
   it('目标行可向指定目标发送测试消息以确认号码对应关系', async () => {
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })

@@ -3,7 +3,7 @@
 
 import { useEffect, useId, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Plus, Radio, Send, Trash2, Users } from 'lucide-react'
+import { Pencil, Plus, Radio, Send, Trash2, Users } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type { BotInboundTarget, BotSummary, BotTarget, BotTargetKind } from '../../api/types'
 import { Badge } from '../Badge'
@@ -74,6 +74,9 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
   const [adding, setAdding] = useState(false)
   const [savingQqId, setSavingQqId] = useState<string | null>(null)
   const [testingId, setTestingId] = useState<string | null>(null)
+  const [editingNameId, setEditingNameId] = useState<string | null>(null)
+  const [nameDraft, setNameDraft] = useState('')
+  const [savingNameId, setSavingNameId] = useState<string | null>(null)
   const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(() => new Set())
   const [removeTarget, setRemoveTarget] = useState<BotTarget | null>(null)
   const [removing, setRemoving] = useState(false)
@@ -191,6 +194,28 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
         : `${targetKindLabel(item.targetKind)} ${item.targetExternalId.slice(-6)}`,
     )
     toast.info('已填入最近入站目标，请确认后添加')
+  }
+
+  const handleSaveName = async (event: FormEvent<HTMLFormElement>, target: BotTarget): Promise<void> => {
+    event.preventDefault()
+    if (!bot || savingNameId === target.id) return
+    const label = nameDraft.trim()
+    if (!label) {
+      toast.error('目标名称不能为空')
+      return
+    }
+    setSavingNameId(target.id)
+    try {
+      const updated = await api.bots.targets.update(bot.id, target.id, { label })
+      setTargets((previous) => previous.map((item) => (item.id === updated.id ? updated : item)))
+      setEditingNameId(null)
+      setNameDraft('')
+      toast.success('目标名称已更新')
+    } catch (updateError) {
+      toast.error(toErrorMessage(updateError, '更新目标名称失败，请重试'))
+    } finally {
+      setSavingNameId(null)
+    }
   }
 
   const handleSaveQqNumber = async (event: FormEvent<HTMLFormElement>, target: BotTarget): Promise<void> => {
@@ -470,7 +495,56 @@ export function BotTargetsPanel({ bot, refreshToken, onChanged }: BotTargetsPane
                 <li key={target.id} className="bot-target-item">
                   <div className="bot-target-main">
                     <div className="bot-target-title-row">
-                      <span className="bot-target-name">{target.label}</span>
+                      {editingNameId === target.id ? (
+                        <form className="bot-target-name-form" onSubmit={(event) => void handleSaveName(event, target)}>
+                          <input
+                            className="input bot-target-name-input"
+                            value={nameDraft}
+                            onChange={(event) => setNameDraft(event.target.value)}
+                            maxLength={80}
+                            aria-label={`编辑目标名称 ${target.label}`}
+                            autoFocus
+                            disabled={savingNameId === target.id}
+                          />
+                          <Button
+                            type="submit"
+                            size="sm"
+                            variant="secondary"
+                            loading={savingNameId === target.id}
+                          >
+                            保存
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEditingNameId(null)
+                              setNameDraft('')
+                            }}
+                            disabled={savingNameId === target.id}
+                          >
+                            取消
+                          </Button>
+                        </form>
+                      ) : (
+                        <>
+                          <span className="bot-target-name">{target.label}</span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={<Pencil size={13} aria-hidden="true" />}
+                            aria-label={`编辑目标名称 ${target.label}`}
+                            onClick={() => {
+                              setEditingNameId(target.id)
+                              setNameDraft(target.label)
+                            }}
+                            disabled={busy || savingNameId !== null}
+                          >
+                            编辑名称
+                          </Button>
+                        </>
+                      )}
                       <Badge tone="muted">{targetKindLabel(target.kind)}</Badge>
                       {target.quietStartMinute !== null && target.quietEndMinute !== null ? (
                         <Badge tone="info">
