@@ -205,22 +205,23 @@ test('QQ：op=13 只接受合法 token/时间戳，阻止签名预言机伪造�
   })
   assert.equal(badToken.kind, 'rejected')
 
-  // 官方示例形状仍可用：20 位字母数字 token + 10 位秒级时间戳。
+  // 官方示例形状仍可用：20 位字母数字 token + 10 位秒级时间戳；使用低熵测试值避免 secret-scan 误报。
+  const officialToken = 'aaaaaaaaaaaaaaaaaaaa'
   const official = await adapter.verifyInbound({
     botId: 'bot-1',
     headers: {},
     body: Buffer.from(
-      JSON.stringify({ op: 13, d: { plain_token: 'Arq0D5A61EgUu4OxUvOp', event_ts: '1725442341' } }),
+      JSON.stringify({ op: 13, d: { plain_token: officialToken, event_ts: '1725442341' } }),
     ),
   })
   assert.equal(official.kind, 'challenge')
   if (official.kind !== 'challenge') throw new Error('expected challenge')
   const challenge = official.body as { plain_token: string; signature: string }
-  assert.equal(challenge.plain_token, 'Arq0D5A61EgUu4OxUvOp')
+  assert.equal(challenge.plain_token, officialToken)
   assert.equal(
     verify(
       null,
-      Buffer.from('1725442341Arq0D5A61EgUu4OxUvOp', 'utf8'),
+      Buffer.from(`1725442341${officialToken}`, 'utf8'),
       publicKey,
       Buffer.from(challenge.signature, 'hex'),
     ),
