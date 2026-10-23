@@ -10,7 +10,6 @@ import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.ts'
 import { hotp, currentStep } from '../src/auth/totp.ts'
 import { BotChatRoleStore } from '../src/bot/roles.ts'
-import { BotMemoryStore } from '../src/bot/memory.ts'
 import { cookieHeader, currentCode, parseSetCookies, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
 import { signQqEvent, makeQqServiceFetch } from './bot-qq-fixtures.ts'
 
@@ -253,19 +252,60 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
     })
     assert.equal(roleBadPatch.statusCode, 400)
 
-    // 记忆管理：列表只含长度，删除返回 { ok: true }。
-    const memoryStore = new BotMemoryStore(db, dir, config.botAiMemoryMaxChars)
-    const memory = memoryStore.get(botId, 'user-1')
-    memoryStore.save(botId, 'user-1', memory.memoryId, '这条记忆正文不应出现在 API。', null)
+    // 记忆管理：用户级/条目元数据与删除返回 { ok: true }，绝不包含 key/value。
+    const insertItem = (id: string, kind: string, key: string, value: string): void => {
+      db.prepare(
+        `INSERT INTO bot_memory_items
+           (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at, last_used_at, expires_at)
+         VALUES (?, ?, 'user-1', ?, ?, ?, 0.8, 3, 'chat', '2026-10-22T00:00:00.000Z', '2026-10-22T00:00:00.000Z', NULL, NULL)`,
+      ).run(id, botId, kind, key, value)
+    }
+    insertItem('item-route-1', 'preference', 'KEY_SECRET_1', 'VALUE_SECRET_1')
+    insertItem('item-route-2', 'fact', 'KEY_SECRET_2', 'VALUE_SECRET_2')
     const memoryList = await context.app.inject({ method: 'GET', url: `/api/bots/${botId}/memories`, headers: { cookie } })
     assert.equal(memoryList.statusCode, 200)
-    // Chat 事件会为用户创建一条空记忆，这里断言目标用户记忆元数据存在。
+    // Chat 事件会为用户创建空状态，这里断言目标用户的结构化元数据存在。
     const seededMemory = (memoryList.json().items as Array<Record<string, unknown>>).find(
       (item) => item.userId === 'user-1',
     )
     assert.ok(seededMemory)
-    assert.equal(seededMemory.summaryLength, '这条记忆正文不应出现在 API。'.length)
-    assert.equal(JSON.stringify(memoryList.json()).includes('记忆正文'), false)
+    assert.equal(seededMemory.itemCount, 2)
+    assert.deepEqual(seededMemory.kinds, { preference: 1, fact: 1 })
+    assert.equal(typeof seededMemory.updatedAt, 'string')
+    const memoryJson = JSON.stringify(memoryList.json())
+    assert.equal(memoryJson.includes('KEY_SECRET'), false)
+    assert.equal(memoryJson.includes('VALUE_SECRET'), false)
+
+    const itemList = await context.app.inject({
+      method: 'GET',
+      url: `/api/bots/${botId}/memories/user-1/items?limit=20&offset=0`,
+      headers: { cookie },
+    })
+    assert.equal(itemList.statusCode, 200)
+    assert.equal(itemList.json().total, 2)
+    assert.equal(itemList.json().items[0].mem_key, undefined)
+    assert.equal(itemList.json().items[0].value, undefined)
+    assert.equal(JSON.stringify(itemList.json()).includes('KEY_SECRET'), false)
+    const itemDelete = await context.app.inject({
+      method: 'DELETE',
+      url: `/api/bots/${botId}/memories/user-1/items/item-route-1`,
+      headers: { cookie, 'x-csrf-token': csrf },
+    })
+    assert.equal(itemDelete.statusCode, 200)
+    assert.deepEqual(itemDelete.json(), { ok: true })
+    const itemDeleteMissing = await context.app.inject({
+      method: 'DELETE',
+      url: `/api/bots/${botId}/memories/user-1/items/item-route-1`,
+      headers: { cookie, 'x-csrf-token': csrf },
+    })
+    assert.equal(itemDeleteMissing.statusCode, 404)
+    const itemDeleteNoCsrf = await context.app.inject({
+      method: 'DELETE',
+      url: `/api/bots/${botId}/memories/user-1/items/item-route-2`,
+      headers: { cookie },
+    })
+    assert.equal(itemDeleteNoCsrf.statusCode, 403)
+
     const memoryDelete = await context.app.inject({
       method: 'DELETE',
       url: `/api/bots/${botId}/memories/user-1`,
@@ -274,7 +314,7 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
     assert.equal(memoryDelete.statusCode, 200)
     assert.deepEqual(memoryDelete.json(), { ok: true })
     assert.equal(
-      (db.prepare("SELECT COUNT(*) AS c FROM bot_ai_memories WHERE bot_id = ? AND user_id = 'user-1'").get(botId) as {
+      (db.prepare("SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = 'user-1'").get(botId) as {
         c: number
       }).c,
       0,

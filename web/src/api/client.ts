@@ -24,7 +24,8 @@ import type {
   BotEventItem,
   BotHealthCheck,
   BotInboundTarget,
-  BotMemorySummary,
+  BotMemoryItemSummary,
+  BotMemoryUserSummary,
   BotMetrics,
   BotConnectivitySnapshot,
   BotPublishInput,
@@ -1141,14 +1142,35 @@ export const api = {
       },
     },
     memories: {
+      /** 用户级结构化记忆元数据：条目数/类型分布/启用状态，不含正文。 */
       list(
         id: string,
         options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: BotMemorySummary[]; total: number }> {
-        return get<{ items: BotMemorySummary[]; total: number }>(
+      ): Promise<{ items: BotMemoryUserSummary[]; total: number }> {
+        return get<{ items: BotMemoryUserSummary[]; total: number }>(
           `/api/bots/${encodeId(id)}/memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
         )
       },
+      /** 单用户记忆条目元数据：只含类型/权重/时间，不含 key/value。 */
+      items(
+        id: string,
+        userId: string,
+        options: { limit?: number; offset?: number } = {},
+      ): Promise<{ items: BotMemoryItemSummary[]; total: number }> {
+        return get<{ items: BotMemoryItemSummary[]; total: number }>(
+          `/api/bots/${encodeId(id)}/memories/${encodeId(userId)}/items${buildQuery({
+            limit: options.limit,
+            offset: options.offset,
+          })}`,
+        )
+      },
+      /** 删除单条记忆；只提交条目 id，服务端不回传正文。 */
+      async removeItem(id: string, userId: string, itemId: string): Promise<void> {
+        await del<OkResult>(
+          `/api/bots/${encodeId(id)}/memories/${encodeId(userId)}/items/${encodeId(itemId)}`,
+        )
+      },
+      /** 删除某用户的全部记忆条目。 */
       async remove(id: string, userId: string): Promise<void> {
         await del<OkResult>(`/api/bots/${encodeId(id)}/memories/${encodeId(userId)}`)
       },

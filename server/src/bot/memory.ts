@@ -1,46 +1,138 @@
 /**
- * Bot 长期记忆存储：DB 为权威摘要，DATA_DIR/bot-memory 下的 Markdown 为镜像文件。
- * 安全边界：文件路径只由服务端生成的 memory UUID 组成；目录 0700、文件 0600；
- * 记忆正文不经过任何 HTTP API/前端读取（管理接口只返回长度等元数据）；文件写入使用临时文件 + 原子 rename。
+ * Bot 结构化长期记忆：条目存储、抽取操作合并、按相关性分层召回、旧滚动摘要迁移与清理。
+ * 安全边界：管理接口只返回类型/重要度等元数据，不返回 key/value；写入前过滤密钥/URL/内部路径；
+ * 记忆内容只作为提示词背景资料，不是指令；/memory off 时既不抽取也不注入。
  */
-import { DatabaseSync } from 'node:sqlite'
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import type { DatabaseSync } from 'node:sqlite'
+import { existsSync, rmSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { transaction } from '../db.ts'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
-import type { BotMemorySummary } from './types.ts'
+import type {
+  BotMemoryItemPrompt,
+  BotMemoryItemSummary,
+  BotMemoryKind,
+  BotMemoryOperation,
+  BotMemoryState,
+  BotMemoryUserSummary,
+} from './types.ts'
+import { BOT_MEMORY_KINDS } from './types.ts'
 
-const MEMORY_TITLE = '# AntifieldCloud Bot Memory'
-const FILE_READ_LIMIT = 32 * 1024
+const VALUE_MAX_CHARS = 500
+const KEY_MAX_CHARS = 64
+const EXTRACT_ITEM_LIMIT = 120
+const LEGACY_READ_LIMIT = 32 * 1024
+const CORE_KINDS = new Set<BotMemoryKind>(['profile', 'preference', 'task'])
 
-export interface BotMemory {
-  botId: string
-  userId: string
-  memoryId: string
-  summary: string
-  sessionId: string | null
-  filePath: string
-  updatedAt: string
+const KIND_LABEL: Record<BotMemoryKind, string> = {
+  profile: '资料',
+  preference: '偏好',
+  fact: '事实',
+  project: '项目',
+  task: '任务',
+  relationship: '关系',
+  episode: '事件',
 }
 
-interface MemoryRow {
+const SECRET_PATTERNS: readonly RegExp[] = [
+  /(?:password|passwd|token|secret|api[_-]?key|private[_-]?key|密码|口令|令牌|密钥)\s*[:=：]/i,
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+  /\b(?:ssh|https?):\/\/\S+/i,
+  /(?:[A-Za-z]:\\|\/(?:home|var|etc|opt|run|proc|sys|tmp)\/)/,
+]
+
+const STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'that', 'this', 'you', 'are', 'was', 'were', 'have', 'has', 'not', '但是', '然后',
+  '就是', '可以', '什么', '怎么', '我们', '你们', '他们', '这个', '那个', '一下', '一个', '现在', '今天', '明天',
+  '今天', '还是', '因为', '所以', '如果', '没有', '不是', '知道', '觉得', '喜欢', '哈哈', '好的', '谢谢',
+])
+
+export interface BotMemoryOptions {
+  maxItems: number
+  promptMaxChars: number
+  promptMaxItems: number
+  factProjectTtlDays: number
+  episodeTtlDays: number
+  taskTtlDays: number
+  legacyMaxChars: number
+}
+
+/** 从 Config 映射记忆存储参数（service/CLI 共用，避免两处默认值漂移）。 */
+export function memoryOptionsFromConfig(config: {
+  botMemoryMaxItems: number
+  botMemoryPromptMaxChars: number
+  botMemoryPromptMaxItems: number
+  botAiMemoryRetentionDays: number
+  botMemoryTtlEpisodeDays: number
+  botMemoryTtlTaskDays: number
+  botAiMemoryMaxChars: number
+}): BotMemoryOptions {
+  return {
+    maxItems: config.botMemoryMaxItems,
+    promptMaxChars: config.botMemoryPromptMaxChars,
+    promptMaxItems: config.botMemoryPromptMaxItems,
+    factProjectTtlDays: config.botAiMemoryRetentionDays,
+    episodeTtlDays: config.botMemoryTtlEpisodeDays,
+    taskTtlDays: config.botMemoryTtlTaskDays,
+    legacyMaxChars: config.botAiMemoryMaxChars,
+  }
+}
+
+export interface BotMemoryPromptContext {
+  /** 已格式化、可直接注入提示词的记忆文本；空字符串表示无记忆/已关闭。 */
+  text: string
+  usedItemIds: string[]
+  legacyFallback: boolean
+}
+
+export interface BotMemoryApplyResult {
+  upserts: number
+  deletes: number
+  skipped: number
+  pruned: number
+}
+
+export interface BotMemoryListPage<T> {
+  items: T[]
+  total: number
+}
+
+interface MemoryItemRow {
+  id: string
+  bot_id: string
+  user_id: string
+  kind: BotMemoryKind
+  mem_key: string
+  value: string
+  confidence: number
+  importance: number
+  source: string
+  created_at: string
+  updated_at: string
+  last_used_at: string | null
+  expires_at: string | null
+}
+
+interface MemoryStateRow {
+  bot_id: string
+  user_id: string
+  memory_enabled: number
+  legacy_migrated_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface LegacyRow {
   bot_id: string
   user_id: string
   memory_id: string
   summary: string
-  summary_session_id: string | null
   created_at: string
   updated_at: string
 }
 
-interface MemoryListRow {
-  user_id: string
-  summary: string
-  created_at: string
-  updated_at: string
-}
-
-function safeSummary(value: string, maxChars: number): string {
+function safeText(value: string, maxChars: number): string {
   return value
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
@@ -49,152 +141,538 @@ function safeSummary(value: string, maxChars: number): string {
     .slice(0, Math.max(0, maxChars))
 }
 
+function stripControl(value: string): string {
+  let out = ''
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    out += code < 32 || code === 127 ? ' ' : char
+  }
+  return out
+}
+
+function normalizeKey(value: string): string {
+  return stripControl(value)
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .trim()
+    .toLowerCase()
+    .slice(0, KEY_MAX_CHARS)
+}
+
+function normalizeValue(value: string): string {
+  return stripControl(value).replace(/\s+/g, ' ').trim().slice(0, VALUE_MAX_CHARS)
+}
+
+function isSensitive(value: string): boolean {
+  return SECRET_PATTERNS.some((pattern) => pattern.test(value))
+}
+
+function clamp(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+function tokenize(text: string): Set<string> {
+  const tokens = new Set<string>()
+  const lower = text.toLowerCase()
+  for (const match of lower.matchAll(/[a-z0-9]{2,}/g)) {
+    const token = match[0]
+    if (!STOP_WORDS.has(token)) tokens.add(token)
+  }
+  for (const match of lower.matchAll(/[\u4e00-\u9fff]+/g)) {
+    const run = match[0]
+    if (run.length === 1) continue
+    for (let i = 0; i < run.length - 1; i += 1) {
+      const token = run.slice(i, i + 2)
+      if (!STOP_WORDS.has(token)) tokens.add(token)
+    }
+  }
+  return tokens
+}
+
 export class BotMemoryStore {
   readonly dir: string
   private readonly db: DatabaseSync
-  private readonly maxChars: number
+  private readonly options: BotMemoryOptions
 
-  constructor(db: DatabaseSync, dataDir: string, maxChars: number) {
+  constructor(db: DatabaseSync, dataDir: string, options: BotMemoryOptions) {
     this.db = db
     this.dir = join(dataDir, 'bot-memory')
-    this.maxChars = Math.max(512, Math.min(16384, maxChars))
+    this.options = {
+      maxItems: Math.max(20, Math.min(1000, Math.floor(options.maxItems))),
+      promptMaxChars: Math.max(500, Math.min(8000, Math.floor(options.promptMaxChars))),
+      promptMaxItems: Math.max(1, Math.min(50, Math.floor(options.promptMaxItems))),
+      factProjectTtlDays: Math.max(1, Math.floor(options.factProjectTtlDays)),
+      episodeTtlDays: Math.max(1, Math.min(365, Math.floor(options.episodeTtlDays))),
+      taskTtlDays: Math.max(1, Math.min(180, Math.floor(options.taskTtlDays))),
+      legacyMaxChars: Math.max(512, Math.min(16384, Math.floor(options.legacyMaxChars))),
+    }
   }
 
-  /** 读取或惰性创建用户记忆；优先 DB 摘要，DB 为空时尝试镜像文件。 */
-  get(botId: string, userId: string): BotMemory {
-    const now = nowIso()
-    let row = this.db
-      .prepare('SELECT * FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
-      .get(botId, userId) as unknown as MemoryRow | undefined
-    if (!row) {
-      const memoryId = newId()
-      this.db
-        .prepare(
-          `INSERT INTO bot_ai_memories (bot_id, user_id, memory_id, summary, summary_session_id, created_at, updated_at)
-           VALUES (?, ?, ?, '', NULL, ?, ?)`,
-        )
-        .run(botId, userId, memoryId, now, now)
-      row = {
-        bot_id: botId,
-        user_id: userId,
-        memory_id: memoryId,
-        summary: '',
-        summary_session_id: null,
-        created_at: now,
-        updated_at: now,
-      }
-    }
-    const memory: BotMemory = {
-      botId,
-      userId,
-      memoryId: row.memory_id,
-      summary: row.summary,
-      sessionId: row.summary_session_id,
-      filePath: this.pathFor(row.memory_id),
-      updatedAt: row.updated_at,
-    }
-    if (!memory.summary && existsSync(memory.filePath)) {
-      try {
-        const text = readFileSync(memory.filePath, 'utf8').slice(0, FILE_READ_LIMIT)
-        const summary = safeSummary(text.replace(/^#[^\n]*\n+/, ''), this.maxChars)
-        if (summary) {
-          memory.summary = summary
-          this.save(botId, userId, row.memory_id, summary, row.summary_session_id)
-        }
-      } catch {
-        // 文件不可读时保持 DB 空摘要，后续轮次继续尝试。
-      }
-    }
-    if (!existsSync(memory.filePath)) this.writeMirror(memory)
-    return memory
+  /** 读取（不存在时创建默认）每用户记忆状态。 */
+  getState(botId: string, userId: string): BotMemoryState {
+    const row = this.ensureState(botId, userId)
+    return { memoryEnabled: row.memory_enabled === 1, legacyMigratedAt: row.legacy_migrated_at }
   }
 
-  /** 保存摘要与摘要会话；DB 先写，镜像文件失败不丢摘要。 */
-  save(botId: string, userId: string, memoryId: string, summary: string, sessionId: string | null): BotMemory {
-    const text = safeSummary(summary, this.maxChars)
+  setMemoryEnabled(botId: string, userId: string, enabled: boolean): void {
     const now = nowIso()
+    this.ensureState(botId, userId)
     this.db
-      .prepare(
-        `UPDATE bot_ai_memories
-         SET summary = ?, summary_session_id = ?, updated_at = ?
-         WHERE bot_id = ? AND user_id = ? AND memory_id = ?`,
-      )
-      .run(text, sessionId, now, botId, userId, memoryId)
-    const memory: BotMemory = {
-      botId,
-      userId,
-      memoryId,
-      summary: text,
-      sessionId,
-      filePath: this.pathFor(memoryId),
-      updatedAt: now,
-    }
-    try {
-      this.writeMirror(memory)
-    } catch {
-      // 镜像失败不影响 DB 权威记忆。
-    }
-    return memory
+      .prepare('UPDATE bot_memory_state SET memory_enabled = ?, updated_at = ? WHERE bot_id = ? AND user_id = ?')
+      .run(enabled ? 1 : 0, now, botId, userId)
   }
 
-  /** 管理页元数据分页：只返回长度/时间，不返回摘要正文。 */
-  list(botId: string, limit = 20, offset = 0): BotMemorySummary[] {
-    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
-    const safeOffset = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0))
+  markLegacyMigrated(botId: string, userId: string): void {
+    const now = nowIso()
+    this.ensureState(botId, userId)
+    this.db
+      .prepare('UPDATE bot_memory_state SET legacy_migrated_at = ?, updated_at = ? WHERE bot_id = ? AND user_id = ?')
+      .run(now, now, botId, userId)
+  }
+
+  /** 旧滚动摘要（仅用于迁移输入/未迁移 fallback）；DB 为空时尝试读取镜像文件。 */
+  legacySummary(botId: string, userId: string): { memoryId: string; summary: string } | null {
+    const row = this.db
+      .prepare('SELECT * FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
+      .get(botId, userId) as unknown as LegacyRow | undefined
+    if (!row) return null
+    let summary = row.summary
+    if (!summary) {
+      const path = this.pathFor(row.memory_id)
+      if (existsSync(path)) {
+        try {
+          summary = safeText(readFileSync(path, 'utf8').replace(/^#[^\n]*\n+/, '').slice(0, LEGACY_READ_LIMIT), this.options.legacyMaxChars)
+        } catch {
+          summary = ''
+        }
+      }
+    }
+    const text = safeText(summary, this.options.legacyMaxChars)
+    return text ? { memoryId: row.memory_id, summary: text } : null
+  }
+
+  /** 提供给抽取模型的现有条目（非过期，最多 120 条）。 */
+  itemsForExtraction(botId: string, userId: string): BotMemoryItemPrompt[] {
     const rows = this.db
       .prepare(
-        `SELECT user_id, summary, created_at, updated_at FROM bot_ai_memories
-         WHERE bot_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+        `SELECT kind, mem_key, value, importance, updated_at FROM bot_memory_items
+         WHERE bot_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?)
+         ORDER BY importance DESC, updated_at DESC LIMIT ?`,
       )
-      .all(botId, safeLimit, safeOffset) as unknown as MemoryListRow[]
+      .all(botId, userId, nowIso(), EXTRACT_ITEM_LIMIT) as unknown as MemoryItemRow[]
     return rows.map((row) => ({
-      userId: row.user_id,
-      userName: null,
-      summaryLength: row.summary.length,
-      createdAt: row.created_at,
+      kind: row.kind,
+      key: row.mem_key,
+      value: row.value,
+      importance: row.importance,
       updatedAt: row.updated_at,
     }))
   }
 
-  count(botId: string): number {
-    const row = this.db
-      .prepare('SELECT COUNT(*) AS c FROM bot_ai_memories WHERE bot_id = ?')
-      .get(botId) as { c: number }
-    return row.c
+  /**
+   * 构建注入提示词的记忆文本：核心类型优先，其余按关键词/重要度/时效召回；
+   * 未迁移时追加旧摘要 fallback。关闭记忆时返回空文本。
+   */
+  buildPromptContext(botId: string, userId: string, userText: string): BotMemoryPromptContext {
+    const state = this.getState(botId, userId)
+    if (!state.memoryEnabled) return { text: '', usedItemIds: [], legacyFallback: false }
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM bot_memory_items
+         WHERE bot_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?)
+         ORDER BY importance DESC, updated_at DESC`,
+      )
+      .all(botId, userId, nowIso()) as unknown as MemoryItemRow[]
+    const tokens = tokenize(userText)
+    const core = rows.filter((row) => CORE_KINDS.has(row.kind))
+    const relevant = rows
+      .filter((row) => !CORE_KINDS.has(row.kind))
+      .map((row) => ({ row, score: this.relevance(row, tokens) }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || b.row.importance - a.row.importance || b.row.updated_at.localeCompare(a.row.updated_at))
+    const selected: MemoryItemRow[] = []
+    for (const row of [...core, ...relevant.map((entry) => entry.row)]) {
+      if (selected.length >= this.options.promptMaxItems) break
+      selected.push(row)
+    }
+    const lines: string[] = []
+    let chars = 0
+    for (const row of selected) {
+      const line = `- ${KIND_LABEL[row.kind]}｜重要度${row.importance}｜${row.mem_key}：${row.value}`
+      if (chars + line.length + 1 > this.options.promptMaxChars) break
+      lines.push(line)
+      chars += line.length + 1
+    }
+    let legacyFallback = false
+    if (!state.legacyMigratedAt) {
+      const legacy = this.legacySummary(botId, userId)
+      if (legacy) {
+        const remaining = Math.max(0, this.options.promptMaxChars - chars - 20)
+        if (remaining > 0) {
+          const block = `[旧记忆（待迁移）]\n${legacy.summary.slice(0, remaining)}`
+          lines.push('', block)
+          legacyFallback = true
+        }
+      }
+    }
+    if (selected.length > 0) {
+      const now = nowIso()
+      const placeholders = selected.map(() => '?').join(',')
+      this.db
+        .prepare(`UPDATE bot_memory_items SET last_used_at = ? WHERE id IN (${placeholders})`)
+        .run(now, ...selected.map((row) => row.id))
+    }
+    return { text: lines.join('\n').trim(), usedItemIds: selected.map((row) => row.id), legacyFallback }
   }
 
-  /** 删除指定用户记忆（DB 行 + 镜像文件）；不存在返回 false。 */
-  remove(botId: string, userId: string): boolean {
-    const row = this.db
-      .prepare('SELECT memory_id FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
-      .get(botId, userId) as { memory_id: string } | undefined
-    if (!row) return false
-    try {
-      rmSync(this.pathFor(row.memory_id), { force: true })
-    } catch {
-      // 镜像文件已不存在或不可删时仍继续删 DB 行。
+  /** 校验并合并抽取操作；返回 upsert/delete/skipped/pruned 计数。 */
+  applyOperations(botId: string, userId: string, ops: readonly BotMemoryOperation[], source: 'chat' | 'legacy' = 'chat'): BotMemoryApplyResult {
+    const valid = this.validateOperations(ops)
+    const now = nowIso()
+    let pruned = 0
+    transaction(this.db, () => {
+      this.ensureState(botId, userId)
+      for (const op of valid.upserts) {
+        const expiresAt = this.expiresAtFor(op.kind, now)
+        this.db
+          .prepare(
+            `INSERT INTO bot_memory_items
+               (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at, last_used_at, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+             ON CONFLICT(bot_id, user_id, kind, mem_key) DO UPDATE SET
+               value = excluded.value,
+               confidence = excluded.confidence,
+               importance = excluded.importance,
+               source = excluded.source,
+               updated_at = excluded.updated_at,
+               expires_at = excluded.expires_at`,
+          )
+          .run(
+            newId(),
+            botId,
+            userId,
+            op.kind,
+            op.key,
+            op.value ?? '',
+            op.confidence ?? 0.8,
+            op.importance ?? 3,
+            source,
+            now,
+            now,
+            expiresAt,
+          )
+      }
+      for (const key of valid.deletes) {
+        const [kind, memKey] = key.split('\u0000') as [BotMemoryKind, string]
+        this.db
+          .prepare('DELETE FROM bot_memory_items WHERE bot_id = ? AND user_id = ? AND kind = ? AND mem_key = ?')
+          .run(botId, userId, kind, memKey)
+      }
+      pruned = this.prune(botId, userId, now)
+      this.db
+        .prepare('UPDATE bot_memory_state SET updated_at = ? WHERE bot_id = ? AND user_id = ?')
+        .run(now, botId, userId)
+    })
+    return {
+      upserts: valid.upserts.length,
+      deletes: valid.deletes.size,
+      skipped: valid.skipped,
+      pruned,
     }
+  }
+
+  /** 管理端用户级分页：只有条目计数/类型分布/状态，不含正文。 */
+  listUsers(botId: string, limit = 20, offset = 0): BotMemoryListPage<BotMemoryUserSummary> {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
+    const safeOffset = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0))
+    const now = nowIso()
+    const itemRows = this.db
+      .prepare(
+        `SELECT user_id, kind, COUNT(*) AS c, MAX(updated_at) AS upd FROM bot_memory_items
+         WHERE bot_id = ? AND (expires_at IS NULL OR expires_at > ?)
+         GROUP BY user_id, kind`,
+      )
+      .all(botId, now) as unknown as { user_id: string; kind: BotMemoryKind; c: number; upd: string }[]
+    const legacyRows = this.db
+      .prepare("SELECT user_id, updated_at FROM bot_ai_memories WHERE bot_id = ? AND summary <> ''")
+      .all(botId) as unknown as { user_id: string; updated_at: string }[]
+    const stateRows = this.db
+      .prepare('SELECT user_id, memory_enabled, updated_at FROM bot_memory_state WHERE bot_id = ?')
+      .all(botId) as unknown as { user_id: string; memory_enabled: number; updated_at: string }[]
+    const nameRows = this.db
+      .prepare('SELECT user_id, user_name FROM bot_inbound_targets WHERE bot_id = ? AND user_name IS NOT NULL ORDER BY last_seen_at DESC')
+      .all(botId) as unknown as { user_id: string; user_name: string }[]
+    const names = new Map<string, string>()
+    for (const row of nameRows) if (!names.has(row.user_id)) names.set(row.user_id, row.user_name)
+    const states = new Map(stateRows.map((row) => [row.user_id, row]))
+    const map = new Map<string, BotMemoryUserSummary>()
+    for (const row of itemRows) {
+      const current = map.get(row.user_id) ?? {
+        userId: row.user_id,
+        userName: names.get(row.user_id) ?? null,
+        itemCount: 0,
+        kinds: {},
+        memoryEnabled: true,
+        updatedAt: null,
+      }
+      current.itemCount += row.c
+      current.kinds[row.kind] = (current.kinds[row.kind] ?? 0) + row.c
+      if (!current.updatedAt || row.upd > current.updatedAt) current.updatedAt = row.upd
+      map.set(row.user_id, current)
+    }
+    for (const row of legacyRows) {
+      const current = map.get(row.user_id) ?? {
+        userId: row.user_id,
+        userName: names.get(row.user_id) ?? null,
+        itemCount: 0,
+        kinds: {},
+        memoryEnabled: true,
+        updatedAt: null,
+      }
+      if (!current.updatedAt || row.updated_at > current.updatedAt) current.updatedAt = row.updated_at
+      map.set(row.user_id, current)
+    }
+    for (const row of stateRows) {
+      if (!map.has(row.user_id)) {
+        map.set(row.user_id, {
+          userId: row.user_id,
+          userName: names.get(row.user_id) ?? null,
+          itemCount: 0,
+          kinds: {},
+          memoryEnabled: row.memory_enabled === 1,
+          updatedAt: row.updated_at,
+        })
+      }
+    }
+    const list = [...map.values()]
+      .map((entry) => ({ ...entry, memoryEnabled: (states.get(entry.userId)?.memory_enabled ?? 1) === 1 }))
+      .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+    return { items: list.slice(safeOffset, safeOffset + safeLimit), total: list.length }
+  }
+
+  /** 管理端条目元数据：只有 id/类型/重要度/置信度/时间，不含 key/value。 */
+  listItems(botId: string, userId: string, limit = 20, offset = 0): BotMemoryListPage<BotMemoryItemSummary> {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
+    const safeOffset = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0))
+    const total = (
+      this.db
+        .prepare('SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = ?')
+        .get(botId, userId) as { c: number }
+    ).c
+    const rows = this.db
+      .prepare(
+        `SELECT id, kind, importance, confidence, updated_at, expires_at FROM bot_memory_items
+         WHERE bot_id = ? AND user_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+      )
+      .all(botId, userId, safeLimit, safeOffset) as unknown as MemoryItemRow[]
+    return {
+      total,
+      items: rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        importance: row.importance,
+        confidence: row.confidence,
+        updatedAt: row.updated_at,
+        expiresAt: row.expires_at,
+      })),
+    }
+  }
+
+  /** 删除单条记忆（管理端）；返回是否删除。 */
+  deleteItem(botId: string, userId: string, itemId: string): boolean {
     const result = this.db
-      .prepare('DELETE FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
-      .run(botId, userId)
+      .prepare('DELETE FROM bot_memory_items WHERE id = ? AND bot_id = ? AND user_id = ?')
+      .run(itemId, botId, userId)
     return Number(result.changes) > 0
   }
 
-  /** 清理超过保留期的映射与文件；摘要不再可用时静默跳过。 */
-  cleanup(retentionDays: number): number {
-    const cutoff = new Date(Date.now() - Math.max(1, retentionDays) * 86_400_000).toISOString()
+  /** 删除用户全部结构化记忆、状态与旧摘要（/forget 或管理端整用户删除）。 */
+  deleteUser(botId: string, userId: string): { deletedItems: number; deletedLegacy: boolean; deletedState: boolean } {
+    const legacy = this.db
+      .prepare('SELECT memory_id FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
+      .get(botId, userId) as { memory_id: string } | undefined
+    const result = transaction(this.db, () => {
+      const items = this.db.prepare('DELETE FROM bot_memory_items WHERE bot_id = ? AND user_id = ?').run(botId, userId)
+      const state = this.db.prepare('DELETE FROM bot_memory_state WHERE bot_id = ? AND user_id = ?').run(botId, userId)
+      const summary = this.db.prepare('DELETE FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?').run(botId, userId)
+      return { deletedItems: Number(items.changes), deletedState: Number(state.changes) > 0, deletedLegacy: Number(summary.changes) > 0 }
+    })
+    if (legacy) this.removeMirror(legacy.memory_id)
+    return result
+  }
+
+  /** 清理过期条目（tick 周期调用）。 */
+  cleanup(): number {
+    const result = this.db
+      .prepare('DELETE FROM bot_memory_items WHERE expires_at IS NOT NULL AND expires_at <= ?')
+      .run(nowIso())
+    return Number(result.changes)
+  }
+
+  /** 已迁移用户列表（legacy 清理 CLI 使用，只返回内部 id，不含正文）。 */
+  listLegacyCleanupCandidates(): { botId: string; userId: string; memoryId: string }[] {
     const rows = this.db
-      .prepare('SELECT memory_id FROM bot_ai_memories WHERE updated_at < ?')
-      .all(cutoff) as unknown as { memory_id: string }[]
-    for (const row of rows) {
-      try {
-        rmSync(this.pathFor(row.memory_id), { force: true })
-      } catch {
-        // 文件已不存在或不可删时保持 DB 清理。
+      .prepare(
+        `SELECT m.bot_id, m.user_id, m.memory_id FROM bot_ai_memories m
+         JOIN bot_memory_state s ON s.bot_id = m.bot_id AND s.user_id = m.user_id
+         WHERE s.legacy_migrated_at IS NOT NULL`,
+      )
+      .all() as unknown as { bot_id: string; user_id: string; memory_id: string }[]
+    return rows.map((row) => ({ botId: row.bot_id, userId: row.user_id, memoryId: row.memory_id }))
+  }
+
+  /** 删除已迁移用户的旧摘要行与镜像；dryRun 只统计数据。 */
+  cleanupLegacyMigrated(dryRun: boolean): { users: number; files: number } {
+    const candidates = this.listLegacyCleanupCandidates()
+    if (dryRun) return { users: candidates.length, files: candidates.length }
+    let files = 0
+    for (const candidate of candidates) {
+      const result = this.db
+        .prepare('DELETE FROM bot_ai_memories WHERE bot_id = ? AND user_id = ? AND memory_id = ?')
+        .run(candidate.botId, candidate.userId, candidate.memoryId)
+      if (Number(result.changes) > 0) {
+        this.removeMirror(candidate.memoryId)
+        files += 1
       }
     }
-    const result = this.db.prepare('DELETE FROM bot_ai_memories WHERE updated_at < ?').run(cutoff)
-    return Number(result.changes)
+    return { users: candidates.length, files }
+  }
+
+  private ensureState(botId: string, userId: string): MemoryStateRow {
+    const existing = this.db
+      .prepare('SELECT * FROM bot_memory_state WHERE bot_id = ? AND user_id = ?')
+      .get(botId, userId) as unknown as MemoryStateRow | undefined
+    if (existing) return existing
+    const now = nowIso()
+    this.db
+      .prepare(
+        `INSERT INTO bot_memory_state (bot_id, user_id, memory_enabled, legacy_migrated_at, created_at, updated_at)
+         VALUES (?, ?, 1, NULL, ?, ?)`,
+      )
+      .run(botId, userId, now, now)
+    return {
+      bot_id: botId,
+      user_id: userId,
+      memory_enabled: 1,
+      legacy_migrated_at: null,
+      created_at: now,
+      updated_at: now,
+    }
+  }
+
+  private expiresAtFor(kind: BotMemoryKind, nowIsoValue: string): string | null {
+    if (kind === 'profile' || kind === 'preference') return null
+    const days =
+      kind === 'task'
+        ? this.options.taskTtlDays
+        : kind === 'episode'
+          ? this.options.episodeTtlDays
+          : this.options.factProjectTtlDays
+    return new Date(new Date(nowIsoValue).getTime() + days * 86_400_000).toISOString()
+  }
+
+  private relevance(row: MemoryItemRow, tokens: Set<string>): number {
+    if (tokens.size === 0) return 0
+    const keyText = row.mem_key.toLowerCase()
+    const valueText = row.value.toLowerCase()
+    let score = 0
+    for (const token of tokens) {
+      if (keyText.includes(token)) score += 3
+      if (valueText.includes(token)) score += 2
+    }
+    if (score === 0) return 0
+    score += row.importance * 0.4
+    const ageDays = Math.max(0, (Date.now() - new Date(row.updated_at).getTime()) / 86_400_000)
+    score += Math.max(0, 2 - ageDays / 30)
+    return score
+  }
+
+  private validateOperations(ops: readonly BotMemoryOperation[]): {
+    upserts: BotMemoryOperation[]
+    deletes: Set<string>
+    skipped: number
+  } {
+    const deletes = new Set<string>()
+    const upsertMap = new Map<string, BotMemoryOperation>()
+    let skipped = 0
+    for (const raw of ops.slice(0, 20)) {
+      if (!raw || !BOT_MEMORY_KINDS.includes(raw.kind) || (raw.op !== 'upsert' && raw.op !== 'delete')) {
+        skipped += 1
+        continue
+      }
+      const key = normalizeKey(String(raw.key ?? ''))
+      if (!key) {
+        skipped += 1
+        continue
+      }
+      const id = `${raw.kind}\u0000${key}`
+      if (raw.op === 'delete') {
+        deletes.add(id)
+        continue
+      }
+      const value = normalizeValue(String(raw.value ?? ''))
+      if (!value || isSensitive(value)) {
+        skipped += 1
+        continue
+      }
+      upsertMap.set(id, {
+        op: 'upsert',
+        kind: raw.kind,
+        key,
+        value,
+        confidence: clamp(Number(raw.confidence), 0, 1, 0.8),
+        importance: Math.round(clamp(Number(raw.importance), 1, 5, 3)),
+      })
+    }
+    for (const id of deletes) upsertMap.delete(id)
+    return { upserts: [...upsertMap.values()], deletes, skipped }
+  }
+
+  private prune(botId: string, userId: string, now: string): number {
+    this.db
+      .prepare('DELETE FROM bot_memory_items WHERE bot_id = ? AND user_id = ? AND expires_at IS NOT NULL AND expires_at <= ?')
+      .run(botId, userId, now)
+    let pruned = 0
+    let count = this.countItems(botId, userId)
+    while (count > this.options.maxItems) {
+      const rows = this.db
+        .prepare(
+          `SELECT id FROM bot_memory_items WHERE bot_id = ? AND user_id = ?
+           AND kind NOT IN ('profile','preference')
+           ORDER BY importance ASC, updated_at ASC LIMIT ?`,
+        )
+        .all(botId, userId, count - this.options.maxItems) as unknown as { id: string }[]
+      if (rows.length === 0) break
+      const ids = rows.map((row) => row.id)
+      const placeholders = ids.map(() => '?').join(',')
+      const result = this.db.prepare(`DELETE FROM bot_memory_items WHERE id IN (${placeholders})`).run(...ids)
+      pruned += Number(result.changes)
+      count = this.countItems(botId, userId)
+    }
+    while (count > this.options.maxItems) {
+      const rows = this.db
+        .prepare(
+          `SELECT id FROM bot_memory_items WHERE bot_id = ? AND user_id = ?
+           ORDER BY importance ASC, updated_at ASC LIMIT ?`,
+        )
+        .all(botId, userId, count - this.options.maxItems) as unknown as { id: string }[]
+      if (rows.length === 0) break
+      const ids = rows.map((row) => row.id)
+      const placeholders = ids.map(() => '?').join(',')
+      const result = this.db.prepare(`DELETE FROM bot_memory_items WHERE id IN (${placeholders})`).run(...ids)
+      pruned += Number(result.changes)
+      count = this.countItems(botId, userId)
+    }
+    return pruned
+  }
+
+  private countItems(botId: string, userId: string): number {
+    return (
+      this.db
+        .prepare('SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = ?')
+        .get(botId, userId) as { c: number }
+    ).c
   }
 
   private pathFor(memoryId: string): string {
@@ -202,12 +680,11 @@ export class BotMemoryStore {
     return join(this.dir, `memory-${memoryId}.md`)
   }
 
-  private writeMirror(memory: BotMemory): void {
-    mkdirSync(this.dir, { recursive: true, mode: 0o700 })
-    const body = `${MEMORY_TITLE}\n\n> 更新时间：${memory.updatedAt}\n\n${memory.summary || '（尚无记忆）'}\n`
-    const temp = `${memory.filePath}.${process.pid}.${Date.now()}.tmp`
-    writeFileSync(temp, body, { encoding: 'utf8', mode: 0o600 })
-    renameSync(temp, memory.filePath)
-    chmodSync(memory.filePath, 0o600)
+  private removeMirror(memoryId: string): void {
+    try {
+      rmSync(this.pathFor(memoryId), { force: true })
+    } catch {
+      // 镜像不存在或不可删时保持 DB 清理结果。
+    }
   }
 }

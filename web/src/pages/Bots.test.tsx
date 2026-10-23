@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   roleSetEnabled: vi.fn(),
   roleRemove: vi.fn(),
   memoriesList: vi.fn(),
+  memoryItems: vi.fn(),
+  memoryRemoveItem: vi.fn(),
   memoryRemove: vi.fn(),
   targetList: vi.fn(),
   targetInbound: vi.fn(),
@@ -63,6 +65,8 @@ vi.mock('../api/client', () => ({
       },
       memories: {
         list: mocks.memoriesList,
+        items: mocks.memoryItems,
+        removeItem: mocks.memoryRemoveItem,
         remove: mocks.memoryRemove,
       },
       metrics: mocks.metrics,
@@ -223,6 +227,8 @@ beforeEach(() => {
   mocks.roleSetEnabled.mockResolvedValue(undefined)
   mocks.roleRemove.mockResolvedValue(undefined)
   mocks.memoriesList.mockResolvedValue({ items: [], total: 0 })
+  mocks.memoryItems.mockResolvedValue({ items: [], total: 0 })
+  mocks.memoryRemoveItem.mockResolvedValue(undefined)
   mocks.memoryRemove.mockResolvedValue(undefined)
   mocks.targetList.mockResolvedValue([target()])
   mocks.targetInbound.mockResolvedValue([])
@@ -436,6 +442,19 @@ describe('Bots 机器人管理', () => {
       ],
       total: 1,
     })
+    mocks.memoriesList.mockResolvedValue({
+      items: [
+        {
+          userId: 'user-1',
+          userName: '小明',
+          itemCount: 3,
+          kinds: { profile: 2, preference: 1 },
+          memoryEnabled: true,
+          updatedAt: '2026-10-21T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+    })
     renderPage()
     await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
 
@@ -445,10 +464,55 @@ describe('Bots 机器人管理', () => {
 
     await userEvent.click(screen.getByRole('tab', { name: '角色与记忆' }))
     expect(await screen.findByRole('heading', { name: '角色卡' })).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: '长期记忆' })).toBeTruthy()
     expect((await screen.findAllByText('小明')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('3 条')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('记忆启用').length).toBeGreaterThan(0)
+    expect(Array.from(document.querySelectorAll('.bot-memory-kind')).map((el) => el.textContent)).toContain('资料2')
     expect(screen.getByText(/仅显示元数据，正文不通过 Web 暴露/)).toBeTruthy()
     expect(mocks.rolesList).toHaveBeenCalledWith('bot-1', { limit: 20, offset: 0 })
     expect(mocks.memoriesList).toHaveBeenCalledWith('bot-1', { limit: 20, offset: 0 })
+  })
+
+  it('角色与记忆分区可打开记忆条目对话框并展示元数据', async () => {
+    mocks.memoriesList.mockResolvedValue({
+      items: [
+        {
+          userId: 'user-1',
+          userName: '小明',
+          itemCount: 1,
+          kinds: { fact: 1 },
+          memoryEnabled: true,
+          updatedAt: '2026-10-21T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+    })
+    mocks.memoryItems.mockResolvedValue({
+      items: [
+        {
+          id: 'mem-1',
+          kind: 'fact',
+          importance: 5,
+          confidence: 0.9,
+          updatedAt: '2026-10-21T00:00:00.000Z',
+          expiresAt: null,
+        },
+      ],
+      total: 1,
+    })
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
+    await userEvent.click(screen.getByRole('tab', { name: '角色与记忆' }))
+
+    await userEvent.click((await screen.findAllByRole('button', { name: '查看记忆条目 小明' }))[0]!)
+    await screen.findByRole('dialog')
+    expect(await screen.findByRole('heading', { name: /记忆条目 · 小明/ })).toBeTruthy()
+    expect(mocks.memoryItems).toHaveBeenCalledWith('bot-1', 'user-1', { limit: 20, offset: 0 })
+    expect((await screen.findAllByText('事实')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('永不过期').length).toBeGreaterThan(0)
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
   it('诊断分区展示事件元数据并支持筛选', async () => {

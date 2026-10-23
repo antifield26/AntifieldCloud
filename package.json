@@ -1,6 +1,6 @@
 {
   "name": "antifieldcloud",
-  "version": "0.5.10",
+  "version": "0.5.11",
   "private": true,
   "license": "MIT",
   "description": "AntifieldCloud · Raspberry Pi 5 个人工作台",
@@ -22,7 +22,8 @@
     "test:web:watch": "vitest --config web/vitest.config.ts",
     "check": "npm run typecheck && npm run lint && npm test && npm run test:web",
     "provision": "node scripts/provision.mjs",
-    "backup": "node scripts/backup.mjs"
+    "backup": "node scripts/backup.mjs",
+    "cleanup:legacy-memory": "node scripts/cleanup-legacy-memory.mjs"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.3",

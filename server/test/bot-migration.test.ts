@@ -10,12 +10,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SUPPORTED_SCHEMA_VERSION, openDatabase } from '../src/db.ts'
 
-test('v6 库升级到 v13：创建 Bot/AI/Chat/角色卡表，并补齐触发策略与事件诊断列', () => {
+test('v6 库升级到 v14：创建 Bot/AI/Chat/角色卡表，并补齐触发策略与事件诊断列', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db = openDatabase({ path })
-    assert.equal(SUPPORTED_SCHEMA_VERSION, 13)
+    assert.equal(SUPPORTED_SCHEMA_VERSION, 14)
     // 模拟 v0.4.2 已升级到 v6、尚无 Bot 表的生产库；v7+ 新增表必须先删除，避免迁移建表冲突。
     db.exec(`
       DROP TABLE bot_chat_roles;
@@ -34,7 +34,7 @@ test('v6 库升级到 v13：创建 Bot/AI/Chat/角色卡表，并补齐触发策
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '13')
+      assert.equal(version.value, '14')
       const tables = (
         upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
       ).map((row) => row.name)
@@ -93,7 +93,7 @@ test('v6 库升级到 v13：创建 Bot/AI/Chat/角色卡表，并补齐触发策
   }
 })
 
-test('v12 库升级到 v13：删除非 QQ Bot 及其级联数据，保留 QQ Bot', () => {
+test('v12 库升级到 v14：删除非 QQ Bot 及其级联数据，保留 QQ Bot', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-v13-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -138,7 +138,7 @@ test('v12 库升级到 v13：删除非 QQ Bot 及其级联数据，保留 QQ Bot
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '13')
+      assert.equal(version.value, '14')
       const bots = upgraded.prepare('SELECT id FROM bots ORDER BY id').all() as unknown as { id: string }[]
       assert.deepEqual(bots.map((row) => row.id), ['bot-qq'])
       const count = (table: string): number => {
@@ -161,7 +161,7 @@ test('v12 库升级到 v13：删除非 QQ Bot 及其级联数据，保留 QQ Bot
   }
 })
 
-test('v11 库升级到 v13：追加触发策略与事件诊断列，旧行按默认值可读', () => {
+test('v11 库升级到 v14：追加触发策略与事件诊断列，旧行按默认值可读', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-v12-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -188,7 +188,7 @@ test('v11 库升级到 v13：追加触发策略与事件诊断列，旧行按默
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '13')
+      assert.equal(version.value, '14')
       const target = upgraded
         .prepare("SELECT chat_trigger FROM bot_targets WHERE id = 'target-v11'")
         .get() as { chat_trigger: string }
@@ -207,7 +207,7 @@ test('v11 库升级到 v13：追加触发策略与事件诊断列，旧行按默
   }
 })
 
-test('v9/v10 库升级到 v13：旧会话归 Chat，主键允许 task/chat 两行', () => {
+test('v9/v10 库升级到 v14：旧会话归 Chat，主键允许 task/chat 两行', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-session-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -263,6 +263,51 @@ test('v9/v10 库升级到 v13：旧会话归 Chat，主键允许 task/chat 两�
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'bot_chat_roles'")
         .get() as { name: string } | undefined
       assert.equal(roleTable?.name, 'bot_chat_roles')
+    } finally {
+      upgraded.close()
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 })
+  }
+})
+
+test('v13 库升级到 v14：创建结构化记忆表并保留旧滚动摘要', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-v14-'))
+  const path = join(dir, 'db.sqlite')
+  try {
+    const db = openDatabase({ path })
+    db.exec(`
+      DROP TABLE IF EXISTS bot_memory_state;
+      DROP TABLE IF EXISTS bot_memory_items;
+      INSERT INTO bots (id, platform, name, enabled, config_json, secret_ciphertext, secret_iv, secret_tag, key_version, created_at, updated_at)
+        VALUES ('bot-qq', 'qq', 'QQ', 1, '{}', 'x', 'x', 'x', 1, '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
+      INSERT INTO bot_ai_memories (bot_id, user_id, memory_id, summary, summary_session_id, created_at, updated_at)
+        VALUES ('bot-qq', 'user-1', '11111111-1111-4111-8111-111111111111', '旧摘要正文', NULL, '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z');
+      UPDATE meta SET value = '13' WHERE key = 'schema_version';
+    `)
+    db.close()
+
+    const upgraded = openDatabase({ path })
+    try {
+      const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
+      assert.equal(version.value, '14')
+      const tables = (
+        upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
+      ).map((row) => row.name)
+      assert.ok(tables.includes('bot_memory_items'))
+      assert.ok(tables.includes('bot_memory_state'))
+      const legacy = upgraded
+        .prepare("SELECT summary FROM bot_ai_memories WHERE bot_id = 'bot-qq' AND user_id = 'user-1'")
+        .get() as { summary: string }
+      assert.equal(legacy.summary, '旧摘要正文')
+      upgraded
+        .prepare(
+          `INSERT INTO bot_memory_items (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at)
+           VALUES ('m1', 'bot-qq', 'user-1', 'preference', 'coffee', '喜欢黑咖啡', 0.9, 3, 'chat', '2026-10-21T00:00:00.000Z', '2026-10-21T00:00:00.000Z')`,
+        )
+        .run()
+      const count = upgraded.prepare('SELECT COUNT(*) AS c FROM bot_memory_items').get() as { c: number }
+      assert.equal(count.c, 1)
     } finally {
       upgraded.close()
     }

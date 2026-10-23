@@ -628,6 +628,37 @@ const MIGRATIONS: string[] = [
   -- v0.5.8：Bot 平台收敛为 QQ 单平台；删除非 QQ Bot 配置及其级联数据（目标/队列/事件/会话/记忆/角色）。
   DELETE FROM bots WHERE platform <> 'qq';
   `,
+  `
+  -- v0.5.11：结构化长期记忆（条目 + 每用户状态）；旧滚动摘要表保留为迁移来源/备份。
+  CREATE TABLE IF NOT EXISTS bot_memory_items (
+    id TEXT PRIMARY KEY,
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('profile','preference','fact','project','task','relationship','episode')),
+    mem_key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    confidence REAL NOT NULL DEFAULT 0.8 CHECK (confidence >= 0 AND confidence <= 1),
+    importance INTEGER NOT NULL DEFAULT 3 CHECK (importance >= 1 AND importance <= 5),
+    source TEXT NOT NULL DEFAULT 'chat' CHECK (source IN ('chat','legacy')),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    last_used_at TEXT,
+    expires_at TEXT,
+    UNIQUE (bot_id, user_id, kind, mem_key)
+  );
+  CREATE INDEX IF NOT EXISTS idx_bot_memory_items_user ON bot_memory_items(bot_id, user_id, kind, importance);
+  CREATE INDEX IF NOT EXISTS idx_bot_memory_items_expiry ON bot_memory_items(expires_at);
+
+  CREATE TABLE IF NOT EXISTS bot_memory_state (
+    bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    memory_enabled INTEGER NOT NULL DEFAULT 1 CHECK (memory_enabled IN (0, 1)),
+    legacy_migrated_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (bot_id, user_id)
+  );
+  `,
 ]
 
 export interface OpenOptions {

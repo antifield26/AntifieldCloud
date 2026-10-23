@@ -244,20 +244,82 @@ export interface BotAi {
     /** 可选图片；未启用/不支持时由调用方降级为纯文本。 */
     image?: BotAiImage
   }): Promise<string>
-  /** 合并摘要长期记忆；每次使用一次性远端会话并在结束后删除。 */
-  summarizeMemory?(input: {
+  /**
+   * 从一批对话中抽取结构化记忆操作；每次使用一次性远端会话并在结束后删除。
+   * 模型只负责给出操作意图，业务校验与合并由 MemoryStore 完成。
+   */
+  extractMemories?(input: {
     botId: string
     userId: string
-    memoryId: string
-    existing: string
+    /** 当前未过期条目（用于让模型做 upsert/delete，而不是重复新增）。 */
+    existing: BotMemoryItemPrompt[]
+    /** 尚未迁移的旧滚动摘要；空字符串表示无。 */
+    legacySummary: string
     userText: string
     assistantText: string
-    maxChars: number
-  }): Promise<{ summary: string }>
+    maxOps: number
+  }): Promise<BotMemoryOperation[]>
   /** 删除远端 AI 会话（/reset、/forget、角色变更等本地映射清理时尽力删除）。 */
   deleteSession?(sessionId: string): Promise<void>
   /** 清理过期会话映射；未实现时服务端跳过。 */
   cleanup?(): number
+}
+
+/** 结构化记忆类型。 */
+export type BotMemoryKind = 'profile' | 'preference' | 'fact' | 'project' | 'task' | 'relationship' | 'episode'
+
+export const BOT_MEMORY_KINDS: readonly BotMemoryKind[] = [
+  'profile',
+  'preference',
+  'fact',
+  'project',
+  'task',
+  'relationship',
+  'episode',
+]
+
+/** 抽取模型输出的单条操作；value 仅 upsert 使用。 */
+export interface BotMemoryOperation {
+  op: 'upsert' | 'delete'
+  kind: BotMemoryKind
+  key: string
+  value?: string
+  confidence?: number
+  importance?: number
+}
+
+/** 提供给模型做合并判断的现有条目（不含 id/时间等内部字段）。 */
+export interface BotMemoryItemPrompt {
+  kind: BotMemoryKind
+  key: string
+  value: string
+  importance: number
+  updatedAt: string
+}
+
+/** 管理端条目元数据：绝不包含 key/value。 */
+export interface BotMemoryItemSummary {
+  id: string
+  kind: BotMemoryKind
+  importance: number
+  confidence: number
+  updatedAt: string
+  expiresAt: string | null
+}
+
+/** 管理端用户级记忆元数据：不含任何正文。 */
+export interface BotMemoryUserSummary {
+  userId: string
+  userName: string | null
+  itemCount: number
+  kinds: Partial<Record<BotMemoryKind, number>>
+  memoryEnabled: boolean
+  updatedAt: string | null
+}
+
+export interface BotMemoryState {
+  memoryEnabled: boolean
+  legacyMigratedAt: string | null
 }
 
 export interface BotMemoryRow {
@@ -315,15 +377,6 @@ export interface BotRoleSummary {
   updatedAt: string
 }
 
-/** 长期记忆管理元数据（不含正文）。 */
-export interface BotMemorySummary {
-  userId: string
-  userName: string | null
-  summaryLength: number
-  createdAt: string
-  updatedAt: string
-}
-
 export interface BotMetrics {
   hours: number
   deliveries: { total: number; sent: number; failed: number; dead: number; successRate: number }
@@ -373,5 +426,5 @@ export interface BotSummary {
   keyVersion: number
 }
 
-export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'role', 'reset', 'forget'] as const
+export const BOT_COMMANDS = ['help', 'status', 'backup', 'world', 'mc', 'files', 'role', 'reset', 'forget', 'memory'] as const
 export type BotCommandName = (typeof BOT_COMMANDS)[number]

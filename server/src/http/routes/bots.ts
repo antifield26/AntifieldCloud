@@ -142,6 +142,25 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
     })
   })
 
+  app.get('/api/bots/:id/memories/:userId/items', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const query = asRecord(request.query) ?? {}
+    return bots.listMemoryItems(requiredId(params.id, 'id'), requiredId(params.userId, 'userId'), {
+      limit: parsePositiveInt(query.limit, 20, 1, 200),
+      offset: offsetOf(query.offset),
+    })
+  })
+
+  app.delete('/api/bots/:id/memories/:userId/items/:itemId', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    bots.deleteMemoryItem(
+      requiredId(params.id, 'id'),
+      requiredId(params.userId, 'userId'),
+      requiredId(params.itemId, 'itemId'),
+    )
+    return { ok: true }
+  })
+
   app.delete('/api/bots/:id/memories/:userId', { preHandler: [requireAuth, csrf] }, async (request) => {
     const params = request.params as Record<string, string>
     bots.deleteMemory(requiredId(params.id, 'id'), requiredId(params.userId, 'userId'))

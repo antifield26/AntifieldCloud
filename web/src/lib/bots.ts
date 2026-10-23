@@ -4,6 +4,7 @@
 import type {
   BotDeliveryKind,
   BotDeliveryStatus,
+  BotMemoryKind,
   BotPlatform,
   BotPublishStatus,
   BotTarget,
@@ -21,6 +22,27 @@ export const BOT_TARGET_KIND_LABELS: Record<BotTargetKind, string> = {
   channel: '频道',
   user: '用户',
   group: '群组',
+}
+
+/** 结构化记忆类型展示顺序与中文标签（只展示类型名，不含 key/value）。 */
+export const BOT_MEMORY_KINDS: readonly BotMemoryKind[] = [
+  'profile',
+  'preference',
+  'fact',
+  'project',
+  'task',
+  'relationship',
+  'episode',
+]
+
+export const BOT_MEMORY_KIND_LABELS: Record<BotMemoryKind, string> = {
+  profile: '资料',
+  preference: '偏好',
+  fact: '事实',
+  project: '项目',
+  task: '任务',
+  relationship: '关系',
+  episode: '事件',
 }
 
 export const BOT_DELIVERY_KIND_LABELS: Record<BotDeliveryKind, string> = {

@@ -1029,12 +1029,34 @@ export interface BotRoleSummary {
   updatedAt: string
 }
 
-/** 长期记忆摘要：服务端只返回元数据，正文不通过 Web 暴露。 */
-export interface BotMemorySummary {
+/** 结构化长期记忆类型（v0.5.11）。 */
+export type BotMemoryKind =
+  | 'profile'
+  | 'preference'
+  | 'fact'
+  | 'project'
+  | 'task'
+  | 'relationship'
+  | 'episode'
+
+/** 管理端用户级记忆元数据：只含条目数/类型分布，不含任何 key/value 正文。 */
+export interface BotMemoryUserSummary {
   userId: string
   userName: string | null
-  /** 摘要字符数，仅用于展示规模，不返回正文。 */
-  summaryLength: number
-  createdAt: string
+  itemCount: number
+  kinds: Partial<Record<BotMemoryKind, number>>
+  memoryEnabled: boolean
+  /** 最近一条记忆更新时间；无条目时为 null。 */
+  updatedAt: string | null
+}
+
+/** 管理端单条记忆元数据：绝不包含 key/value 正文。 */
+export interface BotMemoryItemSummary {
+  id: string
+  kind: BotMemoryKind
+  importance: number
+  confidence: number
   updatedAt: string
+  /** null 表示永不过期。 */
+  expiresAt: string | null
 }

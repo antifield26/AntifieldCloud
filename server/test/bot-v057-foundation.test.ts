@@ -107,18 +107,36 @@ test('角色卡/长期记忆：管理列表只返回元数据，删除同时清�
       assert.equal(roles.setEnabled('bot-1', 'user-1', false), true)
       assert.equal(roles.list('bot-1')[0]!.enabled, false)
 
-      const memory = new BotMemoryStore(db, join(dir, 'data'), 4096)
-      const createdMemory = memory.get('bot-1', 'user-1')
-      const saved = memory.save('bot-1', 'user-1', createdMemory.memoryId, '记忆正文不应暴露。', null)
-      assert.ok(saved.summary.length > 0)
-      const memoryList = memory.list('bot-1')
-      assert.equal(memoryList.length, 1)
-      assert.equal(memoryList[0]!.summaryLength, '记忆正文不应暴露。'.length)
+      const memory = new BotMemoryStore(db, join(dir, 'data'), {
+        maxItems: 200,
+        promptMaxChars: 3000,
+        promptMaxItems: 12,
+        factProjectTtlDays: 365,
+        episodeTtlDays: 90,
+        taskTtlDays: 30,
+        legacyMaxChars: 4096,
+      })
+      const applied = memory.applyOperations('bot-1', 'user-1', [
+        { op: 'upsert', kind: 'preference', key: 'coffee', value: '记忆正文不应暴露。', confidence: 0.9, importance: 3 },
+      ])
+      assert.equal(applied.upserts, 1)
+      const memoryList = memory.listUsers('bot-1')
+      assert.equal(memoryList.total, 1)
+      assert.equal(memoryList.items[0]!.itemCount, 1)
+      assert.equal(memoryList.items[0]!.kinds.preference, 1)
       assert.ok(!JSON.stringify(memoryList).includes('记忆正文'))
-      assert.equal(memory.count('bot-1'), 1)
-      assert.equal(memory.remove('bot-1', 'user-1'), true)
-      assert.equal(memory.remove('bot-1', 'user-1'), false)
-      assert.equal(memory.count('bot-1'), 0)
+      const items = memory.listItems('bot-1', 'user-1')
+      assert.equal(items.total, 1)
+      assert.equal(items.items[0]!.kind, 'preference')
+      assert.ok(!JSON.stringify(items).includes('记忆正文'))
+      assert.equal(memory.deleteItem('bot-1', 'user-1', items.items[0]!.id), true)
+      assert.equal(memory.listItems('bot-1', 'user-1').total, 0)
+      memory.applyOperations('bot-1', 'user-1', [
+        { op: 'upsert', kind: 'fact', key: 'city', value: '常驻杭州', confidence: 0.8, importance: 4 },
+      ])
+      const deleted = memory.deleteUser('bot-1', 'user-1')
+      assert.equal(deleted.deletedItems, 1)
+      assert.equal(deleted.deletedState, true)
     } finally {
       db.close()
     }

@@ -1,8 +1,8 @@
 /**
- * Bot 平台服务（QQ 官方 Bot 单平台）：配置 CRUD、Webhook 验签/命令分发、通知/发布队列与投递重试。
+ * Bot 平台服务（QQ 官方 Bot 单平台）：配置 CRUD、Webhook 验签/命令分发、通知/发布队列、投递重试与结构化长期记忆。
  * 安全边界：AppSecret 只以 AES-256-GCM 密文落库；Webhook 无 session/CSRF，Ed25519 签名是唯一鉴权；
- * 自助命令（/help、/role 私聊、/reset、/forget）对所有用户开放；其余命令必须命中 bot_targets.allow_commands + 显式 user 白名单；
- * 发布只允许登录管理员调用；通知/命令输出不得包含内部路径、URL 或密钥。
+ * 自助命令（/help、/role 私聊、/reset、/forget、/memory）对所有用户开放；其余命令必须命中 bot_targets.allow_commands + 显式 user 白名单；
+ * 发布只允许登录管理员调用；通知/命令输出不得包含内部路径、URL 或密钥；记忆管理接口只返回元数据，不返回 key/value。
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
@@ -22,7 +22,9 @@ import {
   type BotHealthCheck,
   type BotInboundTarget,
   type BotInboundTargetRow,
-  type BotMemorySummary,
+  type BotMemoryItemSummary,
+  type BotMemoryKind,
+  type BotMemoryUserSummary,
   type BotMetrics,
   type BotPlatform,
   type BotPublishJob,
@@ -81,6 +83,18 @@ const IMAGE_DEGRADED_NOTE = '（图片未能处理，已按文字回答）'
 const IMAGE_UNSUPPORTED_TEXT = '当前暂不支持处理这张图片，可以用文字描述。'
 /** 仅图片无正文时交给模型的用户消息占位，避免空用户消息。 */
 const IMAGE_ONLY_USER_TEXT = '（用户发送了一张图片）'
+/** 结构化记忆类型的中文标签；仅用于 /memory 状态展示（不展示 key/value）。 */
+const MEMORY_KIND_LABEL: Record<BotMemoryKind, string> = {
+  profile: '资料',
+  preference: '偏好',
+  fact: '事实',
+  project: '项目',
+  task: '任务',
+  relationship: '关系',
+  episode: '事件',
+}
+/** 单次记忆抽取允许的最大操作数；与 MemoryStore 内部上限一致。 */
+const MEMORY_MAX_OPS = 20
 
 interface ParsedCommand {
   command: string
@@ -265,14 +279,19 @@ export class BotService {
   private stopped = false
   private ticking = false
   private readonly pending = new Set<Promise<void>>()
-  /** 合并中的待摘要对话：按 Bot×用户去重，减少高频 Chat 的额外模型调用。 */
+  /** 待抽取的对话批次：按 Bot×用户去重，减少高频 Chat 的额外模型调用。 */
   private readonly memoryPending = new Map<
     string,
     { bot: BotRow; userId: string; targetExternalId: string; rounds: { userText: string; assistantText: string }[] }
   >()
   private readonly memoryTimers = new Map<string, NodeJS.Timeout>()
-  /** 同一 Bot×用户的摘要串行执行，避免并发读到旧摘要后互相覆盖。 */
+  /** 同一 Bot×用户的记忆抽取串行执行，避免并发读到旧条目后互相覆盖。 */
   private readonly memoryQueues = new Map<string, Promise<void>>()
+  /**
+   * 每用户记忆 generation：/memory off、/forget、管理端删除会递增，
+   * 在途抽取写回前校验版本，避免被取消的批次把旧数据写回。
+   */
+  private readonly memoryGenerations = new Map<string, number>()
 
   constructor(deps: BotServiceDeps) {
     this.db = deps.db
@@ -282,7 +301,16 @@ export class BotService {
     this.webhookLimiter = new SlidingWindowLimiter(60_000, 300)
     this.aiLimiter = new SlidingWindowLimiter(3_600_000, Math.max(1, deps.config.botAiRatePerHour))
     this.chatLimiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botChatRatePerMinute))
-    this.memory = new BotMemoryStore(deps.db, deps.config.dataDir, deps.config.botAiMemoryMaxChars)
+    this.memory = new BotMemoryStore(deps.db, deps.config.dataDir, {
+      maxItems: deps.config.botMemoryMaxItems,
+      promptMaxChars: deps.config.botMemoryPromptMaxChars,
+      promptMaxItems: deps.config.botMemoryPromptMaxItems,
+      // fact/project 复用旧记忆保留期；episode/task 使用独立 TTL。
+      factProjectTtlDays: deps.config.botAiMemoryRetentionDays,
+      episodeTtlDays: deps.config.botMemoryTtlEpisodeDays,
+      taskTtlDays: deps.config.botMemoryTtlTaskDays,
+      legacyMaxChars: deps.config.botAiMemoryMaxChars,
+    })
     this.roles = new BotChatRoleStore(deps.db)
     this.connectivity = new BotConnectivityMonitor({
       enabled: deps.config.botEnabled && deps.config.botConnectivityEnabled,
@@ -650,36 +678,61 @@ export class BotService {
     })
   }
 
-  /** 长期记忆管理列表：只返回长度/时间等元数据，不返回摘要正文。 */
+  /**
+   * 结构化记忆管理：用户级元数据分页（条目数/类型分布/启停/更新时间），不含 key/value。
+   * userName 由 MemoryStore 结合最近入站目标补齐。
+   */
   listMemories(
     botId: string,
     options: { limit?: number; offset?: number } = {},
-  ): { items: BotMemorySummary[]; total: number } {
+  ): { items: BotMemoryUserSummary[]; total: number } {
     this.requireEnabled()
     this.botRow(botId)
     const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(options.limit) ? (options.limit as number) : 20)))
     const offset = Math.max(0, Math.floor(Number.isFinite(options.offset) ? (options.offset as number) : 0))
-    const names = this.inboundUserNames(botId)
-    const items = this.memory.list(botId, limit, offset).map((item) => ({
-      ...item,
-      userName: names.get(item.userId) ?? null,
-    }))
-    return { items, total: this.memory.count(botId) }
+    return this.memory.listUsers(botId, limit, offset)
   }
 
-  /** 删除指定用户的长期记忆（DB 行 + 镜像文件）；不存在时 404。 */
+  /** 管理端条目元数据分页：只有 id/类型/重要度/置信度/时间，不含 key/value。 */
+  listMemoryItems(
+    botId: string,
+    userId: string,
+    options: { limit?: number; offset?: number } = {},
+  ): { items: BotMemoryItemSummary[]; total: number } {
+    this.requireEnabled()
+    this.botRow(botId)
+    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(options.limit) ? (options.limit as number) : 20)))
+    const offset = Math.max(0, Math.floor(Number.isFinite(options.offset) ? (options.offset as number) : 0))
+    return this.memory.listItems(botId, userId, limit, offset)
+  }
+
+  /** 删除单条结构化记忆（管理端）；不存在时 404。审计不含 key/value。 */
+  deleteMemoryItem(botId: string, userId: string, itemId: string): void {
+    this.requireEnabled()
+    this.botRow(botId)
+    const id = itemId.trim().slice(0, 64)
+    if (!id) throw badRequest('记忆条目 ID 不能为空')
+    if (!this.memory.deleteItem(botId, userId, id)) throw notFound('记忆条目不存在')
+    this.deps.audit('bot.memory.delete_item', `${botId}:${userId.slice(0, 64)}`, {
+      bot: botId,
+      user: userId.slice(0, 64),
+      item: id,
+    })
+  }
+
+  /** 整用户删除结构化记忆（条目+状态+旧摘要+镜像）；不存在时 404。审计不含正文。 */
   deleteMemory(botId: string, userId: string): void {
     this.requireEnabled()
     this.botRow(botId)
-    const row = this.db
-      .prepare('SELECT length(summary) AS len FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?')
-      .get(botId, userId) as { len: number } | undefined
-    if (!row || !this.memory.remove(botId, userId)) throw notFound('长期记忆不存在')
-    this.deps.audit('bot.memory.admin', `${botId}:${userId.slice(0, 64)}`, {
-      action: 'delete',
+    // 先取消待处理批次并递增 generation，防止删除后在途抽取回写。
+    this.cancelUserMemory(botId, userId)
+    const result = this.memory.deleteUser(botId, userId)
+    if (result.deletedItems === 0 && !result.deletedState && !result.deletedLegacy) throw notFound('长期记忆不存在')
+    this.deps.audit('bot.memory.delete_user', `${botId}:${userId.slice(0, 64)}`, {
+      bot: botId,
       user: userId.slice(0, 64),
-      summaryLength: row.len,
-      at: nowIso(),
+      items: result.deletedItems,
+      legacy: result.deletedLegacy ? 1 : 0,
     })
   }
 
@@ -1287,8 +1340,9 @@ export class BotService {
       })
       return { status: 200, body: ack() }
     }
-    // /help、/role（私聊）、/reset、/forget 面向所有用户；其余命令需目标 allow_commands + user 白名单。
-    const openCommand = command === 'help' || command === 'role' || command === 'reset' || command === 'forget'
+    // /help、/role（私聊）、/reset、/forget、/memory 面向所有用户；其余命令需目标 allow_commands + user 白名单。
+    const openCommand =
+      command === 'help' || command === 'role' || command === 'reset' || command === 'forget' || command === 'memory'
     const target = this.inboundTarget(bot.id, result)
     const adminAllowed = Boolean(
       target && target.allow_commands === 1 && this.isCommandUserAllowed(bot.id, result.userId),
@@ -1446,6 +1500,9 @@ export class BotService {
         case 'forget':
           text = this.forgetMemory(bot, result, args)
           break
+        case 'memory':
+          text = this.executeMemoryCommand(bot, result, args)
+          break
         default:
           text = commandDenied()
       }
@@ -1478,7 +1535,10 @@ export class BotService {
     return '已重置当前对话（长期记忆保留）。'
   }
 
-  /** `/forget confirm`：清除长期记忆（DB+镜像）、全部会话映射与远端会话；幂等。 */
+  /**
+   * `/forget confirm`：删除结构化记忆（条目+状态+旧摘要+镜像）、全部会话映射与远端会话；幂等。
+   * 同时取消待处理批次并递增 generation，避免在途抽取把旧记忆写回。
+   */
   private forgetMemory(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
@@ -1487,11 +1547,73 @@ export class BotService {
     if (args.trim().toLowerCase() !== 'confirm') {
       return '用法：/forget confirm（将清除长期记忆与全部对话上下文，此操作不可恢复）。'
     }
+    this.cancelUserMemory(bot.id, result.userId)
     this.deleteRemoteSessions(bot.id, { userId: result.userId })
-    const removed = this.memory.remove(bot.id, result.userId)
+    const removed = this.memory.deleteUser(bot.id, result.userId)
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
-    this.deps.audit('bot.memory.forget', bot.id, { bot: bot.id, user: result.userId.slice(0, 64), removed: removed ? 1 : 0 })
+    this.deps.audit('bot.memory.forget', bot.id, {
+      bot: bot.id,
+      user: result.userId.slice(0, 64),
+      items: removed.deletedItems,
+      legacy: removed.deletedLegacy ? 1 : 0,
+    })
     return '已清除长期记忆与全部对话上下文。'
+  }
+
+  /** `/memory`：查看状态或 off/on 暂停/恢复；只展示条目计数与类型分布，不展示 key/value。 */
+  private executeMemoryCommand(
+    bot: BotRow,
+    result: Extract<InboundVerification, { kind: 'command' }>,
+    args: string,
+  ): string {
+    const sub = args.trim().toLowerCase()
+    if (sub === 'off' || sub === 'on') {
+      const enabled = sub === 'on'
+      this.memory.setMemoryEnabled(bot.id, result.userId, enabled)
+      if (!enabled) this.cancelUserMemory(bot.id, result.userId)
+      this.deps.audit('bot.memory.toggle', bot.id, {
+        bot: bot.id,
+        user: result.userId.slice(0, 64),
+        enabled,
+      })
+      return enabled
+        ? '已开启长期记忆：之后的对话会重新抽取记忆。'
+        : '已关闭长期记忆：不再抽取与注入，已取消待处理的记忆批次。'
+    }
+    return this.memoryStatusText(bot.id, result.userId)
+  }
+
+  /** /memory 状态文本：总条数、各类型计数、启用状态与最近更新时间（不含 key/value）。 */
+  private memoryStatusText(botId: string, userId: string): string {
+    const state = this.memory.getState(botId, userId)
+    // 通过 MemoryStore 元数据 API 聚合：总数取 total，各类型分页累计，避免读取条目正文。
+    const kinds = new Map<BotMemoryKind, number>()
+    let updatedAt: string | null = null
+    const first = this.memory.listItems(botId, userId, 200, 0)
+    let page = first
+    let offset = 0
+    while (true) {
+      for (const item of page.items) {
+        kinds.set(item.kind, (kinds.get(item.kind) ?? 0) + 1)
+        if (!updatedAt || item.updatedAt > updatedAt) updatedAt = item.updatedAt
+      }
+      offset += page.items.length
+      if (page.items.length === 0 || offset >= page.total) break
+      page = this.memory.listItems(botId, userId, 200, offset)
+    }
+    const kindText = [...kinds.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([kind, count]) => `${MEMORY_KIND_LABEL[kind] ?? kind} ${count}`)
+      .join('、')
+    const legacy = state.legacyMigratedAt ? null : this.memory.legacySummary(botId, userId)
+    return [
+      '【长期记忆】',
+      `状态：${state.memoryEnabled ? '已开启' : '已暂停'}`,
+      `条目：${first.total} 条${legacy ? '（含待迁移旧摘要）' : ''}`,
+      `类型：${kindText || '（暂无）'}`,
+      `最近更新：${updatedAt ?? '暂无'}`,
+      '说明：/memory off 暂停记忆（不再抽取与注入）；/memory on 恢复；/forget confirm 清除全部记忆。',
+    ].join('\n')
   }
 
   private async executeRoleCommand(
@@ -1759,10 +1881,11 @@ export class BotService {
     image?: BotAiImage,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
-    const memory = this.memory.get(bot.id, userId)
+    // 结构化记忆按相关性召回；关闭记忆或没有可用条目时不注入。
+    const memoryContext = this.memory.buildPromptContext(bot.id, userId, text)
     const prompt = buildBotPrompt({
       roleCard,
-      memory: memory.summary,
+      memory: memoryContext.text || undefined,
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
@@ -1771,6 +1894,7 @@ export class BotService {
       chars: text.length,
       ...(roleCard ? { role: true } : {}),
       ...(image ? { image: image.mime.slice(0, 50) } : {}),
+      ...(memoryContext.usedItemIds.length > 0 ? { memoryItems: memoryContext.usedItemIds.length } : {}),
     })
     const answer = await this.deps.ai.chat({
       botId: bot.id,
@@ -1806,9 +1930,29 @@ export class BotService {
     return cleaned.slice(0, this.config.botAiMaxReplyChars)
   }
 
+  /** Bot×用户记忆键：批处理、串行队列与 generation 共用。 */
+  private memoryKey(botId: string, userId: string): string {
+    return `${botId}:${userId}`
+  }
+
   /**
-   * 回复已发送后再更新长期记忆：按 Bot×用户合并待摘要对话，
-   * 达到条数阈值或用户空闲后触发一次摘要，减少高频 Chat 的额外模型调用。
+   * 取消某用户待处理的记忆批次并递增 generation：
+   * 已入队的在途抽取会在写回前发现版本变化而放弃，避免 `/memory off` 或 `/forget` 后被旧数据回写。
+   */
+  private cancelUserMemory(botId: string, userId: string): void {
+    const key = this.memoryKey(botId, userId)
+    this.memoryGenerations.set(key, (this.memoryGenerations.get(key) ?? 0) + 1)
+    const timer = this.memoryTimers.get(key)
+    if (timer) {
+      clearTimeout(timer)
+      this.memoryTimers.delete(key)
+    }
+    this.memoryPending.delete(key)
+  }
+
+  /**
+   * 回复已发送后再更新长期记忆：按 Bot×用户合并待抽取对话，
+   * 达到条数阈值或用户空闲后触发一次结构化抽取，减少高频 Chat 的额外模型调用。
    */
   private scheduleMemoryUpdate(
     bot: BotRow,
@@ -1817,8 +1961,10 @@ export class BotService {
     userText: string,
     assistantText: string,
   ): void {
-    if (!this.deps.ai?.summarizeMemory) return
-    const key = `${bot.id}:${userId}`
+    if (!this.deps.ai?.extractMemories) return
+    // 记忆已关闭的用户不进入批处理；开启后下一条 Chat 重新开始累计。
+    if (!this.memory.getState(bot.id, userId).memoryEnabled) return
+    const key = this.memoryKey(bot.id, userId)
     const entry = this.memoryPending.get(key) ?? { bot, userId, targetExternalId, rounds: [] }
     entry.bot = bot
     entry.targetExternalId = targetExternalId
@@ -1844,7 +1990,7 @@ export class BotService {
     }
   }
 
-  /** 把某用户待摘要批次送入串行队列；同用户摘要严格顺序执行，避免并发覆盖。 */
+  /** 把某用户待抽取批次送入串行队列；同用户抽取严格顺序执行，避免并发覆盖。 */
   private flushMemory(key: string): void {
     const timer = this.memoryTimers.get(key)
     if (timer) {
@@ -1857,10 +2003,14 @@ export class BotService {
     const rounds = entry.rounds.length
     const userText = entry.rounds.map((round) => round.userText).join('\n---\n')
     const assistantText = entry.rounds.map((round) => round.assistantText).join('\n---\n')
+    // 入队时记录 generation：排队期间被 /memory off、/forget 或管理端删除取消的批次不再执行。
+    const generation = this.memoryGenerations.get(key) ?? 0
     const previous = this.memoryQueues.get(key) ?? Promise.resolve()
     const task = previous
       .catch(() => undefined)
-      .then(() => this.updateMemory(entry.bot, entry.userId, entry.targetExternalId, userText, assistantText, rounds))
+      .then(() =>
+        this.updateMemory(entry.bot, entry.userId, entry.targetExternalId, userText, assistantText, rounds, generation),
+      )
     this.memoryQueues.set(key, task)
     this.pending.add(task)
     void task.finally(() => {
@@ -1869,13 +2019,18 @@ export class BotService {
     })
   }
 
-  /** 进程停止前把待摘要批次全部入队；不阻塞关闭流程。 */
+  /** 进程停止前把待抽取批次全部入队；不阻塞关闭流程。 */
   private flushPendingMemory(): void {
     for (const key of [...this.memoryPending.keys()]) this.flushMemory(key)
     for (const timer of this.memoryTimers.values()) clearTimeout(timer)
     this.memoryTimers.clear()
   }
 
+  /**
+   * 结构化记忆抽取：读取现有条目与未迁移旧摘要 → 模型输出操作 → MemoryStore 校验合并。
+   * 成功后迁移旧摘要标记；失败保留旧数据（fallback 继续生效）并在下一批重试。
+   * generation 变化（/memory off、/forget、管理端删除）时放弃写回。
+   */
   private async updateMemory(
     bot: BotRow,
     userId: string,
@@ -1883,27 +2038,51 @@ export class BotService {
     userText: string,
     assistantText: string,
     rounds: number,
+    generation: number,
   ): Promise<void> {
+    const key = this.memoryKey(bot.id, userId)
+    // 排队期间被取消（/memory off、/forget、管理端删除）：不再读取/写入任何记忆数据。
+    if ((this.memoryGenerations.get(key) ?? 0) !== generation) return
     try {
-      const memory = this.memory.get(bot.id, userId)
-      const updated = await this.deps.ai!.summarizeMemory!({
+      const state = this.memory.getState(bot.id, userId)
+      if (!state.memoryEnabled) return
+      const existing = this.memory.itemsForExtraction(bot.id, userId)
+      // 未迁移时把旧滚动摘要作为迁移输入；空摘要不触发迁移标记。
+      const legacy = state.legacyMigratedAt ? null : this.memory.legacySummary(bot.id, userId)
+      const legacySummary = legacy?.summary ?? ''
+      const ops = await this.deps.ai!.extractMemories!({
         botId: bot.id,
         userId,
-        memoryId: memory.memoryId,
-        existing: memory.summary,
+        existing,
+        legacySummary,
         userText,
         assistantText,
-        maxChars: this.config.botAiMemoryMaxChars,
+        maxOps: MEMORY_MAX_OPS,
       })
-      // 摘要使用一次性远端会话，不再保存摘要会话 id。
-      this.memory.save(bot.id, userId, memory.memoryId, updated.summary, null)
-      this.deps.audit('bot.ai.memory', `${bot.platform}:${targetExternalId}`, {
+      // 抽取期间记忆被关闭/清除：丢弃本次结果，避免旧数据回写。
+      if ((this.memoryGenerations.get(key) ?? 0) !== generation) return
+      const current = this.memory.getState(bot.id, userId)
+      if (!current.memoryEnabled) return
+      const result = this.memory.applyOperations(bot.id, userId, ops, 'chat')
+      let migrated = false
+      if (legacySummary && !current.legacyMigratedAt) {
+        this.memory.markLegacyMigrated(bot.id, userId)
+        migrated = true
+      }
+      this.deps.audit('bot.memory.extract', `${bot.platform}:${targetExternalId}`, {
         bot: bot.id,
         user: userId.slice(0, 64),
         rounds,
+        ops: ops.length,
+        upserts: result.upserts,
+        deletes: result.deletes,
+        skipped: result.skipped,
+        pruned: result.pruned,
+        migrated: migrated ? 1 : 0,
       })
     } catch (error) {
-      this.deps.log('warn', 'Bot 记忆摘要失败', {
+      // 失败不落任何部分数据；旧摘要 fallback 继续生效，下一批重试。
+      this.deps.log('warn', 'Bot 记忆抽取失败', {
         bot: bot.id,
         error: error instanceof Error ? error.message : 'unknown',
       })
@@ -1960,7 +2139,7 @@ export class BotService {
     try {
       this.db.prepare('DELETE FROM bot_events WHERE received_at < ?').run(cutoff)
       this.db.prepare('DELETE FROM bot_inbound_targets WHERE last_seen_at < ?').run(cutoff)
-      this.memory.cleanup(this.config.botAiMemoryRetentionDays)
+      this.memory.cleanup()
       this.db.prepare("DELETE FROM bot_deliveries WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
       this.db.prepare("DELETE FROM bot_publish_jobs WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
       this.deps.ai?.cleanup?.()

@@ -7,7 +7,7 @@ import { rmSync } from 'node:fs'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../src/config.ts'
 import { BotService } from '../src/bot/service.ts'
-import type { BotAiImage } from '../src/bot/types.ts'
+import type { BotAiImage, BotMemoryItemPrompt, BotMemoryOperation } from '../src/bot/types.ts'
 import { tempDataDir, testConfig, testDb } from './helpers.ts'
 
 export const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
@@ -138,6 +138,17 @@ export interface AiCall {
   image?: BotAiImage
 }
 
+/** 一次结构化记忆抽取调用的输入（用于断言批次内容/旧摘要迁移）。 */
+export interface MemoryExtractInput {
+  botId: string
+  userId: string
+  existing: BotMemoryItemPrompt[]
+  legacySummary: string
+  userText: string
+  assistantText: string
+  maxOps: number
+}
+
 export interface AuditRecord {
   action: string
   target: string | null
@@ -151,7 +162,9 @@ export interface QqServiceFixture {
   service: BotService
   fetch: QQServiceFetch
   aiCalls: AiCall[]
-  memoryCalls: { userText: string; assistantText: string }[]
+  extractCalls: MemoryExtractInput[]
+  /** 每次抽取返回的操作（扁平记录，便于断言 upsert/delete）。 */
+  memoryOps: BotMemoryOperation[]
   deletedSessions: string[]
   audits: AuditRecord[]
   botId: string
@@ -169,10 +182,18 @@ export function nextAppId(): string {
 export interface QqServiceOptions {
   aiEnabled?: boolean
   aiHandler?: (input: AiCall) => Promise<string>
-  summarizeMemory?: boolean
-  summarizeHandler?: (input: { userText: string; assistantText: string }) => Promise<{ summary: string }>
+  /** 是否提供 extractMemories（默认 aiEnabled 时提供）。 */
+  extractMemories?: boolean
+  extractHandler?: (input: MemoryExtractInput) => Promise<BotMemoryOperation[]>
   configOverrides?: Partial<Config>
   fetchOptions?: QQServiceFetchOptions
+}
+
+/** 默认抽取桩：把本批用户文本记成一条 fact，便于断言结构化落库。 */
+function defaultExtractOperations(input: MemoryExtractInput): BotMemoryOperation[] {
+  const value = input.userText.replace(/\s+/g, ' ').trim().slice(0, 200)
+  if (!value) return []
+  return [{ op: 'upsert', kind: 'fact', key: '最近对话', value, confidence: 0.8, importance: 3 }]
 }
 
 /** 建立 QQ Bot 服务实例（已创建并启用一个 QQ Bot）；用完调用 fixture.cleanup()。 */
@@ -187,12 +208,14 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
   })
   const fetch = makeQqServiceFetch(options.fetchOptions)
   const aiCalls: AiCall[] = []
-  const memoryCalls: { userText: string; assistantText: string }[] = []
+  const extractCalls: MemoryExtractInput[] = []
+  const memoryOps: BotMemoryOperation[] = []
   const deletedSessions: string[] = []
   const audits: AuditRecord[] = []
   const appId = nextAppId()
   const appSecret = `qq-app-secret-${randomBytes(8).toString('hex')}`
   const aiHandler = options.aiHandler ?? (async () => 'AI 回复')
+  const withExtraction = options.extractMemories ?? true
   const service = new BotService({
     db,
     config,
@@ -213,22 +236,25 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
               aiCalls.push(call)
               return aiHandler(call)
             },
-            ...(options.summarizeMemory === false
-              ? {}
-              : {
-                  summarizeMemory: async (input: { userText: string; assistantText: string }) => {
-                    memoryCalls.push({ userText: input.userText, assistantText: input.assistantText })
-                    if (options.summarizeHandler) return await options.summarizeHandler(input)
-                    return { summary: `记忆：${input.userText}` }
+            ...(withExtraction
+              ? {
+                  extractMemories: async (input: MemoryExtractInput) => {
+                    extractCalls.push(input)
+                    const ops = options.extractHandler
+                      ? await options.extractHandler(input)
+                      : defaultExtractOperations(input)
+                    memoryOps.push(...ops)
+                    return ops
                   },
-                  deleteSession: async (sessionId: string) => {
-                    deletedSessions.push(sessionId)
-                  },
-                  cleanup: () => {
-                    const cutoff = new Date(Date.now() - config.botAiSessionRetentionDays * 86_400_000).toISOString()
-                    return Number(db.prepare('DELETE FROM bot_ai_sessions WHERE updated_at < ?').run(cutoff).changes)
-                  },
-                }),
+                }
+              : {}),
+            deleteSession: async (sessionId: string) => {
+              deletedSessions.push(sessionId)
+            },
+            cleanup: () => {
+              const cutoff = new Date(Date.now() - config.botAiSessionRetentionDays * 86_400_000).toISOString()
+              return Number(db.prepare('DELETE FROM bot_ai_sessions WHERE updated_at < ?').run(cutoff).changes)
+            },
           },
         }
       : {}),
@@ -254,7 +280,8 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
     service,
     fetch,
     aiCalls,
-    memoryCalls,
+    extractCalls,
+    memoryOps,
     deletedSessions,
     audits,
     botId: bot.id,

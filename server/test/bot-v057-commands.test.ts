@@ -5,9 +5,8 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { BotMemoryStore } from '../src/bot/memory.ts'
 import { c2cWebhook, createQqServiceFixture, groupWebhook, lastMessageText, sendWebhook } from './bot-qq-fixtures.ts'
 
 const USER_ID = 'user-openid-1'
@@ -71,14 +70,27 @@ test('v0.5.7：/reset 对所有用户开放，删除当前目标的 chat+task �
   }
 })
 
-test('v0.5.7：/forget 必须 confirm；清除长期记忆+镜像+该 Bot×用户全部会话，且幂等', async () => {
+test('v0.5.7：/forget 必须 confirm；清除结构化记忆+旧摘要镜像+该 Bot×用户全部会话，且幂等', async () => {
   const fixture = createQqServiceFixture()
   try {
-    const memoryStore = new BotMemoryStore(fixture.db, fixture.dir, fixture.config.botAiMemoryMaxChars)
-    const created = memoryStore.get(fixture.botId, USER_ID)
-    memoryStore.save(fixture.botId, USER_ID, created.memoryId, '用户喜欢深色模式，这是记忆正文。', 'memory-session')
-    const mirrorPath = join(fixture.dir, 'bot-memory', `memory-${created.memoryId}.md`)
-    assert.ok(existsSync(mirrorPath), '记忆镜像文件应已创建')
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_memory_items
+           (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at, last_used_at, expires_at)
+         VALUES ('item-1', ?, ?, 'preference', '深色模式', '用户喜欢深色模式，这是记忆正文。', 0.8, 3, 'chat',
+                 '2026-10-22T00:00:00.000Z', '2026-10-22T00:00:00.000Z', NULL, NULL)`,
+      )
+      .run(fixture.botId, USER_ID)
+    const legacyId = '11111111-1111-4111-8111-111111111111'
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_ai_memories (bot_id, user_id, memory_id, summary, summary_session_id, created_at, updated_at)
+         VALUES (?, ?, ?, '旧摘要正文', 'memory-session', '2026-10-22T00:00:00.000Z', '2026-10-22T00:00:00.000Z')`,
+      )
+      .run(fixture.botId, USER_ID, legacyId)
+    const mirrorPath = join(fixture.dir, 'bot-memory', `memory-${legacyId}.md`)
+    mkdirSync(join(fixture.dir, 'bot-memory'), { recursive: true })
+    writeFileSync(mirrorPath, '# memo\n旧摘要正文\n', 'utf8')
     seedSession(fixture, USER_ID, USER_ID, 'chat', 'chat-1')
     seedSession(fixture, USER_ID, USER_ID, 'task', 'task-1')
     seedSession(fixture, GROUP_ID, USER_ID, 'chat', 'chat-2')
@@ -86,12 +98,29 @@ test('v0.5.7：/forget 必须 confirm；清除长期记忆+镜像+该 Bot×用�
 
     await command(fixture, '/forget', 'forget-1')
     assert.match(lastMessageText(fixture), /\/forget confirm/)
-    assert.equal(memoryStore.count(fixture.botId), 1, '未确认时不得删除记忆')
+    assert.equal(
+      (fixture.db.prepare('SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = ?').get(fixture.botId, USER_ID) as {
+        c: number
+      }).c,
+      1,
+      '未确认时不得删除记忆',
+    )
 
     await command(fixture, '/forget confirm', 'forget-2')
     assert.equal(lastMessageText(fixture), '已清除长期记忆与全部对话上下文。')
-    assert.equal(memoryStore.count(fixture.botId), 0)
-    assert.equal(existsSync(mirrorPath), false, '记忆镜像文件应删除')
+    assert.equal(
+      (fixture.db.prepare('SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = ?').get(fixture.botId, USER_ID) as {
+        c: number
+      }).c,
+      0,
+    )
+    assert.equal(
+      (fixture.db.prepare('SELECT COUNT(*) AS c FROM bot_ai_memories WHERE bot_id = ? AND user_id = ?').get(fixture.botId, USER_ID) as {
+        c: number
+      }).c,
+      0,
+    )
+    assert.equal(existsSync(mirrorPath), false, '旧摘要镜像文件应删除')
     const remaining = fixture.db
       .prepare('SELECT COUNT(*) AS c FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?')
       .get(fixture.botId, USER_ID) as { c: number }
@@ -120,8 +149,14 @@ test('v0.5.7：群聊 /reset /forget 对未授权目标开放，但 /status 仍�
       allowNotifications: false,
       allowChat: false,
     })
-    const memoryStore = new BotMemoryStore(fixture.db, fixture.dir, fixture.config.botAiMemoryMaxChars)
-    memoryStore.get(fixture.botId, 'member-openid-1')
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_memory_items
+           (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at, last_used_at, expires_at)
+         VALUES ('item-group-1', ?, 'member-openid-1', 'fact', '城市', '住在上海', 0.8, 3, 'chat',
+                 '2026-10-22T00:00:00.000Z', '2026-10-22T00:00:00.000Z', NULL, NULL)`,
+      )
+      .run(fixture.botId)
     seedSession(fixture, GROUP_ID, 'member-openid-1', 'chat', 'group-chat')
 
     await groupCommand(fixture, '/status', 'group-1')
@@ -134,7 +169,12 @@ test('v0.5.7：群聊 /reset /forget 对未授权目标开放，但 /status 仍�
 
     await groupCommand(fixture, '/forget confirm', 'group-3')
     assert.equal(lastMessageText(fixture), '已清除长期记忆与全部对话上下文。')
-    assert.equal(memoryStore.count(fixture.botId), 0)
+    assert.equal(
+      (fixture.db.prepare("SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = 'member-openid-1'").get(
+        fixture.botId,
+      ) as { c: number }).c,
+      0,
+    )
 
     // 群内 /role 仍只给友好提示，不读改角色卡。
     await groupCommand(fixture, '/role set 群角色 不应生效', 'group-4')

@@ -6,13 +6,10 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { tempDataDir, testConfig, testDb } from './helpers.ts'
 import { createQqServiceFixture } from './bot-qq-fixtures.ts'
 import { BotService } from '../src/bot/service.ts'
 import { BotChatRoleStore } from '../src/bot/roles.ts'
-import { BotMemoryStore } from '../src/bot/memory.ts'
 import { AppError } from '../src/util/errors.ts'
 import type { BotHealthCheck } from '../src/bot/types.ts'
 
@@ -118,35 +115,49 @@ test('v0.5.7：setRoleEnabled/deleteRole 的副作用与审计；删除角色清
   }
 })
 
-test('v0.5.7：listMemories 只返回元数据；deleteMemory 清理 DB 行与镜像文件并审计', () => {
+test('v0.5.7/v0.5.11：记忆用户级/条目元数据与删除，只返回元数据并审计', () => {
   const fixture = createQqServiceFixture()
   try {
     seedInbound(fixture, 'user-1', '小明')
-    const memory = new BotMemoryStore(fixture.db, fixture.dir, fixture.config.botAiMemoryMaxChars)
-    const one = memory.get(fixture.botId, 'user-1')
-    memory.save(fixture.botId, 'user-1', one.memoryId, '用户喜欢深色模式，这是记忆正文。', 'session-1')
-    const two = memory.get(fixture.botId, 'user-2')
-    memory.save(fixture.botId, 'user-2', two.memoryId, '第二条记忆正文。', null)
-    const mirrorPath = join(fixture.dir, 'bot-memory', `memory-${one.memoryId}.md`)
-    assert.ok(existsSync(mirrorPath))
+    const insertItem = (id: string, userId: string, kind: string, key: string, value: string): void => {
+      fixture.db
+        .prepare(
+          `INSERT INTO bot_memory_items
+             (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at, last_used_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, 0.8, 3, 'chat', '2026-10-22T00:00:00.000Z', '2026-10-22T00:00:00.000Z', NULL, NULL)`,
+        )
+        .run(id, fixture.botId, userId, kind, key, value)
+    }
+    insertItem('item-1', 'user-1', 'preference', '深色模式', '用户喜欢深色模式，这是记忆正文。')
+    insertItem('item-2', 'user-1', 'fact', '城市', '第二条记忆正文。')
+    insertItem('item-3', 'user-2', 'fact', '城市', '第三条记忆正文。')
 
     const list = fixture.service.listMemories(fixture.botId, { limit: 20, offset: 0 })
     assert.equal(list.total, 2)
     assert.equal(list.items.length, 2)
     const first = list.items.find((item) => item.userId === 'user-1')
     assert.equal(first?.userName, '小明')
-    assert.equal(first?.summaryLength, '用户喜欢深色模式，这是记忆正文。'.length)
-    assert.ok(first?.createdAt && first.updatedAt)
+    assert.equal(first?.itemCount, 2)
+    assert.equal(first?.kinds.preference, 1)
+    assert.equal(first?.kinds.fact, 1)
+    assert.equal(first?.memoryEnabled, true)
+    assert.ok(first?.updatedAt)
     assert.equal(JSON.stringify(list.items).includes('记忆正文'), false, '管理列表不得暴露记忆正文')
 
     const page = fixture.service.listMemories(fixture.botId, { limit: 1, offset: 1 })
     assert.equal(page.total, 2)
     assert.equal(page.items.length, 1)
 
+    const items = fixture.service.listMemoryItems(fixture.botId, 'user-1', { limit: 20, offset: 0 })
+    assert.equal(items.total, 2)
+    assert.equal(JSON.stringify(items).includes('记忆正文'), false, '条目元数据不得暴露 key/value')
+    fixture.service.deleteMemoryItem(fixture.botId, 'user-1', 'item-1')
+    assert.equal(fixture.service.listMemoryItems(fixture.botId, 'user-1').total, 1)
+    assert.ok(fixture.audits.some((item) => item.action === 'bot.memory.delete_item'))
+
     fixture.service.deleteMemory(fixture.botId, 'user-1')
-    assert.equal(memory.count(fixture.botId), 1)
-    assert.equal(existsSync(mirrorPath), false, '删除记忆应清理镜像文件')
-    assert.ok(fixture.audits.some((item) => item.action === 'bot.memory.admin' && item.detail?.action === 'delete'))
+    assert.equal(fixture.service.listMemoryItems(fixture.botId, 'user-1').total, 0)
+    assert.ok(fixture.audits.some((item) => item.action === 'bot.memory.delete_user'))
     assert.equal(JSON.stringify(fixture.audits).includes('记忆正文'), false)
     assert.throws(
       () => fixture.service.deleteMemory(fixture.botId, 'user-1'),

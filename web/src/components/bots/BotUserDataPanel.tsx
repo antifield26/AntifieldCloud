@@ -1,19 +1,27 @@
-// 角色与记忆分区：展示并管理私聊角色卡与长期记忆的元数据。
-// 安全边界：服务端只返回元数据，本组件绝不渲染角色设定或记忆摘要正文，也不提供正文查看/编辑入口；
-// 停用与删除只提交 userId，删除前必须二次确认。
+// 角色与记忆分区：展示并管理私聊角色卡与结构化长期记忆的元数据。
+// 安全边界：服务端只返回元数据，本组件绝不渲染角色设定或记忆 key/value 正文，也不提供正文查看/编辑入口；
+// 停用与删除只提交 userId / itemId，删除前必须二次确认。
 
 import { useCallback, useEffect, useState } from 'react'
-import { Brain, IdCard, ShieldCheck, Trash2 } from 'lucide-react'
+import { Brain, IdCard, ListTree, ShieldCheck, Trash2 } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
-import type { BotMemorySummary, BotRoleSummary, BotSummary } from '../../api/types'
+import type {
+  BotMemoryItemSummary,
+  BotMemoryUserSummary,
+  BotRoleSummary,
+  BotSummary,
+} from '../../api/types'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
 import { ConfirmDialog } from '../ConfirmDialog'
 import { EmptyState } from '../EmptyState'
+import { InlineError } from '../InlineError'
+import { Modal } from '../Modal'
 import { Table } from '../Table'
 import type { Column } from '../Table'
 import { useToast } from '../Toast'
+import { BOT_MEMORY_KINDS, BOT_MEMORY_KIND_LABELS } from '../../lib/bots'
 import { formatDateTime, truncateText } from '../../lib/format'
 
 /** 每页固定 20 条，与服务端 limit/offset 分页配合。 */
@@ -45,12 +53,33 @@ function UserCell({ userId, userName }: { userId: string; userName: string | nul
   )
 }
 
+/** 分数展示：模型输出的重要度/置信度按原值展示，非法值回退为占位符。 */
+function formatScore(value: number): string {
+  return Number.isFinite(value) ? String(value) : '—'
+}
+
 function pagerInfo(page: number, total: number): string {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   return `第 ${page} / ${totalPages} 页 · 共 ${total} 条`
 }
 
-/** 角色与记忆分区：两个卡片分别管理角色卡启停/删除与记忆删除。 */
+/** 类型分布只展示类型名与计数，不涉及任何 key/value 正文。 */
+function KindDistribution({ kinds }: { kinds: BotMemoryUserSummary['kinds'] }) {
+  const entries = BOT_MEMORY_KINDS.filter((kind) => (kinds[kind] ?? 0) > 0)
+  if (entries.length === 0) return <span className="cell-detail">—</span>
+  return (
+    <span className="bot-memory-kinds">
+      {entries.map((kind) => (
+        <span className="bot-memory-kind" key={kind}>
+          {BOT_MEMORY_KIND_LABELS[kind]}
+          <span className="bot-memory-kind-count">{kinds[kind] ?? 0}</span>
+        </span>
+      ))}
+    </span>
+  )
+}
+
+/** 角色与记忆分区：角色卡管理 + 结构化记忆用户列表与条目对话框。 */
 export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
   const toast = useToast()
   const botId = bot?.id ?? ''
@@ -62,12 +91,22 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
   const [rolesError, setRolesError] = useState<string | null>(null)
   const [rolesReloadKey, setRolesReloadKey] = useState(0)
 
-  const [memories, setMemories] = useState<BotMemorySummary[]>([])
+  const [memories, setMemories] = useState<BotMemoryUserSummary[]>([])
   const [memoriesTotal, setMemoriesTotal] = useState(0)
   const [memoriesPage, setMemoriesPage] = useState(1)
   const [memoriesLoading, setMemoriesLoading] = useState(true)
   const [memoriesError, setMemoriesError] = useState<string | null>(null)
   const [memoriesReloadKey, setMemoriesReloadKey] = useState(0)
+
+  const [itemsTarget, setItemsTarget] = useState<BotMemoryUserSummary | null>(null)
+  const [items, setItems] = useState<BotMemoryItemSummary[]>([])
+  const [itemsTotal, setItemsTotal] = useState(0)
+  const [itemsPage, setItemsPage] = useState(1)
+  const [itemsLoading, setItemsLoading] = useState(false)
+  const [itemsError, setItemsError] = useState<string | null>(null)
+  const [itemsReloadKey, setItemsReloadKey] = useState(0)
+  const [removeItemTarget, setRemoveItemTarget] = useState<BotMemoryItemSummary | null>(null)
+  const [removingItem, setRemovingItem] = useState(false)
 
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null)
@@ -119,6 +158,30 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
     }
   }, [botId, memoriesPage])
 
+  const itemsUserId = itemsTarget?.userId ?? ''
+  const loadItems = useCallback(async (): Promise<void> => {
+    if (!botId || !itemsUserId) {
+      setItems([])
+      setItemsTotal(0)
+      setItemsLoading(false)
+      return
+    }
+    setItemsLoading(true)
+    setItemsError(null)
+    try {
+      const result = await api.bots.memories.items(botId, itemsUserId, {
+        limit: PAGE_SIZE,
+        offset: (itemsPage - 1) * PAGE_SIZE,
+      })
+      setItems(result.items)
+      setItemsTotal(result.total)
+    } catch (loadError) {
+      setItemsError(toErrorMessage(loadError, '读取记忆条目失败'))
+    } finally {
+      setItemsLoading(false)
+    }
+  }, [botId, itemsUserId, itemsPage])
+
   useEffect(() => {
     void loadRoles()
   }, [loadRoles, refreshToken, rolesReloadKey])
@@ -126,6 +189,10 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
   useEffect(() => {
     void loadMemories()
   }, [loadMemories, refreshToken, memoriesReloadKey])
+
+  useEffect(() => {
+    void loadItems()
+  }, [loadItems, itemsReloadKey])
 
   const handleToggleRole = async (role: BotRoleSummary): Promise<void> => {
     if (!bot || busyKey) return
@@ -153,7 +220,8 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
         await loadRoles()
       } else {
         await api.bots.memories.remove(bot.id, confirmTarget.userId)
-        toast.success(`已清除「${confirmTarget.label}」的长期记忆`)
+        toast.success(`已删除「${confirmTarget.label}」的全部记忆`)
+        if (itemsTarget?.userId === confirmTarget.userId) setItemsTarget(null)
         await loadMemories()
       }
       setConfirmTarget(null)
@@ -161,11 +229,42 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
       toast.error(
         toErrorMessage(
           deleteError,
-          confirmTarget.kind === 'role' ? '删除角色卡失败，请重试' : '清除长期记忆失败，请重试',
+          confirmTarget.kind === 'role' ? '删除角色卡失败，请重试' : '删除全部记忆失败，请重试',
         ),
       )
     } finally {
       setConfirming(false)
+    }
+  }
+
+  const openItems = (memory: BotMemoryUserSummary): void => {
+    setItemsTarget(memory)
+    setItemsPage(1)
+    setItems([])
+    setItemsTotal(0)
+    setItemsError(null)
+  }
+
+  const closeItems = (): void => {
+    if (removingItem) return
+    setItemsTarget(null)
+    setRemoveItemTarget(null)
+  }
+
+  const handleRemoveItem = async (): Promise<void> => {
+    if (!bot || !itemsTarget || !removeItemTarget) return
+    setRemovingItem(true)
+    try {
+      await api.bots.memories.removeItem(bot.id, itemsTarget.userId, removeItemTarget.id)
+      toast.success('记忆条目已删除')
+      setRemoveItemTarget(null)
+      if (items.length <= 1 && itemsPage > 1) setItemsPage((value) => value - 1)
+      else await loadItems()
+      await loadMemories()
+    } catch (deleteError) {
+      toast.error(toErrorMessage(deleteError, '删除记忆条目失败，请重试'))
+    } finally {
+      setRemovingItem(false)
     }
   }
 
@@ -238,7 +337,7 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
     },
   ]
 
-  const memoryColumns: Column<BotMemorySummary>[] = [
+  const memoryColumns: Column<BotMemoryUserSummary>[] = [
     {
       key: 'user',
       header: '用户',
@@ -246,9 +345,28 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
       render: (memory) => <UserCell userId={memory.userId} userName={memory.userName} />,
     },
     {
-      key: 'length',
-      header: '记忆长度',
-      render: (memory) => <span className="bot-userdata-length">摘要 {memory.summaryLength} 字</span>,
+      key: 'itemCount',
+      header: '条目数',
+      render: (memory) => (
+        <span className="bot-userdata-length">{memory.itemCount} 条</span>
+      ),
+    },
+    {
+      key: 'kinds',
+      header: '类型分布',
+      render: (memory) => <KindDistribution kinds={memory.kinds} />,
+    },
+    {
+      key: 'status',
+      header: '状态',
+      render: (memory) =>
+        memory.memoryEnabled ? (
+          <Badge tone="success" dot>
+            记忆启用
+          </Badge>
+        ) : (
+          <Badge tone="muted">已暂停</Badge>
+        ),
     },
     {
       key: 'updatedAt',
@@ -262,19 +380,80 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
       render: (memory) => {
         const label = userLabel(memory.userId, memory.userName)
         return (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-danger"
-            icon={<Trash2 size={14} aria-hidden="true" />}
-            aria-label={`删除长期记忆 ${label}`}
-            disabled={busyKey !== null}
-            onClick={() => setConfirmTarget({ kind: 'memory', userId: memory.userId, label })}
-          >
-            删除
-          </Button>
+          <div className="bot-userdata-actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              aria-label={`查看记忆条目 ${label}`}
+              onClick={() => openItems(memory)}
+            >
+              查看条目
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-danger"
+              icon={<Trash2 size={14} aria-hidden="true" />}
+              aria-label={`删除全部记忆 ${label}`}
+              disabled={busyKey !== null}
+              onClick={() => setConfirmTarget({ kind: 'memory', userId: memory.userId, label })}
+            >
+              删除全部
+            </Button>
+          </div>
         )
       },
+    },
+  ]
+
+  const itemColumns: Column<BotMemoryItemSummary>[] = [
+    {
+      key: 'kind',
+      header: '类型',
+      primary: true,
+      render: (item) => <Badge tone="muted">{BOT_MEMORY_KIND_LABELS[item.kind]}</Badge>,
+    },
+    {
+      key: 'importance',
+      header: '重要度',
+      render: (item) => <span className="bot-memory-score">{formatScore(item.importance)}</span>,
+    },
+    {
+      key: 'confidence',
+      header: '置信度',
+      render: (item) => <span className="bot-memory-score">{formatScore(item.confidence)}</span>,
+    },
+    {
+      key: 'updatedAt',
+      header: '更新时间',
+      render: (item) => <span className="cell-time">{formatDateTime(item.updatedAt)}</span>,
+    },
+    {
+      key: 'expiresAt',
+      header: '过期时间',
+      render: (item) =>
+        item.expiresAt ? (
+          <span className="cell-time">{formatDateTime(item.expiresAt)}</span>
+        ) : (
+          <span className="cell-time">永不过期</span>
+        ),
+    },
+    {
+      key: 'actions',
+      header: '操作',
+      className: 'cell-actions',
+      render: (item) => (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-danger"
+          icon={<Trash2 size={14} aria-hidden="true" />}
+          aria-label={`删除记忆条目 ${BOT_MEMORY_KIND_LABELS[item.kind]} ${item.id}`}
+          onClick={() => setRemoveItemTarget(item)}
+        >
+          删除
+        </Button>
+      ),
     },
   ]
 
@@ -284,19 +463,20 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
         <EmptyState
           icon={<Brain size={24} />}
           title="请选择一个 Bot"
-          description="在顶部选择 Bot 后，可查看该 Bot 的用户角色卡与长期记忆元数据。"
+          description="在顶部选择 Bot 后，可查看该 Bot 的用户角色卡与结构化记忆元数据。"
         />
       </Card>
     )
   }
 
   const confirmIsRole = confirmTarget?.kind === 'role'
+  const itemsTotalPages = Math.max(1, Math.ceil(itemsTotal / PAGE_SIZE))
 
   return (
     <div className="bot-userdata">
       <div className="notice notice-muted bot-privacy-note" role="note">
         <ShieldCheck size={16} aria-hidden="true" />
-        仅显示元数据，正文不通过 Web 暴露：角色设定与记忆摘要只在服务端对话中使用，本页不提供查看或编辑入口。
+        仅显示元数据，正文不通过 Web 暴露：角色设定与记忆条目的 key/value 只在服务端对话中使用，本页不提供查看或编辑入口。
       </div>
 
       <Card
@@ -349,7 +529,7 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
 
       <Card
         title="长期记忆"
-        description="AI 对话滚动摘要的元数据；用户可通过 /forget confirm 清除，管理员也可在此删除。"
+        description="结构化记忆的用户级元数据（条目数、类型分布、启用状态）；正文不通过 Web 暴露，用户可通过 /forget confirm 清除。"
         actions={<Badge tone="muted"><Brain size={13} aria-hidden="true" /> {memoriesTotal} 位</Badge>}
         loading={memoriesLoading}
         error={memoriesError}
@@ -360,13 +540,13 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
           columns={memoryColumns}
           rows={memories}
           rowKey={(memory) => memory.userId}
-          caption="长期记忆元数据"
+          caption="结构化长期记忆用户级元数据"
           empty={
             <EmptyState
               compact
               icon={<Brain size={22} />}
               title="暂无长期记忆"
-              description="用户与 AI 对话产生摘要后，这里会显示长度与更新时间。"
+              description="用户与 AI 对话产生结构化记忆后，这里会显示条目数与类型分布。"
             />
           }
         />
@@ -395,20 +575,107 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
         ) : null}
       </Card>
 
+      <Modal
+        open={itemsTarget !== null}
+        size="lg"
+        title={itemsTarget ? `记忆条目 · ${userLabel(itemsTarget.userId, itemsTarget.userName)}` : '记忆条目'}
+        description="仅展示条目元数据：类型、重要度、置信度与时间；key 与 value 正文不通过 Web 暴露。"
+        onClose={closeItems}
+        footer={
+          <Button variant="secondary" onClick={closeItems} disabled={removingItem}>
+            关闭
+          </Button>
+        }
+      >
+        {itemsError ? (
+          <InlineError message={itemsError} onRetry={() => setItemsReloadKey((value) => value + 1)} />
+        ) : (
+          <div className="bot-memory-items">
+            <div className="bot-memory-items-meta">
+              <ListTree size={14} aria-hidden="true" />
+              <span>共 {itemsTotal} 条元数据</span>
+            </div>
+            <Table
+              className="bots-table-scroll"
+              columns={itemColumns}
+              rows={items}
+              rowKey={(item) => item.id}
+              loading={itemsLoading}
+              skeletonRows={3}
+              caption="记忆条目元数据"
+              empty={
+                <EmptyState
+                  compact
+                  icon={<Brain size={22} />}
+                  title="暂无记忆条目"
+                  description="用户产生结构化记忆后，条目元数据会在这里展示。"
+                />
+              }
+            />
+            {itemsTotal > PAGE_SIZE ? (
+              <div className="pager bot-userdata-pager">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label="上一页记忆条目"
+                  disabled={itemsPage <= 1 || itemsLoading}
+                  onClick={() => setItemsPage((value) => Math.max(1, value - 1))}
+                >
+                  上一页
+                </Button>
+                <span className="pager-info">{pagerInfo(itemsPage, itemsTotal)}</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  aria-label="下一页记忆条目"
+                  disabled={itemsPage >= itemsTotalPages || itemsLoading}
+                  onClick={() => setItemsPage((value) => value + 1)}
+                >
+                  下一页
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </Modal>
+
       <ConfirmDialog
         open={confirmTarget !== null}
-        title={confirmIsRole ? '删除角色卡' : '清除长期记忆'}
-        message={confirmTarget ? `确定删除用户「${confirmTarget.label}」的${confirmIsRole ? '角色卡' : '长期记忆摘要'}？` : ''}
+        title={confirmIsRole ? '删除角色卡' : '删除全部记忆'}
+        message={
+          confirmTarget
+            ? confirmIsRole
+              ? `确定删除用户「${confirmTarget.label}」的角色卡？`
+              : `确定删除用户「${confirmTarget.label}」的全部记忆条目？`
+            : ''
+        }
         details={
           confirmIsRole
             ? '删除后该用户将回退到内置角色，且其私聊会话会被清理；此操作不可撤销。'
-            : '删除后该用户与本 Bot 的长期记忆摘要会被清除，已有对话会话保留；此操作不可撤销。'
+            : '删除后该用户与本 Bot 的全部结构化记忆条目会被清除，已有对话会话保留；此操作不可撤销。'
         }
-        confirmText={confirmIsRole ? '删除角色卡' : '清除记忆'}
+        confirmText={confirmIsRole ? '删除角色卡' : '删除全部记忆'}
         loading={confirming}
         onConfirm={() => void handleConfirmDelete()}
         onClose={() => {
           if (!confirming) setConfirmTarget(null)
+        }}
+      />
+
+      <ConfirmDialog
+        open={removeItemTarget !== null}
+        title="删除记忆条目"
+        message={
+          removeItemTarget
+            ? `确定删除这条「${BOT_MEMORY_KIND_LABELS[removeItemTarget.kind]}」记忆条目？`
+            : ''
+        }
+        details="只会删除该条结构化记忆，不影响其他条目；此操作不可撤销。"
+        confirmText="删除条目"
+        loading={removingItem}
+        onConfirm={() => void handleRemoveItem()}
+        onClose={() => {
+          if (!removingItem) setRemoveItemTarget(null)
         }}
       />
     </div>

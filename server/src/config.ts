@@ -118,6 +118,14 @@ export interface Config {
   botAiMemoryBatchMessages: number
   /** 用户空闲多少秒后合并触发记忆摘要；0 表示关闭空闲触发、只按条数触发。 */
   botAiMemoryIdleFlushSeconds: number
+  /** 结构化记忆：每用户最多条目数（超出按过期/重要度清理）。 */
+  botMemoryMaxItems: number
+  /** 注入提示词的记忆字符预算与条数上限。 */
+  botMemoryPromptMaxChars: number
+  botMemoryPromptMaxItems: number
+  /** episode/task 的默认存活天数；fact/project 复用 BOT_AI_MEMORY_RETENTION_DAYS。 */
+  botMemoryTtlEpisodeDays: number
+  botMemoryTtlTaskDays: number
 
   /** AI 回答最大字符数；QQ 适配器会按平台上限分段发送。 */
   botAiMaxReplyChars: number
@@ -302,6 +310,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botAiMemoryRetentionDays: int(merged, 'BOT_AI_MEMORY_RETENTION_DAYS', 365, 30, 3650),
     botAiMemoryBatchMessages: int(merged, 'BOT_AI_MEMORY_BATCH_MESSAGES', 3, 1, 20),
     botAiMemoryIdleFlushSeconds: int(merged, 'BOT_AI_MEMORY_IDLE_FLUSH_SECONDS', 120, 0, 3600),
+    botMemoryMaxItems: int(merged, 'BOT_MEMORY_MAX_ITEMS', 200, 20, 1000),
+    botMemoryPromptMaxChars: int(merged, 'BOT_MEMORY_PROMPT_MAX_CHARS', 3000, 500, 8000),
+    botMemoryPromptMaxItems: int(merged, 'BOT_MEMORY_PROMPT_MAX_ITEMS', 12, 1, 50),
+    botMemoryTtlEpisodeDays: int(merged, 'BOT_MEMORY_TTL_EPISODE_DAYS', 90, 1, 365),
+    botMemoryTtlTaskDays: int(merged, 'BOT_MEMORY_TTL_TASK_DAYS', 30, 1, 180),
     botAiMaxReplyChars: int(merged, 'BOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
     botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', true),
     botAiImageMaxBytes: int(merged, 'BOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),

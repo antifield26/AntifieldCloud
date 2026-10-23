@@ -472,34 +472,87 @@ test('cleanup 只删除超过保留期的会话映射', async () => {
   }
 })
 
-test('v0.5.10：记忆摘要每次新建一次性远端会话并在结束后删除', async () => {
-  const fixture = setup(basicHandler({ messages: [assistant([{ type: 'text', text: '新记忆摘要' }])] }))
+test('v0.5.11：记忆抽取使用一次性会话、解析 JSON 并删除远端会话', async () => {
+  const plain = JSON.stringify({
+    operations: [
+      { op: 'upsert', kind: 'preference', key: 'coffee', value: '喜欢黑咖啡', confidence: 0.9, importance: 3 },
+      { op: 'delete', kind: 'task', key: 'old-task' },
+    ],
+  })
+  const fenced = '```json\n' + plain + '\n```'
+  let messageCalls = 0
+  const fixture = setup(
+    basicHandler({
+      messages: () => {
+        messageCalls += 1
+        return [assistant([{ type: 'text', text: messageCalls === 1 ? fenced : plain }])]
+      },
+    }),
+  )
   try {
-    const first = await fixture.ai.summarizeMemory({
+    const first = await fixture.ai.extractMemories({
       botId: BOT_ID,
       userId: USER,
-      memoryId: 'memory-1',
-      existing: '旧记忆',
-      userText: '用户说喜欢深色模式',
+      existing: [],
+      legacySummary: '',
+      userText: '用户说喜欢黑咖啡',
       assistantText: '记住了',
-      maxChars: 4096,
+      maxOps: 20,
     })
-    assert.deepEqual(first, { summary: '新记忆摘要' })
-    const second = await fixture.ai.summarizeMemory({
+    assert.deepEqual(
+      first.map((op) => [op.op, op.kind, op.key]),
+      [
+        ['upsert', 'preference', 'coffee'],
+        ['delete', 'task', 'old-task'],
+      ],
+    )
+    const second = await fixture.ai.extractMemories({
       botId: BOT_ID,
       userId: USER,
-      memoryId: 'memory-1',
-      existing: '新记忆摘要',
-      userText: '用户说喜欢猫',
+      existing: [{ kind: 'preference', key: 'coffee', value: '喜欢咖啡', importance: 2, updatedAt: '2026-10-22T00:00:00.000Z' }],
+      legacySummary: '旧摘要：喜欢深色模式',
+      userText: '继续聊',
       assistantText: '好的',
-      maxChars: 4096,
+      maxOps: 20,
     })
-    assert.deepEqual(second, { summary: '新记忆摘要' })
+    assert.equal(second.length, 2)
+    const promptBodies = fixture.calls
+      .filter((call) => call.method === 'POST' && call.url.pathname === `/api/session/${SESSION_ID}/prompt`)
+      .map((call) => String((call.body as Record<string, unknown>).text))
+    assert.ok(promptBodies[1]?.includes('[现有记忆]'))
+    assert.ok(promptBodies[1]?.includes('[旧摘要'))
     const creates = fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session')
     const deletes = fixture.calls.filter((call) => call.method === 'DELETE' && call.url.pathname.startsWith('/api/session/'))
-    assert.equal(creates.length, 2, '每次摘要都应新建一次性会话')
-    assert.equal(deletes.length, 2, '每次摘要后都应删除远端会话')
+    assert.equal(creates.length, 2, '每次抽取都应新建一次性会话')
+    assert.equal(deletes.length, 2, '每次抽取后都应删除远端会话')
     assert.ok(deletes.every((call) => call.url.pathname === `/api/session/${SESSION_ID}`))
+    assertNoSecret(fixture.logs)
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.5.11：记忆抽取非法 JSON 抛固定错误且仍删除会话', async () => {
+  const fixture = setup(basicHandler({ messages: [assistant([{ type: 'text', text: '不是 JSON' }])] }))
+  try {
+    await assert.rejects(
+      fixture.ai.extractMemories({
+        botId: BOT_ID,
+        userId: USER,
+        existing: [],
+        legacySummary: '',
+        userText: '你好',
+        assistantText: '你好',
+        maxOps: 20,
+      }),
+      (error: unknown) => {
+        assert.ok(error instanceof AppError)
+        assert.equal(error.code, 'bot_memory_extract_invalid')
+        return true
+      },
+    )
+    const deletes = fixture.calls.filter((call) => call.method === 'DELETE' && call.url.pathname.startsWith('/api/session/'))
+    assert.equal(deletes.length, 1)
     assertNoSecret(fixture.logs)
   } finally {
     dispose(fixture)

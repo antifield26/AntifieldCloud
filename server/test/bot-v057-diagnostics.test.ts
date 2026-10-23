@@ -329,7 +329,8 @@ test('v0.5.7：仅图片无正文时用中性占位送入模型', async () => {
     assert.ok(fixture.aiCalls[0]?.prompt.includes('（用户发送了一张图片）'))
     assert.equal(fixture.aiCalls[0]?.image?.mime, 'image/png')
     assert.equal(lastMessageText(fixture), '图片收到')
-    assert.equal(fixture.memoryCalls.length, 1, '占位文本用于记忆摘要')
+    assert.equal(fixture.extractCalls.length, 1, '占位文本用于结构化记忆抽取')
+    assert.equal(fixture.extractCalls[0]?.userText, '（用户发送了一张图片）')
   } finally {
     fixture.cleanup()
   }
