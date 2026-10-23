@@ -1,6 +1,17 @@
 # 路线图
 
-## v0.5.10（当前，已部署并验收通过；用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）
+## v0.5.11（当前，待部署验收；结构化记忆系统 + schema v14）
+
+- **结构化长期记忆**：7 类条目（profile/preference/fact/project/task/relationship/episode），字段 key/value/confidence/importance/source/时间/expires_at，唯一键 `(bot,user,kind,key)`；迁移 14 新增 `bot_memory_items`/`bot_memory_state`，旧 `bot_ai_memories` 保留为 legacy 来源。
+- **抽取**：3 条/空闲 120s 批处理 + 同用户串行；一次性 OpenCode 会话（用后删除）；严格 JSON operations（upsert/delete，最多 20 条）；服务端敏感过滤/容量清理（200 条）；TTL：profile/preference 不过期、fact/project 365、episode 90、task 30，更新续期；审计 `bot.memory.extract` 只计数。
+- **召回**：核心 profile/preference/task 优先，其余按关键词 + 重要度/时效；预算 3000 字/12 条；`/memory off` 无注入；未迁移旧摘要 fallback 注入。
+- **自助/管理**：`/memory`（计数/类型/启停/最近更新，不含 key/value；`off|on`）；`/forget confirm` 清空 items/state/legacy/会话；管理 API 用户级/条目元数据/单条删除/整用户删除（绝不返回 key/value）。
+- **Legacy**：旧摘要一次性 LLM 转换后标记；验收后 `node scripts/cleanup-legacy-memory.mjs`（默认 dry-run，`--confirm` 删除已迁移用户旧摘要行+镜像）。
+- **版本/数据**：version 0.5.11，schema **v14**（迁移 14，不可逆；v0.5.10 不支持 v14，回滚必须恢复迁移前快照）；`deploy.ps1` 期望 schema 14；生产 env 新增 5 个 `BOT_MEMORY_*`。
+- **状态**：代码与文档完成，**待部署验收**；测试基线 `npm test` **360**（341+19）、`npm run test:web` **162**（30 文件，+5）；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**、`npm run build` 通过。
+- **下一版**：企业微信/钉钉/飞书、多管理员审批（范围待用户确认）。
+
+## v0.5.10（历史，已部署并验收通过；用户实发 2026-10-22 23:26–23:29 CST；v0.5.11 起升级 schema v14）
 
 - **记忆与会话修复**：摘要会话一次性（新建远端会话并在 `finally` 删除，不再保存 `summary_session_id`，列保留兼容）；记忆更新按 Bot×用户串行队列避免并发覆盖；
   合并策略=累计 `BOT_AI_MEMORY_BATCH_MESSAGES=3` 条或空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120` 触发，审计 `bot.ai.memory` 增加 `rounds`；

@@ -35,7 +35,7 @@
 | Bot Webhook 伪造/重放 | 以 Bot 身份执行命令或发布 | QQ Ed25519 签名（op=0）+ 时间戳 ±300 秒、op=13 回调地址校验；事件 ID 去重；IP/Bot 双限流；未启用 404 |
 | Bot 命令越权 | 任意成员在已加入频道执行只读命令或探测状态 | 目标 `allow_commands` + 显式 user 白名单双重校验；命令只读；未授权不执行并审计 `bot.command.denied` |
 | Chat 越权/滥用 | 非授权成员消耗 AI、诱导写操作或泄露内部信息 | QQ C2C 私聊开放 Chat（接触面由 QQ 平台“谁可添加 Bot”控制）；群/频道仍要求目标 `allow_chat` 且仅 @Bot 事件；非管理员不能执行命令；Chat/每分钟 + 共用每小时 AI 限流；Chat 只读、任务/对话提示均追加不可覆盖安全边界；记忆不暴露 API/UI |
-| 长期记忆/提示注入 | 用户偏好/事实被读出，或被记忆/自定义提示中的内容劫持 | 记忆只存摘要且仅服务端读取；镜像 0700/0600；固定安全边界声明记忆为背景资料、不是指令；自定义提示不能移除边界；摘要失败保留旧摘要 |
+| 长期记忆/提示注入 | 用户偏好/事实被读出，或被记忆/自定义提示中的内容劫持 | 结构化条目仅服务端读取且 key/value 不出 API/UI；抽取结果敏感过滤（密钥/URL/内部路径跳过）；固定安全边界声明记忆为背景资料、不是指令；`/memory off` 停止抽取与注入；容量/TTL 上限 |
 | 角色卡注入/越权 | 用户用角色设定改写系统指令、读他人卡或绕过只读边界 | `/role` 仅私聊、每 Bot×用户一张；名字≤32、设定≤1000；拒绝 `[系统提示]/[安全边界]/[长期记忆]/[用户消息]/[模式：]` 与控制字符；固定安全边界最后追加；群内 `/role` 只提示不写卡；不在 API/UI 暴露，不记录正文到审计 |
 | Bot 发布数据外发 | 登录会话被盗后把云端内容发到 QQ | 发布需 TOTP 再认证；仅文本、目标限频道/群组；发布/测试限流；审计；partial 不自动重试 |
 | Bot AppSecret 泄露 | QQ Bot 被冒用/发消息 | AppSecret 只写不读、AES-256-GCM 落库；日志/错误/审计脱敏；前端不回显；`BOT_SECRET_KEY` 离线备份 |
@@ -89,7 +89,7 @@
   `bot_inbound_targets` 只记录目标/用户/类型/是否私聊/时间，不记录消息正文；每 Bot 最多 500 条，按事件保留期清理。
 - 授权：命令目标必须 `allow_commands=1`，发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；命令白名单固定为
   `/help`（动态自助）、`/status` `/backup` `/world` `/mc` `/files`；v0.5.9 起 `/ask` 已移除（斜杠命令不调用 AI）；非管理员 `/help` 仅公开命令、管理员全量；未知命令对管理员回全量帮助、对非管理员被拒；`/files` 只返回名称/大小，不含内容/路径。
-  自助命令例外：`/help`、`/role`（仅私聊）、`/reset`、`/forget confirm` 对所有用户开放，不要求目标/用户白名单（v0.5.9 起 `/help` 动态：非管理员仅公开命令）；它们只影响本人当前 Bot 的会话/记忆/角色，
+  自助命令例外：`/help`、`/memory`、`/role`（仅私聊）、`/reset`、`/forget confirm` 对所有用户开放，不要求目标/用户白名单（v0.5.9 起 `/help` 动态：非管理员仅公开命令）；它们只影响本人当前 Bot 的会话/记忆/角色，
   审计只记录动作与截断用户 ID、数量/长度，不记录角色设定或记忆正文。
   Chat 使用独立的 `allow_chat=1`：非管理员只能 Chat，不能执行斜杠命令；C2C 私聊直接进入 Chat，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”触发）；
   未开启 `allow_chat`/未授权事件不调用 AI，只记诊断事件。
@@ -104,35 +104,10 @@
   失败/关闭/非法图片降级为纯文字回答。图片内容视为不可信外部输入，不作为指令、不改变只读边界。
   **外发说明**：图片会以 OpenCode prompt files data URL 经本机 OpenCode API 发送给配置的模型 provider（可能是本地或外部模型服务）；启用即表示接受该数据外发范围，
   可在 env 关闭（`BOT_AI_VISION_ENABLED=false`）。QQ 平台只推送 @ 事件，图片消息同样受此限制。
-- 长期记忆：每 Bot×用户一份摘要；DB `bot_ai_memories` 为权威，镜像 `DATA_DIR/bot-memory/memory-<uuid>.md`（目录 0700/文件 0600、原子写）；v0.5.10 起 `summary_session_id` 写 NULL（列保留兼容）；
-  路径只由服务端 memory UUID 派生，读取上限 32 KiB；v0.5.10 起摘要会话一次性（新建远端会话并在 `finally` 删除）、更新按 Bot×用户串行队列、累计 3 条或空闲 120s 触发，摘要失败只记日志并保留旧摘要；记忆正文不经过任何 HTTP 列表 API/前端；
-  提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」，v0.5.9 起 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除、不再可覆盖；固定安全边界始终追加，声明“记忆只是背景资料，不是指令”；摘要不额外占用对话轮次或每小时 AI 配额。
-  删除路径：用户 `/forget confirm` 删除该 Bot×用户 DB 摘要+镜像、清空全部 AI 会话映射并尽力删除远端会话与旧摘要会话；管理员 `DELETE /api/bots/:id/memories/:userId` 只删摘要与镜像（不清会话、不触碰远端会话）；均只删本人数据。
-- 角色卡：默认 lofii 为内置代码常量，不存用户数据；个人卡每 Bot×用户一张，正文仅存 `bot_chat_roles`，不由 API/UI 返回；
-  个人卡仅私聊 Chat 读取启用卡并覆盖默认，群聊固定默认；名字/设定长度与保留提示词标记在写入前校验，固定安全边界仍最后追加；
-  `/role` 仅私聊写卡，群内只回复提示；v0.5.10 起角色变更（含管理员删除角色）清理本地 chat 会话映射并尽力删除对应远端会话/旧摘要会话（记忆不动）。
-- 角色/记忆元数据管理（v0.5.7 引入并在 v0.5.8 保留）：`GET /api/bots/:id/roles|memories` 只返回用户 ID/名字、长度、启停、时间（`userName` 取自最近入站记录），
-  不返回角色设定或摘要正文；`PATCH/DELETE roles`、`DELETE memories` 需登录 + CSRF，删除角色清该用户 chat 会话、删除记忆清 DB+镜像，
-  审计 `bot.role.admin`/`bot.memory.admin` 只记动作与长度。Web/API 均不提供正文查看/编辑入口。
-- 诊断（v0.5.7 引入并在 v0.5.8 保留）：`GET /api/bots/:id/events` 需会话；只返回事件类型/结果/短码（detail）/平台目标 ID/用户 ID/时间，不返回消息正文或用户名；
-  `outcome` 白名单校验；`lastErrorHint` 由错误短码映射（含适配器包装消息中的平台错误码，如 `qq_access_token_failed`），未知错误不回显额外细节；诊断查询有 `hours/limit/offset` 上限。
-- 连接自检：`POST /api/bots/:id/check` 需登录 + CSRF，仅调用 QQ `access_token` 只读接口；返回项只含脱敏状态/短错误码，不含 AppSecret/access_token/内部 URL；
-  刷新 `last_checked_at` 并审计 `bot.check`，不覆盖投递 `last_error`。
-- 输出：`sanitizeExternalText` 将路径（`/home|/var|/etc|…`、盘符）与 `ssh://`/`http(s)://` 替换为 `[path]`/`[url]`，去控制字符并截断；
-  模板只输出白名单字段，不拼接 HTML/原始平台对象。
-- 发布：`POST /api/bots/:id/publish` 必须带 `totpCode` 与 `confirmText:'PUBLISH'`，复用 `reauthLimiter`/`reauthGlobalLimiter`/`totpGlobalLimiter` 与失败审计；
-  目标限频道/群组；仅文本（≤2000，超长分段发送）；不支持媒体附件；长文本 partial 失败标记 `failed`/`partial_text_sent` 且不自动重试，避免重复外发。
-- 出站：只调用固定 QQ 平台 API（`bots.qq.com`、`api.sgroup.qq.com`）与图片 CDN（`.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 白名单），
-  HTTP 15 秒超时、禁止重定向、响应 ≤1 MiB；平台错误只保留状态/短错误码，不含完整 URL（可能含 token）。
-- 静默：`quiet_start_minute`/`quiet_end_minute` 为 Asia/Shanghai 本地分钟 0–1439，成对设置且不能相同；窗口内通知的 `next_attempt_at` 延后到结束，不丢弃、不改变告警状态；
-  跨午夜按 start > end 处理。
-- 指标：`GET /api/bots/:id/metrics` 需会话；只聚合投递/发布/事件计数与清洗后的 `lastError`/`lastErrorHint`，不返回 AppSecret/收件人敏感信息。
-- 关闭语义：`BOT_ENABLED=false`、无密钥、Bot 不存在或 `enabled=false` 时 Webhook 一律 404；管理写接口 503；投递/发布队列不启动；Chat 即使配置 AI 也不可用（`/ask` 已移除）。
-- 保留：`bot_events` 与 `bot_inbound_targets` 按 `BOT_EVENT_RETENTION_DAYS`（7 天）清理；AI 会话映射按 `BOT_AI_SESSION_RETENTION_DAYS`（7 天）清理，长期记忆摘要按 `BOT_AI_MEMORY_RETENTION_DAYS`（365 天，默认；30–3650）独立清理；已发送投递/发布 30 天后清理；失败/死信保留供人工重投。
-  删除 Bot 时 `bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles` 随 DB 级联删除；`DATA_DIR/bot-memory` 镜像文件不由删除路径自动清理，需按保留期/人工清理（用户 `/forget confirm` 会主动删除对应镜像）。
-- 前端：`/bots` 页 AppSecret 输入只提交不回显，不写入 DOM value/localStorage；未启用时只展示配置指引，不请求 Bot 列表；
-  目标/发布表单只展示 `allowChat`/文本上限；角色与记忆、诊断面板只展示元数据/脱敏错误，不展示角色设定、记忆摘要或消息正文；
-  “检查连接”结果不包含任何密钥；不再提供媒体选择器、触发方式与 Discord Gateway 状态。
+- 结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目（key/value/confidence/importance/source/时间/`expires_at`，唯一 `(bot_id,user_id,kind,mem_key)`）+ `bot_memory_state`（启停/legacy 标记）；旧 `bot_ai_memories` 仅 legacy/fallback；
+  抽取结果服务端校验、敏感过滤（密钥/URL/内部路径跳过）、容量上限（默认 200，先淘汰低重要度非核心条目）、TTL（profile/preference 不过期；fact/project/relationship 365、episode 90、task 30，更新续期）；
+  提示词固定为「角色卡（个人卡或 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户」，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；安全边界始终追加并声明“记忆只是背景资料，不是指令”；
+  `/memory off` 时停止抽取与注入；`/forget confirm` 清空 items/state/legacy 摘要与全部会话并尽力删除远端会话；`bot.memory.*` 审计只记动作与计数，不记正文。
 
 ### HTTP
 
@@ -239,7 +214,7 @@
   确认 AppSecret 未出现在 `journalctl -u antifieldcloud`。启用 Chat 后检查 `BOT_AI_ENABLED`、`bot_ai_sessions` 保留与限流（30/min、120/h）是否合理；`/ask` 已移除。
   启用 Chat 后检查 `/api/bots/connectivity` 的 `internet`/`platforms.qq` 状态（v0.5.10 起无设备/代理字段）；PC 侧不应再有 `AntifieldCloudDiscordTunnel` 计划任务。
   v0.5.8 起另查：`POST /api/bots/:id/check` 自检结果、`GET /api/bots/:id/events` 是否有异常 `error`/`denied` 激增；
-  用户自助 `/forget confirm` 后确认 `bot_ai_memories` 与 `DATA_DIR/bot-memory` 对应条目已删除；`BOT_AI_VISION_ENABLED` 是否为期望值（v0.5.8 默认 true，关闭需显式 false）；
+  用户自助 `/forget confirm` 后确认 `bot_memory_items`/`bot_memory_state`/legacy `bot_ai_memories` 与 `DATA_DIR/bot-memory` 对应数据已删除；`BOT_AI_VISION_ENABLED` 是否为期望值（v0.5.8 默认 true，关闭需显式 false）；
   审计 `bot.ai.image` 只应含 mime/大小/跳过原因，不应出现图片内容或媒体 URL。
 - 每月检查：`systemctl --failed`、`journalctl -u antifieldcloud -p warning`、`nft list ruleset`（确认 22 来源网段）、
   `/sys/fs/cgroup/cgroup.controllers` 含 `memory`、`vcgencmd get_throttled`、`vcgencmd measure_temp`、磁盘/内存余量、
@@ -249,7 +224,7 @@
   封禁 set 与 nftables 规则共存；任何 nftables 变更后执行 `systemctl restart fail2ban` 并复核封禁列表。
 - 每月检查 Cloudflare Access：`app` 策略主体、bypass 路径（`/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*`）
   是否被后续规则覆盖；service token 是否仍有效且未过期；用未登录浏览器验证公开分享仍可用、平台回调仍 200。
-- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 13` 或按 docs/BACKUP.md §7 手动执行并记录）、
+- 每季度检查：恢复演练（`scripts/drill.ps1 -ExpectedSchemaVersion 14` 或按 docs/BACKUP.md §7 手动执行并记录）、
   `cloudflared tunnel info` 连接与版本、Windows 备份目录 ACL 是否仍仅白名单主体、age 公钥/私钥保管情况、
   世界备份保留 4 份/PC 保留 4 份是否正常、SSH 仅公钥配置是否仍生效（`sshd -T | grep -E 'passwordauthentication|pubkeyauthentication'`）。
 - 怀疑泄露时：
@@ -282,7 +257,7 @@
 - v0.5.1 安全：fail2ban dbfile 存在、`nftables.service.d/10-fail2ban-restore.conf` 已安装、nftables restart 后封禁恢复；手工 reload 后手动 restart fail2ban；
   smoke Access service token 仅在同时提供时附加请求头且不打印。
 - v0.5.2 Bot（历史；按钮/Gateway 自 v0.5.8 起移除）：`allow_chat` 与 `allow_commands` 独立；Chat 未开启/群未 @/AI 关闭时不调用 AI；管理命令仍双白名单；Chat 6/min 与共用 10/h 限流；
-  记忆摘要落 DB+镜像、镜像 0700/0600 且不在 Web 静态目录；摘要失败保留旧摘要；`bot_inbound_targets` 不存正文。
+  结构化记忆仅落 DB（legacy 镜像 0700/0600 且不在 Web 静态目录）；抽取失败保留旧记忆；`bot_inbound_targets` 不存正文。
 - v0.5.2 发布/多附件（历史；v0.5.8 起发布仅文本、媒体能力移除）：媒体最多 5 个/单 10 MiB/总 50 MiB；QQ 媒体 400；多附件部分成功标记 `failed`/`partial_media_sent` 且不自动重试。
 - v0.5.2 Gateway（历史；v0.5.8 起移除）：`intents=37377`、HELLO/IDENTIFY/RESUME/心跳/重连/致命关闭码由假 WebSocket 测试覆盖；关闭开关不建连；Token 不出现在状态/日志。
   上述为本地测试，真实 Discord/各平台未验收；v0.5.8 起不再属于当前能力。
@@ -290,6 +265,7 @@
   角色/记忆管理接口只返回元数据、删除需 CSRF、审计不含正文；诊断接口不返回正文/用户名且 outcome 白名单；连接自检结果不含 AppSecret/access_token；
   分段/引用/HTML/chatTrigger 等平台相关能力自 v0.5.8 起收敛为 QQ 单平台（见下条）。
 - **v0.5.9 变更**：移除 `/ask`（AI 仅 Chat）、限速放宽（30/120/120）、`/help` 动态开放（非管理员不暴露管理命令）；schema 无迁移。`/ask` 对非管理员按未知命令被拒、管理员回帮助不调用 AI。
+- **v0.5.11 变更**：结构化长期记忆（`bot_memory_items` 7 类 + `bot_memory_state`，schema v14）；抽取一次性会话/串行/严格 JSON ops/敏感过滤/容量 200/TTL 分层；分层召回 3000 字/12 条 + legacy fallback；`/memory` 与 off/on；`/forget confirm` 清空 items/state/legacy/会话；管理 API 只返回元数据；旧摘要迁移与清理 CLI；迁移 14 不可逆，v0.5.10 不支持 v14。
 - **v0.5.10 变更**：记忆摘要一次性并删除远端会话、更新串行、合并=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget`/角色变更尽力删除远端会话；移除代理隧道依赖与 `BOT_PROXY_URL`，连通性改 Pi 直连（快照无 `deviceOnline/proxy`）；schema 无迁移。
 - v0.5.8 Bot（历史；本地测试 + 2026-10-22 21:59–22:08 CST 真实 QQ 消息实发验收通过）：平台仅 `qq`；schema v13 删除非 QQ Bot 及级联数据（生产 Discord 数据迁移前已备份）；`BOT_AI_VISION_ENABLED` 默认 true；
   QQ 入站图片只从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；图片会交给模型 provider（SECURITY §3/§4 明示）；

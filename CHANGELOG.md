@@ -1,5 +1,42 @@
 # Changelog
 
+## [v0.5.11] - 2026-10-23
+
+### Added
+
+- **结构化长期记忆**：新增 `bot_memory_items`（7 类 `profile/preference/fact/project/task/relationship/episode`；字段 key/value/confidence/importance/source/created_at/updated_at/last_used_at/expires_at；唯一 `(bot_id,user_id,kind,mem_key)`）
+  与 `bot_memory_state`（每用户启停 + legacy 迁移标记）；schema 升到 **v14**（迁移 14），旧 `bot_ai_memories` 保留为 legacy 迁移来源（验收后 CLI 清理）。
+- **记忆抽取**：沿用累计 3 条或空闲 120s 批处理与同用户串行队列；每次抽取新建一次性 OpenCode 会话并在 `finally` 删除；模型输出严格 JSON operations（upsert/delete，服务端最多 20 条），
+  服务端校验/敏感过滤（密钥、URL、内部路径等跳过）/容量清理（默认 200 条，先淘汰低重要度非核心条目）；审计 `bot.memory.extract` 只记计数。
+- **TTL**：`profile`/`preference` 不过期；`fact`/`project`/`relationship` **365 天**（`BOT_AI_MEMORY_RETENTION_DAYS`）；`episode` **90 天**（`BOT_MEMORY_TTL_EPISODE_DAYS`）；`task` **30 天**（`BOT_MEMORY_TTL_TASK_DAYS`）；更新续期。
+- **分层召回**：核心 `profile`/`preference`/`task` 优先，其余按关键词 + 重要度/时效挑选；预算 **3000 字/12 条**（`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`）；未迁移旧摘要作为 fallback 注入；`/memory off` 时无注入。
+- **`/memory` 自助命令（全用户）**：显示总条数/各类型计数/启停/最近更新时间（不含 key/value）；`/memory off|on` 暂停/恢复抽取与注入；`/forget confirm` 清空 items/state/legacy/会话（含远端）。
+- **管理 API**：`GET /api/bots/:id/memories`（用户级 itemCount/kinds/memoryEnabled/updatedAt）、`GET /api/bots/:id/memories/:userId/items`（条目元数据 id/kind/importance/confidence/updatedAt/expiresAt）、
+  `DELETE .../memories/:userId/items/:itemId`、`DELETE .../memories/:userId`；**绝不返回 key/value**；审计 `bot.memory.delete_item`/`bot.memory.delete_user`。
+- **Legacy 迁移与清理**：旧滚动摘要一次性 LLM 转换（迁移后标记，未迁移用户继续 fallback 注入）；验收后可执行 `node scripts/cleanup-legacy-memory.mjs`（默认 dry-run；`--confirm` 删除已迁移用户的旧摘要行 + 镜像文件，写审计 `bot.memory.legacy_cleanup`）。
+- **新增 env**：`BOT_MEMORY_MAX_ITEMS=200`、`BOT_MEMORY_PROMPT_MAX_CHARS=3000`、`BOT_MEMORY_PROMPT_MAX_ITEMS=12`、`BOT_MEMORY_TTL_EPISODE_DAYS=90`、`BOT_MEMORY_TTL_TASK_DAYS=30`；
+  沿用 `BOT_AI_MEMORY_BATCH_MESSAGES=3`、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`、`BOT_AI_MEMORY_RETENTION_DAYS=365`（fact/project）、`BOT_AI_MEMORY_MAX_CHARS`（legacy fallback 上限）。
+
+### Changed
+
+- 记忆写入从“滚动摘要覆盖”改为“结构化条目 upsert/delete”；旧 `bot_ai_memories` 仅保留 legacy/fallback，不再作为主记忆写入。
+- `/forget confirm` 同时清空结构化条目、状态与旧摘要，并尽力删除远端会话；`/memory off` 后暂停抽取/注入，进行中的抽取结果在写回前发现状态变化会丢弃。
+- `/help` 自助列表加入 `/memory`（查看与 off/on）；管理页“角色与记忆”改为用户级条目计数/类型分布 + 单条元数据列表/删除。
+- `bot.memory.*` 审计动作扩展：`bot.memory.extract`（只计数）、`bot.memory.toggle`、`bot.memory.delete_item`、`bot.memory.delete_user`、`bot.memory.legacy_cleanup`。
+
+### Security
+
+- 抽取结果敏感过滤（密钥/URL/内部路径跳过），条目 key/value 不通过任何 Web/API 返回；TTL + 每用户容量上限（含核心类型保护）；`/memory off` 即时停止抽取与注入；删除用户记忆同时清理本地/远端会话；
+  legacy fallback 只在预算内注入，且公开帮助/状态不展示记忆正文或 key/value。
+
+### Deployment
+
+- 版本/`APP_VERSION` 升到 0.5.11；schema **v14**（迁移 14，新增两张表，不可逆）；`scripts/deploy.ps1` 期望 schema 14，切换前自动迁移前 DB 快照。
+- **v0.5.10 不支持 schema v14**：回滚必须恢复迁移前快照（不能仅切回旧 release）。
+- 生产 env 需新增 5 个 `BOT_MEMORY_*`；部署步骤：env → deploy（迁移 14 + 快照）→ `/healthz` v0.5.11/schema 14 → smoke（`-ExpectedSchemaVersion 14`）→ 真实记忆验收 → `cleanup-legacy-memory.mjs --confirm` → 部署后备份。
+- 测试基线（Lead 实测 2026-10-23）：`npm test` **360**（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，+5）、`npm run typecheck` 通过；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**（`npm run test:coverage` exit 0）、`npm run build` 通过。
+- **待部署验收**。
+
 ## [v0.5.10] - 2026-10-22
 
 ### Added

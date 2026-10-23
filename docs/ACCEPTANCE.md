@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.5.11（待部署验收；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -33,7 +33,42 @@
 > **合并摘要生效**：4 条 Chat 仅产生 1 次 `bot.ai.memory`，detail `rounds:3`（15:28:37Z）；**远端会话删除生效**：部署前快照会话 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要）在 `/forget confirm` 后经 OpenCode API 查询均为 404，该用户本地会话/记忆已清空，其他用户（`E259399F…`、`6B7DAC9B…`）会话/记忆保持 200 未受影响，无“删除远端 AI 会话失败”日志。
 > 图片回归通过（真实 145172 B JPEG 端到端）；`/bots` 出站网络卡片按用户确认验收通过（服务端无单独 UI 证据）；23:29 CST 用户明确“完成验收”。详见下方 v0.5.10 段。
 
-## v0.5.10（当前，已部署并验收通过；用户实发 2026-10-22 23:26–23:29 CST）
+> **v0.5.11 待部署**：2026-10-23 目标版本 v0.5.11（schema 升到 **v14**，迁移 14 新增 `bot_memory_items`/`bot_memory_state`，旧 `bot_ai_memories` 保留为 legacy 来源）。结构化记忆系统（7 类条目、抽取/容量/TTL、分层召回、`/memory` 与 off/on、管理 API 元数据、legacy 转换与清理 CLI）；
+> 生产 env 需新增 5 个 `BOT_MEMORY_*`；v0.5.10 不支持 schema v14，回滚必须恢复迁移前快照。部署与真实验收完成前不得声明通过，详见下方 v0.5.11 段。
+
+## v0.5.11（当前，待部署验收；结构化记忆系统 + schema v14）
+
+- 日期：2026-10-23（Asia/Shanghai）
+- 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（目标 version 0.5.11/schema 14，迁移 14 不可逆）+ Windows 本地工作区
+- **状态**：代码与文档已完成，**待部署验收**；测试基线 `npm test` **360**、`npm run test:web` **162**（30 文件），覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**、`npm run build` 通过；部署/真实验收证据待回填。
+- **交付范围**：
+  - **结构化条目**：`bot_memory_items` 7 类（`profile`/`preference`/`fact`/`project`/`task`/`relationship`/`episode`）；字段 key/value/confidence/importance/source/created_at/updated_at/last_used_at/expires_at；唯一键 `(bot_id,user_id,kind,mem_key)`；
+    `bot_memory_state` 保存每用户启停与 legacy 迁移标记；schema **v14**（迁移 14），旧 `bot_ai_memories` 保留为 legacy 来源。
+  - **抽取**：沿用累计 3 条或空闲 120s 批处理与同用户串行队列；每次新建一次性 OpenCode 会话并在 `finally` 删除；模型严格 JSON operations（upsert/delete，服务端最多 20 条）；
+    服务端校验/敏感过滤（密钥、URL、内部路径等跳过）/容量清理（默认 200 条，先淘汰低重要度非核心条目）；审计 `bot.memory.extract` 只记计数。
+  - **TTL**：`profile`/`preference` 不过期；`fact`/`project`/`relationship` **365 天**（`BOT_AI_MEMORY_RETENTION_DAYS`）；`episode` **90 天**（`BOT_MEMORY_TTL_EPISODE_DAYS`）；`task` **30 天**（`BOT_MEMORY_TTL_TASK_DAYS`）；更新续期。
+  - **分层召回**：核心 `profile`/`preference`/`task` 优先，其余按关键词 + 重要度/时效；预算 **3000 字/12 条**（`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`）；未迁移旧摘要 fallback 注入；`/memory off` 时无注入。
+  - **`/memory` 自助**：显示总条数/各类型计数/启停/最近更新时间（不含 key/value）；`/memory off|on` 暂停/恢复抽取与注入；`/forget confirm` 清空 items/state/legacy/会话（含远端）。
+  - **管理 API**：`GET /api/bots/:id/memories`（用户级 itemCount/kinds/memoryEnabled/updatedAt）、`GET .../memories/:userId/items`（条目元数据 id/kind/importance/confidence/updatedAt/expiresAt）、
+    `DELETE .../memories/:userId/items/:itemId`、`DELETE .../memories/:userId`；绝不返回 key/value；审计 `bot.memory.delete_item`/`bot.memory.delete_user`。
+  - **Legacy 清理**：旧摘要一次性 LLM 转换后标记；验收后 `node scripts/cleanup-legacy-memory.mjs`（默认 dry-run；`--confirm` 删除已迁移用户旧摘要行+镜像，写审计 `bot.memory.legacy_cleanup`）。
+  - **版本/数据**：version 0.5.11；schema **v14**（迁移 14，不可逆；v0.5.10 不支持 v14）；`scripts/deploy.ps1` 期望 schema 14，切换前自动迁移前 DB 快照。
+- **本地验证**（Lead 实测 2026-10-23）：`npm test` **360**（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，+5）、`npm run typecheck` 通过；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**、`npm run build` 通过。
+- **部署要点**：
+  1. 生产 env 新增/确认：`BOT_MEMORY_MAX_ITEMS=200`、`BOT_MEMORY_PROMPT_MAX_CHARS=3000`、`BOT_MEMORY_PROMPT_MAX_ITEMS=12`、`BOT_MEMORY_TTL_EPISODE_DAYS=90`、`BOT_MEMORY_TTL_TASK_DAYS=30`；确认权限 `640 root:antifieldcloud` 并备份 env。
+  2. 部署前备份/校验：确认 PC 最新应用归档与密钥包可校验；记录磁盘余量；`deploy.ps1` 会在切换前自动做迁移前 DB 快照（schema 14 迁移不可逆）。
+  3. `deploy.ps1` 部署 v0.5.11；`/healthz` 断言 `version=0.5.11`、`schemaVersion=14`；部署内只读 smoke 与带 Access token 完整 smoke（`-ExpectedSchemaVersion 14`）通过。
+  4. 验证：`GET /api/bots/connectivity` 等既有接口不变；Chat 多轮后 `bot_memory_items` 生成条目、`bot.memory.extract` 审计只含计数；`/memory` 显示计数/类型/启停/最近更新且不含正文；`/memory off` 后无注入、再 `on` 恢复；
+     `/forget confirm` 清空 items/state/legacy 与远端会话；管理 API 只返回元数据；未迁移用户旧摘要 fallback 仍可注入。
+  5. 真实验收通过后执行 legacy 清理：先 `node scripts/cleanup-legacy-memory.mjs`（dry-run 核对数量），再 `--confirm`；确认只删除已迁移用户旧摘要行+镜像。
+  6. 备份：清理后执行一次部署后备份并确认 PC 拉取/密钥包 ok。
+- **待部署验收项**：
+  1. 生产部署事实（release/commit/healthz/schema 14/smoke）与迁移 14、迁移前快照。
+  2. 真实 QQ Chat 抽取/召回：结构化条目生成、核心层优先、TTL/容量生效、敏感过滤与审计计数。
+  3. `/memory` 展示与 off/on；`/forget confirm` 清空 items/state/legacy/会话（含远端）；管理 API 元数据与删除。
+  4. legacy 迁移/fallback 与清理 CLI（dry-run → `--confirm`）验证。
+- **回滚**：**v0.5.10 不支持 schema v14**；迁移 14 不可逆，回滚只能恢复迁移前 DB 快照（`db-predeploy-*.sqlite`）并切回 release `20261022T152053Z`（v0.5.10）；不要用未恢复快照的旧 release 启动（会因 schema 高于程序支持而拒绝启动）。
+## v0.5.10（历史，已部署并验收通过；用户实发 2026-10-22 23:26–23:29 CST；v0.5.11 起升级 schema v14）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T152053Z`，commit `4619c91`，schema 13）+ Windows 本地工作区
