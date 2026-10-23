@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.6.3] - 2026-10-23（开发中，未发布）
+## [v0.6.3] - 2026-10-23（已部署，待用户验收；未发布）
 
 ### Added
 
@@ -17,7 +17,8 @@
 - 版本升到 **0.6.3**；schema **v16**（迁移 16 新增 `bot_group_roles` 群聊角色卡表；群消息模式复用既有 `bot_targets.chat_trigger`，默认 `mention`）。
 - `deploy.ps1` 期望 schema 改为 **16**；`deploy/env.example` `APP_VERSION=0.6.3`。
 - 迁移 16 只新增表，已有目标/投递/命令不受影响；旧版本 v0.6.2 不支持 schema v16，回滚必须恢复迁移前 DB 快照并切回 v0.6.2 release。
-- 本地门禁/生产部署证据待回填。
+- 本地门禁：`npm run check`/`check-version` 通过；`npm test` **399**、`npm run test:web` **180**；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**；build bundle `index-beLvg53v.js` 691.15 kB。
+- 生产部署（2026-10-23）：release `20261023T135852Z`/commit `aede7f6`（v0.6.3/schema 16）；迁移前快照 `db-predeploy-20261023T135925309Z.sqlite`（sha256 `ec50b50a…2ac1`）；`/healthz` v0.6.3/schema16；只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过；部署后备份 `snapshot-20261023T140233488Z-inc.tar.gz`（193286 bytes，sha256 `b8933604…ef4b5f`，secrets=ok）。用户验收待完成。生产 `bot_group_roles` 初始 0 行（4 个目标/1 个 Bot 保留）。
 
 ## [v0.6.2] - 2026-10-23（已发布：Tag/Release v0.6.2）
 

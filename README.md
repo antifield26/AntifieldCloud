@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.3（**开发中，未发布**）。本版新增：每个群聊目标一张独立共享角色卡（Web“角色与记忆”编辑/启停/删除）；群目标可独立设置“仅接受 @/名字提及消息”（默认）或“接受全部消息并由模型选择是否发送”（实验性）；群聊/频道不再接受任何斜杠命令；schema **v16** 新增 `bot_group_roles`，群消息模式复用 `chat_trigger`。OpenCode v2.1.3。
+> 状态：v0.6.3（**已部署到生产，待用户验收；未发布**）。本版新增：每个群聊目标一张独立共享角色卡（Web“角色与记忆”编辑/启停/删除）；群目标可独立设置“仅接受 @/名字提及消息”（默认）或“接受全部消息并由模型选择是否发送”（实验性）；群聊/频道不再接受任何斜杠命令；schema **v16** 新增 `bot_group_roles`，群消息模式复用 `chat_trigger`。生产 release `20261023T135852Z`/commit `aede7f6`，smoke 24/24，待验收。OpenCode v2.1.3。
 > 发布：最新公开版本为 v0.6.2（生产 release `20261023T123055Z`，Tag `v0.6.2`，GitHub Release [AntifieldCloud v0.6.2](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.2)）；上一版 v0.6.1（release `20261023T094819Z`/commit `ceb2e8f`）。
 > 测试基线（Lead 实测 2026-10-23，v0.6.3）：`npm test` **399**（server+scripts，含群角色卡/群消息模式/`GROUP_MESSAGE_CREATE`/命令禁用回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-beLvg53v.js` 691.15 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
