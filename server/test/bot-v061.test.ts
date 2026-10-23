@@ -100,6 +100,7 @@ test('自动搜索判断保守：时效/问句触发，普通闲聊不触发；�
   assert.equal(needsWebSearch('最近有什么 AI 新闻？'), true)
   assert.equal(needsWebSearch('今天天气怎么样'), true)
   assert.equal(needsWebSearch('帮我搜索一下 v0.6.1'), true)
+  assert.equal(needsWebSearch('再搜搜看'), true)
   assert.equal(needsWebSearch('你好呀'), false)
   assert.equal(needsWebSearch('帮我写一段自我介绍'), false)
   assert.equal(normalizeSearchQuery('最近一周有什么AI新闻？'), 'AI新闻')

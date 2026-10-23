@@ -165,6 +165,8 @@ export function needsWebSearch(text: string): boolean {
   const value = text.replace(/\s+/g, ' ').trim()
   if (value.length < 2) return false
   if (/^(?:请|帮我|麻烦)?(?:搜索|搜一下|搜搜|查一下|查一查|查询|联网查|上网查)/.test(value)) return true
+  // 追问式搜索：命中“再搜/再查/换一个/继续搜”等，沿用上一轮上下文。
+  if (/(?:再搜|再查|搜搜看|查查看|换一个|换一下|继续搜|继续查|还有呢)/.test(value)) return true
   const question = /[?？]|吗|呢|怎么|如何|什么|哪|谁|多少|是否|有没有|介绍|推荐|对比|区别/.test(value)
   const timeSensitive =
     /最新|今天|今日|现在|当前|实时|近期|最近|新闻|天气|气温|股价|汇率|比分|赛程|价格|多少钱|发布|上市|版本|官网|评测|教程|政策|规定|进展|排名|榜单|事件|日期|时间/.test(
