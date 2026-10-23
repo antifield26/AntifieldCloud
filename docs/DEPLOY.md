@@ -21,7 +21,8 @@
   最终迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）；部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）。
   用户实发验收通过（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory` 成功、`/forget confirm` items=2 legacy=0 且未误删其他用户；早前 `/memory off`→Chat 无新 extract→`on`→`/forget` 亦通过；`/bots` 面板用户确认）；首次短消息抽取 ops=0 判定提示词过保守，已由 commit `931b10d` 修正后重试得到 ops=2。
   Legacy 清理 dry-run/`--confirm` 均 users=0 files=0（未迁移用户 2 条未触碰）。**回滚必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10，不支持 v14）。**
-- **v0.6.0 已部署并验收通过**：最终 release `20261023T053539Z`/commit `6349617`（前两次同版本部署 `20261023T052315Z`/`20261023T045613Z` 保留）；`/healthz` version 0.6.0/schema 14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill schema14 通过；部署后备份+密钥包已拉取；用户确认验收通过。详见 §3.0。
+- **v0.6.1 已部署并由用户复核通过**：release `20261023T063020Z`/commit `23d5ec4`（当前）；`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；生产 25 个 acked 归档复核显示已确认，用户确认 Dashboard 不再误报；部署后备份/密钥包已拉取；生产保留 `20261023T063020Z`/`20261023T053539Z`/`20261023T052315Z`。
+- **v0.6.0 已部署并验收通过**：最终 release `20261023T053539Z`/commit `6349617`；`/healthz` version 0.6.0/schema 14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill schema14 通过；部署后备份+密钥包已拉取；用户确认验收通过。详见 §3.0。
 - 历史部署（详细证据见 `docs/ACCEPTANCE.md`/`CHANGELOG.md`）：v0.5.10 release `20261022T152053Z`（schema v13、无迁移）、v0.5.9 `20261022T143451Z`（v13）、v0.5.8 `20261022T134852Z`（v13，QQ 单平台收敛）；这些历史 release 保留用于回滚对照。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.1，Cloudflare Access bypass 见 §5.2。

@@ -22,7 +22,8 @@
 
 - 版本/`APP_VERSION` 升到 **0.6.1**；schema 保持 **v14**（无迁移）；`deploy.ps1` 期望 schema 仍为 14。
 - 生产部署后需验证 `/healthz` v0.6.1/schema14、smoke 16/16 与 24/24、备份状态 Dashboard 不再显示“应用归档文件缺失”；部署前仍做 DB 快照。
-- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **383**、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过。部署证据待回填；v0.6.0 历史发布记录保留。
+- **已部署并由用户复核通过（2026-10-23）**：release `20261023T063020Z`/commit `23d5ec4`；`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；迁移前快照 `db-predeploy-20261023T063052547Z.sqlite`（sha256 `94535865a5be06511d39029e00cc35361763fc22aaca68b169adef823744e206`）；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示已确认，用户确认 Dashboard/备份页不再误报；部署后备份 `snapshot-20261023T063321997Z-inc.tar.gz`（168622 bytes，sha256 `0eca4a03a724d7887a6d43b03f59584a503642587392bebf789903159de0f2f0`，PC ack）+ 密钥包 `secrets-20261023T063324Z.tar.age`（1733483 bytes，secretsOk=true）；生产保留 release `20261023T063020Z`/`20261023T053539Z`/`20261023T052315Z`。
+- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **383**、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过。Tag `v0.6.1`/GitHub Release 见发布记录；v0.6.0 历史发布记录保留。
 
 ## [v0.6.0] - 2026-10-23
 

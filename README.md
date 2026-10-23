@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.1（**本地修复/测试完成，待部署与用户复核**；schema 保持 **v14**、无迁移；OpenCode v2.1.3）。本补丁修复备份状态误报：PC ack 后服务端归档文件被清理时，`/api/backups` 仍返回 `status=acked` 并新增 `available=false`，Dashboard 不再显示“应用归档文件缺失”，恢复按钮明确不可用；同时 `/api/auth/me` 补充旧父域 Cookie 清理，降低 host-only 过渡期残留；生产 deny-all 工具隔离已完成只读负路径验证（模型未调用工具、未创建文件）。v0.6.0 的 P0–P2 修复与验收证据保留在下方历史记录。
-> 发布：v0.6.0 已发布（release `20261023T053539Z`/commit `6349617`，Tag `v0.6.0`，GitHub Release [AntifieldCloud v0.6.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.0)）；v0.6.1 待部署后更新发布信息。
+> 状态：v0.6.1（**已部署并由用户复核通过**，release `20261023T063020Z`/commit `23d5ec4`；schema 保持 **v14**、无迁移；OpenCode v2.1.3）。本补丁修复备份状态误报：PC ack 后服务端归档文件被清理时，`/api/backups` 仍返回 `status=acked` 并新增 `available=false`，Dashboard 不再显示“应用归档文件缺失”，恢复按钮明确不可用；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示“已确认”。同时 `/api/auth/me` 补充旧父域 Cookie 清理，降低 host-only 过渡期残留；生产 deny-all 工具隔离已完成只读负路径验证（模型未调用工具、未创建文件）。v0.6.0 的 P0–P2 修复与验收证据保留在下方历史记录。
+> 发布：v0.6.1 已部署；Tag `v0.6.1` 与 GitHub Release 随本次发布记录。v0.6.0 已发布（release `20261023T053539Z`/commit `6349617`，Tag `v0.6.0`，GitHub Release [AntifieldCloud v0.6.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.0)）。
 > 测试基线（Lead 实测 2026-10-23，v0.6.1）：`npm test` **383**（server+scripts）、`npm run test:web` **177**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 

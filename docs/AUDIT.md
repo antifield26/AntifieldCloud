@@ -427,3 +427,4 @@
 - **修复**：acked 优先返回 `acked`；新增 `available: boolean` 表示服务端文件是否存在；Dashboard 显示“已确认”；Backups 页显示“副本已清理”、恢复按钮禁用并提示；`isArchiveRestorable` 要求 `available !== false`；API 文档 v13。
 - **残余处理**：`/api/auth/me` 增加旧父域 Cookie 清理；生产 deny-all 工具隔离负路径验证通过（无 tool 段、无文件创建）。仍保留 `__Host-` 前缀、SSO ticket IP/UA 绑定、记忆过滤启发式等后续项。
 - 证据：服务端 `backups-import-verify`/`http-hardening` 用例、前端 `backups`/`BackupStatusCard` 用例；原始记录见 `.local/audit/round6-residuals.md`。
+- **部署与复核（2026-10-23）**：release `20261023T063020Z`/commit `23d5ec4`；healthz v0.6.1/schema14；smoke 16/16 与 24/24（0 警告）；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示已确认，用户刷新 Dashboard/备份页确认不再误报；部署后备份/密钥包拉取（168622 B / secretsOk=true）。
