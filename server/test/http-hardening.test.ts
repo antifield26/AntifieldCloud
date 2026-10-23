@@ -204,7 +204,7 @@ test('内联 PDF 补 XFO 与 frame-ancestors CSP', async () => {
   }
 })
 
-test('trustProxy 收紧：X-Forwarded-Host 不再影响 Cookie 域，XFP/CF-IP 仅在 loopback 对端可信', async () => {
+test('Cookie host-only：登录响应无 Domain，并在同一响应清理旧父域 Cookie', async () => {
   const fx = await fixture()
   try {
     const session = await login(fx, {
@@ -212,13 +212,152 @@ test('trustProxy 收紧：X-Forwarded-Host 不再影响 Cookie 域，XFP/CF-IP �
       'x-forwarded-host': '127.0.0.1',
       'cf-connecting-ip': '203.0.113.9',
     })
-    // XFP=true（来自 loopback 对端）→ Secure；XFH 被忽略 → 仍按 Host(app.test) 设置 Domain。
+    const lines = session.setCookie.split('\n').filter(Boolean)
+    // XFP=true（来自 loopback 对端）→ Secure；新 Cookie 一律 host-only（无 Domain）。
     assert.match(session.setCookie, /Secure/i)
-    assert.match(session.setCookie, /Domain=\.test/i)
-    assert.doesNotMatch(session.setCookie, /Domain=127\.0\.0\.1/i)
+    const fresh = lines.filter((line) => /\baf_(session|csrf)=/.test(line) && !/Max-Age=0/i.test(line))
+    assert.equal(fresh.length, 2, session.setCookie)
+    for (const line of fresh) assert.doesNotMatch(line, /Domain=/i, line)
+    // 过渡期：额外删除旧父域 af_session/af_csrf（testConfig legacyCookieDomain='.test'）。
+    const legacy = lines.filter((line) => /Domain=\.test/i.test(line))
+    assert.equal(legacy.length, 2, session.setCookie)
+    for (const name of ['af_session', 'af_csrf']) {
+      const line = legacy.find((entry) => entry.startsWith(`${name}=`))
+      assert.ok(line, `缺少旧父域 ${name} 清理：${session.setCookie}`)
+      assert.match(line, /Max-Age=0/i)
+      assert.match(line, /Path=\//i)
+      assert.match(line, /Secure/i)
+      assert.match(line, /SameSite=Lax/i)
+    }
+    // 新 Cookie 仍可用：/api/auth/me 正常，X-Forwarded-Host 不参与判断。
     const me = await fx.context.app.inject({ method: 'GET', url: '/api/auth/me', headers: { host: 'app.test', cookie: session.cookie } })
     assert.equal(me.statusCode, 200)
     assert.equal(me.json().session.ip, '203.0.113.9')
+  } finally {
+    await fx.close()
+  }
+})
+
+test('AI SSO：/api/auth/ai-ticket 鉴权、next 同源校验、302 与一次性 ticket', async () => {
+  const fx = await fixture()
+  try {
+    const unauth = await fx.context.app.inject({
+      method: 'GET',
+      url: `/api/auth/ai-ticket?next=${encodeURIComponent('https://ai.test/')}`,
+      headers: { host: 'app.test' },
+    })
+    assert.equal(unauth.statusCode, 401)
+
+    const session = await login(fx)
+    const headers = { host: 'app.test', cookie: session.cookie }
+    for (const next of ['', 'https://evil.test/', 'https://ai.test.evil.test/', 'https://ai.test@evil.test/', 'http://ai.test/']) {
+      const bad = await fx.context.app.inject({
+        method: 'GET',
+        url: `/api/auth/ai-ticket?next=${encodeURIComponent(next)}`,
+        headers,
+      })
+      assert.equal(bad.statusCode, 400, `next=${next}: ${bad.body}`)
+      assert.equal(bad.json().error.code, 'invalid_next')
+    }
+    const missing = await fx.context.app.inject({ method: 'GET', url: '/api/auth/ai-ticket', headers })
+    assert.equal(missing.statusCode, 400)
+
+    const ok = await fx.context.app.inject({
+      method: 'GET',
+      url: `/api/auth/ai-ticket?next=${encodeURIComponent('https://ai.test/session/abc?x=1#fragment')}`,
+      headers,
+    })
+    assert.equal(ok.statusCode, 302, ok.body)
+    assert.equal(ok.headers['cache-control'], 'no-store')
+    const location = String(ok.headers.location)
+    assert.match(location, /^https:\/\/ai\.test\/__af\/sso\/[A-Za-z0-9_-]{20,128}\?next=%2Fsession%2Fabc%3Fx%3D1$/)
+    const ticket = /\/__af\/sso\/([A-Za-z0-9_-]+)/.exec(location)?.[1]
+    assert.ok(ticket)
+    // ticket 一次性：服务层直接消费一次成功，再次失败。
+    assert.ok(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test'))
+    assert.equal(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test'), null)
+  } finally {
+    await fx.close()
+  }
+})
+
+test('Origin 收口：aiOrigin 不再被 app 写请求与公开分享 unlock 接受', async () => {
+  const fx = await fixture()
+  try {
+    const session = await login(fx)
+    const write = await fx.context.app.inject({
+      method: 'POST',
+      url: '/api/files/folder',
+      headers: {
+        host: 'app.test',
+        cookie: session.cookie,
+        'x-csrf-token': session.csrf,
+        origin: 'https://ai.test',
+      },
+      payload: { name: 'from-ai' },
+    })
+    assert.equal(write.statusCode, 403)
+    assert.equal(write.json().error.code, 'csrf_failed')
+    const writeOk = await fx.context.app.inject({
+      method: 'POST',
+      url: '/api/files/folder',
+      headers: {
+        host: 'app.test',
+        cookie: session.cookie,
+        'x-csrf-token': session.csrf,
+        origin: 'https://app.test',
+      },
+      payload: { name: 'from-app' },
+    })
+    assert.equal(writeOk.statusCode, 201)
+
+    const { body, boundary } = multipartBody('share.txt', Buffer.from('hello'))
+    const upload = await fx.context.app.inject({
+      method: 'POST',
+      url: '/api/files/upload',
+      headers: {
+        host: 'app.test',
+        cookie: session.cookie,
+        'x-csrf-token': session.csrf,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: body,
+    })
+    assert.equal(upload.statusCode, 200, upload.body)
+    const fileId = upload.json().items[0].id as string
+    const share = await fx.context.app.inject({
+      method: 'POST',
+      url: `/api/files/${fileId}/shares`,
+      headers: { host: 'app.test', cookie: session.cookie, 'x-csrf-token': session.csrf },
+      payload: { password: 'share-pass-123' },
+    })
+    assert.equal(share.statusCode, 201, share.body)
+    const token = (share.json().url as string).split('/s/')[1]!
+    const unlock = await fx.context.app.inject({
+      method: 'POST',
+      url: `/api/public/shares/${token}/unlock`,
+      headers: {
+        host: 'app.test',
+        'x-forwarded-proto': 'https',
+        origin: 'https://ai.test',
+        'content-type': 'application/json',
+      },
+      payload: { password: 'share-pass-123' },
+    })
+    assert.equal(unlock.statusCode, 403)
+    assert.equal(unlock.json().error.code, 'origin_rejected')
+    const unlockOk = await fx.context.app.inject({
+      method: 'POST',
+      url: `/api/public/shares/${token}/unlock`,
+      headers: {
+        host: 'app.test',
+        'x-forwarded-proto': 'https',
+        origin: 'https://app.test',
+        'content-type': 'application/json',
+      },
+      payload: { password: 'share-pass-123' },
+    })
+    assert.equal(unlockOk.statusCode, 200, unlockOk.body)
   } finally {
     await fx.close()
   }

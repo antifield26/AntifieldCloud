@@ -1,4 +1,4 @@
-# AntifieldCloud UI 规范（v11，2026-10-23）
+# AntifieldCloud UI 规范（v12，2026-10-23）
 
 ## 1. 定位与基调
 
@@ -65,7 +65,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
   2. 6 位 TOTP 输入（大号等宽、自动聚焦）；主按钮“登录”；次链接“使用恢复码”。
 - 恢复码模式：输入恢复码；链接“返回验证码”。
 - 错误：卡片内红色提示；429 显示“尝试过多，请 X 分钟后再试”；401 统一“用户名或密码错误 / 验证码无效”。
-- 成功：跳转 `next`（仅允许 app/ai 本站 URL）或 `/`。
+- 成功：站内 `next` 直接跳转；ai 外部 `next` 先经 `/api/auth/ai-ticket?next=...` 由服务端 302 到 ai `/__af/sso/<ticket>`，ai 代理设置 host-only 会话 Cookie 后再进入目标路径；不得直接 `window.location.assign(ai URL)`（否则无 ai 会话而循环跳登录）。
 - 底部小字：“仅限本人使用 · 所有操作均记录审计”。
 
 ### 4.2 工作台 `/`
@@ -190,7 +190,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - Dashboard 数据/降级状态/刷新正常；趋势卡范围切换与空数据降级正常；备份状态卡四类状态可读；白名单增删有反馈。
 - 笔记附件上传/删除/插入、版本查看/恢复可用；Activity 关键词/时间范围筛选与 Alerts 筛选分页可用（详见 §14）。
 - Bot 页：未启用时配置指引、启用后六分区（概览/配置/目标/投递与发布/角色与记忆/诊断）可键盘切换；AppSecret 不回显；目标含 `allowChat` 与最近入站目标登记；
-  发布表单含 TOTP + `PUBLISH` 且仅文本（QQ 单条 2000，超长服务端分段）；配置页“检查连接”展示 QQ access_token 自检结果（详见 §15）。
+  发布表单含 TOTP + `PUBLISH` 且仅文本（QQ 单条 ≤2000；超过返回 400 `publish_text_too_long`，不静默截断、不服务端分段）；配置页“检查连接”展示 QQ access_token 自检结果（详见 §15）。
 - 键盘可完成登录、打开弹窗、关闭弹窗。
 
 ## 10. v0.2.x 新增界面
@@ -294,7 +294,9 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 备份状态
 
-- Dashboard 与 Settings 备份区增加四类状态：应用归档链（最近拉取/pending/孤儿/已确认）、密钥包、世界备份（最近成功/大小/待拉取/错误）、最近恢复演练（时间/结果/DB 完整性）。
+- Dashboard 与 Settings 备份区增加四类状态：应用归档链（最近拉取/pending/孤儿/已确认）、密钥包、世界备份（最近成功/大小/待拉取/错误）、最近恢复演练（时间/结果/`latestDb` + `schemaVersion` + 世界归档是否校验）。
+- 世界备份/PC 拉取“保留份数”按脚本的 `keptCount` 展示（`kept` 是归档名数组）；文案注明世界备份的 `kept` 是“上次运行保留，PC 拉取确认后远端会删除”，不代表 Pi 当前副本数。
+- 演练时间超过 35 天或 schemaVersion 与当前部署不一致时显示 warning 并提示重跑 `drill.ps1 -ExpectedSchemaVersion <当前>`；不伪造 DB 完整性。
 - 状态缺失显示 unknown/未运行；异常（超期、失败、pending 堆积）红色/黄色提示并给出下一步；不展示归档路径。
 - 390px 状态卡纵向堆叠，不横向滚动。
 
@@ -318,7 +320,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 概览
 
-- 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）。
+- 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）；AI 工具隔离状态（`aiToolIsolation`）降级时显示 warning 与降级次数/时间。
 - 概览提示：命令与 Chat 均为只读（v0.5.9 起 AI 仅 Chat，`/ask` 已移除），发布需 TOTP + `PUBLISH` 双确认；`/help`、`/memory`、`/role`（私聊）、`/reset`、`/forget confirm` 为全用户自助命令；QQ 仅文本，入站图片默认交 AI 理解。
 - Bot 列表/选择：名称、平台（QQ 官方）、启用徽章、目标数、密钥版本、最近检查时间；点击切换到该 Bot（并进入配置分区）。
 - “出站网络”卡片（v0.5.10 起 Pi 直连）：外网可达/延迟、QQ 平台探测状态与延迟（不再显示设备在线/代理主机端口）；“检测”按钮调用 `POST /api/bots/connectivity/check`，
@@ -388,7 +390,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
   有 `lastError` 时显示脱敏错误条，有 `lastErrorHint` 时追加中文提示；数据来自 `GET /api/bots/:id/metrics?hours=24`。
 - 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要（错误原文 + 中文提示）；
   `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）。
-- 发布表单（仅文本）：目标（仅频道/群组）、文本（显示 QQ 单条上限 2000 字符，超长由服务端分段发送）、
+- 发布表单（仅文本）：目标（仅频道/群组）、文本（显示 QQ 单条上限 2000 字符；超过提示错误 `publish_text_too_long`，不静默截断）、
   定时时间（可空；≤30 天）、**TOTP 验证码**（6 位、`autocomplete=one-time-code`，必填）、
   **二次确认输入**（必须输入 `PUBLISH`，与 TOTP 共同构成双确认）；提交后进入列表。v0.5.8 移除媒体选择器与多附件。
 - 发布列表：状态、目标、文本摘要、定时/发送时间、错误（含中文提示）；`queued/draft` 可“取消”（确认）。

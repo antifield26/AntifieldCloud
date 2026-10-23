@@ -210,10 +210,12 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   const uploads = new UploadService(db, config, files)
 
   await app.register(cookie)
-  // 分片块使用 raw body；bodyLimit 与路由级限制共同兜底，避免 8 MiB 块被 1 MiB 全局限制拒绝。
+  // octet-stream 全局兜底只使用实例默认 1 MiB 上限；分片上传的 8 MiB 级 raw body 上限
+  // 在 uploads 路由的独立 scope 内覆盖（见 http/routes/uploads.ts），避免公开/无关端点
+  // 在鉴权与 Origin/限流校验之前缓冲大 body。
   app.addContentTypeParser(
     'application/octet-stream',
-    { parseAs: 'buffer', bodyLimit: config.chunkSizeBytes + 64 * 1024 },
+    { parseAs: 'buffer' },
     (_request, body, done) => done(null, body),
   )
   await app.register(multipart, {

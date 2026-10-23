@@ -11,8 +11,10 @@ import { useAppMeta } from '../../meta/MetaContext'
 import {
   buildRestorePlanInput,
   buildRestoreVerification,
+  collectSkippedMissing,
   createRestoreState,
   restoreWizardReducer,
+  summarizeSkippedMissing,
   validateRestoreConfirmation,
   validateSelectStep,
 } from '../../lib/restore-wizard'
@@ -279,6 +281,8 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
   })()
 
   const result: RestoreResult | null = state.result
+  const skippedMissing = collectSkippedMissing(state.plan, result)
+  const skippedSummary = summarizeSkippedMissing(skippedMissing)
   const activeStep = stepIndex(state.step)
 
   return (
@@ -422,9 +426,27 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
 
         {state.step === 'done' && result ? (
           <div className="restore-result">
+            {skippedSummary.message ? (
+              <div className="notice notice-warning" role="alert">
+                <ShieldAlert size={16} aria-hidden="true" />
+                <div>
+                  <strong>恢复未包含全部文件</strong>
+                  <p>{skippedSummary.message}</p>
+                  {skippedSummary.preview.length > 0 ? (
+                    <p className="field-hint" title={skippedMissing.join('\n')}>
+                      缺失文件 ID：{skippedSummary.preview.join('、')}
+                      {skippedMissing.length > skippedSummary.preview.length
+                        ? ` 等 ${skippedMissing.length} 个`
+                        : ''}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <div className="notice notice-success">
               <Check size={16} aria-hidden="true" />
-              恢复完成，已写入新目录「{result.targetName}」。
+              恢复完成，已写入新目录「{result.targetName}」
+              {skippedSummary.count > 0 ? `（${skippedSummary.count} 个缺失文件被跳过）` : ''}。
             </div>
             <dl className="settings-list">
               <div className="settings-list-row">
@@ -435,6 +457,12 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
                 <dt>恢复文件</dt>
                 <dd>{result.filesRestored} 个 · {formatBytes(result.bytesRestored)}</dd>
               </div>
+              {skippedSummary.count > 0 ? (
+                <div className="settings-list-row">
+                  <dt>跳过缺失文件</dt>
+                  <dd className="text-warning">{skippedSummary.count} 个（未写入新目录）</dd>
+                </div>
+              ) : null}
               <div className="settings-list-row">
                 <dt>耗时</dt>
                 <dd>{Math.max(1, Math.round(result.durationMs / 1000))} 秒</dd>

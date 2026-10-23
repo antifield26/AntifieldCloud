@@ -58,10 +58,13 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+/** 自增消息 id/时间：模拟真实 OpenCode 每轮 assistant 消息都会产生新消息。 */
+let assistantMessageSeq = 0
 function assistant(content: unknown[]): Record<string, unknown> {
+  assistantMessageSeq += 1
   return {
-    id: 'msg_test',
-    time: { created: 1 },
+    id: `msg_test_${assistantMessageSeq}`,
+    time: { created: 1_700_000_000_000 + assistantMessageSeq },
     type: 'assistant',
     agent: 'build',
     model: { id: 'test-model', providerID: 'test-provider' },
@@ -390,7 +393,22 @@ test('OpenCode 以 400 拒绝 permissions 时回退并在日志中标注未隔�
       fixture.logs.some((entry) => entry.level === 'warn' && entry.message.includes('未隔离')),
       '日志必须明确工具未隔离',
     )
+    // 降级状态必须可被 BotService/状态接口读取（不能只藏在日志里）。
+    const isolation = fixture.ai.toolIsolation()
+    assert.equal(isolation.supported, false)
+    assert.equal(isolation.fallbackCount, 1)
+    assert.equal(typeof isolation.fallbackAt, 'string')
     assertNoSecret(fixture.logs)
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('工具隔离状态：未降级时 supported=true 且计数为 0', async () => {
+  const fixture = setup(basicHandler())
+  try {
+    await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' })
+    assert.deepEqual(fixture.ai.toolIsolation(), { supported: true, fallbackCount: 0, fallbackAt: null })
   } finally {
     dispose(fixture)
   }
@@ -567,6 +585,115 @@ test('v0.5.10：deleteSession 对已不存在的远端会话不抛错', async ()
     assert.ok(del)
     assert.equal(del.url.pathname, '/api/session/ses_already_gone')
     assertNoSecret(fixture.logs)
+  } finally {
+    dispose(fixture)
+  }
+})
+
+/** 多轮会话假 OpenCode：prompt 后把本轮新回答放到历史最前（wait 可配置）。 */
+function multiTurnHandler(options: { waitStatus?: number } = {}) {
+  const history: unknown[] = []
+  let prompts = 0
+  const handler: Handler = (call) => {
+    const path = call.url.pathname
+    if (call.method === 'POST' && path === '/api/session') return jsonResponse({ data: { id: SESSION_ID } })
+    if (call.method === 'POST' && path === `/api/session/${SESSION_ID}/prompt`) {
+      prompts += 1
+      const text = prompts === 1 ? '第一次回答' : '第二次回答'
+      history.unshift(assistant([{ type: 'text', text }]))
+      return jsonResponse({ data: { id: 'inbox_test' } })
+    }
+    if (call.method === 'POST' && path === `/api/experimental/session/${SESSION_ID}/wait`) {
+      const status = options.waitStatus ?? 204
+      return status === 204 ? new Response(null, { status }) : jsonResponse({ message: 'wait unavailable' }, status)
+    }
+    if (call.method === 'GET' && path === `/api/session/${SESSION_ID}/message`) {
+      return jsonResponse({ data: history })
+    }
+    return jsonResponse({ message: 'unexpected' }, 404)
+  }
+  return handler
+}
+
+test('v0.6.0 多轮 Chat：wait 可用时第二轮返回本轮新回答（不返回历史回答）', async () => {
+  const fixture = setup(multiTurnHandler())
+  try {
+    const first = await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第一问' })
+    const second = await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第二问' })
+    assert.equal(first, '第一次回答')
+    assert.equal(second, '第二次回答')
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.6.0 多轮 Chat：wait 回退轮询只取本轮新增回答，不返回上一轮', async () => {
+  // 第 2 轮回答延迟出现：旧实现在首次轮询就会把第 1 轮回答当成本轮结果返回。
+  const history: unknown[] = []
+  let prompts = 0
+  const handler: Handler = (call) => {
+    const path = call.url.pathname
+    if (call.method === 'POST' && path === '/api/session') return jsonResponse({ data: { id: SESSION_ID } })
+    if (call.method === 'POST' && path === `/api/session/${SESSION_ID}/prompt`) {
+      prompts += 1
+      if (prompts === 1) {
+        history.unshift(assistant([{ type: 'text', text: '第一次回答' }]))
+      } else {
+        setTimeout(() => history.unshift(assistant([{ type: 'text', text: '第二次回答' }])), 300)
+      }
+      return jsonResponse({ data: { id: 'inbox_test' } })
+    }
+    if (call.method === 'POST' && path === `/api/experimental/session/${SESSION_ID}/wait`) {
+      return jsonResponse({ message: 'wait unavailable' }, 404)
+    }
+    if (call.method === 'GET' && path === `/api/session/${SESSION_ID}/message`) {
+      return jsonResponse({ data: history })
+    }
+    return jsonResponse({ message: 'unexpected' }, 404)
+  }
+  const fixture = setup(handler, { botAiTimeoutSeconds: 5 })
+  try {
+    const first = await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第一问' })
+    assert.equal(first, '第一次回答')
+    const startedAt = Date.now()
+    const second = await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第二问' })
+    assert.equal(second, '第二次回答')
+    assert.ok(Date.now() - startedAt >= 250, '应等待新回答出现，而不是立即返回历史回答')
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.6.0 进程重启后复用会话：先建立历史基线再取本轮新回答', async () => {
+  const handler = multiTurnHandler()
+  const fixture = setup(handler)
+  try {
+    const first = await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第一问' })
+    assert.equal(first, '第一次回答')
+
+    // 新实例（模拟进程重启）：内存基线为空，但 DB 会话映射仍在。
+    const restartedFetch = makeFetch(handler)
+    const restarted = new OpenCodeBotAi({
+      db: fixture.db,
+      config: testConfig(fixture.dir, {
+        opencodeUrl: 'http://127.0.0.1:4096',
+        opencodePassword: PASSWORD,
+        botAiProvider: 'test-provider',
+        botAiModel: 'test-model',
+        botAiTimeoutSeconds: 2,
+        botAiSessionRetentionDays: 7,
+      }),
+      fetch: restartedFetch.fetchImpl,
+    })
+    const second = await restarted.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第二问' })
+    assert.equal(second, '第二次回答')
+    const firstPromptIndex = restartedFetch.calls.findIndex(
+      (call) => call.method === 'POST' && call.url.pathname.endsWith('/prompt'),
+    )
+    const baselineIndex = restartedFetch.calls.findIndex(
+      (call) => call.method === 'GET' && call.url.pathname.endsWith('/message'),
+    )
+    assert.ok(baselineIndex >= 0 && baselineIndex < firstPromptIndex, '应在发送 prompt 前读取历史建立基线')
   } finally {
     dispose(fixture)
   }

@@ -37,6 +37,17 @@ export const MAX_LOGIN_USERNAME_LENGTH = 64
 export const TOTP_GLOBAL_MAX = 120
 /** 再认证全局限流：防止多来源同时猜当前密码。 */
 const REAUTH_GLOBAL_MAX = 30
+/** AI 工作区 SSO 一次性 ticket：TTL 60 秒、绑定 aiOrigin、最多 1000 条（仅内存，不落库）。 */
+export const AI_SSO_TICKET_TTL_MS = 60_000
+export const AI_SSO_TICKET_MAX = 1000
+/** ticket 形状：32 字节 CSPRNG base64url（43 字符）；兼容未来长度变化。 */
+const AI_SSO_TICKET_PATTERN = /^[A-Za-z0-9_-]{20,128}$/
+
+interface AiSsoTicket {
+  sessionToken: string
+  origin: string
+  expiresAtMs: number
+}
 
 export interface LoginInput {
   username: string
@@ -91,6 +102,8 @@ export class AuthService {
   readonly totpGlobalLimiter = new SlidingWindowLimiter(60 * 60_000, TOTP_GLOBAL_MAX)
   readonly reauthLimiter = new SlidingWindowLimiter(15 * 60_000, 5)
   readonly reauthGlobalLimiter = new SlidingWindowLimiter(60 * 60_000, REAUTH_GLOBAL_MAX)
+  /** 一次性 AI SSO ticket（code → 会话/绑定 origin/过期时间）；只存内存。 */
+  private readonly aiSsoTickets = new Map<string, AiSsoTicket>()
   private readonly db: DatabaseSync
   private readonly config: Config
   private readonly reauthDelayMs: number
@@ -328,6 +341,40 @@ export class AuthService {
     updateSessionCsrf(this.db, context.session.id, token)
     context.session.csrf_hash = sha256Hex(token)
     return token
+  }
+
+  /**
+   * 创建 AI 工作区 SSO 一次性 ticket（绑定 aiOrigin、60 秒过期、最多 1000 条）。
+   * 只在内存保存到被消费/过期；不写 DB、不写日志、不进入 URL 日志（由调用方审计时排除）。
+   */
+  createAiSsoTicket(sessionToken: string, origin: string, nowMs: number = Date.now()): string {
+    this.pruneAiSsoTickets(nowMs)
+    // 容量上限：按插入顺序淘汰最旧（Map 迭代顺序即插入顺序），避免公开入口无界增长。
+    while (this.aiSsoTickets.size >= AI_SSO_TICKET_MAX) {
+      const oldest = this.aiSsoTickets.keys().next()
+      if (oldest.done) break
+      this.aiSsoTickets.delete(oldest.value)
+    }
+    const code = randomToken(32)
+    this.aiSsoTickets.set(code, { sessionToken, origin, expiresAtMs: nowMs + AI_SSO_TICKET_TTL_MS })
+    return code
+  }
+
+  /** 消费 ticket：无条件删除（一次性）；不存在/过期/绑定 origin 不符返回 null。 */
+  consumeAiSsoTicket(code: string, origin: string, nowMs: number = Date.now()): string | null {
+    if (typeof code !== 'string' || !AI_SSO_TICKET_PATTERN.test(code)) return null
+    this.pruneAiSsoTickets(nowMs)
+    const ticket = this.aiSsoTickets.get(code)
+    if (!ticket) return null
+    this.aiSsoTickets.delete(code)
+    if (ticket.expiresAtMs <= nowMs || ticket.origin !== origin) return null
+    return ticket.sessionToken
+  }
+
+  private pruneAiSsoTickets(nowMs: number): void {
+    for (const [code, ticket] of this.aiSsoTickets) {
+      if (ticket.expiresAtMs <= nowMs) this.aiSsoTickets.delete(code)
+    }
   }
 
   logoutAll(context: AuthContext, ip: string): void {

@@ -2,8 +2,14 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Config } from '../../config.ts'
 import { MAX_LOGIN_USERNAME_LENGTH, type AuthService } from '../../auth/service.ts'
-import { CSRF_COOKIE, clearAuthCookies, setAuthCookies, setCsrfCookie } from '../../auth/cookies.ts'
-import { badRequest } from '../../util/errors.ts'
+import {
+  CSRF_COOKIE,
+  clearAuthCookies,
+  readSessionToken,
+  setAuthCookies,
+  setCsrfCookie,
+} from '../../auth/cookies.ts'
+import { badRequest, unauthorized } from '../../util/errors.ts'
 import { asRecord, clientIp, requireString } from '../util.ts'
 import { authOf, csrfGuard, requireAuth } from '../guards.ts'
 
@@ -72,7 +78,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     // CSRF Cookie 丢失（浏览器清理、跨域策略变化）时轮换并补发，避免前端写操作永久失败。
     if (!csrfToken) {
       csrfToken = auth.rotateCsrfToken(context)
-      setCsrfCookie(reply, request, config, csrfToken, context.session.expires_at)
+      setCsrfCookie(reply, request, csrfToken, context.session.expires_at)
     }
     return {
       user: { username: context.user.username },
@@ -115,5 +121,35 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     auth.logoutAll(authOf(request), clientIp(request))
     clearAuthCookies(reply, request, config)
     return { ok: true }
+  })
+
+  /**
+   * AI 工作区 SSO 入口（app 主机 + 会话）。
+   * next 必须是配置 AI_ORIGIN 的完整 URL；签发一次性 ticket 后 302 到
+   * `${aiOrigin}/__af/sso/<ticket>?next=<同源相对 path+query>`，绝不重定向到其它 origin。
+   */
+  app.get('/api/auth/ai-ticket', { preHandler: [requireAuth] }, async (request, reply) => {
+    const rawNext = asRecord(request.query).next
+    if (typeof rawNext !== 'string' || !rawNext.trim()) throw badRequest('缺少 next 参数', 'invalid_next')
+    let target: URL
+    try {
+      target = new URL(rawNext.trim())
+    } catch {
+      throw badRequest('next 参数不合法', 'invalid_next')
+    }
+    if (
+      target.origin !== config.aiOrigin ||
+      target.username.length > 0 ||
+      target.password.length > 0 ||
+      target.pathname.startsWith('//')
+    ) {
+      throw badRequest('next 必须是 AI 工作区同源地址', 'invalid_next')
+    }
+    const sessionToken = readSessionToken(request)
+    if (!sessionToken) throw unauthorized()
+    const ticket = auth.createAiSsoTicket(sessionToken, config.aiOrigin)
+    const nextPath = `${target.pathname}${target.search}`
+    const location = `${config.aiOrigin}/__af/sso/${ticket}?next=${encodeURIComponent(nextPath)}`
+    reply.code(302).header('location', location).header('cache-control', 'no-store').send()
   })
 }

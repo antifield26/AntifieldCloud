@@ -1,8 +1,19 @@
-# AntifieldCloud v0.5.x 实施计划（摘要）
+# AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.5.x 的权威范围/决策摘要；v0.4.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.5.9**（schema v13，**已部署并验收通过 2026-10-22**，release `20261022T143451Z`/commit `97996dc`，无迁移；上一 release `20261022T134852Z`（v0.5.8）保留；`/healthz` v0.5.9/schema 13，smoke 16/16 与 24/24；生产 env 迁移完成），用户实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.0**（**本地修复/门禁完成，待部署与用户验收**；schema 保持 v14、无迁移；OpenCode 已先升级 v2.1.3）：Minor 版本的质量/安全加固，不引入新功能主线。
 
-## v0.5.11 补充（当前，已部署并验收通过；用户实发 2026-10-23 10:39 CST）
+## v0.6.0 补充（当前，本地修复/门禁完成，待部署与用户验收；质量/安全加固 + OpenCode v2.1.3）
+
+- **范围决策**：用户确认 v0.6.0 以质量/安全加固为主，不新增功能；P0–P2 全部修复，P3 记录；允许必要迁移但本版**不需要 schema 迁移**（保持 v14）。
+- **审计**：第五轮 5 个工作流（安全/数据/灾备/Bot-AI/前端/运维）深度审计；P0=0、P1=1（QQ op=13 签名预言机）、P2=14 去重/工作流合计 16、P3 记录；修复与验证见 `docs/AUDIT.md` 第五轮。
+- **安全修复**：op=13 严格 token/时间戳并审计；app/ai 改 **host-only Cookie + 一次性 AI SSO ticket**（不再父域共享）；app API/公开 unlock Origin 只信 app（+ loopback）；公开端点 octet-stream 大 body 收口；记忆敏感过滤；AI 工具隔离降级可见；SSO ticket 日志脱敏。
+- **数据/灾备修复**：密钥包 opencode 快照硬失败并向 `secretsOk` 传播；多 pending ack 缺失集合合并；恢复解包按 tar 实测字节预检；legacy ops=0 不误标迁移；世界备份 `kept/keptCount`、演练真实字段与 schema 检查、恢复 `skippedMissing` 展示。
+- **Bot 修复**：wait 回退只取本轮新回答；发布 >2000 字符明确 400（不静默截断、不再分段）；op=13 成功审计；`aiToolIsolation` + `bot.ai.permissions_fallback`。
+- **OpenCode**：v2.1.2 → **v2.1.3**（先于 v0.6.0 单独升级并验证 Basic/会话/prompt/wait/content/model；备份与回滚见 `.local/audit/round5-opencode.md`）。
+- **门禁（2026-10-23）**：`npm run check` 通过；`npm test` **383**、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**、build 通过；`check-version` 通过。
+- **待办**：本地提交 → 合并 main → 部署（无迁移，仍做 DB 快照）→ smoke → 用户真实验收 → Tag/GitHub Release/CI；部署后回填 `docs/ACCEPTANCE.md`/CHANGELOG 证据。
+
+## v0.5.11 补充（历史，已部署并验收通过；用户实发 2026-10-23 10:39 CST）
 
 - **结构化记忆**：schema **v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_state`；旧 `bot_ai_memories` 保留为 legacy 来源）；7 类条目（profile/preference/fact/project/task/relationship/episode），key/value/confidence/importance/source/时间/expires_at，唯一键 `(bot,user,kind,key)`。
 - **抽取/召回**：3 条或空闲 120s 批处理 + 同用户串行，一次性会话、严格 JSON ops、敏感过滤、容量/TTL（profile/preference 不过期；fact/project 365、episode 90、task 30）；召回核心层优先 + 关键词相关层，3000 字/12 条预算，legacy fallback。

@@ -28,7 +28,7 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     webDistDir: join(dataDir, 'web'),
     appOrigin: 'https://app.test',
     aiOrigin: 'https://ai.test',
-    cookieDomain: '.test',
+    legacyCookieDomain: '.test',
     allowInsecureLoopback: true,
     quotaBytes: 8 * 1024 * 1024,
     maxUploadBytes: 2 * 1024 * 1024,
@@ -160,7 +160,12 @@ export function parseSetCookies(header: string[] | undefined): Record<string, st
   for (const raw of header ?? []) {
     const first = raw.split(';')[0] ?? ''
     const eq = first.indexOf('=')
-    if (eq > 0) out[first.slice(0, eq)] = first.slice(eq + 1)
+    if (eq <= 0) continue
+    const key = first.slice(0, eq)
+    const value = first.slice(eq + 1)
+    // 过渡期清理旧父域 Cookie 的 Set-Cookie 值为空，不得覆盖同响应里的新 host-only Cookie。
+    if (value === '' || out[key] !== undefined) continue
+    out[key] = value
   }
   return out
 }

@@ -2,9 +2,9 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.5.11（**已部署并验收通过**，release `20261023T022831Z`/commit `931b10d`/schema **v14**（迁移 14 不可逆）；`/healthz` = version 0.5.11/schemaVersion 14；部署 smoke 16/16、完整 Access smoke **24/24**；生产 env 5 个 `BOT_MEMORY_*` 就位（640 root:antifieldcloud），运行配置 365/3/120/3000/12/90/30；**用户实发验收通过**（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory` 成功、`/forget confirm` items=2 legacy=0 且回复含“记忆条目 2 条”，之后 items/state 清空且未误删其他用户；`/bots` 面板用户确认））。v0.5.11 结构化长期记忆：schema v14（新增 `bot_memory_items`/`bot_memory_state`，旧 `bot_ai_memories` 保留为 legacy 来源）、7 类条目、抽取/TTL/容量、分层召回、`/memory` 与 off|on、管理 API 元数据、legacy 清理 CLI；**回滚必须恢复最终迁移前快照 + v0.5.10 release**（v0.5.10 不支持 schema v14）。
-> 发布：main `c16a39b` 已推送，annotated Tag `v0.5.11`，GitHub Release [AntifieldCloud v0.5.11](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.5.11)（Latest，2026-10-23 10:46 CST）。
-> 测试基线（Lead 实测 2026-10-23，v0.5.11）：`npm test` **360**（v0.5.10 的 341 + 新增 19）、`npm run test:web` **162**（30 文件，+5）、`npm run typecheck` 通过；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**（`npm run test:coverage` exit 0）、`npm run build` 通过。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.2**。
+> 状态：v0.6.0（**本地修复与门禁完成，待部署/用户验收**；schema 保持 **v14**，无迁移；OpenCode 已先升级 **v2.1.3**）。本版为质量/安全加固：修复 QQ op=13 签名预言机（P1）、app/ai 改 host-only Cookie + 一次性 AI SSO ticket、公开端点大 body 收敛、密钥包快照硬失败、备份 ack/恢复预算/legacy 迁移修复、Bot wait 旧回答/记忆过滤/工具隔离可见性/发布超长 400、世界备份与演练状态契约修复；所有 P0–P2 闭环，P3 已记录。上一版 v0.5.11（已部署验收通过，release `20261023T022831Z`/commit `931b10d`/schema v14）作为历史保留。
+> 发布：待部署与用户验收后填写 release/commit/Tag/GitHub Release。
+> 测试基线（Lead 实测 2026-10-23，v0.6.0）：`npm test` **383**（server+scripts，含新增回归）、`npm run test:web` **176**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -14,14 +14,14 @@
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
 - Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI（v0.5.9 起 AI 仅 Chat 模式），结构化长期记忆落 DB（v0.5.11 schema v14；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **360**）+ Vitest/jsdom（**162**，30 文件），ESLint，`tsc --noEmit`，覆盖率门禁（Lines **92.05%** / Branches **77.43%** / Functions **86.39%**）
+- 测试：`node --test`（服务端 + 运维脚本 **383**）+ Vitest/jsdom（**176**，32 文件），ESLint，`tsc --noEmit`，覆盖率门禁（Lines **92.39%** / Branches **77.83%** / Functions **87.14%**）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
 
 ### 认证与账号
 
-- 密码（scrypt）+ TOTP 两步验证，10 个一次性恢复码；会话 7 天，HttpOnly + Secure + SameSite=Lax Cookie。
+- 密码（scrypt）+ TOTP 两步验证，10 个一次性恢复码；会话 7 天，app 主机 host-only `af_session`（HttpOnly）+ `af_csrf`，Secure + SameSite=Lax；AI 工作区通过 60s 一次性 ticket 获得自己的 host-only 会话，不再共享父域 Cookie。
 - 所有非 GET `/api` 校验 CSRF 与 Origin；改密/重生成恢复码需“当前密码 + TOTP”，并受限流与审计。
 - 登录限流：每 IP 5 次失败/15 分钟、全局 60 次/小时（loopback 不占全局桶）、TOTP 全局 120 次/小时；再认证另有独立限流与恒定延迟。
 
@@ -119,7 +119,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.5.11 -ExpectedSchemaVersion 13`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.6.0 -ExpectedSchemaVersion 14`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
 
 ## 目录
 

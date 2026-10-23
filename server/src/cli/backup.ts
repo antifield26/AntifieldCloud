@@ -717,8 +717,9 @@ async function ackArchive(
       const now = new Date().toISOString()
       db.prepare('UPDATE backup_archives SET pulled_at = ?, acked_at = ? WHERE name = ?').run(now, now, name)
       advanceCursor(db, row)
-      // 本次 archive 的 skippedMissing 成为下一轮必须重新检查的集合；恢复后由 prepare 自动补入。
-      const missing = parseSkippedMissing(row.manifest_json)
+      // 合并历史缺失与本归档 skippedMissing：多 pending 顺序 ack 时不能丢掉“恢复后补入下一次增量”的
+      // 强制重查集合（后 ack 的 inc 未选中早期缺失文件，旧实现会用空列表覆盖历史缺失集合）。
+      const missing = nextMissingIds(db, readMissingIds(db), row.manifest_json)
       writeMissingIds(db, missing)
       audit(
         db,
@@ -762,17 +763,52 @@ function advanceCursor(
   }
 }
 
-/** 从归档 manifest_json 解析 skippedMissing（缺失物理文件的 id）；异常返回空数组。 */
-function parseSkippedMissing(raw: string | null): string[] {
-  if (!raw) return []
+/** 从归档 manifest_json 解析本次覆盖的 content id 与 skippedMissing（缺失物理文件的 id）。 */
+function parseManifestIndex(raw: string | null): { files: Set<string>; skippedMissing: Set<string> } {
+  const files = new Set<string>()
+  const skippedMissing = new Set<string>()
+  if (!raw) return { files, skippedMissing }
   try {
     const parsed: unknown = JSON.parse(raw)
-    if (!parsed || typeof parsed !== 'object') return []
-    const value = (parsed as Record<string, unknown>).skippedMissing
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []
+    if (!parsed || typeof parsed !== 'object') return { files, skippedMissing }
+    const record = parsed as Record<string, unknown>
+    if (Array.isArray(record.files)) {
+      for (const entry of record.files) {
+        const id = (entry as Record<string, unknown> | null)?.id
+        if (typeof id === 'string' && id) files.add(id)
+      }
+    }
+    if (Array.isArray(record.skippedMissing)) {
+      for (const id of record.skippedMissing) if (typeof id === 'string' && id) skippedMissing.add(id)
+    }
   } catch {
-    return []
+    // manifest 损坏时按“没有任何覆盖信息”处理，由调用方保守保留历史缺失集合。
   }
+  return { files, skippedMissing }
+}
+
+/**
+ * ack 后应继续保留的缺失文件集合：
+ * - 本归档 skippedMissing 的 id 必须保留（等待物理恢复后补入下一次增量）；
+ * - 本归档 files 已包含的 id 视为已覆盖，移除；
+ * - 本归档未选中、但 DB 中文件行仍存在的历史缺失 id 继续保留（多 pending 场景下后 ack 的 inc
+ *   不会重复选择早期文件，直接覆盖会永久丢掉强制重查集合）；文件行已删除的 id 丢弃。
+ */
+function nextMissingIds(db: DatabaseSync, previous: string[], manifestJson: string | null): string[] {
+  const { files, skippedMissing } = parseManifestIndex(manifestJson)
+  const keep = new Set<string>()
+  const existing = db.prepare("SELECT 1 AS ok FROM files WHERE id = ? AND kind = 'file'")
+  for (const id of previous) {
+    if (files.has(id) || skippedMissing.has(id)) continue
+    try {
+      if (existing.get(id) !== undefined) keep.add(id)
+    } catch {
+      // 查询失败时保守保留，宁可下次多打包也不能漏备。
+      keep.add(id)
+    }
+  }
+  for (const id of skippedMissing) keep.add(id)
+  return [...keep]
 }
 
 /**

@@ -124,6 +124,37 @@ export function restoreExecuteResult(result: RestoreExecuteResult): { plan: Rest
   return { plan: result.plan, result: result.result }
 }
 
+/** 恢复时被跳过的缺失文件：计划剔除 + 执行时缺失，去重后用于结果提示。 */
+export function collectSkippedMissing(
+  plan: RestorePlan | null | undefined,
+  result: RestoreResult | null | undefined,
+): string[] {
+  const ids = [...(plan?.skippedMissing ?? []), ...(result?.skippedMissing ?? [])]
+  return [...new Set(ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0))]
+}
+
+export interface SkippedMissingSummary {
+  count: number
+  /** 供 title/详情展示的前几个文件 id。 */
+  preview: string[]
+  /** 完成面板提示文案；无缺失时返回 null，避免把不完整恢复显示成“全部完成”。 */
+  message: string | null
+}
+
+/** 把 skippedMissing 整理为“跳过数量 + 预览”提示；空数组表示完整恢复。 */
+export function summarizeSkippedMissing(ids: readonly string[], maxPreview = 5): SkippedMissingSummary {
+  const unique = [...new Set(ids.filter((id): id is string => typeof id === 'string' && id.trim().length > 0))]
+  const preview = unique.slice(0, Math.max(1, maxPreview))
+  return {
+    count: unique.length,
+    preview,
+    message:
+      unique.length > 0
+        ? `有 ${unique.length} 个文件在归档中缺失，执行时已跳过、不会出现在恢复目录中；其余文件已正常恢复。`
+        : null,
+  }
+}
+
 /**
  * 状态机 reducer。
  * busy（校验/执行中）时拒绝除结果类动作外的输入，避免重复提交或篡改确认内容。

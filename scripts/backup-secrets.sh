@@ -65,15 +65,25 @@ if ! mkdir -p "$tmp_parent" 2>/dev/null; then
 fi
 chmod 0700 "$tmp_parent"
 find "$tmp_parent" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+# opencode 快照需要以 opencode 用户写入，且其父目录必须可被 opencode 用户遍历：
+# tmp_parent/work 都是 0700 root，直接在其下创建快照目录会阻断 opencode 的路径遍历。
+# 因此单独使用 0711 父目录（其他用户可进入但不可列目录），快照子目录 0700 归 opencode。
+snapshot_parent="${tmp_parent%/}-opencode"
+if ! mkdir -p "$snapshot_parent" 2>/dev/null; then
+  snapshot_parent="${TMPDIR:-/tmp}/antifieldcloud-secrets-opencode"
+  mkdir -p "$snapshot_parent"
+fi
+chmod 0711 "$snapshot_parent"
+find "$snapshot_parent" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
 work=$(mktemp -d "$tmp_parent/work.XXXXXX")
 chmod 0700 "$work"
-# opencode 快照需要以 opencode 用户写入；独立目录避免 0700 的 work 阻断其遍历。
 snapshot_root=""
 archive=""
 tmp_tar="$work/secrets.tar.gz"
 cleanup() {
   rm -rf "$work"
   if [[ -n "$snapshot_root" ]]; then rm -rf "$snapshot_root"; fi
+  if [[ -n "${snapshot_parent:-}" ]]; then rmdir "$snapshot_parent" 2>/dev/null || true; fi
   if [[ -n "$archive" && -e "$archive" && -z "${archive_committed:-}" ]]; then
     rm -f "$archive" "$archive.sha256"
   fi
@@ -121,17 +131,21 @@ if [[ ${#root_files[@]} -eq 0 ]]; then
 fi
 
 # opencode 数据库一致性快照：以 opencode 用户执行固定 node:sqlite backup，不修改 opencode 服务。
-# OP-10：快照失败降级为警告，仍打包 env/cloudflared/server.properties；状态 includesOpencode=false。
+# 生产密钥包要求包含 opencode DB：目录不可写或快照失败时直接失败退出，由调用方把密钥包状态置为失败，
+# 避免只记 warning、PC 侧 secretsOk 仍为 true 的静默漏备（失败会保留 Pi 上既有密钥包，下次重试）。
 opencode_included=false
 if [[ -f "$OPENCODE_DB" ]] && getent passwd opencode >/dev/null 2>&1 && [[ -x "$NODE_BIN" ]]; then
-  snapshot_root=$(mktemp -d "$tmp_parent/opencode.XXXXXX")
+  snapshot_root=$(mktemp -d "$snapshot_parent/opencode.XXXXXX")
   snapshot_dir="$snapshot_root/opencode"
   mkdir -p "$snapshot_dir"
   chown opencode:opencode "$snapshot_root" "$snapshot_dir"
   chmod 0700 "$snapshot_root" "$snapshot_dir"
   snapshot_db="$snapshot_dir/opencode.db"
+  if ! run_as_opencode sh -c 'test -w "$0"' "$snapshot_dir" >/dev/null 2>&1; then
+    json_error "opencode 快照目录不可写（opencode 用户无法访问临时目录）"
+  fi
   # node:sqlite 的 backup() 对运行中的 WAL 库做一致性快照；命令固定、无用户输入拼接。
-  if run_as_opencode env SOURCE_OC_DB="$OPENCODE_DB" TARGET_OC_DB="$snapshot_db" "$NODE_BIN" --input-type=module -e '
+  if ! run_as_opencode env SOURCE_OC_DB="$OPENCODE_DB" TARGET_OC_DB="$snapshot_db" "$NODE_BIN" --input-type=module -e '
     import { DatabaseSync, backup } from "node:sqlite"
     const source = new DatabaseSync(process.env.SOURCE_OC_DB, { readOnly: true })
     try {
@@ -140,15 +154,10 @@ if [[ -f "$OPENCODE_DB" ]] && getent passwd opencode >/dev/null 2>&1 && [[ -x "$
       source.close()
     }
   ' >/dev/null 2>&1; then
-    chmod 0600 "$snapshot_db" 2>/dev/null || true
-    opencode_included=true
-  else
-    # 不中断整个密钥包：先记录警告，env/cloudflared/server.properties 仍然备份。
-    opencode_warning="opencode_snapshot_failed"
-    rm -rf "$snapshot_root"
-    snapshot_root=""
-    echo "警告：opencode 数据库快照失败（继续打包其它密钥文件）" >&2
+    json_error "opencode 数据库一致性快照失败（密钥包未生成；请检查 opencode 用户/数据库权限）"
   fi
+  chmod 0600 "$snapshot_db" 2>/dev/null || true
+  opencode_included=true
 fi
 
 if [[ "$opencode_included" == "true" ]]; then

@@ -111,6 +111,7 @@ function botStatus(overrides: Partial<BotStatus> = {}): BotStatus {
     queuedDeliveries: 0,
     queuedPublishes: 0,
     lastError: null,
+    aiToolIsolation: null,
     ...overrides,
   }
 }
@@ -293,6 +294,17 @@ describe('Bots 机器人管理', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: '检测' }))
     await waitFor(() => expect(mocks.checkConnectivity).toHaveBeenCalledTimes(1))
+  })
+
+  it('AI 工具隔离降级时概览显示 warning', async () => {
+    mocks.status.mockResolvedValue(
+      botStatus({
+        aiToolIsolation: { supported: false, fallbackCount: 2, fallbackAt: '2026-10-23T04:00:00.000Z' },
+      }),
+    )
+    renderPage()
+    expect(await screen.findByText(/AI 工具隔离已降级/)).toBeTruthy()
+    expect(await screen.findByText(/降级 2 次/)).toBeTruthy()
   })
 
   it('创建表单校验 QQ 必填项，填写后提交 AppID 与配置', async () => {

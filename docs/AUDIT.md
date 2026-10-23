@@ -1,12 +1,12 @@
-# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0）
+# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0）
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
-- 日期：2026-10-19（第一轮）、2026-10-20（第二/三轮）、2026-10-21（第四轮）
+- 日期：2026-10-19（第一轮）、2026-10-20（第二/三轮）、2026-10-21（第四轮）、2026-10-23（第五轮）
 - 范围：v0.1.0 全部代码、部署脚本、备份、Pi/Cloudflare、前端与测试；第二轮覆盖 v0.2.2 基线与 v0.3.0/v0.3.1 增量；
   第三轮覆盖 v0.3.2 基线与 v0.4.0；第四轮覆盖 v0.4.2 基线与 v0.5.0 Bot 增量。
 - 方法：只读静态审查 + 进程内 PoC + 只读线上检查 + 回归测试；审计阶段未修改生产。
-- 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12；Bot WIP P1=2、P2=4 均已修复；残余见各节“延后/残留”。
+- 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12，Bot WIP P1=2、P2=4 均已修复；第五轮（v0.5.11→v0.6.0）P0=0、P1=1、P2=14 均已在本版修复，P3=54 记录；残余见各节“延后/残留”。
 
 ## 第一轮（v0.2.0，2026-10-19）
 
@@ -344,3 +344,78 @@
 - Bot WIP 的 2 个 P1、4 个 P2 全部在 v0.5.0 修复：发布 TOTP、双白名单、时间戳/去重、关闭态 404、AES-256-GCM/只写 Token、输出清洗；均有本地测试或命令证据。
 - v0.5.0 的部署/CI/smoke/真实平台联调证据尚未产生；`docs/ACCEPTANCE.md` 已留「待部署后补」占位。完成前不得声明验收通过。
 - 下一轮优先：真实平台联调与负路径、`typescript-eslint` TS7 迁移、fail2ban 封禁持久化/观测、sudo 收口、Access 策略自动核验、独立第三方复审。
+
+## 第五轮（v0.5.11 基线 → v0.6.0，2026-10-23）
+
+### 1. 范围与方法
+
+- 基线：生产 v0.5.11 / schema v14 / OpenCode v2.1.3（v2.1.3 于本轮审计前单独升级并验证；备份/回滚证据在本地 `.local/audit/round5-opencode.md`）。
+- 工作流：安全（认证/文件/分享/上传/笔记/OpenCode 代理）、数据/灾备（DB/迁移/备份/恢复/告警/指标）、Bot/AI/记忆/QQ Webhook、前端/API 契约/UI、运维（部署/smoke/文档/生产只读）。Lead 负责 OPS 流并统一 triage。
+- 方法：只读静态审查 + 威胁建模 + 进程内 PoC + 生产只读命令；审计阶段不写生产、不改配置、不访问真实平台；修复阶段由 Lead 统一提交/验证。原始报告在 `.local/audit/round5-*.md`（gitignored，含细节与命令）。
+- 边界：不替代第三方平台/Cloudflare 控制面验收；QQ 真实回调/模型/网络负路径仍以部署后真实验收为准；真实生产写操作仅在 Step 6 部署/验收执行。
+
+### 2. 计数与结论
+
+| 工作流 | P0 | P1 | P2 | P3 | 本版处置 |
+|---|---:|---:|---:|---:|---|
+| 安全 | 0 | 0 | 2 | 12 | P2 全部修复；P3 记录 |
+| 数据/灾备 | 0 | 0 | 4 | 9 | P2 全部修复；P3 记录 |
+| Bot/AI | 0 | 1 | 4 | 14 | P1/P2 全部修复；P3 记录 |
+| 前端/契约 | 0 | 0 | 3 | 14 | P2 全部修复；P3 记录 |
+| 运维 | 0 | 0 | 3 | 5 | P2 全部修复；P3 记录 |
+
+- 跨工作流重复项：`A5-WEB-01 = A5-OPS-01`（世界备份 `kept` 契约）、`A5-WEB-02 = A5-OPS-02`（演练字段/schema 检查）。
+- 去重后本版 **P0=0、P1=1、P2=14**；均为已修复/已闭环（P1 先于本次修复提交 `81be6e5`、`72fe7c0`；P2 见下表）。P3 共 54 项（工作流合计），记录不修（低风险/产品边界/需后续版本）。
+
+### 3. P1/P2 发现与处置
+
+| ID | 级别 | 问题/影响 | 处置与证据 |
+|---|---|---|---|
+| A5-BOT-01 | P1 | QQ `op=13` 回调校验可把任意事件 JSON 当 `plain_token` 换取 Ed25519 签名，进而伪造任意 `op=0` 事件（伪造命令/身份） | 严格 `plain_token ^[A-Za-z0-9_-]{1,128}$`、`event_ts ^\d{1,12}$`，否则 400；webhook botId 日志脱敏；PoC 修复后 `challenge.kind=rejected`、伪造事件不再解析；提交 `81be6e5`/`72fe7c0`；新增回归 + op=13 成功审计 `bot.webhook.challenge` |
+| A5-SEC-01 | P2 | app/ai 共用 `Domain=.父域` 会话 Cookie；任一子域/兄弟域攻击面可影响会话，ai 借用 app 凭据 | app 改 host-only Cookie；ai 改用 app 签发 60s 一次性 ticket（`GET /api/auth/ai-ticket` → `/__af/sso/<ticket>`）设置自己的 host-only 会话；登录/退出清理旧父域 Cookie；测试覆盖一次性/过期/错误 origin/开放重定向/无 Domain |
+| A5-SEC-02 | P2 | 全局 `application/octet-stream` 8 MiB 解析器在鉴权/Origin 前缓冲大 body，公开 unlock 也可触发 | 全局回落 1 MiB；8 MiB+64 KiB raw body 只在 uploads 独立 scope；新增非分片/分片回归；PoC 2 MiB→413 |
+| A5-DATA-01 | P2 | opencode DB 快照因临时父目录 0700 root 对 opencode 不可遍历而静默缺失；PC `secretsOk=true` 掩盖 | 独立 0711 快照父目录 + opencode 可写预检；快照失败硬失败（不生成半成品），传播 `secretsOk=false`；生产证据确认旧包仅 4011 B |
+| A5-DATA-02 | P2 | 多 pending 顺序 ack 用本归档 `skippedMissing` 覆盖 meta，丢失历史缺失强制重查集合 | ack 合并：覆盖移除、仍存在文件行保留、manifest 缺失保守保留；新增多 pending 端到端与行删除测试 |
+| A5-DATA-03 | P2 | 恢复解包预算信任归档 DB `files.size`，可先解包超预算内容再失败 | 解包前 `measureContents()` 按 tar 实际 size 测量，再 staging/配额/落盘预检；超限 507 且不建目标；新增声明 1 字节/实际 20 MiB 与注入上限测试 |
+| A5-DATA-04 | P2 | legacy 抽取 `ops=0` 也置 `legacy_migrated_at`，fallback 停止注入，旧摘要可能被后续清理 | 仅 `upserts>0` 才标记迁移；ops=0 保留 fallback 继续迁移；新增 ops=0/下一批 upsert 测试 |
+| A5-BOT-02 | P2 | wait 不可用轮询回退返回上一轮旧 assistant 回答，多轮答非所问/记忆写入旧回答 | 发送 prompt 前建立 assistant 消息基线（id/time.created），wait/轮询只接受基线外新回答；重启首次复用先读存量消息；多轮/回退/重启用例 |
+| A5-BOT-03 | P2 | 记忆敏感过滤覆盖不足且 key/legacy 未过滤；密码/token/URL/内部路径可落库并进入提示词 | 扩展自然语言密钥/token 前缀/URL/IP/内部路径/UNC/提示结构标记过滤，key/value/legacy 均过滤；读取侧排除旧敏感条目；6 PoC 样本 + 正常偏好不误杀 |
+| A5-BOT-04 | P2 | AI 工具隔离降级仅在日志，无状态/告警；v2.1.3 仅验证 permissions 接受，未验证工具实际被拒 | `toolIsolation()` + `GET /api/bots/status.aiToolIsolation` + 审计 `bot.ai.permissions_fallback`；`/bots` 概览 warning；SECURITY/BOT 记录“接受≠已证明拦截”残余 |
+| A5-BOT-05 | P2 | 发布路由 `slice(2000)` 静默截断，用户以为全文已发 | 路由不截断；service 超长返回 `400 publish_text_too_long`；2000 可入队/2001 拒绝测试 |
+| A5-WEB-01/OPS-01 | P2 | 前端把世界备份 `kept`（归档名数组）当数字展示；世界/PC 状态字段缺失 | `kept: string[]` + `keptCount`，文案注明“上次运行保留、PC ack 后远端删除”；类型/渲染/测试更新 |
+| A5-WEB-02/OPS-02 | P2 | 演练状态按不存在的 `reportPath/dbIntegrity` 展示；smoke 不校验 drill schema | 改用 `report/latestDb/schemaVersion/worldChecked`，旧字段仅兼容回退；smoke 对 schema 不一致 WARN 并提示重跑 |
+| A5-WEB-03 | P2 | 恢复 `skippedMissing` 未展示，用户可能误判完整恢复 | 计划/结果补字段；完成面板显示缺失数量/ID，成功提示不再误报完整恢复；组件测试 |
+| A5-OPS-03 | P2 | 文档版本/字段漂移（OpenCode 2.1.2、schema 14、smoke 13、API 字段/限流、DEPLOY §3.3 陈旧、保留语义矛盾等） | 统一同步 README/AGENTS/API/UI-SPEC/DEPLOY/SECURITY/BACKUP/BOT/CHANGELOG/ACCEPTANCE/PLAN/ROADMAP；`check-version` 通过 |
+
+### 4. P3 汇总（记录，不本版修）
+
+- 安全 12 项：app 写请求可省略 Origin、上传间隔/时间侧信道、公开分享 token 统计 oracle、bare `Origin: null`、备份 TOTP 失败审计、SSO 未绑定 IP/UA、`__Host-` 前缀未采用、旧 Cookie 过渡、AI proxy 响应头透传、分享密码强度/迁移、日志 query 残留、CI 权限/供应链加固。
+- 数据/灾备 9 项：大归档 entries 浏览 507、恢复计划早期快照尺寸检查、导入归档保留策略、告警跨周期不重投、锁心跳、增量时钟水位、状态文件大小上限之外的字段校验、legacy 镜像清理、备份状态历史回填。
+- Bot/AI 14 项：op=13 失败审计字段、消息基线失败边界、旧敏感行仍在 DB、permissions 降级进程级一条审计、多 Bot 状态归属、QQ 平台限流/签名漂移、图片 prompt 文件长期兼容、shim 原生按钮复验、长回复 msg_seq、CF-IP 信任边界、reserved marker、死信 TTL、事件诊断保留、`/ask` 残留文案。
+- 前端/契约 14 项：映射/错误文案细节、BotMetrics 成功率语义、发布文本长度展示、Settings 告警配置、Shares 分页、文件内容/预览契约、空态/重试、PWA 缓存、窄屏表格、无障碍焦点、API 类型可空性、旧字段兼容、UI 文案、前端测试盲区。
+- 运维 5 项：smoke world 归档存在性/schema 匹配、drill 结果解析、CI 缓存/权限、备份脚本 Bash 可移植性、生产日志保留。
+- 明细与逐项证据见 `.local/audit/round5-{security,data,bot,web,ops}.md`；P3 不阻塞 v0.6.0，但若后续变更触及同模块应优先回看。
+
+### 5. 回归与验证证据
+
+- 本地门禁（2026-10-23，`release/v0.6.0` 工作树）：`npm run check` 通过；`npm test` **383 pass / 0 fail**（server+scripts）、`npm run test:web` **176 pass / 0 fail**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）；`node scripts/check-version.mjs` 通过。
+- 针对性批次：安全/SSO/上传 17 pass；备份/恢复 52 pass；Bot 135 pass；前端 176 pass；全新测试文件 `uploads-hardening`、`RestoreWizard`、`Login` 等。
+- PoC：op=13 预言机修复前可伪造命令、修复后 400/拒绝；A5-SEC-02 2 MiB octet-stream 修复前进入 handler、修复后 413；SSO 全链路/一次性/开放重定向用例；备份 ack 多 pending 端到端；恢复 1 字节声明/20 MiB 实际预算。
+- 生产只读：OpenCode v2.1.3 版本/API/model 验证；服务 active、无 warning；备份 pending=0、PC 拉取正常；`secrets-tmp` 0700 root 与旧密钥包 4011 B 证实 A5-DATA-01；未在审计阶段修改生产。
+- 证据边界：mock-only（QQ/模型/网络）；真实 QQ/Cloudflare/浏览器 SSO 验收在 Step 6 执行，未完成前不得声明 v0.6.0 最终验收通过。
+
+### 6. 残余风险（明确）
+
+1. **host-only/SSO 过渡**：旧父域 Cookie 仅在登录/退出响应清理，长期不重登录的浏览器最多 7 天内可能仍发送旧 Cookie；未采用 `__Host-` 前缀；SSO ticket 未绑定 IP/UA（一次性/60s/aiOrigin/no-store/no-referrer）。发布说明提示清理站点 Cookie。
+2. **BOT-04 工具拦截未 e2e**：已实现降级审计/状态，但 await 生产负路径（deny-all 会话内要求执行 shell/读文件，确认无 tool 段）后才可声明隔离有效；仍不得把 Chat 当强沙箱。
+3. **记忆过滤是启发式**：新格式密钥可能漏过；旧版本已落库敏感行仍存在 DB，读取侧已不注入/不迁移，可用 `/forget`/管理删除/后续 CLI 清理。
+4. **密钥包硬失败语义**：opencode 快照瞬时失败会跳过当天密钥包（旧包保留、次日重试）；如希望保留部分包需改备份拉取状态模型（P3）。
+5. **恢复性能**：measureContents 多一次只读解压，大归档恢复耗时增加约一次解压时间；换预算可信。
+6. **既有残余**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/LUKS、Cloudflare 明文、mock-only 平台路径等按 `docs/SECURITY.md` §4 管理。
+7. **验收状态**：本地门禁完成；生产部署/smoke/用户真实验收/备份/Tag/GitHub Release 尚待 Step 6，完成前以“待验收”记录。
+
+### 7. 结论
+
+- 第五轮去重后 P0=0、P1=1、P2=14；P1/P2 均在本版修复并有回归/PoC 证据；P3 54 项记录不修。
+- 审计未发现新的未关闭 P0/P1；无 schema 迁移（保持 v14）；OpenCode 已先升级 v2.1.3。
+- 本版为质量/安全加固 Minor，不是第三方独立审计；生产最终结论以 Step 6 部署、smoke、用户验收与发布证据为准。

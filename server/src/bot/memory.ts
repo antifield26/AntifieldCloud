@@ -1,7 +1,7 @@
 /**
  * Bot 结构化长期记忆：条目存储、抽取操作合并、按相关性分层召回、旧滚动摘要迁移与清理。
- * 安全边界：管理接口只返回类型/重要度等元数据，不返回 key/value；写入前过滤密钥/URL/内部路径；
- * 记忆内容只作为提示词背景资料，不是指令；/memory off 时既不抽取也不注入。
+ * 安全边界：管理接口只返回类型/重要度等元数据，不返回 key/value；写入前过滤密钥/URL/内部路径/提示结构标记
+ * （key 与 value 均过滤），旧摘要注入前按行过滤；记忆内容只作为提示词背景资料，不是指令；/memory off 时既不抽取也不注入。
  */
 import type { DatabaseSync } from 'node:sqlite'
 import { existsSync, rmSync, readFileSync } from 'node:fs'
@@ -18,6 +18,7 @@ import type {
   BotMemoryUserSummary,
 } from './types.ts'
 import { BOT_MEMORY_KINDS } from './types.ts'
+import { RESERVED_ROLE_MARKERS } from './roles.ts'
 
 const VALUE_MAX_CHARS = 500
 const KEY_MAX_CHARS = 64
@@ -35,11 +36,22 @@ const KIND_LABEL: Record<BotMemoryKind, string> = {
   episode: '事件',
 }
 
+/**
+ * 敏感内容过滤：覆盖自然语言密钥句式、常见密钥前缀、带/不带 scheme 的 URL、IP、内部路径与 UNC。
+ * 中文关键词必须带"是/为/：/="等判断词，避免把"对密码学感兴趣""Node.js"这类正常偏好误杀。
+ */
 const SECRET_PATTERNS: readonly RegExp[] = [
-  /(?:password|passwd|token|secret|api[_-]?key|private[_-]?key|密码|口令|令牌|密钥)\s*[:=：]/i,
+  /(?:密码|口令|令牌|密钥|私钥)\s*(?:是|为|[:=：])/,
+  /(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|access[_-]?key|client[_-]?secret)\b\s*(?:[:=：]|是|为|is\b|are\b)/i,
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
-  /\b(?:ssh|https?):\/\/\S+/i,
-  /(?:[A-Za-z]:\\|\/(?:home|var|etc|opt|run|proc|sys|tmp)\/)/,
+  /\bBearer\s+[A-Za-z0-9._~+/-]{12,}/i,
+  /\b(?:sk|pk|rk|ghp|gho|ghu|ghs|ghr|xox[baprs])[-_][A-Za-z0-9_-]{10,}/i,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
+  /\b(?:ssh|https?|ftp|sftp|wss?|git):\/\/\S+/i,
+  /\b(?:[a-z0-9-]+\.)+(?:com|cn|net|org|io|dev|app|xyz|me|co|info|top|site|cloud|tech|link|vip|work|club|online|shop)\b(?:[:/]\S*)?/i,
+  /\b\d{1,3}(?:\.\d{1,3}){3}\b/,
+  /(?:[A-Za-z]:\\|\\\\[A-Za-z0-9._-]+\\|\/(?:home|var|etc|opt|run|proc|sys|tmp|root|mnt|srv|usr|bin|sbin|boot|data|media|lib)\/|~\/)/,
 ]
 
 const STOP_WORDS = new Set([
@@ -164,7 +176,20 @@ function normalizeValue(value: string): string {
 }
 
 function isSensitive(value: string): boolean {
+  if (RESERVED_ROLE_MARKERS.some((marker) => value.includes(marker))) return true
   return SECRET_PATTERNS.some((pattern) => pattern.test(value))
+}
+
+/** 旧摘要按行过滤敏感内容：命中密钥/URL/路径/提示结构标记的行整行丢弃，其余保留。 */
+function filterLegacyLines(value: string): string {
+  return value
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim()
+      return trimmed.length === 0 || !isSensitive(trimmed)
+    })
+    .join('\n')
+    .trim()
 }
 
 function clamp(value: number, min: number, max: number, fallback: number): number {
@@ -242,17 +267,20 @@ export class BotMemoryStore {
       const path = this.pathFor(row.memory_id)
       if (existsSync(path)) {
         try {
-          summary = safeText(readFileSync(path, 'utf8').replace(/^#[^\n]*\n+/, '').slice(0, LEGACY_READ_LIMIT), this.options.legacyMaxChars)
+          summary = readFileSync(path, 'utf8')
+            .replace(/^#[^\n]*\n+/, '')
+            .slice(0, LEGACY_READ_LIMIT)
         } catch {
           summary = ''
         }
       }
     }
-    const text = safeText(summary, this.options.legacyMaxChars)
+    // 旧摘要同样可能是敏感内容来源（历史模型输出）：注入/迁移前按行过滤泄露项与提示结构标记。
+    const text = safeText(filterLegacyLines(summary), this.options.legacyMaxChars)
     return text ? { memoryId: row.memory_id, summary: text } : null
   }
 
-  /** 提供给抽取模型的现有条目（非过期，最多 120 条）。 */
+  /** 提供给抽取模型的现有条目（非过期，最多 120 条）；历史遗留的敏感条目不再回灌模型。 */
   itemsForExtraction(botId: string, userId: string): BotMemoryItemPrompt[] {
     const rows = this.db
       .prepare(
@@ -261,13 +289,15 @@ export class BotMemoryStore {
          ORDER BY importance DESC, updated_at DESC LIMIT ?`,
       )
       .all(botId, userId, nowIso(), EXTRACT_ITEM_LIMIT) as unknown as MemoryItemRow[]
-    return rows.map((row) => ({
-      kind: row.kind,
-      key: row.mem_key,
-      value: row.value,
-      importance: row.importance,
-      updatedAt: row.updated_at,
-    }))
+    return rows
+      .filter((row) => !isSensitive(row.mem_key) && !isSensitive(row.value))
+      .map((row) => ({
+        kind: row.kind,
+        key: row.mem_key,
+        value: row.value,
+        importance: row.importance,
+        updatedAt: row.updated_at,
+      }))
   }
 
   /**
@@ -277,13 +307,16 @@ export class BotMemoryStore {
   buildPromptContext(botId: string, userId: string, userText: string): BotMemoryPromptContext {
     const state = this.getState(botId, userId)
     if (!state.memoryEnabled) return { text: '', usedItemIds: [], legacyFallback: false }
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM bot_memory_items
-         WHERE bot_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?)
-         ORDER BY importance DESC, updated_at DESC`,
-      )
-      .all(botId, userId, nowIso()) as unknown as MemoryItemRow[]
+    const rows = (
+      this.db
+        .prepare(
+          `SELECT * FROM bot_memory_items
+           WHERE bot_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?)
+           ORDER BY importance DESC, updated_at DESC`,
+        )
+        .all(botId, userId, nowIso()) as unknown as MemoryItemRow[]
+      // 历史遗留的敏感条目（旧版本写入）不再进入任何提示词。
+    ).filter((row) => !isSensitive(row.mem_key) && !isSensitive(row.value))
     const tokens = tokenize(userText)
     const core = rows.filter((row) => CORE_KINDS.has(row.kind))
     const relevant = rows
@@ -612,7 +645,8 @@ export class BotMemoryStore {
         continue
       }
       const value = normalizeValue(String(raw.value ?? ''))
-      if (!value || isSensitive(value)) {
+      // key 与 value 都做敏感/提示结构过滤；历史遗留的敏感条目在读取侧也会被排除。
+      if (!value || isSensitive(value) || isSensitive(key)) {
         skipped += 1
         continue
       }

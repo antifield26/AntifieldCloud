@@ -1,31 +1,36 @@
-/** 认证 Cookie 的读写与安全属性。仅 loopback HTTP 允许非 Secure Cookie。 */
+/**
+ * 认证 Cookie 的读写与安全属性。
+ *
+ * 安全边界：
+ * - 新 Cookie 一律 host-only（不设置 Domain）：只有签发它的主机（app）会收到；AI 工作区
+ *   (ai 主机)通过一次性 SSO ticket 换取 ai 主机自己的 host-only 会话 Cookie。
+ * - HttpOnly + Secure + SameSite=Lax；Secure 按请求协议设置，仅 loopback HTTP 例外。
+ * - 过渡期清理：登录/退出时额外删除 v0.6.0 之前按父域共享的旧 af_session/af_csrf
+ *   （`Domain=<legacyCookieDomain>`、Max-Age=0）；该域只用于删除旧 Cookie，绝不用于设置新值。
+ */
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
-import { isLoopbackHostname } from '../http/host.ts'
 import { requestMeta } from '../http/request-meta.ts'
 
 export const SESSION_COOKIE = 'af_session'
 export const CSRF_COOKIE = 'af_csrf'
 
-/** 兼容旧调用：hostname 为 loopback 名称（127.0.0.1/localhost/::1）。 */
-export function isLoopbackHost(hostname: string): boolean {
-  return isLoopbackHostname(hostname)
-}
-
-export interface CookieSecurity {
-  secure: boolean
-  domain: string | undefined
+/** Cookie 安全属性：只由请求协议决定，不再有 Domain 作用域。 */
+export function cookieSecurity(request: FastifyRequest): { secure: boolean } {
+  const meta = requestMeta(request)
+  return { secure: meta.protocol === 'https' }
 }
 
 /**
- * Cookie 安全属性：协议与 hostname 均来自 requestMeta（只信 loopback 对端的
- * Cloudflare 头与原始 Host），不接受 X-Forwarded-Host。
+ * 删除旧版本父域共享的 af_session/af_csrf（v0.6.0 过渡期，仅当配置了清理域时）。
+ * 删除请求固定带 Secure（旧 Cookie 是 Secure 的，非 Secure 的删除请求不会覆盖它）。
  */
-export function cookieSecurity(request: FastifyRequest, config: Config): CookieSecurity {
-  const meta = requestMeta(request)
-  const secure = meta.protocol === 'https'
-  const domain = secure && !meta.loopback && config.cookieDomain ? config.cookieDomain : undefined
-  return { secure, domain }
+function clearLegacyDomainCookies(reply: FastifyReply, config: Config): void {
+  const domain = config.legacyCookieDomain
+  if (!domain) return
+  const base = { path: '/', sameSite: 'lax' as const, secure: true, domain }
+  reply.clearCookie(SESSION_COOKIE, { ...base, httpOnly: true })
+  reply.clearCookie(CSRF_COOKIE, { ...base, httpOnly: false })
 }
 
 export function setAuthCookies(
@@ -36,27 +41,17 @@ export function setAuthCookies(
   csrfToken: string,
   expiresAt: string,
 ): void {
-  const { secure, domain } = cookieSecurity(request, config)
+  const { secure } = cookieSecurity(request)
   const maxAge = Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000))
-  const base = {
-    path: '/',
-    sameSite: 'lax' as const,
-    secure,
-    ...(domain ? { domain } : {}),
-  }
+  const base = { path: '/', sameSite: 'lax' as const, secure }
   reply.setCookie(SESSION_COOKIE, sessionToken, { ...base, httpOnly: true, maxAge })
   reply.setCookie(CSRF_COOKIE, csrfToken, { ...base, httpOnly: false, maxAge })
+  clearLegacyDomainCookies(reply, config)
 }
 
 /** 仅补发 CSRF Cookie（会话存在但 af_csrf 丢失时使用）。 */
-export function setCsrfCookie(
-  reply: FastifyReply,
-  request: FastifyRequest,
-  config: Config,
-  csrfToken: string,
-  expiresAt: string,
-): void {
-  const { secure, domain } = cookieSecurity(request, config)
+export function setCsrfCookie(reply: FastifyReply, request: FastifyRequest, csrfToken: string, expiresAt: string): void {
+  const { secure } = cookieSecurity(request)
   const maxAge = Math.max(0, Math.floor((Date.parse(expiresAt) - Date.now()) / 1000))
   reply.setCookie(CSRF_COOKIE, csrfToken, {
     path: '/',
@@ -64,15 +59,15 @@ export function setCsrfCookie(
     secure,
     httpOnly: false,
     maxAge,
-    ...(domain ? { domain } : {}),
   })
 }
 
 export function clearAuthCookies(reply: FastifyReply, request: FastifyRequest, config: Config): void {
-  const { secure, domain } = cookieSecurity(request, config)
-  const base = { path: '/', sameSite: 'lax' as const, secure, ...(domain ? { domain } : {}) }
+  const { secure } = cookieSecurity(request)
+  const base = { path: '/', sameSite: 'lax' as const, secure }
   reply.clearCookie(SESSION_COOKIE, { ...base, httpOnly: true })
   reply.clearCookie(CSRF_COOKIE, { ...base, httpOnly: false })
+  clearLegacyDomainCookies(reply, config)
 }
 
 export function readSessionToken(request: FastifyRequest): string | null {

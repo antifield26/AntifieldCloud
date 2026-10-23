@@ -221,3 +221,51 @@ test('Web prepare：超时清理本次锁与 .part；陈旧锁（>1h）可继续
     staleFx.close()
   }
 })
+
+test('恢复解包前按 tar 实际字节预检：快照声明 1 字节、实际 20 MiB，空间不足返回 507 且不建目标', async () => {
+  let free = 4 * 1024 * 1024 * 1024
+  const fx = backupsFixture({ freeBytes: () => free })
+  try {
+    const content = Buffer.alloc(20 * 1024 * 1024, 0x41)
+    const name = addPiArchive(fx, {
+      createdAt: T0,
+      mode: 'full',
+      snapshotRows: [{ id: 'file-bomb-0001', name: 'bomb.bin', kind: 'file', size: 1 }],
+      contents: [{ id: 'file-bomb-0001', data: content }],
+    })
+    const plan = await fx.service.createRestorePlan(fx.actor, { archive: name, paths: ['/'] })
+    assert.equal(plan.totalBytes, 1, '计划展示仍使用快照声明尺寸（API 兼容）')
+
+    // 解包真实内容需要 20 MiB + 保留空间；注入可用空间 64 MiB 时必须在写内容前失败。
+    free = 64 * 1024 * 1024
+    const error = await expectAppRejects(fx.service.executeRestore(fx.actor, plan.id), 507, 'insufficient_storage')
+    assert.match(error.message, /空间|存储/)
+    const root = fx.db.prepare('SELECT COUNT(*) AS c FROM files WHERE parent_id IS NULL').get() as { c: number }
+    assert.equal(root.c, 0, '预算不足时不得创建恢复目标文件夹或文件')
+  } finally {
+    fx.close()
+  }
+})
+
+test('恢复解包前遵守 staging 上限：按实际字节判定（测试注入 2 MiB 上限）', async () => {
+  const fx = backupsFixture({
+    freeBytes: () => 4 * 1024 * 1024 * 1024,
+    serviceConfig: { backupStagingMaxBytes: 2 * 1024 * 1024 },
+  })
+  try {
+    const content = Buffer.alloc(4 * 1024 * 1024, 0x42)
+    const name = addPiArchive(fx, {
+      createdAt: T0,
+      mode: 'full',
+      snapshotRows: [{ id: 'file-cap-0001', name: 'cap.bin', kind: 'file', size: content.length }],
+      contents: [{ id: 'file-cap-0001', data: content }],
+    })
+    const plan = await fx.service.createRestorePlan(fx.actor, { archive: name, paths: ['/'] })
+    const error = await expectAppRejects(fx.service.executeRestore(fx.actor, plan.id), 507, 'insufficient_storage')
+    assert.match(error.message, /临时空间|空间/)
+    const root = fx.db.prepare('SELECT COUNT(*) AS c FROM files WHERE parent_id IS NULL').get() as { c: number }
+    assert.equal(root.c, 0, 'staging 超限时不得创建恢复目标')
+  } finally {
+    fx.close()
+  }
+})

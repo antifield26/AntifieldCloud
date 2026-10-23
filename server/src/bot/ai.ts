@@ -7,22 +7,26 @@
  *   仅当服务端明确以 400 拒绝 permissions 字段时降级为默认权限，并记录“未隔离”警告，绝不假装已隔离。
  * - 只返回 assistant 的 text 内容段，忽略 reasoning/tool；单次回复上限由 BOT_AI_MAX_REPLY_CHARS 控制，平台层再按各自上限分段。
  *
- * 兼容性假设（依据 OpenCode 服务端 v2.1.1 的 OpenAPI 快照）：
- * - POST /api/session 返回 { data: { id } }，请求体支持 title/model/permissions；
- * - POST /api/session/{id}/prompt 接收 { text }；
- * - POST /api/experimental/session/{id}/wait 成功返回 204；
+ * 兼容性假设（依据 OpenCode 服务端 v2.1.3 的 OpenAPI 快照与生产只读验证；v2.1.2 → v2.1.3 于 2026-10-23 升级）：
+ * - POST /api/session 返回 { data: { id } }，请求体支持 title/model/permissions；v2.1.3 已只读验证带
+ *   deny-all permissions 返回 200（语义上"被接受"不等于已证明工具被拦截，见 SECURITY 残余说明）；
+ * - POST /api/session/{id}/prompt 接收 { text }（v2.1.3 已只读验证 200）；
+ * - POST /api/experimental/session/{id}/wait 成功返回 204（v2.1.3 已只读验证）；不可用时回退轮询，
+ *   轮询只接受本次 prompt 之后创建的 assistant 消息，避免复用会话时把上一轮回答当成本轮结果；
  * - GET /api/session/{id}/message?order=desc&limit=20&type=assistant 返回 { data: 消息数组 }，
- *   assistant 消息的 content 为 [{ type: 'text' | 'reasoning' | 'tool', ... }]。
+ *   assistant 消息的 content 为 [{ type: 'text' | 'reasoning' | 'tool', ... }]（v2.1.3 已验证 content 形状与 finish=stop）。
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
-import type { BotAi, BotAiImage, BotMemoryItemPrompt, BotMemoryOperation } from './types.ts'
+import type { BotAi, BotAiImage, BotMemoryItemPrompt, BotMemoryOperation, BotToolIsolationStatus } from './types.ts'
 import { AppError } from '../util/errors.ts'
 
 /** 图片 data URL 仅接受这些 mime；其余由上层降级为纯文本。 */
 const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 /** wait 接口不可用时的轮询间隔，避免忙等。 */
 const POLL_INTERVAL_MS = 500
+/** 每个会话保留的已见 assistant 消息键上限，避免长会话/多用户导致内存无限增长。 */
+const MAX_SEEN_MESSAGES_PER_SESSION = 500
 /** OpenCode Permission.Ruleset：拒绝一切工具动作。 */
 const DENY_ALL_PERMISSIONS = [{ action: '*', resource: '*', effect: 'deny' }]
 
@@ -60,11 +64,28 @@ function isPermissionRejection(body: unknown): boolean {
   return typeof record.message === 'string' && /permission/i.test(record.message)
 }
 
-/** 从倒序消息数组中取最新一条含 text 内容段的 assistant 消息，拼接其文本。 */
-function extractAssistantText(messages: unknown[]): string | null {
+interface AssistantCandidate {
+  /** 消息稳定标识（优先 id；缺失时用 created 时间戳兜底），用于区分新旧回答。 */
+  key: string
+  /** 拼接后的 text 内容段；无文本时为 ''。 */
+  text: string
+}
+
+/**
+ * 从倒序消息数组中提取 assistant 候选（保留顺序：最新在前）。
+ * key 用于"本次 prompt 之前是否已存在"的判断；无法确定 key 的消息直接忽略（不能安全判断新旧）。
+ */
+function assistantCandidates(messages: unknown[]): AssistantCandidate[] {
+  const result: AssistantCandidate[] = []
   for (const raw of messages) {
     const message = recordOf(raw)
-    if (!message || message.type !== 'assistant' || !Array.isArray(message.content)) continue
+    if (!message || message.type !== 'assistant') continue
+    const id = typeof message.id === 'string' ? message.id.trim() : ''
+    const time = recordOf(message.time)
+    const created = time && typeof time.created === 'number' && Number.isFinite(time.created) ? time.created : null
+    const key = id || (created === null ? '' : `created:${created}`)
+    if (!key) continue
+    if (!Array.isArray(message.content)) continue
     const pieces: string[] = []
     for (const rawPart of message.content) {
       const part = recordOf(rawPart)
@@ -72,7 +93,17 @@ function extractAssistantText(messages: unknown[]): string | null {
       const text = part.text.trim()
       if (text) pieces.push(text)
     }
-    if (pieces.length > 0) return pieces.join('\n')
+    result.push({ key, text: pieces.join('\n') })
+  }
+  return result
+}
+
+/** 取最新一条"本次 prompt 之后新增且含文本"的 assistant 回答；历史回答一律忽略。 */
+function pickNewAssistantText(candidates: AssistantCandidate[], baseline: ReadonlySet<string>): string | null {
+  for (const candidate of candidates) {
+    if (!candidate.text) continue
+    if (baseline.has(candidate.key)) continue
+    return candidate.text
   }
   return null
 }
@@ -101,8 +132,16 @@ export class OpenCodeBotAi implements BotAi {
   private readonly modelRef: { providerID: string; id: string } | null
   /** 数据库记录用的模型标识，便于运维判断会话由哪个模型创建。 */
   private readonly modelLabel: string | null
-  /** OpenCode v2.1.1 OpenAPI 声明支持 permissions；仅在实际 400 拒绝后关闭。 */
+  /** OpenCode v2.1.3 OpenAPI 声明支持 permissions；仅在实际 400 拒绝后关闭。 */
   private permissionsSupported = true
+  /** 降级累计次数/首次时间：由 BotService 读取并写审计/状态，避免"只在日志里"。 */
+  private permissionsFallbackCount = 0
+  private permissionsFallbackAt: string | null = null
+  /**
+   * 每会话已见 assistant 消息键（有界）。
+   * 轮询回退时用它区分"本轮新回答"与"会话历史中的旧回答"；进程重启后首次复用时先读取存量消息建立基线。
+   */
+  private readonly seenAssistantMessages = new Map<string, Set<string>>()
 
   constructor(options: OpenCodeBotAiOptions) {
     const { config } = options
@@ -144,21 +183,32 @@ export class OpenCodeBotAi implements BotAi {
       targetExternalId: input.targetExternalId,
       userId: input.userId,
     }
-    const sessionId = await this.ensureSession(target)
+    const { sessionId, created } = await this.ensureSession(target)
+    // 发送 prompt 前固定"历史 assistant 消息"基线：轮询回退只接受基线之外的新回答。
+    const baseline = await this.prepareAssistantBaseline(sessionId, created)
     await this.sendPrompt(sessionId, input.prompt, input.image)
 
     const waited = await this.waitForIdle(sessionId)
     let text: string | null
     if (waited) {
-      text = await this.fetchAssistantText(sessionId, this.timeoutMs)
+      text = await this.fetchAssistantText(sessionId, this.timeoutMs, baseline)
       if (!text) throw new AppError(502, 'bot_ai_empty_response', 'AI 未返回文本')
     } else {
-      // wait 不可用时以当前时刻为起点轮询，最长不超过配置超时。
-      text = await this.pollAssistantText(sessionId, Date.now() + this.timeoutMs)
+      // wait 不可用时以当前时刻为起点轮询，最长不超过配置超时；只接受本轮新增的 assistant 回答。
+      text = await this.pollAssistantText(sessionId, Date.now() + this.timeoutMs, baseline)
     }
 
     this.touch(target, sessionId)
     return text.slice(0, this.maxReplyChars)
+  }
+
+  /** 工具隔离状态：供 BotService 暴露到 /api/bots/status 并写审计，避免降级只藏在日志里。 */
+  toolIsolation(): BotToolIsolationStatus {
+    return {
+      supported: this.permissionsSupported,
+      fallbackCount: this.permissionsFallbackCount,
+      fallbackAt: this.permissionsFallbackAt,
+    }
   }
 
   /**
@@ -204,10 +254,12 @@ export class OpenCodeBotAi implements BotAi {
     ].join('\n')
     try {
       await this.sendPrompt(sessionId, prompt)
+      // 一次性会话没有历史消息，基线为空；仍统一走"只取新增 assistant"的逻辑。
+      const baseline = new Set<string>()
       const waited = await this.waitForIdle(sessionId)
       const text = waited
-        ? await this.fetchAssistantText(sessionId, this.timeoutMs)
-        : await this.pollAssistantText(sessionId, Date.now() + this.timeoutMs)
+        ? await this.fetchAssistantText(sessionId, this.timeoutMs, baseline)
+        : await this.pollAssistantText(sessionId, Date.now() + this.timeoutMs, baseline)
       if (!text) throw new AppError(502, 'bot_ai_empty_response', 'AI 未返回记忆抽取结果')
       return parseMemoryOperations(text, maxOps)
     } finally {
@@ -220,6 +272,7 @@ export class OpenCodeBotAi implements BotAi {
   async deleteSession(sessionId: string): Promise<void> {
     const id = sessionId.trim()
     if (!id) return
+    this.seenAssistantMessages.delete(id)
     try {
       const result = await this.request('DELETE', `/api/session/${encodeURIComponent(id)}`, undefined, 15_000)
       if (result.status === 404 || this.isOk(result.status)) return
@@ -239,18 +292,26 @@ export class OpenCodeBotAi implements BotAi {
     const cutoff = new Date(now.getTime() - this.retentionDays * 86_400_000).toISOString()
     const result = this.db.prepare('DELETE FROM bot_ai_sessions WHERE updated_at < ?').run(cutoff)
     const removed = Number(result.changes)
-    if (removed > 0) this.log?.('info', '已清理过期 AI 会话映射', { removed })
+    if (removed > 0) {
+      // 清理已删除映射对应的内存基线，避免 Map 随历史会话增长。
+      const aliveRows = this.db.prepare('SELECT session_id FROM bot_ai_sessions').all() as { session_id: string }[]
+      const alive = new Set(aliveRows.map((row) => row.session_id))
+      for (const sessionId of this.seenAssistantMessages.keys()) {
+        if (!alive.has(sessionId)) this.seenAssistantMessages.delete(sessionId)
+      }
+      this.log?.('info', '已清理过期 AI 会话映射', { removed })
+    }
     return removed
   }
 
   /** 按 (botId,targetExternalId,userId) 复用 Chat 会话；数据库 mode 固定写 chat。 */
-  private async ensureSession(target: ChatTarget): Promise<string> {
+  private async ensureSession(target: ChatTarget): Promise<{ sessionId: string; created: boolean }> {
     const existing = this.db
       .prepare(
         "SELECT session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat'",
       )
       .get(target.botId, target.targetExternalId, target.userId) as AiSessionRow | undefined
-    if (existing?.session_id) return existing.session_id
+    if (existing?.session_id) return { sessionId: existing.session_id, created: false }
 
     const sessionId = await this.createSession('AntifieldCloud Chat')
     const now = new Date().toISOString()
@@ -265,16 +326,21 @@ export class OpenCodeBotAi implements BotAi {
            updated_at = excluded.updated_at`,
       )
       .run(target.botId, target.targetExternalId, target.userId, sessionId, this.modelLabel, now, now)
-    return sessionId
+    return { sessionId, created: true }
   }
 
   private async createSession(title = 'AntifieldCloud Bot'): Promise<string> {
     let result = await this.request('POST', '/api/session', this.sessionBody(this.permissionsSupported, title))
     if (result.status === 400 && this.permissionsSupported && isPermissionRejection(result.body)) {
       // 失败回退：某些 OpenCode 版本可能拒绝 permissions。继续对话但不启用工具隔离，
-      // 日志与注释必须明确这一点，不能宣称 Bot 会话已隔离。
+      // 累计次数/时间供 BotService 写审计并暴露到 /api/bots/status，不能只藏在日志里。
       this.permissionsSupported = false
-      this.log?.('warn', 'OpenCode 拒绝 permissions 字段，AI 会话回退为默认工具权限（未隔离）', { status: 400 })
+      this.permissionsFallbackCount += 1
+      this.permissionsFallbackAt = new Date().toISOString()
+      this.log?.('warn', 'OpenCode 拒绝 permissions 字段，AI 会话回退为默认工具权限（未隔离）', {
+        status: 400,
+        fallbackCount: this.permissionsFallbackCount,
+      })
       result = await this.request('POST', '/api/session', this.sessionBody(false))
     }
     if (!this.isOk(result.status)) throw this.httpError(result.status)
@@ -324,18 +390,34 @@ export class OpenCodeBotAi implements BotAi {
     throw this.httpError(result.status)
   }
 
-  private async pollAssistantText(sessionId: string, deadline: number): Promise<string> {
+  private async pollAssistantText(
+    sessionId: string,
+    deadline: number,
+    baseline: ReadonlySet<string>,
+  ): Promise<string> {
     while (true) {
       const remaining = deadline - Date.now()
       if (remaining <= 0) throw new AppError(504, 'bot_ai_timeout', 'AI 响应超时')
-      const text = await this.fetchAssistantText(sessionId, remaining)
+      const text = await this.fetchAssistantText(sessionId, remaining, baseline)
       if (text) return text
       const wait = Math.min(POLL_INTERVAL_MS, deadline - Date.now())
       if (wait > 0) await sleep(wait)
     }
   }
 
-  private async fetchAssistantText(sessionId: string, timeoutMs: number): Promise<string | null> {
+  /** 读取消息并只返回"基线之外新增"的 assistant 文本；命中后把该批消息记为已见。 */
+  private async fetchAssistantText(
+    sessionId: string,
+    timeoutMs: number,
+    baseline: ReadonlySet<string>,
+  ): Promise<string | null> {
+    const candidates = await this.fetchAssistantCandidates(sessionId, timeoutMs)
+    const text = pickNewAssistantText(candidates, baseline)
+    if (text) this.rememberAssistantMessages(sessionId, candidates)
+    return text
+  }
+
+  private async fetchAssistantCandidates(sessionId: string, timeoutMs: number): Promise<AssistantCandidate[]> {
     const result = await this.request(
       'GET',
       `/api/session/${encodeURIComponent(sessionId)}/message?order=desc&limit=20&type=assistant`,
@@ -345,7 +427,46 @@ export class OpenCodeBotAi implements BotAi {
     if (!this.isOk(result.status)) throw this.httpError(result.status)
     const data = recordOf(result.body)?.data
     if (!Array.isArray(data)) throw new AppError(502, 'bot_ai_invalid_response', 'AI 消息格式无效')
-    return extractAssistantText(data)
+    return assistantCandidates(data)
+  }
+
+  /**
+   * 发送 prompt 前建立"历史 assistant 消息"基线：
+   * - 新建会话必然没有历史，直接返回空集合；
+   * - 复用会话优先用内存中已见集合（正常多轮无需额外请求）；
+   * - 进程重启/首次复用且无内存基线时，先读一次存量消息，避免把历史回答当成本轮结果。
+   */
+  private async prepareAssistantBaseline(sessionId: string, created: boolean): Promise<Set<string>> {
+    // 新建会话必然没有历史，直接以空基线覆盖（也避免远端复用同一 id 时带上其他会话的键）。
+    if (created) {
+      const empty = new Set<string>()
+      this.seenAssistantMessages.set(sessionId, empty)
+      return new Set(empty)
+    }
+    const seen = this.seenAssistantMessages.get(sessionId)
+    if (seen) return new Set(seen)
+    const existing = await this.fetchAssistantCandidates(sessionId, this.timeoutMs)
+    const baseline = new Set(existing.map((candidate) => candidate.key))
+    this.seenAssistantMessages.set(sessionId, baseline)
+    return new Set(baseline)
+  }
+
+  private rememberAssistantMessages(sessionId: string, candidates: AssistantCandidate[]): void {
+    let seen = this.seenAssistantMessages.get(sessionId)
+    if (!seen) {
+      seen = new Set<string>()
+      this.seenAssistantMessages.set(sessionId, seen)
+    }
+    for (const candidate of candidates) seen.add(candidate.key)
+    if (seen.size > MAX_SEEN_MESSAGES_PER_SESSION) {
+      const remove = seen.size - MAX_SEEN_MESSAGES_PER_SESSION
+      let index = 0
+      for (const key of seen) {
+        if (index >= remove) break
+        seen.delete(key)
+        index += 1
+      }
+    }
   }
 
   private touch(target: ChatTarget, sessionId: string): void {

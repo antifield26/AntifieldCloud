@@ -3,6 +3,7 @@
  * 生产环境由 systemd 的 EnvironmentFile 提供；CLI 通过本模块读取同一份文件。
  */
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { isIP } from 'node:net'
 import { resolve } from 'node:path'
 
 export interface Config {
@@ -14,7 +15,12 @@ export interface Config {
   webDistDir: string
   appOrigin: string
   aiOrigin: string
-  cookieDomain: string
+  /**
+   * 过渡期清理旧父域 Cookie 的目标域（形如 `.example.com`）。
+   * 只用于在登录/退出响应中删除 v0.6.0 之前按父域共享的旧 `af_session`/`af_csrf`，
+   * 绝不用于设置新 Cookie；空串表示不做旧域清理。
+   */
+  legacyCookieDomain: string
   allowInsecureLoopback: boolean
   quotaBytes: number
   maxUploadBytes: number
@@ -220,6 +226,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const nodeEnv = nodeEnvRaw === 'production' || nodeEnvRaw === 'test' ? nodeEnvRaw : 'development'
   const dataDir = resolve(str(merged, 'DATA_DIR', resolve(process.cwd(), 'data')))
   const webDistDir = resolve(str(merged, 'WEB_DIST_DIR', resolve(process.cwd(), 'web', 'dist')))
+  const appOrigin = str(merged, 'APP_ORIGIN', 'https://app.example.com')
+  const aiOrigin = str(merged, 'AI_ORIGIN', 'https://ai.example.com')
   const config: Config = {
     nodeEnv,
     logLevel: str(merged, 'LOG_LEVEL', nodeEnv === 'test' ? 'silent' : 'info'),
@@ -227,9 +235,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: int(merged, 'PORT', 3000, 1, 65535),
     dataDir,
     webDistDir,
-    appOrigin: str(merged, 'APP_ORIGIN', 'https://app.example.com'),
-    aiOrigin: str(merged, 'AI_ORIGIN', 'https://ai.example.com'),
-    cookieDomain: str(merged, 'COOKIE_DOMAIN', '.example.com'),
+    appOrigin,
+    aiOrigin,
+    legacyCookieDomain: resolveLegacyCookieDomain(merged, appOrigin),
     allowInsecureLoopback: bool(merged, 'ALLOW_INSECURE_LOOPBACK', true),
     quotaBytes: int(merged, 'QUOTA_BYTES', 10 * GIB, 64 * MIB, 1024 * GIB),
     maxUploadBytes: int(merged, 'MAX_UPLOAD_BYTES', 100 * MIB, 1 * MIB, 1024 * GIB),
@@ -333,9 +341,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   validateOrigin(config.appOrigin, 'APP_ORIGIN')
   validateOrigin(config.aiOrigin, 'AI_ORIGIN')
-  if (config.cookieDomain && !/^\.[A-Za-z0-9.-]+$/.test(config.cookieDomain)) {
-    throw new Error('COOKIE_DOMAIN 必须是以 . 开头的域名')
-  }
   if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
   if (config.botSecretKey) {
     let key: Buffer
@@ -370,6 +375,38 @@ function validateHttpUrl(value: string, key: string): void {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('protocol')
   } catch {
     throw new Error(`${key} 必须是 http(s) URL`)
+  }
+}
+
+/** 旧父域 Cookie 清理域允许的形状：以点开头、至少两个 label、不含空 label。 */
+const LEGACY_COOKIE_DOMAIN_PATTERN = /^\.[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/
+
+/**
+ * 解析过渡期旧父域 Cookie 的清理域（仅删除旧 Cookie，不用于设置新 Cookie）。
+ *
+ * - 优先使用 env `COOKIE_DOMAIN`（v0.6.0 起语义变为 deprecated-only-cleanup）；显式配置非法时
+ *   拒绝启动，避免静默不清理。
+ * - 未配置时从 APP_ORIGIN 主机名推导最后两级（如 app.example.com → .example.com）；仅当
+ *   主机名 ≥3 个 label 且不是 IP 时推导，否则返回空串（不做清理）。
+ * - 多级子域/公共后缀（如 app.foo.co.uk → .co.uk）的推导可能无效，但浏览器会拒绝公共后缀
+ *   Domain，不会误删；生产建议保留显式 `COOKIE_DOMAIN` 以精确清理。
+ */
+export function resolveLegacyCookieDomain(env: Record<string, string>, appOrigin: string): string {
+  const configured = (env.COOKIE_DOMAIN ?? '').trim().toLowerCase()
+  if (configured) {
+    if (!LEGACY_COOKIE_DOMAIN_PATTERN.test(configured)) {
+      throw new Error('COOKIE_DOMAIN 非法（须形如 .example.com；v0.6.0 起仅用于清理旧父域 Cookie）')
+    }
+    return configured
+  }
+  try {
+    const hostname = new URL(appOrigin).hostname.toLowerCase()
+    if (isIP(hostname) !== 0) return ''
+    const labels = hostname.split('.')
+    if (labels.length < 3) return ''
+    return `.${labels.slice(-2).join('.')}`
+  } catch {
+    return ''
   }
 }
 

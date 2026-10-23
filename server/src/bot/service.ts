@@ -24,6 +24,7 @@ import {
   type BotInboundTargetRow,
   type BotMemoryItemSummary,
   type BotMemoryKind,
+  type BotMemoryOperation,
   type BotMemoryUserSummary,
   type BotMetrics,
   type BotPlatform,
@@ -37,6 +38,7 @@ import {
   type BotSummary,
   type BotTarget,
   type BotTargetRow,
+  type BotToolIsolationStatus,
   type InboundVerification,
 } from './types.ts'
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
@@ -292,6 +294,8 @@ export class BotService {
    * 在途抽取写回前校验版本，避免被取消的批次把旧数据写回。
    */
   private readonly memoryGenerations = new Map<string, number>()
+  /** 上次观察到的 AI 工具隔离降级次数：用于把降级写成一次性审计而不是只留日志。 */
+  private lastAiFallbackCount = 0
 
   constructor(deps: BotServiceDeps) {
     this.db = deps.db
@@ -360,7 +364,37 @@ export class BotService {
       queuedDeliveries: deliveries.c,
       queuedPublishes: publishes.c,
       lastError: lastError?.last_error ?? null,
+      aiToolIsolation: this.aiToolIsolationStatus(),
     }
+  }
+
+  /** AI 工具隔离状态：未配置 AI 时返回 null；用于 /api/bots/status 与降级审计。 */
+  private aiToolIsolationStatus(): BotToolIsolationStatus | null {
+    try {
+      return this.deps.ai?.toolIsolation?.() ?? null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * 观察 AI 工具隔离是否发生新的降级：OpenCode 拒绝 permissions 后仅日志不足以告警，
+   * 这里在每次 AI 调用后比较累计次数，新增降级写审计 `bot.ai.permissions_fallback`（不含提示词）。
+   */
+  private observeAiToolIsolation(botId: string): void {
+    const status = this.aiToolIsolationStatus()
+    if (!status || status.fallbackCount <= this.lastAiFallbackCount) return
+    this.lastAiFallbackCount = status.fallbackCount
+    this.deps.log('warn', 'AI 工具隔离降级：OpenCode 拒绝 permissions，会话以默认工具权限运行（未隔离）', {
+      bot: botId,
+      fallbackCount: status.fallbackCount,
+      supported: status.supported,
+    })
+    this.deps.audit('bot.ai.permissions_fallback', botId, {
+      fallbackCount: status.fallbackCount,
+      supported: status.supported,
+      fallbackAt: status.fallbackAt,
+    })
   }
 
   connectivityStatus(): ConnectivitySnapshot {
@@ -894,7 +928,9 @@ export class BotService {
     // 保留到上限 +1 以便区分「空内容」与「超长内容」，超长直接 400 而不是静默截断。
     const text = cleanText(input.text, PUBLISH_TEXT_MAX + 1)
     if (!text) throw badRequest('发布内容不能为空')
-    if (text.length > PUBLISH_TEXT_MAX) throw badRequest(`内容超过 ${PUBLISH_TEXT_MAX} 字符`)
+    if (text.length > PUBLISH_TEXT_MAX) {
+      throw badRequest(`内容超过 ${PUBLISH_TEXT_MAX} 字符`, 'publish_text_too_long')
+    }
     const scheduledAt = this.parseSchedule(input.scheduledAt)
     const id = newId()
     const now = nowIso()
@@ -1189,7 +1225,11 @@ export class BotService {
       this.deps.audit('bot.webhook.rejected', bot.id, { code: result.code })
       return { status: result.status, body: { error: { code: result.code } } }
     }
-    if (result.kind === 'challenge') return { status: 200, body: result.body }
+    if (result.kind === 'challenge') {
+      // op=13 成功校验只审计事件本身，不记录 plain_token/签名（可能被用于推断签名材料）。
+      this.deps.audit('bot.webhook.challenge', bot.id)
+      return { status: 200, body: result.body }
+    }
     if (result.kind === 'ignored') {
       if (result.detail) this.deps.audit('bot.event.ignored', bot.id, { event: result.detail.slice(0, 80) })
       // 适配器可给出去重事件 ID；带 ID 时记录 ignored 结果供诊断查询。
@@ -1898,13 +1938,19 @@ export class BotService {
       ...(image ? { image: image.mime.slice(0, 50) } : {}),
       ...(memoryContext.usedItemIds.length > 0 ? { memoryItems: memoryContext.usedItemIds.length } : {}),
     })
-    const answer = await this.deps.ai.chat({
-      botId: bot.id,
-      targetExternalId,
-      userId,
-      prompt,
-      ...(image ? { image } : {}),
-    })
+    let answer: string
+    try {
+      answer = await this.deps.ai.chat({
+        botId: bot.id,
+        targetExternalId,
+        userId,
+        prompt,
+        ...(image ? { image } : {}),
+      })
+    } finally {
+      // 同步检查降级（不额外引入微任务，避免影响对话/抽取后续排队的时序）。
+      this.observeAiToolIsolation(bot.id)
+    }
     return answer
   }
 
@@ -2030,7 +2076,7 @@ export class BotService {
 
   /**
    * 结构化记忆抽取：读取现有条目与未迁移旧摘要 → 模型输出操作 → MemoryStore 校验合并。
-   * 成功后迁移旧摘要标记；失败保留旧数据（fallback 继续生效）并在下一批重试。
+   * 产出可迁移条目时迁移旧摘要标记（ops=0 保留 fallback）；失败保留旧数据（fallback 继续生效）并在下一批重试。
    * generation 变化（/memory off、/forget、管理端删除）时放弃写回。
    */
   private async updateMemory(
@@ -2052,22 +2098,29 @@ export class BotService {
       // 未迁移时把旧滚动摘要作为迁移输入；空摘要不触发迁移标记。
       const legacy = state.legacyMigratedAt ? null : this.memory.legacySummary(bot.id, userId)
       const legacySummary = legacy?.summary ?? ''
-      const ops = await this.deps.ai!.extractMemories!({
-        botId: bot.id,
-        userId,
-        existing,
-        legacySummary,
-        userText,
-        assistantText,
-        maxOps: MEMORY_MAX_OPS,
-      })
+      let ops: BotMemoryOperation[]
+      try {
+        ops = await this.deps.ai!.extractMemories!({
+          botId: bot.id,
+          userId,
+          existing,
+          legacySummary,
+          userText,
+          assistantText,
+          maxOps: MEMORY_MAX_OPS,
+        })
+      } finally {
+        this.observeAiToolIsolation(bot.id)
+      }
       // 抽取期间记忆被关闭/清除：丢弃本次结果，避免旧数据回写。
       if ((this.memoryGenerations.get(key) ?? 0) !== generation) return
       const current = this.memory.getState(bot.id, userId)
       if (!current.memoryEnabled) return
       const result = this.memory.applyOperations(bot.id, userId, ops, 'chat')
+      // 只有本次确实产出可迁移条目时才把旧摘要标记为已迁移；ops=0（模型未转换出条目）
+      // 必须保留 fallback 注入并继续作为后续批次的迁移输入，避免旧记忆被"静默丢弃"。
       let migrated = false
-      if (legacySummary && !current.legacyMigratedAt) {
+      if (legacySummary && !current.legacyMigratedAt && result.upserts > 0) {
         this.memory.markLegacyMigrated(bot.id, userId)
         migrated = true
       }

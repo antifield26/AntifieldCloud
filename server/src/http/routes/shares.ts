@@ -26,11 +26,11 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
   return value
 }
 
-/** 公开 POST 的来源校验：仅允许 appOrigin/aiOrigin，或 loopback 开发环境。 */
+/** 公开 POST 的来源校验：仅允许 appOrigin，或 loopback 开发环境（ai 主机不再受信）。 */
 function assertAllowedOrigin(request: FastifyRequest, config: Config): void {
   const origin = firstHeader(request.headers.origin)
   if (!origin) throw forbidden('缺少 Origin 请求头', 'origin_rejected')
-  if (origin === config.appOrigin || origin === config.aiOrigin) return
+  if (origin === config.appOrigin) return
   // 协议/Host 只信 requestMeta（trustProxy:false，仅 loopback 对端采信 Cloudflare 头）。
   const meta = requestMeta(request)
   if (config.allowInsecureLoopback && meta.loopback) {

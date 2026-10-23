@@ -8,6 +8,7 @@ import {
   drillView,
   isStaleByDays,
   isStaleByHours,
+  keptCountOf,
   worldBackupView,
   worldPullView,
   worstBackupTone,
@@ -88,15 +89,71 @@ describe('世界备份 / 拉取 / 演练状态', () => {
 
   it('正常状态带归档大小与完整性信息', () => {
     const world = worldBackupView(
-      { ok: true, lastRunAt: isoDaysAgo(1), archiveName: 'world-a.tar.gz', sizeBytes: 2048, kept: 2 },
+      {
+        ok: true,
+        lastRunAt: isoDaysAgo(1),
+        archiveName: 'world-a.tar.gz',
+        sizeBytes: 2048,
+        kept: ['world-a.tar.gz', 'world-b.tar.gz'],
+        keptCount: 2,
+      },
       now,
     )
     expect(world).toMatchObject({ value: '正常', tone: 'success', alert: false })
     expect(world.detail).toContain('world-a.tar.gz')
     expect(world.detail).toContain('2 KB')
-    const drill = drillView({ ok: true, lastRunAt: isoDaysAgo(2), dbIntegrity: 'ok', reportPath: 'drills/a/report.json' }, now)
+    expect(world.detail).toContain('保留 2 份')
+    expect(world.detail).toContain('PC 拉取确认后远端会删除')
+    // kept 是归档名数组：不能把数组内容/个数错误地拼进“N 份”
+    expect(world.detail).not.toContain('world-b.tar.gz')
+    const drill = drillView(
+      {
+        ok: true,
+        lastRunAt: isoDaysAgo(2),
+        report: '20261020T120000Z',
+        latestDb: 'db-20261019T120000Z.sqlite',
+        schemaVersion: 14,
+        worldChecked: true,
+      },
+      now,
+    )
     expect(drill).toMatchObject({ value: '成功', tone: 'success' })
-    expect(drill.detail).toContain('ok')
+    expect(drill.detail).toContain('数据库 db-20261019T120000Z.sqlite')
+    expect(drill.detail).toContain('schema v14')
+    expect(drill.detail).toContain('报告 20261020T120000Z')
+    expect(drill.detail).toContain('世界归档已校验')
+  })
+
+  it('真实脚本形状的 kept 数组不会被渲染成归档名串', () => {
+    expect(keptCountOf({ keptCount: 3, kept: ['a.tar.gz', 'b.tar.gz', 'c.tar.gz'] })).toBe(3)
+    expect(keptCountOf({ kept: ['a.tar.gz', 'b.tar.gz'] })).toBe(2)
+    expect(keptCountOf({ kept: 2 })).toBe(2)
+    expect(keptCountOf({})).toBeNull()
+
+    const pull = worldPullView(
+      {
+        ok: true,
+        lastPullAt: isoDaysAgo(1),
+        archiveName: 'world-a.tar.gz',
+        pulledCount: 1,
+        kept: ['world-a.tar.gz', 'world-b.tar.gz'],
+        keptCount: 2,
+      },
+      now,
+    )
+    expect(pull.detail).toContain('本地保留 2 份')
+    expect(pull.detail).not.toContain('world-b.tar.gz')
+  })
+
+  it('旧演练状态文件仍可回退展示，但不伪造 dbIntegrity', () => {
+    const legacy = drillView(
+      { ok: true, lastRunAt: isoDaysAgo(2), reportPath: 'drills/20261020T120000Z/report.json' },
+      now,
+    )
+    expect(legacy.detail).toContain('报告 report.json')
+    expect(legacy.detail).not.toContain('drills/')
+    const real = drillView({ ok: true, lastRunAt: isoDaysAgo(2), latestDb: 'db-x.sqlite', schemaVersion: 14 }, now)
+    expect(real.detail).not.toContain('数据库完整性')
   })
 })
 
@@ -134,8 +191,8 @@ describe('buildBackupStatusEntries', () => {
         pendingBytes: 4096,
         orphanCount: 1,
         ackedBytes: 8192,
-        world: { ok: true, lastRunAt: isoDaysAgo(1), archiveName: 'world.tar.gz' },
-        drill: { ok: true, lastRunAt: isoDaysAgo(3), dbIntegrity: 'ok' },
+        world: { ok: true, lastRunAt: isoDaysAgo(1), archiveName: 'world.tar.gz', kept: ['world.tar.gz'], keptCount: 1 },
+        drill: { ok: true, lastRunAt: isoDaysAgo(3), latestDb: 'db-x.sqlite', schemaVersion: 14 },
       },
       state: {
         lastPullAt: isoDaysAgo(1),

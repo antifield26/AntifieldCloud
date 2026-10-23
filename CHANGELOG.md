@@ -1,5 +1,56 @@
 # Changelog
 
+## [v0.6.0] - 2026-10-23
+
+### Added
+
+- **AI 工作区 SSO（host-only Cookie）**：app 登录后访问 `GET /api/auth/ai-ticket?next=<ai URL>` 获取 60 秒一次性 ticket，经 ai `/__af/sso/<ticket>` 换取 ai 主机自己的 host-only `af_session`；不再使用父域 Cookie。ticket 绑定 `AI_ORIGIN`、一次性、内存存储、不落库。
+- **旧父域 Cookie 过渡清理**：登录/退出响应额外删除 v0.6.0 前 `Domain=.父域` 的 `af_session`/`af_csrf`（`COOKIE_DOMAIN` 自本版起仅用于清理，不再设置新 Cookie；未配置时按 `APP_ORIGIN` 最后两级推导）。
+- **AI 工具隔离可见性**：`GET /api/bots/status` 新增 `aiToolIsolation`（`supported/fallbackCount/fallbackAt`）；permissions 降级写审计 `bot.ai.permissions_fallback`，`/bots` 概览显示 warning。
+- **新增审计**：`bot.webhook.challenge`（op=13 成功校验，不含 token/签名）、`auth.sso_ai`（SSO 成功/失败，不含 ticket/token）；AI SSO ticket 路径在请求日志中脱敏。
+- **恢复演练状态增强**：`smoke.ps1` 在 `-ExpectedSchemaVersion` 与 drill 状态 `schemaVersion` 不一致时 WARN 并显示 schema，提示重跑 `drill.ps1`。
+- **OpenCode v2.1.3 兼容记录**：生产已由 v2.1.2 升级并只读验证 Basic/会话/prompt/wait/content/model；`ai.ts` 兼容性注释同步 v2.1.3（接受 permissions ≠ 已证明工具被拦截）。
+
+### Fixed
+
+- **P1：QQ op=13 签名预言机**：`plain_token`/`event_ts` 严格形状校验，阻断用任意事件 JSON 换取 Ed25519 签名伪造 op=0 事件；新增回归测试与生产 PoC 复验；webhook 路径 botId 日志脱敏。
+- **A5-SEC-02：octet-stream 全局大 body**：全局解析器回落到 1 MiB，8 MiB+64 KiB raw body 只在 uploads 路由独立 scope 生效；公开 unlock 不再在鉴权前缓冲 8 MiB。
+- **A5-SEC-03：app API 受信 Origin**：写请求与公开分享 unlock 只信任 `appOrigin`（+ loopback 开发例外），移除 `aiOrigin`。
+- **A5-DATA-01：密钥包 opencode 快照静默缺失**：独立 0711 快照父目录；快照失败硬失败并传播 `secretsOk=false`，不再只 warning。
+- **A5-DATA-02：多 pending 顺序 ack 丢缺失集合**：ack 合并历史缺失与本归档 `skippedMissing`（覆盖的移除、文件行仍存在的保留、manifest 缺失保守保留）。
+- **A5-DATA-03：恢复解包预算不可信**：解包前按 tar 实际条目 size 测量字节，再做 staging/配额/落盘空间预检；超限 507 且不创建目标。
+- **A5-DATA-04：legacy 迁移 ops=0 误标**：仅 `upserts>0` 才置 `legacy_migrated_at`；ops=0 保留 fallback 继续迁移。
+- **A5-BOT-02：wait 回退返回旧回答**：发送 prompt 前建立 assistant 消息基线，wait/轮询只接受基线外新回答；进程重启首次复用先读存量消息。
+- **A5-BOT-03：记忆敏感过滤不足**：自然语言密钥、token 前缀、URL/IP/内部路径/UNC/提示结构标记覆盖，key/value/legacy 均过滤；读取侧排除旧敏感条目。
+- **A5-BOT-05：发布 >2000 静默截断**：路由不再截断，service 返回 `400 publish_text_too_long`。
+- **A5-WEB-01/OPS-01：世界备份 kept 契约错误**：`kept` 改为归档名数组，份数用 `keptCount`；世界备份注明“上次运行保留、PC ack 后远端删除”。
+- **A5-WEB-02/OPS-02：演练状态字段错误**：改用脚本真实字段 `report/latestDb/schemaVersion/worldChecked`；旧 `reportPath/dbIntegrity` 仅兼容回退，不伪造 DB 完整性。
+- **A5-WEB-03：恢复 skippedMissing 未展示**：计划/结果补字段，完成面板显示缺失数量与文件 ID，成功提示不再误报完整恢复。
+- **A5-OPS-03：文档漂移**：OpenCode 2.1.3、schema v14、smoke/API/UI 字段、发布上限、密钥包失败语义、世界备份保留语义、登录/SSO 与 Cookie 说明同步。
+
+### Changed
+
+- `af_session`/`af_csrf` 在 app 主机 host-only；ai 主机会话通过一次性 ticket 建立；`GET /api/auth/ai-ticket` 为新增公开路由（需会话，非法 `next` 400，合法 302）。
+- 发布文本上限保持 2000，但超长改为明确 400（不静默截断、不再服务端分段）；Bot Chat 回复仍按 2000 字符分段。
+- 密钥包 opencode 快照由“失败降级 warning”改为“失败不生成半成品”；备份拉取状态会显示失败。
+- 恢复执行多一次只读 tar 扫描（measure + extract），大归档恢复耗时约增加一次解压时间，换取预算可信。
+- `COOKIE_DOMAIN` 语义改为 deprecated-only-cleanup；新装可留空。
+
+### Security
+
+- 修复 P1 op=13 签名预言机；`op=13` 成功/失败均审计（成功不含 token/签名）。
+- app/ai 改为 host-only Cookie + 一次性 SSO ticket；移除 ai 源对 app 写 API/公开 unlock 的 Origin 信任；SSO ticket 路径日志脱敏。
+- 记忆 key/value/legacy 敏感过滤增强；AI permissions 降级可审计/可查（残余：真实工具拦截仍需生产负路径验证）。
+- 公开端点大 body 预缓冲面回落到 1 MiB；分片上传能力保持在独立 scope。
+
+### Deployment
+
+- 版本/`APP_VERSION` 升到 **0.6.0**；schema 保持 **v14**（无迁移），`deploy.ps1` 期望 schema 仍为 14；回滚可切回 v0.5.11 release（同 schema），但旧版会重新使用父域 Cookie，回滚后建议清理站点 Cookie 或重新登录。
+- OpenCode 已先升至 **v2.1.3** 并验证；本版不包含 OpenCode 变更步骤。
+- 生产 env 可保留 `COOKIE_DOMAIN=.父域` 用于清理旧 Cookie（不再设置新 Cookie）；无需新增 schema/env 键。
+- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **383**（server+scripts，含新增回归）、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。
+- **待部署/待用户验收**：部署后填写 release/commit/healthz/smoke/备份/用户验收证据；本版无 schema 变更，部署前仍按流程做 DB 快照。
+
 ## [v0.5.11] - 2026-10-23
 
 ### Added

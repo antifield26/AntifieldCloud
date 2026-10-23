@@ -12,11 +12,17 @@ import httpProxy from 'http-proxy'
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
 import { isLoopbackAddress, type AuthService } from '../auth/service.ts'
-import { readSessionToken } from '../auth/cookies.ts'
+import { readSessionToken, SESSION_COOKIE } from '../auth/cookies.ts'
 import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
+import { requestMeta } from '../http/request-meta.ts'
 import { injectOpenCodeScriptOptOut, injectOpenCodeShim, OPENCODE_SHIM_PATH, OPENCODE_SHIM_SCRIPT } from './shim.ts'
 
 export { normalizeHost, hostFromOrigin }
+
+/** AI SSO 消费路径：GET /__af/sso/<ticket>（一次性 ticket，仅 ai 主机，其它路径不匹配）。 */
+const AI_SSO_PATH_PATTERN = /^\/__af\/sso\/([A-Za-z0-9_-]{20,128})$/
+/** SSO 重定向 next 最大长度（相对路径 + query）。 */
+const AI_SSO_NEXT_MAX_LENGTH = 2048
 
 /** Cookie 解码失败时保留原始值（后续会话校验自然失败），绝不让异常穿透。 */
 function safeDecode(value: string): string {
@@ -275,6 +281,7 @@ export class OpenCodeProxy {
   }
 
   private handleUnsafe(request: FastifyRequest, reply: FastifyReply): void {
+    if (this.tryHandleAiSso(request, reply)) return
     const context = this.auth.authenticate(readSessionToken(request))
     if (!context) {
       if (request.method === 'GET' && this.wantsHtml(request)) {
@@ -312,6 +319,86 @@ export class OpenCodeProxy {
   private wantsHtml(request: FastifyRequest): boolean {
     const accept = request.headers.accept ?? ''
     return typeof accept === 'string' && accept.includes('text/html')
+  }
+
+  /**
+   * AI 工作区 SSO：app 签发的一次性 ticket 换取 ai 主机自己的 host-only 会话 Cookie。
+   * 必须在普通会话校验之前处理（此时浏览器只有 app 主机 Cookie，ai 主机尚无会话）；
+   * 只处理 GET `/__af/sso/<ticket>`，失败审计 `auth.sso_ai`（不记录 ticket/token）。
+   */
+  private tryHandleAiSso(request: FastifyRequest, reply: FastifyReply): boolean {
+    const rawUrl = request.raw.url ?? ''
+    const path = rawUrl.split('?')[0] ?? '/'
+    if (request.method !== 'GET' || !path.startsWith('/__af/sso/')) return false
+    const remoteIp = request.socket.remoteAddress ?? null
+    const match = AI_SSO_PATH_PATTERN.exec(path)
+    if (!match) {
+      this.auditSso('invalid_path', remoteIp)
+      reply.code(400).header('cache-control', 'no-store').send({
+        error: { code: 'invalid_sso_request', message: 'SSO 请求不合法' },
+      })
+      return true
+    }
+    const queryStart = rawUrl.indexOf('?')
+    const nextRaw = queryStart >= 0 ? new URLSearchParams(rawUrl.slice(queryStart + 1)).get('next') : null
+    const next = nextRaw === null ? '/' : this.normalizeAiSsoNext(nextRaw)
+    if (next === null) {
+      this.auditSso('invalid_next', remoteIp)
+      reply.code(400).header('cache-control', 'no-store').send({
+        error: { code: 'invalid_next', message: 'SSO 跳转地址不合法' },
+      })
+      return true
+    }
+    const sessionToken = this.auth.consumeAiSsoTicket(match[1]!, this.config.aiOrigin)
+    if (!sessionToken) {
+      this.auditSso('invalid_ticket', remoteIp)
+      reply.code(401).header('cache-control', 'no-store').send({
+        error: { code: 'sso_ticket_invalid', message: 'SSO 票据无效或已过期' },
+      })
+      return true
+    }
+    const context = this.auth.authenticate(sessionToken)
+    if (!context) {
+      this.auditSso('session_invalid', remoteIp)
+      reply.code(401).header('cache-control', 'no-store').send({
+        error: { code: 'sso_session_invalid', message: '登录状态已失效，请重新登录' },
+      })
+      return true
+    }
+    const maxAge = Math.max(0, Math.floor((Date.parse(context.session.expires_at) - Date.now()) / 1000))
+    reply.setCookie(SESSION_COOKIE, sessionToken, {
+      path: '/',
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: requestMeta(request).protocol === 'https',
+      maxAge,
+    })
+    this.auditSso('ok', remoteIp)
+    reply.code(302).header('location', next).header('cache-control', 'no-store').send()
+    return true
+  }
+
+  /**
+   * SSO next 只允许 ai 同源相对路径：以单个 `/` 开头，拒绝 `//`、`/\`、协议地址与控制字符；
+   * 返回规范化后的 `path?query`，非法返回 null。
+   */
+  private normalizeAiSsoNext(raw: string): string | null {
+    const value = raw.trim()
+    if (!value || value.length > AI_SSO_NEXT_MAX_LENGTH) return null
+    if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) return null
+    // eslint-disable-next-line no-control-regex
+    if (/[\u0000-\u001f\u007f]/.test(value)) return null
+    try {
+      const url = new URL(value, this.config.aiOrigin)
+      if (url.origin !== this.config.aiOrigin || url.username.length > 0 || url.password.length > 0) return null
+      return `${url.pathname}${url.search}`
+    } catch {
+      return null
+    }
+  }
+
+  private auditSso(result: 'ok' | 'invalid_path' | 'invalid_next' | 'invalid_ticket' | 'session_invalid', ip: string | null): void {
+    this.audit?.('auth.sso_ai', null, { ok: result === 'ok', result }, ip)
   }
 
   /** 处理 WebSocket upgrade；只允许 ai 主机且会话有效。任何异常都只断开连接。 */

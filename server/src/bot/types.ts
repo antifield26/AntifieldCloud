@@ -235,6 +235,15 @@ export interface BotAiImage {
   name?: string
 }
 
+/** AI 工具隔离状态：supported=false 表示 OpenCode 拒绝 permissions 后已降级为默认工具权限（未隔离）。 */
+export interface BotToolIsolationStatus {
+  supported: boolean
+  /** 进程生命周期内发生降级的累计次数；0 表示从未降级。 */
+  fallbackCount: number
+  /** 首次降级时间（ISO 8601）；未降级为 null。 */
+  fallbackAt: string | null
+}
+
 export interface BotAi {
   chat(input: {
     botId: string
@@ -244,6 +253,8 @@ export interface BotAi {
     /** 可选图片；未启用/不支持时由调用方降级为纯文本。 */
     image?: BotAiImage
   }): Promise<string>
+  /** 工具隔离状态（可选；未实现时服务端视为未知）。 */
+  toolIsolation?(): BotToolIsolationStatus
   /**
    * 从一批对话中抽取结构化记忆操作；每次使用一次性远端会话并在结束后删除。
    * 模型只负责给出操作意图，业务校验与合并由 MemoryStore 完成。
@@ -408,6 +419,8 @@ export interface BotStatus {
   queuedDeliveries: number
   queuedPublishes: number
   lastError: string | null
+  /** AI 工具隔离状态；未配置 AI 时为 null。supported=false 表示 400 降级后未隔离。 */
+  aiToolIsolation: BotToolIsolationStatus | null
 }
 
 export interface BotSummary {

@@ -127,8 +127,9 @@ sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
   `/etc/opencode/opencode.env`、opencode `opencode.json`/`service.json` 及 opencode SQLite 一致性快照。
 - 明文只在 0700 临时目录：优先 `/run/antifieldcloud/secrets-tmp`（tmpfs，重启即清），不可用时回退 `/tmp`；
   启动前清理上次残留，退出路径 trap 清理，不留下未加密产物。
-- opencode DB 快照失败只降级为 warning（`warnings:["opencode_snapshot_failed"]`，`includesOpencode=false`），
-  仍打包 env/cloudflared/server.properties；不会因单个快照失败丢失全部密钥备份。
+- opencode DB 快照必须成功：临时快照父目录使用独立 0711 目录（默认 `/run/antifieldcloud/secrets-tmp-opencode`），
+  快照子目录 0700 归 opencode；失败（目录不可遍历/不可写、node:sqlite 失败）直接使脚本失败退出，
+  **不生成半成品密钥包**并由备份拉取状态置 `secretsOk=false`，避免“只 warning、PC 仍显示成功”的静默漏备。
 - 脚本校验 age 公钥 root 属主/不可组写；不输出密码/密钥。
 - 输出：`/var/lib/antifieldcloud/backups/secrets/secrets-<UTC>.tar.age` + `.sha256`；目录 root:antifield 2750，文件 0640。
 - **保留**：Pi 端 `SECRETS_KEEP`/默认 `KEEP=2` 滚动保留最新 2 份；Windows 任务拉到本地后**不再立即删除远端密钥包**
@@ -156,10 +157,12 @@ cat /var/lib/antifieldcloud/world-backup-status.json
 - 一致性流程：RCON `save-off` → `save-all flush`（180s 超时、失败重试一次）→ `tar -czf .part`（排除 `session.lock`）
   → gzip 完整性校验 → SHA-256 → 原子改名 `world-<UTC>.tar.gz`；**`save-on` 在 finally 中重试 3 次**，失败时状态 `ok=false`。
 - 权限：归档与 `.sha256` 为 0640，属主 `antifieldcloud:antifield`（PC 用户 `antifield` 同组可 scp）；目录 0770（脚本显式 chown，不使用 setgid，避免 systemd `RestrictSUIDSGID` 拒绝）。
-- 保留：最新 4 份（`WORLD_BACKUP_KEEP` 可调）；只删除匹配 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 的归档与旁文件，
-  旧 legacy 命名文件不动；崩溃遗留超过 6 小时的 `.part` 会被清理。
+- 保留：Pi 侧最多保留最新 4 份（`WORLD_BACKUP_KEEP` 可调）；只删除匹配 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 的归档与旁文件，
+  旧 legacy 命名文件不动；崩溃遗留超过 6 小时的 `.part` 会被清理。PC 拉取校验并 ack 后会删除远端归档，因此 Pi 的 4 份是
+  “拉取前暂存”，不是长期异地副本；PC `world\` 才是长期保留（最新 4 份）。
 - 状态：写 `/var/lib/antifieldcloud/world-backup-status.json`（0644，原子 rename），字段含
-  `lastRunAt/ok/archiveName/sizeBytes/sha256/durationMs/kept/error/message/errors/warnings/saveOffOk/saveOnOk/worldBytes`。
+  `lastRunAt/ok/archiveName/sizeBytes/sha256/durationMs/kept/keptCount/error/message/errors/warnings/saveOffOk/saveOnOk/worldBytes`；
+  `kept` 是归档名数组，份数看 `keptCount`，且是上次运行时的快照（PC ack 删除后不会实时回写）。
 - 失败模式：Minecraft 未运行/RCON 不可达时备份失败并写状态；服务器 `save-off` 期间脚本崩溃时，`save-on` 会重试，
   仍失败则需手动在控制台执行 `save-on`（状态 JSON 会明确提示）。
 - 旧世界 cron：验收后从 `antifield` 的 `crontab` 移除 `minecraft-backups` 行；旧归档约 9 GiB 不自动删除，
@@ -183,16 +186,19 @@ Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Tr
 
 - 两阶段：查询远端 `world-backups` 与 `world-backup-status.json` → 逐个 scp 到 `.part` → 与远端 `.sha256` 比对
   → 原子改名 → 写本地 `.sha256` → 删除远端归档/旁文件（ack）；**校验失败不 ack、不动远端**，退出码 1。
+  ack 删除远端是设计语义；Pi 因此只做暂存，长期副本在 PC `world\`。
 - 本地保留最新 4 份（只删 `world-<UTC>.tar.gz` 匹配名及孤儿旁文件）；日志
   `%LOCALAPPDATA%\AntifieldCloud\world-pull.log`（>1 MiB 轮转）。
 - 状态：写远端 `/var/lib/antifieldcloud/world-pull-status.json`（0644，`sudo install`），字段含
-  `lastPullAt/ok/archiveName/pulledCount/sizeBytes/kept/pendingRemaining/lastBackupAt/lastBackupOk/error/warnings`。
+  `lastPullAt/ok/archiveName/archiveNames/pulledCount/sizeBytes/kept/keptCount/pendingRemaining/lastBackupAt/lastBackupOk/error/warnings`；
+  `kept` 是本地归档名数组，份数看 `keptCount`。
 - 所有 ssh/scp 有硬超时并杀进程树；UTF-8 输出编码统一；`-NoStatusWrite` 可跳过状态写入；失败也会尽量写 `ok=false`。
 
 ### 6.3 磁盘与一致性注意
 
 - Pi 世界约 4.1 GiB；`save-off` 窗口内 Minecraft 不落盘，gzip 打包在 Pi 上可能持续数分钟——定时器放在周日 12:00，
-  不与玩家高峰重叠。脚本预检要求可用空间 ≥1.5× 世界体积，保留 4 份会持续占用更多磁盘，需定期 `df -h` 确认。
+  不与玩家高峰重叠。脚本预检要求可用空间 ≥1.5× 世界体积；Pi 需要容纳拉取前的暂存归档，PC 拉取 ack 后会释放，
+  仍需定期 `df -h` 确认。
 - 世界归档是 tar.gz，恢复前必须停 Minecraft 或先 `save-off`，避免运行中的世界文件与归档混写。
 - 世界备份不包含 Paper 配置/插件数据；这些仍由密钥包与应用数据归档覆盖。
 
@@ -222,9 +228,9 @@ sudo rm -rf /home/antifield/minecraft-backups
 ```powershell
 # 应用归档链 + DB + manifest + 可选世界归档
 cd "$env:USERPROFILE\projects\AntifieldCloud"
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 13
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 14
 # 需要解包验证世界（先确认临时盘 ≥3× 世界归档体积）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 13 -IncludeWorld
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 14 -IncludeWorld
 # 将 ASCII 状态回写 Pi（可选；默认不写）
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -PiHost 192.0.2.10
 ```
@@ -333,7 +339,7 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 # 核对 .sha256 后，把 /etc/antifieldcloud/env、/etc/cloudflared/*、server.properties、opencode env 按原权限放回
 ```
 
-- 解密在可信机器上做；恢复后检查 `/etc/antifieldcloud/env` 的域名/APP_ORIGIN/COOKIE_DOMAIN 与实际一致。
+- 解密在可信机器上做；恢复后检查 `/etc/antifieldcloud/env` 的域名/APP_ORIGIN/COOKIE_DOMAIN 与实际一致（COOKIE_DOMAIN 自 v0.6.0 起仅用于清理旧父域 Cookie，不再设置新 Cookie）。
 - 密钥包不含普通文件内容；文件恢复走 §8.1，世界走 §8.2。
 
 ### 8.4 验证清单
@@ -377,7 +383,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 | `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB；世界备份另需 1.5× 世界体积 |
 | `skippedMissing` 非空 | DB 有行但文件缺失（断电/误删）。备份继续、manifest 记录；恢复该文件后下一次增量自动补入；查 `warnings` |
 | 密钥备份报 `age 未安装/缺少公钥` | 按 §5 安装 age 并写公钥；文件归档仍可成功，但 `secretsOk` 会为 false，属预期可见状态 |
-| `opencode_snapshot_failed` 警告 | opencode 服务/权限异常：检查 `/var/lib/opencode` 与 opencode 用户；其它密钥仍会打包 |
+| `opencode_snapshot_failed` / `opencode 快照目录不可写` | opencode 用户无法访问临时父目录或 DB：检查 `/run/antifieldcloud/secrets-tmp-opencode`（0711）与 `/var/lib/opencode` 权限；密钥包按失败处理（不会生成半成品），修复后重跑 |
 | 备份面板超 48h 红色 | 检查计划任务 LastTaskResult、`backup.log`、Pi 直连与 pending 状态 |
 | 世界备份状态 ok=false | 看 `/var/lib/antifieldcloud/world-backup-status.json` 的 `error/message`；常见为 RCON 不可达、磁盘不足、save-all 超时；修复后 `sudo systemctl start antifieldcloud-world.service` 重跑 |
 | 世界备份超 8 天告警 | timer 未启用/未安装/上次失败；`systemctl list-timers`、`journalctl -u antifieldcloud-world`、smoke 世界状态检查 |
@@ -386,14 +392,14 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 | 恢复演练报告失败 | 看 `report.json` 的 `errors`：sidecar/链缺失、tar 不安全条目、DB integrity/FK/schema、manifest 不一致；先修备份再演练 |
 | 演练状态 unknown | 从未运行或未指定 `-PiHost` 回写；运行 `drill.ps1 -PiHost ...` 或接受 unknown（不误报通过） |
 | PC 有旧世界归档占空间 | 旧 cron 已停用；按 §6.4 手动清理，保留至少一份可解包副本 |
-| 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN/COOKIE_DOMAIN 一致；必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
+| 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN 一致；COOKIE_DOMAIN 自 v0.6.0 起仅用于清理旧父域 Cookie，必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
 | 恢复后 Bot 显示 `bot_key_missing`/密文不可解密 | `BOT_SECRET_KEY` 与 DB 快照不匹配：从同批密钥包恢复 env，或接受重新录入 Bot Token；不要重置 key 后保留旧 `bots` 行 |
 | 密钥包过大/失败但文件归档成功 | 看 `secretsLastError`；`BOT_SECRET_KEY` 在 env 内，env 不可读会导致密钥包失败；修复 `/etc/antifieldcloud/env` 权限 0640 root:antifieldcloud |
 
 ## 11. 覆盖、残余风险与限制
 
 - **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照，
-  v0.5.0 起 env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 保留 4 + PC 拉取保留 4）、自动化恢复演练。
+  v0.5.0 起 env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练。
 - **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、VPS 远端/异地副本、对象存储、整包加密；
   普通归档仍含 TOTP/会话明文与 Bot 凭据密文，PC ACL/离线介质是最后防线；age 私钥或 `BOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
 - 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。

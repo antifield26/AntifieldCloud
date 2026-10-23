@@ -15,7 +15,7 @@ import {
   signQqEvent,
 } from './bot-qq-fixtures.ts'
 import { BotService } from '../src/bot/service.ts'
-import type { BotPlatform } from '../src/bot/types.ts'
+import type { BotMemoryOperation, BotPlatform } from '../src/bot/types.ts'
 import { decryptBotSecret, encryptBotSecret } from '../src/bot/crypto.ts'
 
 function jsonResponse(body: unknown): Response {
@@ -51,6 +51,13 @@ test('QQ Webhook：op=13 回调校验返回签名，非法签名被拒绝', asyn
       ),
       true,
     )
+    // op=13 成功校验写审计（不记录 plain_token/签名）。
+    const challengeAudit = fixture.audits.filter((item) => item.action === 'bot.webhook.challenge')
+    assert.equal(challengeAudit.length, 1)
+    assert.equal(challengeAudit[0]?.target, fixture.botId)
+    assert.equal(challengeAudit[0]?.detail ?? null, null)
+    assert.equal(JSON.stringify(challengeAudit).includes(payload.signature), false, '审计不得记录签名')
+    assert.equal(JSON.stringify(challengeAudit).includes('plain-token-abc'), false, '审计不得记录 plain_token')
 
     const rejected = await fixture.service.handleWebhook(
       fixture.botId,
@@ -243,6 +250,92 @@ test('QQ 事件签名时间戳过期时拒绝（stale_signature）', async () =>
     const result = await fixture.service.handleWebhook(fixture.botId, webhook.headers, webhook.body)
     assert.equal(result.status, 401)
     assert.deepEqual(result.body, { error: { code: 'stale_signature' } })
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('v0.6.0 AI 工具隔离降级：写审计并在 BotStatus 暴露状态（不含提示词）', async () => {
+  const fixture = createQqServiceFixture({ aiEnabled: true })
+  try {
+    const ai = (fixture.service as unknown as { deps: { ai?: { toolIsolation?: () => unknown } } }).deps.ai
+    assert.ok(ai, '夹具应提供 AI')
+    let isolation = { supported: true, fallbackCount: 0, fallbackAt: null as string | null }
+    ai.toolIsolation = () => isolation
+    assert.deepEqual(fixture.service.status().aiToolIsolation, isolation)
+
+    // 模拟 OpenCode 拒绝 permissions 后发生一次降级。
+    isolation = { supported: false, fallbackCount: 1, fallbackAt: '2026-10-23T00:00:00.000Z' }
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'ai-fallback-1', content: '你好' }))
+    const fallbackAudits = fixture.audits.filter((item) => item.action === 'bot.ai.permissions_fallback')
+    assert.equal(fallbackAudits.length, 1, '降级必须写审计，不能只藏在日志里')
+    assert.equal(fallbackAudits[0]?.target, fixture.botId)
+    assert.equal(fallbackAudits[0]?.detail?.fallbackCount, 1)
+    assert.equal(fallbackAudits[0]?.detail?.supported, false)
+    assert.equal(JSON.stringify(fallbackAudits).includes('你好'), false, '降级审计不得包含提示词')
+    assert.deepEqual(fixture.service.status().aiToolIsolation, isolation)
+
+    // 降级次数不再增加时只审计一次。
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'ai-fallback-2', content: '再聊' }))
+    assert.equal(fixture.audits.filter((item) => item.action === 'bot.ai.permissions_fallback').length, 1)
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('v0.6.0 未配置 AI 时 BotStatus.aiToolIsolation 为 null', () => {
+  const fixture = createQqServiceFixture()
+  try {
+    assert.equal(fixture.service.status().aiToolIsolation, null)
+  } finally {
+    fixture.cleanup()
+  }
+})
+
+test('v0.6.0 legacy 迁移：ops=0 保留 fallback，产出条目后才标记迁移', async () => {
+  const userId = 'user-openid-1'
+  let ops: BotMemoryOperation[] = []
+  const fixture = createQqServiceFixture({
+    aiEnabled: true,
+    extractHandler: async () => ops,
+    configOverrides: { botAiMemoryBatchMessages: 1 },
+  })
+  try {
+    const now = '2026-10-22T00:00:00.000Z'
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_ai_memories (bot_id, user_id, memory_id, summary, summary_session_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?)`,
+      )
+      .run(fixture.botId, userId, '11111111-1111-4111-8111-111111111111', '旧摘要：用户喜欢深色模式', now, now)
+    const migratedAt = (): string | null =>
+      (
+        fixture.db
+          .prepare('SELECT legacy_migrated_at FROM bot_memory_state WHERE bot_id = ? AND user_id = ?')
+          .get(fixture.botId, userId) as { legacy_migrated_at: string | null } | undefined
+      )?.legacy_migrated_at ?? null
+
+    // 第一批：模型返回空操作 → 不迁移，旧摘要 fallback 继续注入并继续作为迁移输入。
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'legacy-ops0-1', content: '第一轮对话' }))
+    await fixture.service.waitForIdle() // 等待回复后才入队的记忆抽取任务完成
+    assert.equal(migratedAt(), null, 'ops=0 不得标记旧摘要已迁移')
+    assert.ok(
+      (fixture.aiCalls.at(-1)?.prompt ?? '').includes('[旧记忆（待迁移）]'),
+      'ops=0 后旧摘要 fallback 仍应注入',
+    )
+    assert.equal(fixture.extractCalls[0]?.legacySummary.includes('深色模式'), true)
+    const firstAudit = fixture.audits.filter((item) => item.action === 'bot.memory.extract').at(-1)
+    assert.equal(firstAudit?.detail?.migrated, 0)
+
+    // 第二批：模型产出可迁移条目 → 标记迁移。
+    ops = [{ op: 'upsert', kind: 'fact', key: 'theme', value: '喜欢深色模式', confidence: 0.9, importance: 3 }]
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'legacy-ops0-2', content: '第二轮对话' }))
+    await fixture.service.waitForIdle()
+    assert.ok(migratedAt(), '产出条目后应标记迁移')
+    const audits = fixture.audits.filter((item) => item.action === 'bot.memory.extract')
+    assert.equal(audits.length, 2)
+    assert.equal(audits[1]?.detail?.migrated, 1)
+    assert.ok(ops.length === 1)
   } finally {
     fixture.cleanup()
   }

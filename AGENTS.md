@@ -2,7 +2,9 @@
 
 ## 0. 项目一句话
 
-在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、QQ 官方机器人（v0.5.8 起单平台；v0.5.9 起 AI 仅普通消息 Chat、自助 `/help` 动态开放；v0.5.10 记忆/会话修复并移除代理隧道依赖；v0.5.11 结构化长期记忆 + schema v14）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。当前版本 v0.5.11，数据库 schema **v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_state`，旧 `bot_ai_memories` 保留为 legacy 来源；迁移 5–13 保留）；生产已部署 v0.5.11/schema v14（release `20261023T022831Z`，commit `931b10d`，迁移 14 不可逆；同版本早前 release `20261023T021339Z`/`20261023T014328Z` 保留；`/healthz` v0.5.11/schema 14，smoke 16/16 与 24/24；生产 env 5 个 `BOT_MEMORY_*` 就位），用户已实发验收通过（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory`、`/forget confirm` items=2 legacy=0 有服务端证据；`/bots` 面板用户确认）。v0.5.11 结构化记忆：7 类条目（profile/preference/fact/project/task/relationship/episode，唯一 `(bot,user,kind,key)`）；抽取 3 条/空闲 120s 批量 + 串行 + 一次性会话 + 严格 JSON ops + 敏感过滤 + 容量 200；TTL（资料/偏好不过期、事实/项目/关系 365、事件 90、任务 30，更新续期）；分层召回 3000 字/12 条 + legacy fallback；自助 `/memory` 与 `/memory off|on`；`/forget confirm` 清空 items/state/legacy/会话（含远端）；管理 API 只返回元数据；生产 env 新增 5 个 `BOT_MEMORY_*`；**迁移 14 不可逆，v0.5.10 不支持 v14，回滚必须恢复迁移前快照**。OpenCode 服务端 v2.1.2。
+**当前版本 v0.6.0（本地修复/门禁完成，待部署与用户验收；质量与安全加固，schema 保持 v14、无迁移；OpenCode v2.1.3）**：第五轮多切入点审计的 P0–P2 全部修复——QQ op=13 签名预言机（P1）、host-only Cookie + 一次性 AI SSO ticket、公开端点大 body 收敛、app API Origin 收口、密钥包 opencode 快照硬失败、备份 ack/恢复预算/legacy 迁移、Bot wait 旧回答/记忆过滤/工具隔离可见性/发布超长 400、世界备份与演练状态契约、文档漂移；P3 记录。本版无新功能主线。
+
+在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台：统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、opencode 反代、QQ 官方机器人（v0.5.8 起单平台；v0.5.9 起 AI 仅普通消息 Chat、自助 `/help` 动态开放；v0.5.10 记忆/会话修复并移除代理隧道依赖；v0.5.11 结构化长期记忆 + schema v14）、PWA、可观测性、主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。产品名 `AntifieldCloud · 个人工作台`。上一版 v0.5.11，数据库 schema **v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_state`，旧 `bot_ai_memories` 保留为 legacy 来源；迁移 5–13 保留）；生产已部署 v0.5.11/schema v14（release `20261023T022831Z`，commit `931b10d`，迁移 14 不可逆；同版本早前 release `20261023T021339Z`/`20261023T014328Z` 保留；`/healthz` v0.5.11/schema 14，smoke 16/16 与 24/24；生产 env 5 个 `BOT_MEMORY_*` 就位），用户已实发验收通过（2026-10-23 10:39 CST：三条 Chat → `bot.memory.extract` rounds=3 ops=2、`/memory`、`/forget confirm` items=2 legacy=0 有服务端证据；`/bots` 面板用户确认）。v0.5.11 结构化记忆：7 类条目（profile/preference/fact/project/task/relationship/episode，唯一 `(bot,user,kind,key)`）；抽取 3 条/空闲 120s 批量 + 串行 + 一次性会话 + 严格 JSON ops + 敏感过滤 + 容量 200；TTL（资料/偏好不过期、事实/项目/关系 365、事件 90、任务 30，更新续期）；分层召回 3000 字/12 条 + legacy fallback；自助 `/memory` 与 `/memory off|on`；`/forget confirm` 清空 items/state/legacy/会话（含远端）；管理 API 只返回元数据；生产 env 新增 5 个 `BOT_MEMORY_*`；**迁移 14 不可逆，v0.5.10 不支持 v14，回滚必须恢复迁移前快照**。OpenCode 服务端 v2.1.3。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -10,7 +12,7 @@
 - `docs/UI-SPEC.md`：界面与交互
 - `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`、`docs/BOT.md`
 - `docs/ROADMAP.md`：路线图与当前版本边界
-- `docs/AUDIT.md`：第一至第四轮审计（v0.2.0 / v0.3.x / v0.4.0 / v0.4.2+v0.5.0）与残留
+- `docs/AUDIT.md`：第一至第五轮审计（v0.2.0 / v0.3.x / v0.4.0 / v0.4.2+v0.5.0 / v0.5.11→v0.6.0）与残留
 - `docs/ACCEPTANCE.md`：当前版本验收与历史记录
 
 ## 1. 语言与注释
@@ -45,7 +47,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY 标题及 lock 根版本一致
 ```
 
-当前基线（v0.5.10 实测：`npm test` 341、`npm run test:web` 157、coverage Lines 91.98% / Branches 76.92% / Functions 85.99%、build 通过）。**v0.5.11：`npm test` 360**（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，+5）；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**（`npm run test:coverage` exit 0）、`npm run build` 通过。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）与备份 tar、告警投递等同样只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
+当前基线（v0.5.10 实测：`npm test` 341、`npm run test:web` 157、coverage Lines 91.98% / Branches 76.92% / Functions 85.99%、build 通过）。**v0.5.11：`npm test` 360**（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，+5）。**v0.6.0（2026-10-23 本地门禁）**：`npm test` **383**（server+scripts，含 op=13/SSO/上传/备份/Bot/日志脱敏回归）、`npm run test:web` **176**（32 文件）；覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。测试禁止依赖真实 Minecraft、真实 opencode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）与备份 tar、告警投递等同样只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份与恢复演练校验脚本（纯函数/夹具，不触碰真实 Pi）。
 
 ## 4. 目录与模块边界
 
@@ -135,7 +137,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 - Pi：`antifield@192.0.2.10` 直连；WiFi 198.51.100.10 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；v0.5.2 安全更新，旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
-- opencode：`127.0.0.1:4096`，服务端 **v2.1.2**（2026-10-22 由 v2.1.1 升级；升级/回滚见 `docs/DEPLOY.md`），Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 opencode 与 antifieldcloud）。
+- opencode：`127.0.0.1:4096`，服务端 **v2.1.3**（2026-10-23 由 v2.1.2 升级；升级/回滚见 `docs/DEPLOY.md`），Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 opencode 与 antifieldcloud）。
 - Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（v0.2.0 已轮换为 32 位随机），
   服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。
 - Pi 已启用 memory cgroup（`cgroup.controllers` 含 `memory`）；`antifieldcloud-health.timer` 每 60s 写

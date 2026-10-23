@@ -79,9 +79,32 @@ export function isStaleByDays(
   return isStaleByHours(timestamp, maxAgeDays * 24, now)
 }
 
+/** 取最新归档（按 createdAt 降序）。 */
 function latestArchive(archives: BackupArchive[]): BackupArchive | null {
   if (archives.length === 0) return null
   return [...archives].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0] ?? null
+}
+
+/**
+ * 状态文件里的保留份数：优先脚本写出的 `keptCount`；
+ * 老代码只给了 `kept`（归档名数组）时按数组长度回退，避免把归档名数组当数字拼接。
+ */
+export function keptCountOf(status: {
+  kept?: string[] | number | null
+  keptCount?: number | null
+}): number | null {
+  if (typeof status.keptCount === 'number' && Number.isFinite(status.keptCount)) return status.keptCount
+  if (Array.isArray(status.kept)) return status.kept.length
+  if (typeof status.kept === 'number' && Number.isFinite(status.kept)) return status.kept
+  return null
+}
+
+/** 演练报告只展示目录/文件名，不展示本地路径。 */
+export function drillReportLabel(drill: DrillStatus): string | null {
+  const raw = drill.report ?? drill.reportPath ?? null
+  if (!raw) return null
+  const name = raw.split(/[\\/]/).filter(Boolean).pop() ?? raw
+  return `报告 ${name}`
 }
 
 /** 世界备份状态：失败 > 过期 > 正常；缺失显示未运行。 */
@@ -111,10 +134,11 @@ export function worldBackupView(
       alert: true,
     }
   }
+  const kept = keptCountOf(world)
   const detailParts = [
     world.archiveName ? `归档 ${world.archiveName}` : null,
     world.sizeBytes !== null && world.sizeBytes !== undefined ? formatBytes(world.sizeBytes) : null,
-    world.kept !== null && world.kept !== undefined ? `保留 ${world.kept} 份` : null,
+    kept !== null ? `保留 ${kept} 份（上次运行保留；PC 拉取确认后远端会删除）` : null,
   ].filter((part): part is string => Boolean(part))
   return {
     value: '正常',
@@ -153,10 +177,11 @@ export function worldPullView(
       alert: true,
     }
   }
+  const kept = keptCountOf(worldPull)
   const detailParts = [
     worldPull.archiveName ? `归档 ${worldPull.archiveName}` : null,
     worldPull.pulledCount !== null && worldPull.pulledCount !== undefined ? `拉取 ${worldPull.pulledCount} 个` : null,
-    worldPull.kept !== null && worldPull.kept !== undefined ? `本地保留 ${worldPull.kept} 份` : null,
+    kept !== null ? `本地保留 ${kept} 份` : null,
   ].filter((part): part is string => Boolean(part))
   return {
     value: '正常',
@@ -191,10 +216,23 @@ export function drillView(drill: DrillStatus | null | undefined, now = Date.now(
       alert: true,
     }
   }
-  const detailParts = [
-    drill.dbIntegrity ? `数据库完整性 ${drill.dbIntegrity}` : null,
-    drill.reportPath ? `报告 ${drill.reportPath}` : null,
+  // 演练脚本实际写 latestDb/schemaVersion/worldChecked/report；dbIntegrity/reportPath 仅兼容旧状态文件。
+  const dbParts = [
+    drill.latestDb ? `数据库 ${drill.latestDb}` : null,
+    typeof drill.schemaVersion === 'number' && Number.isFinite(drill.schemaVersion)
+      ? `schema v${drill.schemaVersion}`
+      : null,
   ].filter((part): part is string => Boolean(part))
+  const dbDetail = drill.dbIntegrity
+    ? `数据库完整性 ${drill.dbIntegrity}`
+    : dbParts.length > 0
+      ? dbParts.join(' · ')
+      : null
+  const worldDetail =
+    drill.worldChecked === true ? '世界归档已校验' : drill.worldChecked === false ? '世界归档校验失败' : null
+  const detailParts = [dbDetail, drillReportLabel(drill), worldDetail].filter(
+    (part): part is string => Boolean(part),
+  )
   return {
     value: '成功',
     tone: 'success',

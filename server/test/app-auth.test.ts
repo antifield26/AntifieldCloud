@@ -1,6 +1,39 @@
+test('AI SSO ticket：一次性、过期、origin 绑定与容量上限', async () => {
+  const dir = tempDataDir()
+  const config = testConfig(dir)
+  const db = testDb(dir)
+  const seeded = await seedAdmin(db)
+  const context = await buildApp(config, db)
+  try {
+    const session = createSession(db, seeded.userId, 'csrf-ticket', 7, '127.0.0.1', 'test')
+    const auth = context.auth
+    const ticket = auth.createAiSsoTicket(session.token, 'https://ai.test')
+    assert.match(ticket, /^[A-Za-z0-9_-]{43}$/)
+    // 错误 origin 消费失败，且票据被销毁（一次性，防跨 origin 重试）。
+    assert.equal(auth.consumeAiSsoTicket(ticket, 'https://other.test'), null)
+    assert.equal(auth.consumeAiSsoTicket(ticket, 'https://ai.test'), null)
+    // 过期（创建时间回拨 61 秒，超过 60 秒 TTL）。
+    const expired = auth.createAiSsoTicket(session.token, 'https://ai.test', Date.now() - 61_000)
+    assert.equal(auth.consumeAiSsoTicket(expired, 'https://ai.test'), null)
+    // 正常消费返回原会话 token。
+    const ok = auth.createAiSsoTicket(session.token, 'https://ai.test')
+    assert.equal(auth.consumeAiSsoTicket(ok, 'https://ai.test'), session.token)
+    // 容量上限 1000：最旧被淘汰，最新仍可消费。
+    const codes: string[] = []
+    for (let index = 0; index < 1001; index += 1) codes.push(auth.createAiSsoTicket(session.token, 'https://ai.test'))
+    assert.equal(auth.consumeAiSsoTicket(codes[0]!, 'https://ai.test'), null)
+    assert.equal(auth.consumeAiSsoTicket(codes[1000]!, 'https://ai.test'), session.token)
+  } finally {
+    await context.app.close()
+    db.close()
+    cleanupDir(dir)
+  }
+})
+
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildApp } from '../src/app.ts'
+import { createSession } from '../src/auth/sessions.ts'
 import { cleanupDir, cookieHeader, currentCode, parseSetCookies, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
 
 test('登录两步、CSRF、会话与登出', async () => {

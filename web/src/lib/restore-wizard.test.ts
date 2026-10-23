@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import type { BackupArchive } from '../api/types'
+import type { BackupArchive, RestorePlan, RestoreResult } from '../api/types'
 import {
   buildRestorePlanInput,
+  collectSkippedMissing,
   createRestoreState,
   restoreWizardReducer,
+  summarizeSkippedMissing,
   validateRestoreConfirmation,
   validateSelectStep,
 } from './restore-wizard'
@@ -121,5 +123,44 @@ describe('restoreWizardReducer', () => {
     expect(state.archiveName).toBe('a-full.tar.gz')
     expect(state.selectedPaths).toEqual(['/a'])
     expect(state.verification).toBeNull()
+  })
+})
+
+describe('恢复结果 skippedMissing 提示', () => {
+  const plan: RestorePlan = {
+    id: 'plan-1',
+    status: 'completed',
+    targetName: 'restore-1',
+    archive: 'a-full.tar.gz',
+    archives: ['a-full.tar.gz'],
+    fileCount: 2,
+    totalBytes: 10,
+    createdAt: '2026-10-19T00:00:00.000Z',
+    expiresAt: '2026-10-19T00:30:00.000Z',
+    skippedMissing: ['plan-file-a', 'shared-file'],
+  }
+  const result: RestoreResult = {
+    targetFolderId: 'folder-1',
+    targetName: 'restore-1',
+    filesRestored: 1,
+    bytesRestored: 10,
+    durationMs: 500,
+    skippedMissing: ['shared-file', 'exec-file-b'],
+  }
+
+  it('合并计划与执行结果的缺失文件并去重', () => {
+    expect(collectSkippedMissing(null, null)).toEqual([])
+    expect(collectSkippedMissing(plan, result)).toEqual(['plan-file-a', 'shared-file', 'exec-file-b'])
+    expect(collectSkippedMissing({ ...plan, skippedMissing: [] }, { ...result, skippedMissing: undefined })).toEqual([])
+  })
+
+  it('生成跳过数量与预览文案，完整恢复不误报', () => {
+    expect(summarizeSkippedMissing([])).toMatchObject({ count: 0, preview: [], message: null })
+    const summary = summarizeSkippedMissing(['f1', 'f2', 'f3', 'f4', 'f5', 'f6'])
+    expect(summary.count).toBe(6)
+    expect(summary.preview).toHaveLength(5)
+    expect(summary.message).toContain('6 个文件')
+    expect(summary.message).toContain('跳过')
+    expect(summary.message).not.toContain('全部')
   })
 })

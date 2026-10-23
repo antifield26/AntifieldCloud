@@ -80,6 +80,13 @@ export function BotOverview({
             最近一次 Bot 错误：{status.lastError}
           </div>
         ) : null}
+        {status.aiToolIsolation && !status.aiToolIsolation.supported ? (
+          <div className="notice notice-warning" role="status">
+            AI 工具隔离已降级：OpenCode 拒绝 deny-all permissions，Chat 会话未启用工具隔离（降级{' '}
+            {status.aiToolIsolation.fallbackCount} 次
+            {status.aiToolIsolation.fallbackAt ? `，首次 ${status.aiToolIsolation.fallbackAt}` : ''}）。
+          </div>
+        ) : null}
         <p className="field-hint">
           Bot 命令为只读（/help、/status、/backup、/world、/mc、/files；AI 对话由普通消息 Chat 承担），本页不提供命令执行入口；发布任务由管理员手动创建并需 TOTP + PUBLISH 双确认。
         </p>

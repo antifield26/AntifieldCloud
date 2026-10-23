@@ -88,6 +88,8 @@ export interface BackupServiceConfig {
   drillStatusFile?: string
   /** 加载归档快照的最大行数（测试可调小），默认 100000。 */
   backupSnapshotMaxRows?: number
+  /** staging 目录总占用上限（字节，测试可调小）；默认 2 GiB，同时受可用空间 20% 约束。 */
+  backupStagingMaxBytes?: number
 }
 
 export type BackupRunner = (args: string[]) => Promise<{ code: number; stdout: string; stderr: string; timedOut?: boolean }>
@@ -366,6 +368,10 @@ export class BackupService {
       worldPullStatusFile: config.worldPullStatusFile ?? join(config.dataDir, 'world-pull-status.json'),
       drillStatusFile: config.drillStatusFile ?? join(config.dataDir, 'drill-status.json'),
       backupSnapshotMaxRows: Math.max(1, config.backupSnapshotMaxRows ?? MAX_SNAPSHOT_ROWS),
+      backupStagingMaxBytes: Math.max(
+        1024 * 1024,
+        Math.min(MAX_STAGING_BYTES, Math.floor(config.backupStagingMaxBytes ?? MAX_STAGING_BYTES)),
+      ),
     }
     this.runner = options.runner ?? this.defaultRunner()
   }
@@ -523,8 +529,8 @@ export class BackupService {
   }
 
   /**
-   * staging 空间预检：同时受总量上限（2 GiB）与可用空间 20% 约束，
-   * 不足返回 507，避免解包归档把系统盘写满。
+   * staging 空间预检：同时受总量上限（默认 2 GiB，测试可调）与可用空间 20% 约束，
+   * 不足返回 507，避免解包归档把系统盘写满。调用方应传入**真实解包字节**，不能用归档内元数据声明值。
    */
   private assertStagingCapacity(neededBytes: number): void {
     this.cleanupStaleStaging()
@@ -537,7 +543,7 @@ export class BackupService {
     if (neededBytes > 0 && free < neededBytes + RESERVED_FREE_BYTES) {
       throw new AppError(507, 'insufficient_storage', '磁盘空间不足，无法解包归档')
     }
-    const cap = Math.min(MAX_STAGING_BYTES, Math.floor(free * STAGING_FREE_RATIO))
+    const cap = Math.min(this.config.backupStagingMaxBytes, Math.floor(free * STAGING_FREE_RATIO))
     const used = this.stagingBytes()
     if (neededBytes > cap || used + neededBytes > cap) {
       throw new AppError(507, 'insufficient_storage', '备份解包临时空间不足，请清理后重试')
@@ -1263,11 +1269,16 @@ export class BackupService {
           const snapshot = await this.loadSnapshot(targetArchive.name, join(staging, 'target'))
           const resolved = this.resolveSelection(snapshot, selection.paths ?? [])
           if (resolved.files.length === 0) throw badRequest('选择内容为空', 'invalid_selection')
+          // 快照中的 files.size 来自不可信归档，不能作为磁盘/配额预算；解包前按 tar 条目实际字节测量。
+          const measured = await this.measureContents(chain, resolved.files.map((row) => row.id))
+          // 解包前按“真实内容字节 + 当前 staging 占用”做契约上限/可用空间预检，超限直接失败，不写内容文件。
+          this.assertStagingCapacity(measured.bytes)
           const usage = this.files.usage()
-          if (usage.usedBytes + resolved.totalBytes > this.config.quotaBytes) {
+          if (usage.usedBytes + measured.bytes > this.config.quotaBytes) {
             throw conflict('剩余配额不足以恢复所选文件', 'quota_exceeded')
           }
-          if (this.freeBytes() < resolved.totalBytes * 2 + RESERVED_FREE_BYTES) {
+          // 解包内容与最终落盘文件会同时存在，按实测字节 ×2 + 保留空间预检。
+          if (this.freeBytes() < measured.bytes * 2 + RESERVED_FREE_BYTES) {
             throw new AppError(507, 'insufficient_storage', '磁盘剩余空间不足，无法完成恢复')
           }
           const contentDir = join(staging, 'content')
@@ -1278,7 +1289,11 @@ export class BackupService {
             contentDir,
           )
           // 归档 manifest 记录/实际内容缺失的文件：跳过并从选择中剔除，其余内容继续恢复。
-          const missingContent = new Set([...missing, ...chain.flatMap((row) => manifestSkippedMissing(row.manifest_json))])
+          const missingContent = new Set([
+            ...missing,
+            ...measured.missing,
+            ...chain.flatMap((row) => manifestSkippedMissing(row.manifest_json)),
+          ])
           const availableFiles = resolved.files.filter((file) => !missingContent.has(file.id) && extracted.has(file.id))
           if (availableFiles.length === 0) {
             throw new AppError(422, 'invalid_archive', '归档缺少所选文件的全部内容', {
@@ -1358,6 +1373,34 @@ export class BackupService {
       if (!existing.has(candidate.toLowerCase())) return candidate
     }
     return `${desired} ${randomToken(2)}`
+  }
+
+  /**
+   * 不落盘测量本次恢复真正会解出的内容字节（按 tar 条目实际 size，而非归档内 DB 快照声明值）。
+   * 与 extractContents 使用同一“从新到旧、每个 id 只取一次”的优先级，结果即解包字节的上界；
+   * 仅读取 tar 头并跳过内容，不写 staging，供解包前的磁盘/配额预算使用（A5-DATA-03）。
+   */
+  private async measureContents(chain: ArchiveRow[], neededIds: string[]): Promise<{ bytes: number; missing: string[] }> {
+    const needed = new Set(neededIds)
+    const measured = new Map<string, number>()
+    for (const row of chain.slice().reverse()) {
+      if (measured.size === needed.size) break
+      await scanTarGz(this.storedPath(row), (header) => {
+        if (header.type !== 'file') return { kind: 'skip' }
+        const match = FILE_ENTRY_PATTERN.exec(header.path)
+        if (!match) return { kind: 'skip' }
+        const id = match[1]!
+        if (!needed.has(id) || measured.has(id)) return { kind: 'skip' }
+        measured.set(id, header.size)
+        return { kind: 'skip' }
+      }, {
+        maxEntryBytes: MAX_RESTORE_ENTRY_BYTES,
+        maxUnpackedBytes: MAX_RESTORE_UNPACKED_BYTES,
+      })
+    }
+    let bytes = 0
+    for (const size of measured.values()) bytes += size
+    return { bytes, missing: neededIds.filter((id) => !measured.has(id)) }
   }
 
   private async extractContents(chain: ArchiveRow[], neededIds: string[], contentDir: string): Promise<{ extracted: Map<string, string>; missing: string[] }> {

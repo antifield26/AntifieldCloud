@@ -91,6 +91,67 @@ test('Bot 发布路由：无 TOTP 400，带有效 TOTP 才创建外发任务', a
     assert.equal(created.json().job.status, 'queued')
     assert.equal(created.json().job.text, '外发测试')
     assert.equal('mediaFileIds' in created.json().job, false, 'QQ 单平台发布不含媒体字段')
+
+    // v0.6.0：service 层 >2000 明确 400（路由不得先静默截断，端到端用例见下一测试）。
+    assert.throws(
+      () => context.bots.createPublish(bot.id, { targetId: target.id, text: '字'.repeat(2001), confirmText: 'PUBLISH' }),
+      (error: unknown) =>
+        error instanceof Error && 'code' in error && (error as { code: string }).code === 'publish_text_too_long',
+    )
+    const exact = context.bots.createPublish(bot.id, {
+      targetId: target.id,
+      text: '字'.repeat(2000),
+      confirmText: 'PUBLISH',
+      // 定时到未来，避免测试 tick 真的尝试出站发送。
+      scheduledAt: new Date(Date.now() + 3600_000).toISOString(),
+    })
+    assert.equal(exact.text.length, 2000, '恰好 2000 字符仍可入队')
+    await context.bots.waitForIdle()
+  } finally {
+    context.bots.stop()
+    await context.app.close()
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('Bot 发布路由：>2000 字符返回 400 publish_text_too_long，不得静默截断外发', async () => {
+  const dir = tempDataDir()
+  const config = testConfig(dir, { botEnabled: true, botSecretKey: randomBytes(32).toString('base64') })
+  const db = testDb(dir)
+  const seeded = await seedAdmin(db)
+  const context = await buildApp(config, db)
+  try {
+    const { cookie, csrf } = await loginAdmin(context.app, seeded)
+    const bot = context.bots.createBot({
+      platform: 'qq',
+      name: 'publish-length',
+      token: APP_SECRET,
+      config: { appId: APP_ID },
+    })
+    context.bots.updateBot(bot.id, { enabled: true })
+    const target = context.bots.createTarget(bot.id, {
+      externalId: 'group-openid-1',
+      label: 'QQ 群',
+      kind: 'group',
+      allowCommands: false,
+      allowNotifications: true,
+    })
+    const totpCode = hotp(seeded.secret, currentStep() + 1)
+    const tooLong = await context.app.inject({
+      method: 'POST',
+      url: `/api/bots/${bot.id}/publish`,
+      headers: { cookie, 'x-csrf-token': csrf },
+      payload: {
+        targetId: target.id,
+        text: '字'.repeat(2001),
+        totpCode,
+        confirmText: 'PUBLISH',
+      },
+    })
+    assert.equal(tooLong.statusCode, 400)
+    assert.equal(tooLong.json().error.code, 'publish_text_too_long')
+    assert.equal(context.bots.listPublishJobs(bot.id).length, 0, '超长发布不得创建任务')
   } finally {
     context.bots.stop()
     await context.app.close()
@@ -163,7 +224,10 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
     // 检查连接：伪造适配器 check，路由返回 { health }，CSRF 必需。
     const internals = context.bots as unknown as {
       adapterFor: (row: unknown) => unknown
-      deps: { ai?: { chat: (input: unknown) => Promise<string> }; fetch?: typeof fetch }
+      deps: {
+        ai?: { chat: (input: unknown) => Promise<string>; toolIsolation?: () => unknown }
+        fetch?: typeof fetch
+      }
     }
     const originalAdapterFor = internals.adapterFor
     internals.adapterFor = () => ({
@@ -171,7 +235,15 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
       check: async () => ({ ok: true, items: [{ name: 'access_token', ok: true, detail: 'access_token 已获取' }] }),
       send: async () => ({ externalId: 'route-sent' }),
     })
-    if (internals.deps.ai) internals.deps.ai.chat = async () => 'AI 回复'
+    if (internals.deps.ai) {
+      internals.deps.ai.chat = async () => 'AI 回复'
+      // v0.6.0：/api/bots/status 暴露 AI 工具隔离状态（OpenCode 400 降级可见）。
+      internals.deps.ai.toolIsolation = () => ({
+        supported: true,
+        fallbackCount: 0,
+        fallbackAt: null,
+      })
+    }
     const check = await context.app.inject({
       method: 'POST',
       url: `/api/bots/${botId}/check`,
@@ -191,6 +263,11 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
     // 恢复真实适配器并注入进程内 fetch，避免 Webhook/回复访问真实 QQ 网络。
     internals.adapterFor = originalAdapterFor
     internals.deps.fetch = makeQqServiceFetch().fetchImpl
+
+    // /api/bots/status 暴露工具隔离状态（未配置 AI 时为 null，配置 AI 时取 ai.toolIsolation()）。
+    const status = await context.app.inject({ method: 'GET', url: '/api/bots/status', headers: { cookie } })
+    assert.equal(status.statusCode, 200)
+    assert.deepEqual(status.json().aiToolIsolation, { supported: true, fallbackCount: 0, fallbackAt: null })
 
     // 事件列表：签名 C2C 聊天产生 ok 事件，筛选/分页参数按契约返回。
     const timestamp = String(Math.floor(Date.now() / 1000))

@@ -110,7 +110,10 @@ export interface OpencodeStatus {
   error?: string | null
 }
 
-/** 世界一致性备份状态（只读文件，由 root 备份脚本写入；文件缺失时服务端返回 null）。 */
+/**
+ * 世界一致性备份状态（只读文件，由 root 备份脚本写入；文件缺失时服务端返回 null）。
+ * 字段以 scripts/backup-world.mjs 实际写出的 JSON 为准：`kept` 是归档名数组，份数看 `keptCount`。
+ */
 export interface WorldBackupStatus {
   lastRunAt?: string | null
   ok?: boolean | null
@@ -118,30 +121,61 @@ export interface WorldBackupStatus {
   sizeBytes?: number | null
   sha256?: string | null
   durationMs?: number | null
-  kept?: number | null
+  /** 上次运行后保留的归档名（Pi 端）；不是数字。 */
+  kept?: string[] | null
+  /** 保留份数（脚本单独写出的计数）。 */
+  keptCount?: number | null
   error?: string | null
+  message?: string | null
 }
 
-/** PC 周度拉取状态（只读文件；契约见 docs/API.md §12）。 */
+/**
+ * PC 周度拉取状态（只读文件，由 scripts/world-pull.ps1 写入）。
+ * `kept` 是本地保留的归档名数组，份数看 `keptCount`。
+ */
 export interface WorldPullStatus {
   /** 契约字段为 lastPullAt；兼容脚本可能写入 lastRunAt */
   lastPullAt?: string | null
   lastRunAt?: string | null
   ok?: boolean | null
   archiveName?: string | null
+  archiveNames?: string[] | null
   pulledCount?: number | null
   ackedCount?: number | null
-  kept?: number | null
+  sizeBytes?: number | null
+  /** 本地保留的归档名；不是数字。 */
+  kept?: string[] | null
+  /** 本地保留份数（脚本单独写出的计数）。 */
+  keptCount?: number | null
+  pendingRemaining?: number | null
+  lastBackupOk?: boolean | null
+  lastBackupArchive?: string | null
   error?: string | null
+  message?: string | null
 }
 
-/** 恢复演练状态（只读文件；报告路径由脚本写入，不在 Web 端下载）。 */
+/**
+ * 恢复演练状态（只读文件，由 scripts/drill.ps1 写入）。
+ * 实际字段为 `report/latestDb/schemaVersion/worldArchive/worldChecked/...`；
+ * `reportPath`/`dbIntegrity` 仅用于兼容旧状态文件，当前脚本不再写入。
+ */
 export interface DrillStatus {
   lastRunAt?: string | null
   ok?: boolean | null
-  reportPath?: string | null
-  dbIntegrity?: string | null
+  /** 报告目录名（脚本写入的 `report`），不包含本地路径。 */
+  report?: string | null
+  fullArchive?: string | null
+  incCount?: number | null
+  latestDb?: string | null
+  schemaVersion?: number | null
+  worldArchive?: string | null
+  worldChecked?: boolean | null
   error?: string | null
+  message?: string | null
+  /** 旧状态文件兼容字段：仅当真实字段缺失时回退展示。 */
+  reportPath?: string | null
+  /** 旧状态文件兼容字段：仅当真实字段缺失时回退展示。 */
+  dbIntegrity?: string | null
 }
 
 export interface BackupStatus {
@@ -768,6 +802,8 @@ export interface RestorePlan {
   expiresAt: string
   completedAt?: string | null
   error?: string | null
+  /** 创建计划时因归档 manifest 标记缺失而被剔除的文件 id（服务端返回）。 */
+  skippedMissing?: string[]
 }
 
 export interface RestorePlanResult {
@@ -780,6 +816,8 @@ export interface RestoreResult {
   filesRestored: number
   bytesRestored: number
   durationMs: number
+  /** 执行时归档内容仍缺失、已跳过未恢复的文件 id；非空时不能视为完整恢复。 */
+  skippedMissing?: string[]
 }
 
 export interface RestoreExecuteResult {
@@ -849,6 +887,13 @@ export type BotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'te
 export type BotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
 export type BotPublishStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled'
 
+/** AI 工具隔离状态；supported=false 表示 OpenCode 拒绝 deny-all permissions 后降级（未隔离）。 */
+export interface BotToolIsolationStatus {
+  supported: boolean
+  fallbackCount: number
+  fallbackAt: string | null
+}
+
 /** 运行状态：即使 Bot 功能未启用，status 接口仍可用于判断具体原因。 */
 export interface BotStatus {
   enabled: boolean
@@ -859,6 +904,8 @@ export interface BotStatus {
   queuedDeliveries: number
   queuedPublishes: number
   lastError: string | null
+  /** AI 工具隔离状态；未配置 AI 时为 null。 */
+  aiToolIsolation?: BotToolIsolationStatus | null
 }
 
 /** Bot 摘要：不包含 AppSecret 等密钥字段。 */

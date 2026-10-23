@@ -61,8 +61,8 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - `server/src/bot/text.ts`：QQ 单条文本上限 2000、分段（最多 4 段、续段前缀、截断标记、代理对安全切分）。
 - `server/src/bot/format.ts`：AI Markdown → QQ 纯文本（去代码块/标题/粗体/列表/链接标记，仅 http(s) 链接保留为文字）。
 - `server/src/bot/errors.ts`：平台/队列错误 → 中文提示（管理页 `lastErrorHint`），不含凭据/URL/响应正文。
-- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、deny-all 工具、超时/截断、图片 prompt files 与记忆摘要（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除）；回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
-- `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；旧摘要仅作 legacy 来源与 fallback。
+- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、deny-all 工具、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；兼容性基于 OpenCode v2.1.3）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
+- `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；v0.6.0 起 key/value/legacy 均过滤敏感内容，读取侧也排除旧版本已落库的敏感条目；旧摘要仅作 legacy 来源与 fallback，抽取 ops=0 不置迁移标记。
 - `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。
 - `server/src/bot/prompts.ts`：任务/对话提示与固定安全边界；Chat 默认个人角色或内置 lofii，群聊固定默认。
 - `server/src/bot/service.ts`：CRUD、Webhook、Chat/命令分发、回复管线（sanitize→format→split）、图片降级、事件诊断、连接自检、角色/记忆管理、指标、静默时段、通知/发布队列、重试、清理、限流。
@@ -73,7 +73,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 
 - 删除 Telegram / Discord / Slack 适配器与 `server/src/bot/discord-gateway.ts`，公开 Webhook 只接受 QQ 官方 Bot。
 - 删除 Discord Gateway、只读按钮（Telegram inline keyboard / Discord components）、Telegram HTML `parse_mode`、群聊引用/线程、目标 `chatTrigger`（QQ 群/频道仅 @，C2C 直接）。
-- 删除媒体/多附件发布与 `BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`；发布仅文本（QQ 单条 ≤2000，长文本按分段发送）。
+- 删除媒体/多附件发布与 `BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`；发布仅文本，`text` ≤2000 字符（超过 `400 publish_text_too_long`，不静默截断、不再服务端分段）。
 - schema v13（迁移 13）：`DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；生产 Discord Bot 数据在部署前已备份，迁移后从应用数据库移除。
 - 保留：QQ 官方 Bot 接入/命令/自助命令/Chat/结构化长期记忆/角色卡、事件诊断、平台连接自检、角色/记忆元数据管理、文本发布、图片理解（默认开启）。
 - 历史验收记录（v0.5.0–v0.5.7）保留多平台内容，但自 **v0.5.8 起移除**，不再作为当前能力。
@@ -81,7 +81,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 ## 2. QQ 平台接入
 
 1. 在 QQ 开放平台（q.qq.com）创建机器人，取得 **AppID** 与 **AppSecret**；AppID 填公开配置（`config.appId`，5–32 位数字），AppSecret 只提交保存为密文。
-2. “开发设置 → 回调地址”填 `https://app.example.com/api/bot/webhook/<botId>`；平台会发送 `op=13` 校验，服务端用 AppSecret 派生 Ed25519 私钥返回 `{plain_token, signature}`。
+2. “开发设置 → 回调地址”填 `https://app.example.com/api/bot/webhook/<botId>`；平台会发送 `op=13` 校验，服务端用 AppSecret 派生 Ed25519 私钥返回 `{plain_token, signature}`；`plain_token` 只接受字母数字/下划线/连字符 1–128、`event_ts` 只接受 1–12 位数字，否则 `400 invalid_payload`（防止签名预言机）；成功 challenge 写审计 `bot.webhook.challenge`。
 3. 事件订阅按场景勾选 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）。
 4. 目标登记：C2C 填 `user_openid`、群聊填 `group_openid`、频道填 `channel_id`；命令用户另建 `kind=user` 且允许命令的目标。
 5. 命令（无需平台注册，直接发送）：`/help`（动态）、`/memory`（查看/`off|on`）、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/role`（仅私聊）、`/reset`、`/forget confirm`；v0.5.9 起 `/ask` 已移除。
@@ -107,7 +107,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - 静默时段：目标设置 `quiet_start_minute`/`quiet_end_minute`（Asia/Shanghai 本地分钟 0–1439，成对设置、不能相同）后，窗口内新通知的 `next_attempt_at` 延后到窗口结束；跨午夜按 start > end 处理；通知不丢弃。
 - 30 秒 tick，指数退避（30s 起，≤1h），达到 `BOT_DELIVERY_MAX_ATTEMPTS`（默认 5）进入 `failed/dead`。
 - 长文本分段（QQ 2000/段，最多 4 段，续段前缀“（续 n/m）”，超出截断并标记“内容过长已截断”）；第 2 段起发送失败时把已发送消息 ID 挂到错误对象，
-  队列/命令记录 `partial_text_sent` 且**不自动重试**，由管理员核对平台消息后处理。
+  队列/命令记录 `partial_text_sent` 且**不自动重试**，由管理员核对平台消息后处理。发布任务不参与分段：路由层拒绝 >2000 字符（`400 publish_text_too_long`）。
 - 格式：AI 回答经 sanitize（路径/URL/控制字符）→ `format.ts` 去 Markdown 标记保留可读正文 → 按 QQ 上限分段发送；仅 http(s) 链接保留为文字。
 - 图片（默认开启）：`d.attachments` → image/* 元数据 → 固定域名后缀白名单 + mime 白名单 + 大小上限 → 内存下载 → OpenCode prompt files；
   关闭/失败/mime 非法时降级为纯文字回答；不落盘、不写日志/审计正文。
@@ -174,7 +174,7 @@ v0.5.11 新增 `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_
   `/reset` 与角色卡变更会清理该范围全部会话映射（不再区分 task/chat）；共享结构化长期记忆（`bot_memory_items`/`bot_memory_state`，v0.5.11 起；旧摘要仅 legacy/fallback）。
 - 审计 `bot.ai.chat` 记录 bot/user/chars/image 等元数据，**不再记录 mode**，不记录提示词/记忆正文。
 - 记忆抽取（v0.5.11）：累计 `BOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）轮或用户空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s，0 关闭）触发一次；按 Bot×用户串行队列，每次新建一次性远端会话并在 `finally` 删除；
-  模型输出严格 JSON operations（upsert/delete，服务端最多 20 条），服务端校验/敏感过滤/容量清理后写入 `bot_memory_items`；审计 `bot.memory.extract` 只记计数（不再有旧摘要 `bot.ai.memory` 主路径，仅 legacy 兼容）。
+  模型输出严格 JSON operations（upsert/delete，服务端最多 20 条），服务端校验/敏感过滤（key/value/legacy 均过滤）后写入 `bot_memory_items`；审计 `bot.memory.extract` 只记计数；**ops=0 不置 legacy 迁移标记**，保留 fallback 继续迁移（v0.6.0）。
   摘要使用一次性远端会话并在 `finally` 删除，不再保存 `summary_session_id`；审计 `bot.ai.memory` 记录 `rounds`，不记录摘要正文。
 - QQ C2C 私聊对任意用户开放 Chat（接触面由 QQ 平台“谁可添加 Bot”控制）；只读命令仍要求目标 `allow_commands` 与用户白名单。
 
@@ -208,7 +208,7 @@ v0.5.11 新增 `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_
 
 - **条目模型**：7 类 `profile`（资料）/`preference`（偏好）/`fact`（事实）/`project`（项目）/`task`（任务）/`relationship`（关系）/`episode`（事件）；字段 key/value/confidence/importance/source/created_at/updated_at/last_used_at/expires_at；
   唯一键 `(bot_id,user_id,kind,mem_key)`；`bot_memory_state` 保存每用户 `memory_enabled` 与 `legacy_migrated_at`；旧 `bot_ai_memories` 仅作 legacy 迁移来源/未迁移 fallback（验收后 CLI 清理）。
-- **抽取**：批量触发 = 累计 `BOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）或空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s）；同用户串行；一次性 OpenCode 会话（用后删除）；模型只输出严格 JSON `operations`，服务端校验 kind/key/value 长度、敏感过滤（密钥/URL/内部路径跳过）、最多 20 条 ops；
+- **抽取**：批量触发 = 累计 `BOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）或空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s）；同用户串行；一次性 OpenCode 会话（用后删除）；模型只输出严格 JSON `operations`，服务端校验 kind/key/value 长度、敏感过滤（自然语言密码/令牌/密钥前缀/URL/IP/内部路径/UNC/提示结构标记，key 与 value 均过滤）、最多 20 条 ops；
   upsert 按唯一键合并并续期，delete 删除；容量超 `BOT_MEMORY_MAX_ITEMS`（默认 200）时先淘汰低重要度非核心条目（profile/preference 受保护）；故障只记日志不影响本轮回复。
 - **TTL**：`profile`/`preference` 不过期；`fact`/`project`/`relationship` 365 天（`BOT_AI_MEMORY_RETENTION_DAYS`）；`episode` 90 天（`BOT_MEMORY_TTL_EPISODE_DAYS`）；`task` 30 天（`BOT_MEMORY_TTL_TASK_DAYS`）；更新操作续期。
 - **召回**：核心 `profile`/`preference`/`task` 优先，其余按关键词命中 + 重要度/时效挑选；预算 `BOT_MEMORY_PROMPT_MAX_CHARS`（默认 3000 字）/`BOT_MEMORY_PROMPT_MAX_ITEMS`（默认 12 条）；命中条目更新 `last_used_at`；
@@ -255,7 +255,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 
 - **数据表**：`bot_memory_items`（`(bot_id,user_id,kind,mem_key)` 唯一，value ≤500 字、key ≤64 字、confidence 0–1、importance 1–5、source ∈ chat/legacy、时间戳/`expires_at`）为权威；`bot_memory_state` 保存启停与 legacy 迁移标记；旧 `bot_ai_memories` 仅 legacy/fallback。
 - **迁移 14**：新增上述两表（不可逆）；`scripts/deploy.ps1` 切换前自动做迁移前 DB 快照；v0.5.10 不支持 schema v14，回滚必须恢复快照。
-- **写入**：抽取批处理按 Bot×用户串行；一次性 OpenCode 会话（`finally` 删除）；服务端严格校验 ops、敏感过滤（密钥/URL/内部路径跳过）、容量清理（默认 200，先淘汰低重要度非核心条目）；更新续期。
+- **写入**：抽取批处理按 Bot×用户串行；一次性 OpenCode 会话（`finally` 删除）；服务端严格校验 ops、敏感过滤（密钥/URL/内部路径/UNC/提示结构标记，key/value/legacy 均过滤）、容量清理（默认 200，先淘汰低重要度非核心条目）；更新续期；ops=0 不置 legacy 迁移标记。
 - **读取/召回**：核心层优先 + 关键词相关层，预算 3000 字/12 条；命中更新 `last_used_at`；`/memory off` 无注入；未迁移旧摘要 fallback 注入（受 `BOT_AI_MEMORY_MAX_CHARS` legacy 上限约束）。
 - **TTL**：profile/preference 不过期；fact/project/relationship 365 天（`BOT_AI_MEMORY_RETENTION_DAYS`）；episode 90 天（`BOT_MEMORY_TTL_EPISODE_DAYS`）；task 30 天（`BOT_MEMORY_TTL_TASK_DAYS`）；过期条目清理并从召回/列表排除。
 - **删除**：用户 `/forget confirm` 清空该 Bot×用户 items/state/legacy 摘要与全部会话，并尽力删除远端会话；管理员 `DELETE .../memories/:userId` 只删条目/状态/legacy，不删会话；`DELETE .../items/:itemId` 删单条并审计；两种管理删除均不返回 key/value。
@@ -275,7 +275,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
   - 图片：`BOT_AI_VISION_ENABLED=true`（默认）、`BOT_AI_ENABLED=true`、模型支持 image 输入、附件域名/mime/大小合规。
 - 手工验收（v0.5.11）：创建/启用 QQ Bot → 添加目标并勾选 `allow_chat` → C2C/群 @Bot 多轮 Chat 触发抽取（≥3 条或空闲 120s）→ 检查 `bot_memory_items` 条目与 `bot.memory.extract` 计数 → `/memory` 查看计数/类型/启停（无正文）→ `/memory off` 后 Chat 无注入、`on` 恢复 → `/forget confirm` 清空 items/state/legacy/会话并核对远端会话 → 管理页记忆列表/条目元数据/删除 → 图片识别回归 → 验收通过后 `cleanup-legacy-memory.mjs` dry-run/`--confirm`。
   C2C/群 @Bot 发普通消息确认 Chat → 管理员发 `/help` 与 `/status` 确认管理员命令、非管理员发 `/help` 只出现公开命令 → 发 `/ask` 确认非管理员被拒/管理员回帮助不调用 AI → 发 `/reset`、`/forget confirm` 确认自助命令 →
-  发布 1 条文本（含长文本分段）→ 多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→
+  发布 1 条 ≤2000 字符文本（超长应返回 400）→ 多轮对话后检查 `bot_ai_memories.summary` 与 `DATA_DIR/bot-memory`（不打印内容）→
   配置页“检查连接” → 诊断分区查看事件/中文错误提示 → 角色与记忆分区启停/删除（只显示元数据）→
   发送一张图片确认模型识别或降级提示 → 多轮对话后检查 `bot.ai.memory` 审计含 `rounds`、`bot_ai_memories.summary_session_id` 为 NULL；`/reset`/`/forget confirm` 后远端会话被尽力删除；确认 PC 无 `AntifieldCloudDiscordTunnel` 计划任务、env 无代理变量。
 - **v0.5.8 真实验收（通过，v0.5.9 起 `/ask` 与 task 模式移除）**：2026-10-22 21:59–22:08 CST 用户实发 13 条 QQ 入站事件全部符合预期——C2C 文本命令（`/help`、`/forget confirm`、`/reset`、`/role` show/set/off/on/delete）、权限拒绝（`bot.command.denied`，随后自助 `/role` 正常）、两条文本 Chat（`bot.ai.chat` + 记忆写入）、真实图片消息端到端（`bot.chat` image/`bot.ai.image` `mime=image/jpeg,size=148563`/`bot.ai.chat` image 标志/outcome=ok，随后记忆更新）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
@@ -285,4 +285,5 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
   **用户实发验收（通过，2026-10-22 23:26–23:29 CST）**：8 条事件全部 ok（4 Chat 含 1 条仅图片 145172 B、3 `/forget` 含 2 次 confirm、1 `/reset`）；4 条 Chat 仅 1 次 `bot.ai.memory`（`rounds:3`）；部署前快照会话 `ses_e9c15b42…`/`ses_e9c15a6f…` 在 `/forget confirm` 后经 OpenCode API 均 404，该用户本地会话/记忆清空、其他用户不受影响、无删除失败日志；图片端到端成功；`/bots` 出站卡片用户确认；23:29 CST 完成验收。
 - **v0.5.11 部署验证（通过）**：最终 release `20261023T022831Z`/commit `931b10d`，schema v14；`/healthz` v0.5.11/schema 14，smoke 16/16 与 24/24；env 5 个 `BOT_MEMORY_*`、运行配置 365/3/120/3000/12/90/30；迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc8…76a98d3c`）；部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，secrets=ok）。
   **用户实发验收（通过，2026-10-23 10:39 CST）**：三条 Chat → `bot.memory.extract` rounds=3 ops=2（偏好+资料）；`/memory` 成功；`/forget confirm` items=2 legacy=0、回复含“记忆条目 2 条”，之后 items=0/state=0 且其他用户 legacy/sessions 未误删；早前 `/memory off`→Chat 无新 extract→`on`→`/forget confirm` 亦通过；`/bots` 面板用户确认；首次短消息 ops=0 判定提示词过保守，commit `931b10d` 修正后重试 ops=2；legacy 清理 dry-run/`--confirm` 均 users=0 files=0。
+- **v0.6.0 修复（待部署验收）**：op=13 只接受合法 token/时间戳并写成功审计（P1）；wait 回退只取本轮新回答；记忆 key/value/legacy 敏感过滤；AI permissions 降级可审计/可查（`GET /api/bots/status` 的 `aiToolIsolation`）；发布 >2000 返回 `400 publish_text_too_long`；legacy ops=0 不误标迁移。真实工具拦截（deny-all）仍需生产只读负路径验证。
 - 发布前请确认 Cloudflare Access 对 `/api/bot/webhook/*` 做 bypass，见 `docs/DEPLOY.md` §5.2。

@@ -284,7 +284,8 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
     return {
       job: bots.createPublish(requiredId(params.id, 'id'), {
         targetId: text(body.targetId, 64),
-        text: text(body.text, 2000),
+        // 不在此截断：超长必须由 service 明确返回 400 publish_text_too_long，避免静默截断后外发。
+        text: typeof body.text === 'string' ? body.text : '',
         scheduledAt: optionalText(body.scheduledAt, 40) ?? null,
         confirmText: text(body.confirmText, 20),
       }),

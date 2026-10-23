@@ -18,7 +18,7 @@ import { Activity } from './pages/Activity'
 import { Settings } from './pages/Settings'
 import { Bots } from './pages/Bots'
 import { usePageTitle } from './hooks/usePageTitle'
-import { isExternalUrl, sanitizeNext } from './lib/next-url'
+import { assignExternalUrl, externalLoginRedirect, sanitizeNext } from './lib/next-url'
 
 /** 受保护路由：会话恢复中显示占位；未登录跳转登录页并带上返回地址。 */
 function ProtectedRoute() {
@@ -32,20 +32,21 @@ function ProtectedRoute() {
   return <Layout />
 }
 
-/** 登录路由：已登录时按 next 跳转（外部地址整页跳转）。 */
+/** 登录路由：已登录时按 next 跳转（外部 AI 工作区经 ai-ticket 换票，其他外部地址整页跳转）。 */
 function LoginRoute() {
   const { status } = useAuth()
   const [searchParams] = useSearchParams()
   const next = sanitizeNext(searchParams.get('next'))
+  const externalRedirect = externalLoginRedirect(next)
 
   useEffect(() => {
-    if (status !== 'authenticated') return
-    if (next && isExternalUrl(next)) window.location.assign(next)
-  }, [status, next])
+    if (status !== 'authenticated' || !externalRedirect) return
+    assignExternalUrl(externalRedirect)
+  }, [status, externalRedirect])
 
   if (status === 'loading') return <AppLoading />
   if (status === 'authenticated') {
-    if (next && isExternalUrl(next)) return <AppLoading text="正在跳转…" />
+    if (externalRedirect) return <AppLoading text="正在跳转…" />
     return <Navigate to={next ?? '/'} replace />
   }
   return <Login next={next} />

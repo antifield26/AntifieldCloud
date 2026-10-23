@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.6.0（本地修复与门禁完成，待部署/用户验收；质量与安全加固，schema 保持 v14、无迁移；OpenCode 已先升级 v2.1.3）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -39,7 +39,16 @@
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
 
-## v0.5.11（当前，已部署并验收通过；用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）
+## v0.6.0（当前，本地修复/门禁完成，待部署与用户验收；质量与安全加固，schema 保持 v14、无迁移）
+
+- **范围**：第五轮多切入点深度审计（安全/数据/灾备/Bot-AI/前端/运维）发现的 P0–P2 全部修复，P3 记录；无新功能主线；OpenCode 已先升级 v2.1.3 并验证。
+- **修复重点**：QQ op=13 签名预言机（P1）、host-only Cookie + AI SSO ticket、公开端点 octet-stream 大 body 收敛、app API Origin 收口、密钥包 opencode 快照硬失败、多 pending ack 缺失集合合并、恢复解包实测预算、legacy ops=0 迁移标记、Bot wait 旧回答/记忆敏感过滤/工具隔离可见性/发布超长 400、世界备份 kept 契约、演练状态真实字段、恢复 skippedMissing 展示、文档版本与字段漂移。
+- **本地门禁（2026-10-23）**：`npm run check` 通过；`npm test` **383**（server+scripts）、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）；`node scripts/check-version.mjs` 通过（version/README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY/lock 一致）。
+- **生产前置（已完成）**：OpenCode v2.1.3 升级与只读验证（Basic GET 200、POST session 200、DELETE 204、deny-all permissions 接受 200、模型 prompt/wait/content `OK`、`finish=stop`；备份/回滚见 `.local/audit/round5-opencode.md`）。
+- **待部署证据（部署后回填）**：release/commit、`/healthz` version 0.6.0/schema 14、部署内 smoke 与带 Access token 完整 smoke、部署后备份 snapshot+secrets、旧父域 Cookie 清理/SSO 浏览器验收、op=13 真实回调、QQ Chat、发布超长 400、`/bots` 概览工具隔离状态、用户原话。
+- **用户验收清单**：app 登录 → 点击 ai 工作区 → 自动进入 ai 且 DevTools 中 `af_session` 为 host-only（无 Domain）；退出 app 后 ai 会话失效；QQ C2C/群 @Bot Chat 正常；发布 2001 字符返回 400；`/bots` 概览无工具隔离降级 warning（或能解释）；备份状态/演练状态字段正常展示；用户确认后更新本节并 Tag。
+
+## v0.5.11（历史，已部署并验收通过；用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）
 
 - 日期：2026-10-23（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261023T022831Z`，commit `931b10d`，schema 14）+ Windows 本地工作区

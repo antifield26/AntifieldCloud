@@ -341,7 +341,14 @@ Check "恢复演练状态" {
   if ($json.ok -ne $true) { throw "最近一次恢复演练失败：$($json.error) $($json.message)" }
   $ageDays = Get-StampAgeHours $json.lastRunAt
   if ($null -ne $ageDays -and ($ageDays / 24) -gt 35) { throw "恢复演练已超过 35 天（$([math]::Round($ageDays / 24,1)) 天）" }
-  "report=$($json.report) age=$(if ($null -ne $ageDays) { [math]::Round($ageDays / 24,1) } else { '?' })d"
+  # 演练必须针对当前 schema；旧 schema 的演练成功不能代表当前库可恢复，只告警不阻断部署。
+  if ($ExpectedSchemaVersion -gt 0 -and $null -ne $json.schemaVersion) {
+    $drillSchema = [int]$json.schemaVersion
+    if ($drillSchema -ne $ExpectedSchemaVersion) {
+      Warn "恢复演练状态" "演练 schemaVersion=$drillSchema 与当前 schema $ExpectedSchemaVersion 不一致；请用 drill.ps1 -ExpectedSchemaVersion $ExpectedSchemaVersion 重跑"
+    }
+  }
+  "report=$($json.report) schema=$(if ($null -ne $json.schemaVersion) { $json.schemaVersion } else { '?' }) age=$(if ($null -ne $ageDays) { [math]::Round($ageDays / 24,1) } else { '?' })d"
 }
 
 if (-not $SkipScriptHash) {

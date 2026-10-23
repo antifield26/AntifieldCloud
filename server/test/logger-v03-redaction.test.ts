@@ -35,6 +35,12 @@ test('Bot Webhook 路径中的 botId 脱敏，不误伤 /api/bots 管理接口',
   assert.equal(redactSensitiveRequestUrl('/api/bots/status'), '/api/bots/status')
 })
 
+test('AI SSO ticket 路径脱敏，不误伤普通 /__af 路径', () => {
+  assert.equal(redactSensitiveRequestUrl('/__af/sso/AbCdEf_123-xyz'), '/__af/sso/[REDACTED]')
+  assert.equal(redactSensitiveRequestUrl('/__af/sso/AbCdEf_123-xyz?next=%2F'), '/__af/sso/[REDACTED]?next=%2F')
+  assert.equal(redactSensitiveRequestUrl('/__af/oc-help.js'), '/__af/oc-help.js')
+})
+
 test('req serializer 保留排障字段且脱敏分享 token', () => {
   const serialized = serializeRequest({
     method: 'GET',

@@ -8,7 +8,7 @@
 # - 不打印任何密码。
 #
 # 用法：sudo bash scripts/bootstrap-env.sh [--force] [--dry-run] [选项]
-# 可选参数：--app-origin --ai-origin --cookie-domain --mc-public-address
+# 可选参数：--app-origin --ai-origin --cookie-domain（v0.6.0 起仅用于清理旧父域 Cookie）--mc-public-address
 #           --data-dir --web-dist-dir --admin-username --mc-properties --opencode-env
 set -euo pipefail
 
@@ -33,7 +33,7 @@ usage() {
   --dry-run                   只打印将解析出的配置，不写文件
   --app-origin=URL            应用公网地址（默认沿用旧值/example.com）
   --ai-origin=URL             AI 工作区地址
-  --cookie-domain=DOMAIN      Cookie 域（如 .example.com）
+  --cookie-domain=DOMAIN      旧父域 Cookie 清理域（如 .example.com；v0.6.0 起仅清理，不设置新 Cookie）
   --mc-public-address=ADDR    Minecraft 公网地址
   --data-dir=DIR              数据目录
   --web-dist-dir=DIR          web/dist 目录
@@ -191,6 +191,7 @@ fi
 
 APP_ORIGIN=$(resolve_value "$APP_ORIGIN_ARG" "$(read_key "$ENV_FILE" APP_ORIGIN)" "$(read_key "$DEPLOY_CONF" APP_ORIGIN)" "https://app.example.com")
 AI_ORIGIN=$(resolve_value "$AI_ORIGIN_ARG" "$(read_key "$ENV_FILE" AI_ORIGIN)" "$(read_key "$DEPLOY_CONF" AI_ORIGIN)" "https://ai.example.com")
+# COOKIE_DOMAIN 自 v0.6.0 起仅用于登录/退出时清理旧父域 Cookie（新 Cookie 为 host-only，不再使用该域）。
 COOKIE_DOMAIN=$(resolve_value "$COOKIE_DOMAIN_ARG" "$(read_key "$ENV_FILE" COOKIE_DOMAIN)" "$(read_key "$DEPLOY_CONF" COOKIE_DOMAIN)" ".example.com")
 MC_PUBLIC_ADDRESS=$(resolve_value "$MC_PUBLIC_ADDRESS_ARG" "$(read_key "$ENV_FILE" MC_PUBLIC_ADDRESS)" "$(read_key "$DEPLOY_CONF" MC_PUBLIC_ADDRESS)" "mc.example.com:11798")
 DATA_DIR=$(resolve_value "$DATA_DIR_ARG" "$(read_key "$ENV_FILE" DATA_DIR)" "$(read_key "$DEPLOY_CONF" DATA_DIR)" "/var/lib/antifieldcloud")

@@ -11,14 +11,17 @@ const SHARE_PAGE_PATTERN = /^\/s\/[^/?#]+/
 const PUBLIC_SHARE_API_PATTERN = /^\/api\/public\/shares\/[^/?#]+/
 /** Bot Webhook 路径包含 botId；虽然它不是凭据，但避免通过 journal 扩散可定位入口。 */
 const BOT_WEBHOOK_PATTERN = /^\/api\/bot\/webhook\/[^/?#]+/
+/** AI SSO 路径包含一次性 ticket；不得写入请求日志（ticket 60s 内可用于换取 ai 会话）。 */
+const AI_SSO_PATTERN = /^\/__af\/sso\/[^/?#]+/
 
-/** 把 URL 路径中的分享 token / Bot Webhook botId 替换为 [REDACTED]，其余部分保持不变。 */
+/** 把 URL 路径中的分享 token / Bot Webhook botId / AI SSO ticket 替换为 [REDACTED]，其余部分保持不变。 */
 export function redactSensitiveRequestUrl(rawUrl: string): string {
   if (typeof rawUrl !== 'string' || rawUrl.length === 0) return ''
   return rawUrl
     .replace(SHARE_PAGE_PATTERN, `/s/${CENSOR}`)
     .replace(PUBLIC_SHARE_API_PATTERN, `/api/public/shares/${CENSOR}`)
     .replace(BOT_WEBHOOK_PATTERN, `/api/bot/webhook/${CENSOR}`)
+    .replace(AI_SSO_PATTERN, `/__af/sso/${CENSOR}`)
 }
 
 interface RawRequestLike {

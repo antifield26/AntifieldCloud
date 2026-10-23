@@ -161,9 +161,9 @@ SQLite（WAL）核心表（schema v14）：
 ## 5. 认证流程
 
 1. `POST /api/auth/password`：限流 → scrypt 校验 → 生成 5 分钟挑战（DB 存哈希）→ 返回 challenge；用户名超过 64 字符直接 400。
-2. `POST /api/auth/totp`：校验 TOTP（±1 步，且 step > 上次使用）或恢复码 → 创建会话与 CSRF token → 设 Cookie。
-3. 会话 Cookie：`af_session`（HttpOnly）+ `af_csrf`（可读）；HTTPS 下 `Secure; SameSite=Lax; Domain=.example.com`；loopback HTTP 例外。
-4. 写操作：`X-CSRF-Token` 与 DB 内 CSRF 哈希比对；若带 Origin，还必须在 app/ai/loopback 白名单。
+2. `POST /api/auth/totp`：校验 TOTP（±1 步，且 step > 上次使用）或恢复码 → 创建会话与 CSRF token → 在 app 主机设 Cookie。
+3. 会话 Cookie：app 主机 host-only `af_session`（HttpOnly）+ `af_csrf`（可读），HTTPS 下 `Secure; SameSite=Lax`，不设 `Domain`；loopback HTTP 例外。AI 主机通过 app 签发的 60s 一次性 ticket（`GET /api/auth/ai-ticket` → `GET /__af/sso/<ticket>`）获得自己的 host-only `af_session`，不共享父域 Cookie；登录/退出响应会清理 v0.6.0 之前遗留的父域 Cookie。
+4. 写操作：`X-CSRF-Token` 与 DB 内 CSRF 哈希比对；若带 Origin，还必须在 app/loopback 白名单（ai 源不再作为 app 写请求受信 Origin）。
 5. 改密/重置 TOTP 使其它会话失效；恢复码一次性；再认证要求“当前密码 + TOTP”。
 6. 限流：每 IP 5 次失败/15 分钟、全局 60 次/小时（loopback 不占全局桶）、TOTP 全局 120 次/小时；再认证独立限流并恒定延迟。
 7. 信任模型：`trustProxy:false`；仅 socket 为 loopback 时采信 `CF-Connecting-IP`/`X-Forwarded-Proto`，
