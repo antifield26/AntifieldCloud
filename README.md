@@ -3,7 +3,7 @@
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
 > 状态：v0.6.0（**已部署并验收通过**，最终 release `20261023T053539Z`/commit `6349617`；schema 保持 **v14**、无迁移；OpenCode 已先升级 **v2.1.3**）。本版为质量/安全加固：修复 QQ op=13 签名预言机（P1）、app/ai 改 host-only Cookie + 一次性 AI SSO ticket、公开端点大 body 收敛、密钥包快照硬失败、备份 ack/恢复预算/legacy 迁移修复、Bot wait 旧回答/记忆过滤/工具隔离可见性/发布超长 400、世界备份与演练状态契约修复、默认角色卡简化；所有 P0–P2 闭环，P3 已记录。`/healthz` v0.6.0/schema 14；部署 smoke 16/16、完整 Access smoke **24/24**（0 警告）；drill schema14 通过；部署后备份+密钥包已拉取（secretsOk=true）；用户已确认验收通过（含默认角色文案实测）。
-> 发布：main 待推送 Tag `v0.6.0`；上一版 v0.5.11（release `20261023T022831Z`/commit `931b10d`）作为历史保留。
+> 发布：main 已推送（`be3a910`），annotated Tag `v0.6.0`，GitHub Release [AntifieldCloud v0.6.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.0)（Latest，2026-10-23 13:51 CST）；上一版 v0.5.11（release `20261023T022831Z`/commit `931b10d`）作为历史保留。
 > 测试基线（Lead 实测 2026-10-23，v0.6.0）：`npm test` **383**（server+scripts，含新增回归）、`npm run test:web` **176**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
