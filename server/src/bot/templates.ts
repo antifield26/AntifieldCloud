@@ -46,41 +46,35 @@ export function formatFileList(query: string, files: Record<string, unknown>[]):
   return clip(lines.join('\n'))
 }
 
-/** 管理员完整命令帮助：只列只读命令与自助命令权限。 */
+/** 管理员完整命令帮助：只列命令及功能/用法。 */
 export function helpText(): string {
   return clip(
     [
-      'AntifieldCloud QQ 官方 Bot 只读命令：',
-      '/help 帮助',
+      '/help 查看帮助',
       '/status 应用/服务/备份摘要',
       '/backup 备份状态',
       '/world 世界备份/拉取/演练状态',
       '/mc Minecraft 状态',
       '/files <关键词> 文件元数据（最多 10 条）',
-      '/role 角色设置（私聊）',
+      '/role set|show|off|on|delete 角色设置（私聊）',
       '/reset 重置当前对话（保留长期记忆）',
       '/forget confirm 清除长期记忆与全部对话',
-      '/memory 查看长期记忆（/memory off|on 暂停/恢复）',
+      '/memory [off|on] 查看/暂停/恢复长期记忆',
       '/search <关键词> 联网搜索并由 AI 总结（附来源）',
-      '普通消息 Chat：C2C 私聊直接对话；群/频道 @Bot 触发；连续短消息会合并处理；图片默认交给 AI 识别。',
-      '除 /help、/memory、/role（私聊）、/reset、/forget、/search 外，斜杠命令仅限已登记目标与管理员用户；不会返回文件内容或密钥。',
     ].join('\n'),
   )
 }
 
-/** 面向非管理员的公开帮助：只列自助命令与 Chat 用法，不暴露管理命令。 */
+/** 面向非管理员的公开帮助：只列可用命令及功能/用法。 */
 export function publicHelpText(): string {
   return clip(
     [
-      'AntifieldCloud QQ 官方 Bot 帮助：',
       '/help 查看帮助',
-      '/role 角色设置（私聊）',
+      '/role set|show|off|on|delete 角色设置（私聊）',
       '/reset 重置当前对话（保留长期记忆）',
       '/forget confirm 清除长期记忆与全部对话',
-      '/memory 查看长期记忆（/memory off|on 暂停/恢复）',
+      '/memory [off|on] 查看/暂停/恢复长期记忆',
       '/search <关键词> 联网搜索并由 AI 总结（附来源）',
-      '普通消息 Chat：C2C 私聊直接对话；群/频道 @Bot 触发；连续短消息会合并处理；图片默认交给 AI 识别。',
-      '更多状态/备份/文件命令需管理员授权。',
     ].join('\n'),
   )
 }

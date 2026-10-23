@@ -6,7 +6,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SAFETY_BOUNDARY } from '../src/bot/prompts.ts'
-import { publicHelpText } from '../src/bot/templates.ts'
+import { helpText, publicHelpText } from '../src/bot/templates.ts'
 import { c2cWebhook, createQqServiceFixture, lastMessageText, sendWebhook } from './bot-qq-fixtures.ts'
 
 const USER = 'user-openid-1'
@@ -68,6 +68,20 @@ test('v0.5.9：个人角色卡覆盖默认 lofii', async () => {
   } finally {
     fixture.cleanup()
   }
+})
+
+test('v0.6.1：/help 只输出命令与功能/用法，不含额外声明', () => {
+  for (const text of [helpText(), publicHelpText()]) {
+    const lines = text.split('\n')
+    assert.ok(lines.length > 0)
+    assert.ok(lines.every((line) => line.startsWith('/')), text)
+    assert.equal(lines[0], '/help 查看帮助')
+    assert.equal(text.includes('AntifieldCloud'), false)
+    assert.equal(text.includes('普通消息 Chat'), false)
+    assert.equal(text.includes('管理员授权'), false)
+  }
+  assert.match(publicHelpText(), /\/search <关键词> 联网搜索/)
+  assert.match(helpText(), /\/status 应用\/服务\/备份摘要/)
 })
 
 test('v0.5.9：/help 对非管理员开放，只显示公开命令；管理员显示全量', async () => {
