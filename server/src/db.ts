@@ -660,7 +660,7 @@ const MIGRATIONS: string[] = [
   );
   `,
   `
-  -- v0.6.2：目标可选 QQ 号/群号，仅用于页面识别；QQ 官方 Bot 回调不含真实号码。
+  -- v0.6.2：保留 qq_number 列（手填号码功能已回滚），已升级生产库的 schema 15 兼容；API/发送不使用该列。
   ALTER TABLE bot_targets ADD COLUMN qq_number TEXT;
   `,
 ]

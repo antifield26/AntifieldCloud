@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SUPPORTED_SCHEMA_VERSION, openDatabase } from '../src/db.ts'
 
-test('v6 库升级到 v15：创建 Bot/AI/Chat/角色卡表，并补齐触发策略、事件诊断与目标 QQ 号列', () => {
+test('v6 库升级到 v15：创建 Bot/AI/Chat/角色卡表，并补齐触发策略与事件诊断列', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -61,6 +61,7 @@ test('v6 库升级到 v15：创建 Bot/AI/Chat/角色卡表，并补齐触发策
       assert.ok(targetColumns.includes('quiet_start_minute'))
       assert.ok(targetColumns.includes('quiet_end_minute'))
       assert.ok(targetColumns.includes('allow_chat'))
+      // v15 的 qq_number 列保留（历史号码功能已回滚），确保旧库迁移仍可完整升级。
       assert.ok(targetColumns.includes('qq_number'))
       const eventColumns = (
         upgraded.prepare('PRAGMA table_info(bot_events)').all() as unknown as { name: string }[]

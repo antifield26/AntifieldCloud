@@ -102,7 +102,6 @@ function targetRow(kind: 'channel' | 'user' | 'group', externalId: string): BotT
     external_id: externalId,
     label: kind,
     kind,
-    qq_number: null,
     allow_commands: 1,
     allow_notifications: 1,
     allow_chat: 1,

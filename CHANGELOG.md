@@ -4,19 +4,23 @@
 
 ### Added
 
-- **目标 QQ 号/群号（`qqNumber`）**：Bot 目标新增可选页面识别号码；添加用户/群组目标时可填写，已配置目标可在行内更新/清空；频道目标不接受该字段。QQ 官方 Bot 回调不提供真实 QQ 号/群号，号码仅用于页面展示，不参与平台发送。
-- **目标管理展示**：列表同时展示“平台目标 ID”（`user_openid`/`group_openid`/`channel_id`）与 QQ 号/群号，内联保存后即时刷新；目标名支持内联编辑（“编辑名称”）；每行“测试”按钮向指定目标发送测试消息，便于确认 openid 与真实 QQ 号/群号的对应关系。
+- **目标名称内联编辑**：已配置目标可在列表中点击“编辑名称”，输入并保存新名称，方便把 openid 目标改为易识别的 QQ 用户/群名称。
+- **目标测试消息**：目标行“测试”按钮调用 `POST /api/bots/:id/test`，向指定目标发送测试消息；在 QQ 收到消息的会话即该 openid 目标，配合名称编辑完成辨识。
 
 ### Changed
 
 - **投递与发布分区单列**：`.bot-delivery-grid` 由双列网格改为单列，指标、投递记录、发布表单与任务纵向排列；桌面/窄屏保持单列。
 
+### Removed
+
+- **手填 QQ 号/群号功能回滚**：QQ 官方 Bot 回调只有 openid、不提供真实 QQ 号/群号，手填号码无法解决“哪个目标对应哪个会话”的辨识问题；改用“测试消息 + 目标名称编辑”后移除目标号码输入/展示/API。schema v15 的 `qq_number` 列保留为兼容列，API 与发送均不使用。
+
 ### Deployment
 
-- 版本升到 **0.6.2**；schema **v15**（迁移 15：`ALTER TABLE bot_targets ADD COLUMN qq_number TEXT`，可空；迁移不可逆，回滚需迁移前快照）。
+- 版本升到 **0.6.2**；schema **v15** 保留迁移 15 的 `bot_targets.qq_number` 可空列（手填功能已回滚，列不再读写）；迁移不可逆，回滚需迁移前快照。
 - `deploy.ps1` 期望 schema 改为 **15**；`deploy/env.example` `APP_VERSION=0.6.2`。
-- 迁移 15 只加可空列，已有目标 `qqNumber=null`，不影响投递/发布/命令；旧版本 v0.6.1 不支持 schema v15，回滚必须恢复迁移前 DB 快照并切回 v0.6.1 release。
-- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **394**、`npm run test:web` **180**；覆盖率 Lines **92.16%** / Branches **77.25%** / Functions **86.87%**（coverage 门禁 exit 0）；build 通过（bundle `index-V7O8HWYr.js` 684.69 kB）；check-version 通过。生产部署/验收证据待回填。
+- 已有目标仅多了未使用的可空列，不影响投递/发布/命令；旧版本 v0.6.1 不支持 schema v15，回滚必须恢复迁移前 DB 快照并切回 v0.6.1 release。
+- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **393**、`npm run test:web` **179**；覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（coverage 门禁 exit 0）；build 通过（bundle `index-DSsnlXHJ.js` 682.80 kB）；check-version 通过。生产部署/验收证据待回填。
 
 ## [v0.6.1] - 2026-10-23（已发布：Tag/Release v0.6.1）
 

@@ -217,7 +217,6 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
         externalId: text(body.externalId, 128),
         label: text(body.label, 80),
         kind,
-        qqNumber: optionalText(body.qqNumber, 20) ?? null,
         allowCommands: boolean(body.allowCommands),
         allowNotifications: boolean(body.allowNotifications, true),
         allowChat: boolean(body.allowChat),
@@ -235,7 +234,6 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
       target: bots.updateTarget(requiredId(params.id, 'id'), requiredId(params.targetId, 'targetId'), {
         label: optionalText(body.label, 80),
         kind: kind === 'channel' || kind === 'user' || kind === 'group' ? kind : undefined,
-        qqNumber: body.qqNumber === null ? null : optionalText(body.qqNumber, 20),
         allowCommands: typeof body.allowCommands === 'boolean' ? body.allowCommands : undefined,
         allowNotifications: typeof body.allowNotifications === 'boolean' ? body.allowNotifications : undefined,
         allowChat: typeof body.allowChat === 'boolean' ? body.allowChat : undefined,

@@ -39,8 +39,6 @@ export interface BotTargetRow {
   external_id: string
   label: string
   kind: 'channel' | 'user' | 'group'
-  /** 页面识别的 QQ 号/群号；平台回调不提供真实号码，仅展示用。 */
-  qq_number: string | null
   allow_commands: number
   allow_notifications: number
   /** 是否允许该目标内成员进行普通消息 Chat；与 allow_commands 独立。 */
@@ -57,8 +55,6 @@ export interface BotTarget {
   externalId: string
   label: string
   kind: 'channel' | 'user' | 'group'
-  /** 页面识别的 QQ 号/群号；可为空。 */
-  qqNumber: string | null
   allowCommands: boolean
   allowNotifications: boolean
   allowChat: boolean

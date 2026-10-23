@@ -136,21 +136,19 @@ function bot(overrides: Partial<BotSummary> = {}): BotSummary {
 }
 
 function target(overrides: Partial<BotTarget> = {}): BotTarget {
-  const { qqNumber = null, ...rest } = overrides
   return {
     id: 'target-1',
     botId: 'bot-1',
     externalId: 'group-openid-1',
     label: '测试群',
     kind: 'group',
-    qqNumber,
     allowCommands: false,
     allowNotifications: true,
     allowChat: false,
     quietStartMinute: null,
     quietEndMinute: null,
     createdAt: '2026-10-20T00:00:00.000Z',
-    ...rest,
+    ...overrides,
   }
 }
 
@@ -374,7 +372,7 @@ describe('Bots 机器人管理', () => {
     await waitFor(() => expect(checkbox).toBeChecked())
   })
 
-  it('目标分区可创建允许 Chat 的目标，展示最近入站目标并填写群号', async () => {
+  it('目标分区可创建允许 Chat 的目标并展示最近入站目标', async () => {
     mocks.targetInbound.mockResolvedValue([
       {
         botId: 'bot-1',
@@ -394,31 +392,13 @@ describe('Bots 机器人管理', () => {
     expect((screen.getByLabelText(/平台目标 ID/) as HTMLInputElement).value).toBe('new-group')
 
     await userEvent.type(screen.getByLabelText(/^名称/), '聊天目标')
-    await userEvent.type(await screen.findByLabelText(/群号（可选）/), '123456789')
     await userEvent.click(screen.getByRole('checkbox', { name: '允许 Chat' }))
     await userEvent.click(screen.getByRole('button', { name: '添加目标' }))
     await waitFor(() =>
       expect(mocks.targetCreate).toHaveBeenCalledWith(
         'bot-1',
-        expect.objectContaining({ externalId: 'new-group', allowChat: true, qqNumber: '123456789' }),
+        expect.objectContaining({ externalId: 'new-group', allowChat: true }),
       ),
-    )
-  })
-
-  it('已配置目标展示并可更新 QQ 号/群号', async () => {
-    mocks.targetList.mockResolvedValue([target({ qqNumber: '123456789' })])
-    mocks.targetUpdate.mockResolvedValue(target({ qqNumber: '987654321' }))
-    renderPage()
-    await screen.findByRole('heading', { level: 3, name: '告警 Bot' })
-    await userEvent.click(screen.getByRole('tab', { name: '目标' }))
-
-    const input = (await screen.findByLabelText('测试群 群号')) as HTMLInputElement
-    expect(input.value).toBe('123456789')
-    await userEvent.clear(input)
-    await userEvent.type(input, '987654321')
-    await userEvent.click(screen.getByRole('button', { name: '保存' }))
-    await waitFor(() =>
-      expect(mocks.targetUpdate).toHaveBeenCalledWith('bot-1', 'target-1', { qqNumber: '987654321' }),
     )
   })
 

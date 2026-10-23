@@ -513,26 +513,6 @@
   font-size: 11.5px;
 }
 
-.bot-target-qq-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  margin-top: 6px;
-}
-
-.bot-target-qq-label {
-  color: var(--text-dim);
-  font-size: 11.5px;
-}
-
-.bot-target-qq-input {
-  width: 132px;
-  min-height: 30px;
-  padding: 4px 8px;
-  font-size: 12px;
-}
-
 .bot-target-flags {
   display: flex;
   flex-wrap: wrap;

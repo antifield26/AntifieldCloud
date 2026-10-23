@@ -87,13 +87,6 @@ export function targetKindLabel(kind: BotTargetKind): string {
   return BOT_TARGET_KIND_LABELS[kind] ?? kind
 }
 
-/** QQ 号/群号字段文案：频道目标不使用该字段。 */
-export function targetQqLabel(kind: BotTargetKind): string {
-  if (kind === 'user') return 'QQ 号'
-  if (kind === 'group') return '群号'
-  return 'QQ 号/群号'
-}
-
 /** 目标名称：目标被删除后仍能展示稳定占位，避免出现 undefined。 */
 export function targetLabel(targets: readonly BotTarget[], targetId: string | null): string {
   if (!targetId) return '未指定目标'
