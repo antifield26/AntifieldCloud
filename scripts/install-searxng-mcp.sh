@@ -8,7 +8,6 @@ SRC="$(dirname "$0")/searxng-mcp.mjs"
 DEST_DIR=/opt/searxng-mcp
 DEST="$DEST_DIR/searxng-mcp.mjs"
 CONFIG=/var/lib/opencode/.config/opencode/opencode.json
-NODE=/usr/local/bin/node
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "请以 root 运行（sudo）" >&2
