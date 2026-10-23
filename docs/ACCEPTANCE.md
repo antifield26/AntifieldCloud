@@ -50,6 +50,7 @@
 - **部署证据（2026-10-23）**：最终 release `20261023T092740Z`/commit `f038eb5`（version 0.6.1/schema 14）；`/healthz` = `{"ok":true,"version":"0.6.1","schemaVersion":14}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24（0 失败/0 警告）**；迁移前 DB 快照 `db-predeploy-20261023T092812687Z.sqlite`（sha256 `63ed973a16f5f6b3d31b267a257c067bf2b0e404f68ca09f19f39846abb37100`）。
 - **备份证据**：部署后应用增量备份 `snapshot-20261023T093412821Z-inc.tar.gz`（180736 bytes，sha256 `F9B5AB93E3ADFAEA9547ACF0AE072570A113B44AC99DCCFB6260FACD17A8D916`，PC 已拉取/ack）；密钥包 `secrets-20261023T093414Z.tar.age`（1771979 bytes，`secretsOk=true`）。
 - **用户实发验收（通过，2026-10-23 17:30–17:32 CST）**：`bot_events` 记录 Chat/`/role`/`/reset` outcome=ok；09:30:50Z 与 09:30:58Z 两条 Chat、09:31:04Z `bot.search` results=5（自动搜索生效）、09:31:48Z `/reset`；用户随后在受控选项中确认“复测通过”。
+- **CI**：main `7753db0` 的 Actions 运行 `39933392321` 全绿（check/coverage/powershell/shellcheck/audit/secret-scan/nftables/prod-dependencies）。
 - **残余/注意**：OpenCode 会话按 Bot×目标×用户 维度隔离，C2C 与群聊各自一个会话；工具模式变化会重置一次会话映射（上下文重建一次）；MCP 工具调用依赖模型选择，已用预取兜底常见问句。
 
 ## v0.6.0（已部署并验收通过；质量与安全加固，schema 保持 v14、无迁移；最终 release `20261023T053539Z`/commit `6349617`）

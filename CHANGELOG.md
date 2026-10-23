@@ -31,6 +31,7 @@
 - 版本/`APP_VERSION` 升到 **0.6.1**；schema 保持 **v14**（无迁移）；`deploy.ps1` 期望 schema 仍为 14。
 - **状态：已预部署并验收通过，未发布**。最终预部署 release `20261023T092740Z`/commit `f038eb5`（version 0.6.1/schema 14），Tag/Release 未打；用户 2026-10-23 17:32 CST 实发复测通过。连续消息、SearXNG MCP 自动/追问搜索、`/reset`/`/forget` 会话清理均已验收；发布决策待用户确认。
 - **预部署证据（2026-10-23）**：`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；迁移前快照 `db-predeploy-20261023T092812687Z.sqlite`（sha256 `63ed973a16f5f6b3d31b267a257c067bf2b0e404f68ca09f19f39846abb37100`）；启动清理 11 个孤儿 OpenCode 会话；部署后备份 `snapshot-20261023T093412821Z-inc.tar.gz`（180736 bytes，sha256 `f9b5ab93e3adfaea9547acf0ae072570a113b44ac99dccfb6260facd17a8d916`，PC ack）+ 密钥包 `secrets-20261023T093414Z.tar.age`（1771979 bytes，secretsOk=true）。
+- **CI**：main `7753db0` 的 Actions 运行 `39933392321` 全绿。
 - 本地门禁（功能代码，2026-10-23）：`npm run check` 通过；`npm test` **392**（含 burst/搜索/MCP/会话清理回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.18%** / Branches **77.29%** / Functions **86.86%**（`npm run test:coverage` exit 0、`npm run test:web:coverage` exit 0）；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过；`scripts/install-searxng.sh`/`install-searxng-mcp.sh`/`bootstrap-env.sh` bash 语法通过。
 
 ## [v0.6.0] - 2026-10-23
