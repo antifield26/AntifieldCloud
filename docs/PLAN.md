@@ -1,16 +1,16 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.1（已预部署并验收通过，未发布）**：最终预部署 release `20261023T092740Z`/commit `f038eb5`，Tag/Release 未打；Bot 连续消息 + SearXNG MCP 联网搜索 + 会话清理已实现并验收，备份状态 hotfix 已随预部署生效。v0.6.0 已部署并验收通过（release `20261023T053539Z`/commit `6349617`）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.1（已发布：Tag/Release v0.6.1）**：最终生产 release `20261023T094819Z`/commit `ceb2e8f`；Bot 连续消息 + SearXNG MCP 联网搜索 + 会话清理 + `/help` 简化已实现并验收，备份状态 hotfix 已生效。v0.6.0 已部署并验收通过（release `20261023T053539Z`/commit `6349617`）。
 
-## v0.6.1（已预部署并验收通过，未发布；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）
+## v0.6.1（已发布：Tag/Release v0.6.1；Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix）
 
-- **发布决策（2026-10-23）**：用户要求不着急发布 v0.6.1；Tag/Release 未打。生产预部署 release `20261023T092740Z`/commit `f038eb5`（v0.6.1/schema 14），用户 17:32 CST 实发复测通过；发布决策待用户确认。
+- **发布决策（2026-10-23）**：用户确认 `/help` 简化文案与整体验收后发布；annotated Tag `v0.6.1` + GitHub Release。生产最终 release `20261023T094819Z`/commit `ceb2e8f`（v0.6.1/schema 14）。
 - **连续消息处理（已确认方案）**：同一 `Bot×目标×用户` 的短窗口多条消息**合并为一次 AI 请求**；默认防抖窗口 `BOT_CHAT_BURST_WINDOW_MS=3000`、最长等待 `BOT_CHAT_BURST_MAX_WAIT_MS=10000`、单批上限 `BOT_CHAT_BURST_MAX_MESSAGES=10`；同一会话**严格串行**（处理中到达的消息进入下一批），不同会话可并行；Webhook 仍立即 ack，最终只回复一次；`/reset`/`/forget`/角色变更清理待处理缓冲；超长合并文本按 `BOT_AI_MAX_PROMPT_CHARS` 截断；图片批次只处理最后一张并保留文字。
 - **联网搜索（已确认方案）**：**自建/私有 SearXNG** + **OpenCode MCP 工具**（`searxng_web_search`，`codemode=false`）作为稳定自动触发；`/search` 命令仍由服务端强制预取保证确定性。Bot 会话 permissions 仅放行 `searxng_*`，其余工具 deny；MCP 服务只访问 loopback SearXNG，不抓取结果网页，不保存查询正文；结果只注入标题/摘要/域名，回答末尾由服务端附来源（不暴露完整 URL）；搜索失败不阻断 Chat；按 Bot×用户每小时限流；提示词把结果标为不可信外部资料。`prefetch` 模式保留关键词预取作为兼容/回退。
 - **配置**：`BOT_CHAT_BURST_WINDOW_MS/MAX_WAIT_MS/MAX_MESSAGES`；`BOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`。`BOT_SEARCH_ENABLED=true` 时必须配置 URL；schema 保持 v14（无迁移）。
 - **备份状态 hotfix（预部署）**：已 ack 且 PC 清理服务端文件的归档返回 `status=acked` + `available=false`，Dashboard/备份页不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核与用户确认通过。
 - **验收门禁**：单元/服务测试覆盖 burst 合并/串行、搜索客户端解析/过滤、自动/命令触发、失败降级、来源展示；本地 `npm run check` + 覆盖率；SearXNG 生产只读 JSON 验证；部署后 smoke 16/16 与 24/24；真实 QQ 连续消息与 `/search` 用户验收；之后再 Tag/Release。
-- **状态**：功能已实现并验收；预部署 smoke 16/16 与 Access 24/24、MCP 连接、会话清理、用户实发复测通过。Tag/Release 待用户确认后执行。
+- **状态**：功能已实现并验收；预部署 smoke 16/16 与 Access 24/24、MCP 连接、会话清理、`/help` 简化、用户实发复测通过；Tag/Release 已发布。
 
 ## v0.6.0 补充（已部署并验收通过；质量/安全加固 + OpenCode v2.1.3）
 

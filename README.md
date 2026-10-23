@@ -2,9 +2,9 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.1（**已预部署并验收通过，未发布**；release `20261023T092740Z`/commit `f038eb5`，Tag/Release 未打）。本版新增：Bot 连续消息 burst 合并 + 同会话串行处理；Bot 联网搜索（自建/私有 SearXNG + OpenCode MCP，自动/追问 + `/search`，结果注入并附来源）；启动/`/reset`/`/forget` 清理孤儿会话。备份状态 hotfix 修复 PC ack 后归档文件被清理时的“应用归档文件缺失”误报；`/api/auth/me` 补清旧父域 Cookie。schema 保持 **v14**、无迁移；OpenCode v2.1.3。
+> 状态：v0.6.1（**已发布：Tag/Release v0.6.1**；生产 release `20261023T094819Z`/commit `ceb2e8f`）。本版新增：Bot 连续消息 burst 合并 + 同会话串行处理；Bot 联网搜索（自建/私有 SearXNG + OpenCode MCP，自动/追问 + `/search`，结果注入并附来源）；启动/`/reset`/`/forget` 清理孤儿会话；`/help` 简化为命令清单。备份状态 hotfix 修复 PC ack 后归档文件被清理时的“应用归档文件缺失”误报；`/api/auth/me` 补清旧父域 Cookie。schema 保持 **v14**、无迁移；OpenCode v2.1.3。
 > 发布：最新公开版本仍为 v0.6.0（release `20261023T053539Z`/commit `6349617`，Tag `v0.6.0`，GitHub Release [AntifieldCloud v0.6.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.0)）；v0.6.1 待连续消息/联网搜索完成、部署验证与用户验收后再打 Tag/Release。
-> 测试基线（Lead 实测 2026-10-23，v0.6.1 开发中）：`npm test` **392**（server+scripts，含 burst/搜索/MCP/会话清理回归）、`npm run test:web` **177**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.18%** / Branches **77.29%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
+> 测试基线（Lead 实测 2026-10-23，v0.6.1）：`npm test` **393**（server+scripts，含 burst/搜索/MCP/会话清理/help 回归）、`npm run test:web` **177**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.15%** / Branches **77.30%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
