@@ -402,7 +402,7 @@
 - 针对性批次：安全/SSO/上传 17 pass；备份/恢复 52 pass；Bot 135 pass；前端 176 pass；全新测试文件 `uploads-hardening`、`RestoreWizard`、`Login` 等。
 - PoC：op=13 预言机修复前可伪造命令、修复后 400/拒绝；A5-SEC-02 2 MiB octet-stream 修复前进入 handler、修复后 413；SSO 全链路/一次性/开放重定向用例；备份 ack 多 pending 端到端；恢复 1 字节声明/20 MiB 实际预算。
 - 生产只读：OpenCode v2.1.3 版本/API/model 验证；服务 active、无 warning；备份 pending=0、PC 拉取正常；`secrets-tmp` 0700 root 与旧密钥包 4011 B 证实 A5-DATA-01；未在审计阶段修改生产。
-- 证据边界：mock-only（QQ/模型/网络）；真实 QQ/Cloudflare/浏览器 SSO 验收在 Step 6 执行，未完成前不得声明 v0.6.0 最终验收通过。
+- 证据边界：mock-only（QQ/模型/网络）；真实 QQ/Cloudflare/浏览器 SSO 验收已在 Step 6 由用户确认通过（最终 release `20261023T053539Z`/commit `6349617`，smoke 24/24、0 警告；用户确认验收通过）；mock-only 边界仍适用于平台限流/签名漂移等负路径。
 
 ### 6. 残余风险（明确）
 
@@ -412,10 +412,11 @@
 4. **密钥包硬失败语义**：opencode 快照瞬时失败会跳过当天密钥包（旧包保留、次日重试）；如希望保留部分包需改备份拉取状态模型（P3）。
 5. **恢复性能**：measureContents 多一次只读解压，大归档恢复耗时增加约一次解压时间；换预算可信。
 6. **既有残余**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/LUKS、Cloudflare 明文、mock-only 平台路径等按 `docs/SECURITY.md` §4 管理。
-7. **验收状态**：本地门禁完成；生产部署/smoke/用户真实验收/备份/Tag/GitHub Release 尚待 Step 6，完成前以“待验收”记录。
+7. **验收状态**：本地门禁完成；生产已部署最终 release `20261023T053539Z`/commit `6349617`（healthz v0.6.0/schema14、smoke 16/16 与 24/24、drill schema14、备份/密钥包拉取、用户验收通过）；Tag/GitHub Release 见发布记录。
 
 ### 7. 结论
 
 - 第五轮去重后 P0=0、P1=1、P2=14；P1/P2 均在本版修复并有回归/PoC 证据；P3 54 项记录不修。
 - 审计未发现新的未关闭 P0/P1；无 schema 迁移（保持 v14）；OpenCode 已先升级 v2.1.3。
-- 本版为质量/安全加固 Minor，不是第三方独立审计；生产最终结论以 Step 6 部署、smoke、用户验收与发布证据为准。
+- 本版为质量/安全加固 Minor，不是第三方独立审计；生产最终结论以 Step 6 部署、smoke、用户验收与发布证据为准：最终 release `20261023T053539Z`/commit `6349617`，smoke 24/24、0 警告，用户确认验收通过。
+- 用户追加：默认 `lofii` 角色卡简化为名字 + 用户指定对话风格（不注入详细人设），`/role set` 个人卡仍可覆盖；最终部署已包含（commit `6349617`）。

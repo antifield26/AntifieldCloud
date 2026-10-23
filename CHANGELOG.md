@@ -50,7 +50,9 @@
 - OpenCode 已先升至 **v2.1.3** 并验证；本版不包含 OpenCode 变更步骤。
 - 生产 env 可保留 `COOKIE_DOMAIN=.父域` 用于清理旧 Cookie（不再设置新 Cookie）；无需新增 schema/env 键。
 - 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **383**（server+scripts，含新增回归）、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。
-- **待部署/待用户验收**：部署后填写 release/commit/healthz/smoke/备份/用户验收证据；本版无 schema 变更，部署前仍按流程做 DB 快照。
+- **已部署并验收通过（2026-10-23）**：最终 release `20261023T053539Z`/commit `6349617`；前两次同版本部署 `20261023T052315Z`（默认角色简化）与 `20261023T045613Z`（审计修复）保留；`/healthz` = `{"ok":true,"version":"0.6.0","schemaVersion":14}`；部署 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；最终迁移前快照 `db-predeploy-20261023T053611142Z.sqlite`（sha256 `8a96fe8eccea0875a52362f23f37d9f9213b609a36caf2c7f15a5830e376e445`）；drill `20261023T050104Z` schema14（`latestDb=db-20261023T045938554Z.sqlite`、世界归档已校验）；部署后备份 `snapshot-20261023T053645712Z-inc.tar.gz`（163398 bytes，sha256 `da0a75c121116623251a33f6740a8c13406f4d17b00cb80045f6d957f0d7faf8`，PC 已拉取/ack）+ 密钥包 `secrets-20261023T053647Z.tar.age`（1477127 bytes，含 opencode DB；A5-DATA-01 生产复验通过，`secretsOk=true`）。
+- **真实 QQ/浏览器验收（用户确认通过）**：用户确认 app→ai SSO/Cookie、QQ 普通 Chat、`/role set` 覆盖、发布超长 400、备份/演练状态可用；默认 `lofii` 采用用户指定对话风格文案（最终 commit `6349617`）。
+- 回滚：生产当前仅保留 3 个 v0.6.0 release（`20261023T053539Z`/`20261023T052315Z`/`20261023T045613Z`），schema 相同；可切回 `20261023T052315Z` 或 `20261023T045613Z`；如需 v0.5.11 可从本地/远端 Tag 重新部署（旧版会重新设置父域 Cookie，需清理站点 Cookie）。
 
 ## [v0.5.11] - 2026-10-23
 

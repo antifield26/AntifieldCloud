@@ -39,14 +39,16 @@
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
 
-## v0.6.0（当前，本地修复/门禁完成，待部署与用户验收；质量与安全加固，schema 保持 v14、无迁移）
+## v0.6.0（已部署并验收通过；质量与安全加固，schema 保持 v14、无迁移；最终 release `20261023T053539Z`/commit `6349617`）
 
 - **范围**：第五轮多切入点深度审计（安全/数据/灾备/Bot-AI/前端/运维）发现的 P0–P2 全部修复，P3 记录；无新功能主线；OpenCode 已先升级 v2.1.3 并验证。
-- **修复重点**：QQ op=13 签名预言机（P1）、host-only Cookie + AI SSO ticket、公开端点 octet-stream 大 body 收敛、app API Origin 收口、密钥包 opencode 快照硬失败、多 pending ack 缺失集合合并、恢复解包实测预算、legacy ops=0 迁移标记、Bot wait 旧回答/记忆敏感过滤/工具隔离可见性/发布超长 400、世界备份 kept 契约、演练状态真实字段、恢复 skippedMissing 展示、文档版本与字段漂移。
-- **本地门禁（2026-10-23）**：`npm run check` 通过；`npm test` **383**（server+scripts）、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）；`node scripts/check-version.mjs` 通过（version/README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY/lock 一致）。
+- **修复重点**：QQ op=13 签名预言机（P1）、host-only Cookie + AI SSO ticket、公开端点 octet-stream 大 body 收敛、app API Origin 收口、密钥包 opencode 快照硬失败、多 pending ack 缺失集合合并、恢复解包实测预算、legacy ops=0 迁移标记、Bot wait 旧回答/记忆敏感过滤/工具隔离可见性/发布超长 400、世界备份 kept 契约、演练状态真实字段、恢复 skippedMissing 展示、文档版本与字段漂移、默认 lofii 角色卡简化。
+- **本地门禁（2026-10-23）**：`npm run check` 通过；`npm test` **383**（server+scripts）、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）；`node scripts/check-version.mjs` 通过。
 - **生产前置（已完成）**：OpenCode v2.1.3 升级与只读验证（Basic GET 200、POST session 200、DELETE 204、deny-all permissions 接受 200、模型 prompt/wait/content `OK`、`finish=stop`；备份/回滚见 `.local/audit/round5-opencode.md`）。
-- **待部署证据（部署后回填）**：release/commit、`/healthz` version 0.6.0/schema 14、部署内 smoke 与带 Access token 完整 smoke、部署后备份 snapshot+secrets、旧父域 Cookie 清理/SSO 浏览器验收、op=13 真实回调、QQ Chat、发布超长 400、`/bots` 概览工具隔离状态、用户原话。
-- **用户验收清单**：app 登录 → 点击 ai 工作区 → 自动进入 ai 且 DevTools 中 `af_session` 为 host-only（无 Domain）；退出 app 后 ai 会话失效；QQ C2C/群 @Bot Chat 正常；发布 2001 字符返回 400；`/bots` 概览无工具隔离降级 warning（或能解释）；备份状态/演练状态字段正常展示；用户确认后更新本节并 Tag。
+- **部署证据**：最终 release `20261023T053539Z`/commit `6349617`（前两次同版本部署 `20261023T052315Z`、`20261023T045613Z` 保留）；`/healthz` = `{"ok":true,"version":"0.6.0","schemaVersion":14}`；部署内 smoke **16/16**（0 警告）、带 Access token 完整 smoke **24/24**（0 警告）；最终迁移前 DB 快照 `db-predeploy-20261023T053611142Z.sqlite`（sha256 `8a96fe8eccea0875a52362f23f37d9f9213b609a36caf2c7f15a5830e376e445`）；生产仅保留 3 个 v0.6.0 release；如需 v0.5.11 从 Tag 重新部署，旧版会重新设置父域 Cookie。
+- **灾备证据**：drill `20261023T050104Z` 通过（schema 14、`latestDb=db-20261023T045938554Z.sqlite`、世界归档已校验）；部署后应用备份 `snapshot-20261023T053645712Z-inc.tar.gz`（163398 bytes，sha256 `da0a75c121116623251a33f6740a8c13406f4d17b00cb80045f6d957f0d7faf8`，PC 已拉取/ack）+ 密钥包 `secrets-20261023T053647Z.tar.age`（1477127 bytes，含 opencode DB；`secretsOk=true`，A5-DATA-01 生产复验通过）。
+- **用户验收**：2026-10-23 用户确认 **验收通过**；默认 `lofii` 采用用户指定对话风格文案「对话风格：简短、自然、轻松，短句为主；可使用轻量语气词，不连续卖萌、不刷屏；遇到认真、难过或风险话题时收起玩闹；不假装真人、不虚构共同经历、不索要隐私。」；`/role set` 个人卡仍可覆盖。
+- **残余**：host-only 旧父域 Cookie 过渡期（≤7 天，建议清理站点 Cookie）；BOT-04 工具拦截真实负路径、记忆过滤启发式、`__Host-` 前缀、SSO ticket 未绑定 IP/UA 等见 `docs/AUDIT.md` 第五轮 §6。
 
 ## v0.5.11（历史，已部署并验收通过；用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）
 

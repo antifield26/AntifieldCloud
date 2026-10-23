@@ -1,6 +1,6 @@
 # 路线图
 
-## v0.6.0（当前，本地修复/门禁完成，待部署与用户验收；质量/安全加固，schema 保持 v14 + OpenCode v2.1.3）
+## v0.6.0（已部署并验收通过；质量/安全加固，schema 保持 v14 + OpenCode v2.1.3）
 
 - **定位**：Minor 版本的质量/安全加固，不新增功能主线；第五轮多切入点审计的 P0–P2 全部修复，P3 记录。
 - **安全/认证**：QQ op=13 严格校验 + 审计（P1）；app/ai host-only Cookie + 一次性 AI SSO ticket（不再父域共享）；app API/公开 unlock Origin 只信 app（+ loopback）；公开端点大 body 收口；SSO ticket 日志脱敏。
@@ -8,7 +8,7 @@
 - **Bot**：wait 回退只取本轮新回答；记忆 key/value/legacy 敏感过滤；发布 >2000 明确 400；工具隔离降级可审计/可查（`aiToolIsolation`）；op=13 成功审计。
 - **OpenCode**：v2.1.2 → **v2.1.3**（先升级并验证，v0.6.0 部署不重复操作）。
 - **版本/数据**：version 0.6.0，schema **v14**（无迁移）；`deploy.ps1` 期望 schema 14；回滚可切回 v0.5.11（同 schema，建议清理站点 Cookie）。
-- **状态**：`npm run check` 通过；`npm test` **383**、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**、build 通过；待部署/用户验收/Tag。
+- **状态**：`npm run check` 通过；`npm test` **383**、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**、build 通过；已部署最终 release `20261023T053539Z`/commit `6349617`（healthz v0.6.0/schema14，smoke 16/16 与 24/24、drill schema14、备份/密钥包已拉取、用户验收通过）；Tag/GitHub Release 见发布记录。
 - **下一版**：企业微信/钉钉/飞书、多管理员审批（范围待用户确认）。
 
 ## v0.5.11（历史，已部署并验收通过；用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）
