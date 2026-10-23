@@ -4,7 +4,7 @@
 
 - **发布状态**：Tag/Release 已撤回；生产预部署备份状态 hotfix（release `20261023T063020Z`），不对外发布；待功能/验收完成后再发 v0.6.1。
 - **连续消息**：同一 Bot×目标×用户 burst 合并 + 同会话串行；Webhook 立即 ack、最终只回复一次；默认窗口 3000ms/最长 10000ms/上限 10 条；`/reset`/`/forget` 清缓冲；不同会话并行。
-- **联网搜索**：自建/私有 SearXNG（loopback JSON API）+ 自动判断 + `/search`；结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文；失败降级、限流、不可信外部资料边界；配置 `BOT_SEARCH_*`。
+- **联网搜索**：自建/私有 SearXNG（loopback JSON API）+ OpenCode MCP 工具 `searxng_web_search`（codemode=false）稳定自动触发；`/search` 命令服务端强制预取；Bot 会话仅放行 `searxng_*`，其余工具 deny；结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文；失败降级、限流、不可信外部资料边界；`prefetch` 关键词模式保留为回退；配置 `BOT_SEARCH_*`。
 - **备份状态 hotfix（预部署）**：acked 归档 `status=acked` + `available=false`，Dashboard/备份页不再误报文件缺失；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档与用户复核通过。
 - **数据/版本**：schema v14 无迁移；新增配置无 schema；发布前完成本地/CI 门禁、SearXNG 生产只读验证、smoke 与真实 QQ 用户验收。
 

@@ -29,6 +29,11 @@ const POLL_INTERVAL_MS = 500
 const MAX_SEEN_MESSAGES_PER_SESSION = 500
 /** OpenCode Permission.Ruleset：拒绝一切工具动作。 */
 const DENY_ALL_PERMISSIONS = [{ action: '*', resource: '*', effect: 'deny' }]
+/** mcp 搜索模式下只放行 SearXNG MCP 工具；内置 shell/edit/read 等仍全部拒绝。 */
+const SEARCH_MCP_PERMISSIONS = [
+  { action: '*', resource: '*', effect: 'deny' },
+  { action: 'searxng_*', resource: '*', effect: 'allow' },
+]
 
 export interface OpenCodeBotAiOptions {
   db: DatabaseSync
@@ -132,6 +137,8 @@ export class OpenCodeBotAi implements BotAi {
   private readonly modelRef: { providerID: string; id: string } | null
   /** 数据库记录用的模型标识，便于运维判断会话由哪个模型创建。 */
   private readonly modelLabel: string | null
+  /** 是否在 Bot 会话中放行 SearXNG MCP 搜索工具（仅 botSearchMode=mcp）。 */
+  private readonly searchToolEnabled: boolean
   /** OpenCode v2.1.3 OpenAPI 声明支持 permissions；仅在实际 400 拒绝后关闭。 */
   private permissionsSupported = true
   /** 降级累计次数/首次时间：由 BotService 读取并写审计/状态，避免"只在日志里"。 */
@@ -148,6 +155,7 @@ export class OpenCodeBotAi implements BotAi {
     this.db = options.db
     this.fetchImpl = options.fetch ?? fetch
     this.log = options.log
+    this.searchToolEnabled = config.botSearchEnabled && config.botSearchMode === 'mcp'
     this.baseUrl = config.opencodeUrl.replace(/\/+$/, '')
     this.basicAuth = `Basic ${Buffer.from(
       `${config.opencodeUsername}:${config.opencodePassword}`,
@@ -355,7 +363,7 @@ export class OpenCodeBotAi implements BotAi {
     return {
       title,
       ...(this.modelRef ? { model: this.modelRef } : {}),
-      ...(includePermissions ? { permissions: DENY_ALL_PERMISSIONS } : {}),
+      ...(includePermissions ? { permissions: this.searchToolEnabled ? SEARCH_MCP_PERMISSIONS : DENY_ALL_PERMISSIONS } : {}),
     }
   }
 

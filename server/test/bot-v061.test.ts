@@ -206,6 +206,35 @@ test('联网搜索：/search 强制搜索且对普通用户开放；未启用时
   }
 })
 
+test('联网搜索：mcp 模式不在服务端预取，提示模型使用 SearXNG MCP 工具', async () => {
+  let searchCalls = 0
+  const fixture = createQqServiceFixture({
+    aiEnabled: true,
+    configOverrides: {
+      botChatBurstWindowMs: 0,
+      botSearchEnabled: true,
+      botSearchMode: 'mcp',
+      botSearchAuto: true,
+    },
+    search: {
+      search: async () => {
+        searchCalls += 1
+        return SEARCH_RESULTS
+      },
+    },
+  })
+  try {
+    await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'search-mcp-1', content: '最近有什么 AI 新闻？' }))
+    assert.equal(searchCalls, 0, 'mcp 模式由模型调用工具，服务端不预取')
+    const prompt = fixture.aiCalls[0]?.prompt ?? ''
+    assert.match(prompt, /\[联网搜索工具\]/)
+    assert.match(prompt, /searxng_web_search/)
+    assert.equal(prompt.includes('[联网搜索结果'), false)
+  } finally {
+    fixture.cleanup()
+  }
+})
+
 test('联网搜索失败不阻断 Chat：不附来源、不抛错；审计只记录错误码', async () => {
   const fixture = createQqServiceFixture({
     aiEnabled: true,

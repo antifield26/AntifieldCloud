@@ -124,6 +124,7 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     botSearchEnabled: false,
     botSearchUrl: '',
     botSearchAuto: true,
+    botSearchMode: 'prefetch',
     botSearchMaxResults: 5,
     botSearchTimeoutSeconds: 8,
     botSearchMaxSnippetChars: 500,

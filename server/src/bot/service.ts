@@ -1942,6 +1942,8 @@ export class BotService {
     force: boolean,
   ): Promise<SearchResolution> {
     if (!this.config.botSearchEnabled || !this.webSearch) return { kind: 'ok', context: null }
+    // mcp 模式由模型通过 SearXNG MCP 工具自行决定是否搜索；服务端只保留 /search 的强制预取。
+    if (!force && this.config.botSearchMode === 'mcp') return { kind: 'ok', context: null }
     if (!force && (!this.config.botSearchAuto || !needsWebSearch(text))) return { kind: 'ok', context: null }
     const key = `${bot.id}:${userId}`
     const retry = this.searchLimiter.hit(key)
@@ -2129,6 +2131,7 @@ export class BotService {
       roleCard,
       memory: memoryContext.text || undefined,
       searchContext,
+      webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp',
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {

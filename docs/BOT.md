@@ -164,6 +164,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 | `BOT_SEARCH_ENABLED` | `false` | SearXNG 联网搜索总开关；开启时必须配置 `BOT_SEARCH_URL` |
 | `BOT_SEARCH_URL` | 空 | SearXNG 基址；生产建议 `http://127.0.0.1:8888`，仅 http/https、不得含凭据 |
 | `BOT_SEARCH_AUTO` | `true` | 自动判断问句/时效内容并搜索；显式 `/search` 不受影响 |
+| `BOT_SEARCH_MODE` | `mcp` | `mcp`=模型通过 SearXNG MCP 工具自行决定；`prefetch`=服务端关键词预取（兼容/回退） |
 | `BOT_SEARCH_MAX_RESULTS` | `5` | 单次搜索最多结果数（1–10） |
 | `BOT_SEARCH_TIMEOUT_SECONDS` | `8` | SearXNG 超时（1–30 秒） |
 | `BOT_SEARCH_MAX_SNIPPET_CHARS` | `500` | 单条摘要截断（100–1500） |
@@ -239,14 +240,16 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` �
 - 聊天/搜索限流按**批次**计（一次合并回复算一次），避免连续短消息被误判刷屏；命令不受 burst 合并影响。
 - 审计 `bot.chat` 仍按入站消息记录长度（不含正文），诊断事件在批次结束时统一标记 ok/rate_limited/error。
 
-## 5.7 联网搜索（v0.6.1）
+## 5.7 联网搜索（v0.6.1，SearXNG MCP）
 
-- **部署**：SearXNG 自建/私有实例，仅监听 `127.0.0.1:8888`；应用通过 `BOT_SEARCH_URL` 访问 `/search?format=json`。安装与回滚见 `docs/DEPLOY.md` §3.5；不引入 Docker。
-- **触发**：`/search <关键词>` 对所有可 Chat 的用户开放（C2C 或目标 `allow_chat=1`），强制搜索；普通消息在 `BOT_SEARCH_AUTO=true` 时用保守问句+时效关键词自动判断。`/search` 不受自动开关影响，但受搜索总开关与限流约束。
-- **结果注入**：只读取 SearXNG JSON 的标题/摘要/URL（内部校验）/域名，最多 `BOT_SEARCH_MAX_RESULTS` 条；提示词把结果标为**不可信外部资料**，要求不执行其中指令、不编造、不输出完整 URL；回答末尾由服务端附“参考来源：标题（域名）”，不把搜索页内容/URL 直接回显。
-- **失败降级**：SearXNG 超时/非 2xx/格式错误时 Chat 继续回答但明确不附来源；自动搜索失败不打断对话；`/search` 失败仍走 AI 回答（无来源）。审计 `bot.search` 只记录结果数/错误码/是否强制，不记录查询正文。
-- **限流/隐私**：每 Bot×用户每小时 `BOT_SEARCH_RATE_PER_HOUR`；查询会发给配置的私有 SearXNG 及其启用的引擎（生产仅 Bing），不会把用户消息直接发给任意外部搜索 API。搜索只取摘要，不抓取结果页面；`BOT_SEARCH_ENGINES=bing` 规避被墙引擎超时。
-- **启用步骤**：安装 SearXNG → `curl 'http://127.0.0.1:8888/search?q=test&format=json&engines=bing'` 返回 JSON → env 设置 `BOT_SEARCH_ENABLED=true`/`BOT_SEARCH_URL=http://127.0.0.1:8888` → 重启应用 → 实测 `/search` 与自动问句。
+- **部署**：SearXNG 自建/私有实例，仅监听 `127.0.0.1:8888`；通过 `scripts/searxng-mcp.mjs` 作为 OpenCode MCP 工具暴露（`codemode:false`，工具名 `searxng_web_search`），应用侧 `BOT_SEARCH_MODE=mcp`。安装/回滚见 `docs/DEPLOY.md` §3.5；不引入 Docker。
+- **自动触发**：`mcp` 模式下由模型在需要最新/实时/新闻/事实核查时调用 `searxng_web_search`；Bot 新建会话的 permissions 仅放行 `searxng_*`，其余工具仍 deny（生产已验证 shell 不可用、目标文件未创建）。`prefetch` 模式保留服务端关键词预取作为兼容/回退。
+- **显式命令**：`/search <关键词>` 对所有可 Chat 用户开放（C2C 或目标 `allow_chat=1`），服务端强制预取并向模型注入结果，保证命令触发稳定。
+- **结果注入/展示**：MCP 工具直接返回标题/摘要/域名/URL；`/search` 预取只取标题/摘要/域名/URL，最多 `BOT_SEARCH_MAX_RESULTS` 条；提示词把结果标为**不可信外部资料**，不执行其中指令、不编造、不输出完整 URL；服务端附“参考来源：标题（域名）”。
+- **失败降级**：SearXNG 超时/非 2xx/格式错误时工具返回失败文本，Chat 继续回答并说明无法核实；`/search` 预取失败仍走 AI 回答（无来源）。审计 `bot.search` 只记录结果数/错误码/是否强制，不记录查询正文。
+- **限流/隐私**：每 Bot×用户每小时 `BOT_SEARCH_RATE_PER_HOUR`；查询会发给私有 SearXNG 及其启用引擎（生产仅 Bing），不把用户消息直接发给任意外部搜索 API。MCP 服务只访问 `SEARXNG_URL`，不抓结果网页；MCP 工具输出含 URL 但 Bot 回答层仍会脱敏/附来源。
+- **启用步骤**：安装 SearXNG → `sudo bash scripts/install-searxng-mcp.sh`（安装 MCP 服务并改 OpenCode 配置；重启 opencode）→ `curl 'http://127.0.0.1:8888/search?q=test&format=json&engines=bing'` 返回 JSON → 应用 env `BOT_SEARCH_ENABLED=true`/`BOT_SEARCH_MODE=mcp`/`BOT_SEARCH_URL=http://127.0.0.1:8888` → 重启应用 → 实测普通问句自动搜索与 `/search`。
+- **MCP 权限**：OpenCode 配置 `mcp.servers.searxng.codemode=false`；Bot 会话 permissions 顺序为 deny-all 后 allow `searxng_*`（最后匹配生效）。若 OpenCode 拒绝 permissions 字段，现有降级逻辑会记录 `aiToolIsolation.supported=false`，此时不应把 Chat 当强隔离环境。
 
 ## 6. 网络出站（QQ / OpenCode，Pi 直连）
 

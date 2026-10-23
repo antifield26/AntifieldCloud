@@ -151,6 +151,8 @@ export interface Config {
   botSearchUrl: string
   /** 自动判断并搜索（显式 /search 不受此开关影响）。 */
   botSearchAuto: boolean
+  /** 搜索触发模式：mcp=模型通过 SearXNG MCP 工具自行决定；prefetch=服务端关键词预取。 */
+  botSearchMode: 'mcp' | 'prefetch'
   botSearchMaxResults: number
   botSearchTimeoutSeconds: number
   botSearchMaxSnippetChars: number
@@ -353,6 +355,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botSearchEnabled: bool(merged, 'BOT_SEARCH_ENABLED', false),
     botSearchUrl: str(merged, 'BOT_SEARCH_URL', ''),
     botSearchAuto: bool(merged, 'BOT_SEARCH_AUTO', true),
+    botSearchMode: str(merged, 'BOT_SEARCH_MODE', 'mcp') === 'prefetch' ? 'prefetch' : 'mcp',
     botSearchMaxResults: int(merged, 'BOT_SEARCH_MAX_RESULTS', 5, 1, 10),
     botSearchTimeoutSeconds: int(merged, 'BOT_SEARCH_TIMEOUT_SECONDS', 8, 1, 30),
     botSearchMaxSnippetChars: int(merged, 'BOT_SEARCH_MAX_SNIPPET_CHARS', 500, 100, 1500),

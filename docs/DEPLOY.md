@@ -336,8 +336,12 @@ curl -fsS --max-time 20 \
 # 3) 应用 env（/etc/antifieldcloud/env）追加/修改；然后重启应用
 BOT_SEARCH_ENABLED=true
 BOT_SEARCH_URL=http://127.0.0.1:8888
+BOT_SEARCH_MODE=mcp
 BOT_SEARCH_ENGINES=bing
 # 其余 BOT_SEARCH_* 使用 deploy/env.example 默认值；bootstrap-env.sh 已纳管。
+# 4) 安装 SearXNG MCP 工具并更新 OpenCode 配置（重启 opencode，不影响 Minecraft）
+sudo bash scripts/install-searxng-mcp.sh
+# 5) 重启应用使 Bot 会话 permissions/提示词生效
 sudo systemctl restart antifieldcloud
 ```
 

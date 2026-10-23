@@ -30,7 +30,7 @@
 - 版本/`APP_VERSION` 升到 **0.6.1**；schema 保持 **v14**（无迁移）；`deploy.ps1` 期望 schema 仍为 14。
 - **状态：开发中，未发布**。此前误打的 Tag/Release `v0.6.1` 已撤回；生产保留 hotfix 预部署（release `20261023T063020Z`/commit `23d5ec4`），不作为发布版本。连续消息/联网搜索、SearXNG 生产验证、smoke 与真实 QQ 用户验收完成后再打 Tag/Release。
 - **预部署 hotfix 证据（2026-10-23）**：`/healthz` v0.6.1/schema14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；迁移前快照 `db-predeploy-20261023T063052547Z.sqlite`（sha256 `94535865a5be06511d39029e00cc35361763fc22aaca68b169adef823744e206`）；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示已确认，用户确认 Dashboard/备份页不再误报；部署后备份 `snapshot-20261023T063321997Z-inc.tar.gz`（168622 bytes，sha256 `0eca4a03a724d7887a6d43b03f59584a503642587392bebf789903159de0f2f0`，PC ack）+ 密钥包 `secrets-20261023T063324Z.tar.age`（1733483 bytes，secretsOk=true）。
-- 本地门禁（功能代码，2026-10-23）：`npm run check` 通过；`npm test` **390**（含 burst/搜索回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过；`scripts/install-searxng.sh`/`bootstrap-env.sh` bash 语法通过。新功能部署/验收证据待回填；v0.6.0 历史发布记录保留。
+- 本地门禁（功能代码，2026-10-23）：`npm run check` 通过；`npm test` **391**（含 burst/搜索/MCP 回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；check-version 通过；`scripts/install-searxng.sh`/`install-searxng-mcp.sh`/`bootstrap-env.sh` bash 语法通过。新功能部署/验收证据待回填；v0.6.0 历史发布记录保留。
 
 ## [v0.6.0] - 2026-10-23
 

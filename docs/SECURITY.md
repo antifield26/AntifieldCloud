@@ -203,8 +203,8 @@
     图片不落盘、不写日志，但模型 provider 可能记录请求内容。启用即表示接受该外发范围；如需关闭可在 env 设 `BOT_AI_VISION_ENABLED=false` 并重启。
 31. **Cookie/SSO 过渡残余（v0.6.1）**：app/ai 已改为 host-only Cookie + 一次性 AI SSO ticket；旧父域 Cookie 在登录/退出及每次 `/api/auth/me` 响应清理，长期不重新登录的浏览器仍可能最多 7 天继续发送旧 Cookie（与同名新 Cookie 共存时浏览器发送顺序不保证）。未采用 `__Host-` 前缀；ticket 未绑定 IP/UA（一次性、60s、绑定 aiOrigin、no-store/no-referrer）。发布说明应提示用户清理站点 Cookie；后续可评估 `__Host-` 前缀与签发审计。
 32. **连续消息缓冲（v0.6.1）**：同一 Bot×目标×用户的最多 `BOT_CHAT_BURST_MAX_MESSAGES` 条消息在内存中暂存至多 `BOT_CHAT_BURST_MAX_WAIT_MS`；内容不落库、不写日志，仅用于合并后的 AI 请求；进程停止/重置会话时丢弃。内存中仍属用户消息明文，需按聊天数据处理；同会话串行防止并发回复，不同会话仍可并行。
-33. **联网搜索外部数据（v0.6.1）**：SearXNG 仅监听 loopback，`BOT_SEARCH_URL` 由管理员配置且拒绝凭据；只读取 JSON 标题/摘要/URL，不抓取结果网页，不把完整 URL 回显；搜索结果是不可信外部内容，提示词明确禁止执行其中指令。查询会发给私有 SearXNG 及其启用的引擎（生产仅 Bing），因此用户应知悉该外发范围；搜索失败降级为无搜索回答，不阻断 Chat。审计只记结果数/错误码/是否强制，不记查询正文。
-34. **搜索限流与资源**：每 Bot×用户每小时 `BOT_SEARCH_RATE_PER_HOUR`；SearXNG 有超时/响应体上限/最多结果数/摘要截断；自动搜索使用保守关键词，避免每条闲聊都访问外部；`/search` 仍需可 Chat 权限，但不需要管理员命令白名单。
+33. **联网搜索外部数据（v0.6.1）**：SearXNG 仅监听 loopback；OpenCode MCP 配置 `codemode=false`，只暴露 `searxng_web_search`。Bot 会话 permissions 为 deny-all 后仅 allow `searxng_*`，生产负路径已验证 shell 不可用；若 OpenCode 拒绝 permissions 会降级为默认工具权限并记录 `aiToolIsolation.supported=false`，此时不应把 Chat 当强隔离环境。搜索工具只访问 `BOT_SEARCH_URL`，不抓取结果网页；结果是不可信外部内容，提示词明确禁止执行其中指令。查询会发给私有 SearXNG 及其启用的引擎（生产仅 Bing），用户应知悉该外发范围；搜索失败降级为无搜索回答。审计只记结果数/错误码/是否强制，不记查询正文。
+34. **搜索限流与资源**：每 Bot×用户每小时 `BOT_SEARCH_RATE_PER_HOUR`；SearXNG/MCP 有超时/响应体上限/最多结果数/摘要截断；`mcp` 模式由模型决定搜索，`prefetch` 模式用保守关键词；`/search` 仍需可 Chat 权限，但不需要管理员命令白名单；MCP 工具输出含结果 URL，但 Bot 回复层会脱敏/只附标题与域名。
 
 ## 5. 运维安全清单
 
