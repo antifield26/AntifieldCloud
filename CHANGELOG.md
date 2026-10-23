@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.6.2] - 2026-10-23（开发中，未发布）
+## [v0.6.2] - 2026-10-23（已发布：Tag/Release v0.6.2）
 
 ### Added
 
@@ -21,7 +21,8 @@
 - 版本升到 **0.6.2**；schema **v15** 保留迁移 15 的 `bot_targets.qq_number` 可空列（手填功能已回滚，列不再读写）；迁移不可逆，回滚需迁移前快照。
 - `deploy.ps1` 期望 schema 改为 **15**；`deploy/env.example` `APP_VERSION=0.6.2`。
 - 已有目标仅多了未使用的可空列，不影响投递/发布/命令；旧版本 v0.6.1 不支持 schema v15，回滚必须恢复迁移前 DB 快照并切回 v0.6.1 release。
-- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **393**、`npm run test:web` **179**；覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（coverage 门禁 exit 0）；build 通过（bundle `index-BdeajuIF.js` 682.91 kB）；check-version 通过。生产部署/验收证据待回填。
+- 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **393**、`npm run test:web` **179**；覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（coverage 门禁 exit 0）；build 通过（bundle `index-BdeajuIF.js` 682.91 kB）；check-version 通过。
+- 生产部署（2026-10-23）：最终 release `20261023T123055Z`/commit `77e42c7`（v0.6.2/schema 15）；迁移前快照 `db-predeploy-20261023T103430161Z.sqlite`（首次 schema 15）；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；恢复演练 `20261023T103520Z` schema15 通过；部署后备份 `snapshot-20261023T123205815Z-inc.tar.gz`（190596 bytes）+ 密钥包 `secrets-20261023T123207Z.tar.age`（secrets=ok）；用户验收通过。
 
 ## [v0.6.1] - 2026-10-23（已发布：Tag/Release v0.6.1）
 
