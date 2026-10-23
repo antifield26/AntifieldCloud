@@ -12,6 +12,11 @@ test('提示词：默认使用内置 lofii 角色、固定安全边界与空记�
   assert.ok(prompt.includes('[系统提示]'))
   assert.ok(prompt.includes('[角色卡：lofii]'))
   assert.ok(prompt.includes(DEFAULT_CHAT_ROLE.prompt))
+  // 默认角色卡只保留名字 + 回复风格，不再注入详细人设/背景，避免影响用户对话调整出的个性。
+  assert.match(DEFAULT_CHAT_ROLE.prompt, /回复风格/u)
+  assert.ok(DEFAULT_CHAT_ROLE.prompt.length <= 220)
+  assert.equal(DEFAULT_CHAT_ROLE.prompt.includes('猫系'), false)
+  assert.equal(DEFAULT_CHAT_ROLE.prompt.includes('撒娇'), false)
   assert.ok(!prompt.includes('[模式：'))
   assert.ok(!prompt.includes('/ask'))
   assert.ok(prompt.includes(SAFETY_BOUNDARY))

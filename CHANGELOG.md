@@ -9,6 +9,7 @@
 - **AI 工具隔离可见性**：`GET /api/bots/status` 新增 `aiToolIsolation`（`supported/fallbackCount/fallbackAt`）；permissions 降级写审计 `bot.ai.permissions_fallback`，`/bots` 概览显示 warning。
 - **新增审计**：`bot.webhook.challenge`（op=13 成功校验，不含 token/签名）、`auth.sso_ai`（SSO 成功/失败，不含 ticket/token）；AI SSO ticket 路径在请求日志中脱敏。
 - **恢复演练状态增强**：`smoke.ps1` 在 `-ExpectedSchemaVersion` 与 drill 状态 `schemaVersion` 不一致时 WARN 并显示 schema，提示重跑 `drill.ps1`。
+- **默认角色卡简化**：内置 `lofii` 只保留名字与简短回复风格（短句、自然、轻松；偶尔轻量语气词，不连续卖萌/不人设化），详细人设由用户 `/role set` 个人卡定义；避免默认系统提示影响用户通过对话调整个性。
 - **OpenCode v2.1.3 兼容记录**：生产已由 v2.1.2 升级并只读验证 Basic/会话/prompt/wait/content/model；`ai.ts` 兼容性注释同步 v2.1.3（接受 permissions ≠ 已证明工具被拦截）。
 
 ### Fixed

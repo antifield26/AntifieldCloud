@@ -63,7 +63,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - `server/src/bot/errors.ts`：平台/队列错误 → 中文提示（管理页 `lastErrorHint`），不含凭据/URL/响应正文。
 - `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、deny-all 工具、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；兼容性基于 OpenCode v2.1.3）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
 - `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；v0.6.0 起 key/value/legacy 均过滤敏感内容，读取侧也排除旧版本已落库的敏感条目；旧摘要仅作 legacy 来源与 fallback，抽取 ops=0 不置迁移标记。
-- `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。
+- `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。内置默认角色 `lofii` 自 v0.6.0 起只保留名字与简短回复风格，不注入详细人设/背景。
 - `server/src/bot/prompts.ts`：任务/对话提示与固定安全边界；Chat 默认个人角色或内置 lofii，群聊固定默认。
 - `server/src/bot/service.ts`：CRUD、Webhook、Chat/命令分发、回复管线（sanitize→format→split）、图片降级、事件诊断、连接自检、角色/记忆管理、指标、静默时段、通知/发布队列、重试、清理、限流。
 - `server/src/http/routes/bots.ts`：管理 API；`bot-webhook.ts`：公开回调入口。
@@ -167,7 +167,7 @@ v0.5.11 新增 `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_
 
 ## 5.1 Chat 提示词、会话与记忆抽取（v0.5.11）
 
-- 提示词固定由四部分组成：**角色卡（私聊个人卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息**；不再提供任务/对话提示词覆盖，
+- 提示词固定由四部分组成：**角色卡（私聊个人卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息**；不再提供任务/对话提示词覆盖。默认 `lofii` 自 v0.6.0 起只保留名字与回复风格（短句、自然、轻松，偶尔轻量语气词；不连续卖萌、不人设化），用户可通过 `/role set` 建个人卡获得更具体人设；
   `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取。
 - AI 仅在普通消息 Chat 中调用（`allow_chat` 目标 / QQ C2C 私聊）；斜杠命令不调用 AI，`/ask` 已移除（非管理员被拒、管理员回全量帮助）。
 - 会话：`bot_ai_sessions` 按 `(bot_id, target_external_id, user_id, mode)` 复用 OpenCode 会话；v0.5.9 起 `mode` 只写 `chat`（列保留，旧 `task` 行为历史遗留）；
