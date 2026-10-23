@@ -107,7 +107,7 @@ test('v0.5.7：/forget 必须 confirm；清除结构化记忆+旧摘要镜像+�
     )
 
     await command(fixture, '/forget confirm', 'forget-2')
-    assert.equal(lastMessageText(fixture), '已清除长期记忆与全部对话上下文。')
+    assert.match(lastMessageText(fixture), /^已清除长期记忆与全部对话上下文（记忆条目 1 条/)
     assert.equal(
       (fixture.db.prepare('SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = ?').get(fixture.botId, USER_ID) as {
         c: number
@@ -168,7 +168,7 @@ test('v0.5.7：群聊 /reset /forget 对未授权目标开放，但 /status 仍�
     assert.deepEqual(sessionModes(fixture, GROUP_ID, 'member-openid-1'), [])
 
     await groupCommand(fixture, '/forget confirm', 'group-3')
-    assert.equal(lastMessageText(fixture), '已清除长期记忆与全部对话上下文。')
+    assert.match(lastMessageText(fixture), /^已清除长期记忆与全部对话上下文（记忆条目 1 条/)
     assert.equal(
       (fixture.db.prepare("SELECT COUNT(*) AS c FROM bot_memory_items WHERE bot_id = ? AND user_id = 'member-openid-1'").get(
         fixture.botId,

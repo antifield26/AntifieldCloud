@@ -9,7 +9,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { c2cWebhook, createQqServiceFixture, sendWebhook } from './bot-qq-fixtures.ts'
+import { c2cWebhook, createQqServiceFixture, lastMessageText, sendWebhook } from './bot-qq-fixtures.ts'
 import { AppError } from '../src/util/errors.ts'
 
 const USER = 'user-openid-1'
@@ -150,6 +150,8 @@ test('v0.5.11：/forget confirm 清空条目、状态与旧摘要', async () => 
     assert.equal(countRows(fixture, 'bot_memory_items'), 0)
     assert.equal(countRows(fixture, 'bot_memory_state'), 0)
     assert.equal(countRows(fixture, 'bot_ai_memories'), 0)
+    assert.match(lastMessageText(fixture), /记忆条目 1 条/)
+    assert.match(lastMessageText(fixture), /旧摘要已删除/)
     const audit = auditDetail(fixture, 'bot.memory.forget')
     assert.equal(audit?.items, 1)
     assert.equal(audit?.legacy, 1)

@@ -1557,7 +1557,9 @@ export class BotService {
       items: removed.deletedItems,
       legacy: removed.deletedLegacy ? 1 : 0,
     })
-    return '已清除长期记忆与全部对话上下文。'
+    return removed.deletedItems > 0 || removed.deletedLegacy
+      ? `已清除长期记忆与全部对话上下文（记忆条目 ${removed.deletedItems} 条${removed.deletedLegacy ? '，旧摘要已删除' : ''}）。`
+      : '已清除长期记忆与全部对话上下文。'
   }
 
   /** `/memory`：查看状态或 off/on 暂停/恢复；只展示条目计数与类型分布，不展示 key/value。 */
