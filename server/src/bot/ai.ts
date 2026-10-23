@@ -292,6 +292,29 @@ export class OpenCodeBotAi implements BotAi {
     }
   }
 
+  /** 列出远端会话（仅 id/title），供服务端清理孤儿 Bot 会话。 */
+  async listSessions(): Promise<{ id: string; title: string }[]> {
+    try {
+      const result = await this.request('GET', '/api/session', undefined, 15_000)
+      if (!this.isOk(result.status)) return []
+      const data = recordOf(result.body)?.data
+      if (!Array.isArray(data)) return []
+      const sessions: { id: string; title: string }[] = []
+      for (const item of data) {
+        const row = recordOf(item)
+        const id = typeof row?.id === 'string' ? row.id : ''
+        const title = typeof row?.title === 'string' ? row.title : ''
+        if (id) sessions.push({ id, title })
+      }
+      return sessions
+    } catch (error) {
+      this.log?.('warn', '列出远端 AI 会话失败', {
+        error: error instanceof Error ? error.message.slice(0, 160) : 'unknown',
+      })
+      return []
+    }
+  }
+
   /**
    * 删除超过保留期的会话映射（不删除 OpenCode 远端会话）。
    * 由主服务按需调用；本类不创建定时器。

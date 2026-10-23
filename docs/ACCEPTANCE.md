@@ -45,7 +45,7 @@
 - **连续消息（已实现，待真实 QQ 验收）**：同一 Bot×目标×用户 burst 合并 + 同会话串行；默认窗口 3000ms/最长 10000ms/上限 10 条；Webhook 立即 ack、只调用一次 AI/回复一次；`/reset`/`/forget` 清缓冲；不同会话并行。
 - **联网搜索（已实现，待 SearXNG/真实 QQ 验收）**：自建 SearXNG（loopback JSON API）自动判断 + `/search`；结果标题/摘要/域名注入提示词，回答末尾附来源；不抓网页、不记录查询正文；失败降级、每小时限流、不可信外部资料边界；生产网络仅启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
 - **备份状态 hotfix（已预部署并经用户复核）**：`acked` + `available=false` 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核通过。
-- **本地门禁（2026-10-23，功能代码）**：`npm run check` 通过；`npm test` **391**（含 burst/搜索/MCP 回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**（`npm run test:coverage` exit 0）；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`scripts/install-searxng.sh`/`bootstrap-env.sh` bash 语法通过。
+- **本地门禁（2026-10-23，功能代码）**：`npm run check` 通过；`npm test` **392**（含 burst/搜索/MCP/会话清理回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.21%** / Branches **77.44%** / Functions **86.85%**（`npm run test:coverage` exit 0）；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`scripts/install-searxng.sh`/`bootstrap-env.sh` bash 语法通过。
 - **待完成**：本地全量/覆盖率/CI、SearXNG 安装后只读 JSON 验证、应用部署与 smoke、真实 QQ 连续消息/`/search` 用户验收、Tag/Release。未完成前不发布。
 
 ## v0.6.0（已部署并验收通过；质量与安全加固，schema 保持 v14、无迁移；最终 release `20261023T053539Z`/commit `6349617`）

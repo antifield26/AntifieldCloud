@@ -1019,17 +1019,55 @@ export class BotService {
    * 出现“提示词说有搜索工具、实际不可用”或不安全地沿用 deny-all 之外的权限。
    */
   private resetSessionsForToolMode(): void {
+    if (!this.config.botEnabled || !this.config.botAiEnabled) return
     const mode = this.config.botSearchEnabled ? this.config.botSearchMode : 'off'
     const previous = getMeta(this.db, 'bot_ai_tool_mode')
-    if (previous === mode) return
+    if (previous === mode) {
+      void this.cleanupRemoteSessions([])
+      return
+    }
     try {
+      const sessionRows = this.db
+        .prepare('SELECT session_id FROM bot_ai_sessions')
+        .all() as { session_id: string }[]
       const changes = Number(this.db.prepare('DELETE FROM bot_ai_sessions').run().changes)
       setMeta(this.db, 'bot_ai_tool_mode', mode)
       if (changes > 0) {
         this.deps.audit('bot.ai.tool_mode_reset', null, { mode, sessions: changes })
       }
+      void this.cleanupRemoteSessions(sessionRows.map((row) => row.session_id))
     } catch (error) {
       this.deps.log('warn', 'Bot AI 工具模式切换清理会话失败', {
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
+  }
+
+  /** 工具模式切换后删除旧远端会话，并清理没有 DB 映射的孤儿 Bot 会话。 */
+  private async cleanupRemoteSessions(ids: string[]): Promise<void> {
+    const ai = this.deps.ai
+    if (!ai?.deleteSession && !ai?.listSessions) return
+    for (const id of ids) {
+      if (id) await ai.deleteSession?.(id).catch(() => undefined)
+    }
+    if (!ai.listSessions) return
+    try {
+      const sessions = await ai.listSessions()
+      const mapped = new Set(
+        (this.db.prepare('SELECT session_id FROM bot_ai_sessions').all() as { session_id: string }[]).map(
+          (row) => row.session_id,
+        ),
+      )
+      let removed = 0
+      for (const session of sessions) {
+        if (!session.title.startsWith('AntifieldCloud')) continue
+        if (mapped.has(session.id)) continue
+        await ai.deleteSession?.(session.id).catch(() => undefined)
+        removed += 1
+      }
+      if (removed > 0) this.deps.audit('bot.ai.orphan_sessions_removed', null, { sessions: removed })
+    } catch (error) {
+      this.deps.log('warn', '清理远端 Bot 孤儿会话失败', {
         error: error instanceof Error ? error.message : 'unknown',
       })
     }
@@ -1649,6 +1687,7 @@ export class BotService {
     this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
     this.lastSearchQueries.delete(`${bot.id}:${result.userId}`)
     this.resetChatSession(bot.id, result.targetExternalId, result.userId)
+    void this.cleanupRemoteSessions([])
     this.deps.audit('bot.reset', bot.id, { bot: bot.id, user: result.userId.slice(0, 64) })
     return '已重置当前对话（长期记忆保留）。'
   }
@@ -1669,6 +1708,7 @@ export class BotService {
     this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
     this.lastSearchQueries.delete(`${bot.id}:${result.userId}`)
     this.deleteRemoteSessions(bot.id, { userId: result.userId })
+    void this.cleanupRemoteSessions([])
     const removed = this.memory.deleteUser(bot.id, result.userId)
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
     this.deps.audit('bot.memory.forget', bot.id, {

@@ -272,6 +272,8 @@ export interface BotAi {
   }): Promise<BotMemoryOperation[]>
   /** 删除远端 AI 会话（/reset、/forget、角色变更等本地映射清理时尽力删除）。 */
   deleteSession?(sessionId: string): Promise<void>
+  /** 列出远端 Bot 会话（仅 id/title）；用于清理工具模式切换后的孤儿会话。 */
+  listSessions?(): Promise<{ id: string; title: string }[]>
   /** 清理过期会话映射；未实现时服务端跳过。 */
   cleanup?(): number
 }
