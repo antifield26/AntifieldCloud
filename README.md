@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.6（**已部署，待验收；Tag/Release 待发布**）。本版精简系统提示词与发送工具定义文本，降低工具说明对 Bot 回复风格的影响；群聊用户消息增加用户名 head；群聊声明所处环境，未 @ 消息默认沉默、不要求每轮调用发送工具；群聊改用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊会话；同时包含 v0.6.5 的 `/role show` 与失效 AI 会话重建修复。schema 保持 **v16**（无迁移）。生产 release `20261024T093804Z`/commit `84a9fb9`。OpenCode v2.1.3。
+> 状态：v0.6.6（**已部署，待验收；Tag/Release 待发布**）。本版精简系统提示词与发送工具定义文本，降低工具说明对 Bot 回复风格的影响；群聊用户消息增加用户名 head；群聊声明所处环境，未 @ 消息默认沉默、不要求每轮调用发送工具；群聊改用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊会话；`/bots` 长期记忆分用户记忆/群聊记忆左右两栏并迁移现有群聊参与者记忆；同时包含 v0.6.5 的 `/role show` 与失效 AI 会话重建修复。schema 保持 **v16**（无迁移）。生产 release `20261024T100522Z`/commit `1f6980e`。OpenCode v2.1.3。
 > 发布：最新公开版本 v0.6.4（Tag `v0.6.4`，GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)）；v0.6.5 未发布、由 v0.6.6 承接；v0.6.6 已部署待验收，验收通过后发布。上一版 v0.6.3（Tag `v0.6.3`，release `20261023T142411Z`/commit `7ac1d27`）。
 > 测试基线（Lead 实测 2026-10-24，v0.6.6）：`npm test` **414**（server+scripts，含群聊用户名/共享记忆/群聊默认沉默/记忆迁移/角色卡/失效会话重建回归）、`npm run test:web` **181**（32 文件）、`npm run typecheck`/`npm run lint` 通过；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。

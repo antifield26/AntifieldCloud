@@ -7,7 +7,7 @@
 - **范围**：缩短安全边界、群聊回复策略、搜索/发送工具说明并移除空记忆段；群聊用户消息前缀 `<用户名>：`；群聊声明所处环境，未 @ 消息默认沉默、不要求每轮调用发送工具；群聊共享记忆使用独立 `group:<targetExternalId>` scope，条目按 `<用户名>：<记忆>` 存储/注入；群聊抽取按发言用户归属，用户级记忆不进入群聊；`/bots` 长期记忆分用户记忆/群聊记忆两栏，并迁移现有群聊参与者记忆。
 - **数据/配置**：schema 保持 **v16**（无迁移）；复用 `bot_memory_items` 的群 scope，不新增 env/DB 字段；迁移由 meta 标记保证只执行一次。
 - **验收门禁**：`npm run check`/`check-version` 通过；`npm test` **414**（新增群聊用户名/共享记忆隔离/默认沉默/记忆迁移回归）、`npm run test:web` **181**；部署后 smoke 16/16 + 完整 Access smoke 24/24。
-- **部署证据**：生产 release `20261024T093804Z`/commit `84a9fb9`（v0.6.6/schema16，含群聊默认沉默补充）；预部署快照 `db-predeploy-20261024T093835555Z.sqlite`；部署内 smoke 16/16、完整 Access smoke 24/24；部署后备份 `snapshot-20261024T093948876Z-inc.tar.gz`（244087 bytes，secrets=ok，PC ack）。
+- **部署证据**：生产 release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema16，含记忆两栏/迁移）；预部署快照 `db-predeploy-20261024T100552756Z.sqlite`；部署内 smoke 16/16、完整 Access smoke 24/24；启动迁移群共享条目 4 条、用户级 4 条保留；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，secrets=ok，PC ack）。
 
 ## v0.6.5（已部署，未发布；由 v0.6.6 承接；Bot `/role show` 角色卡详情）
 

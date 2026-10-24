@@ -44,7 +44,7 @@
 - **范围**：缩短 Bot 系统提示词与发送工具说明、移除空记忆段；群聊用户消息增加 `<用户名>：` head；群聊提示词声明所处群聊环境，未 @ 消息引导默认沉默、不要求每轮调用发送工具；群聊使用独立共享记忆（`<用户名>：<记忆>`），已登记用户的用户级记忆不进入群聊会话；群聊抽取按发言用户归属；`/bots`「角色与记忆」按用户记忆/群聊记忆左右两栏展示，并将现有群聊参与者的用户级记忆复制/迁移到群共享记忆。
 - **数据/配置**：schema 保持 v16（无迁移）；群聊共享记忆复用 `bot_memory_items` 的 `group:<targetExternalId>` scope，不新增 env/DB 字段；一次性迁移由 meta 标记保证幂等。
 - **本地门禁**：`npm run check` 通过；`npm test` **414**（新增群聊用户名/共享记忆隔离/默认沉默/记忆迁移回归）、`npm run test:web` **181**。
-- **部署（2026-10-24 17:38 CST）**：生产 release `20261024T093804Z`/commit `84a9fb9`（v0.6.6/schema 16，含群聊默认沉默补充）；迁移前快照 `db-predeploy-20261024T093835555Z.sqlite`（sha256 `06873e4f4eb07d70fb7f3d07df58a3e4545a76e2ab4359b6c8d9296afa39a3fc`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T093948876Z-inc.tar.gz`（244087 bytes，sha256 `c8f8d012bc73f62800892d281b958bf26f24d90e6f36ad707c2ef1031be8bc0f`，secrets=ok，PC ack）。
+- **部署（2026-10-24 18:05 CST）**：生产 release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema 16，含用户/群聊记忆两栏与迁移）；迁移前快照 `db-predeploy-20261024T100552756Z.sqlite`（sha256 `2cd3e5be3646d90031755d6d76378475369fce43d4ab367345d69873e6d2b0b9`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；启动迁移 `bot_group_memory_migrated_v1=2026-10-24T10:05:54.350Z`（群共享条目 4 条；用户级条目 4 条保留，覆盖有私聊/已登记用户）；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，sha256 `21cabc05142103a30ba058fdef8a5ab24d09ac3176d811dffff6e15aa79309cd`，secrets=ok，PC ack）。
 
 ## v0.6.5（已部署，未发布；由 v0.6.6 承接；Bot `/role show` 角色卡详情 + 失效 AI 会话重建；schema 保持 v16）
 
