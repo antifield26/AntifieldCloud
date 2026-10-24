@@ -11,7 +11,7 @@
   - 全量群聊非 @ 合并窗口默认 8000ms/最长 20000ms，@/名字命中仍用 3000/10000ms。
   - 已知问题处理：SSO ticket 绑定 UA（IP 因移动网络/边缘出口不稳定不绑定）；记忆敏感过滤补充云/数据库凭据模式；`__Host-` Cookie 前缀与 SSH/sudo 等残余记录为明确保留。
 - **数据/配置**：schema 保持 **v16**（无迁移）；新增 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`/`BOT_AI_SEND_TOOL_ENABLED`；不新增 DB 表/列。
-- **验收门禁**：`npm run check`、覆盖率、build；新增工具协议/回合 token/兜底/群聊长窗口/会话标题/UA 绑定/记忆过滤测试；生产 release `20261024T033900Z`/commit `6d26cbd`、schema16、smoke 24/24，`botmsg` MCP connected；按用户要求等待多用户内测后再做真实 QQ 验收与 Tag/Release。
+- **验收门禁**：`npm run check`、覆盖率、build；新增工具协议/回合 token/兜底/群聊长窗口/会话标题/UA 绑定/记忆过滤测试；生产 release `20261024T041205Z`/commit `944566f`、schema16、部署内 smoke 16/16（首次部署完整 Access smoke 24/24，最终重部署受 tunnel 网络阻断待重跑），`botmsg` MCP connected；按用户要求等待多用户内测后再做真实 QQ 验收与 Tag/Release。
 
 ## v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用命令；schema v16）
 

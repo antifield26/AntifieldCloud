@@ -19,9 +19,11 @@
 
 - 版本升到 **0.6.4**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **408**、`npm run test:web` **180**；服务端覆盖率 Lines **92.34%** / Branches **77.48%** / Functions **87.23%**；build bundle `index-BHmn1DCi.js` 691.34 kB。
-- 生产部署（2026-10-24 11:39 CST）：release `20261024T033900Z`/commit `6d26cbd`（v0.6.4/schema 16）；迁移前快照 `db-predeploy-20261024T034003296Z.sqlite`（sha256 `8790d5ccc0750695fe40240387867af2d9f6f5675ca78a065e9935bdd1e77dad`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）。
+- 生产部署（2026-10-24 12:12 CST）：最终 release `20261024T041205Z`/commit `944566f`（v0.6.4/schema 16；首次 release `20261024T033900Z`/`6d26cbd` 已包含同一功能，本次修复“启用发送工具时重建旧会话”）；迁移前快照 `db-predeploy-20261024T041301675Z.sqlite`（sha256 `3be0aa254e843d0557d08c1a7296bc1f42494a0ebb33f4fbad4e2958e20662ef`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16；首次部署完整 Access smoke 24/24（0 警告），最终重部署后公网 smoke 因当前网络阻断 Cloudflare tunnel（530）待重跑。
+- 工具模式重建：最终部署后 `meta.bot_ai_tool_mode=mcp:send`、`bot_ai_sessions=0`，旧会话映射清空，下一条消息按新权限创建带 `botmsg_*`/`searxng_*` 的会话。
 - 生产 env 增加 `BOT_AI_SEND_TOOL_ENABLED=true`、`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`；安装 `botmsg` MCP（`/opt/botmsg-mcp`）并重启 opencode，`/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（假 turn 凭据按预期返回失败）。
-- 部署后备份 `snapshot-20261024T035343845Z-inc.tar.gz`（204359 bytes，sha256 `abd9ef97a0522f7a2741c98ce62171caa4c180a2babad883759d391fe65dc42b`，secrets=ok，PC 已 ack）。
+- 部署后备份 `snapshot-20261024T041919954Z-inc.tar.gz`（205376 bytes，sha256 `22686c9db29e2a530e5f637f1de8453c7ab9605f5e6a44a71e1e1e4b6dca3a86`，secrets=ok，PC 已 ack）。
+- 环境事件：2026-10-24 12:15 CST 起当前网络阻断 Cloudflare tunnel 出站 7844（cloudflared precheck TCP/UDP FAIL、API 443 可达、公网 530）；本机应用/数据正常，待网络恢复后重跑完整 Access smoke；不影响已完成的部署与本地测试。
 - 发布状态：用户要求先进行多用户内测，**未创建 Tag/GitHub Release**；内测通过后再发布。
 
 ## [v0.6.3] - 2026-10-23（已发布：Tag/Release v0.6.3）
