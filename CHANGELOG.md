@@ -23,10 +23,10 @@
 
 - 版本升到 **0.6.4**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **408**、`npm run test:web` **180**；服务端覆盖率 Lines **92.34%** / Branches **77.48%** / Functions **87.23%**；build bundle `index-BHmn1DCi.js` 691.34 kB。
-- 生产部署（2026-10-24 12:12 CST）：最终 release `20261024T041205Z`/commit `944566f`（v0.6.4/schema 16；首次 release `20261024T033900Z`/`6d26cbd` 已包含同一功能，本次修复“启用发送工具时重建旧会话”）；迁移前快照 `db-predeploy-20261024T041301675Z.sqlite`（sha256 `3be0aa254e843d0557d08c1a7296bc1f42494a0ebb33f4fbad4e2958e20662ef`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16；完整 Access smoke 24/24（0 警告；网络恢复后复跑）。
+- 生产部署（2026-10-24 14:52 CST）：最终 release `20261024T065245Z`/commit `63792a7`（v0.6.4/schema 16，含 `/help` 命令列表修复；首次 release `20261024T033900Z`/`6d26cbd`，第二次 `20261024T041205Z`/`944566f`）；迁移前快照 `db-predeploy-20261024T065317276Z.sqlite`（sha256 `005704f9ba01bda4332de73d4446eda5e035dd19e9cad7401462f1121c6aa53d`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16；完整 Access smoke 24/24（0 警告）。
 - 工具模式重建：最终部署后 `meta.bot_ai_tool_mode=mcp:send`、`bot_ai_sessions=0`，旧会话映射清空，下一条消息按新权限创建带 `botmsg_*`/`searxng_*` 的会话。
 - 生产 env 增加 `BOT_AI_SEND_TOOL_ENABLED=true`、`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`；安装 `botmsg` MCP（`/opt/botmsg-mcp`）并重启 opencode，`/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（假 turn 凭据按预期返回失败）。
-- 部署后备份 `snapshot-20261024T041919954Z-inc.tar.gz`（205376 bytes，sha256 `22686c9db29e2a530e5f637f1de8453c7ab9605f5e6a44a71e1e1e4b6dca3a86`，secrets=ok，PC 已 ack）。
+- 部署后备份 `snapshot-20261024T065433557Z-inc.tar.gz`（218203 bytes，sha256 `83e9693375898717a3590f68656dbe0b7a198d4076bb9c28e098ed754b3e26db`，secrets=ok，PC 已 ack）。
 - 环境事件与恢复：2026-10-24 12:15 CST 校园网 Portal 认证失效导致 Cloudflare tunnel 出站 7844（TCP/UDP）被拦截，公网 530、浏览器 1033；13:46 CST 经 Pi 出口重新完成校园网认证后，cloudflared precheck 全 PASS（DNS/TCP/UDP/API），服务 active（NRestarts=0）、公网健康 200，完整 Access smoke **24/24（0 警告）**；本机应用/数据全程正常。
 - 发布状态：用户要求先进行多用户内测，**未创建 Tag/GitHub Release**；内测通过后再发布。
 
