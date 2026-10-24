@@ -18,6 +18,13 @@ test('AI SSO ticket：一次性、过期、origin 绑定与容量上限', async 
     // 正常消费返回原会话 token。
     const ok = auth.createAiSsoTicket(session.token, 'https://ai.test')
     assert.equal(auth.consumeAiSsoTicket(ok, 'https://ai.test'), session.token)
+    // v0.6.4：绑定 UA 的 ticket 只能由同一 UA 消费；失败同样一次性销毁。
+    const uaA = hashUserAgent('Mozilla/5.0 test-a')
+    const uaB = hashUserAgent('Mozilla/5.0 test-b')
+    const bound = auth.createAiSsoTicket(session.token, 'https://ai.test', Date.now(), uaA)
+    assert.equal(auth.consumeAiSsoTicket(bound, 'https://ai.test', Date.now(), uaB), null)
+    const boundOk = auth.createAiSsoTicket(session.token, 'https://ai.test', Date.now(), uaA)
+    assert.equal(auth.consumeAiSsoTicket(boundOk, 'https://ai.test', Date.now(), uaA), session.token)
     // 容量上限 1000：最旧被淘汰，最新仍可消费。
     const codes: string[] = []
     for (let index = 0; index < 1001; index += 1) codes.push(auth.createAiSsoTicket(session.token, 'https://ai.test'))
@@ -33,6 +40,7 @@ test('AI SSO ticket：一次性、过期、origin 绑定与容量上限', async 
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { buildApp } from '../src/app.ts'
+import { hashUserAgent } from '../src/auth/service.ts'
 import { createSession } from '../src/auth/sessions.ts'
 import { cleanupDir, cookieHeader, currentCode, parseSetCookies, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
 

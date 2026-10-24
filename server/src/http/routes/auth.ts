@@ -1,7 +1,7 @@
 /** 认证与账号路由。 */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { Config } from '../../config.ts'
-import { MAX_LOGIN_USERNAME_LENGTH, type AuthService } from '../../auth/service.ts'
+import { MAX_LOGIN_USERNAME_LENGTH, hashUserAgent, type AuthService } from '../../auth/service.ts'
 import {
   CSRF_COOKIE,
   clearAuthCookies,
@@ -151,7 +151,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     }
     const sessionToken = readSessionToken(request)
     if (!sessionToken) throw unauthorized()
-    const ticket = auth.createAiSsoTicket(sessionToken, config.aiOrigin)
+    const ticket = auth.createAiSsoTicket(sessionToken, config.aiOrigin, Date.now(), hashUserAgent(userAgent(request)))
     const nextPath = `${target.pathname}${target.search}`
     const location = `${config.aiOrigin}/__af/sso/${ticket}?next=${encodeURIComponent(nextPath)}`
     reply.code(302).header('location', location).header('cache-control', 'no-store').send()

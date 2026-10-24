@@ -145,6 +145,12 @@ export interface Config {
   botChatBurstMaxWaitMs: number
   /** 单批最大消息数；达到后立即触发。 */
   botChatBurstMaxMessages: number
+  /** v0.6.4：群聊目标设为全量消息时，非 @ 消息使用更长的合并窗口。 */
+  botChatBurstGroupAllWindowMs: number
+  /** v0.6.4：全量群聊合并从首条起的最长等待。 */
+  botChatBurstGroupAllMaxWaitMs: number
+  /** v0.6.4：是否允许模型调用 send_message 工具发送消息（需安装 botmsg MCP）。 */
+  botAiSendToolEnabled: boolean
   /** v0.6.1：SearXNG 联网搜索总开关；开启时必须配置 BOT_SEARCH_URL。 */
   botSearchEnabled: boolean
   /** SearXNG 基址（生产建议 loopback 私有实例），仅 http/https。 */
@@ -352,6 +358,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botChatBurstWindowMs: int(merged, 'BOT_CHAT_BURST_WINDOW_MS', 3000, 0, 8000),
     botChatBurstMaxWaitMs: int(merged, 'BOT_CHAT_BURST_MAX_WAIT_MS', 10000, 1000, 20000),
     botChatBurstMaxMessages: int(merged, 'BOT_CHAT_BURST_MAX_MESSAGES', 10, 1, 20),
+    botChatBurstGroupAllWindowMs: int(merged, 'BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS', 8000, 0, 30000),
+    botChatBurstGroupAllMaxWaitMs: int(merged, 'BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS', 20000, 1000, 60000),
+    botAiSendToolEnabled: bool(merged, 'BOT_AI_SEND_TOOL_ENABLED', false),
     botSearchEnabled: bool(merged, 'BOT_SEARCH_ENABLED', false),
     botSearchUrl: str(merged, 'BOT_SEARCH_URL', ''),
     botSearchAuto: bool(merged, 'BOT_SEARCH_AUTO', true),
@@ -382,6 +391,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   if (config.botChatBurstWindowMs > config.botChatBurstMaxWaitMs) {
     throw new Error('BOT_CHAT_BURST_WINDOW_MS 不能大于 BOT_CHAT_BURST_MAX_WAIT_MS')
+  }
+  if (config.botChatBurstGroupAllWindowMs > config.botChatBurstGroupAllMaxWaitMs) {
+    throw new Error('BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS 不能大于 BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS')
   }
   validateOrigin(config.appOrigin, 'APP_ORIGIN')
   validateOrigin(config.aiOrigin, 'AI_ORIGIN')

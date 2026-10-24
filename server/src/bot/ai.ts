@@ -29,11 +29,29 @@ const POLL_INTERVAL_MS = 500
 const MAX_SEEN_MESSAGES_PER_SESSION = 500
 /** OpenCode Permission.Ruleset：拒绝一切工具动作。 */
 const DENY_ALL_PERMISSIONS = [{ action: '*', resource: '*', effect: 'deny' }]
-/** mcp 搜索模式下只放行 SearXNG MCP 工具；内置 shell/edit/read 等仍全部拒绝。 */
-const SEARCH_MCP_PERMISSIONS = [
-  { action: '*', resource: '*', effect: 'deny' },
-  { action: 'searxng_*', resource: '*', effect: 'allow' },
-]
+
+/** Bot 会话只放行明确授权的 MCP 工具；内置 shell/edit/read 等仍全部拒绝。 */
+function botPermissions(searchToolEnabled: boolean, sendToolEnabled: boolean): Record<string, unknown>[] {
+  const permissions: Record<string, unknown>[] = [...DENY_ALL_PERMISSIONS]
+  if (searchToolEnabled) permissions.push({ action: 'searxng_*', resource: '*', effect: 'allow' })
+  if (sendToolEnabled) permissions.push({ action: 'botmsg_*', resource: '*', effect: 'allow' })
+  return permissions
+}
+
+/** 会话标题只保留单行可见字符并限制长度，避免目标名污染 OpenCode 列表。 */
+function normalizeSessionTitle(value: string | undefined, fallback: string): string {
+  if (typeof value !== 'string') return fallback
+  const title = [...value]
+    .filter((char) => {
+      const code = char.codePointAt(0) ?? 0
+      return code >= 32 && code !== 127
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120)
+  return title || fallback
+}
 
 export interface OpenCodeBotAiOptions {
   db: DatabaseSync
@@ -139,6 +157,8 @@ export class OpenCodeBotAi implements BotAi {
   private readonly modelLabel: string | null
   /** 是否在 Bot 会话中放行 SearXNG MCP 搜索工具（仅 botSearchMode=mcp）。 */
   private readonly searchToolEnabled: boolean
+  /** 是否在 Bot 会话中放行 send_message MCP 工具。 */
+  private readonly sendToolEnabled: boolean
   /** OpenCode v2.1.3 OpenAPI 声明支持 permissions；仅在实际 400 拒绝后关闭。 */
   private permissionsSupported = true
   /** 降级累计次数/首次时间：由 BotService 读取并写审计/状态，避免"只在日志里"。 */
@@ -156,6 +176,7 @@ export class OpenCodeBotAi implements BotAi {
     this.fetchImpl = options.fetch ?? fetch
     this.log = options.log
     this.searchToolEnabled = config.botSearchEnabled && config.botSearchMode === 'mcp'
+    this.sendToolEnabled = config.botAiSendToolEnabled
     this.baseUrl = config.opencodeUrl.replace(/\/+$/, '')
     this.basicAuth = `Basic ${Buffer.from(
       `${config.opencodeUsername}:${config.opencodePassword}`,
@@ -184,6 +205,7 @@ export class OpenCodeBotAi implements BotAi {
     targetExternalId: string
     userId: string
     prompt: string
+    sessionTitle?: string
     image?: BotAiImage
   }): Promise<string> {
     const target: ChatTarget = {
@@ -191,7 +213,7 @@ export class OpenCodeBotAi implements BotAi {
       targetExternalId: input.targetExternalId,
       userId: input.userId,
     }
-    const { sessionId, created } = await this.ensureSession(target)
+    const { sessionId, created } = await this.ensureSession(target, input.sessionTitle)
     // 发送 prompt 前固定"历史 assistant 消息"基线：轮询回退只接受基线之外的新回答。
     const baseline = await this.prepareAssistantBaseline(sessionId, created)
     await this.sendPrompt(sessionId, input.prompt, input.image)
@@ -226,13 +248,14 @@ export class OpenCodeBotAi implements BotAi {
   async extractMemories(input: {
     botId: string
     userId: string
+    sessionTitle?: string
     existing: BotMemoryItemPrompt[]
     legacySummary: string
     userText: string
     assistantText: string
     maxOps: number
   }): Promise<BotMemoryOperation[]> {
-    const sessionId = await this.createSession('AntifieldCloud Memory Extract')
+    const sessionId = await this.createSession(normalizeSessionTitle(input.sessionTitle, 'AntifieldCloud Memory'))
     const maxOps = Math.max(1, Math.min(20, Math.floor(input.maxOps)))
     const existing = input.existing
       .slice(0, 120)
@@ -336,7 +359,7 @@ export class OpenCodeBotAi implements BotAi {
   }
 
   /** 按 (botId,targetExternalId,userId) 复用 Chat 会话；数据库 mode 固定写 chat。 */
-  private async ensureSession(target: ChatTarget): Promise<{ sessionId: string; created: boolean }> {
+  private async ensureSession(target: ChatTarget, title?: string): Promise<{ sessionId: string; created: boolean }> {
     const existing = this.db
       .prepare(
         "SELECT session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat'",
@@ -344,7 +367,7 @@ export class OpenCodeBotAi implements BotAi {
       .get(target.botId, target.targetExternalId, target.userId) as AiSessionRow | undefined
     if (existing?.session_id) return { sessionId: existing.session_id, created: false }
 
-    const sessionId = await this.createSession('AntifieldCloud Chat')
+    const sessionId = await this.createSession(normalizeSessionTitle(title, 'AntifieldCloud Chat'))
     const now = new Date().toISOString()
     // 并发首次对话可能同时创建远端会话；以最后一次写入为准，避免主键冲突导致整次对话失败。
     this.db
@@ -372,7 +395,7 @@ export class OpenCodeBotAi implements BotAi {
         status: 400,
         fallbackCount: this.permissionsFallbackCount,
       })
-      result = await this.request('POST', '/api/session', this.sessionBody(false))
+      result = await this.request('POST', '/api/session', this.sessionBody(false, title))
     }
     if (!this.isOk(result.status)) throw this.httpError(result.status)
 
@@ -386,7 +409,9 @@ export class OpenCodeBotAi implements BotAi {
     return {
       title,
       ...(this.modelRef ? { model: this.modelRef } : {}),
-      ...(includePermissions ? { permissions: this.searchToolEnabled ? SEARCH_MCP_PERMISSIONS : DENY_ALL_PERMISSIONS } : {}),
+      ...(includePermissions
+        ? { permissions: botPermissions(this.searchToolEnabled, this.sendToolEnabled) }
+        : {}),
     }
   }
 

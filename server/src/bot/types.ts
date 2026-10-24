@@ -259,6 +259,8 @@ export interface BotAi {
     targetExternalId: string
     userId: string
     prompt: string
+    /** 新会话标题；为空时使用内置默认标题。 */
+    sessionTitle?: string
     /** 可选图片；未启用/不支持时由调用方降级为纯文本。 */
     image?: BotAiImage
   }): Promise<string>
@@ -271,6 +273,8 @@ export interface BotAi {
   extractMemories?(input: {
     botId: string
     userId: string
+    /** 新会话标题；为空时使用内置默认标题。 */
+    sessionTitle?: string
     /** 当前未过期条目（用于让模型做 upsert/delete，而不是重复新增）。 */
     existing: BotMemoryItemPrompt[]
     /** 尚未迁移的旧滚动摘要；空字符串表示无。 */

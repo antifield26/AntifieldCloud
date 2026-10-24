@@ -2,9 +2,9 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.3（**已发布：Tag/Release v0.6.3**）。本版新增：每个群聊目标一张独立共享角色卡（Web“角色与记忆”编辑/启停/删除）；群目标可独立设置“仅接受 @/名字提及消息”（默认）或“接受全部消息并由模型选择是否发送”（实验性）；群聊/频道不再接受任何斜杠命令；schema **v16** 新增 `bot_group_roles`，群消息模式复用 `chat_trigger`。生产 release `20261023T142411Z`/commit `7ac1d27`，smoke 24/24，用户验收通过。OpenCode v2.1.3。
-> 发布：最新公开版本为 v0.6.3（生产 release `20261023T142411Z`，Tag `v0.6.3`，GitHub Release [AntifieldCloud v0.6.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.3)）；上一版 v0.6.2（release `20261023T123055Z`/commit `77e42c7`）。
-> 测试基线（Lead 实测 2026-10-23，v0.6.3）：`npm test` **399**（server+scripts，含群角色卡/群消息模式/`GROUP_MESSAGE_CREATE`/命令禁用回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-BHmn1DCi.js` 691.34 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
+> 状态：v0.6.4（开发/验收中）。本版复核处理已知问题/遗留事项：Bot 全量群聊非 @ 消息延长合并窗口（默认 8s/最长 20s）；`NO_REPLY` 升级为 `botmsg_send_message` MCP 工具，模型可连续发送 1–5 条，私聊/@ 每轮至少调用一次，全量群聊不调用即静默；新建 Chat/Memory 会话按「目标名称 + Chat/Memory」命名；SSO ticket 绑定 UA、记忆敏感过滤补充云/数据库凭据模式；schema 保持 **v16**（无迁移）。OpenCode v2.1.3。
+> 发布：最新公开版本为 v0.6.3（生产 release `20261023T142411Z`，Tag `v0.6.3`，GitHub Release [AntifieldCloud v0.6.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.3)）；v0.6.4 验收通过后再发布 Tag/Release。上一版 v0.6.2（release `20261023T123055Z`/commit `77e42c7`）。
+> 测试基线（Lead 实测 2026-10-24，v0.6.4）：`npm test` **408**（server+scripts，含消息工具/回合 token/长合并窗口/会话标题/UA 绑定回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率 Lines **92.34%** / Branches **77.48%** / Functions **87.23%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0、`npm run build` 通过（bundle `index-BHmn1DCi.js` 691.34 kB）。Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -60,7 +60,7 @@
 
 - **平台收敛**：v0.5.8 起仅支持 QQ 官方 Bot：QQ 用 AppSecret 派生 Ed25519（`op=13` 回调地址校验、`op=0` 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。
   Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式与 Telegram HTML/引用/线程已移除；schema v13 删除非 QQ Bot 及其级联数据（生产 Discord Bot 数据迁移前已备份）。
-- **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话；C2C 私聊直接进入；QQ 群/频道默认只有 @Bot 事件进入，v0.6.3 群目标可设为 `groupReplyMode=all` 并在 QQ 后台开启“接收所有消息”（全量 `GROUP_MESSAGE_CREATE`，模型可 `NO_REPLY` 静默）；v0.6.3 起群聊/频道不再执行斜杠命令，命令仅在 C2C 私聊可用；C2C 管理员命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读。v0.5.9 起限速放宽：每 Bot×用户 Chat 每分钟默认 **30** 次、AI 每小时默认 **120** 次（`BOT_CHAT_RATE_PER_MINUTE`/`BOT_AI_RATE_PER_HOUR`）。
+- **普通消息 Chat**：非斜杠消息在目标 `allow_chat=1` 时进入 AI 对话；C2C 私聊直接进入；QQ 群/频道默认只有 @Bot 事件进入，v0.6.3 群目标可设为 `groupReplyMode=all` 并在 QQ 后台开启“接收所有消息”；v0.6.4 起模型通过 `botmsg_send_message` 工具发送（私聊/@ 至少 1 条、可连续 1–5 条，全量群聊不调用即静默）；群聊/频道不执行斜杠命令，命令仅在 C2C 私聊可用；C2C 管理员命令仍由目标 `allow_commands` + user 白名单双校验；Chat 只读。v0.5.9 起限速放宽：每 Bot×用户 Chat 每分钟默认 **30** 次、AI 每小时默认 **120** 次（`BOT_CHAT_RATE_PER_MINUTE`/`BOT_AI_RATE_PER_HOUR`）。
 - **回复形态（QQ 纯文本）**：AI 回答经清洗、去 Markdown 标记后按 QQ 单条 2000 字符分段（最多 4 段，续段前缀“（续 n/m）”，超限截断）；partial 失败 `partial_text_sent` 不自动重试；QQ 不支持媒体/附件/按钮/引用回复。
 - **图片理解（默认开启）**：`BOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；
   失败/关闭/非法图片时降级为纯文字回答；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。需模型支持 image 输入（`opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。

@@ -43,6 +43,7 @@ import { OpenCodeBotAi } from './bot/ai.ts'
 import { SearxngSearchClient } from './bot/search.ts'
 import { registerBotRoutes } from './http/routes/bots.ts'
 import { registerBotWebhookRoutes } from './http/routes/bot-webhook.ts'
+import { registerBotAiToolRoutes } from './http/routes/bot-ai-tool.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -329,6 +330,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerMetricsRoutes(app, metrics)
   registerBotRoutes(app, config, bots, auth)
   registerBotWebhookRoutes(app, config, bots)
+  registerBotAiToolRoutes(app, bots)
 
   registerErrorHandler(app)
 

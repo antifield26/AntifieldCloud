@@ -6,6 +6,7 @@
  * 限流并审计（password_change_failed / recovery_regenerate_failed）。
  */
 import type { DatabaseSync } from 'node:sqlite'
+import { createHash } from 'node:crypto'
 import type { Config } from '../config.ts'
 import type { AuthContext, SessionRow, UserRow } from '../types.ts'
 import { invalidCode, invalidCredentials, rateLimited, unauthorized, badRequest, challengeExpired } from '../util/errors.ts'
@@ -47,6 +48,16 @@ interface AiSsoTicket {
   sessionToken: string
   origin: string
   expiresAtMs: number
+  /** User-Agent 摘要；为空表示该 ticket 未绑定，兼容旧调用/无 UA 客户端。 */
+  userAgentHash: string | null
+}
+
+/** 计算 SSO ticket 的 User-Agent 绑定值；空值返回 null。 */
+export function hashUserAgent(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().slice(0, 512)
+  if (!normalized) return null
+  return createHash('sha256').update(normalized).digest('base64url')
 }
 
 export interface LoginInput {
@@ -347,7 +358,12 @@ export class AuthService {
    * 创建 AI 工作区 SSO 一次性 ticket（绑定 aiOrigin、60 秒过期、最多 1000 条）。
    * 只在内存保存到被消费/过期；不写 DB、不写日志、不进入 URL 日志（由调用方审计时排除）。
    */
-  createAiSsoTicket(sessionToken: string, origin: string, nowMs: number = Date.now()): string {
+  createAiSsoTicket(
+    sessionToken: string,
+    origin: string,
+    nowMs: number = Date.now(),
+    userAgentHash: string | null = null,
+  ): string {
     this.pruneAiSsoTickets(nowMs)
     // 容量上限：按插入顺序淘汰最旧（Map 迭代顺序即插入顺序），避免公开入口无界增长。
     while (this.aiSsoTickets.size >= AI_SSO_TICKET_MAX) {
@@ -356,18 +372,29 @@ export class AuthService {
       this.aiSsoTickets.delete(oldest.value)
     }
     const code = randomToken(32)
-    this.aiSsoTickets.set(code, { sessionToken, origin, expiresAtMs: nowMs + AI_SSO_TICKET_TTL_MS })
+    this.aiSsoTickets.set(code, {
+      sessionToken,
+      origin,
+      expiresAtMs: nowMs + AI_SSO_TICKET_TTL_MS,
+      userAgentHash,
+    })
     return code
   }
 
-  /** 消费 ticket：无条件删除（一次性）；不存在/过期/绑定 origin 不符返回 null。 */
-  consumeAiSsoTicket(code: string, origin: string, nowMs: number = Date.now()): string | null {
+  /** 消费 ticket：无条件删除（一次性）；不存在/过期/绑定 origin 或 UA 不符返回 null。 */
+  consumeAiSsoTicket(
+    code: string,
+    origin: string,
+    nowMs: number = Date.now(),
+    userAgentHash: string | null = null,
+  ): string | null {
     if (typeof code !== 'string' || !AI_SSO_TICKET_PATTERN.test(code)) return null
     this.pruneAiSsoTickets(nowMs)
     const ticket = this.aiSsoTickets.get(code)
     if (!ticket) return null
     this.aiSsoTickets.delete(code)
     if (ticket.expiresAtMs <= nowMs || ticket.origin !== origin) return null
+    if (ticket.userAgentHash && ticket.userAgentHash !== userAgentHash) return null
     return ticket.sessionToken
   }
 

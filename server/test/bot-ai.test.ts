@@ -191,6 +191,31 @@ function assertNoSecret(logs: LogEntry[]): void {
   assert.ok(!serialized.includes('127.0.0.1'), '日志不含上游 URL')
 }
 
+test('v0.6.4：新会话使用目标名称标题，并放行 botmsg MCP 工具权限', async () => {
+  const fixture = setup(basicHandler({ messages: [assistant([{ type: 'text', text: '好的' }])] }), {
+    botAiSendToolEnabled: true,
+  })
+  try {
+    await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: TARGET,
+      userId: USER,
+      prompt: '你好',
+      sessionTitle: '私聊目标 Chat',
+    })
+    const create = fixture.calls.find((call) => call.method === 'POST' && call.url.pathname === '/api/session')
+    assert.ok(create, '应创建 OpenCode 会话')
+    const createBody = create.body as Record<string, unknown>
+    assert.equal(createBody.title, '私聊目标 Chat')
+    assert.deepEqual(createBody.permissions, [
+      { action: '*', resource: '*', effect: 'deny' },
+      { action: 'botmsg_*', resource: '*', effect: 'allow' },
+    ])
+  } finally {
+    dispose(fixture)
+  }
+})
+
 test('首次对话：创建 deny-all 权限会话、发送 prompt、等待 idle 并拼接 assistant 文本', async () => {
   const fixture = setup(
     basicHandler({

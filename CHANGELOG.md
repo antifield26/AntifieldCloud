@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.6.4] - 2026-10-24（开发/验收中）
+
+### Added
+
+- **消息发送工具**：模型通过 OpenCode MCP `botmsg_send_message` 发送用户可见消息，可连续调用 1–5 条；每轮携带由 `BOT_SECRET_KEY` HMAC 的一次性 `turn_id`/`turn_token`，应用回调只写内存缓冲，回合结束统一清洗/格式化/发送。私聊与群 @/名字命中必须至少发送一条，模型漏调用时兜底最终文本并审计 `bot.ai.send_fallback`；全量群聊不调用工具即静默。
+- **全量群聊合并窗口**：`groupReplyMode=all` 的非 @ 消息使用 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000` / `BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000` 合并，减少逐条模型调用；@/名字命中仍用默认 3000/10000ms。
+- **会话命名**：新建 OpenCode Chat 会话标题为「目标名称 Chat」，记忆抽取会话为「目标名称 Memory」；已有会话不主动重命名。
+- **已知问题处理**：SSO ticket 绑定 User-Agent SHA-256；记忆敏感过滤补充 Google/GitLab/npm/Stripe/AWS/Azure 与带凭据数据库 URL 模式；复核 `__Host-`、IP 绑定、SSH/sudo、DR P3 等并记录明确保留理由。
+
+### Changed
+
+- `NO_REPLY` 退化为未启用发送工具时的兼容路径；全量群聊以“是否调用工具”决定发送。
+- `BOT_AI_SEND_TOOL_ENABLED` 默认关闭；启用前需安装 `botmsg` MCP（`scripts/install-bot-tool-mcp.sh`）并重启应用。
+- 会话新标题只对新建会话生效；现有 OpenCode 会话标题保持不变。
+
+### Deployment
+
+- 版本升到 **0.6.4**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
+- 本地门禁、生产部署、smoke、真实 QQ 验收与 Tag/Release 待回填。
+
 ## [v0.6.3] - 2026-10-23（已发布：Tag/Release v0.6.3）
 
 ### Added

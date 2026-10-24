@@ -32,8 +32,8 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
                                ├─ 事件去重 → bot_events(received/ignored 诊断) + bot_inbound_targets（目标/用户，不存正文）
                                ├─ 斜杠命令（仅 C2C） → 自助命令(/help、/memory、/role 私聊、/reset、/forget confirm) 或 目标 allow_commands + 用户白名单；群聊/频道审计 command.disabled
                                │              → 只读 provider / OpenCode AI → 平台回复
-                               ├─ 普通消息 → 目标 allow_chat（C2C 私聊直接进入；群/频道默认仅 @Bot 事件；全量模式按目标/NO_REPLY 过滤）
-                               │              → 文本或入站图片 → OpenCode AI → 清洗/格式化/分段 → 平台回复
+                               ├─ 普通消息 → 目标 allow_chat（C2C 私聊直接进入；群/频道默认仅 @Bot 事件；全量模式按目标/工具调用过滤）
+                               │              → 文本或入站图片 → OpenCode AI → 工具 send_message/清洗/格式化/分段 → 平台回复
                                └─ 入站错误 → 401/404/429（不执行业务）
 
 入站图片管线（默认开启）：d.attachments → image/* 元数据(content_type/filename/size/url)
@@ -61,11 +61,12 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - `server/src/bot/text.ts`：QQ 单条文本上限 2000、分段（最多 4 段、续段前缀、截断标记、代理对安全切分）。
 - `server/src/bot/format.ts`：AI Markdown → QQ 纯文本（去代码块/标题/粗体/列表/链接标记，仅 http(s) 链接保留为文字）。
 - `server/src/bot/errors.ts`：平台/队列错误 → 中文提示（管理页 `lastErrorHint`），不含凭据/URL/响应正文。
-- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、deny-all 工具、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；兼容性基于 OpenCode v2.1.3）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
+- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、工具白名单、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；v0.6.4 起按配置放行 `botmsg_*` MCP 发送工具；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；兼容性基于 OpenCode v2.1.3）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
+- `server/src/bot/group-roles.ts`：群聊目标共享角色卡存储；`server/src/http/routes/bot-ai-tool.ts`：消息发送 MCP 的内部回调路由（turn token HMAC、无 session/CSRF）。
 - `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；v0.6.0 起 key/value/legacy 均过滤敏感内容，读取侧也排除旧版本已落库的敏感条目；旧摘要仅作 legacy 来源与 fallback，抽取 ops=0 不置迁移标记。
 - `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。内置默认角色 `lofii` 自 v0.6.0 起只保留名字与简短对话风格，不注入详细人设/背景。
 - `server/src/bot/group-roles.ts`：每 Bot×群聊目标一张共享角色卡（v0.6.3）；仅管理员可编辑正文，用于该群所有成员的 Chat 提示词，停用/删除后回退 `lofii`。
-- `server/src/bot/prompts.ts`：任务/对话提示与固定安全边界；Chat 使用私聊个人卡或群聊共享卡，缺失时回退内置 lofii；全量群消息追加“可输出 NO_REPLY”的回复决策段。
+- `server/src/bot/prompts.ts`：任务/对话提示与固定安全边界；Chat 使用私聊个人卡或群聊共享卡，缺失时回退内置 lofii；v0.6.4 启用发送工具时追加 `[消息发送工具]`（携带一次性 turn 凭据），全量群聊未启用工具时保留 `NO_REPLY` 兼容段。
 - `server/src/bot/service.ts`：CRUD、Webhook、Chat/命令分发、群消息模式过滤、回复管线（sanitize→format→split）、图片降级、事件诊断、连接自检、角色/记忆管理、指标、静默时段、通知/发布队列、重试、清理、限流。
 - `server/src/http/routes/bots.ts`：管理 API；`bot-webhook.ts`：公开回调入口。
 - web `/bots`：概览、配置、目标、投递与发布、角色与记忆、诊断六个分区；配置页“检查连接”，目标页 `allowChat`/群消息模式，角色/记忆与诊断面板只展示元数据/脱敏错误（群聊角色卡正文仅管理员编辑 Modal 可见）。
@@ -86,7 +87,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 3. 事件订阅按场景勾选 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；如需“接受全部消息”，再勾选 `GROUP_MESSAGE_CREATE`（需在 QQ 后台开启接收所有消息）；群主还需在 QQ 群设置 → 机器人 → 可获取的群聊消息范围选择“获取群内全部消息”，否则平台不会推送非 @ 消息。
 4. 目标登记：C2C 填 `user_openid`、群聊填 `group_openid`、频道填 `channel_id`；命令用户另建 `kind=user` 且允许命令的目标。QQ 官方回调不提供真实 QQ 号/群号；v0.6.2 起可在目标行点“测试”发送测试消息，在 QQ 收到消息的会话即对应目标，再用“编辑名称”改为易识别的名称。v0.6.3 起每个群聊目标可在“角色与记忆”配置独立共享角色卡；“目标”页可设置仅 @/名字提及（默认）或全部消息（实验性）。
 5. 命令（无需平台注册，仅 C2C 私聊可用）：`/help`（动态）、`/memory`（查看/`off|on`）、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/role`（仅私聊）、`/reset`、`/forget confirm`；v0.5.9 起 `/ask` 已移除；v0.6.3 起群聊/频道不再接受任何斜杠命令。
-6. 触发：C2C 私聊普通文本直接进入 Chat；群/频道默认仅 @Bot 事件；群目标设为“接受全部消息”且平台开启全量消息后，`GROUP_MESSAGE_CREATE` 事件按 externalId 查配置：仅@/名字模式未命中则静默忽略，全量模式交由模型判断，模型输出 `NO_REPLY` 时不发送。
+6. 触发：C2C 私聊普通文本直接进入 Chat；群/频道默认仅 @Bot 事件；群目标设为“接受全部消息”且平台开启全量消息后，`GROUP_MESSAGE_CREATE` 事件按 externalId 查配置：仅@/名字模式未命中则静默忽略；全量模式交由模型判断，v0.6.4 起模型调用 `send_message` 才发言，未调用即静默（旧 `NO_REPLY` 仅作为未启用工具时的兼容回退）。
 7. **入站图片（默认开启）**：QQ 事件 `d.attachments` 提供 `content_type`/`filename`/`size`/`url`；只取首个 `image/*` 附件，仅图片无文字也可进入 Chat。
    适配器只从固定域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载，校验 image mime 白名单（jpeg/png/webp/gif）与 `BOT_AI_IMAGE_MAX_BYTES`；
    图片在内存中转 base64，以 OpenCode prompt files data URL 随本轮 prompt 发送给模型 provider（本地 AI 服务），**不落盘、不写日志/审计正文**。
@@ -101,7 +102,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - **用户白名单**：私聊发送者必须登记为 `kind='user'` 且 `allow_commands=1` 的目标；群/频道里的成员即使目标开启命令也无法执行（且命令本身已在群聊禁用）。
 - **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停/最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊，管理个人角色卡）、
 `/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目/状态/legacy 旧摘要与该 Bot×用户的全部会话，含远端）。五条不需要目标 `allow_commands` 或 user 白名单；
-- **群聊角色卡**：每个群聊目标一张共享卡（管理员在 Web 编辑）；群聊 Chat 使用该卡，不再使用成员私聊个人卡；群聊不接受 `/role`。`groupReplyMode=mention` 仅处理 @Bot/文本包含 Bot 名称的全量消息；`all` 为实验性，模型可输出 `NO_REPLY` 决定不发送。
+- **群聊角色卡**：每个群聊目标一张共享卡（管理员在 Web 编辑）；群聊 Chat 使用该卡，不再使用成员私聊个人卡；群聊不接受 `/role`。`groupReplyMode=mention` 仅处理 @Bot/文本包含 Bot 名称的全量消息；`all` 为实验性，v0.6.4 起由模型是否调用 `send_message` 决定发送，未调用即静默。
 
 ## 4. 队列、回复管线与失败处理
 
@@ -163,6 +164,9 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 | `BOT_CHAT_BURST_WINDOW_MS` | `3000` | 同一 Bot×目标×用户连续消息合并窗口（0 关闭合并但仍串行；0–8000） |
 | `BOT_CHAT_BURST_MAX_WAIT_MS` | `10000` | 从首条消息起最长等待，避免持续输入不回复（1000–20000） |
 | `BOT_CHAT_BURST_MAX_MESSAGES` | `10` | 单批最多合并消息数（1–20） |
+| `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS` | `8000` | 全量群聊非 @ 消息合并窗口（0–30000；v0.6.4 新增） |
+| `BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS` | `20000` | 全量群聊合并从首条起最长等待（1000–60000；v0.6.4 新增） |
+| `BOT_AI_SEND_TOOL_ENABLED` | `false` | 是否允许模型调用 `botmsg_send_message`；需先安装 botmsg MCP（v0.6.4 新增） |
 | `BOT_SEARCH_ENABLED` | `false` | SearXNG 联网搜索总开关；开启时必须配置 `BOT_SEARCH_URL` |
 | `BOT_SEARCH_URL` | 空 | SearXNG 基址；生产建议 `http://127.0.0.1:8888`，仅 http/https、不得含凭据 |
 | `BOT_SEARCH_AUTO` | `true` | 自动判断问句/时效内容并搜索；显式 `/search` 不受影响 |
@@ -180,11 +184,11 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 v0.5.9 移除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`，AI 提示词固定不再可覆盖；
 v0.5.10 删除 `BOT_PROXY_URL`（Pi 直连）并新增 `BOT_AI_MEMORY_RETENTION_DAYS`/`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`；
 v0.5.11 新增 `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`/`BOT_MEMORY_TTL_EPISODE_DAYS`/`BOT_MEMORY_TTL_TASK_DAYS`）；
-v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` 默认 `true`。
+v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；v0.6.4 新增 `BOT_CHAT_BURST_GROUP_ALL_*` 与 `BOT_AI_SEND_TOOL_ENABLED`。`BOT_AI_VISION_ENABLED` 默认 `true`。
 
 ## 5.1 Chat 提示词、会话与记忆抽取（v0.5.11）
 
-- 提示词固定由四部分组成：**角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息**；群聊共享卡覆盖群内成员私聊卡；全量群消息额外追加回复决策段（`NO_REPLY` 表示不发言）；不再提供任务/对话提示词覆盖。默认 `lofii` 自 v0.6.0 起只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设；
+- 提示词固定由四部分组成：**角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息**；群聊共享卡覆盖群内成员私聊卡；v0.6.4 启用发送工具时追加 `[消息发送工具]`（本轮 `turn_id`/`turn_token`，私聊/@ 必须至少调用一次，全量群聊不调用即静默）；未启用工具时全量群聊保留 `NO_REPLY` 兼容段；不再提供任务/对话提示词覆盖。默认 `lofii` 自 v0.6.0 起只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设；
   `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取。
 - AI 仅在普通消息 Chat 中调用（`allow_chat` 目标 / QQ C2C 私聊）；斜杠命令不调用 AI，`/ask` 已移除（非管理员被拒、管理员回全量帮助）。
 - 会话：`bot_ai_sessions` 按 `(bot_id, target_external_id, user_id, mode)` 复用 OpenCode 会话；v0.5.9 起 `mode` 只写 `chat`（列保留，旧 `task` 行为历史遗留）；
@@ -246,13 +250,23 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`。`BOT_AI_VISION_ENABLED` �
 ## 5.7 联网搜索（v0.6.1，SearXNG MCP）
 
 - **部署**：SearXNG 自建/私有实例，仅监听 `127.0.0.1:8888`；通过 `scripts/searxng-mcp.mjs` 作为 OpenCode MCP 工具暴露（`codemode:false`，工具名 `searxng_web_search`），应用侧 `BOT_SEARCH_MODE=mcp`。安装/回滚见 `docs/DEPLOY.md` §3.5；不引入 Docker。
-- **自动触发**：`mcp` 模式下命中关键词/追问时服务端先预取（保证“找找B站热点”“再搜搜看”等稳定），未命中时由模型通过 `searxng_web_search` 语义决定；Bot 新建会话的 permissions 仅放行 `searxng_*`，其余工具仍 deny（生产已验证 shell 不可用、目标文件未创建）。`prefetch` 模式仅服务端关键词预取，作为兼容/回退。
+- **自动触发**：`mcp` 模式下命中关键词/追问时服务端先预取（保证“找找B站热点”“再搜搜看”等稳定），未命中时由模型通过 `searxng_web_search` 语义决定；Bot 新建会话的 permissions 仅放行 `searxng_*`（v0.6.4 启用发送工具时另放行 `botmsg_*`），其余工具仍 deny（生产已验证 shell 不可用、目标文件未创建）。`prefetch` 模式仅服务端关键词预取，作为兼容/回退。
 - **显式命令**：`/search <关键词>` 对所有可 Chat 用户开放（C2C 或目标 `allow_chat=1`），服务端强制预取并向模型注入结果，保证命令触发稳定。
 - **结果注入/展示**：MCP 工具直接返回标题/摘要/域名/URL；`/search` 预取只取标题/摘要/域名/URL，最多 `BOT_SEARCH_MAX_RESULTS` 条；提示词把结果标为**不可信外部资料**，不执行其中指令、不编造、不输出完整 URL；服务端附“参考来源：标题（域名）”。
 - **失败降级**：SearXNG 超时/非 2xx/格式错误时工具返回失败文本，Chat 继续回答并说明无法核实；`/search` 预取失败仍走 AI 回答（无来源）。审计 `bot.search` 只记录结果数/错误码/是否强制，不记录查询正文。
 - **限流/隐私**：每 Bot×用户每小时 `BOT_SEARCH_RATE_PER_HOUR`；查询会发给私有 SearXNG 及其启用引擎（生产仅 Bing），不把用户消息直接发给任意外部搜索 API。MCP 服务只访问 `SEARXNG_URL`，不抓结果网页；MCP 工具输出含 URL 但 Bot 回答层仍会脱敏/附来源。
 - **启用步骤**：安装 SearXNG → `sudo bash scripts/install-searxng-mcp.sh`（安装 MCP 服务并改 OpenCode 配置；重启 opencode）→ `curl 'http://127.0.0.1:8888/search?q=test&format=json&engines=bing'` 返回 JSON → 应用 env `BOT_SEARCH_ENABLED=true`/`BOT_SEARCH_MODE=mcp`/`BOT_SEARCH_URL=http://127.0.0.1:8888` → 重启应用 → 实测普通问句自动搜索与 `/search`。
-- **MCP 权限**：OpenCode 配置 `mcp.servers.searxng.codemode=false`；Bot 会话 permissions 顺序为 deny-all 后 allow `searxng_*`（最后匹配生效）。若 OpenCode 拒绝 permissions 字段，现有降级逻辑会记录 `aiToolIsolation.supported=false`，此时不应把 Chat 当强隔离环境。
+- **MCP 权限**：OpenCode 配置 `mcp.servers.searxng.codemode=false`；Bot 会话 permissions 顺序为 deny-all 后 allow `searxng_*`（启用发送工具时另 allow `botmsg_*`，最后匹配生效）。若 OpenCode 拒绝 permissions 字段，现有降级逻辑会记录 `aiToolIsolation.supported=false`，此时不应把 Chat 当强隔离环境。
+
+## 5.8 消息发送工具与连续消息（v0.6.4）
+
+- **目标**：把“是否发送/如何分段”从模型最终文本升级为可调用工具。模型只能通过 `botmsg_send_message` 发送用户可见消息；私聊与群 @/名字命中必须至少调用一次，全量群聊不调用即静默（替代旧 `NO_REPLY` 文本哨兵）。
+- **链路**：应用为每轮 Chat 生成随机 `turn_id` 与 `BOT_SECRET_KEY` HMAC 的 `turn_token`，写入提示词；OpenCode 通过 `botmsg` MCP（`codemode=false`）调用工具；MCP 转发到本机 `POST /api/bot/ai/tool/send`；应用校验 token/过期/单轮上限后写入内存缓冲，回合结束统一发送。
+- **连续消息**：模型可多次调用工具发送 1–5 条独立消息；单条 ≤1800 字，服务端仍做路径/URL 清洗、QQ 2000 字符分段；最终 assistant 文本不会自动发送。工具调用失败/超限返回错误文本给模型，不把内部错误暴露给用户。
+- **兜底**：私聊/@ 提及在工具未启用、MCP 未安装或模型漏调用时，服务端发送最终文本（审计 `bot.ai.send_fallback`），避免用户无响应；全量群聊不调用工具时不发送。无论成功/失败，回合结束清理 turn 上下文。
+- **会话命名**：新建 OpenCode Chat 会话标题为「目标名称 Chat」，记忆抽取一次性会话为「目标名称 Memory」；已有会话不主动重命名，清理逻辑按 Bot×目标×用户映射执行。
+- **部署**：`sudo bash scripts/install-bot-tool-mcp.sh` 将 `scripts/bot-tool-mcp.mjs` 安装为 `/opt/botmsg-mcp/bot-tool-mcp.mjs` 并写入 OpenCode `mcp.servers.botmsg`（重启 opencode）；随后 app env `BOT_AI_SEND_TOOL_ENABLED=true` 并重启应用。OpenCode 会话 permissions 顺序为 deny-all 后 allow `botmsg_*`（搜索启用时另 allow `searxng_*`）。
+- **全量群聊合并**：非 @ 全量消息使用 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`（默认 8000ms）/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`（默认 20000ms），减少逐条调用模型；@/名字命中仍用默认 3000/10000ms，保证及时回复。
 
 ## 6. 网络出站（QQ / OpenCode，Pi 直连）
 

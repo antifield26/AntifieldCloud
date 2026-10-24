@@ -428,3 +428,32 @@
 - **残余处理**：`/api/auth/me` 增加旧父域 Cookie 清理；生产 deny-all 工具隔离负路径验证通过（无 tool 段、无文件创建）。仍保留 `__Host-` 前缀、SSO ticket IP/UA 绑定、记忆过滤启发式等后续项。
 - 证据：服务端 `backups-import-verify`/`http-hardening` 用例、前端 `backups`/`BackupStatusCard` 用例；原始记录见 `.local/audit/round6-residuals.md`。
 - **部署与复核（2026-10-23）**：release `20261023T063020Z`/commit `23d5ec4`；healthz v0.6.1/schema14；smoke 16/16 与 24/24（0 警告）；生产 25 个 acked 归档（文件均已被 PC 清理）复核显示已确认，用户刷新 Dashboard/备份页确认不再误报；部署后备份/密钥包拉取（168622 B / secretsOk=true）。
+
+## v0.6.4 已知问题与遗留事项复核（2026-10-24）
+
+### 范围与结论
+
+- 复核对象：v0.6.0 §6 残余风险、v0.6.1 补丁残余、v0.6.3 全量群消息平台配置问题，以及 `docs/ROADMAP.md` 未完成的 P3/历史欠项。
+- 结论：未发现新的未关闭 P0/P1；v0.6.4 不新增 schema 迁移（保持 v16）。本轮关闭 5 项可安全收敛的问题，其余按下表明确保留并记录理由。
+- 测试边界不变：QQ 适配器、OpenCode、Cloudflare 等平台路径仍以进程内夹具/mock 为主，真实平台负路径需部署后联调；不把 mock 全绿等同于线上通过。
+
+### 本轮处理
+
+| 项目 | 来源 | 处置 |
+| --- | --- | --- |
+| 全量群消息已开启但非 @ 消息无响应 | v0.6.3 验收发现 | 根因在 QQ 平台侧：需同时开启“接收所有消息”、订阅 `GROUP_MESSAGE_CREATE`、群主设置“获取群内全部消息”；v0.6.3 已补 UI/文档提示，v0.6.4 复核确认生产可用，非代码缺陷 |
+| `NO_REPLY` 文本哨兵脆弱 | v0.6.3 设计 | 升级为 `botmsg_send_message` 工具：模型不调用工具即不发送；私聊/@ 必须至少调用一次，漏调用时服务端兜底发送最终文本并审计 `bot.ai.send_fallback`；未启用工具的部署保留旧 `NO_REPLY` 兼容路径 |
+| 全量群聊逐条调用模型成本高 | v0.6.4 需求 | 新增 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`，仅对非 @ 全量消息延长合并；@/名字命中仍走默认窗口 |
+| 新会话标题不可管理 | v0.6.4 需求 | 新建 Chat/Memory 会话命名为「目标名称 Chat/Memory」；已有会话不重命名；C2C 未登记用户回退入站用户名/短 ID |
+| SSO ticket 未绑定客户端 | v0.6.1 残余 | 绑定 User-Agent SHA-256 摘要（可选；签发/消费不一致即失败并一次性销毁）；IP 不绑定，原因是移动网络切换与 Cloudflare 边缘出口 IP 可能变化，绑定会导致正常 SSO 失败；仍保留一次性/60s/aiOrigin/no-store |
+| 记忆敏感过滤启发式 | v0.6.1 残余 | 新增 Google `AIza`、GitLab `glpat-`、npm token、Stripe `sk_live_`、AWS secret key、Azure `AccountKey`、带凭据的数据库 URL 模式；仍为启发式，读取侧继续过滤旧条目 |
+| Bot 工具隔离可验证性 | v0.6.0 残余 | 发送工具只放行 `botmsg_*`，搜索只放行 `searxng_*`，其余 deny；工具调用必须携带本轮 HMAC token，单轮最多 5 条、3 分钟过期；permissions 降级仍通过 `aiToolIsolation` 暴露 |
+
+### 明确保留（不本版处理）
+
+1. **`__Host-` Cookie 前缀**：需要同时迁移 Cookie 名、前端读取、SSO 代理与回滚路径；且本地 loopback HTTP 开发环境没有 Secure 上下文，直接加前缀会影响开发登录。当前 host-only + 清理旧父域 Cookie 已覆盖主要跨子域风险，下一版本单独评估。
+2. **SSO ticket IP 绑定**：见上，UA 已绑定；IP 在移动网络/Cloudflare 边缘场景不稳定，强行绑定会破坏正常登录，记录为已评估不采用。
+3. **SSH/sudo、RCON 监听、单 SD/LUKS、Cloudflare 明文、mock-only 平台负路径**：按 `docs/SECURITY.md` §4 既有残余管理，用户已选择仅文档披露/接受。
+4. **DR-1 增量水位、DR-7 导入归档保留、DR-22 告警跨周期重投、DR-23 锁心跳、DR-17 listTrash 性能等 P3**：本次未触及对应模块，不扩大 v0.6.4 范围；若后续改动备份/告警模块优先回看。
+5. **工具调用模型行为非强保证**：私聊/@ 的兜底保证“有回复”，但不保证模型一定调用工具；生产验收应观察 `bot.ai.send`/`bot.ai.send_fallback` 审计与真实 QQ 消息。
+

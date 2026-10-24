@@ -24,6 +24,14 @@ interface BurstState<T> {
   firstAt: number
   timer: NodeJS.Timeout | null
   running: boolean
+  windowMs: number
+  maxWaitMs: number
+}
+
+/** 单次入队可覆盖默认窗口（例如全量群聊使用更长合并时间）。 */
+export interface BurstTiming {
+  windowMs?: number
+  maxWaitMs?: number
 }
 
 export class BurstMerger<T> {
@@ -35,14 +43,25 @@ export class BurstMerger<T> {
     this.options = options
   }
 
-  enqueue(key: string, item: T): void {
+  enqueue(key: string, item: T, timing: BurstTiming = {}): void {
     let state = this.states.get(key)
     if (!state) {
-      state = { items: [], firstAt: Date.now(), timer: null, running: false }
+      state = {
+        items: [],
+        firstAt: Date.now(),
+        timer: null,
+        running: false,
+        windowMs: timing.windowMs ?? this.options.windowMs,
+        maxWaitMs: timing.maxWaitMs ?? this.options.maxWaitMs,
+      }
       this.states.set(key, state)
+    } else {
+      // 同一会话中途切换模式时，用最新时序覆盖后续批次。
+      if (timing.windowMs !== undefined) state.windowMs = timing.windowMs
+      if (timing.maxWaitMs !== undefined) state.maxWaitMs = timing.maxWaitMs
     }
     state.items.push(item)
-    if (this.options.windowMs <= 0 || state.items.length >= this.options.maxItems) {
+    if (state.windowMs <= 0 || state.items.length >= this.options.maxItems) {
       this.trigger(key, state)
       return
     }
@@ -100,7 +119,7 @@ export class BurstMerger<T> {
   private schedule(key: string, state: BurstState<T>): void {
     if (state.timer) clearTimeout(state.timer)
     const now = Date.now()
-    const deadline = Math.min(now + Math.max(0, this.options.windowMs), state.firstAt + this.options.maxWaitMs)
+    const deadline = Math.min(now + Math.max(0, state.windowMs), state.firstAt + state.maxWaitMs)
     const delay = Math.max(0, deadline - now)
     state.timer = setTimeout(() => {
       state.timer = null
@@ -144,7 +163,7 @@ export class BurstMerger<T> {
       this.inflight.delete(task)
       state.running = false
       if (state.items.length > 0) {
-        if (this.options.windowMs <= 0) void this.flush(key, state)
+        if (state.windowMs <= 0) void this.flush(key, state)
         else this.schedule(key, state)
       } else {
         this.states.delete(key)

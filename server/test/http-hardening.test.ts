@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { request as httpRequest } from 'node:http'
 import { buildApp } from '../src/app.ts'
 import { createSession } from '../src/auth/sessions.ts'
+import { hashUserAgent } from '../src/auth/service.ts'
 import { cleanupDir, cookieHeader, currentCode, parseSetCookies, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
 
 interface Fixture {
@@ -257,7 +258,7 @@ test('AI SSO：/api/auth/ai-ticket 鉴权、next 同源校验、302 与一次性
     assert.equal(unauth.statusCode, 401)
 
     const session = await login(fx)
-    const headers = { host: 'app.test', cookie: session.cookie }
+    const headers = { host: 'app.test', cookie: session.cookie, 'user-agent': 'sso-test-agent' }
     for (const next of ['', 'https://evil.test/', 'https://ai.test.evil.test/', 'https://ai.test@evil.test/', 'http://ai.test/']) {
       const bad = await fx.context.app.inject({
         method: 'GET',
@@ -281,9 +282,9 @@ test('AI SSO：/api/auth/ai-ticket 鉴权、next 同源校验、302 与一次性
     assert.match(location, /^https:\/\/ai\.test\/__af\/sso\/[A-Za-z0-9_-]{20,128}\?next=%2Fsession%2Fabc%3Fx%3D1$/)
     const ticket = /\/__af\/sso\/([A-Za-z0-9_-]+)/.exec(location)?.[1]
     assert.ok(ticket)
-    // ticket 一次性：服务层直接消费一次成功，再次失败。
-    assert.ok(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test'))
-    assert.equal(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test'), null)
+    // ticket 一次性且绑定 UA：同一 UA 直接消费一次成功，再次失败。
+    assert.ok(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test', Date.now(), hashUserAgent('sso-test-agent')))
+    assert.equal(fx.context.auth.consumeAiSsoTicket(ticket, 'https://ai.test', Date.now(), hashUserAgent('sso-test-agent')), null)
   } finally {
     await fx.close()
   }

@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.6.3）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.6.4）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -16,6 +16,7 @@
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
+- **v0.6.4 部署（待执行）**：schema 保持 **v16**（无迁移）；`deploy.ps1 -PiHost <直连 IP> -ExpectedSchemaVersion 16`；部署后配置 `BOT_AI_SEND_TOOL_ENABLED=true` 与全量群聊合并窗口，运行 `scripts/install-bot-tool-mcp.sh` 安装 `botmsg` MCP 并重启 opencode；smoke 使用 `-ExpectedVersion 0.6.4 -ExpectedSchemaVersion 16`。回滚可切回 v0.6.3 release（同 schema 16）并关闭 `BOT_AI_SEND_TOOL_ENABLED`。
 - 生产现状：**v0.6.3 已发布**（生产 release `20261023T142411Z`/commit `7ac1d27`，schema **v16**；annotated Tag `v0.6.3`；GitHub Release [AntifieldCloud v0.6.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.3)）。迁移前快照 `db-predeploy-20261023T142445335Z.sqlite` sha256 `256e34ac…3098`；`/healthz` v0.6.3/schema16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过；部署后备份 `snapshot-20261023T142611502Z-inc.tar.gz` 195705 bytes/sha256 `89cbf7c6…c449`，secrets=ok；用户 2026-10-23 23:09 CST 验收通过。上一发布 v0.6.2（release `20261023T123055Z`/commit `77e42c7`，schema v15）。
 - **v0.6.3 部署**：`deploy.ps1 -PiHost <直连 IP>` 会自动做迁移前 DB 快照并执行迁移 16（新增 `bot_group_roles`）；预期 `/healthz` = `{"ok":true,"version":"0.6.3","schemaVersion":16}`；smoke 使用 `-ExpectedVersion 0.6.3 -ExpectedSchemaVersion 16`。迁移不可逆：回滚需恢复 `db-predeploy-20261023T142445335Z.sqlite` 并切回 v0.6.2 release `20261023T123055Z`（旧版不支持 schema v16）。
 - **v0.6.0 已部署并验收通过**：最终 release `20261023T053539Z`/commit `6349617`；`/healthz` version 0.6.0/schema 14；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill schema14 通过；部署后备份+密钥包已拉取；用户确认验收通过。详见 §3.0。
@@ -346,6 +347,25 @@ sudo systemctl restart antifieldcloud
 - 验证：SearXNG `systemctl is-active searxng` = active；JSON 返回 `results` 数组；应用重启后 `/healthz` normal；QQ 发 `/search 关键词` 或“最近有什么新闻？”应有 AI 回答 + `参考来源`。
 - 回滚：`sudo systemctl disable --now searxng`（或设 `BOT_SEARCH_ENABLED=false` 后重启应用）；不需要恢复 schema/DB；卸载可选删除 `/opt/searxng`、`/opt/searxng-venv`、`/etc/searxng`。
 - 故障：`journalctl -u searxng -n 80 --no-pager`；若 `Permission denied /etc/searxng/settings.yml` 检查目录为 `root:searxng 0750`、文件 `0640`；若引擎全 timeout，确认 `BOT_SEARCH_ENGINES=bing` 且 `cn.bing.com` 可达；不要开启被墙引擎。
+
+### 3.6 Bot 消息发送 MCP（v0.6.4）
+
+```bash
+# 1) 安装 MCP 服务并更新 OpenCode 配置（重启 opencode，不影响 Minecraft）
+sudo bash scripts/install-bot-tool-mcp.sh
+# 2) 应用 env（/etc/antifieldcloud/env）追加/修改，然后重启应用
+BOT_AI_SEND_TOOL_ENABLED=true
+BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000
+BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000
+sudo systemctl restart antifieldcloud
+```
+
+- 安装内容：`/opt/botmsg-mcp/bot-tool-mcp.mjs`（root:root 0755）；OpenCode `mcp.servers.botmsg`（local、`codemode=false`、`BOT_TOOL_URL=http://127.0.0.1:3000/api/bot/ai/tool/send`）；安装脚本幂等并重启 `opencode.service`。
+- 应用侧 `BOT_AI_SEND_TOOL_ENABLED=true` 后新建/已有 Chat 会话会获得 `botmsg_*` 工具权限；工具回调路由只接受本轮 HMAC token，无需额外共享密钥，`BOT_SECRET_KEY` 必须存在。
+- 验证：`curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:3000/api/bot/ai/tool/send -H 'content-type: application/json' -d '{"turn_id":"x","turn_token":"x","text":"x"}'` 应为 `404`（无活跃回合）；OpenCode 会话工具列表应出现 `botmsg_send_message`；真实私聊消息应产生多条 QQ 消息并审计 `bot.ai.send`。
+- 回滚：`BOT_AI_SEND_TOOL_ENABLED=false` 并重启应用即可恢复旧的最终文本/`NO_REPLY` 行为；如需移除 OpenCode 工具，删除 `mcp.servers.botmsg` 后重启 opencode；不需要恢复 schema/DB。
+- 故障：`journalctl -u opencode -n 80 --no-pager` 查看 MCP 启动错误；`journalctl -u antifieldcloud -n 80 --no-pager | grep -E 'bot.ai|botmsg|BOT_AI_SEND'`；确认 app 监听 `127.0.0.1:3000` 且 `/api/bot/ai/tool/send` 未被 Cloudflare Access 拦截（本机 MCP 不应经公网）。
+
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 
 在**交互式 SSH** 中运行（不要把密码/二维码发到聊天）：

@@ -11,7 +11,7 @@ import type { Socket } from 'node:net'
 import httpProxy from 'http-proxy'
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
-import { isLoopbackAddress, type AuthService } from '../auth/service.ts'
+import { hashUserAgent, isLoopbackAddress, type AuthService } from '../auth/service.ts'
 import { readSessionToken, SESSION_COOKIE } from '../auth/cookies.ts'
 import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
 import { requestMeta } from '../http/request-meta.ts'
@@ -349,7 +349,12 @@ export class OpenCodeProxy {
       })
       return true
     }
-    const sessionToken = this.auth.consumeAiSsoTicket(match[1]!, this.config.aiOrigin)
+    const sessionToken = this.auth.consumeAiSsoTicket(
+      match[1]!,
+      this.config.aiOrigin,
+      Date.now(),
+      hashUserAgent(request.headers['user-agent']),
+    )
     if (!sessionToken) {
       this.auditSso('invalid_ticket', remoteIp)
       reply.code(401).header('cache-control', 'no-store').send({

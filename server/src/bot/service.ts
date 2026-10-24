@@ -5,6 +5,7 @@
  * 发布只允许登录管理员调用；通知/命令输出不得包含内部路径、URL 或密钥；记忆管理接口只返回元数据，不返回 key/value。
  */
 import type { DatabaseSync } from 'node:sqlite'
+import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { Config } from '../config.ts'
 import { AppError, badRequest, notFound } from '../util/errors.ts'
 import { getMeta, setMeta } from '../db.ts'
@@ -49,7 +50,7 @@ import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { describeBotError } from './errors.ts'
 import { formatAiReply } from './format.ts'
 import { BotMemoryStore } from './memory.ts'
-import { buildBotPrompt } from './prompts.ts'
+import { buildBotPrompt, type BotSendToolPrompt } from './prompts.ts'
 import { BurstMerger } from './burst.ts'
 import {
   formatSearchPromptContext,
@@ -89,6 +90,11 @@ const MAX_TARGETS_PER_BOT = 100
 const MAX_INBOUND_TARGETS_PER_BOT = 500
 /** QQ 单条文本上限；发布内容在入队前先校验。 */
 const PUBLISH_TEXT_MAX = BOT_TEXT_LIMITS.qq
+/** v0.6.4：模型消息发送工具名与单轮上限。 */
+const AI_SEND_TOOL_NAME = 'botmsg_send_message'
+const AI_SEND_MAX_MESSAGES = 5
+const AI_SEND_MAX_TEXT = 1800
+const AI_SEND_TURN_TTL_MS = 3 * 60_000
 /** 诊断事件结果枚举；service 与 route 共用校验。 */
 const BOT_EVENT_OUTCOMES = ['received', 'ok', 'denied', 'rate_limited', 'ignored', 'error'] as const
 
@@ -96,6 +102,21 @@ interface ChatBurstItem {
   bot: BotRow
   result: Extract<InboundVerification, { kind: 'chat' }>
   text: string
+}
+
+/**
+ * 一轮 AI 对话的消息发送上下文：模型通过 MCP 工具把消息写入缓冲区，
+ * 回合结束后由服务端统一发送（避免工具调用中途部分外发）。
+ * turnToken 由 BOT_SECRET_KEY 做 HMAC，工具路由只认本轮 token。
+ */
+interface AiSendTurn {
+  id: string
+  token: string
+  targetExternalId: string
+  targetKind: BotTargetRow['kind']
+  userId: string
+  messages: string[]
+  expiresAtMs: number
 }
 
 interface WebSearchContext {
@@ -341,6 +362,8 @@ export class BotService {
   private readonly groupRoles: BotGroupRoleStore
   private readonly connectivity: BotConnectivityMonitor
   private readonly chatBursts: BurstMerger<ChatBurstItem>
+  /** 活跃的 AI 消息发送回合（只存内存；回合结束即清理）。 */
+  private readonly aiSendTurns = new Map<string, AiSendTurn>()
   private readonly webSearch: WebSearchClient | null
   private timer: NodeJS.Timeout | null = null
   private stopped = false
@@ -1520,6 +1543,44 @@ export class BotService {
   }
 
   /** 写入入站事件（按 bot×平台事件 ID 去重）；返回是否首次插入。 */
+  /**
+   * v0.6.4：模型消息发送工具入口。工具只把文本写入本轮缓冲，回合结束后统一发送；
+   * 路由认证依赖 BOT_SECRET_KEY 派生的 turn_token，不需要额外共享密钥。
+   */
+  handleAiSendTool(input: unknown): { status: number; body: unknown } {
+    if (!this.config.botEnabled || !this.config.botAiSendToolEnabled || !this.key || !this.deps.ai) {
+      return { status: 404, body: { error: { code: 'not_found' } } }
+    }
+    const body = input !== null && typeof input === 'object' && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {}
+    const turnId = typeof body.turn_id === 'string' ? body.turn_id.trim().slice(0, 64) : ''
+    const turnToken = typeof body.turn_token === 'string' ? body.turn_token.trim().slice(0, 128) : ''
+    const text = cleanText(body.text, AI_SEND_MAX_TEXT)
+    if (!turnId || !turnToken) {
+      return { status: 400, body: { error: { code: 'invalid_turn' } } }
+    }
+    if (!text) {
+      return { status: 400, body: { error: { code: 'empty_text' } } }
+    }
+    const turn = this.aiSendTurns.get(turnId)
+    if (!turn) return { status: 404, body: { error: { code: 'turn_not_found' } } }
+    const actual = Buffer.from(turnToken)
+    const expected = Buffer.from(turn.token)
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      return { status: 403, body: { error: { code: 'invalid_turn_token' } } }
+    }
+    if (turn.expiresAtMs <= Date.now()) {
+      this.aiSendTurns.delete(turnId)
+      return { status: 410, body: { error: { code: 'turn_expired' } } }
+    }
+    if (turn.messages.length >= AI_SEND_MAX_MESSAGES) {
+      return { status: 429, body: { error: { code: 'send_limit' } } }
+    }
+    turn.messages.push(text)
+    return { status: 200, body: { ok: true, index: turn.messages.length } }
+  }
+
   private insertEvent(
     botId: string,
     eventId: string,
@@ -1729,11 +1790,23 @@ export class BotService {
       ...(target?.kind === 'group' ? { replyMode: target.chat_trigger } : {}),
     })
     // 连续消息合并 + 同会话串行由 BurstMerger 负责；Webhook 仍立即 ack。
-    this.chatBursts.enqueue(this.chatBurstKey(bot.id, result.targetExternalId, result.userId), {
-      bot,
-      result: effective,
-      text,
-    })
+    // 全量群消息使用更长窗口，减少对非 @ 闲聊逐条调用 AI 的次数；@/名字命中的消息仍即时回复。
+    const burstTiming =
+      effective.chatTrigger === 'all'
+        ? {
+            windowMs: this.config.botChatBurstGroupAllWindowMs,
+            maxWaitMs: this.config.botChatBurstGroupAllMaxWaitMs,
+          }
+        : undefined
+    this.chatBursts.enqueue(
+      this.chatBurstKey(bot.id, result.targetExternalId, result.userId),
+      {
+        bot,
+        result: effective,
+        text,
+      },
+      burstTiming,
+    )
     return { status: 200, body: ack() }
   }
 
@@ -2057,6 +2130,58 @@ export class BotService {
     }
   }
 
+  /** 开启一轮消息发送工具上下文；工具未启用/无 Bot 密钥时返回 null。 */
+  private openAiSendTurn(result: Extract<InboundVerification, { kind: 'chat' }>): AiSendTurn | null {
+    if (!this.config.botAiSendToolEnabled || !this.key || !this.deps.ai) return null
+    const now = Date.now()
+    for (const [id, turn] of this.aiSendTurns) {
+      if (turn.expiresAtMs <= now) this.aiSendTurns.delete(id)
+    }
+    const id = newId()
+    const turn: AiSendTurn = {
+      id,
+      token: createHmac('sha256', this.key).update(id).digest('base64url'),
+      targetExternalId: result.targetExternalId,
+      targetKind: result.targetKind,
+      userId: result.userId,
+      messages: [],
+      expiresAtMs: now + AI_SEND_TURN_TTL_MS,
+    }
+    this.aiSendTurns.set(id, turn)
+    return turn
+  }
+
+  private takeAiSendMessages(turn: AiSendTurn | null): string[] {
+    if (!turn) return []
+    const messages = turn.messages
+    turn.messages = []
+    return messages
+  }
+
+  private closeAiSendTurn(turn: AiSendTurn | null): void {
+    if (turn) this.aiSendTurns.delete(turn.id)
+  }
+
+  /** 把工具缓冲的消息按顺序发送；来源/图片说明附在最后一条。 */
+  private async sendAiToolMessages(
+    result: Extract<InboundVerification, { kind: 'chat' }>,
+    messages: string[],
+    sourceNote: string,
+    imageNote: string,
+  ): Promise<void> {
+    const formatted = messages
+      .map((message) => formatAiReply(this.sanitizeAiText(message)))
+      .filter((message) => message.length > 0)
+    if (formatted.length === 0) {
+      throw new AppError(502, 'bot_ai_send_empty', '消息发送内容为空')
+    }
+    const lastIndex = formatted.length - 1
+    formatted[lastIndex] = `${formatted[lastIndex]}${sourceNote}${imageNote}`.trim()
+    for (const message of formatted) {
+      await result.reply(message)
+    }
+  }
+
   /**
    * 执行一批连续消息：合并文本、串行调用 AI、只回复一次。
    * 同一会话由 BurstMerger 串行；不同会话可并行。
@@ -2079,6 +2204,7 @@ export class BotService {
         })
       }
     }
+    let sendTurn: AiSendTurn | null = null
     try {
       const chatRetry = this.chatLimiter.hit(`${bot.id}:${result.userId}`)
       if (chatRetry > 0) {
@@ -2120,6 +2246,23 @@ export class BotService {
         return
       }
       const searchContext = search.context ? formatSearchPromptContext(search.context.query, search.context.results) : undefined
+      const imageNote = prepared.kind === 'ok' && prepared.degraded && merged ? `\n${IMAGE_DEGRADED_NOTE}` : ''
+      const sourceNote = search.context && search.context.results.length > 0 ? formatSearchSources(search.context.results) : ''
+      const sessionTitle = `${this.targetNameForSession(
+        bot.id,
+        result.targetExternalId,
+        result.userId,
+        result.userName,
+      )} Chat`
+      sendTurn = this.openAiSendTurn(result)
+      const sendToolPrompt: BotSendToolPrompt | undefined = sendTurn
+        ? {
+            turnId: sendTurn.id,
+            turnToken: sendTurn.token,
+            toolName: AI_SEND_TOOL_NAME,
+            required: !silent,
+          }
+        : undefined
       const answer = await this.chatWithAi(
         bot,
         result.userId,
@@ -2130,15 +2273,48 @@ export class BotService {
         searchContext,
         search.context?.results.length ?? 0,
         silent,
+        sessionTitle,
+        sendToolPrompt,
       )
-      if (silent && isNoReplyAnswer(answer)) {
+      const toolMessages = this.takeAiSendMessages(sendTurn)
+      if (sendTurn) {
+        if (toolMessages.length > 0) {
+          await this.sendAiToolMessages(result, toolMessages, sourceNote, imageNote)
+          const memoryText = toolMessages
+            .map((message) => this.sanitizeAiText(message))
+            .filter(Boolean)
+            .join('\n')
+          if (userText && memoryText) {
+            this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, memoryText)
+          }
+          this.deps.audit('bot.ai.send', `${bot.platform}:${result.targetExternalId}`, {
+            bot: bot.id,
+            user: result.userId.slice(0, 64),
+            messages: toolMessages.length,
+            chars: toolMessages.reduce((sum, message) => sum + message.length, 0),
+          })
+          finishAll('ok', 'chat_tool')
+          return
+        }
+        // 全量群聊未调用工具 = 模型选择不发言（NO_REPLY 的工具化升级）。
+        if (silent) {
+          finishAll('ignored', 'no_reply')
+          return
+        }
+        // 工具不可用/模型漏调用时的兜底：私聊与 @ 提及仍至少发送一条，避免用户无响应。
+        this.deps.audit('bot.ai.send_fallback', bot.id, {
+          target: result.targetExternalId,
+          user: result.userId.slice(0, 64),
+          reason: 'no_tool_call',
+        })
+      }
+      if (!sendTurn && silent && isNoReplyAnswer(answer)) {
         finishAll('ignored', 'no_reply')
         return
       }
-      const plain = this.sanitizeAiText(answer)
+      const fallbackAnswer = sendTurn && isNoReplyAnswer(answer) ? '暂时没回应上来，稍后再试。' : answer
+      const plain = this.sanitizeAiText(fallbackAnswer)
       const formatted = formatAiReply(plain)
-      const imageNote = prepared.kind === 'ok' && prepared.degraded && merged ? `\n${IMAGE_DEGRADED_NOTE}` : ''
-      const sourceNote = search.context && search.context.results.length > 0 ? formatSearchSources(search.context.results) : ''
       const replyText = `${formatted}${sourceNote}${imageNote}`
       if (!replyText) {
         finishAll('ignored', 'empty_reply')
@@ -2159,6 +2335,8 @@ export class BotService {
       }
       finishAll('error', errorShortCode(error))
       if (!silent) await result.reply('暂时没回应上来，稍后再试。').catch(() => undefined)
+    } finally {
+      this.closeAiSendTurn(sendTurn)
     }
   }
 
@@ -2364,6 +2542,8 @@ export class BotService {
     searchContext?: string,
     searchResults = 0,
     replyDecision = false,
+    sessionTitle?: string,
+    sendTool?: BotSendToolPrompt,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     // 结构化记忆按相关性召回；关闭记忆或没有可用条目时不注入。
@@ -2373,7 +2553,7 @@ export class BotService {
       memory: memoryContext.text || undefined,
       searchContext,
       webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext,
-      replyDecision,
+      ...(sendTool ? { sendTool } : { replyDecision }),
       userText: text.slice(0, this.config.botAiMaxPromptChars),
     })
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
@@ -2384,7 +2564,7 @@ export class BotService {
       ...(image ? { image: image.mime.slice(0, 50) } : {}),
       ...(memoryContext.usedItemIds.length > 0 ? { memoryItems: memoryContext.usedItemIds.length } : {}),
       ...(searchContext ? { search: true, searchResults } : {}),
-      ...(replyDecision ? { replyDecision: true } : {}),
+      ...(sendTool ? { sendTool: true } : replyDecision ? { replyDecision: true } : {}),
     })
     let answer: string
     try {
@@ -2393,6 +2573,7 @@ export class BotService {
         targetExternalId,
         userId,
         prompt,
+        ...(sessionTitle ? { sessionTitle } : {}),
         ...(image ? { image } : {}),
       })
     } finally {
@@ -2555,6 +2736,7 @@ export class BotService {
         ops = await this.deps.ai!.extractMemories!({
           botId: bot.id,
           userId,
+          sessionTitle: `${this.targetNameForSession(bot.id, targetExternalId, userId)} Memory`,
           existing,
           legacySummary,
           userText,
@@ -2682,6 +2864,30 @@ export class BotService {
    * 入站目标解析：优先按平台目标 ID；私聊没有独立频道目标时回退到 user 目标（QQ C2C）。
    * 只改变授权/回复目标，不自动创建目标，也不放开未登记用户。
    */
+  /**
+   * 新会话标题使用目标名称 + Chat/Memory，便于在 OpenCode 会话列表中管理。
+   * 未登记 C2C 用户优先使用入站用户名；都没有时使用短 ID 兜底。
+   */
+  private targetNameForSession(
+    botId: string,
+    targetExternalId: string,
+    userId: string,
+    userName?: string | null,
+  ): string {
+    const target = this.db
+      .prepare('SELECT label FROM bot_targets WHERE bot_id = ? AND external_id = ?')
+      .get(botId, targetExternalId) as { label: string } | undefined
+    const label = cleanText(target?.label, 60)
+    if (label) return label
+    const inbound = this.db
+      .prepare('SELECT user_name FROM bot_inbound_targets WHERE bot_id = ? AND target_external_id = ? AND user_id = ?')
+      .get(botId, targetExternalId, userId) as { user_name: string | null } | undefined
+    const name = cleanText(userName ?? inbound?.user_name ?? '', 60)
+    if (name) return name
+    const short = (targetExternalId || userId).slice(-6)
+    return short ? `目标${short}` : 'Bot'
+  }
+
   private inboundTarget(
     botId: string,
     input: { targetExternalId: string; userId: string; isDirect: boolean },

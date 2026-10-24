@@ -606,9 +606,15 @@ BotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|project|t
 `BotMetrics.deliveries.successRate = sent / (sent + failed) × 100`（保留 1 位小数，无尝试时为 0）；`lastError`/`lastErrorHint`/`lastSentAt` 取投递与发布的最近值。
 v0.5.8 起 `BotSummary` 无 `gateway`、`BotTarget` 无旧 `chatTrigger` 字段、`BotPublishJob` 无 `mediaFileIds`；`BotDelivery` 的 `partial` 语义仅针对长文本分段。
 v0.6.3 起 `BotTarget.groupReplyMode` 仅群聊目标可设为 `all`（实验性全量消息），其余目标固定 `mention`；群聊/频道不再执行斜杠命令。
+v0.6.4 起普通消息 Chat 可启用模型消息发送工具：OpenCode 通过 `botmsg` MCP 调用 `botmsg_send_message`，每轮由提示词携带一次性 `turn_id`/`turn_token`；
+应用内部回调 `POST /api/bot/ai/tool/send`（无 session/CSRF，`turn_token` 由 `BOT_SECRET_KEY` HMAC，只写本轮缓冲）接收文本，回合结束由服务端统一发送。
+私聊与 @ 提及必须至少发送一条，模型漏调用时服务端兜底发送最终文本并审计 `bot.ai.send_fallback`；全量群聊未调用工具即静默（替代旧 `NO_REPLY` 文本哨兵）。
+全量群聊非 @ 消息使用 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`（默认 8000）与 `BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`（默认 20000）延长合并窗口。
+新创建的 OpenCode Chat/Memory 会话标题为「目标名称 + Chat/Memory」。
 
 ### 管理端点
 
+- `POST /api/bot/ai/tool/send`（内部工具回调，无 session/CSRF）：body `{turn_id,turn_token,text}`；只接受当前活跃回合的 HMAC token，单轮最多 5 条、单条 ≤1800 字；返回 `{ok:true,index}`，非法/过期/超限分别 `400/403/404/410/429`；文本只进入缓冲，不立即外发。该路由不在 Cloudflare Access bypass 中，生产由本机 MCP 访问 `127.0.0.1`。
 - `GET /api/bots/status` → `BotStatus`（功能关闭时也可读；用于前端判断是否展示配置指引）。
 - `GET /api/bots/connectivity` → `BotConnectivitySnapshot`；需要会话，功能关闭时仍返回当前快照/未检测状态。
 - `POST /api/bots/connectivity/check` → `BotConnectivitySnapshot`；需要会话 + CSRF，30 次/分钟；手动复检外网/QQ 平台（v0.5.10 起无代理端口）。

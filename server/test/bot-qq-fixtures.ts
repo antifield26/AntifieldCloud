@@ -137,12 +137,16 @@ export function signQqEvent(
 export interface AiCall {
   prompt: string
   image?: BotAiImage
+  /** v0.6.4：新会话标题，便于断言目标名称 + Chat。 */
+  sessionTitle?: string
 }
 
 /** 一次结构化记忆抽取调用的输入（用于断言批次内容/旧摘要迁移）。 */
 export interface MemoryExtractInput {
   botId: string
   userId: string
+  /** v0.6.4：新会话标题，便于断言目标名称 + Memory。 */
+  sessionTitle?: string
   existing: BotMemoryItemPrompt[]
   legacySummary: string
   userText: string
@@ -231,10 +235,11 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
     ...(options.aiEnabled
       ? {
           ai: {
-            chat: async (input: { prompt: string; image?: BotAiImage }) => {
+            chat: async (input: { prompt: string; image?: BotAiImage; sessionTitle?: string }) => {
               const call: AiCall = {
                 prompt: input.prompt,
                 ...(input.image ? { image: input.image } : {}),
+                ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
               }
               aiCalls.push(call)
               return aiHandler(call)
