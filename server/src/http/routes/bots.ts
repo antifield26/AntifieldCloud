@@ -192,6 +192,21 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, bots: Bo
     })
   })
 
+  app.get('/api/bots/:id/group-memories', { preHandler: [requireAuth] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const query = asRecord(request.query) ?? {}
+    return bots.listGroupMemories(requiredId(params.id, 'id'), {
+      limit: parsePositiveInt(query.limit, 20, 1, 200),
+      offset: offsetOf(query.offset),
+    })
+  })
+
+  app.delete('/api/bots/:id/group-memories/:scope', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    bots.deleteGroupMemory(requiredId(params.id, 'id'), requiredId(params.scope, 'scope'))
+    return { ok: true }
+  })
+
   app.get('/api/bots/:id/memories/:userId/items', { preHandler: [requireAuth] }, async (request) => {
     const params = request.params as Record<string, string>
     const query = asRecord(request.query) ?? {}

@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   roleSetEnabled: vi.fn(),
   roleRemove: vi.fn(),
   memoriesList: vi.fn(),
+  groupMemoriesList: vi.fn(),
+  groupMemoryRemove: vi.fn(),
   memoryItems: vi.fn(),
   memoryRemoveItem: vi.fn(),
   memoryRemove: vi.fn(),
@@ -68,6 +70,10 @@ vi.mock('../api/client', () => ({
         items: mocks.memoryItems,
         removeItem: mocks.memoryRemoveItem,
         remove: mocks.memoryRemove,
+      },
+      groupMemories: {
+        list: mocks.groupMemoriesList,
+        remove: mocks.groupMemoryRemove,
       },
       metrics: mocks.metrics,
       targets: {
@@ -229,6 +235,8 @@ beforeEach(() => {
   mocks.roleSetEnabled.mockResolvedValue(undefined)
   mocks.roleRemove.mockResolvedValue(undefined)
   mocks.memoriesList.mockResolvedValue({ items: [], total: 0 })
+  mocks.groupMemoriesList.mockResolvedValue({ items: [], total: 0 })
+  mocks.groupMemoryRemove.mockResolvedValue(undefined)
   mocks.memoryItems.mockResolvedValue({ items: [], total: 0 })
   mocks.memoryRemoveItem.mockResolvedValue(undefined)
   mocks.memoryRemove.mockResolvedValue(undefined)

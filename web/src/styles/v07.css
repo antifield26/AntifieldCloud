@@ -35,6 +35,43 @@
   min-width: 0;
 }
 
+/* 长期记忆左右两栏：用户记忆 / 群聊记忆；窄屏改为上下排列。 */
+.bot-memory-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+  min-width: 0;
+}
+
+.bot-memory-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bot-memory-column-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bot-memory-column-head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+@media (max-width: 1100px) {
+  .bot-memory-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .bot-memory-items-meta {
   display: flex;
   align-items: center;

@@ -12,6 +12,7 @@ import { nowIso } from '../util/time.ts'
 import type {
   BotMemoryItemPrompt,
   BotMemoryItemSummary,
+  BotMemoryGroupSummary,
   BotMemoryKind,
   BotMemoryOperation,
   BotMemoryState,
@@ -431,8 +432,7 @@ export class BotMemoryStore {
   }
 
   /** 管理端用户级分页：只有条目计数/类型分布/状态，不含正文。 */
-  listUsers(botId: string, limit = 20, offset = 0): BotMemoryListPage<BotMemoryUserSummary> {
-    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
+  listUsers(botId: string, limit = 20, offset = 0): BotMemoryListPage<BotMemoryUserSummary> {    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
     const safeOffset = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0))
     const now = nowIso()
     const itemRows = this.db
@@ -497,6 +497,154 @@ export class BotMemoryStore {
       .map((entry) => ({ ...entry, memoryEnabled: (states.get(entry.userId)?.memory_enabled ?? 1) === 1 }))
       .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
     return { items: list.slice(safeOffset, safeOffset + safeLimit), total: list.length }
+  }
+
+  /** 管理端群聊共享记忆分页：按群目标聚合，只有条目计数/类型分布/时间，不含正文。 */
+  listGroups(botId: string, limit = 20, offset = 0): BotMemoryListPage<BotMemoryGroupSummary> {
+    const safeLimit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(limit) ? limit : 20)))
+    const safeOffset = Math.max(0, Math.floor(Number.isFinite(offset) ? offset : 0))
+    const rows = this.db
+      .prepare(
+        `SELECT user_id, kind, COUNT(*) AS c, MAX(updated_at) AS upd FROM bot_memory_items
+         WHERE bot_id = ? AND user_id LIKE ? AND (expires_at IS NULL OR expires_at > ?)
+         GROUP BY user_id, kind`,
+      )
+      .all(botId, `${GROUP_MEMORY_PREFIX}%`, nowIso()) as unknown as {
+      user_id: string
+      kind: BotMemoryKind
+      c: number
+      upd: string
+    }[]
+    const targets = new Map(
+      (
+        this.db
+          .prepare("SELECT external_id, label FROM bot_targets WHERE bot_id = ? AND kind = 'group'")
+          .all(botId) as unknown as { external_id: string; label: string }[]
+      ).map((row) => [row.external_id, row.label]),
+    )
+    const map = new Map<string, BotMemoryGroupSummary>()
+    for (const row of rows) {
+      const externalId = row.user_id.slice(GROUP_MEMORY_PREFIX.length)
+      const current = map.get(row.user_id) ?? {
+        scope: row.user_id,
+        targetExternalId: externalId,
+        targetName: targets.get(externalId)?.trim() || externalId.slice(0, 14),
+        itemCount: 0,
+        kinds: {},
+        updatedAt: null,
+      }
+      current.itemCount += row.c
+      current.kinds[row.kind] = (current.kinds[row.kind] ?? 0) + row.c
+      if (!current.updatedAt || row.upd > current.updatedAt) current.updatedAt = row.upd
+      map.set(row.user_id, current)
+    }
+    const list = [...map.values()].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+    return { items: list.slice(safeOffset, safeOffset + safeLimit), total: list.length }
+  }
+
+  /**
+   * 把群聊参与者的用户级记忆复制/迁移到对应群共享记忆：
+   * - 只处理有群入站/群会话记录的用户；
+   * - 用户同时有私聊记录或已登记 user 目标时只复制，保留用户级记忆；
+   * - 仅参与一个群且无私聊记录的用户，复制后删除其用户级条目，完成迁移；
+   * - 群内条目格式为 `<用户名>：<记忆>`，key 带 `<用户名>:` 前缀。
+   */
+  migrateGroupParticipantMemories(): { copied: number; moved: number; groups: number } {
+    return transaction(this.db, () => {
+      let copied = 0
+      let moved = 0
+      const touchedGroups = new Set<string>()
+      const groups = this.db
+        .prepare("SELECT bot_id, external_id, label FROM bot_targets WHERE kind = 'group'")
+        .all() as unknown as { bot_id: string; external_id: string; label: string }[]
+      for (const group of groups) {
+        const participants = this.db
+          .prepare(
+            `SELECT DISTINCT user_id FROM bot_inbound_targets
+             WHERE bot_id = ? AND target_external_id = ? AND is_direct = 0
+             UNION
+             SELECT DISTINCT user_id FROM bot_ai_sessions
+             WHERE bot_id = ? AND target_external_id = ?`,
+          )
+          .all(group.bot_id, group.external_id, group.bot_id, group.external_id) as unknown as { user_id: string }[]
+        for (const participant of participants) {
+          const nameRow = this.db
+            .prepare(
+              `SELECT user_name FROM bot_inbound_targets
+               WHERE bot_id = ? AND user_id = ? AND user_name IS NOT NULL
+               ORDER BY last_seen_at DESC LIMIT 1`,
+            )
+            .get(group.bot_id, participant.user_id) as { user_name: string | null } | undefined
+          const rawName = String(nameRow?.user_name ?? '').trim().slice(0, 20)
+          const userName = rawName || `用户${participant.user_id.slice(-6)}`
+          const items = this.db
+            .prepare(
+              `SELECT * FROM bot_memory_items
+               WHERE bot_id = ? AND user_id = ? AND (expires_at IS NULL OR expires_at > ?)`,
+            )
+            .all(group.bot_id, participant.user_id, nowIso()) as unknown as MemoryItemRow[]
+          if (items.length === 0) continue
+          const groupScope = groupMemoryScope(group.external_id)
+          const direct = this.db
+            .prepare('SELECT 1 AS x FROM bot_inbound_targets WHERE bot_id = ? AND user_id = ? AND is_direct = 1 LIMIT 1')
+            .get(group.bot_id, participant.user_id)
+          const registered = this.db
+            .prepare("SELECT 1 AS x FROM bot_targets WHERE bot_id = ? AND kind = 'user' AND external_id = ? LIMIT 1")
+            .get(group.bot_id, participant.user_id)
+          const groupCount = (
+            this.db
+              .prepare(
+                `SELECT COUNT(DISTINCT target_external_id) AS c FROM bot_inbound_targets
+                 WHERE bot_id = ? AND user_id = ? AND is_direct = 0`,
+              )
+              .get(group.bot_id, participant.user_id) as { c: number }
+          ).c
+          const move = !direct && !registered && groupCount <= 1
+          const migratedIds: string[] = []
+          for (const item of items) {
+            let value = item.value.trim()
+            if (value.startsWith(`${userName}：`)) value = value.slice(userName.length + 1)
+            else if (value.startsWith(`${userName}:`)) value = value.slice(userName.length + 1).trimStart()
+            const keyPrefix = `${userName}:`
+            const key = `${item.mem_key.startsWith(keyPrefix) ? item.mem_key : `${keyPrefix}${item.mem_key}`}`.slice(0, KEY_MAX_CHARS)
+            const result = this.db
+              .prepare(
+                `INSERT OR IGNORE INTO bot_memory_items
+                   (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at, last_used_at, expires_at)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              )
+              .run(
+                newId(),
+                group.bot_id,
+                groupScope,
+                item.kind,
+                key,
+                `${userName}：${value}`,
+                item.confidence,
+                item.importance,
+                item.source,
+                item.created_at,
+                item.updated_at,
+                item.last_used_at,
+                item.expires_at,
+              )
+            if (result.changes > 0) {
+              copied += 1
+              touchedGroups.add(`${group.bot_id}:${group.external_id}`)
+              migratedIds.push(item.id)
+            }
+          }
+          if (move && migratedIds.length === items.length) {
+            const placeholders = migratedIds.map(() => '?').join(',')
+            const deleted = this.db
+              .prepare(`DELETE FROM bot_memory_items WHERE bot_id = ? AND user_id = ? AND id IN (${placeholders})`)
+              .run(group.bot_id, participant.user_id, ...migratedIds)
+            moved += Number(deleted.changes)
+          }
+        }
+      }
+      return { copied, moved, groups: touchedGroups.size }
+    })
   }
 
   /** 管理端条目元数据：只有 id/类型/重要度/置信度/时间，不含 key/value。 */

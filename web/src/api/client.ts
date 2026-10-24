@@ -25,6 +25,7 @@ import type {
   BotHealthCheck,
   BotInboundTarget,
   BotMemoryItemSummary,
+  BotMemoryGroupSummary,
   BotMemoryUserSummary,
   BotMetrics,
   BotConnectivitySnapshot,
@@ -1203,6 +1204,21 @@ export const api = {
       /** 删除某用户的全部记忆条目。 */
       async remove(id: string, userId: string): Promise<void> {
         await del<OkResult>(`/api/bots/${encodeId(id)}/memories/${encodeId(userId)}`)
+      },
+    },
+    groupMemories: {
+      /** 群聊共享记忆元数据：按群目标聚合，不含正文。 */
+      list(
+        id: string,
+        options: { limit?: number; offset?: number } = {},
+      ): Promise<{ items: BotMemoryGroupSummary[]; total: number }> {
+        return get<{ items: BotMemoryGroupSummary[]; total: number }>(
+          `/api/bots/${encodeId(id)}/group-memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
+        )
+      },
+      /** 清空某个群目标的共享记忆。 */
+      async remove(id: string, scope: string): Promise<void> {
+        await del<OkResult>(`/api/bots/${encodeId(id)}/group-memories/${encodeId(scope)}`)
       },
     },
     targets: {

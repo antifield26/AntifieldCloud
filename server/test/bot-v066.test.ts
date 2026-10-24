@@ -96,6 +96,60 @@ test('v0.6.6：群聊提示词带用户名 head，共享记忆按“用户名：
   }
 })
 
+test('v0.6.6：长期记忆区分用户/群聊两栏，现有群聊用户独立记忆迁移到群共享', () => {
+  const fixture = createQqServiceFixture({
+    configOverrides: { botAiMemoryBatchMessages: 1, botAiMemoryIdleFlushSeconds: 0 },
+  })
+  try {
+    const target = fixture.service.createTarget(fixture.botId, {
+      externalId: GROUP,
+      label: '迁移测试群',
+      kind: 'group',
+      allowCommands: false,
+      allowNotifications: false,
+      allowChat: true,
+      groupReplyMode: 'all',
+    })
+    const now = new Date().toISOString()
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_inbound_targets
+           (bot_id, target_external_id, target_kind, user_id, user_name, is_direct, last_seen_at)
+         VALUES (?, ?, 'group', ?, ?, 0, ?)`,
+      )
+      .run(fixture.botId, GROUP, 'member-v066-migrate', '小红', now)
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_memory_items
+           (id, bot_id, user_id, kind, mem_key, value, confidence, importance, source, created_at, updated_at)
+         VALUES (?, ?, ?, 'preference', 'drink', '喜欢乌龙茶', 0.9, 3, 'chat', ?, ?)`,
+      )
+      .run('v066-migrate-user', fixture.botId, 'member-v066-migrate', now, now)
+
+    const migrated = fixture.service.migrateGroupChatMemories()
+    assert.equal(migrated.skipped, false)
+    assert.equal(migrated.copied, 1)
+    assert.equal(migrated.moved, 1)
+    assert.equal(migrated.groups, 1)
+
+    const groups = fixture.service.listGroupMemories(fixture.botId)
+    assert.equal(groups.total, 1)
+    assert.equal(groups.items[0]?.targetName, '迁移测试群')
+    assert.equal(groups.items[0]?.scope, groupMemoryScope(GROUP))
+    assert.equal(groups.items[0]?.itemCount, 1)
+    assert.equal(fixture.service.listMemories(fixture.botId).total, 0, '仅群聊用户迁移后用户记忆为空')
+
+    const row = fixture.db
+      .prepare('SELECT value FROM bot_memory_items WHERE bot_id = ? AND user_id = ?')
+      .get(fixture.botId, groupMemoryScope(GROUP)) as { value: string } | undefined
+    assert.equal(row?.value, '小红：喜欢乌龙茶')
+    assert.equal(fixture.service.migrateGroupChatMemories().skipped, true, '迁移只执行一次')
+    void target
+  } finally {
+    fixture.cleanup()
+  }
+})
+
 test('v0.6.6：未 @ 的全量群消息声明群聊环境并引导默认沉默', async () => {
   const fixture = createQqServiceFixture({ aiEnabled: true })
   try {

@@ -1126,9 +1126,18 @@ export interface BotMemoryUserSummary {
   updatedAt: string | null
 }
 
+/** 管理端群聊共享记忆元数据：按群目标聚合，不含 key/value。 */
+export interface BotMemoryGroupSummary {
+  scope: string
+  targetExternalId: string
+  targetName: string
+  itemCount: number
+  kinds: Partial<Record<BotMemoryKind, number>>
+  updatedAt: string | null
+}
+
 /** 管理端单条记忆元数据：绝不包含 key/value 正文。 */
-export interface BotMemoryItemSummary {
-  id: string
+export interface BotMemoryItemSummary {  id: string
   kind: BotMemoryKind
   importance: number
   confidence: number

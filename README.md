@@ -4,7 +4,7 @@
 
 > 状态：v0.6.6（**已部署，待验收；Tag/Release 待发布**）。本版精简系统提示词与发送工具定义文本，降低工具说明对 Bot 回复风格的影响；群聊用户消息增加用户名 head；群聊声明所处环境，未 @ 消息默认沉默、不要求每轮调用发送工具；群聊改用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊会话；同时包含 v0.6.5 的 `/role show` 与失效 AI 会话重建修复。schema 保持 **v16**（无迁移）。生产 release `20261024T093804Z`/commit `84a9fb9`。OpenCode v2.1.3。
 > 发布：最新公开版本 v0.6.4（Tag `v0.6.4`，GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)）；v0.6.5 未发布、由 v0.6.6 承接；v0.6.6 已部署待验收，验收通过后发布。上一版 v0.6.3（Tag `v0.6.3`，release `20261023T142411Z`/commit `7ac1d27`）。
-> 测试基线（Lead 实测 2026-10-24，v0.6.6）：`npm test` **413**（server+scripts，含群聊用户名/共享记忆/群聊默认沉默/角色卡/失效会话重建回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
+> 测试基线（Lead 实测 2026-10-24，v0.6.6）：`npm test` **414**（server+scripts，含群聊用户名/共享记忆/群聊默认沉默/记忆迁移/角色卡/失效会话重建回归）、`npm run test:web` **181**（32 文件）、`npm run typecheck`/`npm run lint` 通过；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -64,12 +64,12 @@
 - **回复形态（QQ 纯文本）**：AI 回答经清洗、去 Markdown 标记后按 QQ 单条 2000 字符分段（最多 4 段，续段前缀“（续 n/m）”，超限截断）；partial 失败 `partial_text_sent` 不自动重试；QQ 不支持媒体/附件/按钮/引用回复。
 - **图片理解（默认开启）**：`BOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；
   失败/关闭/非法图片时降级为纯文字回答；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。需模型支持 image 输入（`opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。
-- **结构化长期记忆（v0.5.11）**：`bot_memory_items` 7 类（资料/偏好/事实/项目/任务/关系/事件），key/value/confidence/importance/source/时间/`expires_at`，唯一 `(bot,user,kind,key)`；`bot_memory_state` 保存启停与 legacy 迁移标记；旧 `bot_ai_memories` 仅作 legacy 来源/fallback（验收后 CLI 清理）。
+- **结构化长期记忆（v0.5.11）**：`bot_memory_items` 7 类（资料/偏好/事实/项目/任务/关系/事件），key/value/confidence/importance/source/时间/`expires_at`，唯一 `(bot,user,kind,key)`；`bot_memory_state` 保存启停与 legacy 迁移标记；旧 `bot_ai_memories` 仅作 legacy 来源/fallback（验收后 CLI 清理）。v0.6.6 起 `/bots`「角色与记忆」将长期记忆分为**用户记忆/群聊记忆**左右两栏；群聊记忆按群目标聚合，启动时一次性把现有群聊参与者的用户级记忆复制/迁移到对应群共享记忆。
   抽取沿用累计 **3** 条或空闲 **120s**（`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`）+ 同用户串行，一次性 OpenCode 会话（用后删除）；模型 JSON ops 经服务端校验/敏感过滤（密钥/URL/内部路径跳过）/容量清理（默认 **200** 条）；
   TTL：资料/偏好不过期，事实/项目/关系 **365 天**、事件 **90 天**、任务 **30 天**（更新续期）；召回核心层优先 + 关键词相关层，预算 **3000 字/12 条**（`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`），`/memory off` 时无注入；审计 `bot.memory.extract` 只记计数。
 - **AI 仅普通消息 Chat（v0.5.9）**：提示词固定为「角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息」，全量群消息追加 `NO_REPLY` 决策段；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；`/reset` 与私聊角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 mode。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
 - **默认角色、私聊角色卡与群聊角色卡**：内置默认角色 `lofii` 只保留名字与简短对话风格；群聊使用管理员在“角色与记忆”配置的共享角色卡（每个群目标一张，覆盖成员私聊卡，停用/删除回退 lofii）；C2C `/role` 对 QQ 私聊用户开放，每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；`/role show` 对用户自定义卡返回完整详细文本，默认角色卡只返回名称、不展示内置详情；个人卡只覆盖私聊；群聊不执行 `/role`，也不再接受任何斜杠命令。私聊角色卡变更会清理该范围会话映射。
-- **群聊用户名与共享记忆（v0.6.6）**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话。系统提示词与发送工具说明同步精简，减少工具定义对回复风格的影响。
+- **群聊用户名与共享记忆（v0.6.6）**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话；Web「角色与记忆」按用户记忆/群聊记忆左右两栏展示元数据并支持清空群共享记忆。系统提示词与发送工具说明同步精简，减少工具定义对回复风格的影响。
 - **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停与最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊）、`/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目、状态、legacy 旧摘要与该 Bot×用户全部会话，含远端）；对 C2C 用户开放；`/reset` 与私聊角色卡变更会尽力删除对应远端会话。
 - **出站连通性（v0.5.10，Pi 直连）**：`server/src/bot/connectivity.ts` 每 60 秒探测外网与 QQ 平台只读 API；`GET /api/bots/connectivity` 仅返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/bots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/bots` 概览展示外网/QQ 平台状态。
 - **代理隧道已移除（v0.5.10）**：删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`，Bot 出站改为 Pi 直连。

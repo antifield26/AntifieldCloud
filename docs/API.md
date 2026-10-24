@@ -597,6 +597,7 @@ BotHealthCheck: { "ok": true, "items": [{ "name": "access_token", "ok": true, "d
 BotEventItem: { "eventId": "qq:message_id", "kind": "command|chat|ignored", "outcome": "received|ok|denied|rate_limited|ignored|error", "detail": "短码|null（如 command_denied/chat_rate_limited）", "targetExternalId": "…|null", "userId": "…|null", "receivedAt": "…", "updatedAt": "…|null" }
 BotRoleSummary: { "userId": "…", "userName": "…|null", "name": "角色名", "enabled": true, "promptLength": 320, "createdAt": "…", "updatedAt": "…" }
 BotGroupRoleSummary: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手|null", "enabled": true, "promptLength": 120, "updatedAt": "…|null" }
+BotMemoryGroupSummary: { "scope": "group:<group_openid>", "targetExternalId": "group_openid", "targetName": "测试群", "itemCount": 3, "kinds": { "fact": 2, "preference": 1 }, "updatedAt": "…|null" }
 BotGroupRoleDetail: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手", "prompt": "管理员可编辑正文", "enabled": true, "createdAt": "…", "updatedAt": "…" }
 BotMemoryUserSummary: { "userId": "…", "userName": "…|null", "itemCount": 7, "kinds": { "profile": 2, "preference": 3, "task": 2 }, "memoryEnabled": true, "updatedAt": "…|null" }
 BotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|project|task|relationship|episode", "importance": 3, "confidence": 0.8, "updatedAt": "…", "expiresAt": "…|null" }
@@ -637,6 +638,9 @@ v0.6.4 起普通消息 Chat 可启用模型消息发送工具：OpenCode 通过 
   - `GET /api/bots/:id/memories/:userId/items?limit=20&offset=0` → `{ "items": [BotMemoryItemSummary], "total": n }`；需要会话；条目元数据（id/kind/importance/confidence/updatedAt/expiresAt），不过期条目的 `expiresAt` 为 null。
   - `DELETE /api/bots/:id/memories/:userId/items/:itemId` → `{ "ok": true }`；需要会话 + CSRF；删除单条结构化记忆（审计 `bot.memory.delete_item`），不存在 `404`。
   - `DELETE /api/bots/:id/memories/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除该用户结构化条目、状态与 legacy 摘要（不清 AI 会话；清全部会话与远端会话由用户自助 `/forget confirm`）；审计 `bot.memory.delete_user`；不存在 `404`。
+  - `GET /api/bots/:id/group-memories?limit=20&offset=0` → `{ "items": [BotMemoryGroupSummary], "total": n }`；需要会话；按群目标聚合的共享记忆元数据（scope/targetExternalId/targetName/itemCount/kinds/updatedAt），**不返回 key/value 正文**。
+  - `DELETE /api/bots/:id/group-memories/:scope` → `{ "ok": true }`；需要会话 + CSRF；scope 必须为 `group:<targetExternalId>`，只清空该群共享记忆，不影响用户记忆/群目标/会话；审计 `bot.memory.delete_user`。
+  - 群聊记忆条目复用 `GET .../memories/:scope/items` 与 `DELETE .../memories/:scope/items/:itemId`；启动时一次性把现有群聊参与者的用户级记忆复制到对应群共享记忆（仅群聊用户执行移动），`meta.bot_group_memory_migrated_v1` 保证幂等。
 - `GET /api/bots/:id/inbound-targets?limit=50` → `{ "items": [BotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50；越界按边界截断）。
   只记录最近命令/Chat 事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `BOT_EVENT_RETENTION_DAYS` 清理。`/bots` 目标分区用该接口做“最近入站目标”登记。
 - `POST /api/bots` body `{platform,name,token,config?}` → `200 { "bot": BotSummary }`。

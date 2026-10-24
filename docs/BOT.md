@@ -197,7 +197,7 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；v0.6.4 新增 `BOT_CHAT_BU
 - 审计 `bot.ai.chat` 记录 bot/user/chars/image 等元数据，**不再记录 mode**，不记录提示词/记忆正文。
 - 记忆抽取（v0.5.11）：累计 `BOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）轮或用户空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s，0 关闭）触发一次；按 Bot×用户串行队列，每次新建一次性远端会话并在 `finally` 删除；
   模型输出严格 JSON operations（upsert/delete，服务端最多 20 条），服务端校验/敏感过滤（key/value/legacy 均过滤）后写入 `bot_memory_items`；审计 `bot.memory.extract` 只记计数；**ops=0 不置 legacy 迁移标记**，保留 fallback 继续迁移（v0.6.0）。
-- **群聊共享记忆（v0.6.6）**：群聊使用独立 scope `group:<targetExternalId>`，条目按 `<用户名>：<记忆>` 保存和注入；群聊抽取按发言用户归属（key 前缀用户名），已登记成员的用户级 `bot_memory_items` 不进入群聊提示词；群 scope 不显示在 Web 用户级记忆列表中。群聊仍使用该目标共享角色卡，与共享记忆相互独立。
+- **群聊共享记忆（v0.6.6）**：群聊使用独立 scope `group:<targetExternalId>`，条目按 `<用户名>：<记忆>` 保存和注入；群聊抽取按发言用户归属（key 前缀用户名），已登记成员的用户级 `bot_memory_items` 不进入群聊提示词；`/bots`「角色与记忆」按**用户记忆/群聊记忆**左右两栏展示元数据，可查看条目、清空群共享记忆；启动时一次性把现有群聊参与者的用户级记忆复制到对应群共享记忆，仅群聊用户（无私聊、未登记 user 目标、只参与一个群）执行移动；群聊仍使用该目标共享角色卡，与共享记忆相互独立。
   摘要使用一次性远端会话并在 `finally` 删除，不再保存 `summary_session_id`；审计 `bot.ai.memory` 记录 `rounds`，不记录摘要正文。
 - QQ C2C 私聊对任意用户开放 Chat（接触面由 QQ 平台“谁可添加 Bot”控制）；只读命令仍要求目标 `allow_commands` 与用户白名单。
 

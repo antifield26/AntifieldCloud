@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import type {
   BotGroupRoleSummary,
+  BotMemoryGroupSummary,
   BotMemoryItemSummary,
   BotMemoryUserSummary,
   BotRoleSummary,
@@ -22,6 +23,8 @@ const mocks = vi.hoisted(() => ({
   groupRoleSetEnabled: vi.fn(),
   groupRoleRemove: vi.fn(),
   memoriesList: vi.fn(),
+  groupMemoriesList: vi.fn(),
+  groupMemoryRemove: vi.fn(),
   memoryItems: vi.fn(),
   memoryRemoveItem: vi.fn(),
   memoryRemove: vi.fn(),
@@ -47,6 +50,10 @@ vi.mock('../../api/client', () => ({
         items: mocks.memoryItems,
         removeItem: mocks.memoryRemoveItem,
         remove: mocks.memoryRemove,
+      },
+      groupMemories: {
+        list: mocks.groupMemoriesList,
+        remove: mocks.groupMemoryRemove,
       },
     },
   },
@@ -122,6 +129,18 @@ function memoryItemSummary(overrides: Partial<BotMemoryItemSummary> = {}): BotMe
   }
 }
 
+function memoryGroupSummary(overrides: Partial<BotMemoryGroupSummary> = {}): BotMemoryGroupSummary {
+  return {
+    scope: 'group:group-openid-1',
+    targetExternalId: 'group-openid-1',
+    targetName: '测试群',
+    itemCount: 2,
+    kinds: { fact: 2 },
+    updatedAt: '2026-10-21T00:00:00.000Z',
+    ...overrides,
+  }
+}
+
 function renderPanel(refreshToken = 0) {
   return render(
     <ToastProvider>
@@ -155,6 +174,8 @@ beforeEach(() => {
   mocks.groupRoleSetEnabled.mockResolvedValue(undefined)
   mocks.groupRoleRemove.mockResolvedValue(undefined)
   mocks.memoriesList.mockResolvedValue({ items: [memoryUserSummary()], total: 1 })
+  mocks.groupMemoriesList.mockResolvedValue({ items: [memoryGroupSummary()], total: 1 })
+  mocks.groupMemoryRemove.mockResolvedValue(undefined)
   mocks.memoryItems.mockResolvedValue({
     items: [memoryItemSummary()],
     total: 1,
@@ -382,12 +403,40 @@ describe('BotUserDataPanel 角色与记忆', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
+  it('长期记忆左右两栏展示群聊记忆，可查看条目并清空群共享记忆', async () => {
+    mocks.groupMemoriesList.mockResolvedValue({
+      items: [memoryGroupSummary({ targetName: '记忆群' })],
+      total: 1,
+    })
+    renderPanel()
+
+    expect(await screen.findByText('用户记忆')).toBeTruthy()
+    expect(screen.getByText('群聊记忆')).toBeTruthy()
+    expect((await screen.findAllByText('记忆群')).length).toBeGreaterThan(0)
+
+    await userEvent.click(screen.getAllByRole('button', { name: '查看群聊记忆条目 记忆群' })[0]!)
+    expect(await screen.findByRole('heading', { name: /记忆条目 · 记忆群/ })).toBeTruthy()
+    expect(mocks.memoryItems).toHaveBeenCalledWith('bot-1', 'group:group-openid-1', {
+      limit: 20,
+      offset: 0,
+    })
+    await userEvent.click(screen.getByRole('button', { name: '关闭' }))
+
+    await userEvent.click(screen.getAllByRole('button', { name: '删除群聊记忆 记忆群' })[0]!)
+    expect(await screen.findByText('确定删除群聊「记忆群」的全部共享记忆条目？')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '删除群聊记忆' }))
+    await waitFor(() =>
+      expect(mocks.groupMemoryRemove).toHaveBeenCalledWith('bot-1', 'group:group-openid-1'),
+    )
+  })
+
   it('空态提示暂无角色卡与长期记忆', async () => {
     mocks.rolesList.mockResolvedValue({ items: [], total: 0 })
     mocks.memoriesList.mockResolvedValue({ items: [], total: 0 })
     renderPanel()
 
     expect(await screen.findByText('暂无角色卡')).toBeTruthy()
-    expect(screen.getByText('暂无长期记忆')).toBeTruthy()
+    expect(screen.getByText('用户记忆')).toBeTruthy()
+    expect(screen.getByText('群聊记忆')).toBeTruthy()
   })
 })

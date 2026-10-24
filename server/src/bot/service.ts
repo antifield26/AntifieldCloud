@@ -27,6 +27,7 @@ import {
   type BotInboundTarget,
   type BotInboundTargetRow,
   type BotMemoryItemSummary,
+  type BotMemoryGroupSummary,
   type BotMemoryKind,
   type BotMemoryOperation,
   type BotMemoryUserSummary,
@@ -49,7 +50,7 @@ import {
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { describeBotError } from './errors.ts'
 import { formatAiReply } from './format.ts'
-import { BotMemoryStore, groupMemoryScope } from './memory.ts'
+import { BotMemoryStore, GROUP_MEMORY_PREFIX, groupMemoryScope } from './memory.ts'
 import { buildBotPrompt, type BotSendToolPrompt, type GroupChatMode } from './prompts.ts'
 import { BurstMerger } from './burst.ts'
 import {
@@ -944,6 +945,46 @@ export class BotService {
     return this.memory.listUsers(botId, limit, offset)
   }
 
+  /** 群聊共享记忆管理：按群目标聚合的元数据分页，不含 key/value。 */
+  listGroupMemories(
+    botId: string,
+    options: { limit?: number; offset?: number } = {},
+  ): { items: BotMemoryGroupSummary[]; total: number } {
+    this.requireEnabled()
+    this.botRow(botId)
+    return this.memory.listGroups(botId, options.limit ?? 20, options.offset ?? 0)
+  }
+
+  /** 清空某个群目标的共享记忆；scope 必须是内部群 scope，避免误删用户记忆。 */
+  deleteGroupMemory(botId: string, scope: string): void {
+    this.requireEnabled()
+    this.botRow(botId)
+    if (!scope.startsWith(GROUP_MEMORY_PREFIX)) throw badRequest('群聊记忆标识无效')
+    this.deleteMemory(botId, scope)
+  }
+
+  /**
+   * 一次性数据迁移：把群聊参与者的用户级记忆复制/迁移到群共享记忆。
+   * 通过 meta 标记保证进程重启后不重复执行；失败时保留标记缺失，下次启动重试。
+   */
+  migrateGroupChatMemories(): { copied: number; moved: number; groups: number; skipped: boolean } {
+    const key = 'bot_group_memory_migrated_v1'
+    if (getMeta(this.db, key)) return { copied: 0, moved: 0, groups: 0, skipped: true }
+    const result = this.memory.migrateGroupParticipantMemories()
+    setMeta(this.db, key, nowIso())
+    this.deps.audit('bot.memory.group_migrate', 'bot', {
+      copied: result.copied,
+      moved: result.moved,
+      groups: result.groups,
+    })
+    this.deps.log('info', '群聊共享记忆迁移完成', {
+      copied: result.copied,
+      moved: result.moved,
+      groups: result.groups,
+    })
+    return { ...result, skipped: false }
+  }
+
   /** 管理端条目元数据分页：只有 id/类型/重要度/置信度/时间，不含 key/value。 */
   listMemoryItems(
     botId: string,
@@ -1259,6 +1300,14 @@ export class BotService {
 
   start(): void {
     if (!this.enabled || this.timer) return
+    try {
+      this.migrateGroupChatMemories()
+    } catch (error) {
+      // 迁移失败不阻塞 Bot 启动；保留 meta 标记缺失，下次启动重试。
+      this.deps.log('warn', '群聊共享记忆迁移失败', {
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
     this.stopped = false
     this.timer = setInterval(() => this.scheduleTick(), this.config.botDeliveryIntervalSeconds * 1000)
     this.timer.unref()

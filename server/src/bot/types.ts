@@ -345,6 +345,17 @@ export interface BotMemoryUserSummary {
   updatedAt: string | null
 }
 
+/** 群聊共享记忆元数据：按群目标聚合，不含 key/value。 */
+export interface BotMemoryGroupSummary {
+  /** 内部 scope；删除/查看条目时作为标识提交。 */
+  scope: string
+  targetExternalId: string
+  targetName: string
+  itemCount: number
+  kinds: Partial<Record<BotMemoryKind, number>>
+  updatedAt: string | null
+}
+
 export interface BotMemoryState {
   memoryEnabled: boolean
   legacyMigratedAt: string | null
