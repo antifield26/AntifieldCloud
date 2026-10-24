@@ -14,7 +14,7 @@
 
 - 版本升到 **0.6.5**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **410**（新增 `/role show` 与失效会话重建回归）、`npm run test:web` **180**。
-- 生产部署（2026-10-24 16:16 CST）：release `20261024T081541Z`/commit `d2767fa`（v0.6.5/schema 16）；迁移前快照 `db-predeploy-20261024T081613444Z.sqlite`（sha256 `6e25cae48849f892e9051291572e2fa2174dd6dc3b93d2134624a07d05d0773d`）；`/healthz` v0.6.5/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T081735310Z-inc.tar.gz`（232784 bytes，sha256 `a1196adf4a9ee20ccef7e2bebe3da7a60111e600a41c793a74da798da3663134`，secrets=ok，PC 已 ack）。
+- 生产部署（2026-10-24 16:55 CST）：release `20261024T085435Z`/commit `c48ea8a`（v0.6.5/schema 16，含 `/role show` 与失效 AI 会话重建修复）；迁移前快照 `db-predeploy-20261024T085507536Z.sqlite`（sha256 `e0062e5a8b6320cee4a81c98f28852c64a84994d4867909e539bd28aa29a9c14`）；`/healthz` v0.6.5/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T085621039Z-inc.tar.gz`（241426 bytes，sha256 `2d52c76f96fc7fe3895ca8fb11795d59925c2f9340cf646ce5d682de95adbbc6`，secrets=ok，PC 已 ack）。
 - 发布状态：已部署待用户验收；验收通过后创建 Tag/Release。
 
 ## [v0.6.4] - 2026-10-24（已发布：Tag/Release v0.6.4）

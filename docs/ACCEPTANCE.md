@@ -44,7 +44,7 @@
 - **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；使用默认角色卡 `lofii` 时只返回名称，不展示内置详情。修复群聊未登记用户复用已失效 OpenCode 会话时 `bot_ai_http_error` 的问题：自动清理旧映射、重建会话并重试一次。
 - **数据/配置**：schema 保持 v16（无迁移）；不新增 env/DB 字段。
 - **本地门禁**：`npm run check` 通过；`npm test` **410**（新增 `/role show` 与失效会话重建回归）、`npm run test:web` **180**。
-- **部署（2026-10-24 16:16 CST）**：生产 release `20261024T081541Z`/commit `d2767fa`（v0.6.5/schema 16）；迁移前快照 `db-predeploy-20261024T081613444Z.sqlite`（sha256 `6e25cae48849f892e9051291572e2fa2174dd6dc3b93d2134624a07d05d0773d`）；`/healthz` v0.6.5/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T081735310Z-inc.tar.gz`（232784 bytes，sha256 `a1196adf4a9ee20ccef7e2bebe3da7a60111e600a41c793a74da798da3663134`，secrets=ok，PC ack）。
+- **部署（2026-10-24 16:55 CST）**：生产 release `20261024T085435Z`/commit `c48ea8a`（v0.6.5/schema 16，含失效 AI 会话重建修复）；迁移前快照 `db-predeploy-20261024T085507536Z.sqlite`（sha256 `e0062e5a8b6320cee4a81c98f28852c64a84994d4867909e539bd28aa29a9c14`）；`/healthz` v0.6.5/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T085621039Z-inc.tar.gz`（241426 bytes，sha256 `2d52c76f96fc7fe3895ca8fb11795d59925c2f9340cf646ce5d682de95adbbc6`，secrets=ok，PC ack）。
 
 ## v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
 
