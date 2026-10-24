@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.6.6] - 2026-10-24（开发中，待部署）
+## [v0.6.6] - 2026-10-24（已部署，待验收；Tag/Release 待发布）
 
 ### Changed
 
@@ -12,6 +12,7 @@
 
 - 版本升到 **0.6.6**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **411**（新增群聊用户名 head、共享记忆隔离回归）、`npm run test:web` **180**。
+- 生产部署（2026-10-24 17:21 CST）：release `20261024T092028Z`/commit `d063693`（v0.6.6/schema 16）；迁移前快照 `db-predeploy-20261024T092059737Z.sqlite`（sha256 `36b6b93f50984260cbaa511cc2847574e4d545160192d07fa9593262a0608783`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T092217120Z-inc.tar.gz`（243077 bytes，sha256 `08c03dfde7f76c520de1fe14f0e55fefcc584d1fe20eed2d95929728e2ffb0f6`，secrets=ok，PC 已 ack）。
 - v0.6.5 的 `/role show` 与失效 AI 会话重建修复一并包含在本版；v0.6.5 未单独发布。
 
 ## [v0.6.5] - 2026-10-24（已部署，待验收；Tag/Release 待发布）
