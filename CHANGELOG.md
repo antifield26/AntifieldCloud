@@ -23,7 +23,7 @@
 - 工具模式重建：最终部署后 `meta.bot_ai_tool_mode=mcp:send`、`bot_ai_sessions=0`，旧会话映射清空，下一条消息按新权限创建带 `botmsg_*`/`searxng_*` 的会话。
 - 生产 env 增加 `BOT_AI_SEND_TOOL_ENABLED=true`、`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`；安装 `botmsg` MCP（`/opt/botmsg-mcp`）并重启 opencode，`/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（假 turn 凭据按预期返回失败）。
 - 部署后备份 `snapshot-20261024T041919954Z-inc.tar.gz`（205376 bytes，sha256 `22686c9db29e2a530e5f637f1de8453c7ab9605f5e6a44a71e1e1e4b6dca3a86`，secrets=ok，PC 已 ack）。
-- 环境事件：2026-10-24 12:15 CST 起当前网络阻断 Cloudflare tunnel 出站 7844（cloudflared precheck TCP/UDP FAIL、API 443 可达、公网 530）；本机应用/数据正常，待网络恢复后重跑完整 Access smoke；不影响已完成的部署与本地测试。
+- 环境事件与恢复：2026-10-24 12:15 CST 校园网 Portal 认证失效导致 Cloudflare tunnel 出站 7844（TCP/UDP）被拦截，公网 530、浏览器 1033；13:46 CST 经 Pi 出口重新完成校园网认证后，cloudflared precheck 全 PASS（DNS/TCP/UDP/API），服务 active（NRestarts=0）、公网健康 200，完整 Access smoke **24/24（0 警告）**；本机应用/数据全程正常。
 - 发布状态：用户要求先进行多用户内测，**未创建 Tag/GitHub Release**；内测通过后再发布。
 
 ## [v0.6.3] - 2026-10-23（已发布：Tag/Release v0.6.3）
