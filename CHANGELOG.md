@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.6.4] - 2026-10-24（已部署，等待多用户内测后发布）
+## [v0.6.4] - 2026-10-24（已发布：Tag/Release v0.6.4）
 
 ### Added
 
@@ -28,7 +28,7 @@
 - 生产 env 增加 `BOT_AI_SEND_TOOL_ENABLED=true`、`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`；安装 `botmsg` MCP（`/opt/botmsg-mcp`）并重启 opencode，`/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（假 turn 凭据按预期返回失败）。
 - 部署后备份 `snapshot-20261024T065433557Z-inc.tar.gz`（218203 bytes，sha256 `83e9693375898717a3590f68656dbe0b7a198d4076bb9c28e098ed754b3e26db`，secrets=ok，PC 已 ack）。
 - 环境事件与恢复：2026-10-24 12:15 CST 校园网 Portal 认证失效导致 Cloudflare tunnel 出站 7844（TCP/UDP）被拦截，公网 530、浏览器 1033；13:46 CST 经 Pi 出口重新完成校园网认证后，cloudflared precheck 全 PASS（DNS/TCP/UDP/API），服务 active（NRestarts=0）、公网健康 200，完整 Access smoke **24/24（0 警告）**；本机应用/数据全程正常。
-- 发布状态：用户要求先进行多用户内测，**未创建 Tag/GitHub Release**；内测通过后再发布。
+- 发布状态：多用户内测用户验收通过（2026-10-24）；已推送 main、annotated Tag `v0.6.4`、GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)。
 
 ## [v0.6.3] - 2026-10-23（已发布：Tag/Release v0.6.3）
 
