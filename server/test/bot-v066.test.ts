@@ -25,6 +25,14 @@ test('v0.6.6：群聊提示词带用户名 head，共享记忆按“用户名：
   })
   try {
     fixture.service.createTarget(fixture.botId, {
+      externalId: MEMBER,
+      label: '已登记成员',
+      kind: 'user',
+      allowCommands: false,
+      allowNotifications: false,
+      allowChat: true,
+    })
+    fixture.service.createTarget(fixture.botId, {
       externalId: GROUP,
       label: '测试群',
       kind: 'group',
