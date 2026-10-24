@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.6.4（开发/验收中；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema v16；OpenCode v2.1.3）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.6.4（**已部署，等待多用户内测后发布**；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema v16；OpenCode v2.1.3）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -39,13 +39,15 @@
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
 
-## v0.6.4（开发/验收中；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
+## v0.6.4（已部署，等待多用户内测后发布；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
 
 - **范围**：复核并处理已知问题/遗留事项；全量群聊非 @ 消息延长 burst 合并窗口；`NO_REPLY` 升级为 `botmsg_send_message` 工具（模型可连续发送 1–5 条，私聊/@ 每轮至少调用一次，全量群聊不调用即静默）；新建 Chat/Memory 会话按目标名称命名；SSO ticket 绑定 UA；记忆敏感过滤补充云/数据库凭据模式。
-- **数据/配置**：schema 保持 v16（无迁移）；新增 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`/`BOT_AI_SEND_TOOL_ENABLED`；新增 `scripts/bot-tool-mcp.mjs` 与 `scripts/install-bot-tool-mcp.sh`。
-- **本地门禁（待回填）**：`npm run check`/`check-version`、`npm test`、`npm run test:web`、覆盖率、build。
-- **部署/验收（待回填）**：生产 release、`/healthz`、smoke、MCP 工具验证、真实 QQ 私聊多消息/全量群聊静默与发言、备份、用户验收。
-- **发布（待回填）**：Tag/Release。
+- **数据/配置**：schema 保持 v16（无迁移）；新增 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`/`BOT_AI_SEND_TOOL_ENABLED`；新增 `scripts/bot-tool-mcp.mjs` 与 `scripts/install-bot-tool-mcp.sh`；`deploy.ps1` 期望 schema 仍为 16。
+- **本地门禁（2026-10-24）**：`npm run check`/`check-version` 通过；`npm test` **408**（含消息工具/turn token/长合并窗口/会话标题/UA 绑定/MCP 协议回归）、`npm run test:web` **180**（32 文件）；服务端覆盖率 Lines **92.34%** / Branches **77.48%** / Functions **87.23%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-BHmn1DCi.js` 691.34 kB）。
+- **部署（2026-10-24 11:39 CST）**：生产 release `20261024T033900Z`/commit `6d26cbd`（v0.6.4/schema 16）；迁移前快照 `db-predeploy-20261024T034003296Z.sqlite`（sha256 `8790d5ccc0750695fe40240387867af2d9f6f5675ca78a065e9935bdd1e77dad`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；部署后备份 `snapshot-20261024T035343845Z-inc.tar.gz`（204359 bytes，sha256 `abd9ef97a0522f7a2741c98ce62171caa4c180a2babad883759d391fe65dc42b`，secrets=ok，PC ack）。
+- **生产配置/MCP**：env 已设 `BOT_AI_SEND_TOOL_ENABLED=true`、全量群聊合并 8000/20000；`/opt/botmsg-mcp` 已安装，OpenCode `/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（使用假 turn 凭据时按预期返回失败），未发送真实 QQ 消息。
+- **验收状态**：用户确认“等待多用户内测后发布”，因此本版仅部署、未创建 Tag/GitHub Release；多用户内测通过后再补真实 QQ 验收、发布记录与 Tag。
+- **发布（待回填）**：Tag/Release 待多用户内测与用户确认。
 
 ## v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息模型决策；schema v16）
 

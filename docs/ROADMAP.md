@@ -1,10 +1,10 @@
 # 路线图
 
-## v0.6.4（开发/验收中：已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
+## v0.6.4（已部署，等待多用户内测后发布；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
 
 - **范围**：复核并处理项目记录的已知问题和遗留事项；群聊全量消息延长连续消息合并等待；`NO_REPLY` 升级为 `botmsg_send_message` 工具（私聊/@ 每轮至少调用一次，全量群聊不调用即静默）；新建 Chat/Memory 会话按目标名称命名。
 - **决策**：工具经 OpenCode MCP 回调本机应用，`BOT_SECRET_KEY` HMAC 的 turn token 鉴权，缓冲后统一发送；全量群聊非 @ 默认 8s/20s 合并；SSO ticket 绑定 UA、记忆过滤补充模式；`__Host-` Cookie 与 SSH/sudo 等列为明确保留。
-- **状态**：开发中；本地门禁、部署、真实 QQ 验收后更新。
+- **状态**：已部署生产 release `20261024T033900Z`/commit `6d26cbd`（v0.6.4/schema16，smoke 24/24；`botmsg` MCP connected）；按用户要求等待多用户内测后再发布 Tag/Release。
 
 ## v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用命令；schema v16）
 

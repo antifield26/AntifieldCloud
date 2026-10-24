@@ -2,7 +2,7 @@
 
 本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.4（开发/验收中）**：复核并处理项目已知问题/遗留事项；Bot 全量群聊延长合并窗口；消息发送从 `NO_REPLY` 文本哨兵升级为 `botmsg_send_message` MCP 工具；私聊/@ 每轮至少发送一次，全量群聊不调用即静默；新建 Chat/Memory 会话按目标名称命名；schema 保持 v16（无迁移）。上一版 v0.6.3 已发布（Tag/Release v0.6.3，release `20261023T142411Z`/commit `7ac1d27`，schema v16）。
 
-## v0.6.4（开发/验收中；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名）
+## v0.6.4（已部署，等待多用户内测后发布；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名）
 
 - **范围**：复核 `docs/AUDIT.md`/`docs/SECURITY.md` 残余并处理可安全收敛项；群目标 `groupReplyMode=all` 时非 @ 消息使用更长 burst 窗口；模型通过 `botmsg_send_message` 工具发送 1–5 条连续消息，私聊/@ 每轮至少调用一次，全量群聊不调用即静默；新建 OpenCode Chat/Memory 会话标题为「目标名称 Chat/Memory」。
 - **决策**：
@@ -11,7 +11,7 @@
   - 全量群聊非 @ 合并窗口默认 8000ms/最长 20000ms，@/名字命中仍用 3000/10000ms。
   - 已知问题处理：SSO ticket 绑定 UA（IP 因移动网络/边缘出口不稳定不绑定）；记忆敏感过滤补充云/数据库凭据模式；`__Host-` Cookie 前缀与 SSH/sudo 等残余记录为明确保留。
 - **数据/配置**：schema 保持 **v16**（无迁移）；新增 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`/`BOT_AI_SEND_TOOL_ENABLED`；不新增 DB 表/列。
-- **验收门禁**：`npm run check`、覆盖率、build；新增工具协议/回合 token/兜底/群聊长窗口/会话标题/UA 绑定/记忆过滤测试；部署后 smoke 24/24、MCP 工具可见、真实 QQ 私聊多消息与全量群聊静默/发言验收；用户确认后 Tag/Release。
+- **验收门禁**：`npm run check`、覆盖率、build；新增工具协议/回合 token/兜底/群聊长窗口/会话标题/UA 绑定/记忆过滤测试；生产 release `20261024T033900Z`/commit `6d26cbd`、schema16、smoke 24/24，`botmsg` MCP connected；按用户要求等待多用户内测后再做真实 QQ 验收与 Tag/Release。
 
 ## v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用命令；schema v16）
 
