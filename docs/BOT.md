@@ -9,7 +9,7 @@ QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`），图片经 
 > v0.5.8 已部署（2026-10-22，release `20261022T134852Z`/commit `96294e4`，schema v13；`/healthz` version 0.5.8/schemaVersion 13，部署内只读 smoke 16/16、带 Access token 完整 smoke 24/24）。
 > 迁移 13 后 `bots` 仅剩 1 行 QQ Bot，原 Discord Bot 及级联数据已删除（迁移前快照 `db-predeploy-20261022T134921798Z.sqlite` 可回滚）；QQ 数据保留，图片理解默认开启。真实 QQ 消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片端到端成功；用户 22:10 CST 确认“验收通过”）。
 > **v0.5.9 已部署**（2026-10-22 22:35 CST，release `20261022T143451Z`/commit `97996dc`，schema v13、无迁移；`/healthz` version 0.5.9/schemaVersion 13，smoke 16/16 与 24/24）。
-> 移除 `/ask`（AI 全部由普通消息 Chat 承担）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、`/help` 对非管理员开放且按身份动态显示；生产 env 迁移已完成（命令 120/AI 120/Chat 30、提示词变量已删除）。v0.6.1 起 `/help` 只输出可用命令与功能/用法，不再附带标题、Chat 说明或权限声明。
+> 移除 `/ask`（AI 全部由普通消息 Chat 承担）、限速放宽为 Chat 30/min、AI 120/hour、命令 120/min、`/help` 对非管理员开放且按身份动态显示；生产 env 迁移已完成（命令 120/AI 120/Chat 30、提示词变量已删除）。v0.6.1 起 `/help` 只输出可用命令；v0.6.4 起进一步只保留命令列表，不再附带标题、Chat 说明、权限声明、功能说明或用法注释（管理员 11 条、非管理员 6 条）。
 > 用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。
 >
 > **v0.5.10 已部署**（2026-10-22 23:20–23:23 CST，release `20261022T152053Z`/commit `4619c91`，schema v13、无迁移；`/healthz` version 0.5.10/schemaVersion 13，smoke 16/16 与 24/24）。

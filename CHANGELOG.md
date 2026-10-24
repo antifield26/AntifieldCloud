@@ -9,6 +9,10 @@
 - **会话命名**：新建 OpenCode Chat 会话标题为「目标名称 Chat」，记忆抽取会话为「目标名称 Memory」；已有会话不主动重命名。
 - **已知问题处理**：SSO ticket 绑定 User-Agent SHA-256；记忆敏感过滤补充 Google/GitLab/npm/Stripe/AWS/Azure 与带凭据数据库 URL 模式；复核 `__Host-`、IP 绑定、SSH/sudo、DR P3 等并记录明确保留理由。
 
+### Fixed
+
+- `/help` 返回文案改为仅命令列表：管理员 11 条、非管理员 6 条；移除标题、权限说明、功能描述与用法/参数注释。
+
 ### Changed
 
 - `NO_REPLY` 退化为未启用发送工具时的兼容路径；全量群聊以“是否调用工具”决定发送。
@@ -19,7 +23,7 @@
 
 - 版本升到 **0.6.4**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **408**、`npm run test:web` **180**；服务端覆盖率 Lines **92.34%** / Branches **77.48%** / Functions **87.23%**；build bundle `index-BHmn1DCi.js` 691.34 kB。
-- 生产部署（2026-10-24 12:12 CST）：最终 release `20261024T041205Z`/commit `944566f`（v0.6.4/schema 16；首次 release `20261024T033900Z`/`6d26cbd` 已包含同一功能，本次修复“启用发送工具时重建旧会话”）；迁移前快照 `db-predeploy-20261024T041301675Z.sqlite`（sha256 `3be0aa254e843d0557d08c1a7296bc1f42494a0ebb33f4fbad4e2958e20662ef`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16；首次部署完整 Access smoke 24/24（0 警告），最终重部署后公网 smoke 因当前网络阻断 Cloudflare tunnel（530）待重跑。
+- 生产部署（2026-10-24 12:12 CST）：最终 release `20261024T041205Z`/commit `944566f`（v0.6.4/schema 16；首次 release `20261024T033900Z`/`6d26cbd` 已包含同一功能，本次修复“启用发送工具时重建旧会话”）；迁移前快照 `db-predeploy-20261024T041301675Z.sqlite`（sha256 `3be0aa254e843d0557d08c1a7296bc1f42494a0ebb33f4fbad4e2958e20662ef`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16；完整 Access smoke 24/24（0 警告；网络恢复后复跑）。
 - 工具模式重建：最终部署后 `meta.bot_ai_tool_mode=mcp:send`、`bot_ai_sessions=0`，旧会话映射清空，下一条消息按新权限创建带 `botmsg_*`/`searxng_*` 的会话。
 - 生产 env 增加 `BOT_AI_SEND_TOOL_ENABLED=true`、`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`；安装 `botmsg` MCP（`/opt/botmsg-mcp`）并重启 opencode，`/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（假 turn 凭据按预期返回失败）。
 - 部署后备份 `snapshot-20261024T041919954Z-inc.tar.gz`（205376 bytes，sha256 `22686c9db29e2a530e5f637f1de8453c7ab9605f5e6a44a71e1e1e4b6dca3a86`，secrets=ok，PC 已 ack）。

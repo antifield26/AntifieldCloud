@@ -46,37 +46,35 @@ export function formatFileList(query: string, files: Record<string, unknown>[]):
   return clip(lines.join('\n'))
 }
 
-/** 管理员完整命令帮助：只列命令及功能/用法；命令仅在 C2C 私聊可用。 */
+/** 管理员完整命令帮助：只输出命令列表，不带标题、说明或用法注释；命令仅在 C2C 私聊可用。 */
 export function helpText(): string {
   return clip(
     [
-      '命令仅在 C2C 私聊可用；群聊/频道自 v0.6.3 起不再接受斜杠命令。',
-      '/help 查看帮助',
-      '/status 应用/服务/备份摘要',
-      '/backup 备份状态',
-      '/world 世界备份/拉取/演练状态',
-      '/mc Minecraft 状态',
-      '/files <关键词> 文件元数据（最多 10 条）',
-      '/role set|show|off|on|delete 角色设置（私聊）',
-      '/reset 重置当前对话（保留长期记忆）',
-      '/forget confirm 清除长期记忆与全部对话',
-      '/memory [off|on] 查看/暂停/恢复长期记忆',
-      '/search <关键词> 联网搜索并由 AI 总结（附来源）',
+      '/help',
+      '/status',
+      '/backup',
+      '/world',
+      '/mc',
+      '/files',
+      '/role',
+      '/reset',
+      '/forget',
+      '/memory',
+      '/search',
     ].join('\n'),
   )
 }
 
-/** 面向非管理员的公开帮助：只列可用命令及功能/用法；命令仅在 C2C 私聊可用。 */
+/** 面向非管理员的公开帮助：只输出命令列表，不带标题、说明或用法注释；命令仅在 C2C 私聊可用。 */
 export function publicHelpText(): string {
   return clip(
     [
-      '命令仅在 C2C 私聊可用；群聊/频道自 v0.6.3 起不再接受斜杠命令。',
-      '/help 查看帮助',
-      '/role set|show|off|on|delete 角色设置（私聊）',
-      '/reset 重置当前对话（保留长期记忆）',
-      '/forget confirm 清除长期记忆与全部对话',
-      '/memory [off|on] 查看/暂停/恢复长期记忆',
-      '/search <关键词> 联网搜索并由 AI 总结（附来源）',
+      '/help',
+      '/role',
+      '/reset',
+      '/forget',
+      '/memory',
+      '/search',
     ].join('\n'),
   )
 }
