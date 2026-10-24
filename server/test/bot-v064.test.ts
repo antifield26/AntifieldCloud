@@ -11,6 +11,7 @@ import {
   sendWebhook,
 } from './bot-qq-fixtures.ts'
 import { BurstMerger } from '../src/bot/burst.ts'
+import { getMeta } from '../src/db.ts'
 
 const GROUP_ID = 'group-openid-v064'
 const USER_ID = 'user-openid-v064'
@@ -162,6 +163,7 @@ test('v0.6.4：私聊工具连续发送多条消息，并使用目标名称 + Ch
   })
   fixtureRef = fixture
   try {
+    assert.equal(getMeta(fixture.db, 'bot_ai_tool_mode'), 'off:send')
     createUserTarget(fixture)
     await sendWebhook(
       fixture,

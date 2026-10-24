@@ -1173,13 +1173,15 @@ export class BotService {
   }
 
   /**
-   * OpenCode 的工具权限在会话创建时固定；搜索工具模式变化后，旧会话即使映射仍在也没有新工具。
-   * 用 meta 记录上次工具模式，模式变化时一次性清空会话映射（新 Chat 会重新建会话），避免旧会话
-   * 出现“提示词说有搜索工具、实际不可用”或不安全地沿用 deny-all 之外的权限。
+   * OpenCode 的工具权限在会话创建时固定；搜索模式或消息发送工具开关变化后，
+   * 旧会话即使映射仍在也没有新工具（或可能沿用不再需要的权限）。
+   * 用 meta 记录上次工具模式，模式变化时一次性清空会话映射（新 Chat 会重新建会话），避免
+   * “提示词说有工具、实际不可用”或沿用旧权限。消息发送工具启用时也必须重建会话。
    */
   private resetSessionsForToolMode(): void {
     if (!this.config.botEnabled || !this.config.botAiEnabled) return
-    const mode = this.config.botSearchEnabled ? this.config.botSearchMode : 'off'
+    const searchMode = this.config.botSearchEnabled ? this.config.botSearchMode : 'off'
+    const mode = `${searchMode}:${this.config.botAiSendToolEnabled ? 'send' : 'nosend'}`
     const previous = getMeta(this.db, 'bot_ai_tool_mode')
     if (previous === mode) {
       void this.cleanupRemoteSessions([])
