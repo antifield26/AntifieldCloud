@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.6.6（**已发布：Tag `v0.6.6` + GitHub Release**；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16；OpenCode v2.1.3）；v0.6.5（已部署，未单独打 Tag，内容并入 v0.6.6；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.6.6（**已发布：Tag `v0.6.6` + GitHub Release**；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16；OpenCode v2.1.3）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -47,13 +47,13 @@
 - **发布**：annotated Tag `v0.6.6` + GitHub Release [AntifieldCloud v0.6.6](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.6)（Latest，2026-10-24 18:20 CST）；Tag 指向发布提交，生产代码 commit `1f6980e`。
 - **部署（2026-10-24 18:05 CST）**：生产 release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema 16，含用户/群聊记忆两栏与迁移）；迁移前快照 `db-predeploy-20261024T100552756Z.sqlite`（sha256 `2cd3e5be3646d90031755d6d76378475369fce43d4ab367345d69873e6d2b0b9`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；启动迁移 `bot_group_memory_migrated_v1=2026-10-24T10:05:54.350Z`（群共享条目 4 条；用户级条目 4 条保留，覆盖有私聊/已登记用户）；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，sha256 `21cabc05142103a30ba058fdef8a5ab24d09ac3176d811dffff6e15aa79309cd`，secrets=ok，PC ack）。
 
-## v0.6.5（已部署；未单独打 Tag，内容并入 v0.6.6；生产 release `20261024T085435Z`/commit `c48ea8a`；Bot `/role show` 角色卡详情 + 失效 AI 会话重建；schema 保持 v16）
+## v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`；Bot `/role show` 角色卡详情 + 失效 AI 会话重建；schema 保持 v16）
 
 - **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；使用默认角色卡 `lofii` 时只返回名称，不展示内置详情。修复群聊未登记用户复用已失效 OpenCode 会话时 `bot_ai_http_error` 的问题：自动清理旧映射、重建会话并重试一次。
 - **数据/配置**：schema 保持 v16（无迁移）；不新增 env/DB 字段。
 - **本地门禁**：`npm run check` 通过；`npm test` **410**（新增 `/role show` 与失效会话重建回归）、`npm run test:web` **180**。
 - **部署（2026-10-24 16:55 CST）**：生产 release `20261024T085435Z`/commit `c48ea8a`（v0.6.5/schema 16，含失效 AI 会话重建修复）；迁移前快照 `db-predeploy-20261024T085507536Z.sqlite`（sha256 `e0062e5a8b6320cee4a81c98f28852c64a84994d4867909e539bd28aa29a9c14`）；`/healthz` v0.6.5/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T085621039Z-inc.tar.gz`（241426 bytes，sha256 `2d52c76f96fc7fe3895ca8fb11795d59925c2f9340cf646ce5d682de95adbbc6`，secrets=ok，PC ack）。
-- **发布信息**：未单独创建 Tag/Release；功能与修复并入 v0.6.6 发布（Tag `v0.6.6` + GitHub Release），保留生产 release/commit/备份证据如上。
+- **发布信息**：事后补发 annotated Tag `v0.6.5` + GitHub Release [AntifieldCloud v0.6.5](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.5)；Tag 指向 v0.6.5 最终文档提交 `4a6ba41`，保留上述生产 release/commit/备份证据。
 
 ## v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
 

@@ -1,6 +1,6 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.6（已发布：Tag `v0.6.6` + GitHub Release）**：精简 Bot 系统提示词与发送工具说明；群聊用户消息增加 `<用户名>：` head；群聊使用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊；记忆分用户/群聊两栏并迁移；schema 保持 v16（无迁移）。v0.6.5 已部署未单独打 Tag、内容并入 v0.6.6（生产 release `20261024T085435Z`/commit `c48ea8a`）；上一发布 v0.6.4 已发布（Tag/Release v0.6.4，生产 release `20261024T065245Z`/commit `63792a7`，schema v16）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.6（已发布：Tag `v0.6.6` + GitHub Release）**：精简 Bot 系统提示词与发送工具说明；群聊用户消息增加 `<用户名>：` head；群聊使用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊；记忆分用户/群聊两栏并迁移；schema 保持 v16（无迁移）。v0.6.5 已补发 Tag `v0.6.5` + GitHub Release（生产 release `20261024T085435Z`/commit `c48ea8a`，内容并入 v0.6.6）；上一发布 v0.6.4 已发布（Tag/Release v0.6.4，生产 release `20261024T065245Z`/commit `63792a7`，schema v16）。
 
 ## v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移）
 
@@ -9,7 +9,7 @@
 - **验收门禁**：`npm run check`/`check-version` 通过；`npm test` **414**（新增群聊用户名/共享记忆隔离/默认沉默/记忆迁移回归）、`npm run test:web` **181**；部署后 smoke 16/16 + 完整 Access smoke 24/24。
 - **部署证据**：生产 release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema16，含记忆两栏/迁移）；预部署快照 `db-predeploy-20261024T100552756Z.sqlite`；部署内 smoke 16/16、完整 Access smoke 24/24；启动迁移群共享条目 4 条、用户级 4 条保留；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，secrets=ok，PC ack）。
 
-## v0.6.5（已部署；未单独打 Tag，内容并入 v0.6.6；生产 release `20261024T085435Z`/commit `c48ea8a`；Bot `/role show` 角色卡详情）
+## v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`；Bot `/role show` 角色卡详情）
 
 - **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；默认角色卡只返回名称，不展示内置详情；失效 AI 会话映射自动清理并重建一次，避免群聊未登记用户持续 `bot_ai_http_error`。
 - **数据/配置**：schema 保持 **v16**（无迁移）；不新增 env/DB 字段。

@@ -5,7 +5,7 @@
 - **范围**：精简 Bot 系统提示词与发送工具说明；群聊用户消息加 `<用户名>：` head；群聊提示词声明所处环境，未 @ 消息默认沉默、不要求每轮调用发送工具；群聊使用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊；群聊抽取按发言用户归属；`/bots` 长期记忆分用户记忆/群聊记忆两栏并迁移现有群聊参与者记忆。
 - **状态**：生产 release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema16，部署内 smoke 16/16、完整 Access smoke 24/24）；annotated Tag `v0.6.6` + GitHub Release [AntifieldCloud v0.6.6](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.6)。
 
-## v0.6.5（已部署；未单独打 Tag，内容并入 v0.6.6；生产 release `20261024T085435Z`/commit `c48ea8a`；Bot `/role show` 角色卡详情；schema 保持 v16）
+## v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`；Bot `/role show` 角色卡详情；schema 保持 v16）
 
 - **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；默认角色卡 `lofii` 只返回名称，不展示内置详情；失效 AI 会话映射自动清理并重建一次，避免群聊未登记用户持续 `bot_ai_http_error`。
 - **状态**：生产 release `20261024T085435Z`/commit `c48ea8a`（v0.6.5/schema16，部署内 smoke 16/16、完整 Access smoke 24/24）；已部署待验收，Tag/Release 待发布。

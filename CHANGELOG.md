@@ -15,11 +15,11 @@
 - 版本升到 **0.6.6**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **414**（新增群聊用户名 head、共享记忆隔离、群聊默认沉默、记忆迁移回归）、`npm run test:web` **181**。
 - 生产部署（2026-10-24 18:05 CST）：release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema 16，含用户/群聊记忆两栏与迁移）；迁移前快照 `db-predeploy-20261024T100552756Z.sqlite`（sha256 `2cd3e5be3646d90031755d6d76378475369fce43d4ab367345d69873e6d2b0b9`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；启动迁移 `bot_group_memory_migrated_v1=2026-10-24T10:05:54.350Z`，群共享条目 4 条、用户级条目 4 条保留；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，sha256 `21cabc05142103a30ba058fdef8a5ab24d09ac3176d811dffff6e15aa79309cd`，secrets=ok，PC 已 ack）。
-- v0.6.5 的 `/role show` 与失效 AI 会话重建修复一并包含在本版；v0.6.5 未单独发布。
+- v0.6.5 的 `/role show` 与失效 AI 会话重建修复一并包含在本版；v0.6.5 已单独补发 Tag `v0.6.5` + [GitHub Release](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.5)。
 - 发布（2026-10-24 18:20 CST）：annotated Tag `v0.6.6` + GitHub Release [AntifieldCloud v0.6.6](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.6)（Latest）；Tag 指向本版发布提交，生产代码 commit `1f6980e`、生产 release `20261024T100522Z`。
 - v0.6.5 发布信息（并入 v0.6.6）：生产 release `20261024T085435Z`/commit `c48ea8a`（v0.6.5/schema16）；迁移前快照 `db-predeploy-20261024T085507536Z.sqlite`（sha256 `e0062e5a8b6320cee4a81c98f28852c64a84994d4867909e539bd28aa29a9c14`）；部署内只读 smoke 16/16、完整 Access smoke 24/24；部署后备份 `snapshot-20261024T085621039Z-inc.tar.gz`（241426 bytes，sha256 `2d52c76f96fc7fe3895ca8fb11795d59925c2f9340cf646ce5d682de95adbbc6`，secrets=ok）；未单独创建 Tag/Release。
 
-## [v0.6.5] - 2026-10-24（已部署；未单独打 Tag，内容并入 v0.6.6）
+## [v0.6.5] - 2026-10-24（已发布：Tag `v0.6.5` + GitHub Release）
 
 ### Added
 
