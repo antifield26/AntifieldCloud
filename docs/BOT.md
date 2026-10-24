@@ -103,6 +103,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停/最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊，管理个人角色卡；`/role show` 对自定义卡展示完整详情，默认卡不展示内置详情）、
 `/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目/状态/legacy 旧摘要与该 Bot×用户的全部会话，含远端）。五条不需要目标 `allow_commands` 或 user 白名单；
 - **群聊角色卡**：每个群聊目标一张共享卡（管理员在 Web 编辑）；群聊 Chat 使用该卡，不再使用成员私聊个人卡；群聊不接受 `/role`。`groupReplyMode=mention` 仅处理 @Bot/文本包含 Bot 名称的全量消息；`all` 为实验性，v0.6.4 起由模型是否调用 `send_message` 决定发送，未调用即静默。
+- **AI 会话复用**：按 Bot×目标×用户复用 OpenCode 会话；v0.6.5 起若远端会话已被清理（404），自动删除 `bot_ai_sessions` 旧映射并重建一次，避免群聊未登记用户持续收到 `bot_ai_http_error`。
 
 ## 4. 队列、回复管线与失败处理
 

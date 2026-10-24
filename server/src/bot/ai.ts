@@ -136,6 +136,11 @@ function isTimeoutError(error: unknown): boolean {
   return error.name === 'TimeoutError' || error.name === 'AbortError'
 }
 
+/** 仅匹配远端会话不存在的 404；用于清理失效映射并重建一次。 */
+function isStaleSessionError(error: unknown): boolean {
+  return error instanceof AppError && error.code === 'bot_ai_http_error' && error.message.includes('HTTP 404')
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -213,7 +218,29 @@ export class OpenCodeBotAi implements BotAi {
       targetExternalId: input.targetExternalId,
       userId: input.userId,
     }
-    const { sessionId, created } = await this.ensureSession(target, input.sessionTitle)
+    const session = await this.ensureSession(target, input.sessionTitle)
+    try {
+      return await this.chatInSession(target, input, session)
+    } catch (error) {
+      // OpenCode 侧会话可能被清理/重启后丢失；旧映射会让后续所有消息都 404。
+      // 仅对复用会话的 404 做一次重建重试；新建会话或其它错误直接上抛，避免掩盖真实故障。
+      if (session.created || !isStaleSessionError(error)) throw error
+      this.log?.('warn', 'AI 会话映射已失效，清理后重建', {
+        sessionId: session.sessionId.slice(0, 32),
+      })
+      this.forgetChatSession(target, session.sessionId)
+      const recreated = await this.ensureSession(target, input.sessionTitle)
+      return await this.chatInSession(target, input, recreated)
+    }
+  }
+
+  /** 在已确定的会话内完成一轮 prompt → 等待 → 取新增 assistant 文本。 */
+  private async chatInSession(
+    target: ChatTarget,
+    input: { prompt: string; image?: BotAiImage },
+    session: { sessionId: string; created: boolean },
+  ): Promise<string> {
+    const { sessionId, created } = session
     // 发送 prompt 前固定"历史 assistant 消息"基线：轮询回退只接受基线之外的新回答。
     const baseline = await this.prepareAssistantBaseline(sessionId, created)
     await this.sendPrompt(sessionId, input.prompt, input.image)
@@ -230,6 +257,16 @@ export class OpenCodeBotAi implements BotAi {
 
     this.touch(target, sessionId)
     return text.slice(0, this.maxReplyChars)
+  }
+
+  /** 删除失效的 Chat 会话映射，并清理该会话的内存基线；只删匹配行，避免误删并发新建的映射。 */
+  private forgetChatSession(target: ChatTarget, sessionId: string): void {
+    this.db
+      .prepare(
+        "DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat' AND session_id = ?",
+      )
+      .run(target.botId, target.targetExternalId, target.userId, sessionId)
+    this.seenAssistantMessages.delete(sessionId)
   }
 
   /** 工具隔离状态：供 BotService 暴露到 /api/bots/status 并写审计，避免降级只藏在日志里。 */

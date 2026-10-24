@@ -338,6 +338,56 @@ test('第二次对话复用同一 session_id，不重复创建会话', async () 
   }
 })
 
+test('v0.6.5：旧会话已不存在时清理映射并重建一次，不再返回 bot_ai_http_error', async () => {
+  const staleSession = 'ses_stale_1'
+  const newSession = 'ses_new_1'
+  let createCalls = 0
+  const fixture = setup((call) => {
+    const path = call.url.pathname
+    if (call.method === 'POST' && path === '/api/session') {
+      createCalls += 1
+      return jsonResponse({ data: { id: newSession } })
+    }
+    if (call.method === 'POST' && path === `/api/session/${staleSession}/prompt`) {
+      return jsonResponse({ _tag: 'SessionNotFoundError', message: 'Session not found' }, 404)
+    }
+    if (call.method === 'POST' && path === `/api/session/${newSession}/prompt`) {
+      return jsonResponse({ data: { id: 'inbox_recreated' } })
+    }
+    if (call.method === 'POST' && path === `/api/experimental/session/${newSession}/wait`) {
+      return new Response(null, { status: 204 })
+    }
+    if (call.method === 'GET' && path === `/api/session/${newSession}/message`) {
+      return jsonResponse({ data: [assistant([{ type: 'text', text: '重建后的回答' }])] })
+    }
+    return jsonResponse({ _tag: 'SessionNotFoundError', message: 'stale' }, 404)
+  })
+  try {
+    const now = new Date().toISOString()
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_ai_sessions (bot_id, target_external_id, user_id, mode, session_id, model, created_at, updated_at)
+         VALUES (?, ?, ?, 'chat', ?, 'test-provider/test-model', ?, ?)`,
+      )
+      .run(BOT_ID, TARGET, USER, staleSession, now, now)
+
+    const reply = await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: TARGET,
+      userId: USER,
+      prompt: '旧会话已被清理',
+    })
+    assert.equal(reply, '重建后的回答')
+    assert.equal(createCalls, 1, '只应重建一次会话')
+    const row = mapping(fixture.db, BOT_ID)
+    assert.equal(row?.session_id, newSession, '映射应更新为新会话')
+    assert.ok(fixture.logs.some((entry) => entry.message.includes('AI 会话映射已失效')))
+    assertNoSecret(fixture.logs)
+  } finally {
+    dispose(fixture)
+  }
+})
+
 test('assistant 无文本时抛错，错误与日志不泄漏密码或上游 URL', async () => {
   const fixture = setup(
     basicHandler({
