@@ -1,6 +1,6 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.4（开发/验收中）**：复核并处理项目已知问题/遗留事项；Bot 全量群聊延长合并窗口；消息发送从 `NO_REPLY` 文本哨兵升级为 `botmsg_send_message` MCP 工具；私聊/@ 每轮至少发送一次，全量群聊不调用即静默；新建 Chat/Memory 会话按目标名称命名；schema 保持 v16（无迁移）。上一版 v0.6.3 已发布（Tag/Release v0.6.3，release `20261023T142411Z`/commit `7ac1d27`，schema v16）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.4（已部署，等待多用户内测后发布）**：复核并处理项目已知问题/遗留事项；Bot 全量群聊延长合并窗口；消息发送从 `NO_REPLY` 文本哨兵升级为 `botmsg_send_message` MCP 工具；私聊/@ 每轮至少发送一次，全量群聊不调用即静默；新建 Chat/Memory 会话按目标名称命名；schema 保持 v16（无迁移）。上一版 v0.6.3 已发布（Tag/Release v0.6.3，release `20261023T142411Z`/commit `7ac1d27`，schema v16）。
 
 ## v0.6.4（已部署，等待多用户内测后发布；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名）
 
