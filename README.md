@@ -2,9 +2,9 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.5（**开发中，待部署**）。本版修复 Bot 私聊角色卡展示：`/role show` 在用户设置角色卡时返回完整角色卡详细文本；使用默认角色卡时不展示内置详情。schema 保持 **v16**（无迁移）。OpenCode v2.1.3。
-> 发布：最新公开版本 v0.6.4（Tag `v0.6.4`，GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)）；v0.6.5 待部署与验收后发布。上一版 v0.6.3（Tag `v0.6.3`，release `20261023T142411Z`/commit `7ac1d27`）。
-> 测试基线（Lead 实测 2026-10-24，v0.6.5）：`npm test` **409**（server+scripts，含角色卡展示/消息工具/回合 token/长合并窗口/会话标题/UA 绑定回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；服务端覆盖率以 `npm run test:coverage` 输出为准；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
+> 状态：v0.6.5（**已部署，待验收；Tag/Release 待发布**）。本版修复 Bot 私聊角色卡展示：`/role show` 在用户设置角色卡时返回完整角色卡详细文本；使用默认角色卡时不展示内置详情。schema 保持 **v16**（无迁移）。生产 release `20261024T081541Z`/commit `d2767fa`。OpenCode v2.1.3。
+> 发布：最新公开版本 v0.6.4（Tag `v0.6.4`，GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)）；v0.6.5 已部署待验收，验收通过后发布。上一版 v0.6.3（Tag `v0.6.3`，release `20261023T142411Z`/commit `7ac1d27`）。
+> 测试基线（Lead 实测 2026-10-24，v0.6.5）：`npm test` **409**（server+scripts，含角色卡展示/消息工具/回合 token/长合并窗口/会话标题/UA 绑定回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈

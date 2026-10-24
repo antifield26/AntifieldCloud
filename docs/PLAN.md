@@ -1,8 +1,8 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.5（开发中，待部署）**：修复 Bot 私聊 `/role show` 展示用户自定义角色卡完整详情，默认角色卡不展示内置详情；schema 保持 v16（无迁移）。上一版 v0.6.4 已发布（Tag/Release v0.6.4，生产 release `20261024T065245Z`/commit `63792a7`，schema v16）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.5（已部署，待验收；Tag/Release 待发布）**：修复 Bot 私聊 `/role show` 展示用户自定义角色卡完整详情，默认角色卡不展示内置详情；schema 保持 v16（无迁移）。上一版 v0.6.4 已发布（Tag/Release v0.6.4，生产 release `20261024T065245Z`/commit `63792a7`，schema v16）。
 
-## v0.6.5（开发中，待部署；Bot `/role show` 角色卡详情）
+## v0.6.5（已部署，待验收；Bot `/role show` 角色卡详情）
 
 - **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；默认角色卡只返回名称，不展示内置详情。
 - **数据/配置**：schema 保持 **v16**（无迁移）；不新增 env/DB 字段。

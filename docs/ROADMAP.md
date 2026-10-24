@@ -1,9 +1,9 @@
 # 路线图
 
-## v0.6.5（开发中，待部署；Bot `/role show` 角色卡详情；schema 保持 v16）
+## v0.6.5（已部署，待验收；Bot `/role show` 角色卡详情；schema 保持 v16）
 
 - **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；默认角色卡 `lofii` 只返回名称，不展示内置详情。
-- **状态**：本地实现与测试完成，待部署；schema v16 无迁移。
+- **状态**：生产 release `20261024T081541Z`/commit `d2767fa`（v0.6.5/schema16，部署内 smoke 16/16、完整 Access smoke 24/24）；已部署待验收，Tag/Release 待发布。
 
 ## v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
 
