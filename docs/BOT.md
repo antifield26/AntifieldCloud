@@ -64,7 +64,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、工具白名单、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；v0.6.4 起按配置放行 `botmsg_*` MCP 发送工具；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；兼容性基于 OpenCode v2.1.3）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
 - `server/src/bot/group-roles.ts`：群聊目标共享角色卡存储；`server/src/http/routes/bot-ai-tool.ts`：消息发送 MCP 的内部回调路由（turn token HMAC、无 session/CSRF）。
 - `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；v0.6.0 起 key/value/legacy 均过滤敏感内容，读取侧也排除旧版本已落库的敏感条目；旧摘要仅作 legacy 来源与 fallback，抽取 ops=0 不置迁移标记。
-- `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。内置默认角色 `lofii` 自 v0.6.0 起只保留名字与简短对话风格，不注入详细人设/背景。
+- `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。内置默认角色 `lofii` 自 v0.6.0 起只保留名字与简短对话风格，不注入详细人设/背景；v0.6.5 起 `/role show` 对用户自定义卡返回完整详情，默认角色卡只显示名称、不展示内置设定。
 - `server/src/bot/group-roles.ts`：每 Bot×群聊目标一张共享角色卡（v0.6.3）；仅管理员可编辑正文，用于该群所有成员的 Chat 提示词，停用/删除后回退 `lofii`。
 - `server/src/bot/prompts.ts`：任务/对话提示与固定安全边界；Chat 使用私聊个人卡或群聊共享卡，缺失时回退内置 lofii；v0.6.4 启用发送工具时追加 `[消息发送工具]`（携带一次性 turn 凭据），全量群聊未启用工具时保留 `NO_REPLY` 兼容段。
 - `server/src/bot/service.ts`：CRUD、Webhook、Chat/命令分发、群消息模式过滤、回复管线（sanitize→format→split）、图片降级、事件诊断、连接自检、角色/记忆管理、指标、静默时段、通知/发布队列、重试、清理、限流。
@@ -100,7 +100,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 
 - **命令目标（仅 C2C 私聊）**：`bot_targets` 中 `kind='user'` 且 `allow_commands=1` 的私聊目标；v0.6.3 起群聊/频道目标不再接受任何斜杠命令（服务端审计 `bot.command.disabled` 并静默忽略）。
 - **用户白名单**：私聊发送者必须登记为 `kind='user'` 且 `allow_commands=1` 的目标；群/频道里的成员即使目标开启命令也无法执行（且命令本身已在群聊禁用）。
-- **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停/最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊，管理个人角色卡）、
+- **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停/最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊，管理个人角色卡；`/role show` 对自定义卡展示完整详情，默认卡不展示内置详情）、
 `/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目/状态/legacy 旧摘要与该 Bot×用户的全部会话，含远端）。五条不需要目标 `allow_commands` 或 user 白名单；
 - **群聊角色卡**：每个群聊目标一张共享卡（管理员在 Web 编辑）；群聊 Chat 使用该卡，不再使用成员私聊个人卡；群聊不接受 `/role`。`groupReplyMode=mention` 仅处理 @Bot/文本包含 Bot 名称的全量消息；`all` 为实验性，v0.6.4 起由模型是否调用 `send_message` 决定发送，未调用即静默。
 

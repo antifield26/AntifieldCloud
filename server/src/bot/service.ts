@@ -81,6 +81,7 @@ import {
   publicHelpText,
   roleDefaultText,
   roleGroupHint,
+  roleShowText,
   roleUsage,
 } from './templates.ts'
 
@@ -2022,12 +2023,7 @@ export class BotService {
     }
 
     if (sub === 'show') {
-      if (!card) return roleDefaultText()
-      return [
-        `当前角色：${card.name}（专属，${card.enabled ? '使用中' : '已暂停'}）`,
-        '设定：',
-        card.prompt,
-      ].join('\n')
+      return roleShowText(card)
     }
 
     if (sub === 'set') {

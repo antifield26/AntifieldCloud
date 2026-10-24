@@ -1,6 +1,12 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）**：复核并处理项目已知问题/遗留事项；Bot 全量群聊延长合并窗口；消息发送从 `NO_REPLY` 文本哨兵升级为 `botmsg_send_message` MCP 工具；私聊/@ 每轮至少发送一次，全量群聊不调用即静默；新建 Chat/Memory 会话按目标名称命名；schema 保持 v16（无迁移）。上一版 v0.6.3 已发布（Tag/Release v0.6.3，release `20261023T142411Z`/commit `7ac1d27`，schema v16）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.5（开发中，待部署）**：修复 Bot 私聊 `/role show` 展示用户自定义角色卡完整详情，默认角色卡不展示内置详情；schema 保持 v16（无迁移）。上一版 v0.6.4 已发布（Tag/Release v0.6.4，生产 release `20261024T065245Z`/commit `63792a7`，schema v16）。
+
+## v0.6.5（开发中，待部署；Bot `/role show` 角色卡详情）
+
+- **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；默认角色卡只返回名称，不展示内置详情。
+- **数据/配置**：schema 保持 **v16**（无迁移）；不新增 env/DB 字段。
+- **验收门禁**：`npm run check`/`check-version` 通过；`npm test` **409**（新增 `/role show` 模板与命令回归）、`npm run test:web` **180**；部署后 smoke 16/16 + 完整 Access smoke 24/24。
 
 ## v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名）
 

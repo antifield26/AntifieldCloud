@@ -81,6 +81,7 @@ test('v0.5.5：/role show/off/on/delete 与会话重置（全部会话映射清�
     await command(fixture, '/role show', 'role-3')
     reply = lastMessageText(fixture)
     assert.ok(reply.includes('老师'))
+    assert.ok(reply.includes('角色卡详情：'))
     assert.ok(reply.includes('用耐心、分步骤的方式解释。'))
 
     await command(fixture, '/role off', 'role-4')
@@ -98,6 +99,10 @@ test('v0.5.5：/role show/off/on/delete 与会话重置（全部会话映射清�
 
     await command(fixture, '/role on', 'role-5')
     await command(fixture, '/role delete', 'role-6')
+    await command(fixture, '/role show', 'role-7')
+    reply = lastMessageText(fixture)
+    assert.equal(reply, '当前角色：lofii（默认）')
+    assert.equal(reply.includes('角色卡详情'), false)
     assert.equal(
       (fixture.db
         .prepare('SELECT COUNT(*) AS n FROM bot_chat_roles WHERE bot_id = ? AND user_id = ?')

@@ -96,6 +96,16 @@ export function roleDefaultText(): string {
   return `当前角色：${DEFAULT_CHAT_ROLE.name}（默认）`
 }
 
+/** `/role show`：用户设置了角色卡时返回完整设定文本；默认角色卡只返回名称，不暴露内置设定。 */
+export function roleShowText(card: { name: string; prompt: string; enabled: boolean } | null): string {
+  if (!card) return roleDefaultText()
+  return [
+    `当前角色：${card.name}（专属，${card.enabled ? '使用中' : '已暂停'}）`,
+    '角色卡详情：',
+    card.prompt,
+  ].join('\n')
+}
+
 export function roleGroupHint(): string {
   return '群聊角色由管理员在 Web“角色与记忆”中配置；群聊/频道不再接受斜杠命令。'
 }

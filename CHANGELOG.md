@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.6.5] - 2026-10-24（开发中，待部署）
+
+### Added
+
+- **`/role show` 角色卡详情**：用户设置过私聊角色卡时，返回角色名、启停状态与完整角色设定文本；使用默认角色卡 `lofii` 时只返回名称，不展示内置设定详情。
+
+### Deployment
+
+- 版本升到 **0.6.5**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
+- 本地门禁：`npm run check`/`check-version` 通过；`npm test` **409**（新增 `/role show` 模板与命令回归）、`npm run test:web` **180**。
+
 ## [v0.6.4] - 2026-10-24（已发布：Tag/Release v0.6.4）
 
 ### Added
