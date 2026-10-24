@@ -281,6 +281,8 @@ export interface BotAi {
     legacySummary: string
     userText: string
     assistantText: string
+    /** 群聊共享记忆：当前发言用户显示名；设置后按“用户名：记忆”归属到该用户。 */
+    groupUserName?: string
     maxOps: number
   }): Promise<BotMemoryOperation[]>
   /** 删除远端 AI 会话（/reset、/forget、角色变更等本地映射清理时尽力删除）。 */

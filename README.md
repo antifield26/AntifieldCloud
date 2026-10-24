@@ -2,9 +2,9 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.5（**已部署，待验收；Tag/Release 待发布**）。本版修复 Bot 私聊角色卡展示：`/role show` 在用户设置角色卡时返回完整角色卡详细文本；使用默认角色卡时不展示内置详情；同时修复群聊未登记用户复用已失效 OpenCode 会话时返回 `bot_ai_http_error` 的问题（自动清理旧映射并重建会话）。schema 保持 **v16**（无迁移）。生产 release `20261024T085435Z`/commit `c48ea8a`。OpenCode v2.1.3。
-> 发布：最新公开版本 v0.6.4（Tag `v0.6.4`，GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)）；v0.6.5 已部署待验收，验收通过后发布。上一版 v0.6.3（Tag `v0.6.3`，release `20261023T142411Z`/commit `7ac1d27`）。
-> 测试基线（Lead 实测 2026-10-24，v0.6.5）：`npm test` **410**（server+scripts，含角色卡展示/失效会话重建/消息工具/回合 token/长合并窗口/会话标题/UA 绑定回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
+> 状态：v0.6.6（**开发中，待部署**）。本版精简系统提示词与发送工具定义文本，降低工具说明对 Bot 回复风格的影响；群聊用户消息增加用户名 head；群聊改用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊会话；同时包含 v0.6.5 的 `/role show` 与失效 AI 会话重建修复。schema 保持 **v16**（无迁移）。OpenCode v2.1.3。
+> 发布：最新公开版本 v0.6.4（Tag `v0.6.4`，GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)）；v0.6.5 未发布、由 v0.6.6 承接；v0.6.6 待部署验收后发布。上一版 v0.6.3（Tag `v0.6.3`，release `20261023T142411Z`/commit `7ac1d27`）。
+> 测试基线（Lead 实测 2026-10-24，v0.6.6）：`npm test` **411**（server+scripts，含群聊用户名/共享记忆/角色卡/失效会话重建回归）、`npm run test:web` **180**（32 文件）、`npm run typecheck`/`npm run lint` 通过；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -69,6 +69,7 @@
   TTL：资料/偏好不过期，事实/项目/关系 **365 天**、事件 **90 天**、任务 **30 天**（更新续期）；召回核心层优先 + 关键词相关层，预算 **3000 字/12 条**（`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`），`/memory off` 时无注入；审计 `bot.memory.extract` 只记计数。
 - **AI 仅普通消息 Chat（v0.5.9）**：提示词固定为「角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息」，全量群消息追加 `NO_REPLY` 决策段；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；`/reset` 与私聊角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 mode。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
 - **默认角色、私聊角色卡与群聊角色卡**：内置默认角色 `lofii` 只保留名字与简短对话风格；群聊使用管理员在“角色与记忆”配置的共享角色卡（每个群目标一张，覆盖成员私聊卡，停用/删除回退 lofii）；C2C `/role` 对 QQ 私聊用户开放，每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；`/role show` 对用户自定义卡返回完整详细文本，默认角色卡只返回名称、不展示内置详情；个人卡只覆盖私聊；群聊不执行 `/role`，也不再接受任何斜杠命令。私聊角色卡变更会清理该范围会话映射。
+- **群聊用户名与共享记忆（v0.6.6）**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话。系统提示词与发送工具说明同步精简，减少工具定义对回复风格的影响。
 - **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停与最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊）、`/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目、状态、legacy 旧摘要与该 Bot×用户全部会话，含远端）；对 C2C 用户开放；`/reset` 与私聊角色卡变更会尽力删除对应远端会话。
 - **出站连通性（v0.5.10，Pi 直连）**：`server/src/bot/connectivity.ts` 每 60 秒探测外网与 QQ 平台只读 API；`GET /api/bots/connectivity` 仅返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/bots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/bots` 概览展示外网/QQ 平台状态。
 - **代理隧道已移除（v0.5.10）**：删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`，Bot 出站改为 Pi 直连。

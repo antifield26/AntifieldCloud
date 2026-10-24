@@ -290,6 +290,7 @@ export class OpenCodeBotAi implements BotAi {
     legacySummary: string
     userText: string
     assistantText: string
+    groupUserName?: string
     maxOps: number
   }): Promise<BotMemoryOperation[]> {
     const sessionId = await this.createSession(normalizeSessionTitle(input.sessionTitle, 'AntifieldCloud Memory'))
@@ -302,10 +303,17 @@ export class OpenCodeBotAi implements BotAi {
       )
       .join('\n')
     const legacy = input.legacySummary.trim()
+    const groupUserName = input.groupUserName?.trim()
     const prompt = [
       '你在从对话中抽取 AntifieldCloud Bot 用户的长期记忆，只输出严格 JSON，不要 Markdown、解释或代码块。',
       '输出格式：{"operations":[{"op":"upsert","kind":"profile","key":"nickname","value":"称呼用户为小明","confidence":0.9,"importance":3},{"op":"delete","kind":"task","key":"..."}]}',
       'kind 只能是 profile/preference/fact/project/task/relationship/episode；key 是稳定短语（1–64 字符），同一事实更新时复用相同 kind+key。',
+      ...(groupUserName
+        ? [
+            `这是群聊共享记忆；当前发言用户是「${groupUserName.slice(0, 40)}」。每条 upsert 的 key 必须以「${groupUserName.slice(0, 40)}:」开头，value 只写该用户的记忆内容，不要写其他用户。`,
+            '删除操作只删除当前用户自己的条目。',
+          ]
+        : []),
       'value 最多 500 字；用户的明确喜好/厌恶、称呼、身份、长期项目、未完成任务、人物关系、值得记住的事件，即使只有一句话也必须记录，不要因为消息简短而返回空。',
       '例如：用户说“我喜欢红茶”，应输出 {"op":"upsert","kind":"preference","key":"tea","value":"喜欢红茶","confidence":0.9,"importance":3}。',
       '忽略纯寒暄（你好/谢谢）、一次性内容和推测；确实没有新信息时才返回 {"operations":[]}。',

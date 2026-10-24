@@ -189,7 +189,7 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；v0.6.4 新增 `BOT_CHAT_BU
 
 ## 5.1 Chat 提示词、会话与记忆抽取（v0.5.11）
 
-- 提示词固定由四部分组成：**角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息**；群聊共享卡覆盖群内成员私聊卡；v0.6.4 启用发送工具时追加 `[消息发送工具]`（本轮 `turn_id`/`turn_token`，私聊/@ 必须至少调用一次，全量群聊不调用即静默）；未启用工具时全量群聊保留 `NO_REPLY` 兼容段；不再提供任务/对话提示词覆盖。默认 `lofii` 自 v0.6.0 起只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设；
+- 提示词固定由四部分组成：**角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 记忆 + 用户消息**；群聊共享卡覆盖群内成员私聊卡；v0.6.4 启用发送工具时追加精简的 `[消息发送工具]`（本轮 `turn_id`/`turn_token`，私聊/@ 必须至少调用一次，全量群聊不调用即静默）；未启用工具时全量群聊保留 `NO_REPLY` 兼容段。v0.6.6 起安全边界、群聊策略、搜索/发送工具说明均精简，空记忆不再注入占位段；群聊用户消息格式为 `<用户名>：<消息>`，用于区分不同成员。不再提供任务/对话提示词覆盖。默认 `lofii` 自 v0.6.0 起只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设；
   `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；旧 `BOT_AI_SYSTEM_PROMPT` 已废弃且不再读取。
 - AI 仅在普通消息 Chat 中调用（`allow_chat` 目标 / QQ C2C 私聊）；斜杠命令不调用 AI，`/ask` 已移除（非管理员被拒、管理员回全量帮助）。
 - 会话：`bot_ai_sessions` 按 `(bot_id, target_external_id, user_id, mode)` 复用 OpenCode 会话；v0.5.9 起 `mode` 只写 `chat`（列保留，旧 `task` 行为历史遗留）；
@@ -197,6 +197,7 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；v0.6.4 新增 `BOT_CHAT_BU
 - 审计 `bot.ai.chat` 记录 bot/user/chars/image 等元数据，**不再记录 mode**，不记录提示词/记忆正文。
 - 记忆抽取（v0.5.11）：累计 `BOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）轮或用户空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s，0 关闭）触发一次；按 Bot×用户串行队列，每次新建一次性远端会话并在 `finally` 删除；
   模型输出严格 JSON operations（upsert/delete，服务端最多 20 条），服务端校验/敏感过滤（key/value/legacy 均过滤）后写入 `bot_memory_items`；审计 `bot.memory.extract` 只记计数；**ops=0 不置 legacy 迁移标记**，保留 fallback 继续迁移（v0.6.0）。
+- **群聊共享记忆（v0.6.6）**：群聊使用独立 scope `group:<targetExternalId>`，条目按 `<用户名>：<记忆>` 保存和注入；群聊抽取按发言用户归属（key 前缀用户名），已登记成员的用户级 `bot_memory_items` 不进入群聊提示词；群 scope 不显示在 Web 用户级记忆列表中。群聊仍使用该目标共享角色卡，与共享记忆相互独立。
   摘要使用一次性远端会话并在 `finally` 删除，不再保存 `summary_session_id`；审计 `bot.ai.memory` 记录 `rounds`，不记录摘要正文。
 - QQ C2C 私聊对任意用户开放 Chat（接触面由 QQ 平台“谁可添加 Bot”控制）；只读命令仍要求目标 `allow_commands` 与用户白名单。
 

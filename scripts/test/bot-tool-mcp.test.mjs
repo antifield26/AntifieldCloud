@@ -103,7 +103,7 @@ test('bot-tool-mcp：初始化、列出工具并转发 turn_id/turn_token/text',
       arguments: { turn_id: 'turn-test', turn_token: 'token-test', text: '第一条' },
     })
     assert.equal(sent?.result?.isError, false)
-    assert.match(sent?.result?.content?.[0]?.text ?? '', /第 1 条/)
+    assert.equal(sent?.result?.content?.[0]?.text ?? '', 'ok:1')
     assert.deepEqual(requests[0]?.body, { turn_id: 'turn-test', turn_token: 'token-test', text: '第一条' })
 
     const failed = await call('tools/call', {
@@ -111,7 +111,7 @@ test('bot-tool-mcp：初始化、列出工具并转发 turn_id/turn_token/text',
       arguments: { turn_id: 'turn-test', turn_token: 'token-test', text: '失败样本' },
     })
     assert.equal(failed?.result?.isError, true)
-    assert.match(failed?.result?.content?.[0]?.text ?? '', /发送失败/)
+    assert.match(failed?.result?.content?.[0]?.text ?? '', /send failed/)
   } finally {
     child.kill()
     server.close()

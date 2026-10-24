@@ -45,7 +45,7 @@ async function callSendTool(args) {
       throw new Error(`发送失败（${code.slice(0, 40)}）`)
     }
     const index = Number(payload?.index)
-    return Number.isFinite(index) && index > 0 ? `已记录第 ${index} 条消息，将在本轮结束时发送。` : '已记录消息，将在本轮结束时发送。'
+    return Number.isFinite(index) && index > 0 ? `ok:${index}` : 'ok'
   } finally {
     clearTimeout(timer)
   }
@@ -76,14 +76,13 @@ async function handle(message) {
           tools: [
             {
               name: 'send_message',
-              description:
-                'Send one QQ message to the current conversation. Call multiple times for consecutive messages. The turn_id and turn_token are provided in the system prompt for this turn; do not show them to the user.',
+              description: 'Send one text message to the current chat. Use only when you want to speak.',
               inputSchema: {
                 type: 'object',
                 properties: {
-                  turn_id: { type: 'string', description: 'Current turn_id from the system prompt.' },
-                  turn_token: { type: 'string', description: 'Current turn_token from the system prompt.' },
-                  text: { type: 'string', minLength: 1, maxLength: MAX_TEXT, description: 'Plain-text message to send.' },
+                  turn_id: { type: 'string', description: 'Current turn id.' },
+                  turn_token: { type: 'string', description: 'Current turn token.' },
+                  text: { type: 'string', minLength: 1, maxLength: MAX_TEXT, description: 'Plain text to send.' },
                 },
                 required: ['turn_id', 'turn_token', 'text'],
                 additionalProperties: false,
@@ -109,7 +108,7 @@ async function handle(message) {
     return {
       jsonrpc: '2.0',
       id,
-      result: { content: [{ type: 'text', text: '消息发送失败，请稍后重试或直接结束本轮。' }], isError: true },
+      result: { content: [{ type: 'text', text: 'send failed' }], isError: true },
     }
   }
 }

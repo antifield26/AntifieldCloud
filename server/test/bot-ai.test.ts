@@ -609,15 +609,28 @@ test('v0.5.11：记忆抽取使用一次性会话、解析 JSON 并删除远端�
       maxOps: 20,
     })
     assert.equal(second.length, 2)
+    const third = await fixture.ai.extractMemories({
+      botId: BOT_ID,
+      userId: USER,
+      existing: [],
+      legacySummary: '',
+      userText: '群聊里的对话',
+      assistantText: '好的',
+      groupUserName: '小明',
+      maxOps: 20,
+    })
+    assert.equal(third.length, 2)
     const promptBodies = fixture.calls
       .filter((call) => call.method === 'POST' && call.url.pathname === `/api/session/${SESSION_ID}/prompt`)
       .map((call) => String((call.body as Record<string, unknown>).text))
     assert.ok(promptBodies[1]?.includes('[现有记忆]'))
     assert.ok(promptBodies[1]?.includes('[旧摘要'))
+    assert.ok(promptBodies[2]?.includes('群聊共享记忆'))
+    assert.ok(promptBodies[2]?.includes('小明:'), '群聊抽取要求 key 使用用户名前缀')
     const creates = fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session')
     const deletes = fixture.calls.filter((call) => call.method === 'DELETE' && call.url.pathname.startsWith('/api/session/'))
-    assert.equal(creates.length, 2, '每次抽取都应新建一次性会话')
-    assert.equal(deletes.length, 2, '每次抽取后都应删除远端会话')
+    assert.equal(creates.length, 3, '每次抽取都应新建一次性会话')
+    assert.equal(deletes.length, 3, '每次抽取后都应删除远端会话')
     assert.ok(deletes.every((call) => call.url.pathname === `/api/session/${SESSION_ID}`))
     assertNoSecret(fixture.logs)
   } finally {

@@ -1,8 +1,14 @@
 # AntifieldCloud v0.6.x 实施计划（摘要）
 
-本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.5（已部署，待验收；Tag/Release 待发布）**：修复 Bot 私聊 `/role show` 展示用户自定义角色卡完整详情，默认角色卡不展示内置详情；schema 保持 v16（无迁移）。上一版 v0.6.4 已发布（Tag/Release v0.6.4，生产 release `20261024T065245Z`/commit `63792a7`，schema v16）。
+本文件是 v0.6.x 的权威范围/决策摘要；v0.5.x 历史见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.6.6（开发中，待部署）**：精简 Bot 系统提示词与发送工具说明；群聊用户消息增加 `<用户名>：` head；群聊使用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊；schema 保持 v16（无迁移）。上一版 v0.6.5 已部署未发布、由 v0.6.6 承接；上一发布 v0.6.4 已发布（Tag/Release v0.6.4，生产 release `20261024T065245Z`/commit `63792a7`，schema v16）。
 
-## v0.6.5（已部署，待验收；Bot `/role show` 角色卡详情）
+## v0.6.6（开发中，待部署；系统提示词精简 + 群聊用户名 head + 群聊共享记忆）
+
+- **范围**：缩短安全边界、群聊回复策略、搜索/发送工具说明并移除空记忆段；群聊用户消息前缀 `<用户名>：`；群聊共享记忆使用独立 `group:<targetExternalId>` scope，条目按 `<用户名>：<记忆>` 存储/注入；群聊抽取按发言用户归属，用户级记忆不进入群聊。
+- **数据/配置**：schema 保持 **v16**（无迁移）；复用 `bot_memory_items` 的群 scope，不新增 env/DB 字段。
+- **验收门禁**：`npm run check`/`check-version` 通过；`npm test` **411**（新增群聊用户名/共享记忆隔离回归）、`npm run test:web` **180**；部署后 smoke 16/16 + 完整 Access smoke 24/24。
+
+## v0.6.5（已部署，未发布；由 v0.6.6 承接；Bot `/role show` 角色卡详情）
 
 - **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；默认角色卡只返回名称，不展示内置详情；失效 AI 会话映射自动清理并重建一次，避免群聊未登记用户持续 `bot_ai_http_error`。
 - **数据/配置**：schema 保持 **v16**（无迁移）；不新增 env/DB 字段。

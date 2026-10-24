@@ -690,7 +690,8 @@ v0.6.4 起普通消息 Chat 可启用模型消息发送工具：OpenCode 通过 
   回复文本清洗内部路径/URL，命令回复 ≤1500 字符；`/files` 最多 10 条、只含名称与大小。`/help`：仅输出命令列表（管理员 11 条、非管理员 6 条），不含标题、说明、权限声明或用法注释；未知命令对管理员回全量帮助、对非管理员被拒（无回复）；斜杠命令不调用 AI。
 - Chat：非斜杠普通消息在目标 `allow_chat=1` 且 `BOT_AI_ENABLED=true` 时进入 AI；C2C 私聊直接进入，群/频道仅 @Bot 事件；
   v0.6.5 起复用会话若被 OpenCode 清理（404），自动删除 `bot_ai_sessions` 旧映射并重建一次，避免持续 `bot_ai_http_error`；
-  提示词固定为「角色卡（个人卡或默认 lofii）+ 固定只读安全边界 + 长期记忆 + 用户」；AI 仅 Chat（`allow_chat` 目标/C2C 私聊）；
+  v0.6.6 起群聊用户消息在提示词中格式为 `<用户名>：<消息>`；群聊使用独立共享记忆 scope（`group:<targetExternalId>`），只注入 `<用户名>：<记忆>` 条目，成员用户级记忆不进入群聊；
+  提示词固定为「角色卡（个人卡/群共享卡或默认 lofii）+ 精简安全边界 + 记忆 + 用户」；v0.6.6 起不再注入空记忆占位段；AI 仅 Chat（`allow_chat` 目标/C2C 私聊）；
   `bot_ai_sessions.mode` 只写 `chat`（列保留）；AI 文本经 sanitize → QQ 纯文本格式化 → 按 2000 字符分段（最多 4 段）发送；
   第二段起失败时返回错误并记录 `partial_text_sent`，不自动重试。Chat 不执行命令/写操作；未开启 `allow_chat`、AI 未启用或群/频道非 @Bot 的事件返回 `200` 但不调用 AI（写诊断事件 `ignored`）。
 - 图片：`BOT_AI_VISION_ENABLED=true`（默认）时，QQ 入站图片（`d.attachments`）经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、

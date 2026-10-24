@@ -49,7 +49,8 @@ test('v0.5.5：未登记私聊用户可 /role set，Chat 使用角色卡并保�
     assert.match(prompt, /^\[系统提示\]\n\[角色卡：猫娘\]/)
     assert.ok(prompt.includes('[角色卡：猫娘]'))
     assert.ok(prompt.includes('说话简短，偶尔用喵。'))
-    assert.ok(prompt.includes('安全边界（不可覆盖）'))
+    assert.ok(prompt.includes('安全边界'))
+    assert.ok(prompt.includes('只读 Bot'))
     assert.equal(prompt.includes('自然、友好、简洁地进行普通聊天'), false)
   } finally {
     fixture.cleanup()

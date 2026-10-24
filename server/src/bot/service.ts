@@ -49,7 +49,7 @@ import {
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { describeBotError } from './errors.ts'
 import { formatAiReply } from './format.ts'
-import { BotMemoryStore } from './memory.ts'
+import { BotMemoryStore, groupMemoryScope } from './memory.ts'
 import { buildBotPrompt, type BotSendToolPrompt } from './prompts.ts'
 import { BurstMerger } from './burst.ts'
 import {
@@ -373,7 +373,14 @@ export class BotService {
   /** 待抽取的对话批次：按 Bot×用户去重，减少高频 Chat 的额外模型调用。 */
   private readonly memoryPending = new Map<
     string,
-    { bot: BotRow; userId: string; targetExternalId: string; rounds: { userText: string; assistantText: string }[] }
+    {
+      bot: BotRow
+      userId: string
+      targetExternalId: string
+      memoryScope: string
+      groupUserName?: string
+      rounds: { userText: string; assistantText: string }[]
+    }
   >()
   private readonly memoryTimers = new Map<string, NodeJS.Timeout>()
   /** 同一 Bot×用户的记忆抽取串行执行，避免并发读到旧条目后互相覆盖。 */
@@ -2220,6 +2227,9 @@ export class BotService {
       const groupRole = target?.kind === 'group' ? this.groupRoles.getByTargetId(bot.id, target.id) : null
       const role = result.isDirect ? this.roles.get(bot.id, result.userId) : groupRole
       const roleCard = role?.enabled ? role : null
+      const isGroup = result.targetKind === 'group'
+      const displayName = isGroup ? this.inboundDisplayName(result) : ''
+      const memoryScope = isGroup ? groupMemoryScope(result.targetExternalId) : result.userId
       const prepared = await this.prepareAiImage(bot, result)
       const texts = items.map((item) => item.text).filter(Boolean)
       const limit = Math.max(1, this.config.botAiMaxPromptChars)
@@ -2252,6 +2262,7 @@ export class BotService {
         result.userId,
         result.userName,
       )} Chat`
+      const promptText = isGroup ? `${displayName}：${userText}` : userText
       sendTurn = this.openAiSendTurn(result)
       const sendToolPrompt: BotSendToolPrompt | undefined = sendTurn
         ? {
@@ -2265,7 +2276,7 @@ export class BotService {
         bot,
         result.userId,
         result.targetExternalId,
-        userText,
+        promptText,
         roleCard,
         prepared.kind === 'ok' ? prepared.image : undefined,
         searchContext,
@@ -2273,6 +2284,8 @@ export class BotService {
         silent,
         sessionTitle,
         sendToolPrompt,
+        memoryScope,
+        isGroup,
       )
       const toolMessages = this.takeAiSendMessages(sendTurn)
       if (sendTurn) {
@@ -2283,7 +2296,10 @@ export class BotService {
             .filter(Boolean)
             .join('\n')
           if (userText && memoryText) {
-            this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, memoryText)
+            this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, memoryText, {
+              memoryScope,
+              ...(isGroup ? { groupUserName: displayName } : {}),
+            })
           }
           this.deps.audit('bot.ai.send', `${bot.platform}:${result.targetExternalId}`, {
             bot: bot.id,
@@ -2319,7 +2335,12 @@ export class BotService {
         return
       }
       await result.reply(replyText)
-      if (userText) this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, plain)
+      if (userText) {
+        this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, plain, {
+          memoryScope,
+          ...(isGroup ? { groupUserName: displayName } : {}),
+        })
+      }
       finishAll('ok', 'chat')
     } catch (error) {
       if (sentExternalIdsOf(error).length > 0) {
@@ -2542,13 +2563,16 @@ export class BotService {
     replyDecision = false,
     sessionTitle?: string,
     sendTool?: BotSendToolPrompt,
+    memoryScope = userId,
+    groupMemory = false,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
-    // 结构化记忆按相关性召回；关闭记忆或没有可用条目时不注入。
-    const memoryContext = this.memory.buildPromptContext(bot.id, userId, text)
+    // 群聊使用独立的群共享记忆 scope，已登记用户的用户级记忆不会进入群聊提示词。
+    const memoryContext = this.memory.buildPromptContext(bot.id, memoryScope, text, groupMemory)
     const prompt = buildBotPrompt({
       roleCard,
       memory: memoryContext.text || undefined,
+      groupMemory,
       searchContext,
       webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext,
       ...(sendTool ? { sendTool } : { replyDecision }),
@@ -2639,14 +2663,26 @@ export class BotService {
     targetExternalId: string,
     userText: string,
     assistantText: string,
+    options: { memoryScope?: string; groupUserName?: string } = {},
   ): void {
     if (!this.deps.ai?.extractMemories) return
-    // 记忆已关闭的用户不进入批处理；开启后下一条 Chat 重新开始累计。
-    if (!this.memory.getState(bot.id, userId).memoryEnabled) return
-    const key = this.memoryKey(bot.id, userId)
-    const entry = this.memoryPending.get(key) ?? { bot, userId, targetExternalId, rounds: [] }
+    const memoryScope = options.memoryScope ?? userId
+    const groupUserName = options.groupUserName
+    // 记忆已关闭的 scope 不进入批处理；开启后下一条 Chat 重新开始累计。
+    if (!this.memory.getState(bot.id, memoryScope).memoryEnabled) return
+    const key = this.memoryQueueKey(bot.id, userId, memoryScope, Boolean(groupUserName))
+    const entry = this.memoryPending.get(key) ?? {
+      bot,
+      userId,
+      targetExternalId,
+      memoryScope,
+      ...(groupUserName ? { groupUserName } : {}),
+      rounds: [],
+    }
     entry.bot = bot
     entry.targetExternalId = targetExternalId
+    entry.memoryScope = memoryScope
+    if (groupUserName) entry.groupUserName = groupUserName
     entry.rounds.push({ userText, assistantText })
     this.memoryPending.set(key, entry)
     const existing = this.memoryTimers.get(key)
@@ -2669,6 +2705,29 @@ export class BotService {
     }
   }
 
+  /** 私聊按 Bot×用户、群聊按 Bot×群 scope×发言用户隔离待抽取批次。 */
+  private memoryQueueKey(botId: string, userId: string, memoryScope: string, group: boolean): string {
+    return group ? `${botId}:${memoryScope}:${userId}` : this.memoryKey(botId, userId)
+  }
+
+  /**
+   * 群聊共享记忆操作：key 加发言用户名前缀，value 统一保存为“用户名：记忆”。
+   * 已登记用户/其他成员的用户级记忆不会进入这里。
+   */
+  private groupMemoryOperations(userName: string, ops: readonly BotMemoryOperation[]): BotMemoryOperation[] {
+    const name = cleanText(userName, 20) || '群成员'
+    const keyPrefix = `${name}:`
+    const valuePrefix = `${name}：`
+    return ops.map((op) => {
+      const key = op.key.startsWith(keyPrefix) ? op.key : `${keyPrefix}${op.key}`
+      if (op.op === 'delete') return { ...op, key }
+      let value = String(op.value ?? '').trim()
+      if (value.startsWith(valuePrefix)) value = value.slice(valuePrefix.length)
+      else if (value.startsWith(`${name}:`)) value = value.slice(name.length + 1).trimStart()
+      return { ...op, key, value: `${valuePrefix}${value}` }
+    })
+  }
+
   /** 把某用户待抽取批次送入串行队列；同用户抽取严格顺序执行，避免并发覆盖。 */
   private flushMemory(key: string): void {
     const timer = this.memoryTimers.get(key)
@@ -2688,7 +2747,17 @@ export class BotService {
     const task = previous
       .catch(() => undefined)
       .then(() =>
-        this.updateMemory(entry.bot, entry.userId, entry.targetExternalId, userText, assistantText, rounds, generation),
+        this.updateMemory(
+          entry.bot,
+          entry.userId,
+          entry.targetExternalId,
+          userText,
+          assistantText,
+          rounds,
+          generation,
+          entry.memoryScope,
+          entry.groupUserName,
+        ),
       )
     this.memoryQueues.set(key, task)
     this.pending.add(task)
@@ -2718,27 +2787,30 @@ export class BotService {
     assistantText: string,
     rounds: number,
     generation: number,
+    memoryScope: string,
+    groupUserName?: string,
   ): Promise<void> {
-    const key = this.memoryKey(bot.id, userId)
+    const key = this.memoryQueueKey(bot.id, userId, memoryScope, Boolean(groupUserName))
     // 排队期间被取消（/memory off、/forget、管理端删除）：不再读取/写入任何记忆数据。
     if ((this.memoryGenerations.get(key) ?? 0) !== generation) return
     try {
-      const state = this.memory.getState(bot.id, userId)
+      const state = this.memory.getState(bot.id, memoryScope)
       if (!state.memoryEnabled) return
-      const existing = this.memory.itemsForExtraction(bot.id, userId)
-      // 未迁移时把旧滚动摘要作为迁移输入；空摘要不触发迁移标记。
-      const legacy = state.legacyMigratedAt ? null : this.memory.legacySummary(bot.id, userId)
+      const existing = this.memory.itemsForExtraction(bot.id, memoryScope)
+      // 群聊共享记忆没有 legacy 摘要；只有私聊用户才迁移旧摘要。
+      const legacy = !groupUserName && !state.legacyMigratedAt ? this.memory.legacySummary(bot.id, memoryScope) : null
       const legacySummary = legacy?.summary ?? ''
       let ops: BotMemoryOperation[]
       try {
         ops = await this.deps.ai!.extractMemories!({
           botId: bot.id,
-          userId,
+          userId: groupUserName ? memoryScope : userId,
           sessionTitle: `${this.targetNameForSession(bot.id, targetExternalId, userId)} Memory`,
           existing,
           legacySummary,
           userText,
           assistantText,
+          ...(groupUserName ? { groupUserName } : {}),
           maxOps: MEMORY_MAX_OPS,
         })
       } finally {
@@ -2746,19 +2818,21 @@ export class BotService {
       }
       // 抽取期间记忆被关闭/清除：丢弃本次结果，避免旧数据回写。
       if ((this.memoryGenerations.get(key) ?? 0) !== generation) return
-      const current = this.memory.getState(bot.id, userId)
+      const current = this.memory.getState(bot.id, memoryScope)
       if (!current.memoryEnabled) return
-      const result = this.memory.applyOperations(bot.id, userId, ops, 'chat')
+      const finalOps = groupUserName ? this.groupMemoryOperations(groupUserName, ops) : ops
+      const result = this.memory.applyOperations(bot.id, memoryScope, finalOps, 'chat')
       // 只有本次确实产出可迁移条目时才把旧摘要标记为已迁移；ops=0（模型未转换出条目）
       // 必须保留 fallback 注入并继续作为后续批次的迁移输入，避免旧记忆被"静默丢弃"。
       let migrated = false
       if (legacySummary && !current.legacyMigratedAt && result.upserts > 0) {
-        this.memory.markLegacyMigrated(bot.id, userId)
+        this.memory.markLegacyMigrated(bot.id, memoryScope)
         migrated = true
       }
       this.deps.audit('bot.memory.extract', `${bot.platform}:${targetExternalId}`, {
         bot: bot.id,
-        user: userId.slice(0, 64),
+        user: (groupUserName ? `${groupUserName.slice(0, 20)}:${userId}` : userId).slice(0, 64),
+        ...(groupUserName ? { group: true } : {}),
         rounds,
         ops: ops.length,
         upserts: result.upserts,
@@ -2866,6 +2940,13 @@ export class BotService {
    * 新会话标题使用目标名称 + Chat/Memory，便于在 OpenCode 会话列表中管理。
    * 未登记 C2C 用户优先使用入站用户名；都没有时使用短 ID 兜底。
    */
+  private inboundDisplayName(result: { userId: string; userName: string | null }): string {
+    const name = cleanText(result.userName ?? '', 40)
+    if (name) return name
+    const short = result.userId.slice(-6)
+    return short ? `用户${short}` : '用户'
+  }
+
   private targetNameForSession(
     botId: string,
     targetExternalId: string,

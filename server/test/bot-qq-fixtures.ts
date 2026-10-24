@@ -151,6 +151,7 @@ export interface MemoryExtractInput {
   legacySummary: string
   userText: string
   assistantText: string
+  groupUserName?: string
   maxOps: number
 }
 
@@ -330,6 +331,7 @@ export interface GroupInput {
   content: string
   groupOpenid: string
   memberOpenid?: string
+  userName?: string
 }
 
 /** 构造并签名群 @Bot 消息事件（content 需带 @ 前缀时由适配器剥离）。 */
@@ -342,7 +344,10 @@ export function groupWebhook(appSecret: string, input: GroupInput): SignedWebhoo
       content: input.content,
       timestamp: QQ_TIMESTAMP,
       group_openid: input.groupOpenid,
-      author: { member_openid: input.memberOpenid ?? 'member-openid-1' },
+      author: {
+        member_openid: input.memberOpenid ?? 'member-openid-1',
+        ...(input.userName ? { username: input.userName } : {}),
+      },
     },
   })
 }
@@ -362,7 +367,10 @@ export function groupFullWebhook(appSecret: string, input: GroupFullInput): Sign
       content: input.content,
       timestamp: QQ_TIMESTAMP,
       group_openid: input.groupOpenid,
-      author: { member_openid: input.memberOpenid ?? 'member-openid-1' },
+      author: {
+        member_openid: input.memberOpenid ?? 'member-openid-1',
+        ...(input.userName ? { username: input.userName } : {}),
+      },
       ...(input.mentions ? { mentions: input.mentions } : {}),
     },
   })

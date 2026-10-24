@@ -25,6 +25,12 @@ const KEY_MAX_CHARS = 64
 const EXTRACT_ITEM_LIMIT = 120
 const LEGACY_READ_LIMIT = 32 * 1024
 const CORE_KINDS = new Set<BotMemoryKind>(['profile', 'preference', 'task'])
+/** 群聊共享记忆使用独立 scope；不会与任何真实用户 openid 混用。 */
+export const GROUP_MEMORY_PREFIX = 'group:'
+
+export function groupMemoryScope(targetExternalId: string): string {
+  return `${GROUP_MEMORY_PREFIX}${targetExternalId}`
+}
 
 const KIND_LABEL: Record<BotMemoryKind, string> = {
   profile: '资料',
@@ -311,7 +317,7 @@ export class BotMemoryStore {
    * 构建注入提示词的记忆文本：核心类型优先，其余按关键词/重要度/时效召回；
    * 未迁移时追加旧摘要 fallback。关闭记忆时返回空文本。
    */
-  buildPromptContext(botId: string, userId: string, userText: string): BotMemoryPromptContext {
+  buildPromptContext(botId: string, userId: string, userText: string, groupMemory = false): BotMemoryPromptContext {
     const state = this.getState(botId, userId)
     if (!state.memoryEnabled) return { text: '', usedItemIds: [], legacyFallback: false }
     const rows = (
@@ -339,13 +345,15 @@ export class BotMemoryStore {
     const lines: string[] = []
     let chars = 0
     for (const row of selected) {
-      const line = `- ${KIND_LABEL[row.kind]}｜重要度${row.importance}｜${row.mem_key}：${row.value}`
+      const line = groupMemory
+        ? `- ${row.value}`
+        : `- ${KIND_LABEL[row.kind]}｜重要度${row.importance}｜${row.mem_key}：${row.value}`
       if (chars + line.length + 1 > this.options.promptMaxChars) break
       lines.push(line)
       chars += line.length + 1
     }
     let legacyFallback = false
-    if (!state.legacyMigratedAt) {
+    if (!groupMemory && !state.legacyMigratedAt) {
       const legacy = this.legacySummary(botId, userId)
       if (legacy) {
         const remaining = Math.max(0, this.options.promptMaxChars - chars - 20)
@@ -430,15 +438,15 @@ export class BotMemoryStore {
     const itemRows = this.db
       .prepare(
         `SELECT user_id, kind, COUNT(*) AS c, MAX(updated_at) AS upd FROM bot_memory_items
-         WHERE bot_id = ? AND (expires_at IS NULL OR expires_at > ?)
+         WHERE bot_id = ? AND (expires_at IS NULL OR expires_at > ?) AND user_id NOT LIKE 'group:%'
          GROUP BY user_id, kind`,
       )
       .all(botId, now) as unknown as { user_id: string; kind: BotMemoryKind; c: number; upd: string }[]
     const legacyRows = this.db
-      .prepare("SELECT user_id, updated_at FROM bot_ai_memories WHERE bot_id = ? AND summary <> ''")
+      .prepare("SELECT user_id, updated_at FROM bot_ai_memories WHERE bot_id = ? AND summary <> '' AND user_id NOT LIKE 'group:%'")
       .all(botId) as unknown as { user_id: string; updated_at: string }[]
     const stateRows = this.db
-      .prepare('SELECT user_id, memory_enabled, updated_at FROM bot_memory_state WHERE bot_id = ?')
+      .prepare("SELECT user_id, memory_enabled, updated_at FROM bot_memory_state WHERE bot_id = ? AND user_id NOT LIKE 'group:%'")
       .all(botId) as unknown as { user_id: string; memory_enabled: number; updated_at: string }[]
     const nameRows = this.db
       .prepare('SELECT user_id, user_name FROM bot_inbound_targets WHERE bot_id = ? AND user_name IS NOT NULL ORDER BY last_seen_at DESC')
