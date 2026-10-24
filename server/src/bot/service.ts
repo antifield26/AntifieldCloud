@@ -50,7 +50,7 @@ import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { describeBotError } from './errors.ts'
 import { formatAiReply } from './format.ts'
 import { BotMemoryStore, groupMemoryScope } from './memory.ts'
-import { buildBotPrompt, type BotSendToolPrompt } from './prompts.ts'
+import { buildBotPrompt, type BotSendToolPrompt, type GroupChatMode } from './prompts.ts'
 import { BurstMerger } from './burst.ts'
 import {
   formatSearchPromptContext,
@@ -2286,6 +2286,7 @@ export class BotService {
         sendToolPrompt,
         memoryScope,
         isGroup,
+        isGroup ? (result.chatTrigger === 'all' ? 'all' : 'mention') : undefined,
       )
       const toolMessages = this.takeAiSendMessages(sendTurn)
       if (sendTurn) {
@@ -2565,6 +2566,7 @@ export class BotService {
     sendTool?: BotSendToolPrompt,
     memoryScope = userId,
     groupMemory = false,
+    groupMode?: GroupChatMode,
   ): Promise<string> {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     // 群聊使用独立的群共享记忆 scope，已登记用户的用户级记忆不会进入群聊提示词。
@@ -2573,6 +2575,7 @@ export class BotService {
       roleCard,
       memory: memoryContext.text || undefined,
       groupMemory,
+      groupMode,
       searchContext,
       webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext,
       ...(sendTool ? { sendTool } : { replyDecision }),
