@@ -4,7 +4,7 @@
 
 > 状态：v0.7.0（**已部署生产，待 Tag/Release**）。本版为第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）：P0=0/P1=3/P2=26/P3=73 全部处置（P3 中可修小项随本版修，架构性/已接受项写入明确残余）；备份归档可用独立 age 公钥整包加密（Web 不持私钥，加密归档在 Web 一律 `409 archive_encrypted`），PC 端可链感知上传密文到异地；Bot AI 工具隔离降级改为 fail-closed（`503 bot_ai_tool_isolation_unavailable`）、群共享记忆归属改为稳定 `member_openid`；审计写入改为事务外 best-effort 并经 `/api/version.audit` 暴露失败计数。schema 保持 **v16**（无迁移）。OpenCode 已升级 **v2.1.4**（生产只读升级，升级/回滚与矩阵见 `docs/DEPLOY.md` §3.2）。
 > 发布：上一发布 v0.6.6（Tag `v0.6.6`，GitHub Release [AntifieldCloud v0.6.6](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.6)，生产 release `20261024T100522Z`/commit `1f6980e`）；v0.6.5 已补发 Tag `v0.6.5` + GitHub Release（内容并入 v0.6.6）。**v0.7.0 已部署生产（release `20261025T014533Z`/commit `ac4b2f9`，`/healthz` v0.7.0/schema16）；Tag/GitHub Release 待真实 QQ 验收后补。**
-> 测试基线（2026-10-25）：`npm test` **482**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.63% / Branches 78.16% / Functions 87.77%**，前端 **Lines 52.31% / Branches 47.32% / Functions 45.02%**；`npm run check`、`check-version`（严格）、`build` 均通过；Node.js **v26.12.1**；OpenCode **v2.1.4**。
+> 测试基线（2026-10-25）：`npm test` **487**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.67% / Branches 78.14% / Functions 87.95%**，前端 **Lines 52.31% / Branches 47.32% / Functions 45.02%**；`npm run check`、`check-version`（严格）、`build` 均通过；Node.js **v26.12.1**；OpenCode **v2.1.4**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -14,7 +14,7 @@
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
 - Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI（v0.5.9 起 AI 仅 Chat 模式），结构化长期记忆落 DB（schema v16；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **482**）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 92.63/78.16/87.77；前端 52.31/47.32/45.02，Lines/Branches/Functions）
+- 测试：`node --test`（服务端 + 运维脚本 **487**）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 92.67/78.14/87.95；前端 52.31/47.32/45.02，Lines/Branches/Functions）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能

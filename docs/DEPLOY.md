@@ -181,7 +181,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 ### 3.0 v0.7.0 应用部署步骤（当前版本；schema 保持 v16，无迁移）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 482（Bot 定向 184）、`test:web` 222、服务端覆盖率 92.63/78.16/87.77、前端 52.31/47.32/45.02、bundle `index-DoPUAny6.js` 726.64 kB、check-version `version ok 0.7.0`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 487（Bot 定向 189）、`test:web` 222、服务端覆盖率 92.67/78.14/87.95、前端 52.31/47.32/45.02、bundle `index-C0QZV4hZ.js` 726.72 kB、check-version `version ok 0.7.0`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.1.4 升级（先于应用部署，按 §3.2）**：备份 v2.1.3 二进制/data/env/unit/MCP 配置 → `opencode upgrade 2.1.4` → 14 项矩阵验收 → 失败回滚；

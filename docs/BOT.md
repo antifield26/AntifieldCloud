@@ -116,7 +116,8 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - 长文本分段（QQ 2000/段，最多 4 段，续段前缀“（续 n/m）”，超出截断并标记“内容过长已截断”）；第 2 段起发送失败时把已发送消息 ID 挂到错误对象，
   队列/命令记录 `partial_text_sent` 且**不自动重试**，由管理员核对平台消息后处理。发布任务不参与分段：路由层拒绝 >2000 字符（`400 publish_text_too_long`）。
 - **连续发送间隔（D-20，v0.7.0 追加）**：同一 Bot（按 AppID 标识）的外发文本按 1000ms 最小间隔串行，覆盖长文本分段、发送工具多条、兜底文本、命令/通知与队列；`access_token` 换取在间隔闸门外，不占用 1s。实现位于 `QqAdapter.sendMessage` 的 `withSendGate`；`BotService` 生产注入 1000ms，测试可注入 0 以保持快速。多个 Bot 之间互不阻塞。
-- 格式：AI 回答经 sanitize（路径/URL/控制字符）→ `format.ts` 去 Markdown 标记保留可读正文 → 按 QQ 上限分段发送；仅 http(s) 链接保留为文字。
+- **原始工具调用文本防回显（v0.7.0 hotfix）**：部分模型在工具解析失败时会把 DSML 工具调用协议作为普通 assistant 文本返回（`<｜…｜ calls>` / `parameter name="text"`）。Chat 兜底只提取 `parameter name="text"` 的可读正文发送；无法提取时使用固定提示，绝不回显协议标记、`turn_id`/`turn_token` 或工具名；发送工具消息与长期记忆同样经 `cleanAiReply` 清洗，并写审计 `bot.ai.tool_call_text`。实现见 `server/src/bot/dsml.ts`。
+- 格式：AI 回答经 sanitize（路径/URL/控制字符/原始工具调用协议）→ `format.ts` 去 Markdown 标记保留可读正文 → 按 QQ 上限分段发送；仅 http(s) 链接保留为文字。
 - 图片（默认开启）：`d.attachments` → image/* 元数据 → 固定域名后缀白名单 + mime 白名单 + 大小上限 → 内存下载 → OpenCode prompt files；
   关闭/失败/mime 非法时降级为纯文字回答；不落盘、不写日志/审计正文。
 - 进程重启后，`sending` 超过 10 分钟的记录自动回队；`assembling` 等异常由各模块维护清理。
@@ -356,7 +357,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 
 - 适配器/验签/队列/命令白名单/发布 TOTP+`PUBLISH`/AI/Chat/记忆/文本分段/图片下载/连接自检/诊断/角色与记忆管理均有进程内测试（不访问真实平台/模型）。
 - QQ 适配器以 mock/fixture 覆盖（op=13/op=0、C2C/群@/频道、attachments 图片、access_token 自检、长文本分段）；AI 使用假 OpenCode HTTP 服务。
-- **v0.7.0 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **184 pass**（28 文件）；全量 `npm test` **482**；新增/更新覆盖工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
+- **v0.7.0 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **189 pass**（29 文件）；全量 `npm test` **487**；新增/更新覆盖工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
   群记忆清空空竞态、lastError 派生、Webhook 限流分桶与审计聚合、burst.clear、名称词边界、孤儿清理保守化、关闭排空；**D-20 连续外发 1000ms 间隔**（分段/发送工具多条/兜底/队列统一，按 Bot/AppID 串行）已由 `bot-send-interval.test.ts` 覆盖；生产真实 QQ/OpenCode 2.1.4 的 V10–V13 待真实用户联调。
 - 历史基线（v0.5.11）：`npm test` 360、`npm run test:web` 162；v0.6.x 基线见 `CHANGELOG.md`/`docs/ACCEPTANCE.md`。真实平台负路径（限流/签名漂移/故障）仍需部署后联调。
 - **真实平台前置条件**（部署/联调前确认）：

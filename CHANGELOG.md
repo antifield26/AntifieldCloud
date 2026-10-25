@@ -34,6 +34,7 @@
 - **A7-BOT-01/02/04/05/06/07/08/13/15**：孤儿会话清理限定旧默认标题（不误删新命名/前缀相似会话）；混批中任一 @ 即整批按被点名处理；回合异常时先补发已缓冲的工具消息并审计 `partialTurn`；`/search` 与普通 Chat 共用会话串行锁；清空群记忆取消在途抽取；`BotStatus/BotSummary.lastError` 改为从投递/发布失败派生；Webhook 未验签与已验签限流桶分离并按窗口聚合拒绝审计；`burst.clear` 取消运行中批次的后续排队；Bot 名称匹配按词边界，减少短名/子串误触发。
 - **A7-OPS-02/03/04/08/10/11/12/13/16/18/20/21**：部署 restart 失败进入回滚并校验快照 SHA-256；密钥包 opencode DB 缺失硬失败、PC 校验 `includesOpencode`；env 补键/清理；smoke 使用 `SKIP:`/`SoftCheck` 并新增 OpenCode/MCP/fail2ban/unit/env/加密/异地/任务安装标记检查；check-version 交叉校验 schema/OpenCode；MCP 处理 `notifications/cancelled|progress` 与可选空闲退出；世界拉取读取 `.sha256` 短重试；drill 支持 `.age`/`-AgeIdentityPath`/链连续性校验且默认 schema 来自 `tool-versions.json`；安装脚本原子备份与替换；覆盖率门禁收紧；备份拉取错误脱敏/随机临时名/本地锁。
 - **A7-WEB-02/03/04 + 契约 CD 系列**：prepare 警告/缺失文件展示；断点 `completed` 消费 `fileId`；恢复计划持久化与轮询；`entries.truncated`、`fileId`、`warnings`、`skippedMissing` 类型补齐；审计动作中文映射、ConfirmDialog 焦点、`/api/version` 重试、Settings 告警字段、hash 导航崩溃、轮询静默等 P3 修复。
+- **Bot 原始工具调用信息回显（部署后 hotfix）**：模型把 DSML 工具调用协议当作普通 assistant 文本返回时，Chat 原先会在发送工具未命中/兜底路径把原始协议发给 QQ 用户。新增 `bot/dsml.ts` 识别并提取 `parameter name="text"` 正文作为兜底，无法提取时使用固定提示；发送工具消息、长期记忆和所有 AI 外发文本统一清洗，绝不回显 `turn_id`/`turn_token`/工具名；审计 `bot.ai.tool_call_text`。回归测试见 `bot-dsml.test.ts`。
 
 ### Security
 
@@ -53,7 +54,7 @@
 - 启用顺序（默认全部关闭）：部署 v0.7.0 → 离线生成备份 age 密钥并把公钥放 Pi → 用私钥完成一次解密演练 → 开 `BACKUP_ARCHIVE_ENCRYPTION=true` → 下一次 prepare 生成 `.age` → PC 拉取/ack → drill → 配置 rclone 与异地任务。回滚：关开关恢复明文，已生成的 `.age` 保留并在 PC 侧解密/演练。
 - PC 任务需重装：`install-backup-task.ps1` 刷新 `backup-pull.ps1`/`backup-offsite.ps1/.mjs` 与安装标记；异地任务需先配置 rclone remote（脚本不创建 remote/凭据）。
 - `smoke.ps1` 新增 `-ExpectedOpenCodeVersion/-ExpectedSshSources/-MaxMcpProcesses` 与 `-Skip*` 开关。
-- 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **482**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.63/78.16/87.77**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-DoPUAny6.js` 726.64 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass；Bot 定向 184 pass。追加 D-20：同一 Bot 连续外发文本最小间隔 1000ms（分段/发送工具/兜底/队列统一，按 AppID 串行；测试注入 0）。
+- 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **487**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.67/78.14/87.95**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-C0QZV4hZ.js` 726.72 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass；Bot 定向 189 pass。追加 D-20：同一 Bot 连续外发文本最小间隔 1000ms（分段/发送工具/兜底/队列统一，按 AppID 串行；测试注入 0）。
 - OpenCode **v2.1.4** 已于 2026-10-25 08:21 CST 在生产只读升级：升级前备份 v2.1.3 二进制/data/env/unit/MCP（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e6…8b19`）；V1–V9、V14 PASS，V10–V13（真实 QQ/记忆/发送工具/搜索）待真实用户联调。
 - 生产应用 **v0.7.0 已部署**（2026-10-25 08:53/09:06/09:45 CST，最终 commit `ac4b2f9`，release `/opt/antifieldcloud/releases/20261025T014533Z`；`/healthz` v0.7.0/schema16；迁移前快照 `db-predeploy-20261025T014606784Z.sqlite` sha256 `cf576d57…f695`；上一 release `20261025T010620Z` 保留可回滚）；部署内 smoke 23/23、完整 Access smoke 31 PASS/0 FAIL/1 WARN/2 SKIP，1 个 env 警告（2 个废弃键）与 2 个 SKIP（加密/异地默认关闭）；D-20 已包含（生产代码探针实测连续发送间隔 1001ms）；Windows 备份任务安装标记需管理员重跑 `install-backup-task.ps1`。
 - Tag/GitHub Release 与加密/异地副本启用演练仍待用户验收/密钥与 rclone 配置后执行。
