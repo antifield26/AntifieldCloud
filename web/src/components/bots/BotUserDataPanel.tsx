@@ -2,7 +2,7 @@
 // 安全边界：服务端只返回元数据，本组件绝不渲染角色设定或记忆 key/value 正文，也不提供正文查看/编辑入口；
 // 停用与删除只提交 userId / itemId，删除前必须二次确认。
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BookOpen, Brain, IdCard, ListTree, Pencil, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type {
@@ -58,9 +58,13 @@ function UserCell({ userId, userName }: { userId: string; userName: string | nul
   )
 }
 
-/** 分数展示：模型输出的重要度/置信度按原值展示，非法值回退为占位符。 */
+/** 分数展示：重要度按原值（1–5），置信度按 0–1 百分比（UI-SPEC §12）。 */
 function formatScore(value: number): string {
   return Number.isFinite(value) ? String(value) : '—'
+}
+
+function formatConfidence(value: number): string {
+  return Number.isFinite(value) ? `${Math.round(value * 100)}%` : '—'
 }
 
 function pagerInfo(page: number, total: number): string {
@@ -133,6 +137,8 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<ConfirmTarget | null>(null)
   const [confirming, setConfirming] = useState(false)
+  /** 群角色卡编辑器请求序号：快速切换目标时丢弃旧响应。 */
+  const groupEditorSeqRef = useRef(0)
 
   const loadRoles = useCallback(async (): Promise<void> => {
     if (!botId) {
@@ -265,6 +271,24 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
     void loadItems()
   }, [loadItems, itemsReloadKey])
 
+  // 删除/数据收缩后回收越界页码，避免停留在空白页。
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(rolesTotal / PAGE_SIZE))
+    if (rolesPage > totalPages) setRolesPage(totalPages)
+  }, [rolesPage, rolesTotal])
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(memoriesTotal / PAGE_SIZE))
+    if (memoriesPage > totalPages) setMemoriesPage(totalPages)
+  }, [memoriesPage, memoriesTotal])
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(groupMemoriesTotal / PAGE_SIZE))
+    if (groupMemoriesPage > totalPages) setGroupMemoriesPage(totalPages)
+  }, [groupMemoriesPage, groupMemoriesTotal])
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(itemsTotal / PAGE_SIZE))
+    if (itemsPage > totalPages) setItemsPage(totalPages)
+  }, [itemsPage, itemsTotal])
+
   const handleToggleRole = async (role: BotRoleSummary): Promise<void> => {
     if (!bot || busyKey) return
     setBusyKey(`role:${role.userId}`)
@@ -283,11 +307,14 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
 
   const openGroupEditor = async (item: BotGroupRoleSummary): Promise<void> => {
     if (!bot) return
+    const seq = groupEditorSeqRef.current + 1
+    groupEditorSeqRef.current = seq
     setGroupEditor({ targetId: item.targetId, targetLabel: item.targetLabel })
     setGroupEditorLoading(true)
     setGroupDraft(null)
     try {
       const result = await api.bots.groupRoles.get(bot.id, item.targetId)
+      if (seq !== groupEditorSeqRef.current) return
       setGroupDraft(
         result.groupRole
           ? {
@@ -298,9 +325,9 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
           : { name: '', prompt: '', enabled: true },
       )
     } catch (loadError) {
-      toast.error(toErrorMessage(loadError, '读取群聊角色卡失败'))
+      if (seq === groupEditorSeqRef.current) toast.error(toErrorMessage(loadError, '读取群聊角色卡失败'))
     } finally {
-      setGroupEditorLoading(false)
+      if (seq === groupEditorSeqRef.current) setGroupEditorLoading(false)
     }
   }
 
@@ -732,11 +759,10 @@ export function BotUserDataPanel({ bot, refreshToken }: BotUserDataPanelProps) {
       key: 'importance',
       header: '重要度',
       render: (item) => <span className="bot-memory-score">{formatScore(item.importance)}</span>,
-    },
-    {
+    },    {
       key: 'confidence',
       header: '置信度',
-      render: (item) => <span className="bot-memory-score">{formatScore(item.confidence)}</span>,
+      render: (item) => <span className="bot-memory-score">{formatConfidence(item.confidence)}</span>,
     },
     {
       key: 'updatedAt',

@@ -48,6 +48,12 @@ const EVENT_LABELS: Record<string, string> = {
   world_backup_stale: '世界备份过期',
   world_pull_stale: '世界备份未拉取',
   drill_stale: '恢复演练过期',
+  // v0.7.0：备份加密与异地副本
+  offsite_overdue: '异地副本超期',
+  offsite_stale: '异地副本超期',
+  offsite_failed: '异地副本失败',
+  backup_encryption_missing: '备份加密公钥缺失',
+  backup_encryption_failed: '备份加密失败',
 }
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -92,6 +98,8 @@ const KNOWN_EVENTS = [
   'world_backup_stale',
   'world_pull_stale',
   'drill_stale',
+  'offsite_overdue',
+  'backup_encryption_missing',
 ]
 
 function severityLabel(severity: string): string {

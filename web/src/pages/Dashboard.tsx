@@ -77,23 +77,31 @@ export function Dashboard() {
   const [refreshError, setRefreshError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const dataRef = useRef<DashboardData | null>(null)
+  const requestIdRef = useRef(0)
 
   const load = useCallback(async (mode: 'initial' | 'refresh'): Promise<void> => {
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
     if (mode === 'initial') setLoading(true)
     else setRefreshing(true)
     try {
       const result = await api.getDashboard()
+      // 10s 轮询、手动刷新与 visibilitychange 可能重叠：只接受最新一次请求的结果。
+      if (requestId !== requestIdRef.current) return
       dataRef.current = result
       setData(result)
       setError(null)
       setRefreshError(null)
     } catch (loadError) {
+      if (requestId !== requestIdRef.current) return
       const message = toErrorMessage(loadError, '加载工作台数据失败')
       if (dataRef.current) setRefreshError(message)
       else setError(message)
     } finally {
-      if (mode === 'initial') setLoading(false)
-      else setRefreshing(false)
+      if (requestId === requestIdRef.current) {
+        if (mode === 'initial') setLoading(false)
+        else setRefreshing(false)
+      }
     }
   }, [])
 
@@ -298,6 +306,9 @@ export function Dashboard() {
             world={backup?.world ?? backups.data?.world ?? null}
             worldPull={backup?.worldPull ?? backups.data?.worldPull ?? null}
             drill={backup?.drill ?? backups.data?.drill ?? null}
+            encryption={backup?.encryption ?? null}
+            offsite={backup?.offsite ?? backups.data?.offsite ?? null}
+            currentSchemaVersion={meta.schemaVersion}
             archives={backups.data?.items ?? []}
             loading={backups.loading && !backups.data}
             error={backups.errorStatus === 404 ? null : backups.error}

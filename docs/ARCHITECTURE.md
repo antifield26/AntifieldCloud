@@ -50,8 +50,9 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
 - 平台收敛：v0.5.8 起 Bot 仅支持 QQ 官方 Bot；Telegram/Discord/Slack 适配器、`discord-gateway.ts`、按钮、媒体/多附件发布、`chatTrigger` 与 Telegram HTML/引用/线程移除。
   schema v13（迁移 13）`DELETE FROM bots WHERE platform <> 'qq'`，按外键级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；生产 Discord 数据迁移前已备份。
 - 入站：`POST /api/bot/webhook/:botId` 在独立 Fastify scope 中以 raw body 解析（JSON 或 form，≤256 KiB），
-  按 `CF-Connecting-IP` 做 120 次/分钟 IP 限流 → `BotService.handleWebhook` 校验 `BOT_ENABLED`/密钥/Bot 启用（否则 404）
-  → 按 Bot 300 次/分钟限流 → QQ 适配器验签（`op=13` 回调地址校验返回签名体；`op=0` 校验 `X-Signature-Ed25519` + 时间戳 ±300 秒）
+  按统一 `requestMeta` 信任模型取客户端 IP（仅 loopback 对端采信 Cloudflare 头）做 120 次/分钟 IP 限流 → `BotInboundHandler` 校验 `BOT_ENABLED`/密钥/Bot 启用（否则 404）
+  → 未验签请求走每 Bot 120 次/分钟桶、已验签事件走 300 次/分钟桶（验签后才扣减，分桶避免无效流量饿死合法事件）→ QQ 适配器验签
+  （`op=13` 回调地址校验返回签名体；`op=0` 校验 `X-Signature-Ed25519` + 时间戳 ±300 秒）
   → `bot_events` 去重并记录诊断元数据（`received`，重复直接 200）→ `bot_inbound_targets` 记录目标/用户（不存正文）→ 按事件类型分发：
   斜杠命令仅 C2C 私聊处理：需目标 `allow_commands` + 用户白名单（自助命令 `/role` 仅私聊、`/reset`、`/forget confirm` 除外）；群聊/频道命令直接忽略并审计 `bot.command.disabled`；
   普通消息需目标 `allow_chat` 且 AI 启用（C2C 私聊直接进入，群/频道默认只有 @Bot 事件；`groupReplyMode=all` 时处理 `GROUP_MESSAGE_CREATE`，v0.6.4 起模型调用 `send_message` 才发言，未启用工具时按 @/名字或模型 `NO_REPLY` 决策）；命令/Chat 异步执行并用 QQ API 回复；
@@ -91,22 +92,22 @@ v0.5.10 删除 PC 代理隧道脚本/计划任务与 `BOT_PROXY_URL`，生产 en
 
 | 模块 | 职责 |
 |---|---|
-| `server/src/config.ts` | 读取 env 文件/环境变量、数值校验、默认值（含 v0.4.0 指标/笔记/世界备份键、v0.5.0 `BOT_*`、v0.5.1 `BOT_AI_*`、v0.5.2 Chat/记忆键、v0.5.3 连通性键、v0.5.7 回答/图片键；v0.5.8 删除多平台/Gateway/媒体键、`BOT_AI_VISION_ENABLED` 默认 true；v0.5.9 删除双模式提示词键、限速默认 30/120/120；v0.5.10 新增记忆保留/合并/空闲键并删除 `BOT_PROXY_URL`；v0.5.11 新增 `BOT_MEMORY_*` 5 键） |
-| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema v14）、事务；迁移前外键一致性检查与孤儿 shares 修复；迁移 13 删除非 QQ Bot 及其级联数据；迁移 14 新增结构化记忆两表（不可逆） |
-| `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断） |
-| `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性 |
-| `uploads/` | 分片上传会话/块索引、配额预留、断点状态、拼接与过期清理 |
+| `server/src/config.ts` | 读取 env 文件/环境变量、数值与安全组合校验（v0.7.0：`NODE_ENV` 非法值、`OPENCODE_URL` 非 loopback、`APP_ORIGIN==AI_ORIGIN`、`BOT_SEARCH_MODE` 非法值直接拒绝启动；新增 `BACKUP_ARCHIVE_ENCRYPTION`/`BACKUP_AGE_RECIPIENT_FILE`/`BACKUP_OFFSITE_STATUS_FILE`/`ALERT_OFFSITE_MAX_AGE_HOURS`；`APP_VERSION` 未设置用 `0.0.0-dev` 不再回退历史版本号） |
+| `server/src/db.ts` | SQLite 打开、PRAGMA、版本化迁移（schema **v16**，本版无迁移）、事务；迁移 13 删除非 QQ Bot 及级联数据；迁移 14 结构化记忆两表；迁移 16 群聊角色卡（不可逆） |
+| `auth/` | scrypt、TOTP、恢复码、挑战、会话、CSRF、限流、审计（字段截断 + 失败诊断 `getAuditDiagnostics`） |
+| `files/` | 目录树、上传落库、配额、搜索、回收站、文本预览、MIME 安全分类、`origin` 可见性、物理孤儿回收 |
+| `uploads/` | 分片上传会话/块索引、配额预留、断点状态、原子拼接、过期/终态清理 |
 | `mc/` | SLP 查询、RCON 客户端、状态/metrics、白名单增删与复核 |
-| `opencode/` | ai 主机认证反代；HTTP/WS Origin 校验；HTML 模式 shim/attributes/passthrough |
-| `backups/` | 归档导入/校验、full+inc 链解析、文件级恢复计划与执行、`skippedMissing`、世界/拉取/演练状态只读 |
-| `dashboard/` | 主机指标、服务状态、opencode 健康、备份/密钥/世界/演练状态、活动聚合、`/api/storage` 轻量用量 |
+| `opencode/` | ai 主机认证反代；HTTP/WS Origin 校验（loopback 例外要求 Host 也是 loopback）；AI 主机未认证限流与审计去重；HTML 模式 shim/attributes/passthrough |
+| `backups/` | 归档导入/校验、full+inc 链解析、文件级恢复计划与执行、`skippedMissing`、加密归档 Web 409 边界、陈旧恢复锁清理、世界/拉取/演练/异地状态只读 |
+| `dashboard/` | 主机指标、服务状态、opencode 健康、备份/加密/世界/演练/异地状态、活动聚合、`/api/storage` 轻量用量 |
 | `metrics/` | 采样器（60s）、范围聚合查询（1h/6h/24h/7d/30d，最多 240 点）、保留期清理 |
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索；附件（`origin=note`）与版本历史 |
-| `shares/` | 单文件/多文件分享 token/密码/过期/次数/吊销、公开元数据与逐项内容 |
-| `bot/` | QQ 官方 Bot 适配器、Chat AI、结构化长期记忆、私聊角色卡、群聊目标共享角色卡（v0.6.3）、群消息模式过滤与 `GROUP_MESSAGE_CREATE`、出站连通性探测、AES-256-GCM 凭据、Webhook 验签/去重、命令（v0.6.3 起仅 C2C；含自助 `/reset`/`/forget confirm`）、回复管线（`text.ts` 分段/`format.ts` QQ 纯文本/`errors.ts` 错误提示）、QQ 入站图片下载（默认开启）、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试 |
-| `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期；Bot 通知入队 |
-| `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口 |
-| `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db） |
+| `shares/` | 单文件/多文件分享 token/密码/过期/原子次数/吊销、公开元数据与逐项内容 |
+| `bot/` | QQ 官方 Bot 适配器、Chat AI、结构化长期记忆（群 scope key 用稳定 `member_openid`）、私聊角色卡、群聊目标共享角色卡、群消息模式过滤与 `GROUP_MESSAGE_CREATE`、出站连通性、AES-256-GCM 凭据、Webhook 验签/去重、命令（仅 C2C；含自助 `/reset`/`/forget confirm`）、回复管线、QQ 入站图片下载、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试。v0.7.0 行为保持拆分：`inbound.ts`（入站验签/限流/命令与 Chat 分发）、`diagnostics.ts`（事件/入站目标/指标/最近错误）、`queue.ts`（投递/发布状态机），`service.ts` 保留 facade/依赖装配 |
+| `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期与异地副本超期；Bot 通知入队 |
+| `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源、`requestMeta` 统一信任模型；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口 |
+| `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db）、backup-encryption.ts（age 加密/公钥校验/sidecar/孤儿正则） |
 | `util/` | 时间/路径/响应/错误；`status.ts` 只读状态文件解析 |
 | `web/` | React SPA（登录、Dashboard、文件、回收站、知识库、分享、MC、活动、设置、公开分享页、PWA） |
 
@@ -197,8 +198,19 @@ SQLite（WAL）核心表（schema v14）：
 - **PC 拉取**：Windows 计划任务每日 `--pending` → 无 pending 才 `--prepare` → `.part` 下载 → SHA-256 校验 →
   原子改名 → 写旁文件 → `--ack` → 删除 Pi 归档；失败保留 pending 重试同一归档；状态 JSON 在重试循环外一次写入。
   保留：Pi pending 直到确认、已确认 2 个；PC daily 30 天、weekly 56 天、secrets 90 天。
+- **整包加密（v0.7.0，默认关闭）**：`cli/backup-encryption.ts` 只读独立 age 公钥（root、组/其他不可写、格式/大小校验），
+  `--prepare` 流程 tar → `*.plain.tmp` → 计算 plain sha/size → `age -r` 加密到 `*.part.age` → rename `.age` → 写外部 sidecar
+  `<name>.meta.json`（schema 2）→ 写 DB `manifest_json`（含 `encrypted/plainSha256/plainSize/cipherSha256/cipherSize/recipient`）→ 删除明文。
+  归档内 manifest `schema:2` 不含明文哈希（避免自引用）；失败关闭（age/公钥/加密/空间失败即 prepare 失败，不降级明文）；
+  空间按 2× 明文预算；崩溃只允许可清理 `*.plain.tmp`/`.part` 或“有密文无 DB 行”孤儿（只报告不自动删）。
+  应用不持私钥：`backups/service.ts` 对 `.age` 的 verify/import/entries/restore-plan/execute 返回 409 `archive_encrypted`，
+  恢复目标自动跳过加密归档；状态/UI 只展示加密开关、公钥是否就绪与密文计数。
+- **异地副本（v0.7.0，默认关闭）**：PC 端 `backup-offsite.mjs` 规划“最新 full + 其后全部 inc + 最近 N 天”链，
+  只上传 `.age`（明文拒绝并计 `plaintextSkipped`），`rclone copyto --checksum` + 远端大小校验，链感知删除且绝不删最新 full；
+  `backup-offsite.ps1` 硬超时调用并把状态 JSON 写回 Pi `/var/lib/antifieldcloud/backup-offsite-status.json`；
+  应用 `util/status.ts` 只读解析（64 KiB 上限），Dashboard 展示、`AlertService.offsiteCondition` 在状态缺失/未配置时返回 null（不误报）。
 - **密钥包**：age 加密 env/cloudflared/Minecraft/opencode 配置与 opencode DB 一致性快照；明文只在 tmpfs 0700 临时目录；
-  opencode 快照失败降级为 warning 仍打包其它文件；Pi `KEEP=2`，PC 拉取后不立即删除远端。
+  opencode 快照失败硬失败（不生成半成品）；`--include-host-config` 可选打包主机配置（OPS-09）；Pi `KEEP=2`，PC 拉取后不立即删除远端。
 - **世界备份**：root 脚本读取 env/server.properties 的 RCON 与路径；预检世界目录/备份目录/磁盘余量（1.5× 世界体积）；
   `save-off → save-all flush（超时重试）→ tar -czf .part → gzip 完整性校验 → SHA-256 → 原子改名`；`save-on` 必执行；
   保留最新 4 份且只删匹配命名的文件；写 `world-backup-status.json`（0644）。
@@ -251,3 +263,26 @@ SQLite（WAL）核心表（schema v14）：
 - 备份归档导入是受 TOTP 门禁的管理员输入，但仍按不可信 tar 校验；不提供归档下载；Web 永不执行整库替换。
 - 状态文件由 root/PC 脚本写、应用只读；文件缺失/损坏时面板与告警降级为 unknown，不影响主服务。
 - 指标与审计只含元数据/主机数值；应用故障不影响 Minecraft/opencode/桌面；cloudflared 故障只影响公网入口。
+- **备份加密边界（v0.7.0）**：Pi 侧只有备份 age 公钥，应用/CLI 永不读取私钥；Web 对 `.age` 的校验/导入/浏览/恢复/执行一律 409
+  （在归档名校验之前），恢复目标自动跳过；PC 端解密/校验/恢复在离线私钥环境完成，临时明文用后即删。失败关闭优先级高于可用性。
+- **异地副本边界（v0.7.0）**：只上传 `.age`；状态文件由 PC 写入、应用只读且只展示别名/计数/时间；状态缺失视为未配置、不告警；
+  远端删除按链感知规划且绝不删最新 full，避免“远端只剩不可恢复链”。
+- **工具隔离 fail-closed（v0.7.0）**：OpenCode 拒绝 `permissions` 时进入重试窗口；启用发送工具且隔离不可用时拒绝新 Chat 并给出固定提示，
+  不以默认权限继续；窗口到点放行重试，上游恢复后自动恢复。可用性让位于安全，期间 Bot Chat 暂停属预期。
+- **审计策略（v0.7.0/D-17）**：非安全审计事务外 best-effort（失败计数/最近错误经 `/api/version.audit`），安全关键审计逐条记录、
+  失败不阻断已完成的业务状态；公开下载计数仍在事务内，避免审计故障改变业务结果。
+
+## 11. 明确残余与长期限制（v0.7.0/D-18）
+
+以下为审计后明确保留、不强行改造的架构性/已接受项（逐条理由见 `docs/AUDIT.md` 第六轮 §5/§9 与 `docs/SECURITY.md` §4）：
+
+1. **单进程单点**：服务端与 Bot 队列、限流、审计诊断计数均在单进程内存态；进程重启会清零限流与诊断计数，无多实例/高可用。
+2. **同步维护与 SQLite 模式**：小时维护任务同步执行可能短暂阻塞请求；`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
+3. **平台/模型路径 mock-only**：QQ 适配器、OpenCode 模型、Cloudflare 边缘的负路径以进程内夹具为主，真实平台限流/签名漂移/故障需部署后联调。
+4. **物理孤儿/导入异常路径**：孤儿文件回收仅限“超期 + DB 无行 + id 形状”；Web 导入归档无自动保留策略；恢复锁/临时目录的极端残留需人工核对。
+5. **备份加密残余**：SIGKILL/断电/ENOSPC 的 `*.plain.tmp` 窗口（>24h 清理）、2× 空间峰值、孤儿密文只报告；私钥丢失不可恢复；
+   预部署 DB 快照继续明文 0600（自动回滚需要）。
+6. **异地副本残余**：默认关闭、单远端、依赖 PC/rclone/凭据；状态文件可信度取决于管理员 PC 边界。
+7. **BotService 拆分（ARCH-01 剩余）**：v0.7.0 已抽出 inbound/diagnostics/queue 等边界，`service.ts` 仍为大型 facade；进一步拆分与状态机解耦排后续版本。
+8. **既有环境限制**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/无 LUKS、Cloudflare 明文、`http-proxy` 弃用警告、
+   内存态限流、`Intl` 开销、迁移无校验和、健康检查为轻量就绪（非全量依赖探测）等按 `docs/SECURITY.md` §4 管理。

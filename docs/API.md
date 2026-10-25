@@ -1,6 +1,6 @@
-# AntifieldCloud HTTP API 契约（v13，2026-10-23）
+# AntifieldCloud HTTP API 契约（v0.7.0）
 
-服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源。
+服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源（占位域名；实际见 `.local/DEPLOYMENT.md`）。
 
 ## 0. 约定
 
@@ -14,7 +14,7 @@
 { "error": { "code": "invalid_credentials", "message": "用户名或密码错误", "details": { } } }
 ```
 
-- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
+- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`503 bot_disabled/bot_key_missing/bot_ai_tool_isolation_unavailable`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
 - 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/bot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。
 - Bot 功能开关：`BOT_ENABLED=false` 或缺少 `BOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/bots*` 写操作返回 `503 bot_disabled`/`bot_key_missing`；`GET /api/bots/status` 仍可读。
@@ -30,8 +30,11 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.6.0", "schemaVersion": 14, "uptimeSec": 1234 }
+{ "ok": true, "version": "0.7.0", "schemaVersion": 16, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
+
+- `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
+- 失败时返回 503/错误体；`/healthz` 仍为 Cloudflare Access bypass（见 `docs/DEPLOY.md` §5.2）。
 
 ## 2. 认证与账号
 
@@ -148,7 +151,7 @@
   },
   "opencode": { "reachable": true, "url": "https://ai.example.com", "sessions": 3 },
   "services": { "minecraft": "active", "cloudflared": "active", "opencode": "active" },
-  "backup": { "lastPullAt": "…", "ageHours": 12.3, "sizeBytes": 123456, "ok": true, "overdue": false },
+  "backup": { "lastPullAt": "…", "ageHours": 12.3, "sizeBytes": 123456, "ok": true, "overdue": false, "encryptedPendingCount": 1, "encryptedAckedCount": 0, "encryption": { "enabled": true, "keyConfigured": true }, "offsite": { "lastRunAt": "…", "ok": true, "remoteLabel": "myremote", "uploaded": 1, "skipped": 0, "failed": 0, "bytes": 123456, "keptRemote": 12, "plaintextSkipped": 0, "error": null } },
   "activity": [
     { "id": 1, "ts": "…", "action": "login", "target": null, "detail": null, "ip": "…" }
   ],
@@ -157,6 +160,9 @@
 ```
 
 `minecraft.error` 可为 `null`；`backup` 恒为对象，但 `lastPullAt/ageHours/sizeBytes` 等字段可为 `null`；`services.*` 取值 `active|inactive|unknown`。`opencode.sessions` 不可得时为 `null`。
+v0.7.0 起 `backup` 另含 `encryptedPendingCount/encryptedAckedCount/encryption{enabled,keyConfigured}/offsite`：
+`encryption` 只表示开关与 Pi 端 age 公钥文件是否存在（不读取私钥）；`offsite` 为 PC 写入的只读状态对象（缺失为 `null`，视为未配置），
+只含别名/计数/时间，不含远端真实路径/URL/凭据。
 
 ### GET /api/audit?limit=50&offset=0&action=login
 
@@ -387,7 +393,9 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.6.0", "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": true, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"] }`。
+- `GET /api/version`（需要会话）：`{ "version": "0.7.0", "schemaVersion": 16, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null } }`。
+  - v0.7.0 新增：`schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
+  - `backupRestoreEnabled` 与 `deploy/env.example` 默认一致（默认 `false`；Web 文件级恢复需显式开启）。
 - `GET /api/storage`（需要会话；v0.4.0 轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
 - 静态资源：`/`、`/files`、`/trash`、`/knowledge`、`/shares`、`/minecraft`、`/settings`、`/s/:token` 等 SPA 路径返回 `index.html`；`/assets/*` 长缓存；`/sw.js` 带 `Service-Worker-Allowed: /`；`/manifest.webmanifest` 为 `application/manifest+json`。
 - `ai.example.com/*`：不是本应用 API，全部经会话校验后反代到 opencode；未登录 HTML 302，API 401。
@@ -441,23 +449,24 @@ RCON 不可用：`502 rcon_unavailable`。
 
 - `POST /api/alerts/test`（会话 + CSRF，10 次/小时）→ `{ok:true,delivered:boolean,message?}`；未配置 webhook 返回 200 `{ok:false,delivered:false,message:"未配置 webhook URL"}`。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
-- 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
+- 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）、世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
+  `config` 含 `offsiteMaxAgeHours`（小时，0 表示关闭；状态文件缺失/未配置时该条件不进入列表，不误报）；`status` 字段另含世界备份/拉取/演练阈值。
 
 ## 11. 备份管理 / 文件级恢复
 
 全部需要会话；写操作需 CSRF；危险操作另需 TOTP（body `totpCode` 或请求头 `X-TOTP-Code`）和 typed confirmation。整库恢复不通过 Web 执行。
 
-- `GET /api/backups` → `{items:[Archive],inbox,orphans,state,world,worldPull,drill}`。Archive 含 `name/mode/createdAt/sizeBytes/sha256/status/origin/available/verifiedAt/pulledAt/ackedAt/lastError/manifest`；`available=false` 表示服务端文件已被 PC ack 清理（acked 后正常），此状态不可用于恢复；不返回归档路径或下载 URL。`world`/`worldPull`/`drill` 为只读状态对象（见 §12），`state` 可含 `pendingBytes/ackedBytes` 统计（缺失时前端按 0 降级）。
-- `POST /api/backups/prepare` body `{totpCode,full?,confirmText:"PREPARE"}`（3 次/小时）→ 只生成 Pi pending 归档，不 ack、不推进游标；输出可带 `warnings`/`skippedMissing`/`missingFiles`/`missingFileCount`/`partials`（物理文件缺失但已跳过，游标不会越过缺失项；下次 prepare 自动补入已恢复文件）。超时由 `BACKUP_PREPARE_TIMEOUT_SEC`（默认 3300s）控制。
-- `POST /api/backups/import`（multipart 字段 `file`，TOTP 走 `X-TOTP-Code`；10 次/小时）→ 201 `{archive,verify,warnings?}`。归档名必须匹配 `^snapshot-[0-9TZ]+(?:-[0-9]+)?-(full|inc)\.tar\.gz$`；落盘 `DATA_DIR/backups/imports` 0700，拒绝覆盖；单请求 ≤ min(MAX_UPLOAD_BYTES, 100 MiB)。导入归档（origin=import）不计入 pending，也不影响 Pi 增量水位。
-- `POST /api/backups/verify` body `{name}` → 流式 SHA-256 + tar 安全解析；409 checksum_mismatch、422 invalid_archive/unsafe_archive、404 archive_not_found。
-- `GET /api/backups/archives/:name/entries?path=/` → `{path,items,truncated}`，用于恢复选择；仅已校验归档；30 次/分钟/IP，超出 429；只返回 `origin='user'` 的普通文件（笔记附件/系统文件不参与恢复）。
-- `POST /api/backups/restore-plan` body `{archive?,paths?,targetName?,totpCode,confirmText:"RESTORE"}` → `{plan}`；校验 full+inc 链、空间/配额、文件数上限；计划 30 分钟过期。计划会剔除链 manifest 中 `skippedMissing` 的文件并返回 `plan.skippedMissing: string[]`；选择全部缺失时 `400 invalid_selection`。
-- `POST /api/restores/:planId/execute` body `{totpCode,confirmText:"RESTORE"}` → `{plan,result}`；只恢复文件内容到**新文件夹**（新 ID，不覆盖），单并发/锁；`410 plan_expired`、`409 restore_busy/plan_completed`；`result.filesRestored/bytesRestored/durationMs/skippedMissing`，其中 `result.skippedMissing` 列出执行时仍缺失、已跳过未恢复的文件 ID，非空时不能视为完整恢复。
-- `GET /api/restores/:planId` → `{plan}`。
-- 错误码：`restore_disabled` 403、`archive_not_verified`/`archive_chain_invalid` 409、`invalid_selection`/`confirmation_failed` 400、`invalid_totp` 401、`restore_too_many_files` 400。
-- 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。schema v14 启动时会拒绝高于支持版本的数据库（迁移 6 孤儿分享修复、迁移 7 Bot 表、迁移 8 QQ/静默/AI 会话、迁移 9 Chat/记忆/入站目标、迁移 10 双模式 AI 会话、迁移 11 私聊角色卡、迁移 12 触发方式与事件诊断列、迁移 13 删除非 QQ Bot 及级联数据、迁移 14 结构化长期记忆 `bot_memory_items`/`bot_memory_state`）。
-- 整库恢复：不在 Web API 内，按 `docs/BACKUP.md` §8.1 的离线 root 手工流程执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；仓库不提供 `restore.sh` 自动脚本。
+- `GET /api/backups` → `{items:[Archive],inbox,orphans,state,world,worldPull,drill}`。Archive 含 `name/mode/createdAt/sizeBytes/sha256/status/origin/available/verifiedAt/pulledAt/ackedAt/lastError/manifest/encrypted`；`available=false` 表示服务端文件已被 PC ack 清理（acked 后正常），此状态不可用于恢复；`encrypted=true` 表示 age 加密归档（Web 不可校验/恢复）；不返回归档路径或下载 URL。`world`/`worldPull`/`drill` 为只读状态对象（见 §12），`state` 可含 `pendingBytes/ackedBytes/encryptedPendingCount/encryptedAckedCount` 统计（缺失时前端按 0 降级）。
+- `POST /api/backups/prepare` body `{totpCode,full?,confirmText:"PREPARE"}`（3 次/小时）→ 只生成 Pi pending 归档，不 ack、不推进游标；输出可带 `warnings`/`skippedMissing`/`missingFiles`/`missingFileCount`/`partials`，加密开启时另带 `encrypted:true/archiveFormat:"tar.gz.age"/metaName/plainSha256/plainSize`（明文哈希只在 sidecar/DB，不在加密归档内）。超时由 `BACKUP_PREPARE_TIMEOUT_SEC`（默认 3300s）控制；加密开启时 age/公钥/空间任一不满足即失败关闭（不产生 pending、不降级明文）。TOTP 失败写审计 `backup_reauth_failed`。
+- `POST /api/backups/import`（multipart 字段 `file`，TOTP 走 `X-TOTP-Code`；10 次/小时）→ 201 `{archive,verify,warnings?}`。归档名必须匹配 `^snapshot-[0-9TZ]+(?:-[0-9]+)?-(full|inc)\.tar\.gz$`（明文）或 `…\.tar\.gz\.age$`（加密，**导入返回 409 `archive_encrypted`**）；落盘 `DATA_DIR/backups/imports` 0700，拒绝覆盖；单请求 ≤ min(MAX_UPLOAD_BYTES, 100 MiB)。导入归档（origin=import）不计入 pending，也不影响 Pi 增量水位。
+- `POST /api/backups/verify` body `{name}` → 流式 SHA-256 + tar 安全解析；**加密归档（`.age`）在名称校验之前返回 `409 archive_encrypted`**（Pi 无私钥）；明文归档错误：409 checksum_mismatch、422 invalid_archive/unsafe_archive、404 archive_not_found；校验失败会清除 `verified_at/manifest_json` 并记录 `last_error`。
+- `GET /api/backups/archives/:name/entries?path=/` → `{path,items,truncated}`，用于恢复选择；仅已校验明文归档；`.age` 返回 `409 archive_encrypted`；30 次/分钟/IP，超出 429；只返回 `origin='user'` 的普通文件（笔记附件/系统文件不参与恢复）。
+- `POST /api/backups/restore-plan` body `{archive?,paths?,targetName?,totpCode,confirmText:"RESTORE"}` → `{plan}`；校验 full+inc 链、空间/配额、文件数上限；计划 30 分钟过期。不指定归档时**自动恢复目标跳过 `.age`**；指定 `.age` 或链中含 `.age` 返回 `409 archive_encrypted`。计划会剔除链 manifest 中 `skippedMissing` 的文件并返回 `plan.skippedMissing: string[]`；选择全部缺失时 `400 invalid_selection`。
+- `POST /api/restores/:planId/execute` body `{totpCode,confirmText:"RESTORE"}` → `{plan,result}`；只恢复文件内容到**新文件夹**（新 ID，不覆盖），单并发/锁；`410 plan_expired`、`409 restore_busy/plan_completed`；`result.filesRestored/bytesRestored/durationMs/skippedMissing`，其中 `result.skippedMissing` 列出执行时仍缺失、已跳过未恢复的文件 ID，非空时不能视为完整恢复。启动/维护会清理崩溃遗留的陈旧 `restore.lock`。
+- `GET /api/restores/:planId` → `{plan}`（用于恢复向导刷新/断网后继续轮询）。
+- 错误码：`archive_encrypted` 409（加密归档 Web 不可操作）、`restore_disabled` 403、`archive_not_verified`/`archive_chain_invalid` 409、`invalid_selection`/`confirmation_failed` 400、`invalid_totp` 401、`restore_too_many_files` 400。
+- 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。schema v16 启动时会拒绝高于支持版本的数据库（迁移 5–16 保留；本版无新迁移）。
+- 整库恢复：不在 Web API 内，按 `docs/BACKUP.md` §8.1 的离线 root 手工流程执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；加密归档必须先在 PC 用离线私钥解密，再按同流程恢复。
 
 ## 12. 可观测性与备份状态（v0.4.0）
 
@@ -532,17 +541,30 @@ RCON 不可用：`502 rcon_unavailable`。
     "ok": true,
     "report": "20261020T120000Z",
     "latestDb": "db-20261020T120000Z.sqlite",
-    "schemaVersion": 14,
+    "schemaVersion": 16,
     "worldChecked": true,
     "error": null,
     "message": null
+  },
+  "offsite": {
+    "lastRunAt": "2026-10-24T05:00:00.000Z",
+    "ok": true,
+    "remoteLabel": "myremote",
+    "uploaded": 1,
+    "skipped": 0,
+    "failed": 0,
+    "bytes": 123456,
+    "keptRemote": 12,
+    "plaintextSkipped": 0,
+    "error": null
   }
 }
 ```
 
 字段说明：`world.kept`/`worldPull.kept` 是归档名数组，份数看 `keptCount`；`world.kept` 是“上次运行保留”，PC 拉取校验并 ack 后远端归档会被删除，不代表 Pi 当前仍有该数量；`drill.reportPath`/`dbIntegrity` 仅为旧状态文件兼容字段，当前脚本写 `report/latestDb/schemaVersion/worldChecked`。
+`offsite`（v0.7.0，PC 脚本写入、应用只读）：缺失为 `null`（未配置，不告警）；只含远端别名 `remoteLabel` 与计数/时间/错误，不含远端真实路径/URL/凭据；`plaintextSkipped>0` 表示有明文归档被拒绝上传（安全信号）。
 
-`GET /api/dashboard` 的 `backup` 始终返回对象（历史字段可为 `null`）：`lastPullAt/ageHours/sizeBytes/ok/overdue/lastError`，另含 `pendingCount/pendingBytes/orphanCount/ackedBytes`、`world/worldPull/drill`。状态文件由 root 世界备份脚本与 PC 拉取/演练脚本写入，应用只读；不含密钥。
+`GET /api/dashboard` 的 `backup` 始终返回对象（历史字段可为 `null`）：`lastPullAt/ageHours/sizeBytes/ok/overdue/lastError`，另含 `pendingCount/pendingBytes/orphanCount/ackedBytes`、`encryptedPendingCount/encryptedAckedCount`、`encryption{enabled,keyConfigured}`、`world/worldPull/drill/offsite`。状态文件由 root 世界备份脚本与 PC 拉取/演练/异地脚本写入，应用只读；不含密钥。
 
 ## 13. 笔记附件与版本历史（v0.4.0）
 
@@ -582,7 +604,7 @@ v0.5.10 变更：记忆摘要会话一次性（每次新建远端 OpenCode 会�
 ### 对象
 
 ```json
-BotStatus:  { "enabled": true, "keyConfigured": true, "bots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null, "aiToolIsolation": { "supported": true, "fallbackCount": 0, "fallbackAt": null } }
+BotStatus:  { "enabled": true, "keyConfigured": true, "bots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null, "aiToolIsolation": { "supported": true, "fallbackCount": 0, "fallbackAt": null, "retryAt": null } }
 v0.5.11 变更（结构化记忆）：记忆从滚动摘要改为结构化条目，`GET /api/bots/:id/memories` 返回用户级 `BotMemoryUserSummary`（itemCount/kinds/memoryEnabled/updatedAt）；新增
 `GET /api/bots/:id/memories/:userId/items`（条目元数据 id/kind/importance/confidence/updatedAt/expiresAt）与 `DELETE .../items/:itemId`；`DELETE .../memories/:userId` 删除整用户结构化记忆（含状态/legacy，不清会话）；
 **所有记忆接口均不返回 key/value**。自助命令新增 `/memory`（查看计数/类型/启停/最近更新；`/memory off|on` 暂停/恢复抽取与注入）；`/forget confirm` 清空 items/state/legacy 与全部会话（含远端）。
@@ -612,6 +634,12 @@ v0.6.4 起普通消息 Chat 可启用模型消息发送工具：OpenCode 通过 
 私聊与 @ 提及必须至少发送一条，模型漏调用时服务端兜底发送最终文本并审计 `bot.ai.send_fallback`；全量群聊未调用工具即静默（替代旧 `NO_REPLY` 文本哨兵）。
 全量群聊非 @ 消息使用 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`（默认 8000）与 `BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`（默认 20000）延长合并窗口。
 新创建的 OpenCode Chat/Memory 会话标题为「目标名称 + Chat/Memory」。
+
+v0.7.0 变更（审计修复）：
+- `BotStatus.aiToolIsolation` 增加 `retryAt`（下一次允许重试 `permissions` 的时间；未降级为 null）；`BotStatus.lastError`/`BotSummary.lastError` 改为从 `bot_deliveries`/`bot_publish_jobs` 失败派生（不再依赖 `bots.last_error` 死字段）。工具隔离 fail-closed：启用 `BOT_AI_SEND_TOOL_ENABLED` 且隔离不可用时，新 Chat 返回固定提示并写 `bot_events`（忽略/拒绝），OpenCode 层返回 `503 bot_ai_tool_isolation_unavailable`；10 分钟窗口到点后放行一次重试，上游恢复后自动恢复隔离。
+- 群共享记忆归属：条目 key 前缀为稳定 `<member_openid>:`（显示名只存 value）；启动一次性迁移 `bot_group_memory_owner_migrated_v1`，无法映射的旧键加 `legacy:` 保留；`/forget confirm` 清除本人在各群共享记忆中的条目并取消在途抽取，审计 `bot.memory.forget` 增加 `groupItems/groupScopes`。
+- Webhook 限流：未通过验签的请求使用独立每 Bot 每分钟 120 次桶，已验签业务事件 300 次/分钟（验签后才扣减），无效流量不能饿死合法事件；拒绝/限流审计按「每 Bot×动作×分钟」聚合（首条 + 每 50 条），降低未认证写放大。
+- 其它：孤儿 OpenCode 会话清理只针对旧默认标题（不误删新命名/前缀相似会话）；全量群混批中任一 @ 即整批按被点名处理；发送工具已缓冲消息在回合异常时先补发并审计 `partialTurn`；`/search` 与普通 Chat 共用会话串行锁；群聊名称匹配按词边界；`burst.clear` 取消运行中批次的后续排队。
 
 ### 管理端点
 
@@ -674,7 +702,7 @@ v0.6.4 起普通消息 Chat 可启用模型消息发送工具：OpenCode 通过 
     - 发布文本不再分段：单条 ≤2000 字符；已发送后失败时任务标记 `failed` 且 `last_error` 含 `partial_text_sent`，**不自动重试**（避免重复外发），需人工确认后重建任务。
     - 限流 20 次/小时；队列每 `BOT_DELIVERY_INTERVAL_SECONDS`（30）扫描，失败按指数退避（30s 起，≤1h），达到 `BOT_DELIVERY_MAX_ATTEMPTS`（5）标记 `failed`/死信。
   - `DELETE /api/bots/:id/publish/:jobId` → `{ "ok": true }`；仅 `queued|draft` 可取消，其它 `404`。
-- 审计动作：`bot.create/update/delete`、`bot.target.create/update/delete`、`bot.delivery.retry/partial`、`bot.publish.create/sent/cancel/partial`、`bot.command`、`bot.command.denied`、`bot.chat`、`bot.chat.denied`、`bot.ai.chat`、`bot.ai.memory`（legacy）、`bot.ai.permissions_fallback`、`bot.memory.extract`、`bot.memory.toggle`、`bot.memory.delete_item`、`bot.memory.delete_user`、`bot.memory.legacy_cleanup`、`bot.ai.image`、`bot.webhook.challenge`、`bot.webhook.rejected/rate_limited`、`bot.event.ignored`、`bot.test`、`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin`、`reauth_bot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。
+- 审计动作：`bot.create/update/delete`、`bot.target.create/update/delete`、`bot.delivery.retry/partial`、`bot.publish.create/sent/cancel/partial`、`bot.command`、`bot.command.denied`、`bot.chat`、`bot.chat.denied`、`bot.ai.chat`、`bot.ai.memory`（legacy）、`bot.ai.permissions_fallback`、`bot.memory.extract`、`bot.memory.toggle`、`bot.memory.delete_item`、`bot.memory.delete_user`、`bot.memory.legacy_cleanup`、`bot.ai.image`、`bot.webhook.challenge`、`bot.webhook.rejected/rate_limited`、`bot.event.ignored`、`bot.test`、`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin`、`reauth_bot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。备份危险操作用 `backup_reauth_failed` 记录 TOTP 再认证失败（route/错误摘要/IP，不含 TOTP）。
 
 ### 公开 Webhook
 
@@ -700,10 +728,11 @@ v0.6.4 起普通消息 Chat 可启用模型消息发送工具：OpenCode 通过 
   第二段起失败时返回错误并记录 `partial_text_sent`，不自动重试。Chat 不执行命令/写操作；未开启 `allow_chat`、AI 未启用或群/频道非 @Bot 的事件返回 `200` 但不调用 AI（写诊断事件 `ignored`）。
 - 图片：`BOT_AI_VISION_ENABLED=true`（默认）时，QQ 入站图片（`d.attachments`）经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、
   内存下载（不落盘）后以 OpenCode prompt files 交给 AI；`BOT_AI_VISION_ENABLED=false`、下载失败或 mime/大小非法时降级为文字回答。审计 `bot.ai.image` 只记录 mime/大小/跳过原因。
-- 限流：Webhook scope 按 `CF-Connecting-IP`（缺失时 `request.ip`）120 次/分钟；BotService 再按 botId 300 次/分钟；命令按 `botId:userId` 每 `BOT_COMMAND_RATE_PER_MINUTE`（120）次/分钟；
+- 限流（v0.7.0）：Webhook scope 按统一 `requestMeta` 信任模型取客户端 IP（仅 loopback 对端采信 Cloudflare 头）120 次/分钟；BotService 对**未验签**请求按每 Bot 每分钟 120 次、对**已验签**事件按每 Bot 每分钟 300 次分别计数（验签通过后才扣减），拒绝/限流审计按窗口聚合。命令按 `botId:userId` 每 `BOT_COMMAND_RATE_PER_MINUTE`（120）次/分钟；
   Chat 另按每分钟 `BOT_CHAT_RATE_PER_MINUTE`（30）次、每小时 `BOT_AI_RATE_PER_HOUR`（120）次。记忆摘要不额外占用每小时 AI 配额（每轮对话只计 1 次）。
+- 公开 Webhook 失败码补充：限流 `429 rate_limited`（无效流量走未验签桶；已验签桶超限同样 429 但不应影响合法重试）；工具隔离不可用不通过 Webhook 返回 503，而是 Chat 侧固定提示 + 诊断事件，AI 内部错误码 `bot_ai_tool_isolation_unavailable` 只用于 API/日志状态。
 - Bot 关闭（`BOT_ENABLED=false`/无密钥）、Bot 不存在或 `enabled=false` 时统一 `404`，不泄露 Bot 是否存在。
 
 ### 错误码汇总
 
-`bot_disabled`（503）、`bot_key_missing`（503）、`bot_key_invalid`（500，仅启动/配置阶段）、`invalid_bot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`bot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `bot_ai_image_unsupported`/`bot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。v0.5.8 起删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
+`bot_disabled`（503）、`bot_key_missing`（503）、`bot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`bot_key_invalid`（500，仅启动/配置阶段）、`invalid_bot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`bot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `bot_ai_image_unsupported`/`bot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。v0.5.8 起删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。

@@ -2,7 +2,16 @@
 // 展示应用归档、密钥包、pending/acked/孤儿、世界备份、PC 拉取与最近演练；
 // 状态文件缺失显示“未运行/未知”，异常红黄高亮，不展示归档路径等敏感信息。
 
-import type { BackupArchive, BackupState, BackupStatus, DrillStatus, WorldBackupStatus, WorldPullStatus } from '../../api/types'
+import type {
+  BackupArchive,
+  BackupEncryptionStatus,
+  BackupState,
+  BackupStatus,
+  DrillStatus,
+  OffsiteStatus,
+  WorldBackupStatus,
+  WorldPullStatus,
+} from '../../api/types'
 import { Badge } from '../Badge'
 import type { BadgeTone } from '../Badge'
 import { InlineError } from '../InlineError'
@@ -24,6 +33,11 @@ export interface BackupStatusCardProps {
   world?: WorldBackupStatus | null
   worldPull?: WorldPullStatus | null
   drill?: DrillStatus | null
+  /** v0.7.0：备份整包加密与异地副本只读状态（缺失时显示未配置/未运行）。 */
+  encryption?: BackupEncryptionStatus | null
+  offsite?: OffsiteStatus | null
+  /** 当前部署 schema 版本；用于“演练 schema 与部署不一致”提示（未知时不比较）。 */
+  currentSchemaVersion?: number | null
   archives?: BackupArchive[]
   loading?: boolean
   error?: string | null
@@ -49,6 +63,9 @@ export function BackupStatusCard({
   world = null,
   worldPull = null,
   drill = null,
+  encryption = null,
+  offsite = null,
+  currentSchemaVersion = null,
   archives = [],
   loading = false,
   error = null,
@@ -61,10 +78,20 @@ export function BackupStatusCard({
     world: world ?? backup?.world ?? null,
     worldPull: worldPull ?? backup?.worldPull ?? null,
     drill: drill ?? backup?.drill ?? null,
+    encryption: encryption ?? backup?.encryption ?? null,
+    offsite: offsite ?? backup?.offsite ?? null,
+    currentSchemaVersion,
     archives,
   })
   const hasAnyData =
-    Boolean(backup) || Boolean(state) || Boolean(world) || Boolean(worldPull) || Boolean(drill) || archives.length > 0
+    Boolean(backup) ||
+    Boolean(state) ||
+    Boolean(world) ||
+    Boolean(worldPull) ||
+    Boolean(drill) ||
+    Boolean(encryption) ||
+    Boolean(offsite) ||
+    archives.length > 0
   const allUnknown = entries.every((entry) => entry.tone === 'muted')
 
   if (loading && !hasAnyData) {
@@ -93,7 +120,7 @@ export function BackupStatusCard({
 
       {!hasAnyData ? (
         <div className="notice notice-muted">
-          尚无备份状态记录：应用归档、密钥包、世界备份与恢复演练均未上报。完成首次 Pi 备份与 PC 拉取后会在这里显示。
+          尚无备份状态记录：应用归档、密钥包、世界备份、恢复演练、备份加密与异地副本均未上报。完成首次 Pi 备份与 PC 拉取后会在这里显示。
         </div>
       ) : null}
 

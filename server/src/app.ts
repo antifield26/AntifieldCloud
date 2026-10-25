@@ -100,7 +100,13 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   const auth = new AuthService(db, config)
-  const files = new FileService(db, config, app.log)
+  // 分享吊销钩子：FileService 先构造，闭包延迟引用后构造的 ShareService（避免循环依赖）。
+  let sharesRef: ShareService | null = null
+  const files = new FileService(db, config, app.log, {
+    revokeSharesForFiles: (fileIds) => {
+      sharesRef?.revokeSharesForFiles(fileIds)
+    },
+  })
   const mc = new MinecraftService(db, config)
   const dashboard = new DashboardService(db, config, files, mc)
   const notes = new NoteService(db, {
@@ -112,6 +118,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
   const bookmarks = new BookmarkService(db)
   const shares = new ShareService(db, config)
+  sharesRef = shares
   const metrics = new MetricsService(db)
   // 复用 DashboardService 的 HostMonitor 采集 CPU，避免两个采样器互相覆盖 CPU 基线。
   const metricsSampler = createMetricsSampler({
@@ -315,7 +322,18 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
 
   app.get('/healthz', async () => {
     db.prepare('SELECT 1').get()
-    return { ok: true, version: config.appVersion, schemaVersion: SUPPORTED_SCHEMA_VERSION, uptimeSec: Math.floor(process.uptime()) }
+    const pending = db
+      .prepare('SELECT COUNT(*) AS c FROM backup_archives WHERE acked_at IS NULL AND deleted_at IS NULL')
+      .get() as { c: number }
+    return {
+      ok: true,
+      version: config.appVersion,
+      schemaVersion: SUPPORTED_SCHEMA_VERSION,
+      uptimeSec: Math.floor(process.uptime()),
+      /** 轻量就绪信息（不含敏感数据）：DB 可读 + 待确认备份数量。 */
+      db: 'ok',
+      pendingBackups: Number(pending.c),
+    }
   })
 
   registerAuthRoutes(app, config, auth)
@@ -325,7 +343,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerNoteRoutes(app, config, notes, bookmarks, files)
   registerShareRoutes(app, config, shares)
   registerAlertRoutes(app, config, alerts)
-  registerBackupRoutes(app, config, backups)
+  registerBackupRoutes(app, config, backups, db)
   registerUploadRoutes(app, config, uploads)
   registerMetricsRoutes(app, metrics)
   registerBotRoutes(app, config, bots, auth)
@@ -361,6 +379,16 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   app.addHook('onClose', async () => {
     alerts.stop()
     metricsSampler.stop()
+    // ARCH-04：关闭前有限等待 Bot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。
+    // 最多等 15s，超时仍继续关闭（不阻塞 systemd stop），并记录警告。
+    const drain = bots.waitForIdle().catch((error: unknown) => {
+      app.log.warn({ err: error }, 'Bot 关闭排空失败')
+    })
+    const timeout = new Promise<void>((resolve) => {
+      const timer = setTimeout(() => resolve(), 15_000)
+      timer.unref?.()
+    })
+    await Promise.race([drain, timeout])
     bots.stop()
     proxy.close()
   })
@@ -382,7 +410,9 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       ['备份清理', () => backups.cleanup()],
       ['分片上传过期清理', () => uploads.cleanupExpired()],
       ['分片上传孤儿目录清理', () => uploads.cleanupOrphanSessions()],
+      ['终态上传会话清理', () => uploads.cleanupTerminalSessions()],
       ['笔记附件孤儿清理', () => notes.cleanupOrphanAttachments()],
+      ['文件物理孤儿清理', () => files.cleanupOrphanFiles()],
       ['指标保留清理', () => metrics.prune(config.metricsRetentionDays)],
       ['认证数据清理', () => auth.cleanup()],
       ['审计保留清理', () => purgeAudit(db, config.auditRetentionDays)],

@@ -251,6 +251,11 @@ export interface BotToolIsolationStatus {
   fallbackCount: number
   /** 首次降级时间（ISO 8601）；未降级为 null。 */
   fallbackAt: string | null
+  /**
+   * 下一次允许重试 permissions 的时间（ISO 8601）；未降级/无需重试为 null。
+   * service 侧据此决定是否前置 fail-closed：窗口内阻断新 Chat，到点后放行给 AI 层重试。
+   */
+  retryAt: string | null
 }
 
 export interface BotAi {

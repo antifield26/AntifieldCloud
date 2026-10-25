@@ -176,7 +176,9 @@ test('manifest：schema/mode/fileCount/fields 异常可诊断', () => {
     totalBytes: 0,
   }
   assert.equal(verifyManifest(valid).ok, true)
-  assert.equal(verifyManifest({ ...valid, schema: 2 }).errors.some((error) => error.code === 'manifest_schema_invalid'), true)
+  // v0.7.0：manifest schema 2 表示“已按加密特性新规则生成”，与 schema 1 同样可校验；3 才非法。
+  assert.equal(verifyManifest({ ...valid, schema: 2 }).ok, true)
+  assert.equal(verifyManifest({ ...valid, schema: 3 }).errors.some((error) => error.code === 'manifest_schema_invalid'), true)
   assert.equal(verifyManifest({ ...valid, mode: 'delta' }).errors.some((error) => error.code === 'manifest_mode_invalid'), true)
   assert.equal(verifyManifest(valid, { expectedMode: 'full' }).errors.some((error) => error.code === 'manifest_mode_mismatch'), true)
   assert.equal(verifyManifest({ ...valid, fileCount: 2 }).errors.some((error) => error.code === 'manifest_filecount_mismatch'), true)

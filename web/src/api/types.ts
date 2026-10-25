@@ -20,7 +20,8 @@ export interface SessionInfo {
   createdAt: string
   expiresAt: string
   ip: string
-  userAgent: string
+  /** 服务端可能拿不到 UA（旧会话/异常客户端），展示层需容忍 null。 */
+  userAgent: string | null
 }
 
 export interface PasswordChallenge {
@@ -178,6 +179,43 @@ export interface DrillStatus {
   dbIntegrity?: string | null
 }
 
+export interface BackupEncryptionStatus {
+  /** 备份整包加密是否启用（默认关闭）。 */
+  enabled: boolean
+  /** Pi 端是否已配置可用的 age 公钥（缺失时 prepare 会失败关闭）。 */
+  keyConfigured: boolean
+}
+
+/** PC 端异地副本状态（只读状态文件，由 backup-offsite 脚本写入；不含远端路径/凭据）。 */
+export interface OffsiteStatus {
+  /** 异地副本是否启用（默认关闭；状态文件存在即视为脚本已配置）。 */
+  enabled?: boolean | null
+  lastRunAt?: string | null
+  /** 兼容字段；优先 lastRunAt。 */
+  lastPushAt?: string | null
+  ok?: boolean | null
+  /** 远端目标别名（不是真实路径/URL/凭据；脚本字段 remoteLabel）。 */
+  remoteLabel?: string | null
+  targetAlias?: string | null
+  /** 本次上传/跳过/失败数量与字节数（脚本字段）。 */
+  uploaded?: number | null
+  skipped?: number | null
+  failed?: number | null
+  bytes?: number | null
+  /** 远端保留的归档数（脚本字段 keptRemote）。 */
+  keptRemote?: number | null
+  /** 被拒绝上传的明文归档数量（安全信号：脚本只上传 .age）。 */
+  plaintextSkipped?: number | null
+  /** 兼容字段（旧/新脚本可能使用）。 */
+  transferredCount?: number | null
+  pendingRemaining?: number | null
+  kept?: string[] | null
+  keptCount?: number | null
+  lastError?: string | null
+  error?: string | null
+  message?: string | null
+}
+
 export interface BackupStatus {
   lastPullAt: string | null
   ageHours: number | null
@@ -198,6 +236,11 @@ export interface BackupStatus {
   world?: WorldBackupStatus | null
   worldPull?: WorldPullStatus | null
   drill?: DrillStatus | null
+  /** v0.7.0：加密归档计数、加密开关/公钥状态与 PC 异地副本状态。 */
+  encryptedPendingCount?: number | null
+  encryptedAckedCount?: number | null
+  encryption?: BackupEncryptionStatus | null
+  offsite?: OffsiteStatus | null
 }
 
 export interface ServicesStatus {
@@ -313,6 +356,8 @@ export interface ChunkUploadStatus {
   missing: number[]
   status: 'uploading' | 'assembling' | 'completed' | 'aborted' | 'expired'
   expiresAt: string
+  /** 仅 status='completed' 时返回：已登记文件 id，客户端据此在响应丢失后直接结束而不重传。 */
+  fileId?: string
 }
 
 export interface TextPreviewResult {
@@ -359,6 +404,13 @@ export interface WhitelistMutationResult {
 }
 
 /** /api/version 的 v0.2 扩展；旧服务端可能只返回 version。 */
+/** 审计写入诊断：失败计数与最近错误（不含量级明细/审计内容）。 */
+export interface VersionAuditDiagnostics {
+  failureCount: number
+  lastError: string | null
+  lastFailureAt: string | null
+}
+
 export interface VersionResult {
   version: string
   appOrigin?: string
@@ -386,6 +438,15 @@ export interface VersionResult {
   /** v0.5.0：Bot 功能是否可用与支持的平台（旧服务端不下发） */
   botsEnabled?: boolean
   botPlatforms?: string[]
+  /** 当前程序支持的 schema 版本（v0.7.0）；旧服务端不下发时不比较演练一致性。 */
+  schemaVersion?: number
+  /** v0.7.0：备份整包加密开关与 Pi 端 age 公钥是否就绪（不读取私钥）。 */
+  backupArchiveEncryption?: boolean
+  backupAgeRecipientConfigured?: boolean
+  /** v0.7.0：PC 异地副本状态文件是否存在（缺失时 UI 显示未配置）。 */
+  backupOffsiteStatusConfigured?: boolean
+  /** 审计写入诊断（失败计数/最近错误；不包含审计明细）。 */
+  audit?: VersionAuditDiagnostics
 }
 
 /** 前端运行期需要的站点元数据（由 /api/version 推导 + 安全回退）。 */
@@ -417,6 +478,14 @@ export interface AppMeta {
   /** 归档导入单请求上限（默认 100 MiB）与恢复向导文件数上限（默认 5000） */
   backupImportMaxBytes: number
   backupRestoreMaxEntries: number
+  /** 当前 schema 版本；未知时为 null（演练一致性检查据此降级为“不比较”）。 */
+  schemaVersion: number | null
+  /** v0.7.0 特性状态（旧服务端不下发时按关闭/未配置处理）。 */
+  backupArchiveEncryption: boolean
+  backupAgeRecipientConfigured: boolean
+  backupOffsiteStatusConfigured: boolean
+  /** 审计写入诊断；旧服务端不下发时为 null。 */
+  audit: VersionAuditDiagnostics | null
 }
 
 /* ---------- 知识库：笔记与书签 ---------- */
@@ -655,11 +724,22 @@ export interface AlertState {
 export interface AlertsConfig {
   enabled: boolean
   webhookConfigured: boolean
+  /** Webhook 类型（旧服务端可能不下发）。 */
+  webhookType?: string | null
   diskFreePct: number | null
   tempC: number | null
+  /** 内存使用率告警阈值（百分比）。 */
+  memoryUsedPct?: number | null
   backupMaxAgeHours: number | null
+  /** 世界备份/拉取超期小时数与恢复演练超期天数（v0.4.0，旧服务端可能不下发）。 */
+  worldBackupMaxAgeHours?: number | null
+  drillMaxAgeDays?: number | null
+  /** 异地副本超期阈值（小时，v0.7.0）。 */
+  offsiteMaxAgeHours?: number | null
   cooldownMinutes: number | null
   checkIntervalSeconds: number | null
+  /** 最近一次告警评估时间。 */
+  lastEvaluatedAt?: string | null
 }
 
 export interface AlertsResult {
@@ -720,6 +800,8 @@ export interface BackupArchive {
   ackedAt: string | null
   lastError: string | null
   manifest: BackupManifest | null
+  /** v0.7.0：age 加密归档（Pi 无私钥，Web 不可校验/恢复；服务端对所有危险端点返回 archive_encrypted）。 */
+  encrypted?: boolean
 }
 
 /** imports 目录中存在但 DB 无记录的文件（孤儿）或待导入文件。 */
@@ -741,6 +823,9 @@ export interface BackupState {
   /** v0.4.0：待确认/已确认归档占用（旧服务端可能不下发） */
   pendingBytes?: number | null
   ackedBytes?: number | null
+  /** v0.7.0：加密 pending/acked 归档计数（Web 只能展示，不能校验/恢复）。 */
+  encryptedPendingCount?: number
+  encryptedAckedCount?: number
 }
 
 export interface BackupListResult {
@@ -752,6 +837,8 @@ export interface BackupListResult {
   world?: WorldBackupStatus | null
   worldPull?: WorldPullStatus | null
   drill?: DrillStatus | null
+  /** v0.7.0：PC 异地副本状态（当前由 dashboard.backup 下发；保留可选字段兼容服务端扩展）。 */
+  offsite?: OffsiteStatus | null
 }
 
 export interface BackupImportVerify {
@@ -762,6 +849,7 @@ export interface BackupImportVerify {
 export interface BackupImportResult {
   archive: BackupArchive
   verify?: BackupImportVerify
+  warnings?: string[]
 }
 
 export interface BackupVerifyResult {
@@ -777,6 +865,15 @@ export interface BackupPrepareResult {
   sha256?: string
   fileCount?: number
   pending?: BackupArchive[]
+  /** v0.7.0：本次生成是否为加密归档，以及密文/明文元数据（明文哈希只在 sidecar，PC 校验）。 */
+  encrypted?: boolean
+  archiveFormat?: 'tar.gz' | 'tar.gz.age'
+  metaName?: string | null
+  plainSha256?: string | null
+  plainSize?: number | null
+  /** 物理文件缺失被跳过（游标不会越过缺失项，下次 prepare 会自动补入）。 */
+  skippedMissing?: string[]
+  warnings?: string[]
 }
 
 /** GET /api/backups/archives/:name/entries 的只读归档内容（最多 500 条）。 */
@@ -790,6 +887,8 @@ export interface BackupArchiveEntry {
 export interface BackupEntriesResult {
   path: string
   items: BackupArchiveEntry[]
+  /** 条目超过服务端上限（500）时为 true：列表不完整，留空选择表示全部。 */
+  truncated?: boolean
 }
 
 export interface RestorePlan {

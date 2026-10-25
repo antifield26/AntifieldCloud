@@ -2,12 +2,15 @@
 // 安全边界：服务端下发的 origin 必须通过 http(s) 校验；缺失时根据当前页面域名安全回退。
 // 公开页（登录/分享）不依赖登录态，未登录时不请求该接口。
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '../api/client'
 import type { AppMeta, VersionResult } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { currentSiteLocation, deriveSiblingOrigin, safeOrigin } from '../lib/origin'
+
+/** /api/version 失败后的自动重试间隔（毫秒）；最多 3 次，避免长期停留在安全回退值。 */
+const META_RETRY_DELAYS_MS = [3000, 10_000, 30_000] as const
 
 const DEFAULT_TRASH_RETENTION_DAYS = 30
 // 与 docs/API.md 的单请求上限一致：Cloudflare 代理下最大 100 MiB
@@ -51,6 +54,11 @@ function fallbackMeta(): AppMeta {
     metricsRetentionDays: DEFAULT_METRICS_RETENTION_DAYS,
     backupImportMaxBytes: DEFAULT_BACKUP_IMPORT_MAX_BYTES,
     backupRestoreMaxEntries: DEFAULT_BACKUP_RESTORE_MAX_ENTRIES,
+    schemaVersion: null,
+    backupArchiveEncryption: false,
+    backupAgeRecipientConfigured: false,
+    backupOffsiteStatusConfigured: false,
+    audit: null,
   }
 }
 
@@ -96,6 +104,14 @@ function buildMeta(version: VersionResult): AppMeta {
     backupRestoreMaxEntries: Math.floor(
       positiveNumber(version.backupRestoreMaxEntries, DEFAULT_BACKUP_RESTORE_MAX_ENTRIES),
     ),
+    schemaVersion:
+      typeof version.schemaVersion === 'number' && Number.isFinite(version.schemaVersion)
+        ? version.schemaVersion
+        : null,
+    backupArchiveEncryption: version.backupArchiveEncryption === true,
+    backupAgeRecipientConfigured: version.backupAgeRecipientConfigured === true,
+    backupOffsiteStatusConfigured: version.backupOffsiteStatusConfigured === true,
+    audit: version.audit ?? null,
   }
 }
 
@@ -117,14 +133,18 @@ export function AppMetaProvider({ children }: { children: ReactNode }) {
   const { status } = useAuth()
   const [meta, setMeta] = useState<AppMeta>(() => fallbackMeta())
   const [loading, setLoading] = useState(true)
+  const [retryTick, setRetryTick] = useState(0)
+  const retryAttemptRef = useRef(0)
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
       const version = await api.getVersion()
       setMeta(buildMeta(version))
+      retryAttemptRef.current = 0
     } catch {
-      // 元数据接口失败时保留安全回退值，不阻塞页面
+      // 元数据接口失败时保留安全回退值，不阻塞页面；由下方重试 effect 限次补拉。
       setMeta((previous) => (previous.version ? previous : fallbackMeta()))
+      setRetryTick((value) => value + 1)
     } finally {
       setLoading(false)
     }
@@ -132,6 +152,7 @@ export function AppMetaProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (status !== 'authenticated') {
+      retryAttemptRef.current = 0
       setMeta(fallbackMeta())
       setLoading(status === 'loading')
       return
@@ -139,6 +160,19 @@ export function AppMetaProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     void refresh()
   }, [status, refresh])
+
+  // 元数据接口偶发失败时按退避重试（最多 3 次），避免分片上传/恢复入口长期被回退值关闭。
+  useEffect(() => {
+    if (status !== 'authenticated' || meta.version) return
+    const attempt = retryAttemptRef.current
+    if (attempt >= META_RETRY_DELAYS_MS.length) return
+    const delay = META_RETRY_DELAYS_MS[attempt] ?? 30_000
+    const timer = window.setTimeout(() => {
+      retryAttemptRef.current = attempt + 1
+      void refresh()
+    }, delay)
+    return () => window.clearTimeout(timer)
+  }, [status, meta.version, retryTick, refresh])
 
   const value = useMemo<AppMetaContextValue>(() => ({ meta, loading, refresh }), [meta, loading, refresh])
 

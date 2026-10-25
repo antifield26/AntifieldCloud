@@ -20,6 +20,9 @@ import { RelativeTime } from '../components/RelativeTime'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useToast } from '../components/Toast'
 
+/** 分享列表分页大小（服务端 pageSize 上限 500，默认 100；页面按 50 分页显示）。 */
+const PAGE_SIZE = 50
+
 function shareStatus(share: Share): { label: string; tone: BadgeTone } {
   if (share.revokedAt) return { label: '已吊销', tone: 'muted' }
   if (share.expiresAt && new Date(share.expiresAt).getTime() <= Date.now()) return { label: '已过期', tone: 'warning' }
@@ -43,33 +46,44 @@ export function Shares() {
   const { meta } = useAppMeta()
   const toast = useToast()
   const [items, setItems] = useState<Share[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [revokeTarget, setRevokeTarget] = useState<Share | null>(null)
   const [revokeBusy, setRevokeBusy] = useState(false)
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
   const load = useCallback(async (): Promise<void> => {
     if (!meta.sharesEnabled) {
       setLoading(false)
       setItems([])
+      setTotal(0)
       return
     }
     setLoading(true)
     setError(null)
     try {
-      const result = await api.shares.list()
+      const result = await api.shares.list(page, PAGE_SIZE)
       setItems(result.items)
+      setTotal(typeof result.total === 'number' ? result.total : result.items.length)
     } catch (loadError) {
       setError(toErrorMessage(loadError, '加载分享列表失败'))
     } finally {
       setLoading(false)
     }
-  }, [meta.sharesEnabled])
+  }, [meta.sharesEnabled, page])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  // 数据收缩后回收越界页码。
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   const refresh = async (): Promise<void> => {
     setRefreshing(true)
@@ -177,7 +191,7 @@ export function Shares() {
     <div className="shares-page">
       <PageHeader
         title="分享管理"
-        description={items.length > 0 ? `共 ${items.length} 条分享` : '公开下载链接的状态与吊销'}
+        description={total > 0 ? `共 ${total} 条分享` : '公开下载链接的状态与吊销'}
         actions={
           <>
             <Button
@@ -229,6 +243,30 @@ export function Shares() {
           }
         />
       </section>
+
+      {total > PAGE_SIZE ? (
+        <div className="pager">
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={page <= 1 || loading}
+            onClick={() => setPage((value) => Math.max(1, value - 1))}
+          >
+            上一页
+          </Button>
+          <span className="pager-info">
+            第 {page} / {totalPages} 页 · 共 {total} 条
+          </span>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={page >= totalPages || loading}
+            onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+          >
+            下一页
+          </Button>
+        </div>
+      ) : null}
 
       <ConfirmDialog
         open={revokeTarget !== null}

@@ -6,6 +6,8 @@
  * 不把 stdout 用于日志（MCP 协议占用 stdout），错误只写 stderr。
  *
  * 依赖：Node >= 26 内置 fetch；无 npm 依赖。协议：MCP stdio（每行一个 JSON-RPC 消息）。
+ * 生命周期：处理 notifications/cancelled（忽略）；未知 notification 不回复错误；可选 MCP_IDLE_TIMEOUT_MS
+ * （默认 0=不启用）空闲超时自行退出，避免 OpenCode 重复 spawn 时残留进程（OPS-11）。
  */
 import process from 'node:process'
 
@@ -14,6 +16,7 @@ const ENGINES = process.env.SEARXNG_ENGINES ?? 'bing'
 const TIMEOUT_MS = Math.max(1000, Math.min(30000, Number(process.env.SEARXNG_TIMEOUT_MS ?? 8000)))
 const MAX_RESULTS = Math.max(1, Math.min(10, Number(process.env.SEARXNG_MAX_RESULTS ?? 5)))
 const MAX_RESPONSE_BYTES = 512 * 1024
+const IDLE_TIMEOUT_MS = Math.max(0, Math.min(60 * 60 * 1000, Number(process.env.MCP_IDLE_TIMEOUT_MS ?? 0)))
 
 function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`)
@@ -115,6 +118,7 @@ async function handle(message) {
       } }
     }
     if (method === 'notifications/initialized') return null
+    if (method === 'notifications/cancelled' || method === 'notifications/progress') return null
     if (method === 'ping') return { jsonrpc: '2.0', id, result: {} }
     if (method === 'tools/list') {
       return { jsonrpc: '2.0', id, result: { tools: [{
@@ -142,16 +146,29 @@ async function handle(message) {
         isError: false,
       } }
     }
+    if (id === undefined || id === null) return null
     return { jsonrpc: '2.0', id, error: { code: -32601, message: `Method not found: ${method}` } }
   } catch (error) {
     log('error', error instanceof Error ? error.message : String(error))
+    if (id === undefined || id === null) return null
     return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: '联网搜索失败，请直接回答并说明无法核实。' }], isError: true } }
   }
 }
 
 let buffer = ''
+let idleTimer = null
+function armIdleTimer() {
+  if (IDLE_TIMEOUT_MS <= 0) return
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    log(`idle timeout (${IDLE_TIMEOUT_MS}ms), exiting`)
+    process.exit(0)
+  }, IDLE_TIMEOUT_MS)
+}
+armIdleTimer()
 process.stdin.setEncoding('utf8')
 process.stdin.on('data', (chunk) => {
+  armIdleTimer()
   buffer += chunk
   for (;;) {
     const index = buffer.indexOf('\n')

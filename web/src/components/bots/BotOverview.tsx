@@ -1,7 +1,9 @@
 // 机器人概览：运行状态卡（队列/密钥/目标计数）与 Bot 列表。
 // 列表只使用 BotSummary 的公开字段，不读取或展示任何密钥。
 
+import { useEffect, useState } from 'react'
 import { Bot as BotIcon, Cable, Plus, RefreshCw } from 'lucide-react'
+import { api } from '../../api/client'
 import type { BotStatus, BotSummary } from '../../api/types'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
@@ -34,6 +36,27 @@ export function BotOverview({
   onCreate,
   onSelect,
 }: BotOverviewProps) {
+  // 概览状态只有原始 lastError；中文 hint 在 /metrics 中，故仅在存在最近错误时补查一次（失败静默）。
+  const [lastErrorHint, setLastErrorHint] = useState<string | null>(null)
+  useEffect(() => {
+    if (!status.lastError || !selectedId) {
+      setLastErrorHint(null)
+      return
+    }
+    let active = true
+    api.bots
+      .metrics(selectedId, 24)
+      .then((metrics) => {
+        if (active) setLastErrorHint(metrics.lastErrorHint ?? null)
+      })
+      .catch(() => {
+        if (active) setLastErrorHint(null)
+      })
+    return () => {
+      active = false
+    }
+  }, [status.lastError, selectedId])
+
   return (
     <div className="bots-overview">
       <Card
@@ -78,6 +101,7 @@ export function BotOverview({
         {status.lastError ? (
           <div className="notice notice-danger" role="alert">
             最近一次 Bot 错误：{status.lastError}
+            {lastErrorHint ? `（${lastErrorHint}）` : ''}
           </div>
         ) : null}
         {status.aiToolIsolation && !status.aiToolIsolation.supported ? (

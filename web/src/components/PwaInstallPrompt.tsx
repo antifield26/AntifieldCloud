@@ -1,71 +1,43 @@
-// PWA 安装提示：捕获 beforeinstallprompt，用户可安装或稍后关闭。
+// PWA 安装提示：展示浏览器 beforeinstallprompt 捕获到的安装机会，用户可安装或稍后关闭。
 // 已安装/独立窗口模式不展示；关闭选择记入 localStorage，避免反复打扰。
+// v0.7.0：事件由 lib/pwa-install 统一捕获，Settings“关于”卡片与底部提示复用同一 deferred prompt。
 
 import { useEffect, useState } from 'react'
 import { Download, Smartphone, X } from 'lucide-react'
 import { Button } from './Button'
 import { Logo } from './Logo'
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
-}
-
-const DISMISS_KEY = 'af-pwa-install-dismissed'
-
-function isStandalone(): boolean {
-  if (typeof window === 'undefined') return false
-  if (window.matchMedia?.('(display-mode: standalone)').matches) return true
-  return Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
-}
+import {
+  ensurePwaInstallListener,
+  getInstallPromptEvent,
+  isInstallDismissed,
+  isPwaInstalled,
+  promptPwaInstall,
+  rememberInstallDismissed,
+  subscribePwaInstall,
+} from '../lib/pwa-install'
 
 export function PwaInstallPrompt() {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
+  const [hasPrompt, setHasPrompt] = useState<boolean>(() => Boolean(getInstallPromptEvent()))
   const [visible, setVisible] = useState(false)
   const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
-    if (isStandalone()) return
-    try {
-      if (window.localStorage.getItem(DISMISS_KEY) === '1') return
-    } catch {
-      // 隐私模式下 localStorage 不可写，仍显示提示
+    ensurePwaInstallListener()
+    const sync = (): void => {
+      const available = Boolean(getInstallPromptEvent())
+      setHasPrompt(available)
+      setVisible(available && !isPwaInstalled() && !isInstallDismissed())
     }
-    const handlePrompt = (event: Event): void => {
-      event.preventDefault()
-      setDeferred(event as BeforeInstallPromptEvent)
-      setVisible(true)
-    }
-    const handleInstalled = (): void => {
-      setVisible(false)
-      setDeferred(null)
-    }
-    window.addEventListener('beforeinstallprompt', handlePrompt)
-    window.addEventListener('appinstalled', handleInstalled)
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handlePrompt)
-      window.removeEventListener('appinstalled', handleInstalled)
-    }
+    sync()
+    return subscribePwaInstall(sync)
   }, [])
 
-  const rememberDismiss = (): void => {
-    try {
-      window.localStorage.setItem(DISMISS_KEY, '1')
-    } catch {
-      // 忽略不可写
-    }
-  }
-
   const handleInstall = async (): Promise<void> => {
-    if (!deferred || installing) return
+    if (!hasPrompt || installing) return
     setInstalling(true)
     try {
-      await deferred.prompt()
-      const choice = await deferred.userChoice
-      if (choice.outcome !== 'accepted') rememberDismiss()
-      setVisible(false)
-      setDeferred(null)
-    } catch {
+      const outcome = await promptPwaInstall()
+      if (outcome !== 'accepted') rememberInstallDismissed()
       setVisible(false)
     } finally {
       setInstalling(false)
@@ -98,7 +70,7 @@ export function PwaInstallPrompt() {
           className="icon-btn pwa-prompt-close"
           aria-label="关闭安装提示"
           onClick={() => {
-            rememberDismiss()
+            rememberInstallDismissed()
             setVisible(false)
           }}
         >

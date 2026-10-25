@@ -37,6 +37,12 @@ else
   git -C "$INSTALL_DIR" reset --hard origin/HEAD
 fi
 chown -R root:root "$INSTALL_DIR"
+# 记录实际部署的 commit：SearXNG 未固定 tag，升级后靠这里追溯（OPS-16 供应链可审计性）。
+deployed_commit=$(git -C "$INSTALL_DIR" rev-parse HEAD)
+printf '%s\n' "$deployed_commit" > "$SETTINGS_DIR/deployed-commit"
+chown root:searxng "$SETTINGS_DIR/deployed-commit"
+chmod 0640 "$SETTINGS_DIR/deployed-commit"
+echo "SearXNG commit：$deployed_commit"
 
 if [ ! -x "$VENV_DIR/bin/python" ]; then
   python3 -m venv "$VENV_DIR"
@@ -44,6 +50,8 @@ fi
 "$VENV_DIR/bin/pip" install -q -U pip setuptools wheel
 "$VENV_DIR/bin/pip" install -q -r "$INSTALL_DIR/requirements.txt"
 "$VENV_DIR/bin/pip" install -q gunicorn
+# 冻结实际安装依赖，便于事后审计/重建（不强制下次安装使用；升级需人工评审）。
+"$VENV_DIR/bin/pip" freeze > "$VENV_DIR/requirements.lock"
 
 if [ ! -f "$SETTINGS_FILE" ]; then
   secret=$(openssl rand -hex 32)

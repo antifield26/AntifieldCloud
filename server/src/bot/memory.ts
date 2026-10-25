@@ -29,6 +29,9 @@ const CORE_KINDS = new Set<BotMemoryKind>(['profile', 'preference', 'task'])
 /** 群聊共享记忆使用独立 scope；不会与任何真实用户 openid 混用。 */
 export const GROUP_MEMORY_PREFIX = 'group:'
 
+/** 无法映射到稳定 member_openid 的旧群记忆 key 前缀：保留内容但明确标注 legacy，不参与按成员删除。 */
+export const LEGACY_GROUP_KEY_PREFIX = 'legacy:'
+
 export function groupMemoryScope(targetExternalId: string): string {
   return `${GROUP_MEMORY_PREFIX}${targetExternalId}`
 }
@@ -605,8 +608,10 @@ export class BotMemoryStore {
             let value = item.value.trim()
             if (value.startsWith(`${userName}：`)) value = value.slice(userName.length + 1)
             else if (value.startsWith(`${userName}:`)) value = value.slice(userName.length + 1).trimStart()
+            // 稳定归属：key 前缀用 member_openid，显示名只写入 value（D-13）。
             const keyPrefix = `${userName}:`
-            const key = `${item.mem_key.startsWith(keyPrefix) ? item.mem_key : `${keyPrefix}${item.mem_key}`}`.slice(0, KEY_MAX_CHARS)
+            const rawKey = item.mem_key.startsWith(keyPrefix) ? item.mem_key.slice(keyPrefix.length) : item.mem_key
+            const key = `${participant.user_id}:${rawKey}`.slice(0, KEY_MAX_CHARS)
             const result = this.db
               .prepare(
                 `INSERT OR IGNORE INTO bot_memory_items
@@ -645,6 +650,130 @@ export class BotMemoryStore {
       }
       return { copied, moved, groups: touchedGroups.size }
     })
+  }
+
+  /**
+   * D-13 一次性归属迁移：把旧版按显示名前缀存储的群共享条目改为稳定 `member_openid:` 前缀。
+   * - 通过 bot_inbound_targets 的「群目标 + 显示名 + 用户」建立唯一映射；同名多用户视为不可映射；
+   * - 已是 member_openid 前缀的条目跳过；无法映射的加 `legacy:` 前缀保留（不参与按成员删除）；
+   * - 目标键已存在（冲突）时跳过并在返回计数中体现，不覆盖现有条目。
+   * 由 BotService 用 meta 标记保证只执行一次。
+   */
+  renameGroupItemOwners(): { migrated: number; legacy: number; groups: number; skippedConflicts: number } {
+    return transaction(this.db, () => {
+      let migrated = 0
+      let legacy = 0
+      let skippedConflicts = 0
+      const touchedGroups = new Set<string>()
+      const bots = this.db.prepare('SELECT id FROM bots').all() as unknown as { id: string }[]
+      for (const bot of bots) {
+        const groups = this.db
+          .prepare("SELECT external_id FROM bot_targets WHERE bot_id = ? AND kind = 'group'")
+          .all(bot.id) as unknown as { external_id: string }[]
+        for (const group of groups) {
+          const scope = groupMemoryScope(group.external_id)
+          const rows = this.db
+            .prepare('SELECT * FROM bot_memory_items WHERE bot_id = ? AND user_id = ?')
+            .all(bot.id, scope) as unknown as MemoryItemRow[]
+          if (rows.length === 0) continue
+          const nameRows = this.db
+            .prepare(
+              `SELECT user_name, user_id FROM bot_inbound_targets
+               WHERE bot_id = ? AND target_external_id = ? AND user_name IS NOT NULL
+               ORDER BY last_seen_at DESC`,
+            )
+            .all(bot.id, group.external_id) as unknown as { user_name: string; user_id: string }[]
+          const nameCandidates = new Map<string, Set<string>>()
+          for (const row of nameRows) {
+            const name = row.user_name.trim()
+            if (!name) continue
+            const set = nameCandidates.get(name) ?? new Set<string>()
+            set.add(row.user_id)
+            nameCandidates.set(name, set)
+          }
+          const nameToMember = new Map<string, string>()
+          const memberIds = new Set<string>()
+          for (const [name, ids] of nameCandidates) {
+            for (const id of ids) memberIds.add(id)
+            if (ids.size === 1) nameToMember.set(name, [...ids][0]!)
+          }
+          for (const row of rows) {
+            const currentKey = row.mem_key
+            if (currentKey.startsWith(LEGACY_GROUP_KEY_PREFIX)) continue
+            const colon = currentKey.indexOf(':')
+            const prefix = colon > 0 ? currentKey.slice(0, colon) : ''
+            // 已经是稳定 member_openid 前缀：无需迁移。
+            if (prefix && memberIds.has(prefix)) continue
+            const memberId = prefix ? nameToMember.get(prefix) : undefined
+            const rest = colon > 0 ? currentKey.slice(colon + 1) : currentKey
+            const nextKey = memberId
+              ? `${memberId}:${rest}`.slice(0, KEY_MAX_CHARS)
+              : `${LEGACY_GROUP_KEY_PREFIX}${currentKey}`.slice(0, KEY_MAX_CHARS)
+            if (!nextKey || nextKey === currentKey) {
+              if (!memberId) legacy += 1
+              continue
+            }
+            // 显示名只保留在 value：旧 value 未带名字前缀时补上，便于群提示词按「名字：记忆」展示。
+            const nextValue =
+              memberId && prefix && !row.value.trimStart().startsWith(`${prefix}：`)
+                ? `${prefix}：${row.value.trim()}`
+                : row.value
+            const conflict = this.db
+              .prepare(
+                'SELECT 1 AS x FROM bot_memory_items WHERE bot_id = ? AND user_id = ? AND kind = ? AND mem_key = ?',
+              )
+              .get(bot.id, scope, row.kind, nextKey)
+            if (conflict) {
+              skippedConflicts += 1
+              continue
+            }
+            const updated = this.db
+              .prepare('UPDATE bot_memory_items SET mem_key = ?, value = ? WHERE id = ?')
+              .run(nextKey, nextValue, row.id)
+            if (Number(updated.changes) > 0) {
+              if (memberId) migrated += 1
+              else legacy += 1
+              touchedGroups.add(`${bot.id}:${group.external_id}`)
+            }
+          }
+        }
+      }
+      return { migrated, legacy, groups: touchedGroups.size, skippedConflicts }
+    })
+  }
+
+  /**
+   * 删除某成员在所有群共享 scope 下的条目（`/forget confirm` 用）：按稳定 member_openid 前缀精确匹配。
+   * 返回删除数量与涉及群数；legacy 条目（无法映射归属）不删除，避免误删他人内容。
+   */
+  deleteMemberGroupItems(botId: string, memberUserId: string): { items: number; groups: number } {
+    const prefix = `${memberUserId}:`
+    const groups = this.db
+      .prepare("SELECT external_id FROM bot_targets WHERE bot_id = ? AND kind = 'group'")
+      .all(botId) as unknown as { external_id: string }[]
+    let items = 0
+    let touchedGroups = 0
+    transaction(this.db, () => {
+      for (const group of groups) {
+        const scope = groupMemoryScope(group.external_id)
+        const rows = this.db
+          .prepare('SELECT id, mem_key FROM bot_memory_items WHERE bot_id = ? AND user_id = ?')
+          .all(botId, scope) as unknown as { id: string; mem_key: string }[]
+        const ids = rows.filter((row) => row.mem_key.startsWith(prefix)).map((row) => row.id)
+        if (ids.length === 0) continue
+        const placeholders = ids.map(() => '?').join(',')
+        const deleted = this.db.prepare(`DELETE FROM bot_memory_items WHERE id IN (${placeholders})`).run(...ids)
+        items += Number(deleted.changes)
+        touchedGroups += 1
+      }
+    })
+    return { items, groups: touchedGroups }
+  }
+
+  /** 删除整个群 scope 的记忆（目标删除/改类型时清理孤儿群记忆）。 */
+  deleteGroupScope(botId: string, scope: string): number {
+    if (!scope.startsWith(GROUP_MEMORY_PREFIX)) return 0
+    return this.deleteUser(botId, scope).deletedItems
   }
 
   /** 管理端条目元数据：只有 id/类型/重要度/置信度/时间，不含 key/value。 */

@@ -32,16 +32,17 @@ if (files.length === 0) {
 }
 console.log(`运行 ${files.length} 个测试文件（server=${serverTests.length}，scripts=${scriptTests.length}）`)
 
-// --coverage 由 CI 覆盖率 job 使用：只统计 server/src，阈值略低于当前基线并逐步收紧。
+// --coverage 由 CI 覆盖率 job 使用：只统计 server/src；阈值贴近 v0.6.6 基线
+// （Lines 92.34% / Branches 77.48% / Functions 87.23%），留少量波动空间，回退即失败（OPS-18）。
 const coverage = process.argv.includes('--coverage')
 const coverageArgs = coverage
   ? [
       '--experimental-test-coverage',
       '--test-coverage-include=server/src/**/*.ts',
       '--test-coverage-exclude=server/src/**/*.d.ts',
-      '--test-coverage-lines=75',
-      '--test-coverage-functions=75',
-      '--test-coverage-branches=65',
+      '--test-coverage-lines=91',
+      '--test-coverage-functions=85',
+      '--test-coverage-branches=76',
     ]
   : []
 const result = spawnSync(process.execPath, [...coverageArgs, '--test', ...files], { stdio: 'inherit' })

@@ -37,11 +37,9 @@ export function resumeStorageKey(fingerprint: string): string {
   return `af_chunk_upload:${fingerprint}`
 }
 
+/** 本地断点只保留续传所需最小字段（不缓存文件内容/名称/目录；文件身份已编码在 storage key 指纹中）。 */
 export interface ResumeRecord {
   uploadId: string
-  parentId: string | null
-  name: string
-  size: number
   received: number[]
   expiresAt: string
 }
@@ -52,9 +50,6 @@ export function isValidResumeRecord(value: unknown): value is ResumeRecord {
   return (
     typeof record.uploadId === 'string' &&
     record.uploadId.length > 0 &&
-    (typeof record.parentId === 'string' || record.parentId === null) &&
-    typeof record.name === 'string' &&
-    typeof record.size === 'number' &&
     Array.isArray(record.received) &&
     record.received.every((index) => typeof index === 'number') &&
     typeof record.expiresAt === 'string'

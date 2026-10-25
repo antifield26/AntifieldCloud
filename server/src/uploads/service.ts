@@ -18,6 +18,7 @@ import { newId } from '../util/ids.ts'
 import { AppError, badRequest, conflict, notFound, tooLarge } from '../util/errors.ts'
 import type { FileService } from '../files/service.ts'
 import { sanitizeName } from '../files/mime.ts'
+import { transaction } from '../db.ts'
 
 type UploadStatus = 'uploading' | 'assembling' | 'completed' | 'aborted' | 'expired'
 
@@ -73,7 +74,16 @@ export interface CompleteResult {
 
 const UPLOAD_ID_PATTERN = /^[0-9a-f-]{36}$/
 const ACTIVE_STATUSES = "('uploading', 'assembling')"
+const TERMINAL_STATUSES = "('completed', 'aborted', 'expired')"
 const MAX_RECEIVED_LIST = 100_000
+/** 终态会话行保留天数：完成/取消/过期后保留一段时间供断点查询，之后回收。 */
+export const TERMINAL_SESSION_RETENTION_DAYS = 30
+
+/** 同索引分片的唯一约束冲突：并发 PUT 的另一请求已先插入，不应删除共享块。 */
+function isUniqueChunkConflict(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return /UNIQUE constraint failed: upload_chunks\.(session_id|idx)/.test(error.message)
+}
 
 export class UploadService {
   private readonly db: DatabaseSync
@@ -81,6 +91,8 @@ export class UploadService {
   private readonly files: FileService
   private readonly rootDir: string
   private readonly reservedSessions = new Set<string>()
+  /** 同一会话+索引的进程内串行锁，保证重复 PUT 幂等且不互相删除共享块。 */
+  private readonly chunkLocks = new Map<string, Promise<void>>()
 
   constructor(db: DatabaseSync, config: Config, files: FileService) {
     this.db = db
@@ -203,6 +215,40 @@ export class UploadService {
   }
 
   async putChunk(actor: Actor, id: string, index: number, body: Buffer): Promise<{ index: number; received: number }> {
+    return this.withChunkLock(`${id}:${index}`, () => this.putChunkLocked(actor, id, index, body))
+  }
+
+  /** 进程内按「会话+索引」串行，保证重复 PUT 幂等且不会互相删除已落盘分片。 */
+  private async withChunkLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const previous = this.chunkLocks.get(key) ?? Promise.resolve()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const tail = previous.then(
+      () => gate,
+      () => gate,
+    )
+    this.chunkLocks.set(key, tail)
+    try {
+      await previous
+    } catch {
+      // 前序请求失败不影响后续排队的同索引请求。
+    }
+    try {
+      return await fn()
+    } finally {
+      release()
+      if (this.chunkLocks.get(key) === tail) this.chunkLocks.delete(key)
+    }
+  }
+
+  private async putChunkLocked(
+    actor: Actor,
+    id: string,
+    index: number,
+    body: Buffer,
+  ): Promise<{ index: number; received: number }> {
     const session = this.ownedSession(actor, id)
     if (session.status !== 'uploading') throw conflict('上传会话当前不可写入', 'upload_not_writable')
     if (!Number.isInteger(index) || index < 0 || index >= session.total_chunks) {
@@ -256,6 +302,20 @@ export class UploadService {
         throw conflict('上传会话已结束', 'upload_not_writable')
       }
     } catch (error) {
+      // 唯一约束冲突说明同索引已被并发请求/前序请求写入：不得删除共享目标块。
+      // 同内容视作幂等成功（与 API 契约一致），不同内容按冲突返回。
+      if (isUniqueChunkConflict(error)) {
+        const current = this.db
+          .prepare('SELECT idx, size, sha256 FROM upload_chunks WHERE session_id = ? AND idx = ?')
+          .get(id, index) as ChunkRow | undefined
+        if (current && Number(current.size) === expectedSize && current.sha256 === sha256 && existsSync(target)) {
+          const latest = this.db.prepare('SELECT received FROM upload_sessions WHERE id = ?').get(id) as
+            | { received: number }
+            | undefined
+          return { index, received: Number(latest?.received ?? session.received) }
+        }
+        throw conflict('分片内容与已上传块不一致', 'chunk_conflict')
+      }
       rmSync(target, { force: true })
       throw error
     }
@@ -410,8 +470,13 @@ export class UploadService {
       return 0
     }
     let removed = 0
+    // 只保护仍活动的会话目录；终态会话（completed/aborted/expired）的残留目录应回收。
     const known = new Set(
-      (this.db.prepare('SELECT id FROM upload_sessions').all() as unknown as { id: string }[]).map((row) => row.id),
+      (
+        this.db.prepare(`SELECT id FROM upload_sessions WHERE status IN ${ACTIVE_STATUSES}`).all() as unknown as {
+          id: string
+        }[]
+      ).map((row) => row.id),
     )
     for (const entry of entries) {
       const full = join(this.rootDir, entry.name)
@@ -428,6 +493,33 @@ export class UploadService {
         }
       } catch {
         // 单条目清理失败不影响其余。
+      }
+    }
+    return removed
+  }
+
+  /**
+   * 回收长期保留的终态上传会话行与块（completed/aborted/expired）。
+   * 会话表无 retention 会无限增长；断点续传元数据在保留下仍可用，超过保留期后客户端重新 init 即可。
+   */
+  cleanupTerminalSessions(retentionDays = TERMINAL_SESSION_RETENTION_DAYS): number {
+    const days = Math.max(1, Math.floor(retentionDays))
+    const cutoff = new Date(Date.now() - days * 86_400_000).toISOString()
+    const rows = this.db
+      .prepare(`SELECT id FROM upload_sessions WHERE status IN ${TERMINAL_STATUSES} AND updated_at < ?`)
+      .all(cutoff) as unknown as { id: string }[]
+    let removed = 0
+    for (const row of rows) {
+      try {
+        transaction(this.db, () => {
+          this.db.prepare('DELETE FROM upload_chunks WHERE session_id = ?').run(row.id)
+          this.db.prepare('DELETE FROM upload_sessions WHERE id = ?').run(row.id)
+        })
+        this.reservedSessions.delete(row.id)
+        this.removeSessionDir(row.id)
+        removed += 1
+      } catch {
+        // 单条回收失败不影响其余会话。
       }
     }
     return removed

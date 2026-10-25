@@ -912,7 +912,7 @@ export async function runBackup(options = {}) {
       tarExitCode: result.tarExitCode,
       world: config?.levelName ?? null,
       worldBytes: result.worldBytes ?? null,
-      backupDir: config?.backupDir ?? null,
+      // 状态文件不写绝对路径（AGENTS 红线 #9 / SECURITY 声明）：应用只读展示，不需要内部目录。
     }
     if (config) {
       try {

@@ -146,7 +146,7 @@ export function registerShareRoutes(app: FastifyInstance, config: Config, shares
     limit(unlockLimiter, `${ip}|${sha256Hex(token)}`)
     const body = asRecord(request.body)
     const password = typeof body.password === 'string' ? body.password : ''
-    const result = await shares.unlock(token, password)
+    const result = await shares.unlock(token, password, ip)
     setShareCookie(reply, request, token, result.sessionToken, SHARE_SESSION_TTL_SECONDS)
     reply.header('x-robots-tag', 'noindex, nofollow')
     return {

@@ -1,7 +1,8 @@
 /** 分片上传服务：成功、幂等、哈希、配额、过期与并发上限。 */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { openDatabase } from '../src/db.ts'
 import { FileService } from '../src/files/service.ts'
@@ -62,6 +63,62 @@ test('重复分片同内容幂等，不同内容 409', async () => {
       ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abce')),
       (error: unknown) => (error as { code?: string }).code === 'chunk_conflict',
     )
+  } finally {
+    close(ctx)
+  }
+})
+
+test('并发同索引同内容：两次都成功、只保留一份块、received 只加一次（DATA-02）', async () => {
+  const ctx = setup()
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'concurrent-same.bin', parentId: null, size: 4 })
+    const body = Buffer.from('abcd')
+    const results = await Promise.all([
+      ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, body),
+      ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, body),
+    ])
+    assert.deepEqual(results.map((item) => item.index), [0, 0])
+    const chunkPath = join(ctx.dir, 'tmp', 'chunks', init.uploadId, '0.part')
+    assert.equal(existsSync(chunkPath), true, '共享分块不得被并发的另一个请求删除')
+    assert.equal(readFileSync(chunkPath, 'utf8'), 'abcd')
+    const chunkCount = (
+      ctx.db.prepare('SELECT COUNT(*) AS c FROM upload_chunks WHERE session_id = ? AND idx = 0').get(init.uploadId) as {
+        c: number
+      }
+    ).c
+    assert.equal(chunkCount, 1)
+    const session = ctx.db.prepare('SELECT received FROM upload_sessions WHERE id = ?').get(init.uploadId) as {
+      received: number
+    }
+    assert.equal(session.received, 1, 'received 只应计一次')
+    const result = await ctx.uploads.complete(ctx.actor, init.uploadId)
+    assert.equal(result.file.size, 4)
+    assert.equal(result.file.sha256, createHash('sha256').update(body).digest('hex'))
+  } finally {
+    close(ctx)
+  }
+})
+
+test('并发同索引不同内容：一个成功一个 409，已落盘块保留可完成（DATA-02）', async () => {
+  const ctx = setup()
+  try {
+    const init = ctx.uploads.init(ctx.actor, { name: 'concurrent-diff.bin', parentId: null, size: 4 })
+    const results = await Promise.allSettled([
+      ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abcd')),
+      ctx.uploads.putChunk(ctx.actor, init.uploadId, 0, Buffer.from('abce')),
+    ])
+    const fulfilled = results.filter((item) => item.status === 'fulfilled')
+    const rejected = results.filter((item): item is PromiseRejectedResult => item.status === 'rejected')
+    assert.equal(fulfilled.length, 1)
+    assert.equal(rejected.length, 1)
+    assert.equal((rejected[0]!.reason as { code?: string }).code, 'chunk_conflict')
+    const chunkPath = join(ctx.dir, 'tmp', 'chunks', init.uploadId, '0.part')
+    assert.equal(existsSync(chunkPath), true, '冲突请求不得删除已成功写入的块')
+    const row = ctx.db
+      .prepare('SELECT sha256 FROM upload_chunks WHERE session_id = ? AND idx = 0')
+      .get(init.uploadId) as { sha256: string }
+    assert.equal(row.sha256, createHash('sha256').update(readFileSync(chunkPath)).digest('hex'))
+    await ctx.uploads.complete(ctx.actor, init.uploadId)
   } finally {
     close(ctx)
   }
@@ -251,19 +308,65 @@ test('缺块自愈：物理分块丢失后允许重传并正确计数', async ()
   }
 })
 
-test('孤儿分片目录/assembling 残片：维护清理只删除无会话的条目', () => {
+test('孤儿分片目录/assembling 残片：维护清理只删除无活动会话的条目', () => {
   const ctx = setup()
   try {
     const init = ctx.uploads.init(ctx.actor, { name: 'keep.bin', parentId: null, size: 4 })
+    const expired = ctx.uploads.init(ctx.actor, { name: 'expired.bin', parentId: null, size: 4 })
+    ctx.db.prepare("UPDATE upload_sessions SET status = 'expired' WHERE id = ?").run(expired.uploadId)
     const root = join(ctx.dir, 'tmp', 'chunks')
     mkdirSync(join(root, 'orphan-session-dir'), { recursive: true })
     writeFileSync(join(root, 'orphan-session-dir', '0.part'), 'x')
     writeFileSync(join(root, 'dead-session.assembling'), 'x')
     writeFileSync(join(root, 'keep.bin.assembling'), 'x') // 无对应会话 → 应清理
-    assert.equal(ctx.uploads.cleanupOrphanSessions(), 3)
+    mkdirSync(join(root, expired.uploadId), { recursive: true })
+    // 终态会话的残留目录也应回收（known 只保护 active 会话）。
+    assert.equal(ctx.uploads.cleanupOrphanSessions(), 4)
     assert.equal(existsSync(join(root, 'orphan-session-dir')), false)
     assert.equal(existsSync(join(root, 'dead-session.assembling')), false)
+    assert.equal(existsSync(join(root, expired.uploadId)), false, '终态会话残留目录应回收')
     assert.equal(existsSync(join(root, init.uploadId)), true, '仍活动的会话目录保留')
+  } finally {
+    close(ctx)
+  }
+})
+
+test('终态上传会话 retention：回收超期 completed/aborted/expired 行与块（DATA-10）', () => {
+  const ctx = setup()
+  try {
+    const old = ctx.uploads.init(ctx.actor, { name: 'old-completed.bin', parentId: null, size: 4 })
+    ctx.db
+      .prepare("UPDATE upload_sessions SET status = 'completed', updated_at = ? WHERE id = ?")
+      .run('2000-01-01T00:00:00.000Z', old.uploadId)
+    ctx.db
+      .prepare("INSERT INTO upload_chunks (session_id, idx, size, sha256, created_at) VALUES (?, 0, 4, ?, ?)")
+      .run(old.uploadId, 'a'.repeat(64), '2000-01-01T00:00:00.000Z')
+    mkdirSync(join(ctx.dir, 'tmp', 'chunks', old.uploadId), { recursive: true })
+
+    const recent = ctx.uploads.init(ctx.actor, { name: 'recent-completed.bin', parentId: null, size: 4 })
+    ctx.db
+      .prepare("UPDATE upload_sessions SET status = 'completed', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), recent.uploadId)
+    const active = ctx.uploads.init(ctx.actor, { name: 'active.bin', parentId: null, size: 4 })
+
+    assert.equal(ctx.uploads.cleanupTerminalSessions(30), 1)
+    const oldRow = ctx.db.prepare('SELECT COUNT(*) AS c FROM upload_sessions WHERE id = ?').get(old.uploadId) as { c: number }
+    const oldChunks = ctx.db.prepare('SELECT COUNT(*) AS c FROM upload_chunks WHERE session_id = ?').get(old.uploadId) as {
+      c: number
+    }
+    assert.equal(oldRow.c, 0, '超期终态会话行应删除')
+    assert.equal(oldChunks.c, 0, '关联块索引应删除')
+    assert.equal(existsSync(join(ctx.dir, 'tmp', 'chunks', old.uploadId)), false)
+    assert.equal(
+      (ctx.db.prepare('SELECT COUNT(*) AS c FROM upload_sessions WHERE id = ?').get(recent.uploadId) as { c: number }).c,
+      1,
+      '未超期终态会话保留',
+    )
+    assert.equal(
+      (ctx.db.prepare('SELECT COUNT(*) AS c FROM upload_sessions WHERE id = ?').get(active.uploadId) as { c: number }).c,
+      1,
+      '活动会话保留',
+    )
   } finally {
     close(ctx)
   }

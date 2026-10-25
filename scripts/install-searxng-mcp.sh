@@ -25,9 +25,17 @@ fi
 install -d -o root -g root -m 0755 "$DEST_DIR"
 install -o root -g root -m 0755 "$SRC" "$DEST"
 
+# 先备份 OpenCode 配置：写入采用“临时文件 + os.replace”原子替换（OPS-16）。
+backup="$CONFIG.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+cp -a "$CONFIG" "$backup"
+chmod 0640 "$backup" 2>/dev/null || true
+echo "已备份 OpenCode 配置：$backup"
+
 python3 - "$CONFIG" <<'PY'
 import json
+import os
 import sys
+import tempfile
 
 path = sys.argv[1]
 with open(path, encoding="utf-8") as handle:
@@ -44,9 +52,19 @@ servers["searxng"] = {
     # 直接暴露 searxng_web_search；Bot 会话权限可精确允许该工具而不放行 Code Mode。
     "codemode": False,
 }
-with open(path, "w", encoding="utf-8") as handle:
-    json.dump(config, handle, ensure_ascii=False, indent=2)
-    handle.write("\n")
+dir_name = os.path.dirname(path) or "."
+fd, tmp_path = tempfile.mkstemp(prefix=".opencode-json-", suffix=".tmp", dir=dir_name)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(config, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.chmod(tmp_path, 0o640)
+    os.replace(tmp_path, path)
+finally:
+    if os.path.exists(tmp_path):
+        os.unlink(tmp_path)
 PY
 
 if systemctl list-unit-files opencode.service >/dev/null 2>&1; then

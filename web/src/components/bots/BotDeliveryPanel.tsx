@@ -77,8 +77,9 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       try {
         const [targetItems, deliveryItems, jobItems, metricData] = await Promise.all([
           api.bots.targets.list(botId),
-          api.bots.deliveries.list(botId),
-          api.bots.publish.list(botId),
+          // 服务端上限 200：取最近 200 条（无分页端点）；列表计数需注明“最近”。
+          api.bots.deliveries.list(botId, 200),
+          api.bots.publish.list(botId, 200),
           api.bots.metrics(botId, 24),
         ])
         if (requestSeq.current !== seq) return
@@ -222,10 +223,12 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
               <span className="bot-status-value">{metrics.deliveries.successRate}%</span>
             </div>
             <div className="bot-status-item">
-              <span className="bot-status-label">失败/死信</span>
-              <span className="bot-status-value">
-                {metrics.deliveries.failed}/{metrics.deliveries.dead}
-              </span>
+              <span className="bot-status-label">失败（含死信）</span>
+              <span className="bot-status-value">{metrics.deliveries.failed}</span>
+            </div>
+            <div className="bot-status-item">
+              <span className="bot-status-label">死信</span>
+              <span className="bot-status-value">{metrics.deliveries.dead}</span>
             </div>
             <div className="bot-status-item">
               <span className="bot-status-label">发布 sent/失败</span>
@@ -241,7 +244,10 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
             </div>
           </div>
           {metrics.lastError ? (
-            <div className="notice notice-danger" role="alert">最近错误：{metrics.lastError}</div>
+            <div className="notice notice-danger" role="alert">
+              最近错误：{metrics.lastError}
+              {metrics.lastErrorHint ? `（${metrics.lastErrorHint}）` : ''}
+            </div>
           ) : null}
         </Card>
       ) : null}
@@ -249,7 +255,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
       <Card
         title="投递记录"
         description="通知、命令回复、发布与测试消息的发送状态；失败任务可重新排队。"
-        actions={<Badge tone="muted"><Inbox size={13} aria-hidden="true" /> {deliveries.length} 条</Badge>}
+        actions={<Badge tone="muted"><Inbox size={13} aria-hidden="true" /> 最近 {deliveries.length} 条</Badge>}
         loading={loading}
         error={error}
         onRetry={() => void load()}
@@ -310,7 +316,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
 
       <Card
         title="发布消息"
-        description={`向 QQ 频道/群组发布纯文本；QQ 单条文本上限 ${textLimit} 字符，超长由服务端分段发送。`}
+        description={`向 QQ 频道/群组发布纯文本；单条上限 ${textLimit} 字符，超出会被服务端拒绝（publish_text_too_long），不会自动分段。`}
         actions={<Badge tone="accent"><Send size={13} aria-hidden="true" /> 手动发布</Badge>}
         error={error}
         onRetry={() => void load()}
@@ -433,6 +439,7 @@ export function BotDeliveryPanel({ bot, refreshToken, onChanged }: BotDeliveryPa
         </form>
 
         <h3 className="subsection-title bot-publish-jobs-title">发布任务</h3>
+        <span className="field-hint">最近 {jobs.length} 条（最多 200）</span>
         {jobs.length === 0 ? (
           <EmptyState
             compact

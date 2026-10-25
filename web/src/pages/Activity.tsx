@@ -27,6 +27,7 @@ const CATEGORY_TONES: Record<AuditCategory, BadgeTone> = {
   knowledge: 'accent',
   alert: 'warning',
   backup: 'warning',
+  bot: 'info',
   other: 'muted',
 }
 
@@ -115,6 +116,11 @@ export function Activity() {
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  // 数据收缩（删除/保留期清理）后回收越界页码，避免空白页。
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
   const actionLabel = action ? (ACTION_LABELS.get(action) ?? action) : '全部动作'
   const timeLabel = auditTimeRangeLabel(timeRange)
   const hasFilters = Boolean(action || debouncedQuery || timeRange !== 'all')

@@ -169,6 +169,8 @@ describe('buildBackupStatusEntries', () => {
       'world',
       'worldPull',
       'drill',
+      'encryption',
+      'offsite',
     ])
     expect(entries.every((entry) => entry.tone === 'muted')).toBe(true)
     expect(worstBackupTone(entries)).toBe('muted')

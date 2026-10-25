@@ -5,18 +5,29 @@
  * 发布只允许登录管理员调用；通知/命令输出不得包含内部路径、URL 或密钥；记忆管理接口只返回元数据，不返回 key/value。
  */
 import type { DatabaseSync } from 'node:sqlite'
-import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { Config } from '../config.ts'
 import { AppError, badRequest, notFound } from '../util/errors.ts'
 import { getMeta, setMeta } from '../db.ts'
 import { newId } from '../util/ids.ts'
-import { isoAfterSeconds, nowIso } from '../util/time.ts'
+import { nowIso } from '../util/time.ts'
 import { SlidingWindowLimiter } from '../auth/limiter.ts'
+import {
+  BotInboundHandler,
+  cleanText,
+  errorShortCode,
+  normalizeGroupReplyMode,
+  sanitizeExternalText,
+  sentExternalIdsOf,
+  type BurstTimingLike,
+  type ParsedCommand,
+} from './inbound.ts'
+import { BotDiagnostics } from './diagnostics.ts'
+import { BotQueue } from './queue.ts'
+import { BotChatPipeline } from './chat.ts'
 import {
   BOT_COMMANDS,
   isBotPlatform,
   type BotAdapter,
-  type BotAiImage,
   type BotDelivery,
   type BotDeliveryRow,
   type BotEventItem,
@@ -49,24 +60,11 @@ import {
 } from './types.ts'
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { describeBotError } from './errors.ts'
-import { formatAiReply } from './format.ts'
 import { BotMemoryStore, GROUP_MEMORY_PREFIX, groupMemoryScope } from './memory.ts'
-import { buildBotPrompt, type BotSendToolPrompt, type GroupChatMode } from './prompts.ts'
-import { BurstMerger } from './burst.ts'
-import {
-  formatSearchPromptContext,
-  formatSearchSources,
-  isSearchFollowUp,
-  needsWebSearch,
-  normalizeSearchQuery,
-  type WebSearchClient,
-  type WebSearchResult,
-} from './search.ts'
 import {
   BotChatRoleStore,
   normalizeRolePrompt,
   validateRole,
-  type BotChatRole,
   type RoleValidationError,
 } from './roles.ts'
 import { BotGroupRoleStore } from './group-roles.ts'
@@ -89,55 +87,8 @@ import {
 const NAME_MAX = 80
 const TARGET_MAX = 128
 const MAX_TARGETS_PER_BOT = 100
-const MAX_INBOUND_TARGETS_PER_BOT = 500
 /** QQ 单条文本上限；发布内容在入队前先校验。 */
 const PUBLISH_TEXT_MAX = BOT_TEXT_LIMITS.qq
-/** v0.6.4：模型消息发送工具名与单轮上限。 */
-const AI_SEND_TOOL_NAME = 'botmsg_send_message'
-const AI_SEND_MAX_MESSAGES = 5
-const AI_SEND_MAX_TEXT = 1800
-const AI_SEND_TURN_TTL_MS = 3 * 60_000
-/** 诊断事件结果枚举；service 与 route 共用校验。 */
-const BOT_EVENT_OUTCOMES = ['received', 'ok', 'denied', 'rate_limited', 'ignored', 'error'] as const
-
-interface ChatBurstItem {
-  bot: BotRow
-  result: Extract<InboundVerification, { kind: 'chat' }>
-  text: string
-}
-
-/**
- * 一轮 AI 对话的消息发送上下文：模型通过 MCP 工具把消息写入缓冲区，
- * 回合结束后由服务端统一发送（避免工具调用中途部分外发）。
- * turnToken 由 BOT_SECRET_KEY 做 HMAC，工具路由只认本轮 token。
- */
-interface AiSendTurn {
-  id: string
-  token: string
-  targetExternalId: string
-  targetKind: BotTargetRow['kind']
-  userId: string
-  messages: string[]
-  expiresAtMs: number
-}
-
-interface WebSearchContext {
-  query: string
-  results: WebSearchResult[]
-  /** 搜索失败时保留原因类别（不记录查询正文）。 */
-  failed?: boolean
-}
-
-type SearchResolution = { kind: 'ok'; context: WebSearchContext | null } | { kind: 'rate_limited' }
-/** AI 图片理解允许的 mime；超出范围降级为纯文本。 */
-const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
-/** 入站图片下载超时；由适配器 loadImage 执行。 */
-const IMAGE_DOWNLOAD_TIMEOUT_MS = 15_000
-/** 图片无法处理时附在纯文字回答末尾的说明。 */
-const IMAGE_DEGRADED_NOTE = '（图片未能处理，已按文字回答）'
-const IMAGE_UNSUPPORTED_TEXT = '当前暂不支持处理这张图片，可以用文字描述。'
-/** 仅图片无正文时交给模型的用户消息占位，避免空用户消息。 */
-const IMAGE_ONLY_USER_TEXT = '（用户发送了一张图片）'
 /** 结构化记忆类型的中文标签；仅用于 /memory 状态展示（不展示 key/value）。 */
 const MEMORY_KIND_LABEL: Record<BotMemoryKind, string> = {
   profile: '资料',
@@ -150,17 +101,14 @@ const MEMORY_KIND_LABEL: Record<BotMemoryKind, string> = {
 }
 /** 单次记忆抽取允许的最大操作数；与 MemoryStore 内部上限一致。 */
 const MEMORY_MAX_OPS = 20
-
-interface ParsedCommand {
-  command: string
-  args: string
-}
-
-function parseCommandText(text: string): ParsedCommand | null {
-  const parsed = /^\/([a-z0-9_]{1,32})(?:\s+([\s\S]*))?$/.exec(text.trim())
-  if (!parsed) return null
-  return { command: parsed[1] ?? '', args: (parsed[2] ?? '').trim() }
-}
+/** v0.6.4 之前的旧默认会话标题（精确匹配）；孤儿清理只针对它们，避免误删新命名/归档会话。 */
+const LEGACY_SESSION_TITLES = new Set(['AntifieldCloud Chat', 'AntifieldCloud Memory'])
+/** 群记忆一次性归属迁移的 meta 标记；迁移成功后不再重复执行。 */
+const GROUP_MEMORY_OWNER_MIGRATION_KEY = 'bot_group_memory_owner_migrated_v1'
+/** Webhook 验签失败/未认证请求的每 Bot 分钟桶上限（只限制无效流量，不影响已验签事件）。 */
+const WEBHOOK_UNAUTHENTICATED_PER_MINUTE = 120
+/** Webhook 已验签事件每 Bot 分钟桶上限（业务限流，验签通过后才扣减）。 */
+const WEBHOOK_AUTHENTICATED_PER_MINUTE = 300
 
 function roleValidationMessage(error: RoleValidationError): string {
   switch (error) {
@@ -183,18 +131,19 @@ function roleValidationMessage(error: RoleValidationError): string {
   }
 }
 
-/** 适配器部分发送失败时挂在错误对象上的已发送 ID；用于禁止自动重试。 */
-function sentExternalIdsOf(error: unknown): string[] {
-  if (!error || typeof error !== 'object') return []
-  const value = (error as { sentExternalIds?: unknown }).sentExternalIds
-  if (!Array.isArray(value)) return []
-  return value.filter((item): item is string => typeof item === 'string')
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
 }
 
-/** 诊断 detail 只记录短代码：优先 AppError.code，其次通用 error。 */
-function errorShortCode(error: unknown): string {
-  if (error instanceof AppError) return error.code.slice(0, 60)
-  return 'error'
+function parseConfig(text: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(text) as unknown
+    return asRecord(parsed) ?? {}
+  } catch {
+    return {}
+  }
 }
 
 export interface CreateBotInput {
@@ -255,118 +204,32 @@ export interface BotAlertEvent {
   createdAt: string
 }
 
-function cleanText(value: unknown, max: number): string {
-  if (typeof value !== 'string') return ''
-  let text = ''
-  for (const char of value) {
-    const code = char.codePointAt(0) ?? 0
-    if (code >= 32 && code !== 127) text += char
-  }
-  return text.trim().slice(0, max)
-}
-
-/** 群消息模式只允许 mention/all；非群聊目标固定 mention。 */
-function normalizeGroupReplyMode(value: unknown, kind: BotTargetRow['kind']): GroupReplyMode {
-  const mode = value === 'all' ? 'all' : value === 'mention' ? 'mention' : value === undefined ? undefined : null
-  if (mode === null) throw badRequest('群消息模式无效')
-  if (kind !== 'group') {
-    if (mode === 'all') throw badRequest('仅群聊目标支持接收全部消息')
-    return 'mention'
-  }
-  return mode ?? 'mention'
-}
-
-/** 仅@/名字提及模式：用 Bot 名称做保守文本匹配（大小写不敏感）。 */
-function isBotNameMentioned(botName: string, text: string): boolean {
-  const name = botName.trim().toLowerCase()
-  if (!name) return false
-  return text.toLowerCase().includes(name)
-}
-
-/** 全量群消息模式：模型以 NO_REPLY（允许 []/标点包裹）表示本轮不发言。 */
-function isNoReplyAnswer(answer: string): boolean {
-  const trimmed = answer.trim().toUpperCase()
-  const unpadded = trimmed.replace(/^[\s"'`]+|[\s"'`]+$/g, '')
-  const normalized = unpadded.startsWith('[') && unpadded.endsWith(']')
-    ? unpadded.slice(1, -1).trim()
-    : unpadded
-  return normalized === 'NO_REPLY' || normalized === 'NOREPLY'
-}
-
-/** 通知/命令回复只保留用户可见文本，去除内部路径与 URL（审计 BOT-04）。 */
-function sanitizeExternalText(value: string): string {
-  return value
-    .replace(/(?:[A-Za-z]:\\|\/(?:home|var|etc|opt|run|proc|sys|tmp)\/)[^\s"'`]+/g, '[path]')
-    .replace(/(?:ssh|https?):\/\/[^\s"'`]+/g, '[url]')
-    .replace(/[ \t]+/g, ' ')
-    .trim()
-    .slice(0, 1500)
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null
-}
-
-/** 目标静默时段：Asia/Shanghai 本地分钟；起止相等视为未配置。 */
-function localMinute(now: Date): number {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Asia/Shanghai',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(now)
-  const hour = Number(parts.find((part) => part.type === 'hour')?.value ?? '0')
-  const minute = Number(parts.find((part) => part.type === 'minute')?.value ?? '0')
-  return hour * 60 + minute
-}
-
-function inQuietWindow(now: Date, target: BotTargetRow): boolean {
-  const start = target.quiet_start_minute
-  const end = target.quiet_end_minute
-  if (start === null || end === null || start === end) return false
-  const minute = localMinute(now)
-  return start < end ? minute >= start && minute < end : minute >= start || minute < end
-}
-
-/** 静默窗口结束时刻（最多向后找 24 小时，按上海本地分钟匹配）。 */
-function quietUntil(now: Date, target: BotTargetRow): Date {
-  const end = target.quiet_end_minute ?? 0
-  for (let offset = 1; offset <= 24 * 60; offset += 1) {
-    const candidate = new Date(now.getTime() + offset * 60_000)
-    if (localMinute(candidate) === end) return candidate
-  }
-  return new Date(now.getTime() + 24 * 3_600_000)
-}
-
-function parseConfig(text: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(text) as unknown
-    return asRecord(parsed) ?? {}
-  } catch {
-    return {}
-  }
-}
-
 export class BotService {
   private readonly db: DatabaseSync
   private readonly config: Config
   private readonly deps: BotServiceDeps
+  /** 诊断事件/指标存储（只做 DB 读写；权限开关由本类校验）。 */
+  private readonly diagnostics: BotDiagnostics
+  /** 出站投递/发布队列（入队、claim、退避、死信、TTL）。 */
+  private readonly queue: BotQueue
+  /** Chat 管线（连续消息合并/串行/AI/搜索/发送工具）。 */
+  private readonly chat: BotChatPipeline
   private readonly key: Buffer | null
   private readonly limiter: SlidingWindowLimiter
-  private readonly webhookLimiter: SlidingWindowLimiter
-  private readonly aiLimiter: SlidingWindowLimiter
-  private readonly chatLimiter: SlidingWindowLimiter
-  private readonly searchLimiter: SlidingWindowLimiter
+  /** 未通过验签的 Webhook 请求（每 Bot 分钟桶）；与已验签业务桶分离，无效流量无法饿死合法事件。 */
+  private readonly webhookUnauthenticatedLimiter: SlidingWindowLimiter
+  /** 已验签 Webhook 事件（每 Bot 分钟桶，验签通过后才扣减）。 */
+  private readonly webhookAuthenticatedLimiter: SlidingWindowLimiter
+
+  /** Webhook 拒绝/限流审计的窗口聚合计数（避免每次 401/429 各写一条审计）。 */
+  private readonly webhookAuditWindows = new Map<string, { minute: number; count: number }>()
   private readonly memory: BotMemoryStore
   private readonly roles: BotChatRoleStore
   private readonly groupRoles: BotGroupRoleStore
   private readonly connectivity: BotConnectivityMonitor
-  private readonly chatBursts: BurstMerger<ChatBurstItem>
+  /** 入站 Webhook 处理（验签/限流/去重/命令与 Chat 路由）；行为与重构前一致。 */
+  private readonly inbound: BotInboundHandler
   /** 活跃的 AI 消息发送回合（只存内存；回合结束即清理）。 */
-  private readonly aiSendTurns = new Map<string, AiSendTurn>()
-  private readonly webSearch: WebSearchClient | null
   private timer: NodeJS.Timeout | null = null
   private stopped = false
   private ticking = false
@@ -391,8 +254,6 @@ export class BotService {
    * 在途抽取写回前校验版本，避免被取消的批次把旧数据写回。
    */
   private readonly memoryGenerations = new Map<string, number>()
-  /** 上次搜索查询（按 Bot×用户），用于“再搜搜看”等追问；进程内、验证后清理。 */
-  private readonly lastSearchQueries = new Map<string, string>()
   /** 上次观察到的 AI 工具隔离降级次数：用于把降级写成一次性审计而不是只留日志。 */
   private lastAiFallbackCount = 0
 
@@ -400,28 +261,21 @@ export class BotService {
     this.db = deps.db
     this.config = deps.config
     this.deps = deps
-    this.limiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botCommandRatePerMinute))
-    this.webhookLimiter = new SlidingWindowLimiter(60_000, 300)
-    this.aiLimiter = new SlidingWindowLimiter(3_600_000, Math.max(1, deps.config.botAiRatePerHour))
-    this.chatLimiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botChatRatePerMinute))
-    this.searchLimiter = new SlidingWindowLimiter(3_600_000, Math.max(1, deps.config.botSearchRatePerHour))
-    this.webSearch = deps.search ?? null
-    this.chatBursts = new BurstMerger<ChatBurstItem>({
-      windowMs: deps.config.botChatBurstWindowMs,
-      maxWaitMs: deps.config.botChatBurstMaxWaitMs,
-      maxItems: deps.config.botChatBurstMaxMessages,
-      onFlush: (_key, items) => {
-        const task = this.executeChatBatch(items)
-        this.pending.add(task)
-        void task.finally(() => this.pending.delete(task))
-        return task
-      },
-      onError: (error) => {
-        this.deps.log('warn', 'Bot 连续消息批次处理失败', {
-          error: error instanceof Error ? error.message : 'unknown',
-        })
-      },
+    this.diagnostics = new BotDiagnostics({ db: deps.db })
+    this.queue = new BotQueue({
+      db: deps.db,
+      config: deps.config,
+      log: deps.log,
+      audit: deps.audit,
+      botRow: (id) => this.botRow(id),
+      targetRow: (id) => this.targetRow(id),
+      publishRow: (id) => this.publishRow(id),
+      adapterFor: (bot) => this.adapterFor(bot),
+      now: deps.now,
     })
+    this.limiter = new SlidingWindowLimiter(60_000, Math.max(1, deps.config.botCommandRatePerMinute))
+    this.webhookUnauthenticatedLimiter = new SlidingWindowLimiter(60_000, WEBHOOK_UNAUTHENTICATED_PER_MINUTE)
+    this.webhookAuthenticatedLimiter = new SlidingWindowLimiter(60_000, WEBHOOK_AUTHENTICATED_PER_MINUTE)
     this.memory = new BotMemoryStore(deps.db, deps.config.dataDir, {
       maxItems: deps.config.botMemoryMaxItems,
       promptMaxChars: deps.config.botMemoryPromptMaxChars,
@@ -450,6 +304,62 @@ export class BotService {
     } catch {
       throw new AppError(500, 'bot_key_invalid', 'BOT_SECRET_KEY 配置无效')
     }
+    this.inbound = new BotInboundHandler({
+      db: this.db,
+      config: this.config,
+      log: this.deps.log,
+      audit: this.deps.audit,
+      botRow: (id) => this.botRow(id),
+      adapterFor: (bot) => this.adapterFor(bot),
+      inboundTarget: (botId, result) => this.inboundTarget(botId, result),
+      isCommandUserAllowed: (botId, userId) => this.isCommandUserAllowed(botId, userId),
+      commandLimiter: this.limiter,
+      webhookUnauthenticatedLimiter: this.webhookUnauthenticatedLimiter,
+      webhookAuthenticatedLimiter: this.webhookAuthenticatedLimiter,
+      auditWebhookThrottled: (action, botId, detail) => this.auditWebhookThrottled(action, botId, detail),
+      insertEvent: (botId, eventId, kind, outcome, detail, targetExternalId, userId) =>
+        this.insertEvent(botId, eventId, kind, outcome, detail, targetExternalId, userId),
+      markEvent: (botId, eventId, update) => this.markEvent(botId, eventId, update),
+      recordInbound: (bot, result) => this.recordInbound(bot, result),
+      executeCommand: (bot, result, parsed, adminAllowed) => this.executeCommand(bot, result, parsed, adminAllowed),
+      enqueueChat: (bot, result, text, timing) => this.enqueueChatMessage(bot, result, text, timing),
+      track: (task) => {
+        this.pending.add(task)
+        void task.finally(() => this.pending.delete(task))
+      },
+      aiIsolationBlocked: () => this.aiIsolationBlocked(),
+    })
+    this.chat = new BotChatPipeline({
+      config: this.config,
+      key: this.key,
+      deps: {
+        db: this.db,
+        log: this.deps.log,
+        audit: this.deps.audit,
+        ai: this.deps.ai,
+        search: this.deps.search,
+        now: this.deps.now,
+        memory: this.memory,
+      },
+      roles: this.roles,
+      groupRoles: this.groupRoles,
+      host: {
+        markEvent: (botId, eventId, update) => this.markEvent(botId, eventId, update),
+        inboundTarget: (botId, result) => this.inboundTarget(botId, result),
+        inboundDisplayName: (result) => this.inboundDisplayName(result),
+        targetNameForSession: (botId, targetExternalId, userId, userName) =>
+          this.targetNameForSession(botId, targetExternalId, userId, userName),
+        scheduleMemoryUpdate: (bot, userId, targetExternalId, userText, assistantText, options) =>
+          this.scheduleMemoryUpdate(bot, userId, targetExternalId, userText, assistantText, options),
+        observeAiToolIsolation: (botId) => this.observeAiToolIsolation(botId),
+        aiIsolationBlocked: () => this.aiIsolationBlocked(),
+        adapterFor: (bot) => this.adapterFor(bot),
+        trackTask: (task) => {
+          this.pending.add(task)
+          void task.finally(() => this.pending.delete(task))
+        },
+      },
+    })
   }
 
   get enabled(): boolean {
@@ -471,9 +381,6 @@ export class BotService {
     const publishes = this.db
       .prepare("SELECT COUNT(*) AS c FROM bot_publish_jobs WHERE status IN ('queued','sending')")
       .get() as { c: number }
-    const lastError = this.db
-      .prepare("SELECT last_error FROM bots WHERE last_error IS NOT NULL ORDER BY updated_at DESC LIMIT 1")
-      .get() as { last_error: string } | undefined
     return {
       enabled: this.enabled,
       keyConfigured: this.key !== null,
@@ -482,7 +389,7 @@ export class BotService {
       targets: targets.c,
       queuedDeliveries: deliveries.c,
       queuedPublishes: publishes.c,
-      lastError: lastError?.last_error ?? null,
+      lastError: this.latestBotError(null),
       aiToolIsolation: this.aiToolIsolationStatus(),
     }
   }
@@ -494,6 +401,48 @@ export class BotService {
     } catch {
       return null
     }
+  }
+
+  /**
+   * SEC-11 fail-closed：启用消息发送工具时，工具隔离不可用且仍在重试窗口内就拒绝新的 AI 对话，
+   * 不以默认权限继续运行；由 Chat 入口与批次执行前双重检查。
+   *
+   * 到 `retryAt` 后必须放行给 AI 层重试（ai.chat 内部仍 fail-closed），否则 10 分钟重试永远无法发生。
+   * `retryAt` 缺失（旧 AI 实现/无窗口信息）时不前置阻断，交给 ai.chat 的 503 兜底。
+   */
+  private aiIsolationBlocked(): boolean {
+    if (!this.config.botAiSendToolEnabled) return false
+    const status = this.aiToolIsolationStatus()
+    if (!status || status.supported !== false) return false
+    if (!status.retryAt) return false
+    const retryAt = Date.parse(status.retryAt)
+    return Number.isFinite(retryAt) && Date.now() < retryAt
+  }
+
+  /**
+   * Webhook 拒绝/限流审计按「每 Bot×动作×分钟」聚合：第 1 次与每满 50 次写一条，
+   * 避免未认证请求刷 401/429 时把 audit_log 写满（A5-BOT-16 遗留的写放大问题）。
+   */
+  private auditWebhookThrottled(action: string, botId: string, detail?: Record<string, unknown>): void {
+    const minute = Math.floor(Date.now() / 60_000)
+    const key = `${action}\u0000${botId}`
+    const entry = this.webhookAuditWindows.get(key)
+    const count = entry && entry.minute === minute ? entry.count + 1 : 1
+    this.webhookAuditWindows.set(key, { minute, count })
+    if (count === 1 || count % 50 === 0) {
+      this.deps.audit(action, botId, detail ? { ...detail, count } : { count })
+    }
+    // 窗口滚动时清理其它过期键，避免 Map 随 bot/动作增长（Bot 数量有限，但仍显式收敛）。
+    if (this.webhookAuditWindows.size > 200) {
+      for (const [windowKey, window] of this.webhookAuditWindows) {
+        if (window.minute < minute) this.webhookAuditWindows.delete(windowKey)
+      }
+    }
+  }
+
+  /** 最近一次投递/发布失败（BOT-07）：派生自队列，避免 bots.last_error 死字段。 */
+  private latestBotError(botId: string | null, fallback: string | null = null): string | null {
+    return this.diagnostics.findLatestError(botId, fallback)
   }
 
   /**
@@ -534,68 +483,7 @@ export class BotService {
   metrics(botId: string, hours = 24): BotMetrics {
     this.requireEnabled()
     this.botRow(botId)
-    const windowHours = Math.max(1, Math.min(24 * 30, Math.floor(hours)))
-    const cutoff = new Date(Date.now() - windowHours * 3_600_000).toISOString()
-    const deliveries = this.db
-      .prepare(
-        `SELECT
-           COUNT(*) AS total,
-           SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
-           SUM(CASE WHEN status IN ('failed','dead') THEN 1 ELSE 0 END) AS failed,
-           SUM(CASE WHEN status = 'dead' THEN 1 ELSE 0 END) AS dead
-         FROM bot_deliveries WHERE bot_id = ? AND created_at >= ?`,
-      )
-      .get(botId, cutoff) as { total: number; sent: number | null; failed: number | null; dead: number | null }
-    const publishes = this.db
-      .prepare(
-        `SELECT
-           COUNT(*) AS total,
-           SUM(CASE WHEN status = 'sent' THEN 1 ELSE 0 END) AS sent,
-           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
-         FROM bot_publish_jobs WHERE bot_id = ? AND created_at >= ?`,
-      )
-      .get(botId, cutoff) as { total: number; sent: number | null; failed: number | null }
-    const events = this.db
-      .prepare('SELECT COUNT(*) AS c FROM bot_events WHERE bot_id = ? AND received_at >= ?')
-      .get(botId, cutoff) as { c: number }
-    const lastError = this.db
-      .prepare(
-        `SELECT last_error FROM (
-           SELECT last_error, updated_at FROM bot_deliveries WHERE bot_id = ? AND last_error IS NOT NULL
-           UNION ALL
-           SELECT last_error, updated_at FROM bot_publish_jobs WHERE bot_id = ? AND last_error IS NOT NULL
-         ) ORDER BY updated_at DESC LIMIT 1`,
-      )
-      .get(botId, botId) as { last_error: string } | undefined
-    const lastSent = this.db
-      .prepare(
-        `SELECT sent_at FROM (
-           SELECT sent_at FROM bot_deliveries WHERE bot_id = ? AND sent_at IS NOT NULL
-           UNION ALL
-           SELECT sent_at FROM bot_publish_jobs WHERE bot_id = ? AND sent_at IS NOT NULL
-         ) ORDER BY sent_at DESC LIMIT 1`,
-      )
-      .get(botId, botId) as { sent_at: string } | undefined
-    const attempted = Number(deliveries.sent ?? 0) + Number(deliveries.failed ?? 0)
-    return {
-      hours: windowHours,
-      deliveries: {
-        total: deliveries.total,
-        sent: Number(deliveries.sent ?? 0),
-        failed: Number(deliveries.failed ?? 0),
-        dead: Number(deliveries.dead ?? 0),
-        successRate: attempted === 0 ? 0 : Math.round((Number(deliveries.sent ?? 0) / attempted) * 1000) / 10,
-      },
-      publishes: {
-        total: publishes.total,
-        sent: Number(publishes.sent ?? 0),
-        failed: Number(publishes.failed ?? 0),
-      },
-      events: events.c,
-      lastError: lastError?.last_error ?? null,
-      lastErrorHint: describeBotError(lastError?.last_error ?? null),
-      lastSentAt: lastSent?.sent_at ?? null,
-    }
+    return this.diagnostics.metrics(botId, hours)
   }
 
   listBots(): BotSummary[] {
@@ -783,6 +671,8 @@ export class BotService {
         targetId,
       )
     if (kind !== 'group') this.groupRoles.remove(botId, targetId)
+    // 目标从群聊改为其它类型后，原群共享记忆 scope 会变成不可管理的孤儿，直接清理。
+    if (row.kind === 'group' && kind !== 'group') this.dropGroupTargetMemory(botId, row.external_id)
     this.deps.audit('bot.target.update', `${botId}:${targetId}`)
     return toTarget(this.targetRowForBot(botId, targetId))
   }
@@ -790,9 +680,17 @@ export class BotService {
   deleteTarget(botId: string, targetId: string): void {
     this.requireEnabled()
     this.botRow(botId)
-    this.targetRowForBot(botId, targetId)
+    const row = this.targetRowForBot(botId, targetId)
     this.db.prepare('DELETE FROM bot_targets WHERE id = ?').run(targetId)
+    if (row.kind === 'group') this.dropGroupTargetMemory(botId, row.external_id)
     this.deps.audit('bot.target.delete', `${botId}:${targetId}`)
+  }
+
+  /** 目标删除/改类型后清理其群共享记忆 scope（含状态/旧摘要），避免孤儿记忆无法再被管理。 */
+  private dropGroupTargetMemory(botId: string, targetExternalId: string): void {
+    const scope = groupMemoryScope(targetExternalId)
+    this.cancelGroupMemoryScope(botId, scope)
+    this.memory.deleteGroupScope(botId, scope)
   }
 
   /**
@@ -960,7 +858,30 @@ export class BotService {
     this.requireEnabled()
     this.botRow(botId)
     if (!scope.startsWith(GROUP_MEMORY_PREFIX)) throw badRequest('群聊记忆标识无效')
+    // 先取消该 scope 下所有成员的在途抽取/待处理批次，避免清空后旧批次写回（BOT-06）。
+    this.cancelGroupMemoryScope(botId, scope)
     this.deleteMemory(botId, scope)
+  }
+
+  /**
+   * D-13 一次性归属迁移：把旧版按显示名前缀存储的群共享条目改为稳定 `member_openid:` 前缀。
+   * 通过 meta 标记保证只执行一次；失败时保留标记缺失，下次启动重试。
+   */
+  migrateGroupMemoryOwners(): {
+    migrated: number
+    legacy: number
+    groups: number
+    skippedConflicts: number
+    skipped: boolean
+  } {
+    if (getMeta(this.db, GROUP_MEMORY_OWNER_MIGRATION_KEY)) {
+      return { migrated: 0, legacy: 0, groups: 0, skippedConflicts: 0, skipped: true }
+    }
+    const result = this.memory.renameGroupItemOwners()
+    setMeta(this.db, GROUP_MEMORY_OWNER_MIGRATION_KEY, nowIso())
+    this.deps.audit('bot.memory.group_owner_migrate', 'bot', result)
+    this.deps.log('info', '群聊共享记忆归属迁移完成', result)
+    return { ...result, skipped: false }
   }
 
   /**
@@ -1097,54 +1018,14 @@ export class BotService {
    * 诊断事件列表：按 received_at DESC 分页；只含元数据（事件 ID/类型/结果/短码/目标/用户/时间）。
    * outcome 缺省返回全部，非法值直接 400。
    */
+  /** 诊断事件列表（只含元数据）；权限/开关校验保留在 facade。 */
   listEvents(
     botId: string,
     options: { hours?: number; limit?: number; offset?: number; outcome?: string } = {},
   ): { items: BotEventItem[]; total: number } {
     this.requireEnabled()
     this.botRow(botId)
-    const rawHours = Number(options.hours)
-    const hours = Math.max(1, Math.min(720, Math.floor(Number.isFinite(rawHours) ? rawHours : 24)))
-    const rawLimit = Number(options.limit)
-    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(rawLimit) ? rawLimit : 50)))
-    const rawOffset = Number(options.offset)
-    const offset = Math.max(0, Math.floor(Number.isFinite(rawOffset) ? rawOffset : 0))
-    const outcome = typeof options.outcome === 'string' && options.outcome.trim() ? options.outcome.trim() : null
-    if (outcome !== null && !(BOT_EVENT_OUTCOMES as readonly string[]).includes(outcome)) {
-      throw badRequest('事件结果筛选值无效')
-    }
-    const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString()
-    const where = outcome === null ? 'bot_id = ? AND received_at >= ?' : 'bot_id = ? AND received_at >= ? AND outcome = ?'
-    const params: (string | number)[] = outcome === null ? [botId, cutoff] : [botId, cutoff, outcome]
-    const totalRow = this.db.prepare(`SELECT COUNT(*) AS c FROM bot_events WHERE ${where}`).get(...params) as { c: number }
-    const rows = this.db
-      .prepare(
-        `SELECT platform_event_id, event_kind, outcome, detail, target_external_id, user_id, received_at, updated_at
-         FROM bot_events WHERE ${where} ORDER BY received_at DESC LIMIT ? OFFSET ?`,
-      )
-      .all(...params, limit, offset) as unknown as Array<{
-      platform_event_id: string
-      event_kind: string | null
-      outcome: string | null
-      detail: string | null
-      target_external_id: string | null
-      user_id: string | null
-      received_at: string
-      updated_at: string | null
-    }>
-    return {
-      total: totalRow.c,
-      items: rows.map((row) => ({
-        eventId: row.platform_event_id,
-        kind: row.event_kind,
-        outcome: row.outcome,
-        detail: row.detail,
-        targetExternalId: row.target_external_id,
-        userId: row.user_id,
-        receivedAt: row.received_at,
-        updatedAt: row.updated_at,
-      })),
-    }
+    return this.diagnostics.listEvents(botId, options)
   }
 
   listDeliveries(botId: string, limit = 50): BotDelivery[] {
@@ -1159,12 +1040,7 @@ export class BotService {
   retryDelivery(botId: string, deliveryId: string): void {
     this.requireEnabled()
     this.botRow(botId)
-    const result = this.db
-      .prepare(
-        "UPDATE bot_deliveries SET status = 'queued', attempts = 0, next_attempt_at = NULL, last_error = NULL WHERE id = ? AND bot_id = ? AND status IN ('failed','dead')",
-      )
-      .run(deliveryId, botId)
-    if (Number(result.changes) === 0) throw notFound('投递记录不存在或不可重试')
+    if (!this.queue.retryDelivery(botId, deliveryId)) throw notFound('投递记录不存在或不可重试')
     this.deps.audit('bot.delivery.retry', `${botId}:${deliveryId}`)
   }
 
@@ -1218,7 +1094,7 @@ export class BotService {
     const bot = this.botRow(botId)
     const target = targetId ? this.targetRowForBot(botId, targetId) : this.firstTarget(botId)
     if (!target) throw badRequest('请先配置目标')
-    return this.sendTest(bot, target)
+    return this.queue.sendTest(bot, target)
   }
 
   /**
@@ -1253,7 +1129,14 @@ export class BotService {
     }
   }
 
-  /** 工具模式切换后删除旧远端会话，并清理没有 DB 映射的孤儿 Bot 会话。 */
+  /**
+   * 工具模式切换后删除旧远端会话，并保守清理没有 DB 映射的孤儿 Bot 会话。
+   *
+   * 只清理 v0.6.4 之前的旧默认标题（精确匹配 `AntifieldCloud Chat`/`AntifieldCloud Memory`）。
+   * v0.6.4 起会话标题是「目标名称 Chat/Memory」，与其用前缀猜测，不如不主动删：
+   * - 2.1.x `session.list` 是否包含 archived 尚未验证，按前缀删除可能误删归档/自定义会话；
+   * - 新命名孤儿本版先保留，待 OpenCode 2.1.4 归档语义验证后再单独设计清理策略。
+   */
   private async cleanupRemoteSessions(ids: string[]): Promise<void> {
     const ai = this.deps.ai
     if (!ai?.deleteSession && !ai?.listSessions) return
@@ -1270,7 +1153,7 @@ export class BotService {
       )
       let removed = 0
       for (const session of sessions) {
-        if (!session.title.startsWith('AntifieldCloud')) continue
+        if (!LEGACY_SESSION_TITLES.has(session.title.trim())) continue
         if (mapped.has(session.id)) continue
         await ai.deleteSession?.(session.id).catch(() => undefined)
         removed += 1
@@ -1286,7 +1169,7 @@ export class BotService {
   async waitForIdle(): Promise<void> {
     await Promise.allSettled([...this.pending])
     // 连续消息缓冲可能仍在防抖计时；一并排空，保证测试/关闭能看到最终回复。
-    await this.chatBursts.drain()
+    await this.chat.drain()
     await Promise.allSettled([...this.pending])
   }
 
@@ -1308,6 +1191,14 @@ export class BotService {
         error: error instanceof Error ? error.message : 'unknown',
       })
     }
+    try {
+      // 必须在 v0.6.6 群记忆迁移之后执行（把显示名 key 改写成 member_openid）。
+      this.migrateGroupMemoryOwners()
+    } catch (error) {
+      this.deps.log('warn', '群聊共享记忆归属迁移失败', {
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
     this.stopped = false
     this.timer = setInterval(() => this.scheduleTick(), this.config.botDeliveryIntervalSeconds * 1000)
     this.timer.unref()
@@ -1318,7 +1209,7 @@ export class BotService {
   stop(): void {
     this.stopped = true
     this.flushPendingMemory()
-    this.chatBursts.stop()
+    this.chat.stop()
     if (this.timer) {
       clearInterval(this.timer)
       this.timer = null
@@ -1330,314 +1221,43 @@ export class BotService {
     if (!this.enabled || this.stopped || this.ticking) return
     this.ticking = true
     try {
-      this.recoverStaleQueue()
-      await this.processDeliveries()
-      await this.processPublishJobs()
+      this.queue.recoverStaleQueue()
+      await this.queue.processDeliveries()
+      await this.queue.processPublishJobs()
       this.cleanup()
     } finally {
       this.ticking = false
     }
   }
 
-  /** 进程重启/异常后，把长时间停留在 sending 的记录重新排队，避免永久卡死。 */
-  private recoverStaleQueue(): void {
-    const cutoff = new Date(Date.now() - 10 * 60_000).toISOString()
-    try {
-      this.db
-        .prepare("UPDATE bot_deliveries SET status = 'queued', next_attempt_at = NULL, updated_at = ? WHERE status = 'sending' AND updated_at < ?")
-        .run(nowIso(), cutoff)
-      this.db
-        .prepare("UPDATE bot_publish_jobs SET status = 'queued', updated_at = ? WHERE status = 'sending' AND updated_at < ?")
-        .run(nowIso(), cutoff)
-    } catch {
-      // 恢复失败不阻断本轮投递。
-    }
-  }
-
+  /** 告警通知入队（静默时段只延迟 next_attempt_at）。 */
   notifyAlert(event: BotAlertEvent): void {
     if (!this.enabled) return
-    const bots = this.db.prepare('SELECT * FROM bots WHERE enabled = 1').all() as unknown as BotRow[]
-    for (const bot of bots) {
-      const targets = this.db
-        .prepare('SELECT * FROM bot_targets WHERE bot_id = ? AND allow_notifications = 1')
-        .all(bot.id) as unknown as BotTargetRow[]
-      for (const target of targets) {
-        const text = [
-          `【${event.severity}】${sanitizeExternalText(event.title)}`,
-          sanitizeExternalText(event.message),
-          `事件：${event.event}（${event.status}）`,
-          `时间：${event.createdAt}`,
-        ].join('\n')
-        const now = this.deps.now?.() ?? new Date()
-        const notBefore = inQuietWindow(now, target) ? quietUntil(now, target) : undefined
-        this.enqueueDelivery(bot.id, target.id, 'notification', { text }, `alert:${event.id}:${bot.id}:${target.id}`, notBefore)
-      }
-    }
+    this.queue.notifyAlert(event)
   }
 
+  /** 投递队列扫描（tick/测试可直接调用）。 */
   async processDeliveries(): Promise<void> {
-    const now = nowIso()
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM bot_deliveries WHERE status IN ('queued','failed')
-         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-         AND attempts < ? ORDER BY created_at ASC LIMIT 20`,
-      )
-      .all(now, this.config.botDeliveryMaxAttempts) as unknown as BotDeliveryRow[]
-    for (const row of rows) {
-      await this.deliverOne(row)
-    }
+    await this.queue.processDeliveries()
   }
 
-  private async deliverOne(row: BotDeliveryRow): Promise<void> {
-    const claimed = this.db
-      .prepare("UPDATE bot_deliveries SET status = 'sending', updated_at = ? WHERE id = ? AND status IN ('queued','failed')")
-      .run(nowIso(), row.id)
-    if (Number(claimed.changes) !== 1) return
-    const delivery = this.db.prepare('SELECT * FROM bot_deliveries WHERE id = ?').get(row.id) as unknown as BotDeliveryRow
-    if (delivery.status !== 'sending') return
-    try {
-      const bot = this.botRow(delivery.bot_id)
-      if (!bot.enabled) throw new AppError(400, 'bot_disabled', 'Bot 已停用')
-      const target = delivery.target_id ? this.targetRow(delivery.target_id) : null
-      if (!target) throw new AppError(400, 'target_missing', '目标不存在')
-      const payload = JSON.parse(delivery.payload_json) as { text?: unknown }
-      const text = typeof payload.text === 'string' ? payload.text : ''
-      if (!text) throw new AppError(400, 'empty_payload', '投递内容为空')
-      const adapter = this.adapterFor(bot)
-      const result = await adapter.send(target, { text })
-      this.db
-        .prepare("UPDATE bot_deliveries SET status = 'sent', external_id = ?, sent_at = ?, updated_at = ?, last_error = NULL WHERE id = ?")
-        .run(result.externalId, nowIso(), nowIso(), delivery.id)
-    } catch (error) {
-      this.failDelivery(delivery, error)
-    }
-  }
-
-  private failDelivery(delivery: BotDeliveryRow, error: unknown): void {
-    const attempts = delivery.attempts + 1
-    const message = error instanceof Error ? error.message.slice(0, 500) : '投递失败'
-    const sentIds = sentExternalIdsOf(error)
-    if (sentIds.length > 0) {
-      // 长消息已部分外发：自动重试会重复发送，标记 failed 且 attempts 用尽，交人工确认。
-      this.db
-        .prepare("UPDATE bot_deliveries SET status = 'failed', attempts = ?, last_error = ?, next_attempt_at = NULL, updated_at = ? WHERE id = ?")
-        .run(
-          this.config.botDeliveryMaxAttempts,
-          `partial_text_sent（已发送 ${sentIds.length} 段）：${message}`.slice(0, 500),
-          nowIso(),
-          delivery.id,
-        )
-      this.deps.log('warn', 'Bot 投递部分外发，停止自动重试', {
-        bot: delivery.bot_id,
-        delivery: delivery.id,
-        sent: sentIds.length,
-      })
-      this.deps.audit('bot.delivery.partial', `${delivery.bot_id}:${delivery.id}`, { sent: sentIds.length })
-      return
-    }
-    if (attempts >= this.config.botDeliveryMaxAttempts) {
-      this.db
-        .prepare("UPDATE bot_deliveries SET status = 'dead', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
-        .run(attempts, message, nowIso(), delivery.id)
-      this.deps.log('warn', 'Bot 投递进入死信', { bot: delivery.bot_id, delivery: delivery.id })
-      return
-    }
-    const delaySeconds = Math.min(3600, 30 * 2 ** Math.min(6, attempts))
-    this.db
-      .prepare(
-        "UPDATE bot_deliveries SET status = 'failed', attempts = ?, last_error = ?, next_attempt_at = ?, updated_at = ? WHERE id = ?",
-      )
-      .run(attempts, message, isoAfterSeconds(delaySeconds, new Date()), nowIso(), delivery.id)
-  }
-
+  /** 发布队列扫描（tick/测试可直接调用）。 */
   async processPublishJobs(): Promise<void> {
-    const now = nowIso()
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM bot_publish_jobs WHERE status = 'queued'
-         AND (scheduled_at IS NULL OR scheduled_at <= ?) ORDER BY scheduled_at ASC LIMIT 10`,
-      )
-      .all(now) as unknown as BotPublishRow[]
-    for (const row of rows) {
-      await this.publishOne(row)
-    }
+    await this.queue.processPublishJobs()
   }
 
-  private async publishOne(row: BotPublishRow): Promise<void> {
-    const claimed = this.db
-      .prepare("UPDATE bot_publish_jobs SET status = 'sending', updated_at = ? WHERE id = ? AND status = 'queued'")
-      .run(nowIso(), row.id)
-    if (Number(claimed.changes) !== 1) return
-    const job = this.publishRow(row.id)
-    if (job.status !== 'sending') return
-    try {
-      const bot = this.botRow(job.bot_id)
-      if (!bot.enabled) throw new AppError(400, 'bot_disabled', 'Bot 已停用')
-      const target = this.targetRow(job.target_id)
-      const content = JSON.parse(job.content_json) as { text?: unknown }
-      const text = typeof content.text === 'string' ? content.text : ''
-      if (!text) throw new AppError(400, 'empty_payload', '发布内容为空')
-      const adapter = this.adapterFor(bot)
-      const result = await adapter.send(target, { text })
-      if (result.partial) {
-        const message = 'partial_text_sent：部分段落已发送，需人工确认后重建发布任务'
-        this.db
-          .prepare("UPDATE bot_publish_jobs SET status = 'failed', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
-          .run(this.config.botDeliveryMaxAttempts, message, nowIso(), job.id)
-        this.deps.audit('bot.publish.partial', `${bot.id}:${job.id}`)
-        return
-      }
-      this.db
-        .prepare("UPDATE bot_publish_jobs SET status = 'sent', sent_at = ?, updated_at = ?, last_error = NULL WHERE id = ?")
-        .run(nowIso(), nowIso(), job.id)
-      this.deps.audit('bot.publish.sent', `${bot.id}:${job.id}`, { externalId: result.externalId })
-    } catch (error) {
-      this.failPublish(job, error)
-    }
-  }
-
-  private failPublish(job: BotPublishRow, error: unknown): void {
-    const attempts = job.attempts + 1
-    const partialIds = sentExternalIdsOf(error)
-    const message = error instanceof Error ? error.message.slice(0, 500) : '发布失败'
-    if (partialIds.length > 0) {
-      // 长文本已部分外发，自动重试会重复发送；保留证据交管理员人工重建。
-      this.db
-        .prepare("UPDATE bot_publish_jobs SET status = 'failed', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
-        .run(
-          this.config.botDeliveryMaxAttempts,
-          `partial_text_sent（已发送 ${partialIds.length} 段）：${message}`.slice(0, 500),
-          nowIso(),
-          job.id,
-        )
-      this.deps.audit('bot.publish.partial', `${job.bot_id}:${job.id}`, { sent: partialIds.length })
-      return
-    }
-    if (attempts >= this.config.botDeliveryMaxAttempts) {
-      this.db
-        .prepare("UPDATE bot_publish_jobs SET status = 'failed', attempts = ?, last_error = ?, updated_at = ? WHERE id = ?")
-        .run(attempts, message, nowIso(), job.id)
-      return
-    }
-    const delaySeconds = Math.min(3600, 30 * 2 ** Math.min(6, attempts))
-    this.db
-      .prepare(
-        "UPDATE bot_publish_jobs SET status = 'queued', attempts = ?, last_error = ?, scheduled_at = ?, updated_at = ? WHERE id = ?",
-      )
-      .run(attempts, message, isoAfterSeconds(delaySeconds), nowIso(), job.id)
-  }
-
+  /** Webhook 入口（无 session/CSRF）：验签、去重、命令/Chat 分发全部在 inbound 模块。 */
   async handleWebhook(
     botId: string,
     headers: Record<string, string | string[] | undefined>,
     body: Buffer,
   ): Promise<{ status: number; body: unknown }> {
-    if (!this.config.botEnabled) return { status: 404, body: { error: { code: 'not_found' } } }
-    if (!this.key) return { status: 404, body: { error: { code: 'not_found' } } }
-    let bot: BotRow
-    try {
-      bot = this.botRow(botId)
-    } catch {
-      return { status: 404, body: { error: { code: 'not_found' } } }
-    }
-    if (!bot.enabled) return { status: 404, body: { error: { code: 'not_found' } } }
-    if (this.webhookLimiter.hit(bot.id) > 0) {
-      this.deps.audit('bot.webhook.rate_limited', bot.id)
-      return { status: 429, body: { error: { code: 'rate_limited' } } }
-    }
-    let result: InboundVerification
-    try {
-      result = await this.adapterFor(bot).verifyInbound({ botId, headers, body })
-    } catch {
-      this.deps.log('warn', 'Bot Webhook 验签异常', { bot: bot.id })
-      return { status: 400, body: { error: { code: 'invalid_request' } } }
-    }
-    if (result.kind === 'rejected') {
-      this.deps.audit('bot.webhook.rejected', bot.id, { code: result.code })
-      return { status: result.status, body: { error: { code: result.code } } }
-    }
-    if (result.kind === 'challenge') {
-      // op=13 成功校验只审计事件本身，不记录 plain_token/签名（可能被用于推断签名材料）。
-      this.deps.audit('bot.webhook.challenge', bot.id)
-      return { status: 200, body: result.body }
-    }
-    if (result.kind === 'ignored') {
-      if (result.detail) this.deps.audit('bot.event.ignored', bot.id, { event: result.detail.slice(0, 80) })
-      // 适配器可给出去重事件 ID；带 ID 时记录 ignored 结果供诊断查询。
-      if (result.eventId) {
-        this.insertEvent(bot.id, result.eventId, 'ignored', 'ignored', result.detail ?? null, null, null)
-      }
-      return { status: 200, body: result.ackBody ?? { ok: true } }
-    }
-    const inserted = this.insertEvent(
-      bot.id,
-      result.eventId,
-      result.kind,
-      'received',
-      null,
-      result.targetExternalId,
-      result.userId,
-    )
-    if (!inserted) return { status: 200, body: result.ackBody ?? { ok: true, duplicate: true } }
-    this.recordInbound(bot, result)
-    if (result.kind === 'command') {
-      if (!result.isDirect) {
-        // v0.6.3 起群聊/频道不再接受斜杠命令；静默确认，避免平台重推。
-        this.deps.audit('bot.command.disabled', bot.id, {
-          target: result.targetExternalId,
-          user: result.userId.slice(0, 64),
-        })
-        this.markEvent(bot.id, result.eventId, {
-          outcome: 'ignored',
-          detail: 'commands_disabled',
-          target: result.targetExternalId,
-          user: result.userId,
-        })
-        return { status: 200, body: result.ackBody ?? { ok: true } }
-      }
-      return this.dispatchCommand(bot, result)
-    }
-    return this.dispatchChat(bot, result)
+    return this.inbound.handleWebhook(botId, headers, body)
   }
 
-  /** 写入入站事件（按 bot×平台事件 ID 去重）；返回是否首次插入。 */
-  /**
-   * v0.6.4：模型消息发送工具入口。工具只把文本写入本轮缓冲，回合结束后统一发送；
-   * 路由认证依赖 BOT_SECRET_KEY 派生的 turn_token，不需要额外共享密钥。
-   */
+  /** 消息发送工具入口：认证/缓冲在 Chat 管线内完成。 */
   handleAiSendTool(input: unknown): { status: number; body: unknown } {
-    if (!this.config.botEnabled || !this.config.botAiSendToolEnabled || !this.key || !this.deps.ai) {
-      return { status: 404, body: { error: { code: 'not_found' } } }
-    }
-    const body = input !== null && typeof input === 'object' && !Array.isArray(input)
-      ? (input as Record<string, unknown>)
-      : {}
-    const turnId = typeof body.turn_id === 'string' ? body.turn_id.trim().slice(0, 64) : ''
-    const turnToken = typeof body.turn_token === 'string' ? body.turn_token.trim().slice(0, 128) : ''
-    const text = cleanText(body.text, AI_SEND_MAX_TEXT)
-    if (!turnId || !turnToken) {
-      return { status: 400, body: { error: { code: 'invalid_turn' } } }
-    }
-    if (!text) {
-      return { status: 400, body: { error: { code: 'empty_text' } } }
-    }
-    const turn = this.aiSendTurns.get(turnId)
-    if (!turn) return { status: 404, body: { error: { code: 'turn_not_found' } } }
-    const actual = Buffer.from(turnToken)
-    const expected = Buffer.from(turn.token)
-    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
-      return { status: 403, body: { error: { code: 'invalid_turn_token' } } }
-    }
-    if (turn.expiresAtMs <= Date.now()) {
-      this.aiSendTurns.delete(turnId)
-      return { status: 410, body: { error: { code: 'turn_expired' } } }
-    }
-    if (turn.messages.length >= AI_SEND_MAX_MESSAGES) {
-      return { status: 429, body: { error: { code: 'send_limit' } } }
-    }
-    turn.messages.push(text)
-    return { status: 200, body: { ok: true, index: turn.messages.length } }
+    return this.chat.handleAiSendTool(input)
   }
 
   private insertEvent(
@@ -1649,224 +1269,29 @@ export class BotService {
     targetExternalId: string | null,
     userId: string | null,
   ): boolean {
-    try {
-      const now = nowIso()
-      const inserted = this.db
-        .prepare(
-          `INSERT OR IGNORE INTO bot_events
-           (bot_id, platform_event_id, received_at, event_kind, outcome, detail, target_external_id, user_id, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          botId,
-          eventId,
-          now,
-          kind.slice(0, 32),
-          outcome,
-          detail === null ? null : detail.slice(0, 120),
-          targetExternalId === null ? null : targetExternalId.slice(0, 128),
-          userId === null ? null : userId.slice(0, 64),
-          now,
-        )
-      return Number(inserted.changes) > 0
-    } catch {
-      // 诊断记录失败不影响消息主路径（按新事件继续处理）。
-      return true
-    }
+    return this.diagnostics.insertEvent(botId, eventId, kind, outcome, detail, targetExternalId, userId)
   }
 
-  /**
-   * 更新事件最终结果。detail 只允许短码（如 command_denied/chat_ok/error code），
-   * 禁止写入消息正文、文件路径或外部 ID 以外的内容。
-   */
   private markEvent(
     botId: string,
     eventId: string,
     update: { outcome: BotEventOutcome; detail?: string; target?: string; user?: string },
   ): void {
-    try {
-      this.db
-        .prepare(
-          `UPDATE bot_events SET outcome = ?, detail = ?,
-             target_external_id = COALESCE(?, target_external_id),
-             user_id = COALESCE(?, user_id), updated_at = ?
-           WHERE bot_id = ? AND platform_event_id = ?`,
-        )
-        .run(
-          update.outcome,
-          update.detail === undefined ? null : update.detail.slice(0, 120),
-          update.target === undefined ? null : update.target.slice(0, 128),
-          update.user === undefined ? null : update.user.slice(0, 64),
-          nowIso(),
-          botId,
-          eventId,
-        )
-    } catch {
-      // 诊断更新失败不影响处理。
-    }
+    this.diagnostics.markEvent(botId, eventId, update)
   }
 
   private recordInbound(bot: BotRow, result: Extract<InboundVerification, { kind: 'command' | 'chat' }>): void {
-    try {
-      this.db
-        .prepare(
-          `INSERT INTO bot_inbound_targets
-           (bot_id, target_external_id, target_kind, user_id, user_name, is_direct, last_seen_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(bot_id, target_external_id, user_id) DO UPDATE SET
-             target_kind = excluded.target_kind,
-             user_name = excluded.user_name,
-             is_direct = excluded.is_direct,
-             last_seen_at = excluded.last_seen_at`,
-        )
-        .run(
-          bot.id,
-          result.targetExternalId,
-          result.targetKind,
-          result.userId,
-          result.userName,
-          result.isDirect ? 1 : 0,
-          nowIso(),
-        )
-      const count = this.db.prepare('SELECT COUNT(*) AS c FROM bot_inbound_targets WHERE bot_id = ?').get(bot.id) as { c: number }
-      if (count.c > MAX_INBOUND_TARGETS_PER_BOT) {
-        this.db
-          .prepare(
-            `DELETE FROM bot_inbound_targets WHERE rowid IN (
-               SELECT rowid FROM bot_inbound_targets WHERE bot_id = ? ORDER BY last_seen_at ASC LIMIT ?
-             )`,
-          )
-          .run(bot.id, count.c - MAX_INBOUND_TARGETS_PER_BOT)
-      }
-    } catch {
-      // 发现记录失败不影响命令/会话主路径。
-    }
+    this.diagnostics.recordInbound(bot, result)
   }
 
-  private async dispatchCommand(
-    bot: BotRow,
-    result: Extract<InboundVerification, { kind: 'command' }>,
-  ): Promise<{ status: number; body: unknown }> {
-    const parsed = parseCommandText(result.text)
-    const command = parsed?.command ?? ''
-    const ack = () => result.ackBody ?? { ok: true }
-    // /help、/role（私聊）、/reset、/forget、/memory、/search 面向所有用户；其余命令需目标 allow_commands + user 白名单。
-    const openCommand =
-      command === 'help' ||
-      command === 'role' ||
-      command === 'reset' ||
-      command === 'forget' ||
-      command === 'memory' ||
-      command === 'search'
-    const target = this.inboundTarget(bot.id, result)
-    const adminAllowed = Boolean(
-      target && target.allow_commands === 1 && this.isCommandUserAllowed(bot.id, result.userId),
-    )
-    if (!openCommand && !adminAllowed) {
-      this.deps.audit('bot.command.denied', bot.id, { target: result.targetExternalId, user: result.userId.slice(0, 64) })
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'denied',
-        detail: 'command_denied',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return { status: 200, body: ack() }
-    }
-    const retry = this.limiter.hit(`${bot.id}:${result.userId}`)
-    if (retry > 0) {
-      void result.reply('命令过于频繁，请稍后再试。').catch(() => undefined)
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'rate_limited',
-        detail: 'command_rate_limited',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return { status: 200, body: ack() }
-    }
-    const task = this.executeCommand(bot, result, parsed, adminAllowed).catch((error: unknown) => {
-      this.deps.log('warn', 'Bot 命令执行失败', { bot: bot.id, error: error instanceof Error ? error.message : 'unknown' })
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'error',
-        detail: sentExternalIdsOf(error).length > 0 ? 'partial_reply' : errorShortCode(error),
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-    })
-    this.pending.add(task)
-    void task.finally(() => this.pending.delete(task))
-    return { status: 200, body: ack() }
-  }
-
-  private async dispatchChat(
+  /** 入站模块把 Chat 消息放入连续消息合并器（保留原有 burst 时序语义）。 */
+  private enqueueChatMessage(
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'chat' }>,
-  ): Promise<{ status: number; body: unknown }> {
-    const target = this.inboundTarget(bot.id, result)
-    const ack = () => result.ackBody ?? { ok: true }
-    const mark = (outcome: BotEventOutcome, detail: string) =>
-      this.markEvent(bot.id, result.eventId, {
-        outcome,
-        detail,
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-    // QQ C2C 的接触面由 QQ 平台“谁可添加 Bot”控制；Chat 对任意 C2C 开放，命令仍走目标白名单。
-    const openQqC2c = result.isDirect && result.targetKind === 'user'
-    if ((!target || target.allow_chat !== 1) && !openQqC2c) {
-      this.deps.audit('bot.chat.denied', bot.id, { target: result.targetExternalId })
-      mark('denied', 'chat_denied')
-      return { status: 200, body: ack() }
-    }
-    if (!this.config.botAiEnabled || !this.deps.ai) {
-      mark('ignored', 'ai_disabled')
-      return { status: 200, body: ack() }
-    }
-    const text = cleanText(result.text, this.config.botAiMaxPromptChars)
-    // 允许只有图片没有正文的消息进入 AI 管线。
-    if (!text && !result.image) {
-      mark('ignored', 'empty_content')
-      return { status: 200, body: ack() }
-    }
-    let effective = result
-    if (result.targetKind === 'group' && target) {
-      // 全量模式消息进入后，再按目标设置过滤：仅@/名字模式未命中则静默忽略；
-      // 命中 @/名字时标记为 mention（必回复），未命中且目标为 all 时交给模型决策。
-      if (result.chatTrigger === 'all') {
-        const addressed = result.mentionedBot === true || isBotNameMentioned(bot.name, result.text)
-        if (target.chat_trigger === 'mention' && !addressed) {
-          mark('ignored', 'mention_filtered')
-          return { status: 200, body: ack() }
-        }
-        if (addressed) effective = { ...result, chatTrigger: 'mention' }
-      }
-    }
-    this.deps.audit('bot.chat', `${bot.platform}:${result.targetExternalId}`, {
-      bot: bot.id,
-      user: result.userId.slice(0, 64),
-      chars: text.length,
-      ...(result.image ? { image: result.image.mime.slice(0, 50) } : {}),
-      ...(target ? {} : { open: 'qq_c2c' }),
-      ...(target?.kind === 'group' ? { replyMode: target.chat_trigger } : {}),
-    })
-    // 连续消息合并 + 同会话串行由 BurstMerger 负责；Webhook 仍立即 ack。
-    // 全量群消息使用更长窗口，减少对非 @ 闲聊逐条调用 AI 的次数；@/名字命中的消息仍即时回复。
-    const burstTiming =
-      effective.chatTrigger === 'all'
-        ? {
-            windowMs: this.config.botChatBurstGroupAllWindowMs,
-            maxWaitMs: this.config.botChatBurstGroupAllMaxWaitMs,
-          }
-        : undefined
-    this.chatBursts.enqueue(
-      this.chatBurstKey(bot.id, result.targetExternalId, result.userId),
-      {
-        bot,
-        result: effective,
-        text,
-      },
-      burstTiming,
-    )
-    return { status: 200, body: ack() }
+    text: string,
+    timing: BurstTimingLike | undefined,
+  ): void {
+    this.chat.enqueue(bot, result, text, timing)
   }
 
   private chatBurstKey(botId: string, targetExternalId: string, userId: string): string {
@@ -1902,7 +1327,7 @@ export class BotService {
       let text: string
       switch (command) {
         case 'search':
-          await this.executeSearchChat(bot, result, args)
+          await this.chat.executeSearchChat(bot, result, args)
           return
         case 'help':
           text = adminAllowed ? helpText() : publicHelpText()
@@ -1966,8 +1391,8 @@ export class BotService {
     bot: BotRow,
     result: Extract<InboundVerification, { kind: 'command' }>,
   ): string {
-    this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
-    this.lastSearchQueries.delete(`${bot.id}:${result.userId}`)
+    this.chat.clearSession(bot.id, result.targetExternalId, result.userId)
+    this.chat.clearSearchQuery(bot.id, result.userId)
     this.resetChatSession(bot.id, result.targetExternalId, result.userId)
     void this.cleanupRemoteSessions([])
     this.deps.audit('bot.reset', bot.id, { bot: bot.id, user: result.userId.slice(0, 64) })
@@ -1987,20 +1412,25 @@ export class BotService {
       return '用法：/forget confirm（将清除长期记忆与全部对话上下文，此操作不可恢复）。'
     }
     this.cancelUserMemory(bot.id, result.userId)
-    this.chatBursts.clear(this.chatBurstKey(bot.id, result.targetExternalId, result.userId))
-    this.lastSearchQueries.delete(`${bot.id}:${result.userId}`)
+    // D-13：群共享记忆条目按稳定 member_openid 归属，/forget 同时清除本人贡献的群记忆并取消在途抽取。
+    this.cancelMemberGroupMemory(bot.id, result.userId)
+    this.chat.clearSession(bot.id, result.targetExternalId, result.userId)
+    this.chat.clearSearchQuery(bot.id, result.userId)
     this.deleteRemoteSessions(bot.id, { userId: result.userId })
     void this.cleanupRemoteSessions([])
     const removed = this.memory.deleteUser(bot.id, result.userId)
+    const groupRemoved = this.memory.deleteMemberGroupItems(bot.id, result.userId)
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
     this.deps.audit('bot.memory.forget', bot.id, {
       bot: bot.id,
       user: result.userId.slice(0, 64),
       items: removed.deletedItems,
       legacy: removed.deletedLegacy ? 1 : 0,
+      groupItems: groupRemoved.items,
+      groupScopes: groupRemoved.groups,
     })
-    return removed.deletedItems > 0 || removed.deletedLegacy
-      ? `已清除长期记忆与全部对话上下文（记忆条目 ${removed.deletedItems} 条${removed.deletedLegacy ? '，旧摘要已删除' : ''}）。`
+    return removed.deletedItems > 0 || removed.deletedLegacy || groupRemoved.items > 0
+      ? `已清除长期记忆与全部对话上下文（记忆条目 ${removed.deletedItems} 条${groupRemoved.items > 0 ? `，群聊共享记忆 ${groupRemoved.items} 条` : ''}${removed.deletedLegacy ? '，旧摘要已删除' : ''}）。`
       : '已清除长期记忆与全部对话上下文。'
   }
 
@@ -2185,507 +1615,6 @@ export class BotService {
   }
 
   /** 开启一轮消息发送工具上下文；工具未启用/无 Bot 密钥时返回 null。 */
-  private openAiSendTurn(result: Extract<InboundVerification, { kind: 'chat' }>): AiSendTurn | null {
-    if (!this.config.botAiSendToolEnabled || !this.key || !this.deps.ai) return null
-    const now = Date.now()
-    for (const [id, turn] of this.aiSendTurns) {
-      if (turn.expiresAtMs <= now) this.aiSendTurns.delete(id)
-    }
-    const id = newId()
-    const turn: AiSendTurn = {
-      id,
-      token: createHmac('sha256', this.key).update(id).digest('base64url'),
-      targetExternalId: result.targetExternalId,
-      targetKind: result.targetKind,
-      userId: result.userId,
-      messages: [],
-      expiresAtMs: now + AI_SEND_TURN_TTL_MS,
-    }
-    this.aiSendTurns.set(id, turn)
-    return turn
-  }
-
-  private takeAiSendMessages(turn: AiSendTurn | null): string[] {
-    if (!turn) return []
-    const messages = turn.messages
-    turn.messages = []
-    return messages
-  }
-
-  private closeAiSendTurn(turn: AiSendTurn | null): void {
-    if (turn) this.aiSendTurns.delete(turn.id)
-  }
-
-  /** 把工具缓冲的消息按顺序发送；来源/图片说明附在最后一条。 */
-  private async sendAiToolMessages(
-    result: Extract<InboundVerification, { kind: 'chat' }>,
-    messages: string[],
-    sourceNote: string,
-    imageNote: string,
-  ): Promise<void> {
-    const formatted = messages
-      .map((message) => formatAiReply(this.sanitizeAiText(message)))
-      .filter((message) => message.length > 0)
-    if (formatted.length === 0) {
-      throw new AppError(502, 'bot_ai_send_empty', '消息发送内容为空')
-    }
-    const lastIndex = formatted.length - 1
-    formatted[lastIndex] = `${formatted[lastIndex]}${sourceNote}${imageNote}`.trim()
-    for (const message of formatted) {
-      await result.reply(message)
-    }
-  }
-
-  /**
-   * 执行一批连续消息：合并文本、串行调用 AI、只回复一次。
-   * 同一会话由 BurstMerger 串行；不同会话可并行。
-   */
-  private async executeChatBatch(items: ChatBurstItem[], forceSearch = false): Promise<void> {
-    if (items.length === 0) return
-    const first = items[0]
-    const last = items[items.length - 1]
-    if (!first || !last) return
-    const bot = first.bot
-    const result = last.result
-    const silent = result.chatTrigger === 'all'
-    const finishAll = (outcome: BotEventOutcome, detail: string) => {
-      for (const item of items) {
-        this.markEvent(bot.id, item.result.eventId, {
-          outcome,
-          detail,
-          target: item.result.targetExternalId,
-          user: item.result.userId,
-        })
-      }
-    }
-    let sendTurn: AiSendTurn | null = null
-    try {
-      const chatRetry = this.chatLimiter.hit(`${bot.id}:${result.userId}`)
-      if (chatRetry > 0) {
-        if (!silent) await result.reply(`对话过于频繁（每分钟 ${this.config.botChatRatePerMinute} 次），请稍后再试。`).catch(() => undefined)
-        finishAll('rate_limited', 'chat_rate_limited')
-        return
-      }
-      const aiRetry = this.aiLimiter.hit(`${bot.id}:${result.userId}`)
-      if (aiRetry > 0) {
-        if (!silent) await result.reply(`AI 调用过于频繁（每小时 ${this.config.botAiRatePerHour} 次），请稍后再试。`).catch(() => undefined)
-        finishAll('rate_limited', 'ai_rate_limited')
-        return
-      }
-      const target = this.inboundTarget(bot.id, result)
-      const groupRole = target?.kind === 'group' ? this.groupRoles.getByTargetId(bot.id, target.id) : null
-      const role = result.isDirect ? this.roles.get(bot.id, result.userId) : groupRole
-      const roleCard = role?.enabled ? role : null
-      const isGroup = result.targetKind === 'group'
-      const displayName = isGroup ? this.inboundDisplayName(result) : ''
-      const memoryScope = isGroup ? groupMemoryScope(result.targetExternalId) : result.userId
-      const prepared = await this.prepareAiImage(bot, result)
-      const texts = items.map((item) => item.text).filter(Boolean)
-      const limit = Math.max(1, this.config.botAiMaxPromptChars)
-      let merged = texts.join('\n').trim()
-      if (merged.length > limit) merged = merged.slice(-limit)
-      if (prepared.kind === 'unsupported' && !merged) {
-        // 图片无法处理且本批没有任何可用文字：直接提示，不调用模型。
-        if (!silent) await result.reply(IMAGE_UNSUPPORTED_TEXT)
-        finishAll('ignored', 'image_unsupported')
-        return
-      }
-      // 仅图片无正文时用中性占位，避免向模型发送空用户消息。
-      const userText = merged || (result.image ? IMAGE_ONLY_USER_TEXT : '')
-      if (!userText) {
-        finishAll('ignored', 'empty_content')
-        return
-      }
-      const search = await this.resolveWebSearch(bot, result.userId, userText, forceSearch)
-      if (search.kind === 'rate_limited') {
-        if (!silent) await result.reply(`联网搜索过于频繁（每小时 ${this.config.botSearchRatePerHour} 次），请稍后再试。`).catch(() => undefined)
-        finishAll('rate_limited', 'search_rate_limited')
-        return
-      }
-      const searchContext = search.context ? formatSearchPromptContext(search.context.query, search.context.results) : undefined
-      const imageNote = prepared.kind === 'ok' && prepared.degraded && merged ? `\n${IMAGE_DEGRADED_NOTE}` : ''
-      const sourceNote = search.context && search.context.results.length > 0 ? formatSearchSources(search.context.results) : ''
-      const sessionTitle = `${this.targetNameForSession(
-        bot.id,
-        result.targetExternalId,
-        result.userId,
-        result.userName,
-      )} Chat`
-      const promptText = isGroup ? `${displayName}：${userText}` : userText
-      sendTurn = this.openAiSendTurn(result)
-      const sendToolPrompt: BotSendToolPrompt | undefined = sendTurn
-        ? {
-            turnId: sendTurn.id,
-            turnToken: sendTurn.token,
-            toolName: AI_SEND_TOOL_NAME,
-            required: !silent,
-          }
-        : undefined
-      const answer = await this.chatWithAi(
-        bot,
-        result.userId,
-        result.targetExternalId,
-        promptText,
-        roleCard,
-        prepared.kind === 'ok' ? prepared.image : undefined,
-        searchContext,
-        search.context?.results.length ?? 0,
-        silent,
-        sessionTitle,
-        sendToolPrompt,
-        memoryScope,
-        isGroup,
-        isGroup ? (result.chatTrigger === 'all' ? 'all' : 'mention') : undefined,
-      )
-      const toolMessages = this.takeAiSendMessages(sendTurn)
-      if (sendTurn) {
-        if (toolMessages.length > 0) {
-          await this.sendAiToolMessages(result, toolMessages, sourceNote, imageNote)
-          const memoryText = toolMessages
-            .map((message) => this.sanitizeAiText(message))
-            .filter(Boolean)
-            .join('\n')
-          if (userText && memoryText) {
-            this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, memoryText, {
-              memoryScope,
-              ...(isGroup ? { groupUserName: displayName } : {}),
-            })
-          }
-          this.deps.audit('bot.ai.send', `${bot.platform}:${result.targetExternalId}`, {
-            bot: bot.id,
-            user: result.userId.slice(0, 64),
-            messages: toolMessages.length,
-            chars: toolMessages.reduce((sum, message) => sum + message.length, 0),
-          })
-          finishAll('ok', 'chat_tool')
-          return
-        }
-        // 全量群聊未调用工具 = 模型选择不发言（NO_REPLY 的工具化升级）。
-        if (silent) {
-          finishAll('ignored', 'no_reply')
-          return
-        }
-        // 工具不可用/模型漏调用时的兜底：私聊与 @ 提及仍至少发送一条，避免用户无响应。
-        this.deps.audit('bot.ai.send_fallback', bot.id, {
-          target: result.targetExternalId,
-          user: result.userId.slice(0, 64),
-          reason: 'no_tool_call',
-        })
-      }
-      if (!sendTurn && silent && isNoReplyAnswer(answer)) {
-        finishAll('ignored', 'no_reply')
-        return
-      }
-      const fallbackAnswer = sendTurn && isNoReplyAnswer(answer) ? '暂时没回应上来，稍后再试。' : answer
-      const plain = this.sanitizeAiText(fallbackAnswer)
-      const formatted = formatAiReply(plain)
-      const replyText = `${formatted}${sourceNote}${imageNote}`
-      if (!replyText) {
-        finishAll('ignored', 'empty_reply')
-        return
-      }
-      await result.reply(replyText)
-      if (userText) {
-        this.scheduleMemoryUpdate(bot, result.userId, result.targetExternalId, userText, plain, {
-          memoryScope,
-          ...(isGroup ? { groupUserName: displayName } : {}),
-        })
-      }
-      finishAll('ok', 'chat')
-    } catch (error) {
-      if (sentExternalIdsOf(error).length > 0) {
-        // 长回复已部分外发：只记日志，不补发失败提示。
-        this.deps.log('warn', 'Bot Chat 回复部分外发', {
-          bot: bot.id,
-          sent: sentExternalIdsOf(error).length,
-        })
-        finishAll('error', 'partial_reply')
-        return
-      }
-      finishAll('error', errorShortCode(error))
-      if (!silent) await result.reply('暂时没回应上来，稍后再试。').catch(() => undefined)
-    } finally {
-      this.closeAiSendTurn(sendTurn)
-    }
-  }
-
-  /**
-   * 解析本批是否需要联网搜索：显式 /search 强制；自动模式用保守关键词判断。
-   * 搜索失败不阻断 Chat，返回空结果并在提示词中说明不可用；绝不记录查询正文。
-   */
-  private async resolveWebSearch(
-    bot: BotRow,
-    userId: string,
-    text: string,
-    force: boolean,
-  ): Promise<SearchResolution> {
-    if (!this.config.botSearchEnabled || !this.webSearch) return { kind: 'ok', context: null }
-    const followUp = isSearchFollowUp(text)
-    // mcp 模式：模型可通过 MCP 工具自行搜索；命中关键词/追问时服务端先预取，保证常见问句稳定。
-    if (!force && this.config.botSearchMode === 'mcp' && !followUp && !needsWebSearch(text)) {
-      return { kind: 'ok', context: null }
-    }
-    if (!force && (!this.config.botSearchAuto || (!needsWebSearch(text) && !followUp))) {
-      return { kind: 'ok', context: null }
-    }
-    const key = `${bot.id}:${userId}`
-    const normalized = normalizeSearchQuery(text)
-    const query = followUp ? this.lastSearchQueries.get(key) ?? normalized : normalized
-    if (!query) return { kind: 'ok', context: null }
-    const retry = this.searchLimiter.hit(key)
-    if (retry > 0) {
-      this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
-        bot: bot.id,
-        user: userId.slice(0, 64),
-        rateLimited: true,
-        forced: force,
-      })
-      return force ? { kind: 'rate_limited' } : { kind: 'ok', context: null }
-    }
-    try {
-      const results = await this.webSearch.search(query)
-      this.lastSearchQueries.set(key, query)
-      this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
-        bot: bot.id,
-        user: userId.slice(0, 64),
-        results: results.length,
-        forced: force,
-        followUp,
-      })
-      if (results.length === 0 && !force) return { kind: 'ok', context: null }
-      return { kind: 'ok', context: { query, results } }
-    } catch (error) {
-      this.deps.log('warn', 'Bot 联网搜索失败', {
-        bot: bot.id,
-        error: errorShortCode(error),
-        forced: force,
-      })
-      this.deps.audit('bot.search', `${bot.platform}:${bot.id}`, {
-        bot: bot.id,
-        user: userId.slice(0, 64),
-        error: errorShortCode(error),
-        forced: force,
-      })
-      return { kind: 'ok', context: { query: text, results: [], failed: true } }
-    }
-  }
-
-  /** `/search <关键词>`：复用 Chat 管线强制搜索，结果由 AI 总结并附来源。 */
-  private async executeSearchChat(
-    bot: BotRow,
-    result: Extract<InboundVerification, { kind: 'command' }>,
-    args: string,
-  ): Promise<void> {
-    const target = this.inboundTarget(bot.id, result)
-    const openQqC2c = result.isDirect && result.targetKind === 'user'
-    if ((!target || target.allow_chat !== 1) && !openQqC2c) {
-      await result.reply('当前会话未开启普通消息对话，无法使用联网搜索。').catch(() => undefined)
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'denied',
-        detail: 'search_chat_denied',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return
-    }
-    if (!args.trim()) {
-      await result.reply('用法：/search <关键词>（联网搜索并由 AI 总结，附来源）').catch(() => undefined)
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'ignored',
-        detail: 'search_empty',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return
-    }
-    if (!this.config.botAiEnabled || !this.deps.ai) {
-      await result.reply('AI 未启用，无法使用联网搜索。').catch(() => undefined)
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'ignored',
-        detail: 'ai_disabled',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return
-    }
-    if (!this.config.botSearchEnabled || !this.webSearch) {
-      await result.reply('联网搜索未启用，请联系管理员配置 SearXNG。').catch(() => undefined)
-      this.markEvent(bot.id, result.eventId, {
-        outcome: 'ignored',
-        detail: 'search_disabled',
-        target: result.targetExternalId,
-        user: result.userId,
-      })
-      return
-    }
-    const chatResult: Extract<InboundVerification, { kind: 'chat' }> = {
-      ...result,
-      kind: 'chat',
-      text: args,
-      chatTrigger: result.isDirect ? 'direct' : 'mention',
-    }
-    await this.executeChatBatch([{ bot, result: chatResult, text: args }], true)
-  }
-
-  /**
-   * 图片预处理：识别关闭/适配器不支持/下载失败/mime 非法时降级为纯文本。
-   * - 有文字：继续回答，末尾追加“图片未能处理”说明；
-   * - 无文字：返回 unsupported，由调用方提示用户改用文字描述。
-   */
-  private async prepareAiImage(
-    bot: BotRow,
-    result: Extract<InboundVerification, { kind: 'chat' }>,
-  ): Promise<{ kind: 'ok'; image?: BotAiImage; degraded: boolean } | { kind: 'unsupported' }> {
-    const inbound = result.image
-    if (!inbound) return { kind: 'ok', degraded: false }
-    const degrade = () =>
-      result.text.trim()
-        ? ({ kind: 'ok', degraded: true } as const)
-        : ({ kind: 'unsupported' } as const)
-    if (!this.config.botAiVisionEnabled) {
-      this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
-        bot: bot.id,
-        mime: inbound.mime.slice(0, 50),
-        size: inbound.size ?? null,
-        skipped: 'vision_disabled',
-      })
-      return degrade()
-    }
-    const adapter = this.adapterFor(bot)
-    if (!adapter.loadImage) {
-      this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
-        bot: bot.id,
-        mime: inbound.mime.slice(0, 50),
-        size: inbound.size ?? null,
-        skipped: 'unsupported',
-      })
-      return degrade()
-    }
-    try {
-      const loaded = await adapter.loadImage(inbound, {
-        maxBytes: this.config.botAiImageMaxBytes,
-        timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
-      })
-      const mime = loaded.mime.toLowerCase()
-      if (!IMAGE_MIME_ALLOWLIST.has(mime) || loaded.data.length === 0 || loaded.data.length > this.config.botAiImageMaxBytes) {
-        this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
-          bot: bot.id,
-          mime: mime.slice(0, 50),
-          size: loaded.data.length,
-          skipped: 'invalid',
-        })
-        return degrade()
-      }
-      // 审计只记录 mime/大小，不记录图片内容或 base64。
-      this.deps.audit('bot.ai.image', `${bot.platform}:${result.targetExternalId}`, {
-        bot: bot.id,
-        mime: mime.slice(0, 50),
-        size: loaded.data.length,
-      })
-      return {
-        kind: 'ok',
-        degraded: false,
-        image: {
-          mime,
-          base64: loaded.data.toString('base64'),
-          ...(inbound.name ? { name: inbound.name.slice(0, 80) } : {}),
-        },
-      }
-    } catch (error) {
-      this.deps.log('warn', 'Bot 入站图片处理失败，降级为纯文本', {
-        bot: bot.id,
-        code: errorShortCode(error),
-      })
-      return degrade()
-    }
-  }
-
-  /** Chat 的统一模型调用：角色卡 + 共享长期记忆 + 用户消息（可选图片）。 */
-  private async chatWithAi(
-    bot: BotRow,
-    userId: string,
-    targetExternalId: string,
-    text: string,
-    roleCard?: Pick<BotChatRole, 'name' | 'prompt'> | null,
-    image?: BotAiImage,
-    searchContext?: string,
-    searchResults = 0,
-    replyDecision = false,
-    sessionTitle?: string,
-    sendTool?: BotSendToolPrompt,
-    memoryScope = userId,
-    groupMemory = false,
-    groupMode?: GroupChatMode,
-  ): Promise<string> {
-    if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
-    // 群聊使用独立的群共享记忆 scope，已登记用户的用户级记忆不会进入群聊提示词。
-    const memoryContext = this.memory.buildPromptContext(bot.id, memoryScope, text, groupMemory)
-    const prompt = buildBotPrompt({
-      roleCard,
-      memory: memoryContext.text || undefined,
-      groupMemory,
-      groupMode,
-      searchContext,
-      webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext,
-      ...(sendTool ? { sendTool } : { replyDecision }),
-      userText: text.slice(0, this.config.botAiMaxPromptChars),
-    })
-    this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
-      bot: bot.id,
-      user: userId.slice(0, 64),
-      chars: text.length,
-      ...(roleCard ? { role: true } : {}),
-      ...(image ? { image: image.mime.slice(0, 50) } : {}),
-      ...(memoryContext.usedItemIds.length > 0 ? { memoryItems: memoryContext.usedItemIds.length } : {}),
-      ...(searchContext ? { search: true, searchResults } : {}),
-      ...(sendTool ? { sendTool: true } : replyDecision ? { replyDecision: true } : {}),
-    })
-    let answer: string
-    try {
-      answer = await this.deps.ai.chat({
-        botId: bot.id,
-        targetExternalId,
-        userId,
-        prompt,
-        ...(sessionTitle ? { sessionTitle } : {}),
-        ...(image ? { image } : {}),
-      })
-    } finally {
-      // 同步检查降级（不额外引入微任务，避免影响对话/抽取后续排队的时序）。
-      this.observeAiToolIsolation(bot.id)
-    }
-    return answer
-  }
-
-  /**
-   * AI 回答清洗：去除内部路径/URL 与控制字符，保留换行/分段，按配置上限截断。
-   * 与 sanitizeExternalText 的固定 1500 截断区分：AI 回答由 QQ 适配器按 2000 上限分段发送。
-   */
-  private sanitizeAiText(value: string): string {
-    if (typeof value !== 'string') return ''
-    const replaced = value
-      .replace(/\r\n?/g, '\n')
-      // 某些模型在工具 schema 不可用时会输出 DSML 工具调用文本；不能把内部语法回显给用户。
-      .replace(/<\|DSML\|>[\s\S]*?<\/\|DSML\|>/gi, '')
-      .replace(/｜｜DSML｜｜[\s\S]*?<\/｜｜DSML｜｜>/g, '')
-      .replace(/[｜|]{2}DSML[｜|]{2}/g, '')
-      .replace(/(?:[A-Za-z]:\\|\/(?:home|var|etc|opt|run|proc|sys|tmp)\/)[^\s"'`]+/g, '[path]')
-      .replace(/(?:ssh|https?):\/\/[^\s"'`]+/g, '[url]')
-    let cleaned = ''
-    for (const char of replaced) {
-      const code = char.codePointAt(0) ?? 0
-      if (code === 10 || code === 9 || (code >= 32 && code !== 127)) cleaned += char
-    }
-    // 保留换行/分段，仅收敛行内多余空白；不要压缩空行。
-    cleaned = cleaned
-      .split('\n')
-      .map((line) => line.replace(/[ \t]+/g, ' ').trimEnd())
-      .join('\n')
-      .trim()
-    return cleaned.slice(0, this.config.botAiMaxReplyChars)
-  }
-
-  /** Bot×用户记忆键：批处理、串行队列与 generation 共用。 */
   private memoryKey(botId: string, userId: string): string {
     return `${botId}:${userId}`
   }
@@ -2703,6 +1632,48 @@ export class BotService {
       this.memoryTimers.delete(key)
     }
     this.memoryPending.delete(key)
+  }
+
+  /**
+   * 取消某群 scope 下所有成员的在途/待处理记忆抽取（管理端清空群记忆用，BOT-06）。
+   * 群聊队列 key 形如 `${bot}:${scope}:${userId}`，gen 与队列必须同源，否则清空后会被在途批次写回。
+   */
+  private cancelGroupMemoryScope(botId: string, scope: string): void {
+    const prefix = `${botId}:${scope}:`
+    for (const [key, timer] of [...this.memoryTimers]) {
+      if (!key.startsWith(prefix)) continue
+      clearTimeout(timer)
+      this.memoryTimers.delete(key)
+    }
+    for (const key of [...this.memoryPending.keys()]) {
+      if (key.startsWith(prefix)) this.memoryPending.delete(key)
+    }
+    // 在途队列里的 key 不一定已写进 memoryGenerations（首次批次 generation 缺省为 0），
+    // 这里对队列/已记录的所有 key 统一 +1，确保 updateMemory 写回前能发现版本变化。
+    for (const key of [...this.memoryQueues.keys()]) {
+      if (!key.startsWith(prefix)) continue
+      this.memoryGenerations.set(key, (this.memoryGenerations.get(key) ?? 0) + 1)
+    }
+    for (const key of [...this.memoryGenerations.keys()]) {
+      if (key.startsWith(prefix)) this.memoryGenerations.set(key, (this.memoryGenerations.get(key) ?? 0) + 1)
+    }
+  }
+
+  /** 取消某成员在各群 scope 下的在途/待处理记忆抽取（`/forget confirm` 用，D-13）。 */
+  private cancelMemberGroupMemory(botId: string, memberUserId: string): void {
+    const groups = this.db
+      .prepare("SELECT external_id FROM bot_targets WHERE bot_id = ? AND kind = 'group'")
+      .all(botId) as unknown as { external_id: string }[]
+    for (const group of groups) {
+      const key = `${botId}:${groupMemoryScope(group.external_id)}:${memberUserId}`
+      this.memoryGenerations.set(key, (this.memoryGenerations.get(key) ?? 0) + 1)
+      const timer = this.memoryTimers.get(key)
+      if (timer) {
+        clearTimeout(timer)
+        this.memoryTimers.delete(key)
+      }
+      this.memoryPending.delete(key)
+    }
   }
 
   /**
@@ -2763,20 +1734,27 @@ export class BotService {
   }
 
   /**
-   * 群聊共享记忆操作：key 加发言用户名前缀，value 统一保存为“用户名：记忆”。
+   * 群聊共享记忆操作（D-13）：key 前缀使用稳定 member_openid，显示名只写入 value（“用户名：记忆”）。
+   * 模型可能按旧提示词输出 `<显示名>:` 前缀，服务端统一剥掉后改写，保证同名/改名成员不会互相覆盖或删除。
    * 已登记用户/其他成员的用户级记忆不会进入这里。
    */
-  private groupMemoryOperations(userName: string, ops: readonly BotMemoryOperation[]): BotMemoryOperation[] {
-    const name = cleanText(userName, 20) || '群成员'
-    const keyPrefix = `${name}:`
-    const valuePrefix = `${name}：`
+  private groupMemoryOperations(
+    memberUserId: string,
+    memberName: string,
+    ops: readonly BotMemoryOperation[],
+  ): BotMemoryOperation[] {
+    const name = cleanText(memberName, 20) || '群成员'
+    const idPrefix = `${memberUserId}:`
     return ops.map((op) => {
-      const key = op.key.startsWith(keyPrefix) ? op.key : `${keyPrefix}${op.key}`
+      let rawKey = String(op.key ?? '').trim()
+      if (rawKey.startsWith(`${name}:`)) rawKey = rawKey.slice(name.length + 1)
+      else if (rawKey.startsWith(`${name}：`)) rawKey = rawKey.slice(name.length + 1)
+      const key = `${idPrefix}${rawKey}`
       if (op.op === 'delete') return { ...op, key }
       let value = String(op.value ?? '').trim()
-      if (value.startsWith(valuePrefix)) value = value.slice(valuePrefix.length)
+      if (value.startsWith(`${name}：`)) value = value.slice(name.length + 1)
       else if (value.startsWith(`${name}:`)) value = value.slice(name.length + 1).trimStart()
-      return { ...op, key, value: `${valuePrefix}${value}` }
+      return { ...op, key, value: `${name}：${value}` }
     })
   }
 
@@ -2872,7 +1850,7 @@ export class BotService {
       if ((this.memoryGenerations.get(key) ?? 0) !== generation) return
       const current = this.memory.getState(bot.id, memoryScope)
       if (!current.memoryEnabled) return
-      const finalOps = groupUserName ? this.groupMemoryOperations(groupUserName, ops) : ops
+      const finalOps = groupUserName ? this.groupMemoryOperations(userId, groupUserName, ops) : ops
       const result = this.memory.applyOperations(bot.id, memoryScope, finalOps, 'chat')
       // 只有本次确实产出可迁移条目时才把旧摘要标记为已迁移；ops=0（模型未转换出条目）
       // 必须保留 fallback 注入并继续作为后续批次的迁移输入，避免旧记忆被"静默丢弃"。
@@ -2902,63 +1880,14 @@ export class BotService {
     }
   }
 
-  private enqueueDelivery(
-    botId: string,
-    targetId: string | null,
-    kind: BotDeliveryRow['kind'],
-    payload: Record<string, unknown>,
-    dedupeKey: string | null,
-    notBefore?: Date,
-  ): void {
-    const now = nowIso()
-    try {
-      this.db
-        .prepare(
-          `INSERT OR IGNORE INTO bot_deliveries
-           (id, bot_id, target_id, kind, dedupe_key, payload_json, status, attempts, next_attempt_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`,
-        )
-        .run(
-          newId(),
-          botId,
-          targetId,
-          kind,
-          dedupeKey,
-          JSON.stringify(payload),
-          notBefore ? notBefore.toISOString() : null,
-          now,
-          now,
-        )
-    } catch {
-      // 队列写入失败不应影响告警/请求主路径。
-    }
-  }
-
-  private async sendTest(bot: BotRow, target: BotTargetRow): Promise<void> {
-    const adapter = this.adapterFor(bot)
-    const result = await adapter.send(target, { text: 'AntifieldCloud Bot 测试消息：配置可用。' })
-    this.db
-      .prepare(
-        `INSERT INTO bot_deliveries (id, bot_id, target_id, kind, payload_json, status, attempts, external_id, created_at, updated_at, sent_at)
-         VALUES (?, ?, ?, 'test', ?, 'sent', 1, ?, ?, ?, ?)`,
-      )
-      .run(newId(), bot.id, target.id, JSON.stringify({ text: 'test' }), result.externalId, nowIso(), nowIso(), nowIso())
-    this.deps.audit('bot.test', `${bot.id}:${target.id}`)
-  }
-
   private cleanup(): void {
     const cutoff = new Date(Date.now() - this.config.botEventRetentionDays * 86400_000).toISOString()
-    const deliveryCutoff = new Date(Date.now() - 30 * 86400_000).toISOString()
     try {
       this.db.prepare('DELETE FROM bot_events WHERE received_at < ?').run(cutoff)
       this.db.prepare('DELETE FROM bot_inbound_targets WHERE last_seen_at < ?').run(cutoff)
       this.memory.cleanup()
-      this.db.prepare("DELETE FROM bot_deliveries WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
-      this.db.prepare("DELETE FROM bot_publish_jobs WHERE sent_at IS NOT NULL AND sent_at < ?").run(deliveryCutoff)
+      this.queue.cleanupExpired()
       this.deps.ai?.cleanup?.()
-      // 永久失败/死信也需要 TTL，避免 Bot 长期运行后队列无限增长。
-      this.db.prepare("DELETE FROM bot_deliveries WHERE status IN ('dead','failed') AND updated_at < ?").run(deliveryCutoff)
-      this.db.prepare("DELETE FROM bot_publish_jobs WHERE status = 'failed' AND updated_at < ?").run(deliveryCutoff)
     } catch {
       // 清理失败不影响投递。
     }
@@ -3083,7 +2012,7 @@ export class BotService {
       webhookUrl: setup.webhookUrl,
       setupSteps: setup.steps,
       targetsCount: count.c,
-      lastError: row.last_error,
+      lastError: this.latestBotError(row.id, row.last_error),
       lastCheckedAt: row.last_checked_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

@@ -1,5 +1,5 @@
 /** 仪表盘聚合：主机、存储、Minecraft、opencode、服务、备份、最近活动。 */
-import { readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
@@ -34,6 +34,16 @@ export interface BackupStatus {
   world: StatusFileRecord | null
   worldPull: StatusFileRecord | null
   drill: StatusFileRecord | null
+  /** v0.7.0：加密归档计数（Web 不可校验/恢复）。 */
+  encryptedPendingCount: number
+  encryptedAckedCount: number
+  /** v0.7.0：加密开关与公钥是否就绪（只表示状态，不读取私钥）。 */
+  encryption: {
+    enabled: boolean
+    keyConfigured: boolean
+  }
+  /** v0.7.0：PC 异地副本只读状态；文件缺失/未配置为 null。 */
+  offsite: StatusFileRecord | null
 }
 
 export interface OpenCodeStatus {
@@ -133,7 +143,14 @@ export class DashboardService {
     return this.host.snapshot()
   }
 
-  private archiveCounts(): { pendingCount: number; pendingBytes: number; ackedBytes: number; lastError: string | null } {
+  private archiveCounts(): {
+    pendingCount: number
+    pendingBytes: number
+    ackedBytes: number
+    encryptedPendingCount: number
+    encryptedAckedCount: number
+    lastError: string | null
+  } {
     try {
       const pending = this.db
         .prepare(
@@ -147,6 +164,18 @@ export class DashboardService {
            WHERE deleted_at IS NULL AND acked_at IS NOT NULL AND origin != 'import'`,
         )
         .get() as { bytes: number }
+      const encryptedPending = this.db
+        .prepare(
+          `SELECT COUNT(*) AS c FROM backup_archives
+           WHERE deleted_at IS NULL AND acked_at IS NULL AND origin != 'import' AND name LIKE '%.tar.gz.age'`,
+        )
+        .get() as { c: number }
+      const encryptedAcked = this.db
+        .prepare(
+          `SELECT COUNT(*) AS c FROM backup_archives
+           WHERE deleted_at IS NULL AND acked_at IS NOT NULL AND origin != 'import' AND name LIKE '%.tar.gz.age'`,
+        )
+        .get() as { c: number }
       const lastError = (
         this.db
           .prepare(
@@ -159,10 +188,19 @@ export class DashboardService {
         pendingCount: Number(pending.c),
         pendingBytes: Number(pending.bytes),
         ackedBytes: Number(acked.bytes),
+        encryptedPendingCount: Number(encryptedPending.c),
+        encryptedAckedCount: Number(encryptedAcked.c),
         lastError,
       }
     } catch {
-      return { pendingCount: 0, pendingBytes: 0, ackedBytes: 0, lastError: null }
+      return {
+        pendingCount: 0,
+        pendingBytes: 0,
+        ackedBytes: 0,
+        encryptedPendingCount: 0,
+        encryptedAckedCount: 0,
+        lastError: null,
+      }
     }
   }
 
@@ -227,6 +265,13 @@ export class DashboardService {
       world: readStatusFile(this.config.worldBackupStatusFile),
       worldPull: readStatusFile(this.config.worldPullStatusFile),
       drill: readStatusFile(this.config.drillStatusFile),
+      encryptedPendingCount: counts.encryptedPendingCount,
+      encryptedAckedCount: counts.encryptedAckedCount,
+      encryption: {
+        enabled: this.config.backupArchiveEncryption,
+        keyConfigured: existsSync(this.config.backupAgeRecipientFile),
+      },
+      offsite: readStatusFile(this.config.backupOffsiteStatusFile),
     }
   }
 

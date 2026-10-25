@@ -245,6 +245,7 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
         supported: true,
         fallbackCount: 0,
         fallbackAt: null,
+        retryAt: null,
       })
     }
     const check = await context.app.inject({
@@ -270,7 +271,12 @@ test('v0.5.8 Bot 管理路由：QQ Bot CRUD、目标、检查连接、事件、�
     // /api/bots/status 暴露工具隔离状态（未配置 AI 时为 null，配置 AI 时取 ai.toolIsolation()）。
     const status = await context.app.inject({ method: 'GET', url: '/api/bots/status', headers: { cookie } })
     assert.equal(status.statusCode, 200)
-    assert.deepEqual(status.json().aiToolIsolation, { supported: true, fallbackCount: 0, fallbackAt: null })
+    assert.deepEqual(status.json().aiToolIsolation, {
+      supported: true,
+      fallbackCount: 0,
+      fallbackAt: null,
+      retryAt: null,
+    })
 
     // 事件列表：签名 C2C 聊天产生 ok 事件，筛选/分页参数按契约返回。
     const timestamp = String(Math.floor(Date.now() / 1000))

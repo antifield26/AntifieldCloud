@@ -4,7 +4,10 @@
 import type { BackupArchive, BackupInboxItem, BackupListResult, BackupManifest } from '../api/types'
 
 export const MAX_BACKUP_UPLOAD_BYTES = 100 * 1024 * 1024
+/** 明文归档名（Web 可校验/恢复）。 */
 export const BACKUP_FILE_PATTERN = /^snapshot-.+-(full|inc)\.tar\.gz$/i
+/** v0.7.0 加密归档名（.tar.gz.age）：Web 只能展示，校验与恢复依赖 PC 离线私钥。 */
+export const BACKUP_ENCRYPTED_FILE_PATTERN = /^snapshot-.+-(full|inc)\.tar\.gz\.age$/i
 
 export type BackupModeValue = 'full' | 'incremental'
 
@@ -77,13 +80,42 @@ export function isArchiveVerified(archive: BackupArchive): boolean {
   return Boolean(archive.verifiedAt)
 }
 
+/** 是否为加密归档（v0.7.0；服务端未下发 encrypted 时按 `.age` 名称兜底识别）。 */
+export function isArchiveEncrypted(archive: BackupArchive): boolean {
+  if (typeof archive.encrypted === 'boolean') return archive.encrypted
+  return BACKUP_ENCRYPTED_FILE_PATTERN.test(archive.name)
+}
+
+/** Web 是否可以校验该归档：加密归档只能 PC 离线私钥校验。 */
+export function isArchiveWebVerifiable(archive: BackupArchive): boolean {
+  return !isArchiveEncrypted(archive)
+}
+
+/** Web 是否可以恢复该归档：加密归档只能 PC 离线私钥恢复。 */
+export function isArchiveWebRestorable(archive: BackupArchive): boolean {
+  return !isArchiveEncrypted(archive)
+}
+
 export function isArchiveRestorable(archive: BackupArchive): boolean {
   return (
+    isArchiveWebRestorable(archive) &&
     isArchiveVerified(archive) &&
     normalizedArchiveStatus(archive.status) !== 'missing' &&
     // acked 归档在 PC 拉取确认后可能已删除服务端文件；后端显式 available=false 时不可恢复。
     archive.available !== false
   )
+}
+
+/** 恢复/校验不可用原因（用于按钮 title 与提示）。 */
+export function archiveWebActionReason(archive: BackupArchive, action: 'verify' | 'restore'): string | null {
+  if (isArchiveEncrypted(archive)) {
+    return action === 'verify'
+      ? '加密归档（.tar.gz.age）只能在 PC 上用 age 私钥解密校验'
+      : '加密归档（.tar.gz.age）只能在 PC 上用 age 私钥解密后恢复'
+  }
+  if (action === 'restore' && !isArchiveVerified(archive)) return '请先在 Web 校验归档通过后再恢复'
+  if (action === 'restore' && archive.available === false) return '服务端归档副本已清理，无法恢复'
+  return null
 }
 
 export function backupOriginLabel(origin: string): string {
@@ -104,6 +136,9 @@ export function validateBackupFile(
   file: { name: string; size: number },
   maxBytes = MAX_BACKUP_UPLOAD_BYTES,
 ): string | null {
+  if (BACKUP_ENCRYPTED_FILE_PATTERN.test(file.name)) {
+    return '加密归档（.tar.gz.age）不能在 Web 导入；请在 PC 上解密/校验后按文档处理'
+  }
   if (!BACKUP_FILE_PATTERN.test(file.name)) {
     return '归档文件名需类似 snapshot-<名称>-(full|inc).tar.gz'
   }

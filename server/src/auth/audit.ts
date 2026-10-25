@@ -21,6 +21,35 @@ function clampDetail(detail: Record<string, unknown> | null | undefined): string
   return JSON.stringify({ truncated: true, preview: raw.slice(0, AUDIT_DETAIL_MAX_BYTES - 64) })
 }
 
+export interface AuditDiagnostics {
+  /** 进程启动以来审计写入失败次数（DB 忙/磁盘满等）。 */
+  failureCount: number
+  /** 最近一次失败的错误摘要（不含敏感内容）；无失败为 null。 */
+  lastError: string | null
+  /** 最近一次失败时间（ISO 8601）；无失败为 null。 */
+  lastFailureAt: string | null
+}
+
+let auditFailureCount = 0
+let auditLastError: string | null = null
+let auditLastFailureAt: string | null = null
+
+/** 审计写入诊断：供 /api/version 暴露，避免“审计失败完全不可见”（ARCH-05）。 */
+export function getAuditDiagnostics(): AuditDiagnostics {
+  return { failureCount: auditFailureCount, lastError: auditLastError, lastFailureAt: auditLastFailureAt }
+}
+
+/** 测试用：重置诊断计数。 */
+export function resetAuditDiagnostics(): void {
+  auditFailureCount = 0
+  auditLastError = null
+  auditLastFailureAt = null
+}
+
+/**
+ * 写审计：审计失败不阻断已完成的业务，但必须可见（计数 + 最近错误）。
+ * 安全关键审计（登录/发布/工具隔离）由调用方在返回值/状态中体现，不靠抛错。
+ */
 export function audit(
   db: DatabaseSync,
   actor: string,
@@ -29,16 +58,23 @@ export function audit(
   detail?: Record<string, unknown> | null,
   ip?: string | null,
 ): void {
-  db.prepare(
-    'INSERT INTO audit_log (ts, actor, action, target, detail_json, ip) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run(
-    nowIso(),
-    clampText(actor, AUDIT_ACTOR_MAX_LENGTH) ?? '(unknown)',
-    clampText(action, 64) ?? '(unknown)',
-    clampText(target, AUDIT_TARGET_MAX_LENGTH),
-    clampDetail(detail),
-    clampText(ip, 64),
-  )
+  try {
+    db.prepare(
+      'INSERT INTO audit_log (ts, actor, action, target, detail_json, ip) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(
+      nowIso(),
+      clampText(actor, AUDIT_ACTOR_MAX_LENGTH) ?? '(unknown)',
+      clampText(action, 64) ?? '(unknown)',
+      clampText(target, AUDIT_TARGET_MAX_LENGTH),
+      clampDetail(detail),
+      clampText(ip, 64),
+    )
+  } catch (error) {
+    // 审计失败不静默：进程内计数 + 最近错误，交由 /api/version 诊断与日志观察。
+    auditFailureCount += 1
+    auditLastFailureAt = nowIso()
+    auditLastError = (error instanceof Error ? error.message : String(error)).slice(0, 200)
+  }
 }
 
 export interface AuditItem {

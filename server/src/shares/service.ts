@@ -341,36 +341,85 @@ export class ShareService {
     return row ?? { file_name: null, file_size: null, file_mime: null }
   }
 
-  /** 分享全部文件大小之和；历史行没有 share_items 时退回首个文件。 */
-  private shareTotalSize(share: ShareRow): number {
-    const ids = this.shareFileIdsOrFirst(share)
-    if (ids.length === 0) return 0
-    const placeholders = ids.map(() => '?').join(', ')
-    const row = this.db
-      .prepare(`SELECT COALESCE(SUM(size), 0) AS total FROM files WHERE id IN (${placeholders})`)
-      .get(...ids) as { total: number }
-    return Number(row.total)
+  /**
+   * 批量装配分享列表项（避免每行 3 次同步查询的 N+1）：
+   * 一次取 share_items、一次取 files 元数据；计数/总大小只统计未删除文件（DATA-07）。
+   */
+  private itemsForRows(rows: ShareRow[]): ShareItem[] {
+    if (rows.length === 0) return []
+    const shareIds = rows.map((row) => row.id)
+    const itemsByShare = new Map<string, string[]>()
+    for (let offset = 0; offset < shareIds.length; offset += 500) {
+      const batch = shareIds.slice(offset, offset + 500)
+      const placeholders = batch.map(() => '?').join(', ')
+      const itemRows = this.db
+        .prepare(
+          `SELECT share_id, file_id FROM share_items WHERE share_id IN (${placeholders})
+           ORDER BY share_id ASC, rowid ASC`,
+        )
+        .all(...batch) as unknown as { share_id: string; file_id: string }[]
+      for (const item of itemRows) {
+        const list = itemsByShare.get(item.share_id) ?? []
+        list.push(item.file_id)
+        itemsByShare.set(item.share_id, list)
+      }
+    }
+    const fileIds = new Set<string>()
+    for (const row of rows) {
+      for (const id of itemsByShare.get(row.id) ?? [row.file_id]) fileIds.add(id)
+    }
+    const metaById = new Map<string, { name: string; size: number; mime: string | null; deleted_at: string | null }>()
+    const idList = [...fileIds]
+    for (let offset = 0; offset < idList.length; offset += 500) {
+      const batch = idList.slice(offset, offset + 500)
+      const placeholders = batch.map(() => '?').join(', ')
+      const fileRows = this.db
+        .prepare(`SELECT id, name, size, mime, deleted_at FROM files WHERE id IN (${placeholders})`)
+        .all(...batch) as unknown as {
+        id: string
+        name: string
+        size: number
+        mime: string | null
+        deleted_at: string | null
+      }[]
+      for (const file of fileRows) {
+        metaById.set(file.id, {
+          name: file.name,
+          size: Number(file.size),
+          mime: file.mime,
+          deleted_at: file.deleted_at,
+        })
+      }
+    }
+    return rows.map((row) => {
+      const ids = itemsByShare.get(row.id) ?? [row.file_id]
+      const activeIds = ids.filter((id) => {
+        const meta = metaById.get(id)
+        return meta !== undefined && meta.deleted_at === null
+      })
+      const primary = metaById.get(row.file_id) ?? null
+      return {
+        id: row.id,
+        fileId: row.file_id,
+        fileName: primary?.name ?? '(文件已删除)',
+        fileSize: primary ? primary.size : null,
+        fileMime: primary?.mime ?? null,
+        itemCount: activeIds.length,
+        totalSizeBytes: activeIds.reduce((sum, id) => sum + (metaById.get(id)?.size ?? 0), 0),
+        hasPassword: Boolean(row.password_hash),
+        expiresAt: row.expires_at,
+        maxDownloads: Number(row.max_downloads) > 0 ? Number(row.max_downloads) : null,
+        downloadCount: Number(row.download_count),
+        createdAt: row.created_at,
+        revokedAt: row.revoked_at,
+        note: row.note,
+        status: this.stateOf(row, this.nowDate().getTime()),
+      }
+    })
   }
 
   private toItem(row: ShareRow): ShareItem {
-    const meta = this.firstFileMeta(row)
-    return {
-      id: row.id,
-      fileId: row.file_id,
-      fileName: meta.file_name ?? '(文件已删除)',
-      fileSize: meta.file_size === null ? null : Number(meta.file_size),
-      fileMime: meta.file_mime,
-      itemCount: this.shareFileIdsOrFirst(row).length,
-      totalSizeBytes: this.shareTotalSize(row),
-      hasPassword: Boolean(row.password_hash),
-      expiresAt: row.expires_at,
-      maxDownloads: Number(row.max_downloads) > 0 ? Number(row.max_downloads) : null,
-      downloadCount: Number(row.download_count),
-      createdAt: row.created_at,
-      revokedAt: row.revoked_at,
-      note: row.note,
-      status: this.stateOf(row, this.nowDate().getTime()),
-    }
+    return this.itemsForRows([row])[0] as ShareItem
   }
 
   private toPublicItem(file: FileRow): PublicShareItem {
@@ -540,7 +589,7 @@ export class ShareService {
     const rows = this.db
       .prepare('SELECT * FROM shares ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?')
       .all(pageSize, (page - 1) * pageSize) as unknown as ShareRow[]
-    return { items: rows.map((row) => this.toItem(row)), total, page, pageSize }
+    return { items: this.itemsForRows(rows), total, page, pageSize }
   }
 
   revoke(actor: ShareActor, shareId: string): ShareItem {
@@ -609,6 +658,50 @@ export class ShareService {
     return shares.length
   }
 
+  /**
+   * 硬删除文件前按 id 列表批量吊销分享（FileService 的兜底钩子）：
+   * 命中 shares.file_id 或 share_items.file_id 的活动分享全部置 revoked 并删除会话。
+   * 返回吊销数量。与 revokeForFileTree 不同，调用方已展开子树，无需再递归。
+   */
+  revokeSharesForFiles(fileIds: string[]): number {
+    const ids = [...new Set(fileIds.filter((id) => typeof id === 'string' && id.length > 0))]
+    if (ids.length === 0) return 0
+    const matched = new Set<string>()
+    // 每批 400：单条查询同时绑定 s.file_id 与 share_items.file_id 两组参数（800 < SQLite 默认 999 上限）。
+    for (let offset = 0; offset < ids.length; offset += 400) {
+      const batch = ids.slice(offset, offset + 400)
+      const placeholders = batch.map(() => '?').join(', ')
+      const rows = this.db
+        .prepare(
+          `SELECT s.id AS id FROM shares s
+           WHERE s.revoked_at IS NULL AND (
+             s.file_id IN (${placeholders})
+             OR EXISTS (SELECT 1 FROM share_items si WHERE si.share_id = s.id AND si.file_id IN (${placeholders}))
+           )`,
+        )
+        .all(...batch, ...batch) as unknown as { id: string }[]
+      for (const row of rows) matched.add(row.id)
+    }
+    if (matched.size === 0) return 0
+    const shareIds = [...matched]
+    const now = this.nowIso()
+    transaction(this.db, () => {
+      for (let offset = 0; offset < shareIds.length; offset += 500) {
+        const batch = shareIds.slice(offset, offset + 500)
+        const placeholders = batch.map(() => '?').join(', ')
+        this.db
+          .prepare(`UPDATE shares SET revoked_at = ? WHERE revoked_at IS NULL AND id IN (${placeholders})`)
+          .run(now, ...batch)
+        this.db.prepare(`DELETE FROM share_sessions WHERE share_id IN (${placeholders})`).run(...batch)
+      }
+    })
+    audit(this.db, 'system', 'share_revoke', `${shareIds.length} 个分享`, {
+      count: shareIds.length,
+      reason: 'file_hard_deleted',
+    }, null)
+    return shareIds.length
+  }
+
   /** 清理过期会话；顺带 GC 长期过期/吊销的分享行。返回清理的会话数。 */
   cleanup(): number {
     const result = this.db.prepare('DELETE FROM share_sessions WHERE expires_at <= ?').run(this.nowIso())
@@ -642,7 +735,7 @@ export class ShareService {
     }
   }
 
-  async unlock(token: unknown, password: string): Promise<UnlockResult> {
+  async unlock(token: unknown, password: string, ip: string | null = null): Promise<UnlockResult> {
     if (!this.config.sharesEnabled) throw notFound('分享链接不存在')
     const share = this.shareByToken(token)
     this.assertUsable(share, this.nowDate().getTime())
@@ -650,7 +743,11 @@ export class ShareService {
       throw badRequest('该分享无需密码', 'share_no_password')
     }
     const valid = await verifySharePassword(password, share.password_hash, share.password_salt)
-    if (!valid) throw new AppError(401, 'invalid_password', '分享密码错误')
+    if (!valid) {
+      // SEC-13：公开分享密码暴力尝试必须留审计（目标用 share id，不记录 token/密码）。
+      audit(this.db, 'anonymous', 'share_unlock_failed', share.id, { reason: 'invalid_password' }, ip)
+      throw new AppError(401, 'invalid_password', '分享密码错误')
+    }
     const files = this.filesForShare(share)
     const session = this.createSession(share.id)
     return {
@@ -740,7 +837,16 @@ export class ShareService {
   /** 会话首次成功取内容时原子 +1；次数用尽/已吊销/已过期返回 410。 */
   markDownloaded(access: ContentAccess, ip: string | null): void {
     const now = this.nowIso()
+    let counted = false
     transaction(this.db, () => {
+      // 先以条件更新抢占“会话首次计数”资格：同一会话并发/重试只有第一个请求能把
+      // downloaded 从 0 置 1，其余请求不再 +1（多文件按会话只计一次）。
+      if (access.session) {
+        const claimed = this.db
+          .prepare('UPDATE share_sessions SET downloaded = 1 WHERE id = ? AND downloaded = 0')
+          .run(access.session.id)
+        if (Number(claimed.changes) === 0) return
+      }
       const result = this.db
         .prepare(
           `UPDATE shares SET download_count = download_count + 1
@@ -753,10 +859,11 @@ export class ShareService {
         this.assertUsable(current, this.nowDate().getTime())
         throw gone('share_exhausted', '分享下载次数已用尽')
       }
-      if (access.session) {
-        this.db.prepare('UPDATE share_sessions SET downloaded = 1 WHERE id = ?').run(access.session.id)
-      }
-      // 计数与限次语义按真实下载执行；仅审计写入按 share+IP+窗口节流，防止公开链接刷爆 audit_log。
+      counted = true
+    })
+    if (!counted) return
+    // 计数已提交；审计是 best-effort（D-17）：审计失败不得让已完成的下载计数回滚或向客户端抛错。
+    try {
       if (this.shouldAuditDownload(access.share.id, ip, this.nowDate().getTime())) {
         // 审计 target 固定用分享的首个文件名（多文件分享不暴露其他条目）。
         const firstName = this.firstFileMeta(access.share).file_name ?? access.file.name
@@ -766,6 +873,8 @@ export class ShareService {
           itemCount: this.shareFileIdsOrFirst(access.share).length,
         }, ip)
       }
-    })
+    } catch {
+      // 审计写入失败只影响审计完整性；计数/限次状态已提交，保持可用。
+    }
   }
 }

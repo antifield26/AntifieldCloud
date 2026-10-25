@@ -120,8 +120,15 @@ export function ImportArchiveDialog({ open, onClose, onImported }: ImportArchive
       <form id={formId} className="backup-import-form" onSubmit={(event) => void handleSubmit(event)}>
         <div className="notice notice-warning">
           归档将保存到服务端 imports 目录并自动校验 SHA-256 与 tar 内容，失败不影响已有备份；导入操作记录审计。
+          <br />
+          加密归档 <span className="mono">*.tar.gz.age</span> 不提供 Web 导入：Web 不持有私钥，无法校验/恢复；请在 PC 端解密后按 docs/BACKUP.md 处理。
         </div>
-        <FormField label="归档文件" htmlFor={fileId} hint="文件名需符合 snapshot-<名称>-(full|inc).tar.gz，重复文件名会被拒绝。" required>
+        <FormField
+          label="归档文件"
+          htmlFor={fileId}
+          hint="文件名需符合 snapshot-<名称>-(full|inc).tar.gz；加密 .age 归档请走 PC 离线流程。重复文件名会被拒绝。"
+          required
+        >
           <input
             ref={inputRef}
             id={fileId}

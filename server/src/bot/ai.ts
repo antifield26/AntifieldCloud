@@ -29,7 +29,24 @@ const POLL_INTERVAL_MS = 500
 const MAX_SEEN_MESSAGES_PER_SESSION = 500
 /** OpenCode Permission.Ruleset：拒绝一切工具动作。 */
 const DENY_ALL_PERMISSIONS = [{ action: '*', resource: '*', effect: 'deny' }]
+/** permissions 被拒后的重试窗口：窗口内不再带 permissions，之后重新尝试，避免进程级永久降级。 */
+const PERMISSIONS_RETRY_WINDOW_MS = 10 * 60_000
 
+/**
+ * 严格判定 400 是否由 permissions 字段引起：
+ * - 显式 `field === 'permissions'`；或
+ * - message 明确提到 permissions 字段被拒/不支持/非法。
+ * 不再用 /permission/i 宽匹配，避免其它 400（如权限/认证类错误）误关闭工具隔离（A7-BOT-12）。
+ */
+function isPermissionRejection(body: unknown): boolean {
+  const record = recordOf(body)
+  if (!record) return false
+  if (record.field === 'permissions') return true
+  const message = typeof record.message === 'string' ? record.message : ''
+  return /permissions?\b[^.]{0,80}\b(unsupported|not supported|unknown|unexpected|invalid|not allowed|rejected)\b/i.test(
+    message,
+  )
+}
 /** Bot 会话只放行明确授权的 MCP 工具；内置 shell/edit/read 等仍全部拒绝。 */
 function botPermissions(searchToolEnabled: boolean, sendToolEnabled: boolean): Record<string, unknown>[] {
   const permissions: Record<string, unknown>[] = [...DENY_ALL_PERMISSIONS]
@@ -77,14 +94,6 @@ interface HttpResult {
 
 function recordOf(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
-}
-
-/** 判断 400 是否由 permissions 字段引起；错误体可能带 field，也可能只在 message 中说明。 */
-function isPermissionRejection(body: unknown): boolean {
-  const record = recordOf(body)
-  if (!record) return false
-  if (record.field === 'permissions') return true
-  return typeof record.message === 'string' && /permission/i.test(record.message)
 }
 
 interface AssistantCandidate {
@@ -169,6 +178,8 @@ export class OpenCodeBotAi implements BotAi {
   /** 降级累计次数/首次时间：由 BotService 读取并写审计/状态，避免"只在日志里"。 */
   private permissionsFallbackCount = 0
   private permissionsFallbackAt: string | null = null
+  /** 下次允许重试 permissions 的时间（毫秒）；0 表示无需重试。 */
+  private permissionsRetryAt = 0
   /**
    * 每会话已见 assistant 消息键（有界）。
    * 轮询回退时用它区分"本轮新回答"与"会话历史中的旧回答"；进程重启后首次复用时先读取存量消息建立基线。
@@ -217,6 +228,15 @@ export class OpenCodeBotAi implements BotAi {
       botId: input.botId,
       targetExternalId: input.targetExternalId,
       userId: input.userId,
+    }
+    // fail-closed（SEC-11）：启用发送工具时不允许在未隔离的默认权限会话里继续对话。
+    // 若已到重试窗口，允许 ensureSession 重新尝试带 permissions 的新会话；仍失败则抛 503。
+    if (this.sendToolEnabled && !this.permissionsSupported && Date.now() < this.permissionsRetryAt) {
+      throw new AppError(
+        503,
+        'bot_ai_tool_isolation_unavailable',
+        'AI 工具隔离不可用，暂时停止对话（等待上游恢复或重启应用）',
+      )
     }
     const session = await this.ensureSession(target, input.sessionTitle)
     try {
@@ -275,6 +295,11 @@ export class OpenCodeBotAi implements BotAi {
       supported: this.permissionsSupported,
       fallbackCount: this.permissionsFallbackCount,
       fallbackAt: this.permissionsFallbackAt,
+      // 降级后到达该时间才允许 BotService 放行一次重试；未降级为 null。
+      retryAt:
+        !this.permissionsSupported && this.permissionsRetryAt > 0
+          ? new Date(this.permissionsRetryAt).toISOString()
+          : null,
     }
   }
 
@@ -429,18 +454,37 @@ export class OpenCodeBotAi implements BotAi {
   }
 
   private async createSession(title = 'AntifieldCloud Bot'): Promise<string> {
-    let result = await this.request('POST', '/api/session', this.sessionBody(this.permissionsSupported, title))
-    if (result.status === 400 && this.permissionsSupported && isPermissionRejection(result.body)) {
-      // 失败回退：某些 OpenCode 版本可能拒绝 permissions。继续对话但不启用工具隔离，
-      // 累计次数/时间供 BotService 写审计并暴露到 /api/bots/status，不能只藏在日志里。
+    // 降级期间到重试窗口后，重新尝试带 permissions；成功则恢复隔离，失败则继续降级并延长窗口。
+    const wasSupported = this.permissionsSupported
+    const retryDue = !this.permissionsSupported && Date.now() >= this.permissionsRetryAt
+    const includePermissions = this.permissionsSupported || retryDue
+    let result = await this.request('POST', '/api/session', this.sessionBody(includePermissions, title))
+    if (result.status === 400 && includePermissions && isPermissionRejection(result.body)) {
       this.permissionsSupported = false
       this.permissionsFallbackCount += 1
       this.permissionsFallbackAt = new Date().toISOString()
-      this.log?.('warn', 'OpenCode 拒绝 permissions 字段，AI 会话回退为默认工具权限（未隔离）', {
+      // 首次降级立即记录；重试失败只延长窗口，避免刷日志/审计。
+      this.permissionsRetryAt = Date.now() + PERMISSIONS_RETRY_WINDOW_MS
+      this.log?.('warn', 'OpenCode 拒绝 permissions 字段，AI 工具隔离不可用', {
         status: 400,
         fallbackCount: this.permissionsFallbackCount,
+        firstFallback: wasSupported,
+        retryInMs: PERMISSIONS_RETRY_WINDOW_MS,
       })
+      // 启用发送工具时 fail-closed：不再以默认权限创建会话（SEC-11）。
+      if (this.sendToolEnabled) {
+        throw new AppError(
+          503,
+          'bot_ai_tool_isolation_unavailable',
+          'AI 工具隔离不可用，暂时停止对话（等待上游恢复或重启应用）',
+        )
+      }
       result = await this.request('POST', '/api/session', this.sessionBody(false, title))
+    } else if (includePermissions && !wasSupported && this.isOk(result.status)) {
+      // 从降级恢复：记录恢复时间，便于状态/审计观察。
+      this.permissionsSupported = true
+      this.permissionsRetryAt = 0
+      this.log?.('info', 'OpenCode 重新接受 permissions，AI 工具隔离已恢复')
     }
     if (!this.isOk(result.status)) throw this.httpError(result.status)
 

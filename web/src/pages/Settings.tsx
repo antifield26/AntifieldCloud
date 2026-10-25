@@ -6,6 +6,13 @@ import { api, toErrorMessage } from '../api/client'
 import type { AlertsConfig, BackupStatus } from '../api/types'
 import { useAuth } from '../auth/AuthContext'
 import { useAppMeta } from '../meta/MetaContext'
+import {
+  ensurePwaInstallListener,
+  getInstallPromptEvent,
+  isPwaInstalled,
+  promptPwaInstall,
+  subscribePwaInstall,
+} from '../lib/pwa-install'
 import { PageHeader } from '../components/PageHeader'
 import { Card } from '../components/Card'
 import { Button } from '../components/Button'
@@ -54,21 +61,50 @@ export function Settings() {
   const [alertsError, setAlertsError] = useState<string | null>(null)
   const [alertTesting, setAlertTesting] = useState(false)
   const [alertsReloadKey, setAlertsReloadKey] = useState(0)
-  // 备份健康卡需要 dashboard.backup 的密钥包/世界备份/演练字段；设置页只取一次，不轮询
+  const [installAvailable, setInstallAvailable] = useState(false)
+  const [installingApp, setInstallingApp] = useState(false)
+  // PWA 安装入口（UI-SPEC §10：Settings/关于 与底部提示并存）
+  useEffect(() => {
+    ensurePwaInstallListener()
+    const sync = (): void => setInstallAvailable(Boolean(getInstallPromptEvent()) && !isPwaInstalled())
+    sync()
+    return subscribePwaInstall(sync)
+  }, [])
+
+  const handleInstallApp = async (): Promise<void> => {
+    if (installingApp) return
+    setInstallingApp(true)
+    try {
+      const outcome = await promptPwaInstall()
+      if (outcome === 'accepted') {
+        toast.success('已开始安装到桌面')
+      } else if (outcome === 'unavailable') {
+        toast.info('浏览器未提供安装入口，请使用浏览器菜单中的“安装应用/添加到主屏幕”')
+      }
+    } finally {
+      setInstallingApp(false)
+    }
+  }
+
+  // 备份健康卡需要 dashboard.backup 的密钥包/世界备份/演练字段；dashboard 聚合较重，
+  // 延后到首屏渲染后再取一次（不轮询；/api/backups 的轻量状态由 BackupManager 自行加载）。
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null)
 
   useEffect(() => {
     let active = true
-    api
-      .getDashboard()
-      .then((dashboard) => {
-        if (active) setBackupStatus(dashboard.backup)
-      })
-      .catch(() => {
-        // 备份卡缺数据时按“未知”降级展示，不影响设置页其它内容
-      })
+    const timer = window.setTimeout(() => {
+      api
+        .getDashboard()
+        .then((dashboard) => {
+          if (active) setBackupStatus(dashboard.backup)
+        })
+        .catch(() => {
+          // 备份卡缺数据时按“未知”降级展示，不影响设置页其它内容
+        })
+    }, 800)
     return () => {
       active = false
+      window.clearTimeout(timer)
     }
   }, [])
 
@@ -396,24 +432,64 @@ export function Settings() {
               </div>
               <dl className="settings-list">
                 <div className="settings-list-row">
+                  <dt>Webhook 类型</dt>
+                  <dd>{alertsConfig.webhookType || '—'}</dd>
+                </div>
+                <div className="settings-list-row">
                   <dt>磁盘剩余阈值</dt>
-                  <dd>{alertsConfig.diskFreePct === null ? '—' : `${alertsConfig.diskFreePct}%`}</dd>
+                  <dd>{alertsConfig.diskFreePct === null || alertsConfig.diskFreePct === undefined ? '—' : `${alertsConfig.diskFreePct}%`}</dd>
                 </div>
                 <div className="settings-list-row">
                   <dt>温度阈值</dt>
-                  <dd>{alertsConfig.tempC === null ? '—' : `${alertsConfig.tempC} ℃`}</dd>
+                  <dd>{alertsConfig.tempC === null || alertsConfig.tempC === undefined ? '—' : `${alertsConfig.tempC} ℃`}</dd>
+                </div>
+                <div className="settings-list-row">
+                  <dt>内存使用阈值</dt>
+                  <dd>
+                    {alertsConfig.memoryUsedPct === null || alertsConfig.memoryUsedPct === undefined
+                      ? '—'
+                      : `${alertsConfig.memoryUsedPct}%`}
+                  </dd>
                 </div>
                 <div className="settings-list-row">
                   <dt>备份超期阈值</dt>
-                  <dd>{alertsConfig.backupMaxAgeHours === null ? '—' : `${alertsConfig.backupMaxAgeHours} 小时`}</dd>
+                  <dd>{alertsConfig.backupMaxAgeHours === null || alertsConfig.backupMaxAgeHours === undefined ? '—' : `${alertsConfig.backupMaxAgeHours} 小时`}</dd>
+                </div>
+                <div className="settings-list-row">
+                  <dt>世界备份/拉取超期</dt>
+                  <dd>
+                    {alertsConfig.worldBackupMaxAgeHours === null || alertsConfig.worldBackupMaxAgeHours === undefined
+                      ? '—'
+                      : `${alertsConfig.worldBackupMaxAgeHours} 小时`}
+                  </dd>
+                </div>
+                <div className="settings-list-row">
+                  <dt>恢复演练超期</dt>
+                  <dd>
+                    {alertsConfig.drillMaxAgeDays === null || alertsConfig.drillMaxAgeDays === undefined
+                      ? '—'
+                      : `${alertsConfig.drillMaxAgeDays} 天`}
+                  </dd>
+                </div>
+                <div className="settings-list-row">
+                  <dt>异地副本超期</dt>
+                  <dd>
+                    {alertsConfig.offsiteMaxAgeHours === null || alertsConfig.offsiteMaxAgeHours === undefined
+                      ? '—'
+                      : `${alertsConfig.offsiteMaxAgeHours} 小时`}
+                  </dd>
                 </div>
                 <div className="settings-list-row">
                   <dt>冷却时间</dt>
-                  <dd>{alertsConfig.cooldownMinutes === null ? '—' : `${alertsConfig.cooldownMinutes} 分钟`}</dd>
+                  <dd>{alertsConfig.cooldownMinutes === null || alertsConfig.cooldownMinutes === undefined ? '—' : `${alertsConfig.cooldownMinutes} 分钟`}</dd>
                 </div>
                 <div className="settings-list-row">
                   <dt>检查间隔</dt>
-                  <dd>{alertsConfig.checkIntervalSeconds === null ? '—' : `${alertsConfig.checkIntervalSeconds} 秒`}</dd>
+                  <dd>{alertsConfig.checkIntervalSeconds === null || alertsConfig.checkIntervalSeconds === undefined ? '—' : `${alertsConfig.checkIntervalSeconds} 秒`}</dd>
+                </div>
+                <div className="settings-list-row">
+                  <dt>最近评估</dt>
+                  <dd>{alertsConfig.lastEvaluatedAt ? formatDateTime(alertsConfig.lastEvaluatedAt) : '—'}</dd>
                 </div>
               </dl>
               <div className="form-actions">
@@ -476,6 +552,39 @@ export function Settings() {
               <dd>
                 <Badge tone={meta.sharesEnabled ? 'success' : 'muted'}>文件分享</Badge>{' '}
                 <Badge tone={meta.alertsEnabled ? 'success' : 'muted'}>告警</Badge>
+              </dd>
+            </div>
+            <div className="settings-list-row">
+              <dt>安装应用</dt>
+              <dd>
+                {installAvailable ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={installingApp}
+                    onClick={() => void handleInstallApp()}
+                  >
+                    安装到桌面
+                  </Button>
+                ) : (
+                  <span className="muted">使用浏览器菜单“安装应用/添加到主屏幕”</span>
+                )}
+              </dd>
+            </div>
+            <div className="settings-list-row">
+              <dt>审计写入</dt>
+              <dd>
+                {!meta.audit ? (
+                  <span className="muted">服务端未上报</span>
+                ) : meta.audit.failureCount > 0 ? (
+                  <span className="text-warning">
+                    失败 {meta.audit.failureCount} 次
+                    {meta.audit.lastFailureAt ? ` · 最近 ${formatDateTime(meta.audit.lastFailureAt)}` : ''}
+                    {meta.audit.lastError ? ` · ${meta.audit.lastError}` : ''}
+                  </span>
+                ) : (
+                  <Badge tone="success">正常</Badge>
+                )}
               </dd>
             </div>
             <div className="settings-list-row">

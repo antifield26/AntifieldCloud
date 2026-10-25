@@ -5,8 +5,10 @@
  * 还要求 TOTP 再认证 + 限流 + 明确确认词；不暴露归档下载、TOTP 或服务器路径。
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { DatabaseSync } from 'node:sqlite'
 import type { BackupService } from '../../backups/service.ts'
 import type { Config } from '../../config.ts'
+import { audit } from '../../auth/audit.ts'
 import { SlidingWindowLimiter } from '../../auth/limiter.ts'
 import { badRequest, rateLimited, unauthorized } from '../../util/errors.ts'
 import { asRecord, actorFrom, clientIp } from '../util.ts'
@@ -24,7 +26,12 @@ function requireConfirm(value: unknown, expected: string): void {
   }
 }
 
-export function registerBackupRoutes(app: FastifyInstance, config: Config, backups: BackupService): void {
+export function registerBackupRoutes(
+  app: FastifyInstance,
+  config: Config,
+  backups: BackupService,
+  db?: DatabaseSync,
+): void {
   const csrf = csrfGuard(config)
   const prepareLimiter = new SlidingWindowLimiter(60 * 60_000, 3)
   const importLimiter = new SlidingWindowLimiter(60 * 60_000, 10)
@@ -45,6 +52,30 @@ export function registerBackupRoutes(app: FastifyInstance, config: Config, backu
     return { userId: context.user.id }
   }
 
+  /**
+   * 备份危险操作 TOTP 再认证：失败时写审计（SEC-03），仍由调用方返回原错误。
+   * 审计只记录 route/错误摘要/IP，不记录 TOTP。
+   */
+  function reauthOrAudit(request: FastifyRequest, body: Record<string, unknown> | undefined, route: string): void {
+    const { userId } = contextOf(request)
+    try {
+      backups.verifyReauth(userId, totpOf(request, body))
+    } catch (error) {
+      if (db) {
+        const actor = actorFrom(request)
+        audit(
+          db,
+          actor.username,
+          'backup_reauth_failed',
+          route,
+          { route, error: error instanceof Error ? error.message.slice(0, 120) : 'unknown' },
+          clientIp(request),
+        )
+      }
+      throw error
+    }
+  }
+
   // ---------- 清单 ----------
 
   app.get('/api/backups', { preHandler: [requireAuth] }, async () => {
@@ -57,7 +88,7 @@ export function registerBackupRoutes(app: FastifyInstance, config: Config, backu
     const { userId } = contextOf(request)
     limit(prepareLimiter, userId)
     const body = asRecord(request.body)
-    backups.verifyReauth(userId, totpOf(request, body))
+    reauthOrAudit(request, body, 'prepare')
     requireConfirm(body.confirmText, 'PREPARE')
     return backups.prepare(actorFrom(request), { full: body.full === true })
   })
@@ -67,7 +98,7 @@ export function registerBackupRoutes(app: FastifyInstance, config: Config, backu
   app.post('/api/backups/import', { preHandler: [requireAuth, csrf] }, async (request, reply) => {
     const { userId } = contextOf(request)
     limit(importLimiter, userId)
-    backups.verifyReauth(userId, totpOf(request))
+    reauthOrAudit(request, undefined, 'import')
     if (!request.isMultipart()) throw badRequest('需要 multipart/form-data 请求', 'invalid_multipart')
     let result: Awaited<ReturnType<BackupService['importArchive']>> | null = null
     for await (const part of request.parts()) {
@@ -111,7 +142,7 @@ export function registerBackupRoutes(app: FastifyInstance, config: Config, backu
     const { userId } = contextOf(request)
     limit(planLimiter, userId)
     const body = asRecord(request.body)
-    backups.verifyReauth(userId, totpOf(request, body))
+    reauthOrAudit(request, body, 'restore-plan')
     requireConfirm(body.confirmText, 'RESTORE')
     const plan = await backups.createRestorePlan(actorFrom(request), {
       archive: body.archive,
@@ -130,7 +161,7 @@ export function registerBackupRoutes(app: FastifyInstance, config: Config, backu
     const { userId } = contextOf(request)
     limit(executeLimiter, userId)
     const body = asRecord(request.body)
-    backups.verifyReauth(userId, totpOf(request, body))
+    reauthOrAudit(request, body, 'execute-restore')
     requireConfirm(body.confirmText, 'RESTORE')
     const params = request.params as { planId: string }
     return backups.executeRestore(actorFrom(request), params.planId)

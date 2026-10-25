@@ -32,6 +32,24 @@ $previousTarget = $null
 $snapshotJson = $null
 $switched = $false
 $expectedVersion = $null
+$expectedSchemaVersion = $null
+$expectedOpenCodeVersion = $null
+$headSha = ""
+$tarSha256 = $null
+$tarSize = 0
+
+# 读取 deploy/tool-versions.json：PC 侧期望 schema / OpenCode 版本的唯一来源（由 check-version 与 db.ts 交叉校验）。
+function Read-ToolVersions {
+  param([string]$Path)
+  if (-not (Test-Path -LiteralPath $Path)) {
+    throw "缺少 $Path（PC 侧部署需要它提供期望 schema/OpenCode 版本；见 scripts/check-version.mjs）"
+  }
+  try {
+    return ([System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json)
+  } catch {
+    throw "无法解析 $Path：$($_.Exception.Message)"
+  }
+}
 
 function ConvertTo-ArgumentString {
   param([string[]]$Arguments)
@@ -166,7 +184,7 @@ ls -1dt /opt/antifieldcloud/releases/* | awk -v c="`$cur" -v p="`$prev" 'NR>3 &&
 # 没有快照则拒绝自动回滚，打印手工步骤，避免“回滚成功但 schema 不兼容”的假成功（OP-05）。
 function Invoke-Rollback {
   param([string]$Reason)
-  Write-Warning "健康检查失败：$Reason"
+  Write-Warning "开始回滚：$Reason"
   try { Invoke-Remote "sudo journalctl -u antifieldcloud --no-pager -n 80" | Out-Host } catch { }
   if (-not $previousTarget) {
     Write-Warning "没有可回滚的上一 release（首次部署）。本次 release 保持 current，请人工处理。"
@@ -188,11 +206,24 @@ function Invoke-Rollback {
     Write-Warning "无法读取上一 release 版本号，拒绝自动回滚以免健康检查假阳性。"
     return $false
   }
+  # 还原前校验快照哈希：快照被替换/损坏时不能把坏库当回滚结果（OPS-17）。
+  $snapshotSha = [string]$snapshotJson.sha256
+  if ($snapshotSha -notmatch '^[0-9a-f]{64}$') {
+    Write-Warning "迁移前 DB 快照缺少合法 sha256，拒绝自动回滚；快照：$($snapshotJson.snapshot)"
+    return $false
+  }
+  $rollbackReason = ($Reason -replace "['`r`n]", ' ').Trim()
   $rollbackScript = @"
 set -e
 sudo systemctl stop antifieldcloud
 sudo cp -a '$($snapshotJson.snapshot)' /var/lib/antifieldcloud/db.sqlite
 sudo rm -f /var/lib/antifieldcloud/db.sqlite-wal /var/lib/antifieldcloud/db.sqlite-shm
+SNAP_SHA='$snapshotSha'
+ACTUAL_SHA=`$(sha256sum /var/lib/antifieldcloud/db.sqlite | cut -d' ' -f1)
+if [ "`$ACTUAL_SHA" != "`$SNAP_SHA" ]; then
+  echo "DB 快照 SHA 校验失败（expected=`$SNAP_SHA actual=`$ACTUAL_SHA）" >&2
+  exit 1
+fi
 sudo chown antifieldcloud:antifieldcloud /var/lib/antifieldcloud/db.sqlite
 sudo chmod 0640 /var/lib/antifieldcloud/db.sqlite
 if grep -q '^APP_VERSION=' /etc/antifieldcloud/env; then
@@ -202,6 +233,8 @@ else
 fi
 sudo ln -sfn $previousTarget $currentLink
 sudo systemctl start antifieldcloud
+STAMP=`$(date -u +%Y-%m-%dT%H:%M:%SZ)
+printf '%s rollback to=%s reason=%s snapshot=%s\n' "`$STAMP" '$previousTarget' '$rollbackReason' '$($snapshotJson.snapshot)' | sudo tee -a /var/lib/antifieldcloud/deploy-history.log >/dev/null
 "@
   try {
     Invoke-RemoteScript $rollbackScript -TimeoutSeconds 300 | Out-Null
@@ -241,6 +274,17 @@ try {
   if ($expectedVersion -notmatch '^\d+\.\d+\.\d+$') { throw "package.json version 非法：$expectedVersion" }
   Write-Host "目标版本：$expectedVersion"
 
+  # 期望 schema / OpenCode 版本来自受 CI 交叉校验的工具版本清单（避免 deploy.ps1 硬编码 schema）。
+  $toolVersions = Read-ToolVersions (Join-Path $root "deploy/tool-versions.json")
+  if (-not ([int]::TryParse([string]$toolVersions.schemaVersion, [ref]$expectedSchemaVersion))) {
+    throw "deploy/tool-versions.json schemaVersion 非法：$($toolVersions.schemaVersion)"
+  }
+  $expectedOpenCodeVersion = [string]$toolVersions.opencodeVersion
+  if ($expectedOpenCodeVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "deploy/tool-versions.json opencodeVersion 非法：$expectedOpenCodeVersion"
+  }
+  Write-Host "期望 schema=$expectedSchemaVersion OpenCode=$expectedOpenCodeVersion"
+
   # 远程环境预检（OP-24）：Node/NPM 可用、版本足够；部署前不修改任何服务状态。
   Write-Host "== 远程环境预检 =="
   $nodeVersion = (Invoke-Remote "sudo /usr/local/bin/node --version" -Attempts 3 | Out-String).Trim()
@@ -255,6 +299,12 @@ try {
     Write-Host "== npm run check =="
     & npm run check
     if ($LASTEXITCODE -ne 0) { throw "npm run check 失败" }
+    Write-Host "== 生产依赖边界检查 =="
+    & node scripts/check-prod-deps.mjs
+    if ($LASTEXITCODE -ne 0) { throw "生产依赖边界检查失败（server/src 引用了 devDependencies/未声明依赖）" }
+    Write-Host "== 版本/schema/OpenCode 一致性检查 =="
+    & node scripts/check-version.mjs --quiet
+    if ($LASTEXITCODE -ne 0) { throw "版本一致性检查失败（package/README/文档当前事实/schema/OpenCode 不一致；见上方输出）" }
   }
   if (-not $SkipBuild) {
     Write-Host "== npm run build =="
@@ -358,7 +408,26 @@ fi
   # ln 与 restart 分开执行：只要 current 已切换就标记 switched，失败清理不会误删 current 目标。
   Invoke-Remote "sudo ln -sfn $releaseDir $currentLink" | Out-Null
   $switched = $true
-  Invoke-Remote "sudo systemctl restart antifieldcloud" | Out-Null
+  # 重启失败同样视为部署失败：current 已切换、APP_VERSION 已改、DB 可能已迁移，必须回滚（OPS-02）。
+  $restartError = $null
+  try {
+    Invoke-Remote "sudo systemctl restart antifieldcloud" | Out-Null
+  } catch {
+    $restartError = $_
+  }
+  if ($null -ne $restartError) {
+    $rolledBack = Invoke-Rollback "systemctl restart 失败：$($restartError.Exception.Message)"
+    if ($previousTarget -and $rolledBack) {
+      try { Invoke-Remote "sudo rm -rf $releaseDir" | Out-Null } catch { }
+    }
+    if ($previousTarget) {
+      if ($rolledBack) {
+        throw "部署失败（重启失败），已回滚到上一 release 并还原迁移前 DB 快照：$previousTarget"
+      }
+      throw "部署失败（重启失败）且自动回滚未完成，需人工介入；迁移前 DB 快照：$($snapshotJson.snapshot)"
+    }
+    throw "首次部署重启失败，无回滚目标；请排查 journalctl 后手工处理（current 已指向 $releaseDir）。"
+  }
 
   Write-Host "== 健康检查（断言 version=$expectedVersion）=="
   if (-not (Test-Health)) {
@@ -378,6 +447,32 @@ fi
 
   Write-Host "== 清理旧 release（保留 3 个，保护 current/previous）=="
   Invoke-CleanupOldReleases
+
+  # 发布元数据（OPS-17）：记录 commit/包 SHA/版本/schema/时间，便于事后审计与回滚定位。
+  $releaseInfo = [ordered]@{
+    release                = $tag
+    version                = $expectedVersion
+    schemaVersion          = $expectedSchemaVersion
+    opencodeVersion        = $expectedOpenCodeVersion
+    commit                 = $headSha
+    tarSha256              = $tarSha256
+    tarSizeBytes           = $tarSize
+    snapshot               = [string]$snapshotJson.snapshot
+    snapshotSha256         = [string]$snapshotJson.sha256
+    deployedAt             = (Get-Date).ToUniversalTime().ToString("o")
+    deployedBy             = [System.Environment]::UserName
+  }
+  $releaseInfoJson = $releaseInfo | ConvertTo-Json -Compress
+  $releaseInfoB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($releaseInfoJson))
+  try {
+    Invoke-Remote "echo $releaseInfoB64 | base64 -d | sudo tee $releaseDir/release.json >/dev/null && sudo chmod 0644 $releaseDir/release.json" | Out-Null
+    $historyLine = "$(Get-Date).ToUniversalTime().ToString('o') deploy version=$expectedVersion schema=$expectedSchemaVersion commit=$headSha tar=$tarSha256"
+    $historyB64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($historyLine))
+    Invoke-Remote "echo $historyB64 | base64 -d | sudo tee -a /var/lib/antifieldcloud/deploy-history.log >/dev/null" | Out-Null
+  } catch {
+    Write-Warning "发布元数据写入失败（不影响运行）：$($_.Exception.Message)"
+  }
+
   Write-Host "部署完成：$releaseDir（version=$expectedVersion）"
   Write-Host "迁移前 DB 快照：$($snapshotJson.snapshot)"
 
@@ -385,7 +480,7 @@ fi
   $smokePath = Join-Path $PSScriptRoot "smoke.ps1"
   if (Test-Path $smokePath) {
     Write-Host "== 部署后只读 smoke =="
-    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -ExpectedVersion $expectedVersion -ExpectedSchemaVersion 16
+    & $smokePath -PiHost $PiHost -PiUser $PiUser -SkipPublic -SkipLocalBackup -SkipLocalTaskCheck -ExpectedVersion $expectedVersion -ExpectedSchemaVersion $expectedSchemaVersion -ExpectedOpenCodeVersion $expectedOpenCodeVersion
     if ($LASTEXITCODE -ne 0) {
       if ($AllowSmokeFailure) {
         Write-Warning "部署后 smoke 失败（已使用 -AllowSmokeFailure，部署保留；请根据上方 FAIL 项排查）"

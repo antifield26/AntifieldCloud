@@ -1,5 +1,61 @@
 # Changelog
 
+## [v0.7.0] - 待发布
+
+### Added
+
+- **备份整包加密（默认关闭）**：`BACKUP_ARCHIVE_ENCRYPTION=true` 时 `--prepare` 用独立备份 age 公钥生成 `snapshot-<stamp>[-n]-(full|inc).tar.gz.age`，明文 tar 只在 `*.plain.tmp` 短暂存在；明文 SHA-256/大小写入归档外 `<archive>.meta.json`（`schema:2`）与 `backup_archives.manifest_json`，归档内 manifest 只保留 `schema:2/encrypted/archiveFormat`，避免自引用。
+- **异地副本（默认关闭，PC 端）**：新增 `scripts/backup-offsite.mjs` + `backup-offsite.ps1`，只上传 `.age`（拒绝明文），链感知保留（保留最新 full 及其后全部 inc + 最近 N 天，绝不删最新 full），`rclone copyto --checksum` 上传并校验远端大小，状态写 Pi `/var/lib/antifieldcloud/backup-offsite-status.json`；`install-backup-task.ps1` 新增 `-InstallOffsiteTask` 系列参数与 `AntifieldCloud-Backup-Offsite` 任务。
+- **加密/异地运维面**：`GET /api/version` 返回 `schemaVersion/backupArchiveEncryption/backupAgeRecipientConfigured/backupOffsiteStatusConfigured/audit`；Dashboard `backup` 新增 `encryptedPendingCount/encryptedAckedCount/encryption/offsite`；新增告警条件 `offsite_overdue`（`ALERT_OFFSITE_MAX_AGE_HOURS`，默认 48，未配置不误报）；`/healthz` 新增 `db/pendingBackups`。
+- **主机配置模板（OPS-09/D-15）**：新增 `deploy/host/`（sshd drop-in、fail2ban jail、cloudflared/journald drop-in、log2ram 模板与重建清单）；`backup-secrets.sh --include-host-config` 可把安装后的主机配置纳入 age 密钥包（`includesHostConfig`）。
+- **发布工程**：新增 `deploy/tool-versions.json`（schema/OpenCode 单一来源）；`check-version.mjs` 交叉校验 `deploy/tool-versions.json` ↔ `server/src/db.ts` 与文档当前事实；`deploy.ps1` 从清单读取期望值、restart 失败进入回滚、写 `release.json`/`deploy-history.log` 并对回滚快照做 SHA-256 校验；`run-tests.mjs` 覆盖率阈值收紧到 Lines 91 / Functions 85 / Branches 76。
+- **Web**：备份加密状态卡与异地副本状态卡；长任务（prepare/verify/entries/restore-plan/execute）使用显式超时（prepare 3300s、恢复 600s）；prepare 结果展示 `warnings/skippedMissing`；分片断点命中 `completed` 会话时消费 `fileId` 不重传；恢复计划持久化（`restore-plan-store`）并轮询结果；PWA 更新提示；`/api/version` 元数据（含 `schemaVersion` 与审计诊断）纳入前端 MetaContext。
+
+### Changed
+
+- **审计策略（D-17）**：审计写入统一为事务外 best-effort——失败不阻断已完成的业务，改为进程内计数 + 最近错误并暴露到 `GET /api/version.audit`；安全关键审计仍逐条记录，公开下载计数仍在事务内。
+- **文档真实值占位符化（OPS-07/D-14）**：tracked 文档中的真实域名替换为 `app.<domain>`/`ai.<domain>`/`mc.<domain>`，真实直连/校园网段替换为 TEST-NET 示例（`192.0.2.0/24`、`198.51.100.0/24`）并注明安装前按 `.local/DEPLOYMENT.md` 替换；`deploy/nftables.conf` 使用占位网段 + 安装说明。
+- **OpenCode 目标版本 v2.1.4**：`DEPLOY.md` §3.2 固定 `opencode upgrade 2.1.4`，补二进制/data/env/unit/MCP 配置备份、14 项兼容矩阵（assistant 形状、permissions、wait、archived、MCP 进程/工具、compaction、密钥包 opencode DB、Bot 真实回归）与回滚判据；`smoke.ps1` 增加 OpenCode/MCP/fail2ban/unit 漂移只读检查。
+- **Bot 群共享记忆归属（D-13/BOT-03）**：群共享记忆 key 前缀由显示名改为稳定 `member_openid`，显示名只存 value；启动一次性 meta 迁移（`bot_group_memory_owner_migrated_v1`），无法映射的条目加 `legacy:` 保留；`/forget confirm` 同时清除本人在各群贡献的条目并取消在途抽取。
+- **Bot 行为保持重构（D-16）**：抽出入站处理 `bot/inbound.ts`、诊断存储 `bot/diagnostics.ts` 与队列/串行逻辑，`BotService` 保留 facade 与依赖装配；不改变 schema、提示词与外部行为。
+- **env/模板治理（OPS-04）**：`bootstrap-env.sh` 补齐 5 个未纳管键、纳管 4 个 v0.7.0 新键、新增 `--prune-unknown`（必须与 `--force` 联用）；`deploy/env.example` 的 `BACKUP_RESTORE_ENABLED=false` 与生成器一致并补全新键注释。
+- **验收/文档**：版本统一 `0.7.0`，schema 保持 **v16 无迁移**；`docs/AUDIT.md` 新增第六轮（P0=0/P1=3/P2=26/P3=73）；PLAN/ROADMAP/ACCEPTANCE/UI-SPEC/BOT/API/ARCHITECTURE/SECURITY/BACKUP/DEPLOY/README/AGENTS 全量同步。
+
+### Fixed
+
+- **A7-WEB-01（P1）**：备份/恢复长任务不再共用 20s 客户端超时；prepare 3300s、verify/entries/restore-plan/execute 600s；超时文案明确“服务端可能仍在执行”。
+- **A7-OPS-01（P1）**：OpenCode 2.1.4 升级/回滚程序与门禁补全（固定版本、备份、矩阵、smoke、回滚）。
+- **A7-SEC-10（P1）**：AI 主机 `/__af/sso/*` 鉴权前按 IP 限流（60/min），匿名请求另有 120/min 桶；`auth.sso_ai`/`opencode_origin_rejected` 审计按 action+IP 60s 去重（容量上限 4096），避免写放大。
+- **A7-SEC-11（D-12）**：OpenCode 明确 400 拒绝 `permissions` 时，从进程级永久降级改为 10 分钟重试窗口；启用发送工具时 fail-closed（新 Chat 返回 503 `bot_ai_tool_isolation_unavailable` 并回固定提示、写审计/状态），窗口到点放行重试，上游恢复后自动恢复隔离。
+- **A7-ARCH-04**：应用关闭时有限等待 Bot 在途回复/工具缓冲/投递排空（最多 15s，超时记录 warn），避免部署/重启丢回复与重复投递。
+- **A7-DATA-02/04/07/08/09/10/11/12/14**：并发同索引分片改为幂等返回、不删除已落盘共享块；分享下载原子条件计数；分享列表计数随软删一致；目录深度上限与文件服务一致并明确报错；唯一名并发冲突重试；物理孤儿文件定期回收（仅超期且 DB 无行的 id 形状文件）；`verify` 失败清除 `verified_at/manifest_json`；硬删除前分享吊销兜底；分享列表 N+1 优化。
+- **A7-DATA-01/03/05**：PC 拉取缺/非法 `.meta.json` 时按归档分项跳过（不 ack、其余继续）；应用/维护启动清理崩溃遗留 `restore.lock`；状态文件加 64 KiB 上限并统一脱敏绝对路径（`readStatusFile`）。
+- **A7-BOT-01/02/04/05/06/07/08/13/15**：孤儿会话清理限定旧默认标题（不误删新命名/前缀相似会话）；混批中任一 @ 即整批按被点名处理；回合异常时先补发已缓冲的工具消息并审计 `partialTurn`；`/search` 与普通 Chat 共用会话串行锁；清空群记忆取消在途抽取；`BotStatus/BotSummary.lastError` 改为从投递/发布失败派生；Webhook 未验签与已验签限流桶分离并按窗口聚合拒绝审计；`burst.clear` 取消运行中批次的后续排队；Bot 名称匹配按词边界，减少短名/子串误触发。
+- **A7-OPS-02/03/04/08/10/11/12/13/16/18/20/21**：部署 restart 失败进入回滚并校验快照 SHA-256；密钥包 opencode DB 缺失硬失败、PC 校验 `includesOpencode`；env 补键/清理；smoke 使用 `SKIP:`/`SoftCheck` 并新增 OpenCode/MCP/fail2ban/unit/env/加密/异地/任务安装标记检查；check-version 交叉校验 schema/OpenCode；MCP 处理 `notifications/cancelled|progress` 与可选空闲退出；世界拉取读取 `.sha256` 短重试；drill 支持 `.age`/`-AgeIdentityPath`/链连续性校验且默认 schema 来自 `tool-versions.json`；安装脚本原子备份与替换；覆盖率门禁收紧；备份拉取错误脱敏/随机临时名/本地锁。
+- **A7-WEB-02/03/04 + 契约 CD 系列**：prepare 警告/缺失文件展示；断点 `completed` 消费 `fileId`；恢复计划持久化与轮询；`entries.truncated`、`fileId`、`warnings`、`skippedMissing` 类型补齐；审计动作中文映射、ConfirmDialog 焦点、`/api/version` 重试、Settings 告警字段、hash 导航崩溃、轮询静默等 P3 修复。
+
+### Security
+
+- 备份整包加密默认关闭；开启后 Pi 只存 age 公钥（root 属主、组/其他不可写、`age1` 格式校验），私钥离线 ≥2 份，启用前必须用私钥完成一次 `age -d` + 演练；失败关闭（age 缺失/公钥非法/加密失败即 prepare 失败，不产生 pending、不回退明文）；空间按 2× 明文预算；崩溃只允许残留可清理 `*.plain.tmp`/`.part` 或“有密文无 DB 行”孤儿（只报告不自动删）。
+- Web 不持私钥：`verify/import/entries/restore-plan/executeRestore` 对 `.age` 统一返回 `409 archive_encrypted`（在 `validArchiveName` 之前），恢复目标自动选择跳过加密归档；PC `backup-pull.ps1` 校验 `.meta.json`（schema/name/mode/archiveFormat/encrypted/encryptedWith/recipient/plainSha256/plainSize/cipherSha256/cipherSize 与 pending 一致）后才下载/ack，可选 `-AgeIdentityPath` 解密校验后立即删除临时明文。
+- 异地副本只上传 `.age`，明文计入 `plaintextSkipped`；状态文件只含别名/计数/时间，不含远端真实路径/URL/凭据。
+- 群共享记忆归属改为稳定 `member_openid`，同名/改名成员不再互相覆盖或删除。
+- 审计失败不再静默也不阻断业务：计数 + 最近错误经 `/api/version.audit` 可见。
+- Bot Webhook 未验签流量不再占用已验签业务桶，拒绝审计按窗口聚合，降低未认证写放大。
+- 配置启动校验增强：`NODE_ENV` 非法值、`OPENCODE_URL` 非 loopback、`APP_ORIGIN==AI_ORIGIN`、`BOT_SEARCH_MODE` 非法值均拒绝启动；`APP_VERSION` 未设置不再回退历史版本号。
+- 统一 `requestMeta` 信任模型扩展到 Webhook 与代理（仅 loopback 对端采信 Cloudflare 头）；代理 loopback 明文 Origin 例外要求请求 Host 也是 loopback。
+
+### Deployment
+
+- 版本升到 **0.7.0**；schema 保持 **v16**（无迁移，`deploy.ps1 -ExpectedSchemaVersion 16` 不变）；OpenCode 目标 **v2.1.4**（先备份 v2.1.3 二进制/data/env/unit/MCP 配置，按 §3.2 矩阵验收，失败回滚）。
+- 新增 env：`BACKUP_ARCHIVE_ENCRYPTION=false`、`BACKUP_AGE_RECIPIENT_FILE=/etc/antifieldcloud/backup-age.pub`、`BACKUP_OFFSITE_STATUS_FILE=/var/lib/antifieldcloud/backup-offsite-status.json`、`ALERT_OFFSITE_MAX_AGE_HOURS=48`；`bootstrap-env.sh` 已纳管（生产 env 的废弃键清理为用户手动步骤）。
+- 启用顺序（默认全部关闭）：部署 v0.7.0 → 离线生成备份 age 密钥并把公钥放 Pi → 用私钥完成一次解密演练 → 开 `BACKUP_ARCHIVE_ENCRYPTION=true` → 下一次 prepare 生成 `.age` → PC 拉取/ack → drill → 配置 rclone 与异地任务。回滚：关开关恢复明文，已生成的 `.age` 保留并在 PC 侧解密/演练。
+- PC 任务需重装：`install-backup-task.ps1` 刷新 `backup-pull.ps1`/`backup-offsite.ps1/.mjs` 与安装标记；异地任务需先配置 rclone remote（脚本不创建 remote/凭据）。
+- `smoke.ps1` 新增 `-ExpectedOpenCodeVersion/-ExpectedSshSources/-MaxMcpProcesses` 与 `-Skip*` 开关。
+- 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **478**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.63/78.16/87.84**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-DoPUAny6.js` 726.64 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass。
+- OpenCode **v2.1.4** 已于 2026-10-25 08:21 CST 在生产只读升级（应用仍 v0.6.6/schema16）：升级前备份 v2.1.3 二进制/data/env/unit/MCP（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e6…8b19`）；V1–V9、V14 PASS，V10–V13（真实 QQ/记忆/发送工具/搜索）待 v0.7.0 部署后联调。
+- 生产应用部署/release/smoke/Tag/Release/加密与异地启用演练仍为 **待部署**（本次交付未部署应用）。
+
 ## [v0.6.6] - 2026-10-24（已发布）
 
 ### Changed
@@ -734,7 +790,7 @@
 ### Security
 
 - `antifieldcloud.service` 加固：`CapabilityBoundingSet=`（空）、`RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`、`PrivateDevices`、`ProtectClock/Hostname/KernelLogs`、`RestrictNamespaces/SUIDSGID/Realtime`、`LockPersonality`、`StartLimitIntervalSec/Burst`；世界备份 unit 同样加固并限制可写路径。
-- nftables：默认拒绝入站；22 仅允许 `169.254.77.0/24` + `172.23.88.0/21` 且新建连接限速 5/min；25565 仅同网段；25575 仅 loopback；DHCP 仅 `eth0`/`wlan0`；80 不再放行。
+- nftables：默认拒绝入站；22 仅允许 `192.0.2.0/24` + `198.51.100.0/24` 且新建连接限速 5/min；25565 仅同网段；25575 仅 loopback；DHCP 仅 `eth0`/`wlan0`；80 不再放行。
 - 世界备份脚本 root-only、RCON 仅执行固定 `save-off/save-all flush/save-on`；应用 API 仍不提供任意 RCON。
 - 笔记附件 origin 隔离、多文件分享条目归属校验（跨分享 itemId 404）、公开逐项下载计数与会话绑定；metrics 端点需登录；备份归档浏览限流、tar/staging 上限；审计字段截断。
 - 残留风险明确披露：SSH 密码登录与 `antifield` 用户 `NOPASSWD ALL` sudo 未改（用户选择）、RCON 监听 0.0.0.0、单 SD、Cloudflare 明文、限流内存态等（见 `docs/SECURITY.md`）。

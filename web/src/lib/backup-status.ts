@@ -4,9 +4,11 @@
 
 import type {
   BackupArchive,
+  BackupEncryptionStatus,
   BackupState,
   BackupStatus,
   DrillStatus,
+  OffsiteStatus,
   WorldBackupStatus,
   WorldPullStatus,
 } from '../api/types'
@@ -15,6 +17,8 @@ import { formatBytes, formatDateTime } from './format'
 
 export const WORLD_BACKUP_STALE_HOURS = 192
 export const DRILL_STALE_DAYS = 35
+/** 异地副本超期阈值（小时）；与 ALERT_OFFSITE_MAX_AGE_HOURS 默认值保持一致。 */
+export const OFFSITE_STALE_HOURS = 48
 
 export type BackupHealthTone = 'success' | 'warning' | 'danger' | 'muted'
 
@@ -41,6 +45,11 @@ export interface BackupStatusInput {
   worldPull?: WorldPullStatus | null
   drill?: DrillStatus | null
   archives?: BackupArchive[]
+  /** v0.7.0：备份整包加密与异地副本只读状态。 */
+  encryption?: BackupEncryptionStatus | null
+  offsite?: OffsiteStatus | null
+  /** 当前部署 schema 版本；未知时不比较演练 schema。 */
+  currentSchemaVersion?: number | null
   now?: number
 }
 
@@ -192,8 +201,12 @@ export function worldPullView(
   }
 }
 
-/** 恢复演练状态：失败 > 过期 > 正常；缺失显示未运行。 */
-export function drillView(drill: DrillStatus | null | undefined, now = Date.now()): WorldStatusView {
+/** 恢复演练状态：失败 > 过期 > schema 不一致 > 正常；缺失显示未运行。 */
+export function drillView(
+  drill: DrillStatus | null | undefined,
+  now = Date.now(),
+  currentSchemaVersion: number | null | undefined = null,
+): WorldStatusView {
   if (!drill) {
     return { value: '未运行', tone: 'muted', timestamp: null, detail: '尚无恢复演练状态文件', alert: false }
   }
@@ -233,11 +246,124 @@ export function drillView(drill: DrillStatus | null | undefined, now = Date.now(
   const detailParts = [dbDetail, drillReportLabel(drill), worldDetail].filter(
     (part): part is string => Boolean(part),
   )
+  const drillSchema = typeof drill.schemaVersion === 'number' ? drill.schemaVersion : null
+  const schemaMismatch =
+    drillSchema !== null &&
+    typeof currentSchemaVersion === 'number' &&
+    Number.isFinite(currentSchemaVersion) &&
+    drillSchema !== currentSchemaVersion
+  if (schemaMismatch) {
+    return {
+      value: 'schema 不一致',
+      tone: 'warning',
+      timestamp: drill.lastRunAt ?? null,
+      detail: `演练 schema v${drillSchema} 与当前部署 v${currentSchemaVersion} 不一致，建议重跑 drill.ps1 -ExpectedSchemaVersion ${currentSchemaVersion}`,
+      alert: true,
+    }
+  }
   return {
     value: '成功',
     tone: 'success',
     timestamp: drill.lastRunAt ?? null,
     detail: detailParts.length > 0 ? detailParts.join(' · ') : null,
+    alert: false,
+  }
+}
+
+/** 备份整包加密状态：公钥缺失/失败优先，未启用时保持 muted，不伪装成功。 */
+export function encryptionView(
+  encryption: BackupEncryptionStatus | null | undefined,
+): WorldStatusView {
+  if (!encryption) {
+    return {
+      value: '未配置',
+      tone: 'muted',
+      timestamp: null,
+      detail: '服务端未下发备份加密状态（旧版本或功能未启用）',
+      alert: false,
+    }
+  }
+  if (encryption.enabled !== true) {
+    return {
+      value: '未启用',
+      tone: 'muted',
+      timestamp: null,
+      detail: '备份整包加密默认关闭；启用后 Web 不可校验/恢复加密归档（需 PC 离线私钥）',
+      alert: false,
+    }
+  }
+  if (encryption.keyConfigured !== true) {
+    return {
+      value: '公钥缺失',
+      tone: 'danger',
+      timestamp: null,
+      detail: 'Pi 端未配置备份 age 公钥，prepare 会失败关闭（不会降级明文）',
+      alert: true,
+    }
+  }
+  return {
+    value: '已启用',
+    tone: 'success',
+    timestamp: null,
+    detail: '加密归档只能在 PC/离线私钥侧校验与恢复；Web 已禁用校验/恢复/导入',
+    alert: false,
+  }
+}
+
+/** 异地副本状态：失败 > 过期 > 正常；缺失/未启用显示未运行/未启用，不当作正常。 */
+export function offsiteView(offsite: OffsiteStatus | null | undefined, now = Date.now()): WorldStatusView {
+  if (!offsite) {
+    return { value: '未运行', tone: 'muted', timestamp: null, detail: '尚无异地副本状态文件（默认关闭）', alert: false }
+  }
+  if (offsite.enabled === false) {
+    return {
+      value: '未启用',
+      tone: 'muted',
+      timestamp: offsite.lastPushAt ?? offsite.lastRunAt ?? null,
+      detail: '异地副本默认关闭；启用后 PC 端只上传 .age 加密归档',
+      alert: false,
+    }
+  }
+  const timestamp = offsite.lastPushAt ?? offsite.lastRunAt ?? null
+  const stale = isStaleByHours(timestamp, OFFSITE_STALE_HOURS, now)
+  if (offsite.ok === false) {
+    return {
+      value: '失败',
+      tone: 'danger',
+      timestamp,
+      detail: offsite.lastError || offsite.error || '上次异地副本同步失败，请检查 PC 端脚本日志',
+      alert: true,
+    }
+  }
+  if (stale === true) {
+    return {
+      value: '已过期',
+      tone: 'warning',
+      timestamp,
+      detail: `超过 ${OFFSITE_STALE_HOURS} 小时未同步异地副本`,
+      alert: true,
+    }
+  }
+  const kept = offsite.keptRemote ?? keptCountOf(offsite)
+  const uploaded = offsite.uploaded ?? offsite.transferredCount ?? null
+  const parts = [
+    offsite.remoteLabel || offsite.targetAlias ? `目标 ${offsite.remoteLabel ?? offsite.targetAlias}` : null,
+    uploaded !== null && uploaded !== undefined ? `本次上传 ${uploaded} 个` : null,
+    offsite.failed !== null && offsite.failed !== undefined && offsite.failed > 0 ? `失败 ${offsite.failed} 个` : null,
+    offsite.bytes !== null && offsite.bytes !== undefined ? formatBytes(offsite.bytes) : null,
+    offsite.pendingRemaining !== null && offsite.pendingRemaining !== undefined && offsite.pendingRemaining > 0
+      ? `待同步 ${offsite.pendingRemaining} 个`
+      : null,
+    kept !== null ? `远端保留 ${kept} 份` : null,
+    offsite.plaintextSkipped !== null && offsite.plaintextSkipped !== undefined && offsite.plaintextSkipped > 0
+      ? `拒绝明文 ${offsite.plaintextSkipped} 个`
+      : null,
+  ].filter((part): part is string => Boolean(part))
+  return {
+    value: offsite.ok === true ? '正常' : '未知',
+    tone: offsite.ok === true ? 'success' : 'muted',
+    timestamp,
+    detail: parts.length > 0 ? parts.join(' · ') : null,
     alert: false,
   }
 }
@@ -258,6 +384,8 @@ export function buildBackupStatusEntries(input: BackupStatusInput): BackupStatus
   const ackedBytes = backup?.ackedBytes ?? state?.ackedBytes ?? null
   const orphanCount = backup?.orphanCount ?? state?.orphanCount ?? null
   const ackedCount = state?.ackedCount ?? null
+  const encryptedPendingCount = backup?.encryptedPendingCount ?? state?.encryptedPendingCount ?? null
+  const encryptedAckedCount = backup?.encryptedAckedCount ?? state?.encryptedAckedCount ?? null
 
   const entries: BackupStatusEntry[] = []
 
@@ -298,7 +426,11 @@ export function buildBackupStatusEntries(input: BackupStatusInput): BackupStatus
       pendingCount === null
         ? '服务端未上报'
         : pendingCount > 0
-          ? `等待 Windows 拉取并确认${pendingBytes !== null && pendingBytes !== undefined ? ` · ${formatBytes(pendingBytes)}` : ''}`
+          ? `等待 Windows 拉取并确认${pendingBytes !== null && pendingBytes !== undefined ? ` · ${formatBytes(pendingBytes)}` : ''}${
+              encryptedPendingCount !== null && encryptedPendingCount > 0
+                ? ` · 其中加密 ${encryptedPendingCount} 个（Web 不可校验/恢复）`
+                : ''
+            }`
           : '没有待确认归档',
     alert: pendingCount !== null && pendingCount > 0,
   })
@@ -308,7 +440,12 @@ export function buildBackupStatusEntries(input: BackupStatusInput): BackupStatus
     value: ackedBytes !== null && ackedBytes !== undefined ? formatBytes(ackedBytes) : '未知',
     tone: 'muted',
     timestamp: null,
-    detail: ackedCount === null ? '服务端未上报数量' : `已确认 ${ackedCount} 个归档`,
+    detail:
+      ackedCount === null
+        ? '服务端未上报数量'
+        : `已确认 ${ackedCount} 个归档${
+            encryptedAckedCount !== null && encryptedAckedCount > 0 ? `（其中加密 ${encryptedAckedCount} 个）` : ''
+          }`,
     alert: false,
   })
   entries.push({
@@ -330,8 +467,16 @@ export function buildBackupStatusEntries(input: BackupStatusInput): BackupStatus
   entries.push({ key: 'world', label: '世界备份', ...worldState })
   const worldPullState = worldPullView(worldPull, now)
   entries.push({ key: 'worldPull', label: 'PC 拉取', ...worldPullState })
-  const drillState = drillView(drill, now)
+  const drillState = drillView(drill, now, input.currentSchemaVersion ?? null)
   entries.push({ key: 'drill', label: '最近演练', ...drillState })
+
+  // v0.7.0：备份整包加密 + 异地副本（默认关闭/缺失时显示未启用/未运行，不当作正常）
+  const encryption = input.encryption ?? backup?.encryption ?? null
+  const encryptionState = encryptionView(encryption)
+  entries.push({ key: 'encryption', label: '备份加密', ...encryptionState })
+  const offsite = input.offsite ?? backup?.offsite ?? null
+  const offsiteState = offsiteView(offsite, now)
+  entries.push({ key: 'offsite', label: '异地副本', ...offsiteState })
 
   return entries
 }

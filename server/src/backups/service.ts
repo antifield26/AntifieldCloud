@@ -36,13 +36,14 @@ import { DatabaseSync } from 'node:sqlite'
 import { audit } from '../auth/audit.ts'
 import { verifyTotpForReauth } from '../auth/totp.ts'
 import type { FileService } from '../files/service.ts'
+import { MAX_TREE_DEPTH } from '../files/service.ts'
 import { AppError, badRequest, conflict, notFound } from '../util/errors.ts'
 import { newId, randomToken } from '../util/ids.ts'
 import { readStatusFile, type StatusFileRecord } from '../util/status.ts'
 import { nowIso } from '../util/time.ts'
 import { inspectTarGz, invalidArchive, scanTarGz, unsafeArchive } from './tar.ts'
 
-const ARCHIVE_NAME_PATTERN = /^snapshot-[0-9TZ]+(?:-[0-9]+)?-(full|inc)\.tar\.gz$/
+const ARCHIVE_NAME_PATTERN = /^snapshot-[0-9TZ]+(?:-[0-9]+)?-(full|inc)\.tar\.gz(\.age)?$/
 const FILE_ENTRY_PATTERN = /^files\/[A-Za-z0-9_-]+\/([A-Za-z0-9_-]{8,64})$/
 const DB_ENTRY_PATTERN = /^backups\/db-.*\.sqlite$/
 
@@ -150,6 +151,8 @@ export interface BackupArchiveItem {
   ackedAt: string | null
   lastError: string | null
   manifest: BackupManifestSummary | null
+  /** v0.7.0：age 加密归档（Pi 无私钥，Web 不可校验/恢复）。 */
+  encrypted: boolean
 }
 
 export interface InboxItem {
@@ -171,6 +174,9 @@ export interface BackupListResult {
     orphanCount: number
     lastError: string | null
     dataDirFreeBytes: number
+    /** v0.7.0：加密 pending/acked 归档计数（Web 只能展示，不能校验/恢复）。 */
+    encryptedPendingCount: number
+    encryptedAckedCount: number
   }
   /** 世界备份/拉取/演练只读状态（文件缺失为 null）；不含密钥与服务器路径。 */
   world: StatusFileRecord | null
@@ -280,6 +286,16 @@ function validArchiveName(name: unknown): string {
   return name
 }
 
+/** 判断归档名是否为 age 加密归档（唯一可信来源：归档名后缀；DB 记录不新增列）。 */
+export function isEncryptedArchiveName(name: string): boolean {
+  return name.endsWith('.tar.gz.age')
+}
+
+/** 加密归档在 Web 侧统一返回 409：Pi 无私钥，必须在 PC 用离线身份校验/恢复。 */
+function encryptedArchiveError(): AppError {
+  return new AppError(409, 'archive_encrypted', '加密归档需在 PC 使用离线私钥校验/恢复，Web 不提供解密')
+}
+
 function modeFromName(name: string): 'full' | 'inc' {
   const match = ARCHIVE_NAME_PATTERN.exec(name)
   return match?.[1] === 'full' ? 'full' : 'inc'
@@ -376,6 +392,22 @@ export class BackupService {
       ),
     }
     this.runner = options.runner ?? this.defaultRunner()
+    // 启动即清理崩溃遗留的恢复锁（DATA-03）：单进程启动时不可能有本进程的恢复在运行。
+    this.cleanupStaleRestoreLock()
+  }
+
+  /** 清理超过 LOCK_STALE_MS 的恢复锁；返回是否清理。活动恢复进程会刷新锁 mtime。 */
+  private cleanupStaleRestoreLock(): boolean {
+    const lockPath = join(this.config.dataDir, 'tmp', 'restore.lock')
+    try {
+      const stats = statSync(lockPath)
+      if (Date.now() - stats.mtimeMs <= LOCK_STALE_MS) return false
+      unlinkSync(lockPath)
+      this.log('warn', '已清理陈旧的恢复锁（进程崩溃/超时遗留）')
+      return true
+    } catch {
+      return false
+    }
   }
 
   // ---------- 目录与基础查询 ----------
@@ -460,6 +492,7 @@ export class BackupService {
       ackedAt: row.acked_at,
       lastError: row.last_error,
       manifest: this.parseStoredManifest(row.manifest_json),
+      encrypted: isEncryptedArchiveName(row.name),
     }
   }
 
@@ -585,6 +618,8 @@ export class BackupService {
     const pendingCount = items.filter((item) => item.status === 'pending').length
     const ackedCount = items.filter((item) => item.status === 'acked').length
     const importCount = items.filter((item) => item.origin === 'import').length
+    const encryptedPendingCount = items.filter((item) => item.status === 'pending' && item.encrypted).length
+    const encryptedAckedCount = items.filter((item) => item.status === 'acked' && item.encrypted).length
     inbox.sort((a, b) => (a.name < b.name ? 1 : -1))
     orphans.sort((a, b) => (a.name < b.name ? 1 : -1))
     return {
@@ -599,6 +634,8 @@ export class BackupService {
         orphanCount: orphans.length,
         lastError,
         dataDirFreeBytes: this.freeBytes(),
+        encryptedPendingCount,
+        encryptedAckedCount,
       },
       world: readStatusFile(this.config.worldBackupStatusFile),
       worldPull: readStatusFile(this.config.worldPullStatusFile),
@@ -657,7 +694,8 @@ export class BackupService {
       names = []
     }
     for (const name of names) {
-      if (!name.endsWith('.part')) continue
+      // 加密 prepare 可能留下 .plain.tmp（明文临时）或 .part（密文/sidecar 临时）；超时后统一清理。
+      if (!name.endsWith('.part') && !name.endsWith('.plain.tmp')) continue
       const full = join(this.backupsDir, name)
       try {
         if (statSync(full).mtimeMs >= startedAt - 5_000) rmSync(full, { force: true })
@@ -687,6 +725,12 @@ export class BackupService {
     fileCount: number
     warnings: string[]
     skippedMissing: string[]
+    /** v0.7.0：本次是否生成 age 加密归档（加密开启时 Pi 无私钥，Web 不可校验/恢复）。 */
+    encrypted: boolean
+    archiveFormat: 'tar.gz' | 'tar.gz.age'
+    metaName: string | null
+    plainSha256: string | null
+    plainSize: number | null
   }> {
     if (this.prepareRunning) throw conflict('已有备份生成任务在执行', 'backup_busy')
     const lock = this.lockState()
@@ -732,12 +776,18 @@ export class BackupService {
         fileCount: Number(parsed.fileCount ?? 0),
         warnings,
         skippedMissing,
+        encrypted: parsed.encrypted === true || isEncryptedArchiveName(archiveName),
+        archiveFormat: isEncryptedArchiveName(archiveName) ? ('tar.gz.age' as const) : ('tar.gz' as const),
+        metaName: typeof parsed.metaName === 'string' && parsed.metaName ? parsed.metaName : isEncryptedArchiveName(archiveName) ? `${archiveName}.meta.json` : null,
+        plainSha256: typeof parsed.plainSha256 === 'string' ? parsed.plainSha256 : null,
+        plainSize: Number.isSafeInteger(parsed.plainSize) ? Number(parsed.plainSize) : null,
       }
       audit(this.db, actor.username, 'backup_prepare', archiveName, {
         mode,
         sizeBytes: item.sizeBytes,
         fileCount: item.fileCount,
         skippedMissing: skippedMissing.length,
+        encrypted: item.encrypted,
       }, actor.ip)
       return item
     } finally {
@@ -750,6 +800,7 @@ export class BackupService {
   async importArchive(actor: BackupActor, input: { filename: string; stream: Readable }): Promise<ImportResult> {
     this.ensureLayout()
     const name = validArchiveName(input.filename)
+    if (isEncryptedArchiveName(name)) throw encryptedArchiveError()
     if (this.rowByNameOrNull(name)) throw conflict('同名归档已存在', 'archive_exists')
     if (existsSync(join(this.importsDir, name))) throw conflict('同名归档文件已存在', 'archive_exists')
     const maxBytes = this.config.backupImportMaxBytes
@@ -822,6 +873,8 @@ export class BackupService {
 
   async verify(actor: BackupActor, name: string, options: { auditAction?: boolean } = {}): Promise<{ archive: BackupArchiveItem }> {
     const row = this.rowByName(name)
+    // 加密归档在最前面拒绝：不尝试读取/解包/改写 last_error（Pi 无私钥，属预期状态）。
+    if (isEncryptedArchiveName(row.name)) throw encryptedArchiveError()
     const path = this.storedPath(row)
     if (!existsSync(path)) {
       this.markArchiveError(row.name, '归档文件不存在')
@@ -883,7 +936,20 @@ export class BackupService {
     } catch (error) {
       const message = sanitizeMessage(error instanceof Error ? error.message : '归档校验失败', this.config.dataDir)
       this.markArchiveError(row.name, message)
+      // DATA-11：校验失败后清除旧的 verified_at/manifest_json，避免 UI 继续显示“已校验/可恢复”。
+      this.clearArchiveVerification(row.name, message)
       throw error
+    }
+  }
+
+  /** 校验失败时清除派生状态；归档行保留以便重新校验。 */
+  private clearArchiveVerification(name: string, message: string): void {
+    try {
+      this.db
+        .prepare('UPDATE backup_archives SET verified_at = NULL, manifest_json = NULL, last_error = ? WHERE name = ?')
+        .run(message, name)
+    } catch {
+      // 记录失败不覆盖原始错误。
     }
   }
 
@@ -961,7 +1027,10 @@ export class BackupService {
     }
     const pathOf = new Map<string, string>()
     const walk = (parentId: string | null, base: string, depth: number): void => {
-      if (depth > 128) return
+      // 与 files/service.ts 的目录层级上限一致；超出时明确报错而不是静默丢弃子树（DATA-08）。
+      if (depth > MAX_TREE_DEPTH) {
+        throw invalidArchive(`归档目录层级超过支持上限（${MAX_TREE_DEPTH} 层）`)
+      }
       for (const row of childrenOf.get(parentId) ?? []) {
         const path = `${base}/${row.name}`
         pathOf.set(row.id, path)
@@ -1061,6 +1130,8 @@ export class BackupService {
 
   private assertChainUsable(chain: ArchiveRow[]): void {
     for (const row of chain) {
+      // 加密链在 Web 侧一律拒绝（Pi 无私钥）；不能在只读/恢复路径尝试解密。
+      if (isEncryptedArchiveName(row.name)) throw encryptedArchiveError()
       if (!row.verified_at) throw conflict(`归档 ${row.name} 尚未校验`, 'archive_not_verified')
       if (!existsSync(this.storedPath(row))) throw conflict(`归档 ${row.name} 文件不存在`, 'archive_missing')
       if (!this.parseStoredManifest(row.manifest_json)) throw conflict(`归档 ${row.name} 缺少 manifest 信息`, 'archive_invalid')
@@ -1113,9 +1184,17 @@ export class BackupService {
     const target = requested
       ? this.rowByName(requested)
       : rows
-          .filter((row) => row.mode && this.parseStoredManifest(row.manifest_json) && row.verified_at && existsSync(this.storedPath(row)))
+          .filter(
+            (row) =>
+              row.mode &&
+              this.parseStoredManifest(row.manifest_json) &&
+              row.verified_at &&
+              !isEncryptedArchiveName(row.name) &&
+              existsSync(this.storedPath(row)),
+          )
           .sort((a, b) => (this.effectiveCreatedAt(a) < this.effectiveCreatedAt(b) ? 1 : -1))[0]
     if (!target) throw conflict('没有可用于恢复的归档', 'archive_not_found')
+    if (isEncryptedArchiveName(target.name)) throw encryptedArchiveError()
     const chain = this.resolveChain(target)
     this.assertChainUsable(chain)
     const paths = normalizeSelectionPaths(input.paths)
@@ -1515,6 +1594,7 @@ export class BackupService {
   async listArchiveEntries(name: string, path: unknown): Promise<{ path: string; items: ArchiveEntryItem[]; truncated: boolean }> {
     this.assertRestoreEnabled()
     const row = this.rowByName(name)
+    if (isEncryptedArchiveName(row.name)) throw encryptedArchiveError()
     if (!row.verified_at) throw conflict('归档尚未校验，无法浏览', 'archive_not_verified')
     const archivePath = this.storedPath(row)
     if (!existsSync(archivePath)) throw notFound('归档文件不存在', 'archive_missing')
@@ -1575,15 +1655,18 @@ export class BackupService {
 
   cleanup(): { expiredPlans: number; interruptedPlans: number; stagingDirs: number; partialImports: number } {
     const now = this.clock()
+    // 恢复锁崩溃残留：每次维护任务也尝试清理（启动时已清一次）。
+    this.cleanupStaleRestoreLock()
     const expiredPlans = this.db
       .prepare("UPDATE restore_plans SET status = 'expired' WHERE status = 'planned' AND expires_at <= ?")
       .run(now.toISOString())
-    // 进程在中途崩溃时计划会停留在 executing；超过锁过期时间后标记失败，避免永久卡住。
-    const interruptedPlans = this.db
-      .prepare(
-        "UPDATE restore_plans SET status = 'failed', error = '恢复中断（进程退出）' WHERE status = 'executing' AND created_at <= ?",
-      )
-      .run(new Date(now.getTime() - LOCK_STALE_MS).toISOString())
+    // 进程在中途崩溃时计划会停留在 executing；本进程没有恢复在跑时才标记失败。
+    // 不能用 created_at 判断：计划创建后可能在 TTL 内才执行，且大恢复可能超过 2 小时。
+    const interruptedPlans = this.restoreRunning
+      ? { changes: 0 }
+      : this.db
+          .prepare("UPDATE restore_plans SET status = 'failed', error = '恢复中断（进程退出）' WHERE status = 'executing'")
+          .run()
     let stagingDirs = 0
     try {
       for (const entry of readdirSync(this.stagingRoot, { withFileTypes: true })) {
@@ -1609,12 +1692,33 @@ export class BackupService {
     } catch {
       // imports 目录不存在时忽略。
     }
-    if (Number(expiredPlans.changes) > 0 || Number(interruptedPlans.changes) > 0 || stagingDirs > 0 || partialImports > 0) {
+    // 加密 prepare 崩溃遗留的明文临时归档：超过 TTL 统一删除，避免“失败关闭”之外长期驻留明文。
+    let abandonedPlainTemps = 0
+    try {
+      for (const entry of readdirSync(this.backupsDir, { withFileTypes: true })) {
+        if (!entry.isFile() || !entry.name.endsWith('.plain.tmp')) continue
+        const full = join(this.backupsDir, entry.name)
+        if (now.getTime() - statSync(full).mtimeMs > STAGING_TTL_MS) {
+          rmSync(full, { force: true })
+          abandonedPlainTemps += 1
+        }
+      }
+    } catch {
+      // backups 目录不存在时忽略。
+    }
+    if (
+      Number(expiredPlans.changes) > 0 ||
+      Number(interruptedPlans.changes) > 0 ||
+      stagingDirs > 0 ||
+      partialImports > 0 ||
+      abandonedPlainTemps > 0
+    ) {
       this.log('info', '备份维护清理完成', {
         expiredPlans: Number(expiredPlans.changes),
         interruptedPlans: Number(interruptedPlans.changes),
         stagingDirs,
         partialImports,
+        abandonedPlainTemps,
       })
     }
     return {

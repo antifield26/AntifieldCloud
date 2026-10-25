@@ -1,9 +1,11 @@
 /** 仪表盘、审计、版本信息路由。 */
+import { existsSync } from 'node:fs'
 import type { FastifyInstance } from 'fastify'
 import type { Config } from '../../config.ts'
 import type { DashboardService } from '../../dashboard/service.ts'
 import type { DatabaseSync } from 'node:sqlite'
-import { listAudit } from '../../auth/audit.ts'
+import { getAuditDiagnostics, listAudit } from '../../auth/audit.ts'
+import { SUPPORTED_SCHEMA_VERSION } from '../../db.ts'
 import { badRequest } from '../../util/errors.ts'
 import { asRecord, parsePositiveInt } from '../util.ts'
 import { requireAuth } from '../guards.ts'
@@ -42,6 +44,8 @@ export function registerDashboardRoutes(
 
   app.get('/api/version', { preHandler: [requireAuth] }, async () => ({
     version: config.appVersion,
+    /** 当前程序支持的 schema 版本；前端用于演练/升级一致性提示（v0.7.0）。 */
+    schemaVersion: SUPPORTED_SCHEMA_VERSION,
     appOrigin: config.appOrigin,
     aiOrigin: config.aiOrigin,
     trashRetentionDays: config.trashRetentionDays,
@@ -51,6 +55,10 @@ export function registerDashboardRoutes(
     backupRestoreEnabled: config.backupRestoreEnabled,
     backupImportMaxBytes: config.backupImportMaxBytes,
     backupRestoreMaxEntries: config.backupRestoreMaxEntries,
+    /** 加密/异地副本只读状态（不含密钥/路径）。 */
+    backupArchiveEncryption: config.backupArchiveEncryption,
+    backupAgeRecipientConfigured: existsSync(config.backupAgeRecipientFile),
+    backupOffsiteStatusConfigured: existsSync(config.backupOffsiteStatusFile),
     chunkedUploadEnabled: config.chunkedUploadEnabled,
     chunkSizeBytes: config.chunkSizeBytes,
     chunkMaxFileBytes: config.chunkMaxFileBytes,
@@ -63,5 +71,7 @@ export function registerDashboardRoutes(
     metricsRetentionDays: config.metricsRetentionDays,
     botsEnabled: config.botEnabled && config.botSecretKey.length > 0,
     botPlatforms: [...BOT_PLATFORMS],
+    /** 审计写入诊断：失败计数/最近错误（不含明细），用于发现 DB 忙/磁盘满导致的审计丢失。 */
+    audit: getAuditDiagnostics(),
   }))
 }

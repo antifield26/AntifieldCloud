@@ -36,6 +36,14 @@ import { promisify } from 'node:util'
 import { ensureRuntimeDirs, loadConfig, type Config } from '../config.ts'
 import { getMeta, openDatabase, setMeta, transaction } from '../db.ts'
 import { audit } from '../auth/audit.ts'
+import {
+  archiveSidecarName,
+  assertAgeBinary,
+  buildArchiveSidecar,
+  encryptArchiveFile,
+  isEncryptedArchiveName,
+  readAgeRecipientFile,
+} from './backup-encryption.ts'
 
 const execFileAsync = promisify(execFile)
 const GIB = 1024 * 1024 * 1024
@@ -43,8 +51,10 @@ const GIB = 1024 * 1024 * 1024
 const PREPARE_RESERVE_BYTES = 2 * GIB
 /** 已确认归档在 Pi 上保留的最大数量（PC 拉取成功后通常已被删除，这里兜底清理失败场景）。 */
 const MAX_ACKED_ARCHIVES = 2
-/** 部署前 DB 快照保留数量。 */
-const MAX_PREDEPLOY_SNAPSHOTS = 10
+/** 部署前 DB 快照保留数量（v0.7.0：明文快照仅保留最近 2 份，降低 TOTP/会话暴露面）。 */
+const MAX_PREDEPLOY_SNAPSHOTS = 2
+/** 放弃的明文临时归档清理阈值：崩溃/断电后下次 prepare 清理。 */
+const ABANDONED_PLAIN_TEMP_MAX_AGE_MS = 24 * 60 * 60_000
 /** 超过该天数没有成功全量则建议再做一次全量。 */
 const FULL_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000
 /** meta 键：上次 ack 后仍未落盘、等待恢复后自动补入增量的文件 id（JSON 数组）。 */
@@ -112,6 +122,13 @@ interface ArchiveResult {
   skippedMissing: string[]
   /** 上次 ack 记录、本次强制重新检查的历史缺失文件数。 */
   previousMissing: number
+  /** v0.7.0：是否为 age 加密归档（`.tar.gz.age`）。 */
+  encrypted: boolean
+  archiveFormat: 'tar.gz' | 'tar.gz.age'
+  /** 加密归档的外部元数据文件名；明文归档为 null。 */
+  metaName: string | null
+  plainSha256: string | null
+  plainSize: number | null
 }
 
 /** backups 目录中存在、但 backup_archives 里没有记录的归档（只报告，不删除）。 */
@@ -250,7 +267,7 @@ function emit(payload: object): void {
 }
 
 /**
- * 扫描 backups 目录中形如 snapshot-*.tar.gz、但 backup_archives 无记录的归档。
+ * 扫描 backups 目录中形如 snapshot-*.tar.gz / snapshot-*.tar.gz.age、但 backup_archives 无记录的归档。
  * 只读报告，绝不自动删除（归档含敏感数据，需人工确认来源）。
  */
 function listOrphanArchives(db: DatabaseSync, backupsDir: string): OrphanArchive[] {
@@ -261,7 +278,7 @@ function listOrphanArchives(db: DatabaseSync, backupsDir: string): OrphanArchive
   )
   const orphans: OrphanArchive[] = []
   for (const name of readdirSync(backupsDir)) {
-    if (!/^snapshot-.+\.tar\.gz$/.test(name) || known.has(name)) continue
+    if (!/^snapshot-.+\.tar\.gz(\.age)?$/.test(name) || known.has(name)) continue
     try {
       const stats = statSync(join(backupsDir, name))
       if (!stats.isFile()) continue
@@ -313,11 +330,11 @@ function readdirSyncSafe(dir: string): string[] {
   }
 }
 
-/** 扫描 tar 失败残留的 .part 文件（只报告，供 pending 输出可观测）。 */
+/** 扫描 tar/加密失败残留的 `.part` 或明文临时文件（只报告，供 pending 输出可观测）。 */
 function listPartialArchives(backupsDir: string): Array<{ name: string; sizeBytes: number; modifiedAt: string }> {
   const partials: Array<{ name: string; sizeBytes: number; modifiedAt: string }> = []
   for (const name of readdirSyncSafe(backupsDir)) {
-    if (!name.endsWith('.part')) continue
+    if (!name.endsWith('.part') && !name.endsWith('.plain.tmp')) continue
     try {
       const stats = statSync(join(backupsDir, name))
       if (!stats.isFile()) continue
@@ -366,7 +383,15 @@ function listPending(
     warnings.push(`发现 ${orphans.length} 个无 DB 记录的孤儿归档（${orphanBytes} bytes），未自动删除，请人工核对`)
   }
   if (includeWarnings && partials.length > 0) {
-    warnings.push(`发现 ${partials.length} 个未完成的 .part 归档残留，确认无备份任务运行后可手动清理`)
+    warnings.push(`发现 ${partials.length} 个未完成的 .part/.plain.tmp 归档残留，确认无备份任务运行后可手动清理`)
+  }
+  const missingSidecars = pending
+    .filter((row) => isEncryptedArchiveName(row.name) && !existsSync(join(backupsDir, archiveSidecarName(row.name))))
+    .map((row) => row.name)
+  if (includeWarnings && missingSidecars.length > 0) {
+    warnings.push(
+      `有 ${missingSidecars.length} 个加密归档缺少 .meta.json 外部元数据（无法校验明文哈希），请勿在补齐前 ack/删除`,
+    )
   }
   if (includeWarnings && missingFiles.length > 0) {
     warnings.push(
@@ -387,7 +412,14 @@ function listPending(
       sizeBytes: Number(row.size),
       fileCount: Number(row.file_count),
       exists: existsSync(join(backupsDir, row.name)),
+      encrypted: isEncryptedArchiveName(row.name),
+      archiveFormat: isEncryptedArchiveName(row.name) ? 'tar.gz.age' : 'tar.gz',
+      metaName: isEncryptedArchiveName(row.name) ? archiveSidecarName(row.name) : null,
+      metaExists: isEncryptedArchiveName(row.name)
+        ? existsSync(join(backupsDir, archiveSidecarName(row.name)))
+        : null,
     })),
+    missingSidecars,
     orphans,
     partials,
     missingFiles: missingFiles.slice(0, MAX_MISSING_REPORT),
@@ -447,6 +479,28 @@ async function snapshotPredeploy(dataDir: string, backupsDir: string): Promise<R
 }
 
 /**
+ * 清理崩溃/断电遗留的明文临时归档（`*.plain.tmp`）。
+ * 仅删除超过 maxAge 的普通文件；正在生成的归档由 mtime 保护，不会误删。
+ */
+function cleanupAbandonedPlainTemps(backupsDir: string, maxAgeMs = ABANDONED_PLAIN_TEMP_MAX_AGE_MS): number {
+  let removed = 0
+  const cutoff = Date.now() - Math.max(0, maxAgeMs)
+  for (const name of readdirSyncSafe(backupsDir)) {
+    if (!name.endsWith('.plain.tmp')) continue
+    const path = join(backupsDir, name)
+    try {
+      const stats = statSync(path)
+      if (!stats.isFile() || stats.mtimeMs >= cutoff) continue
+      unlinkSync(path)
+      removed += 1
+    } catch {
+      // 单个残留清理失败不影响本次归档；下一次再试。
+    }
+  }
+  return removed
+}
+
+/**
  * 生成一个归档并写入 pending 记录，不推进 backup_state。
  * 增量起点取「上次已确认时间」与「最新 pending 时间」的较大者，避免 pending 未确认时重复打包。
  */
@@ -465,9 +519,22 @@ async function createArchive(
   const listPath = join(backupsDir, `.files-${stamp}.txt`)
   // 归档路径在模式确定后生成；失败清理只删除本次真正创建的文件。
   let createdArchivePath: string | null = null
+  let createdSidecarPath: string | null = null
+  let plainTempPath: string | null = null
   let snapshotDb: DatabaseSync | null = null
+  const encryptionEnabled = config.backupArchiveEncryption
+  const ageBin = process.env.BACKUP_AGE_BIN ?? 'age'
+  let recipient: string | null = null
 
   try {
+    // 失败关闭：加密开启时先校验 age 与公钥，避免打包数 GiB 后才发现不可用。
+    if (encryptionEnabled) {
+      recipient = readAgeRecipientFile(config.backupAgeRecipientFile, {
+        skipOwnerCheck: process.env.BACKUP_SKIP_KEY_OWNER_CHECK === '1',
+      })
+      await assertAgeBinary(ageBin)
+    }
+    cleanupAbandonedPlainTemps(backupsDir)
     await backup(db, dbSnapshotPath)
     chmodSync(dbSnapshotPath, 0o600)
     const dbBytes = statSync(dbSnapshotPath).size
@@ -497,13 +564,16 @@ async function createArchive(
     // 归档名必须唯一：同一毫秒内重试时追加序号，避免覆盖未确认的 pending 归档。
     let archiveName = ''
     let archivePath = ''
+    let archiveBaseName = ''
     let sequence = 0
     for (;;) {
       const suffix = sequence === 0 ? stamp : `${stamp}-${sequence}`
-      archiveName = `snapshot-${suffix}-${mode}.tar.gz`
+      archiveBaseName = `snapshot-${suffix}-${mode}.tar.gz`
+      archiveName = encryptionEnabled ? `${archiveBaseName}.age` : archiveBaseName
       archivePath = join(backupsDir, archiveName)
       const nameTaken =
         existsSync(archivePath) ||
+        existsSync(join(backupsDir, `${archiveBaseName}.plain.tmp`)) ||
         db.prepare('SELECT 1 FROM backup_archives WHERE name = ?').get(archiveName) !== undefined
       if (!nameTaken) break
       sequence++
@@ -559,15 +629,18 @@ async function createArchive(
     const estimate = totalBytes + dbBytes
     const available = freeBytes(config.dataDir)
     // pending 未确认、acked 未清理、孤儿归档都仍需留在磁盘上，空间预算全部计入。
-    const required = estimate + pendingBytes + ackedBytes + orphanBytes + PREPARE_RESERVE_BYTES
+    // 加密时峰值需同时容纳明文 tar 与密文（约 2× 本次估算）。
+    const peakBytes = encryptionEnabled ? estimate * 2 : estimate
+    const required = peakBytes + pendingBytes + ackedBytes + orphanBytes + PREPARE_RESERVE_BYTES
     if (available < required) {
       throw new Error(
-        `磁盘空间不足：需要约 ${Math.ceil(required / GIB)} GiB（本次约 ${Math.ceil(estimate / GIB)} GiB + pending ${pending.length} 个/${Math.ceil(pendingBytes / GIB)} GiB + acked 未清理 ${acked.length} 个/${Math.ceil(ackedBytes / GIB)} GiB + 孤儿 ${orphans.length} 个/${Math.ceil(orphanBytes / GIB)} GiB），可用 ${Math.ceil(available / GIB)} GiB`,
+        `磁盘空间不足：需要约 ${Math.ceil(required / GIB)} GiB（本次${encryptionEnabled ? '加密峰值' : ''}约 ${Math.ceil(peakBytes / GIB)} GiB + pending ${pending.length} 个/${Math.ceil(pendingBytes / GIB)} GiB + acked 未清理 ${acked.length} 个/${Math.ceil(ackedBytes / GIB)} GiB + 孤儿 ${orphans.length} 个/${Math.ceil(orphanBytes / GIB)} GiB），可用 ${Math.ceil(available / GIB)} GiB`,
       )
     }
 
     const manifest = {
-      schema: 1,
+      // 加密归档使用 schema 2：明文哈希/大小在归档外（DB/sidecar），避免自引用。
+      schema: encryptionEnabled ? 2 : 1,
       createdAt,
       mode,
       since,
@@ -577,6 +650,7 @@ async function createArchive(
       totalBytes,
       skippedMissing,
       warnings,
+      ...(encryptionEnabled ? { encrypted: true, archiveFormat: 'tar.gz.age' as const } : {}),
     }
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), { mode: 0o600 })
 
@@ -586,24 +660,79 @@ async function createArchive(
       ...files.map((file) => `files/${file.id.slice(0, 2)}/${file.id}`),
     ]
     writeFileSync(listPath, `${entries.join('\n')}\n`, { mode: 0o600 })
-    // 先写 .part 再原子改名：tar 中途失败/被 kill 时不会留下看似完整的 snapshot 残片。
-    const archivePartPath = `${archivePath}.part`
+    // 加密路径：tar 先写明文临时文件，age 成功后再产生最终 .age；明文只在加密期间短暂存在。
+    // 明文路径：先写 .part 再原子改名，tar 中途失败/被 kill 时不会留下看似完整的 snapshot 残片。
+    const tarTargetPath = encryptionEnabled ? join(backupsDir, `${archiveBaseName}.plain.tmp`) : `${archivePath}.part`
+    if (encryptionEnabled) plainTempPath = tarTargetPath
     // 仅测试注入：模拟 tar 中途失败，验证残片清理；生产环境该分支不可达。
     if (process.env.NODE_ENV === 'test' && process.env.BACKUP_SIMULATE_TAR_FAILURE === '1') {
-      writeFileSync(archivePartPath, 'partial-archive')
+      writeFileSync(tarTargetPath, 'partial-archive')
       throw new Error('模拟 tar 失败')
     }
-    await execFileAsync('tar', ['-czf', archivePartPath, '-C', config.dataDir, '--files-from', listPath], {
+    await execFileAsync('tar', ['-czf', tarTargetPath, '-C', config.dataDir, '--files-from', listPath], {
       maxBuffer: 16 * 1024 * 1024,
     })
-    renameSync(archivePartPath, archivePath)
-    createdArchivePath = archivePath
-    // 归档含 TOTP 与会话等敏感数据：显式 0640，不依赖调用方 umask。
-    chmodSync(archivePath, 0o640)
 
-    const sizeBytes = statSync(archivePath).size
-    const sha256 = await sha256File(archivePath)
-    const manifestJson = JSON.stringify(manifest)
+    let sizeBytes: number
+    let sha256: string
+    let plainSha256: string | null = null
+    let plainSize: number | null = null
+    let manifestJson: string
+    if (encryptionEnabled) {
+      const plainPath = tarTargetPath
+      plainSize = statSync(plainPath).size
+      plainSha256 = await sha256File(plainPath)
+      const cipherPartPath = `${archivePath}.part`
+      await encryptArchiveFile({
+        plainPath,
+        cipherPath: cipherPartPath,
+        recipient: recipient!,
+        ageBin,
+        timeoutMs: 30 * 60_000,
+      })
+      chmodSync(cipherPartPath, 0o640)
+      renameSync(cipherPartPath, archivePath)
+      createdArchivePath = archivePath
+      sizeBytes = statSync(archivePath).size
+      sha256 = await sha256File(archivePath)
+      const sidecar = buildArchiveSidecar({
+        name: archiveName,
+        mode,
+        createdAt,
+        plainSha256,
+        plainSize,
+        cipherSha256: sha256,
+        cipherSize: sizeBytes,
+        recipient: recipient!,
+      })
+      const sidecarPath = join(backupsDir, archiveSidecarName(archiveName))
+      const sidecarTempPath = `${sidecarPath}.part`
+      writeFileSync(sidecarTempPath, JSON.stringify(sidecar, null, 2), { mode: 0o640 })
+      chmodSync(sidecarTempPath, 0o640)
+      renameSync(sidecarTempPath, sidecarPath)
+      createdSidecarPath = sidecarPath
+      // DB 中的 manifest_json 是外部元数据（应用/CLI 可读），包含明文哈希/大小与密文信息。
+      manifestJson = JSON.stringify({
+        ...manifest,
+        plainSha256,
+        plainSize,
+        cipherSha256: sha256,
+        cipherSize: sizeBytes,
+        encryptedWith: 'age',
+        recipient: recipient!,
+      })
+      // 明文 tar 在密文与 sidecar 落盘后立即删除；崩溃窗口由启动清理兜底。
+      unlinkSync(plainPath)
+      plainTempPath = null
+    } else {
+      renameSync(tarTargetPath, archivePath)
+      createdArchivePath = archivePath
+      // 归档含 TOTP 与会话等敏感数据：显式 0640，不依赖调用方 umask。
+      chmodSync(archivePath, 0o640)
+      sizeBytes = statSync(archivePath).size
+      sha256 = await sha256File(archivePath)
+      manifestJson = JSON.stringify(manifest)
+    }
     db.prepare(
       `INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, deleted_at, manifest_json)
        VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
@@ -614,8 +743,14 @@ async function createArchive(
       legacy ? 'backup_legacy' : 'backup_prepare',
       archiveName,
       legacy
-        ? { mode, files: files.length, sizeBytes, deprecated: true, skippedMissing: skippedMissing.length }
-        : { mode, files: files.length, sizeBytes, skippedMissing: skippedMissing.length },
+        ? { mode, files: files.length, sizeBytes, deprecated: true, skippedMissing: skippedMissing.length, encrypted: encryptionEnabled }
+        : {
+            mode,
+            files: files.length,
+            sizeBytes,
+            skippedMissing: skippedMissing.length,
+            ...(encryptionEnabled ? { encrypted: true, plainSize } : {}),
+          },
       null,
     )
 
@@ -635,18 +770,25 @@ async function createArchive(
       warnings,
       skippedMissing,
       previousMissing: previousMissing.length,
+      encrypted: encryptionEnabled,
+      archiveFormat: encryptionEnabled ? 'tar.gz.age' : 'tar.gz',
+      metaName: encryptionEnabled ? archiveSidecarName(archiveName) : null,
+      plainSha256,
+      plainSize,
     }
   } catch (error) {
-    if (createdArchivePath) {
+    for (const cleanupPath of [createdArchivePath, createdSidecarPath, plainTempPath]) {
+      if (!cleanupPath) continue
       try {
-        unlinkSync(createdArchivePath)
+        unlinkSync(cleanupPath)
       } catch {
-        // 归档清理失败不影响错误返回。
+        // 清理失败不影响错误返回；下一次 prepare 会清理残留临时文件。
       }
     }
-    // tar 中途失败/超时被 kill：清理本次 .part 残片，避免 pending/孤儿报告长期堆积。
+    // tar/age 中途失败/超时被 kill：清理本次 .part / .plain.tmp 残片，避免 pending/孤儿报告长期堆积。
     for (const name of readdirSyncSafe(backupsDir)) {
-      if (!name.startsWith(`snapshot-${stamp}`) || !name.endsWith('.part')) continue
+      if (!name.startsWith(`snapshot-${stamp}`)) continue
+      if (!name.endsWith('.part') && !name.endsWith('.plain.tmp')) continue
       try {
         rmSync(join(backupsDir, name), { force: true })
       } catch {
@@ -655,6 +797,13 @@ async function createArchive(
     }
     throw error
   } finally {
+    if (plainTempPath) {
+      try {
+        unlinkSync(plainTempPath)
+      } catch {
+        // 忽略清理失败。
+      }
+    }
     try {
       snapshotDb?.close()
     } catch {
@@ -828,6 +977,9 @@ function pruneAcked(db: DatabaseSync, backupsDir: string): string[] {
     const archivePath = join(backupsDir, row.name)
     try {
       if (existsSync(archivePath)) unlinkSync(archivePath)
+      // 加密归档的 sidecar 与归档同生命周期；PC 已拉取后 Pi 不再需要。
+      const sidecarPath = join(backupsDir, archiveSidecarName(row.name))
+      if (existsSync(sidecarPath)) unlinkSync(sidecarPath)
     } catch {
       // 删除失败时保留记录，下次 ack 再清理。
       continue

@@ -139,7 +139,7 @@ describe('v0.4.0 API 客户端', () => {
         name: 'big.bin',
         size: 1,
         received: [0],
-        expiresAt: '2026-10-21T00:00:00.000Z',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       }),
     )
     fetchMock.mockResolvedValue(mockResponse({ body: { ok: true } }))
@@ -160,7 +160,7 @@ describe('v0.4.0 API 客户端', () => {
         name: 'big.bin',
         size: 1,
         received: [],
-        expiresAt: '2026-10-21T00:00:00.000Z',
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
       }),
     )
     fetchMock.mockResolvedValue(mockResponse({ status: 409, body: { error: { code: 'upload_completed' } } }))

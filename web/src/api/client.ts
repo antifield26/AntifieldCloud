@@ -92,6 +92,20 @@ const CSRF_HEADER = 'X-CSRF-Token'
 const JSON_HEADERS = { Accept: 'application/json' }
 const DEFAULT_UPLOAD_TIMEOUT_MS = 15 * 60 * 1000
 const DEFAULT_REQUEST_TIMEOUT_MS = 20_000
+/**
+ * 备份/恢复是服务端长任务：prepare 由 BACKUP_PREPARE_TIMEOUT_SEC（默认 3300s）控制，
+ * verify/entries/restore-plan 需解包归档，execute 需解包 + 写盘。客户端默认 20s 超时会把
+ * “仍在执行”误报成失败并导致重试 409，因此这些端点显式放宽；超时后 UI 必须提示
+ * “服务端可能仍在执行，请刷新/查询状态”而不是让用户直接重试。
+ */
+export const BACKUP_LONG_OPERATION_TIMEOUTS = {
+  prepare: 3_400_000,
+  verify: 600_000,
+  entries: 600_000,
+  restorePlan: 600_000,
+  executeRestore: 3_600_000,
+  getRestore: 60_000,
+} as const
 
 /** 常见错误码的中文兜底文案；服务端返回的 message 优先。 */
 const ERROR_MESSAGES: Record<string, string> = {
@@ -159,6 +173,23 @@ const ERROR_MESSAGES: Record<string, string> = {
   target_missing: '投递目标不存在或已被删除',
   media_missing: '媒体文件不存在或不可发布',
   empty_payload: '投递内容为空',
+  // v0.7.0：备份整包加密 + 异地副本（加密归档只能在 PC/离线私钥侧校验/恢复）
+  archive_encrypted: '该归档已加密，Web 无法校验或恢复，请在 PC 上用 age 私钥处理',
+  verify_requires_decryption: '该归档已加密，需要离线私钥解密后才能校验',
+  restore_requires_private_key: '该归档已加密，需要离线私钥解密后才能恢复',
+  encryption_key_missing: 'Pi 端未配置备份 age 公钥，加密备份暂不可用',
+  encryption_disabled: '备份加密未启用',
+  archive_missing: '归档文件不存在',
+  backup_busy: '已有备份生成任务在执行，请稍后刷新查看',
+  backup_prepare_timeout: '备份生成超时，请查看 pending 归档或稍后重试',
+  backup_prepare_failed: '生成备份失败，请查看服务端日志',
+  plan_not_pending: '恢复计划当前不可执行（可能已完成或正在执行）',
+  plan_completed: '恢复计划已完成',
+  upload_assembling: '服务端正在拼接文件，请稍后重试（断点已保留）',
+  upload_expired: '上传会话已过期，请重新上传',
+  too_many_attachments: '附件数量超过限制',
+  // v0.7.0：Bot AI 工具隔离 fail-closed（不降级为无工具模式）
+  bot_ai_tool_isolation_unavailable: 'Bot AI 工具安全隔离不可用，已拒绝本轮 AI 请求（请检查 botmsg MCP 与隔离配置）',
 }
 
 export class ApiError extends Error {
@@ -299,6 +330,8 @@ export interface RequestOptions {
   signal?: AbortSignal
   /** 认证类/公开接口不触发全局 401 跳转。 */
   skipAuthRedirect?: boolean
+  /** 单请求超时（毫秒）；<=0 表示不设置超时（仅用于服务端长任务端点）。默认 20s。 */
+  timeoutMs?: number
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -317,8 +350,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   let response: Response
   try {
-    const timeoutSignal = AbortSignal.timeout(DEFAULT_REQUEST_TIMEOUT_MS)
-    const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal
+    const timeoutMs = options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+    const timeoutSignal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : null
+    const signal =
+      timeoutSignal === null
+        ? options.signal
+        : options.signal
+          ? AbortSignal.any([options.signal, timeoutSignal])
+          : timeoutSignal
     response = await fetch(path, {
       method,
       headers,
@@ -563,7 +602,14 @@ function readResumeRecord(key: string): ResumeRecord | null {
     const raw = localStorage.getItem(key)
     if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
-    return isValidResumeRecord(parsed) ? parsed : null
+    if (!isValidResumeRecord(parsed)) return null
+    // 过期断点不再使用：服务端会话已过期/被清理，继续用只会得到 404。
+    const expiresAt = Date.parse(parsed.expiresAt)
+    if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+      localStorage.removeItem(key)
+      return null
+    }
+    return parsed
   } catch {
     return null
   }
@@ -630,9 +676,103 @@ function uploadChunkXhr(
   })
 }
 
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new ApiError(0, 'aborted', '上传已取消'))
+      return
+    }
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    const onAbort = (): void => {
+      window.clearTimeout(timer)
+      reject(new ApiError(0, 'aborted', '上传已取消'))
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
+/** 服务端已登记文件（completed 会话）→ 读取 FileItem 以便上传队列直接标记成功。 */
+async function registeredFileItem(fileId: string, signal?: AbortSignal): Promise<FileItem> {
+  const result = await get<{ item?: FileItem }>(`/api/files/${encodeId(fileId)}`, { signal })
+  if (!result?.item) throw new ApiError(0, 'invalid_response', '上传已完成，但读取已登记文件失败，请刷新文件列表')
+  return result.item
+}
+
+/**
+ * 处理断点会话状态：
+ * - completed：服务端已拼接登记，直接用 fileId 结束（不重传，API.md §4 契约）；
+ * - assembling：服务端正在拼接，短暂轮询等待完成；超时则保留断点让用户稍后重试；
+ * - aborted/expired：清断点并重新 init。
+ * 返回 session 表示需要继续上传；返回 UploadResult 表示上传已完成。
+ */
+async function resumeOrRestartUpload(
+  status: ChunkUploadStatus,
+  storageKey: string,
+  file: File,
+  parentId: string | null,
+  chunkSize: number,
+  signal?: AbortSignal,
+): Promise<ChunkUploadInit | UploadResult> {
+  if (status.status === 'completed') {
+    clearResumeRecord(storageKey)
+    if (!status.fileId) {
+      throw new ApiError(0, 'invalid_response', '上传已完成，但服务端未返回文件 id，请刷新文件列表确认')
+    }
+    return { items: [await registeredFileItem(status.fileId, signal)], errors: [] }
+  }
+  if (status.status === 'assembling') {
+    let current = status
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await delay(1000, signal)
+      current = await get<ChunkUploadStatus>(`/api/uploads/${encodeId(status.uploadId)}`, { signal })
+      if (current.status === 'completed') {
+        clearResumeRecord(storageKey)
+        if (!current.fileId) {
+          throw new ApiError(0, 'invalid_response', '上传已完成，但服务端未返回文件 id，请刷新文件列表确认')
+        }
+        return { items: [await registeredFileItem(current.fileId, signal)], errors: [] }
+      }
+      if (current.status === 'uploading' || current.status === 'aborted' || current.status === 'expired') break
+    }
+    if (current.status === 'completed') {
+      clearResumeRecord(storageKey)
+      if (!current.fileId) throw new ApiError(0, 'invalid_response', '上传已完成，但服务端未返回文件 id')
+      return { items: [await registeredFileItem(current.fileId, signal)], errors: [] }
+    }
+    if (current.status === 'assembling') {
+      throw new ApiError(0, 'upload_assembling', ERROR_MESSAGES.upload_assembling ?? '服务端正在拼接文件，请稍后重试')
+    }
+    if (current.status === 'uploading') {
+      return {
+        uploadId: current.uploadId,
+        chunkSize: current.chunkSize,
+        totalChunks: current.totalChunks,
+        expiresAt: current.expiresAt,
+        received: current.received,
+      }
+    }
+    clearResumeRecord(storageKey)
+    return post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size }, { signal })
+  }
+  if (status.status === 'uploading' && status.chunkSize === chunkSize && status.size === file.size) {
+    return {
+      uploadId: status.uploadId,
+      chunkSize: status.chunkSize,
+      totalChunks: status.totalChunks,
+      expiresAt: status.expiresAt,
+      received: status.received,
+    }
+  }
+  clearResumeRecord(storageKey)
+  return post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size }, { signal })
+}
+
 /**
  * 大文件分片上传：先恢复同文件/同目录的会话，缺块并发上传，最后 complete。
- * 断点只保存 uploadId/已收块号，不缓存文件内容；取消后下次重试仍可续传。
+ * 断点只保存 uploadId/已收块号与恢复所需元数据，不缓存文件内容；取消后下次重试仍可续传。
  */
 export async function uploadFileChunked(
   file: File,
@@ -652,34 +792,28 @@ export async function uploadFileChunked(
 
   let session: ChunkUploadInit
   const resumed = readResumeRecord(storageKey)
-  if (resumed && resumed.parentId === parentId && resumed.name === file.name && resumed.size === file.size) {
+  if (resumed) {
     try {
       const status = await get<ChunkUploadStatus>(`/api/uploads/${encodeId(resumed.uploadId)}`, { signal: options.signal })
-      if (status.status === 'uploading' && status.chunkSize === chunkSize && status.size === file.size) {
-        session = {
-          uploadId: status.uploadId,
-          chunkSize: status.chunkSize,
-          totalChunks: status.totalChunks,
-          expiresAt: status.expiresAt,
-          received: status.received,
-        }
-      } else {
-        clearResumeRecord(storageKey)
-        session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size })
-      }
-    } catch {
+      const outcome = await resumeOrRestartUpload(status, storageKey, file, parentId, chunkSize, options.signal)
+      if ('items' in outcome) return outcome
+      session = outcome
+    } catch (error) {
+      if (isAbortError(error) || isApiError(error, 'upload_assembling')) throw error
       clearResumeRecord(storageKey)
-      session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size })
+      session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size }, {
+        signal: options.signal,
+      })
     }
   } else {
-    session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size })
+    session = await post<ChunkUploadInit>('/api/uploads', { name: file.name, parentId, size: file.size }, {
+      signal: options.signal,
+    })
   }
 
+  // 只持久化续传所需最小字段；文件身份由 storage key 指纹保证。
   const record: ResumeRecord = {
     uploadId: session.uploadId,
-    parentId,
-    name: file.name,
-    size: file.size,
     received: [...session.received],
     expiresAt: session.expiresAt,
   }
@@ -923,23 +1057,36 @@ export const api = {
     list(signal?: AbortSignal): Promise<BackupListResult> {
       return get<BackupListResult>('/api/backups', { signal })
     },
-    /** 触发 Pi 端备份准备（只生成 pending，不 ack、不推进游标）。 */
+    /**
+     * 触发 Pi 端备份准备（只生成 pending，不 ack、不推进游标）。
+     * 服务端上限 BACKUP_PREPARE_TIMEOUT_SEC（默认 3300s），必须放宽客户端超时；
+     * 调用方在 timeout 时不得把它当作“未执行”（服务端可能仍在生成）。
+     */
     prepare(totpCode?: string): Promise<BackupPrepareResult> {
-      return post<BackupPrepareResult>('/api/backups/prepare', {
-        confirmText: 'PREPARE',
-        ...(totpCode ? { totpCode } : {}),
-      })
+      return post<BackupPrepareResult>(
+        '/api/backups/prepare',
+        {
+          confirmText: 'PREPARE',
+          ...(totpCode ? { totpCode } : {}),
+        },
+        { timeoutMs: BACKUP_LONG_OPERATION_TIMEOUTS.prepare },
+      )
     },
     /** 上传归档：multipart + X-TOTP-Code 头，返回 archive 与自动校验结果。 */
     importArchive: uploadBackupArchive,
     /** 流式 SHA-256 + tar 安全校验；失败 409 checksum_mismatch / 422 invalid_archive。 */
     verify(name: string): Promise<BackupVerifyResult> {
-      return post<BackupVerifyResult>('/api/backups/verify', { name })
+      return post<BackupVerifyResult>(
+        '/api/backups/verify',
+        { name },
+        { timeoutMs: BACKUP_LONG_OPERATION_TIMEOUTS.verify },
+      )
     },
     /** 只读归档内容（最多 500 条），用于恢复时选择文件/目录。 */
     entries(name: string, path = '/'): Promise<BackupEntriesResult> {
       return get<BackupEntriesResult>(
         `/api/backups/archives/${encodeId(name)}/entries${buildQuery({ path })}`,
+        { timeoutMs: BACKUP_LONG_OPERATION_TIMEOUTS.entries },
       )
     },
     /** 创建恢复计划：选择归档（链由服务端按 manifest 解析）与可选文件路径。 */
@@ -949,25 +1096,37 @@ export const api = {
       totpCode: string
     }): Promise<RestorePlanResult> {
       return normalizeRestorePlan(
-        await post<unknown>('/api/backups/restore-plan', {
-          archive: input.archive,
-          ...(input.paths && input.paths.length > 0 ? { paths: input.paths } : {}),
-          totpCode: input.totpCode,
-          confirmText: 'RESTORE',
-        }),
+        await post<unknown>(
+          '/api/backups/restore-plan',
+          {
+            archive: input.archive,
+            ...(input.paths && input.paths.length > 0 ? { paths: input.paths } : {}),
+            totpCode: input.totpCode,
+            confirmText: 'RESTORE',
+          },
+          { timeoutMs: BACKUP_LONG_OPERATION_TIMEOUTS.restorePlan },
+        ),
       )
     },
     /** 计划详情（轮询执行状态）。 */
     async getRestore(planId: string): Promise<RestorePlanResult> {
-      return normalizeRestorePlan(await get<unknown>(`/api/restores/${encodeId(planId)}`))
+      return normalizeRestorePlan(
+        await get<unknown>(`/api/restores/${encodeId(planId)}`, {
+          timeoutMs: BACKUP_LONG_OPERATION_TIMEOUTS.getRestore,
+        }),
+      )
     },
     /** 执行恢复：TOTP + typed confirmation；服务端只恢复到新目录，失败可重试。 */
     async executeRestore(planId: string, totpCode: string): Promise<RestoreExecuteResult> {
       return normalizeExecuteResult(
-        await post<unknown>(`/api/restores/${encodeId(planId)}/execute`, {
-          totpCode,
-          confirmText: 'RESTORE',
-        }),
+        await post<unknown>(
+          `/api/restores/${encodeId(planId)}/execute`,
+          {
+            totpCode,
+            confirmText: 'RESTORE',
+          },
+          { timeoutMs: BACKUP_LONG_OPERATION_TIMEOUTS.executeRestore },
+        ),
       )
     },
   },
@@ -986,6 +1145,12 @@ export const api = {
     },
     search(keyword: string, signal?: AbortSignal): Promise<FileSearchResult> {
       return get<FileSearchResult>(`/api/files/search${buildQuery({ q: keyword })}`, { signal })
+    },
+    /** 单个文件详情（GET /api/files/:id → {item,path}）；分片上传断点恢复时用于取回已登记文件。 */
+    async get(id: string, signal?: AbortSignal): Promise<FileItem> {
+      const result = await get<{ item?: FileItem }>(`/api/files/${encodeId(id)}`, { signal })
+      if (!result?.item) throw new ApiError(0, 'invalid_response', ERROR_MESSAGES.invalid_response ?? '服务端返回的数据无法解析')
+      return result.item
     },
     createFolder(parentId: string | null, name: string): Promise<FileItem> {
       return post<FileItem>('/api/files/folder', { parentId, name })

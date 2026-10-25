@@ -1,10 +1,10 @@
 # AntifieldCloud · 个人工作台
 
-面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。
+面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.6.6（**已发布：Tag `v0.6.6` + GitHub Release**）。本版精简系统提示词与发送工具定义文本，降低工具说明对 Bot 回复风格的影响；群聊用户消息增加用户名 head；群聊声明所处环境，未 @ 消息默认沉默、不要求每轮调用发送工具；群聊改用独立共享记忆（`<用户名>：<记忆>`），成员用户级记忆不进入群聊会话；`/bots` 长期记忆分用户记忆/群聊记忆左右两栏并迁移现有群聊参与者记忆；同时包含 v0.6.5 的 `/role show` 与失效 AI 会话重建修复。schema 保持 **v16**（无迁移）。生产 release `20261024T100522Z`/commit `1f6980e`。OpenCode v2.1.3。
-> 发布：最新公开版本 v0.6.6（Tag `v0.6.6`，GitHub Release [AntifieldCloud v0.6.6](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.6)）；v0.6.5 已补发 Tag `v0.6.5` + GitHub Release [AntifieldCloud v0.6.5](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.5)（生产 release `20261024T085435Z`/commit `c48ea8a`，内容并入 v0.6.6）。上一发布 v0.6.4（Tag `v0.6.4`，GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)）；上一版 v0.6.3（Tag `v0.6.3`，release `20261023T142411Z`/commit `7ac1d27`）。
-> 测试基线（Lead 实测 2026-10-24，v0.6.6）：`npm test` **414**（server+scripts，含群聊用户名/共享记忆/群聊默认沉默/记忆迁移/角色卡/失效会话重建回归）、`npm run test:web` **181**（32 文件）、`npm run typecheck`/`npm run lint` 通过；Node.js 运行时 **v26.12.1**；OpenCode **v2.1.3**。
+> 状态：v0.7.0（**待发布**）。本版为第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）：P0=0/P1=3/P2=26/P3=73 全部处置（P3 中可修小项随本版修，架构性/已接受项写入明确残余）；备份归档可用独立 age 公钥整包加密（Web 不持私钥，加密归档在 Web 一律 `409 archive_encrypted`），PC 端可链感知上传密文到异地；Bot AI 工具隔离降级改为 fail-closed（`503 bot_ai_tool_isolation_unavailable`）、群共享记忆归属改为稳定 `member_openid`；审计写入改为事务外 best-effort 并经 `/api/version.audit` 暴露失败计数。schema 保持 **v16**（无迁移）。OpenCode 已升级 **v2.1.4**（生产只读升级，应用仍 v0.6.6，升级/回滚与矩阵见 `docs/DEPLOY.md` §3.2）。
+> 发布：上一发布 v0.6.6（Tag `v0.6.6`，GitHub Release [AntifieldCloud v0.6.6](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.6)，生产 release `20261024T100522Z`/commit `1f6980e`）；v0.6.5 已补发 Tag `v0.6.5` + GitHub Release（内容并入 v0.6.6）。**v0.7.0 的 Tag/Release/生产应用 release 待发布门禁与部署确认后填写。**
+> 测试基线（2026-10-25）：`npm test` **478**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.63% / Branches 78.16% / Functions 87.84%**，前端 **Lines 52.31% / Branches 47.32% / Functions 45.02%**；`npm run check`、`check-version`（严格）、`build` 均通过；Node.js **v26.12.1**；OpenCode **v2.1.4**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -12,9 +12,9 @@
 - 服务端：Node.js >= 26（生产安全更新至 v26.12.1；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
-- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI（v0.5.9 起 AI 仅 Chat 模式），结构化长期记忆落 DB（v0.5.11 schema v14；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
+- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI（v0.5.9 起 AI 仅 Chat 模式），结构化长期记忆落 DB（schema v16；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **383**）+ Vitest/jsdom（**176**，32 文件），ESLint，`tsc --noEmit`，覆盖率门禁（Lines **92.39%** / Branches **77.83%** / Functions **87.14%**）
+- 测试：`node --test`（服务端 + 运维脚本 **478**）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 92.63/78.16/87.84；前端 52.31/47.32/45.02，Lines/Branches/Functions）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -56,7 +56,7 @@
 - HTTP 与 WebSocket 均校验 `Origin`（仅 app/ai 正式 origin；WS 必须带合法 Origin），拒绝时 403 + 审计。
 - `OPENCODE_HTML_MODE=shim|attributes|passthrough` 兼容 Rocket Loader/自动注入差异，不添加可见 UI。
 
-### 机器人（v0.5.11，QQ 官方 Bot 单平台）
+### 机器人（QQ 官方 Bot 单平台）
 
 - **平台收敛**：v0.5.8 起仅支持 QQ 官方 Bot：QQ 用 AppSecret 派生 Ed25519（`op=13` 回调地址校验、`op=0` 事件验签，回复 `{opcode:12}`）；公开入口为 `POST /api/bot/webhook/:botId`，原始 body 验签后按事件 ID 去重。
   Telegram/Discord/Slack 适配器、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式与 Telegram HTML/引用/线程已移除；schema v13 删除非 QQ Bot 及其级联数据（生产 Discord Bot 数据迁移前已备份）。
@@ -69,7 +69,7 @@
   TTL：资料/偏好不过期，事实/项目/关系 **365 天**、事件 **90 天**、任务 **30 天**（更新续期）；召回核心层优先 + 关键词相关层，预算 **3000 字/12 条**（`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`），`/memory off` 时无注入；审计 `bot.memory.extract` 只记计数。
 - **AI 仅普通消息 Chat（v0.5.9）**：提示词固定为「角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息」，全量群消息追加 `NO_REPLY` 决策段；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；`/reset` 与私聊角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 mode。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
 - **默认角色、私聊角色卡与群聊角色卡**：内置默认角色 `lofii` 只保留名字与简短对话风格；群聊使用管理员在“角色与记忆”配置的共享角色卡（每个群目标一张，覆盖成员私聊卡，停用/删除回退 lofii）；C2C `/role` 对 QQ 私聊用户开放，每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；`/role show` 对用户自定义卡返回完整详细文本，默认角色卡只返回名称、不展示内置详情；个人卡只覆盖私聊；群聊不执行 `/role`，也不再接受任何斜杠命令。私聊角色卡变更会清理该范围会话映射。
-- **群聊用户名与共享记忆（v0.6.6）**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话；Web「角色与记忆」按用户记忆/群聊记忆左右两栏展示元数据并支持清空群共享记忆。系统提示词与发送工具说明同步精简，减少工具定义对回复风格的影响。
+- **群聊用户名与共享记忆**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话；Web「角色与记忆」按用户记忆/群聊记忆左右两栏展示元数据并支持清空群共享记忆。v0.7.0 起条目归属键使用稳定 `member_openid`（显示名只存 value），启动一次性迁移旧显示名键、无法映射者标 `legacy:` 保留；`/forget confirm` 同时清除本人在各群贡献的条目并取消在途抽取。
 - **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停与最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊）、`/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目、状态、legacy 旧摘要与该 Bot×用户全部会话，含远端）；对 C2C 用户开放；`/reset` 与私聊角色卡变更会尽力删除对应远端会话。
 - **出站连通性（v0.5.10，Pi 直连）**：`server/src/bot/connectivity.ts` 每 60 秒探测外网与 QQ 平台只读 API；`GET /api/bots/connectivity` 仅返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/bots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/bots` 概览展示外网/QQ 平台状态。
 - **代理隧道已移除（v0.5.10）**：删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`BOT_PROXY_URL`/`NO_PROXY`，Bot 出站改为 Pi 直连。
@@ -87,16 +87,18 @@
 - 每 60s 采样 CPU/内存/温度/磁盘/负载，保留 30 天；`GET /api/metrics?range=1h|6h|24h|7d|30d` 按桶聚合（最多 240 点）。
 - Dashboard 四张 SVG 趋势卡（CPU/内存/温度/磁盘），1h/6h/24h/7d/30d 切换，无第三方图表库。
 - Activity 支持动作精确筛选 + 关键词 + 时间范围；Alerts 卡片支持状态/事件筛选与分页。
-- 告警条件：磁盘、温度、内存、服务、备份超期、pending 备份、备份密钥包、Minecraft、欠压，以及世界备份/世界拉取/恢复演练超期；通用 JSON webhook（10s×3 重试、可选 HMAC）、Bot 通知、去重/冷却/恢复通知、90 天事件保留。
+- 告警条件：磁盘、温度、内存、服务、备份超期、pending 备份、备份密钥包、Minecraft、欠压，以及世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`，`ALERT_OFFSITE_MAX_AGE_HOURS` 默认 48；未配置异地副本时不产生条件、不误报）；通用 JSON webhook（10s×3 重试、可选 HMAC）、Bot 通知、去重/冷却/恢复通知、90 天事件保留。
 
 ### 备份与灾备
 
 - 应用归档两阶段：Pi `--prepare` 生成 pending → PC 拉取并校验 SHA-256 → `--ack` 才推进游标；pending 未确认不删除，已确认在 Pi 保留 2 个、PC 每天/每周保留 30 天/56 天。
-- Web 备份管理：归档列表、手动 prepare、导入/校验、文件级恢复到新目录（TOTP + typed confirmation）；整库恢复只走离线 root 手工流程（`docs/BACKUP.md` §8.1）。
+- 备份整包加密（默认关闭）：`BACKUP_ARCHIVE_ENCRYPTION=true` 时用独立备份 age 公钥生成 `*.tar.gz.age`，明文 tar 只在 `*.plain.tmp` 短暂存在；明文 SHA-256/大小写在归档外 `<archive>.meta.json` 与 DB `manifest_json`；失败关闭（age/公钥/加密失败即 prepare 失败，不回退明文），空间按 2× 明文预算。Pi 只存公钥，私钥离线 ≥2 份；启用前必须用私钥完成一次解密演练。
+- 异地副本（默认关闭，PC 端）：`backup-offsite.mjs/.ps1` 只上传 `.age`（拒绝明文），链感知保留（最新 full + 其后全部 inc + 最近 N 天，绝不删最新 full），`rclone copyto --checksum` 上传并校验，状态写 Pi `backup-offsite-status.json`；Dashboard 只读展示，超期触发告警。
+- Web 备份管理：归档列表、手动 prepare（长任务 3300s 超时）、导入/校验、文件级恢复到新目录（TOTP + typed confirmation）；加密归档在 Web 不可校验/恢复（`409 archive_encrypted`），恢复目标自动跳过；整库恢复只走离线 root 手工流程（`docs/BACKUP.md` §8.1）。
 - 世界备份：`antifieldcloud-world.timer` 每周日 12:00（Asia/Shanghai，Persistent）以 root 生成 gzip 归档（`/var/lib/antifieldcloud/world-backups`），SHA-256 旁文件，保留 4 份；PC 周度 `world-pull.ps1` 校验后 ack 并保留 4 份。
-- 恢复演练：`drill.ps1` 自动校验 full+inc 链、旁文件 SHA、tar 安全、最新 DB integrity/FK/schema、manifest，报告保留 180 天；可选 `-IncludeWorld` 解包验证 `level.dat`。
-- 密钥包：age 加密 env/cloudflared/Minecraft/opencode 配置与 opencode DB 快照；明文临时目录优先用 `/run/antifieldcloud/secrets-tmp`（tmpfs），Pi 保留 2 份、PC 90 天。
-- 备份/世界/拉取/演练状态由脚本写入只读 JSON（`/var/lib/antifieldcloud/*-status.json`，0644），Dashboard/Settings 与告警读取。
+- 恢复演练：`drill.ps1` 自动校验 full+inc 链（含 `since` 连续性与 1–9 位小数秒时间戳）、旁文件 SHA、tar 安全、最新 DB integrity/FK/schema、manifest，报告保留 180 天；加密归档需 `-AgeIdentityPath` 先解密再校验；可选 `-IncludeWorld` 解包验证 `level.dat`。
+- 密钥包：age 加密 env/cloudflared/Minecraft/opencode 配置与 opencode DB 快照；明文临时目录优先用 `/run/antifieldcloud/secrets-tmp`（tmpfs），Pi 保留 2 份、PC 90 天；`--include-host-config` 可把 sshd/fail2ban/cloudflared/journald 等主机配置一并打包。
+- 备份/世界/拉取/演练/异地状态由脚本写入只读 JSON（`/var/lib/antifieldcloud/*-status.json`，0644），Dashboard/Settings 与告警读取；应用只读且对状态文件设 64 KiB 上限。
 
 ### PWA / 手机
 
@@ -120,7 +122,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.6.0 -ExpectedSchemaVersion 14`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.0 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
 
 ## 目录
 
@@ -144,31 +146,31 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - Bot 平台 Token/签名密钥/QQ AppSecret 只写不读，数据库仅存 AES-256-GCM 密文；Webhook 以平台签名/时间戳鉴权并按事件 ID 去重；QQ 额外校验 op=13 Ed25519 回调地址；命令要求目标授权 + 显式用户白名单；发布要求 TOTP + `PUBLISH` 双确认；通知/命令输出清洗路径与 URL。
 - Chat 目标级 `allow_chat` 与命令 `allow_commands` 分离：非管理员只能 Chat，QQ C2C 私聊直接进入、群/频道仅 @Bot 事件（平台限制，无“全部消息”）；结构化记忆条目与 key/value 不经 API/UI 暴露（仅计数/类型/元数据），legacy 旧摘要为 fallback；v0.5.8 起无 Discord Gateway/长连接，只有 QQ Webhook 入站。
 - 诊断只存事件元数据（类型/结果/短码/目标与用户 ID），不存消息正文；角色/记忆管理 API 只返回元数据，正文不进入 Web/API；图片输入不可信：固定平台域名、image mime 白名单、大小上限、不落盘，失败降级为纯文字；长回复/附件 partial 失败不自动重试。
-- Chat 仅对已授权目标/C2C 开放，默认关闭且按用户每分钟/每小时限流；AI 会话新建时使用 deny-all 工具权限，若 OpenCode 明确拒绝该字段才降级并在日志标注“未隔离”；AI 仅把文本回复交给 Bot，不上传文件、不返回 OpenCode 凭据。
-- 备份归档校验 SHA-256 与 tar 安全（拒绝路径穿越/链接/设备/超大条目）；Web 恢复只到新目录、不覆盖，整库恢复仅离线 root 流程。
+- Chat 仅对已授权目标/C2C 开放，默认关闭且按用户每分钟/每小时限流；AI 会话新建时使用 deny-all 工具权限，若 OpenCode 明确拒绝该字段则进入 10 分钟重试窗口；启用消息发送工具时 fail-closed（新 Chat 返回 503 `bot_ai_tool_isolation_unavailable`，不以默认权限继续），上游恢复后自动恢复隔离。AI 仅把文本回复交给 Bot，不上传文件、不返回 OpenCode 凭据。
+- 备份归档校验 SHA-256 与 tar 安全（拒绝路径穿越/链接/设备/超大条目）；Web 恢复只到新目录、不覆盖，整库恢复仅离线 root 流程；加密归档在 Web 一律 409，Web/应用进程不持 age 私钥。
+- 备份加密失败关闭：加密开启时 age 缺失、公钥非法、加密失败或空间不足都让 prepare 失败，不产生 pending、不降级明文；明文临时文件崩溃残留由下次 prepare/维护清理（>24h）。
+- 审计与状态可见：审计写入失败不阻断业务但计数+最近错误可见（`/api/version.audit`）；备份加密/异地状态只含开关、公钥是否就绪、别名与计数，不含私钥/远端路径/凭据。
 - 指标与审计只记录元数据/主机数值，不含文件内容；审计字段截断（actor≤64、target≤256、detail≤4 KiB）。
-- systemd 沙箱（空 capability、只读系统、仅数据目录可写、MemoryMax 512M）+ 世界备份 unit 加固；nftables 默认拒绝入站；SSH 仅公钥（`00-` drop-in，保留 24h 回滚窗口）；`fail2ban` 以 nftables 后端启用 `sshd` jail（24h ban），dbfile 持久化封禁，`nftables.service` 的 drop-in 在启动后异步重启 fail2ban 恢复封禁 set。
-- 任何密钥只存放在 `/etc/antifieldcloud/env`（0640 root:antifieldcloud）、Pi 本机或离线 age 私钥；不进仓库/日志/前端 bundle。
+- systemd 沙箱（空 capability、只读系统、仅数据目录可写、MemoryMax 512M）+ 世界备份 unit 加固；nftables 默认拒绝入站（模板使用 TEST-NET 占位，安装前按实际网段替换）；SSH 仅公钥（`00-` drop-in，保留 24h 回滚窗口）；`fail2ban` 以 nftables 后端启用 `sshd` jail（24h ban），dbfile 持久化封禁，`nftables.service` 的 drop-in 在启动后异步重启 fail2ban 恢复封禁 set；主机级配置模板见 `deploy/host/`。
+- 任何密钥只存放在 `/etc/antifieldcloud/env`（0640 root:antifieldcloud）、Pi 本机或离线 age 私钥；不进仓库/日志/前端 bundle。备份 age 密钥对独立于 `secrets-age`。
 - 备份包含 TOTP secret、Bot 凭据密文（`BOT_SECRET_KEY` 在 env 内）与文件内容；密钥包用 age 加密，Windows 备份目录 ACL 仅当前用户/Administrators/SYSTEM。
 
 ## 已知限制
 
-- SSH 密码登录已在 v0.5.0 关闭（仅公钥，`00-` drop-in，24h 回滚窗口）；`antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择保留）；`fail2ban` 已启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化与 nftables 启动后恢复 drop-in 已安装。
-- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并验证，service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。
-- Cloudflare 终止 TLS，可见明文；单 SD 卡、无全盘加密；普通归档仍含 TOTP/会话明文，age 私钥丢失则密钥包不可恢复。
-- 限流状态在内存中，应用重启清零；`http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换；scrypt 仍为 N=2^15。
+- SSH 密码登录已关闭（仅公钥，`00-` drop-in，24h 回滚窗口）；`antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择保留）；`fail2ban` 已启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化与 nftables 启动后恢复 drop-in 已安装。
+- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并验证，service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。生产探测确认 `ai` 主机未受 Access 保护，本版已在其未认证路径加限流（60/min SSO、120/min 匿名）与审计去重；建议后续在 Cloudflare 后台给 `ai` 增加 Access/WAF。
+- Cloudflare 终止 TLS，可见明文；单 SD 卡、无全盘加密。
+- 限流状态在内存中，应用重启清零；`http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换；scrypt 仍为 N=2^15；单进程单点，`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
 - 分享不支持目录打包，多文件分享不提供服务端 zip；下载次数为会话级近似限制；无公开笔记分享。
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
-- 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练计划任务需用户手动安装，未装时状态为“未运行/unknown”。
-- 备份无异地副本与整包加密；旧世界 cron 已停用，历史 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。
-- Bot 已知限制：v0.5.8 起仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件，无“全部消息”；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批留待下一版。
-- v0.5.8（已部署 2026-10-22）：平台收敛为 QQ 单平台、schema v13（迁移 13 删除非 QQ Bot 及级联数据，迁移前已备份生产 Discord Bot 数据，回滚只能还原快照）、QQ 入站图片理解默认开启、`/bots` 去 Gateway/媒体/触发方式；
-  `/healthz` v0.5.8/schema 13，smoke 16/16 与 24/24；真实 QQ 消息/图片识别/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板与文本发布按用户确认整体通过（服务端未单独留存 UI/发布证据）。
+- 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练/异地副本计划任务需用户手动安装，未装时状态为“未运行/unknown”。
+- **备份整包加密默认关闭且 Web 不可恢复**：加密归档（`.age`）只能在 PC 用离线私钥解密/校验/恢复；私钥丢失即无法恢复明文，Pi 不持私钥也无法代解密。预部署 DB 快照继续明文（0600、保留 2 份，供自动回滚），属威胁模型明确豁免项。
+- **加密失败关闭的残余窗口**：SIGKILL/断电/ENOSPC 可能残留 `*.plain.tmp`（正常路径立即删除，>24h 由下次 prepare 清理）；崩溃只允许产生可清理临时文件或“有密文无 DB 行”孤儿（只报告、不自动删除），后者需人工核对。
+- **异地副本默认关闭**：需用户在 PC 配置 rclone remote/凭据（脚本不创建），只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。
+- **明确残余（D-18 记录、不本版强行改造）**：BotService 仍为大型 facade（D-16 已抽出 inbound/diagnostics 等，进一步拆分排 v0.8）；服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；审计失败计数为进程内、不持久化；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/BACKUP.md` §11。
+- Bot 已知限制：仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件（或显式开启全量消息后由模型决定是否回复）；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批留待后续。
 - 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
-- QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，QQ 官方 Bot 当前不提供该能力。
-- v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST）：结构化记忆系统 + **schema v14**（迁移 14 新增 `bot_memory_items`/`bot_memory_state`，不可逆；v0.5.10 不支持 v14，回滚必须恢复迁移前快照）；旧 `bot_ai_memories` 保留为 legacy，验收后需执行 `node scripts/cleanup-legacy-memory.mjs --confirm` 清理；生产 env 需新增 5 个 `BOT_MEMORY_*`；测试基线 360/162（30 文件），覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**、`npm run build` 通过。
-- v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST）：记忆/会话修复（摘要会话一次性并删除远端、记忆更新串行、合并策略=3 条或空闲 120s、记忆保留 365 天与会话 7 天分离、`/reset`/`/forget confirm`/角色变更清理远端会话）；移除代理隧道依赖（删除隧道脚本/PC 计划任务、`BOT_PROXY_URL` 与生产代理变量，连通性仅外网+QQ 平台，Pi 直连）；schema v13 无迁移；测试基线 341/157（30 文件），覆盖率 Lines **91.98%** / Branches **76.92%** / Functions **85.99%**、`npm run build` 通过。
-- v0.5.9 起 `/ask` 已移除（AI 全部由普通消息 Chat 承担）；v0.5.3 已实发确认 QQ C2C 与 QQ 群 @Bot Chat；v0.5.8 的真实消息/图片能力/自助命令已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片端到端成功）。
+- QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
   告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。
@@ -179,5 +181,5 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 
 MIT © 2026 Antifield。详见 [LICENSE](LICENSE)。
 
-> 仓库中的域名、IP 与备份路径均为示例值（`example.com`、`192.0.2.x`、`%USERPROFILE%`）；
-> 实际部署通过 `/etc/antifieldcloud/env`、`-PiHost`、`-BackupRoot` 等参数覆盖。
+> 仓库中的域名、IP、网段与备份路径均为示例/占位值（`app.<domain>`/`ai.<domain>`/`mc.<domain>`、`example.com`、`192.0.2.x`、`198.51.100.x`、`%USERPROFILE%`）；
+> 安装/部署前按 `.local/DEPLOYMENT.md`（gitignored）替换为实际值，实际部署通过 `/etc/antifieldcloud/env`、`-PiHost`、`-BackupRoot` 等参数覆盖。

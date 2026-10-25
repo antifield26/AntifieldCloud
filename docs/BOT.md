@@ -1,4 +1,4 @@
-# Bot 集成（v0.5.8，QQ 官方 Bot 单平台）
+# Bot 集成（v0.7.0，QQ 官方 Bot 单平台）
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）、QQ 入站图片理解和手动/定时文本发布接到 **QQ 官方 Bot**。
 v0.5.8 起平台收敛为 **QQ 单平台**：Telegram / Discord / Slack 适配器、Discord Gateway、只读按钮、多附件/媒体发布、群聊触发方式（`chatTrigger`）
@@ -61,7 +61,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - `server/src/bot/text.ts`：QQ 单条文本上限 2000、分段（最多 4 段、续段前缀、截断标记、代理对安全切分）。
 - `server/src/bot/format.ts`：AI Markdown → QQ 纯文本（去代码块/标题/粗体/列表/链接标记，仅 http(s) 链接保留为文字）。
 - `server/src/bot/errors.ts`：平台/队列错误 → 中文提示（管理页 `lastErrorHint`），不含凭据/URL/响应正文。
-- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、工具白名单、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；v0.6.4 起按配置放行 `botmsg_*` MCP 发送工具；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；兼容性基于 OpenCode v2.1.3）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
+- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、工具白名单、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；v0.6.4 起按配置放行 `botmsg_*` MCP 发送工具；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；降级后 fail-closed 与 10 分钟重试窗口见 §5.9；兼容性基于 OpenCode v2.1.4）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
 - `server/src/bot/group-roles.ts`：群聊目标共享角色卡存储；`server/src/http/routes/bot-ai-tool.ts`：消息发送 MCP 的内部回调路由（turn token HMAC、无 session/CSRF）。
 - `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；v0.6.0 起 key/value/legacy 均过滤敏感内容，读取侧也排除旧版本已落库的敏感条目；旧摘要仅作 legacy 来源与 fallback，抽取 ops=0 不置迁移标记。
 - `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。内置默认角色 `lofii` 自 v0.6.0 起只保留名字与简短对话风格，不注入详细人设/背景；v0.6.5 起 `/role show` 对用户自定义卡返回完整详情，默认角色卡只显示名称、不展示内置设定。
@@ -104,6 +104,9 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 `/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目/状态/legacy 旧摘要与该 Bot×用户的全部会话，含远端）。五条不需要目标 `allow_commands` 或 user 白名单；
 - **群聊角色卡**：每个群聊目标一张共享卡（管理员在 Web 编辑）；群聊 Chat 使用该卡，不再使用成员私聊个人卡；群聊不接受 `/role`。`groupReplyMode=mention` 仅处理 @Bot/文本包含 Bot 名称的全量消息；`all` 为实验性，v0.6.4 起由模型是否调用 `send_message` 决定发送，未调用即静默。
 - **AI 会话复用**：按 Bot×目标×用户复用 OpenCode 会话；v0.6.5 起若远端会话已被清理（404），自动删除 `bot_ai_sessions` 旧映射并重建一次，避免群聊未登记用户持续收到 `bot_ai_http_error`。
+- **工具隔离与 fail-closed（v0.7.0/D-12）**：Chat 新建 OpenCode 会话使用 deny-all `permissions`（启用搜索/发送工具时仅 allow `searxng_*`/`botmsg_*`）；若 OpenCode 明确 400 拒绝该字段，
+  进入 10 分钟重试窗口，并且**启用发送工具时拒绝新 Chat**（固定提示、诊断事件、不调用 AI；`503 bot_ai_tool_isolation_unavailable`），不以默认权限继续；
+  窗口到点放行一次重试，上游恢复后自动恢复隔离。启动/批次执行前双重检查，避免降级瞬间的排队批次继续运行。
 
 ## 4. 队列、回复管线与失败处理
 
@@ -116,6 +119,7 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - 图片（默认开启）：`d.attachments` → image/* 元数据 → 固定域名后缀白名单 + mime 白名单 + 大小上限 → 内存下载 → OpenCode prompt files；
   关闭/失败/mime 非法时降级为纯文字回答；不落盘、不写日志/审计正文。
 - 进程重启后，`sending` 超过 10 分钟的记录自动回队；`assembling` 等异常由各模块维护清理。
+- 关闭排空（v0.7.0/ARCH-04）：应用关闭时先有限等待在途 Chat/工具缓冲/投递（最多 15s，超时记录 warn），再停队列；减少部署/重启丢回复与重复投递。
 - 事件保留 `BOT_EVENT_RETENTION_DAYS`（默认 7 天）；AI 会话映射按 `BOT_AI_SESSION_RETENTION_DAYS`（默认 7 天）清理；
   结构化记忆按条目 `expires_at` 清理（资料/偏好不过期；事实/项目/关系 365 天、事件 90 天、任务 30 天，更新续期）并受 `BOT_MEMORY_MAX_ITEMS` 容量约束；旧摘要仅 legacy/fallback，验收后 CLI 清理；
   已发送投递/发布 30 天后清理；`failed/dead` 保留供人工重投，不自动删除。
@@ -269,6 +273,32 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；v0.6.4 新增 `BOT_CHAT_BU
 - **会话命名**：新建 OpenCode Chat 会话标题为「目标名称 Chat」，记忆抽取一次性会话为「目标名称 Memory」；已有会话不主动重命名，清理逻辑按 Bot×目标×用户映射执行。
 - **部署**：`sudo bash scripts/install-bot-tool-mcp.sh` 将 `scripts/bot-tool-mcp.mjs` 安装为 `/opt/botmsg-mcp/bot-tool-mcp.mjs` 并写入 OpenCode `mcp.servers.botmsg`（重启 opencode）；随后 app env `BOT_AI_SEND_TOOL_ENABLED=true` 并重启应用。OpenCode 会话 permissions 顺序为 deny-all 后 allow `botmsg_*`（搜索启用时另 allow `searxng_*`）。
 - **全量群聊合并**：非 @ 全量消息使用 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`（默认 8000ms）/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`（默认 20000ms），减少逐条调用模型；@/名字命中仍用默认 3000/10000ms，保证及时回复。
+- **代码边界（v0.7.0/D-16 行为保持重构）**：`server/src/bot/inbound.ts`（入站验签/限流/去重/命令与 Chat 分发）、`chat.ts`（Chat 回合、工具缓冲、记忆触发与串行锁）、
+  `diagnostics.ts`（bot_events/入站目标/指标/最近错误）、`queue.ts`（投递/发布状态机）；`service.ts` 保留 `BotService` facade 与依赖装配。
+  重构不改变 schema/提示词/外部行为；每步以 bot 测试全绿为门禁。
+
+## 5.9 v0.7.0 审计修复与行为变更
+
+- **AI 工具隔离 fail-closed（D-12/SEC-11）**：OpenCode 明确 400 拒绝 `permissions` 时不再进程级永久降级，而是进入 10 分钟重试窗口；
+  启用 `BOT_AI_SEND_TOOL_ENABLED` 且隔离不可用时**拒绝新 Chat**：inbound/chat 侧返回固定提示“安全隔离不可用，暂时停止 AI 对话。”并写 `bot_events`（群/@ 为 denied，全量群为 ignored），
+  OpenCode 层抛 `503 bot_ai_tool_isolation_unavailable`；窗口到点放行一次重试，上游恢复后 `aiToolIsolation.supported=true` 自动恢复。未启用发送工具时纯文本 Chat 行为不变。
+  状态 `BotStatus.aiToolIsolation{ supported, fallbackCount, fallbackAt, retryAt }` 可查；降级审计 `bot.ai.permissions_fallback` 仍只记计数。
+- **群共享记忆归属（D-13/BOT-03/BOT-10）**：群 scope 条目 key 前缀由显示名改为稳定 `member_openid`，显示名只存 value；同名/改名成员不再互相覆盖或删除。
+  启动一次性迁移 `meta.bot_group_memory_owner_migrated_v1`：按 `bot_inbound_targets` 的「群目标 + 显示名 + 用户」唯一映射旧键；无法唯一映射的条目加 `legacy:` 前缀保留（不参与按成员删除）；
+  目标键冲突时跳过不覆盖。`/forget confirm` 在清用户级记忆/会话之外，同时删除本人在各群 scope 贡献的条目并取消在途抽取（审计 `bot.memory.forget` 增加 `groupItems/groupScopes`）。
+- **孤儿会话清理保守化（BOT-01）**：启动清理只删除标题精确等于旧默认值（`AntifieldCloud Chat`/`AntifieldCloud Memory`）且不在当前映射中的远端会话；
+  新命名「目标名称 Chat/Memory」与前缀相似会话不误删；2.1.4 的 archived 语义在升级矩阵 V6 中记录后再评估主动清理。
+- **混批 @ 语义（BOT-02）**：全量群聊批次中只要任一消息被 @/名字命中，整批按“被点名”处理（必回复），不再由最后一条非 @ 全量消息决定静默。
+- **回合异常工具消息（BOT-04）**：模型已通过 `botmsg_send_message` 写入缓冲后若回合异常，先补发缓冲消息并审计 `bot.ai.send`（`partialTurn`），
+  而不是直接回错误兜底；补发失败才回“暂时没回应上来”，保证“模型认为已发送/用户看不到”的情况最小化。
+- **同会话串行（BOT-05）**：`/search` 与普通 Chat 共用 per-session 串行锁；burst 批次、`/search`、直调路径不会并发调用同一会话 AI，不同会话仍并行。
+- **群记忆清空竞态（BOT-06）**：管理端清空群共享记忆会取消该 scope 所有成员在途/待处理抽取（gen 递增），清空后不会被在途批次写回。
+- **死字段（BOT-07）**：`BotStatus.lastError`/`BotSummary.lastError` 改为从 `bot_deliveries`/`bot_publish_jobs` 失败派生；`bots.last_error` 列保留但不再作为唯一来源。
+- **Webhook 限流与审计（BOT-08）**：未验签请求每 Bot 120/min、已验签事件每 Bot 300/min 分桶（验签后才扣业务桶）；拒绝/限流审计按「每 Bot×动作×分钟」聚合（首条 + 每 50 条），
+  未认证流量不能饿死合法事件或写满审计表；IP 取统一 `requestMeta`（仅 loopback 对端采信 Cloudflare 头）。
+- **burst.clear 竞态（BOT-13）**：`clear` 标记 cancelled 并清空 items，运行中批次的 finally 不再为旧消息排队；`/reset`/`/forget`/角色变更后的旧缓冲不会再回复。
+- **名称匹配（BOT-15）**：Bot 名称提及按词边界匹配，降低短名/子串过度触发；未 @ 的群消息仍可由模型选择沉默。
+- **关闭排空（ARCH-04）**：应用关闭时有限等待在途回复/工具缓冲/投递（最多 15s，超时 warn），减少部署/重启丢回复与重复投递。
 
 ## 6. 网络出站（QQ / OpenCode，Pi 直连）
 
@@ -308,6 +338,9 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 ## 7. 结构化记忆存储与运维（v0.5.11）
 
 - **数据表**：`bot_memory_items`（`(bot_id,user_id,kind,mem_key)` 唯一，value ≤500 字、key ≤64 字、confidence 0–1、importance 1–5、source ∈ chat/legacy、时间戳/`expires_at`）为权威；`bot_memory_state` 保存启停与 legacy 迁移标记；旧 `bot_ai_memories` 仅 legacy/fallback。
+- **群共享记忆（v0.7.0/D-13）**：群 scope 为 `group:<targetExternalId>`；条目 key 前缀为稳定 `<member_openid>:`，显示名只存 value（`<用户名>：<记忆>`），
+  同名/改名成员不能互相覆盖/删除；启动一次性迁移旧显示名 key（无法唯一映射加 `legacy:` 保留）；`/forget confirm` 清本人在各群条目并取消在途抽取；
+  管理端清空群记忆会取消在途抽取；管理员 `DELETE /api/bots/:id/group-memories/:scope` 清空该群共享记忆（审计 `bot.memory.delete_user`）。
 - **迁移 14**：新增上述两表（不可逆）；`scripts/deploy.ps1` 切换前自动做迁移前 DB 快照；v0.5.10 不支持 schema v14，回滚必须恢复快照。
 - **写入**：抽取批处理按 Bot×用户串行；一次性 OpenCode 会话（`finally` 删除）；服务端严格校验 ops、敏感过滤（密钥/URL/内部路径/UNC/提示结构标记，key/value/legacy 均过滤）、容量清理（默认 200，先淘汰低重要度非核心条目）；更新续期；ops=0 不置 legacy 迁移标记。
 - **读取/召回**：核心层优先 + 关键词相关层，预算 3000 字/12 条；命中更新 `last_used_at`；`/memory off` 无注入；未迁移旧摘要 fallback 注入（受 `BOT_AI_MEMORY_MAX_CHARS` legacy 上限约束）。
@@ -322,7 +355,9 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 
 - 适配器/验签/队列/命令白名单/发布 TOTP+`PUBLISH`/AI/Chat/记忆/文本分段/图片下载/连接自检/诊断/角色与记忆管理均有进程内测试（不访问真实平台/模型）。
 - QQ 适配器以 mock/fixture 覆盖（op=13/op=0、C2C/群@/频道、attachments 图片、access_token 自检、长文本分段）；AI 使用假 OpenCode HTTP 服务。
-- 测试基线（Lead 实测 2026-10-23，v0.5.11）：`npm test` **360** 通过（v0.5.10 的 341 + 新增 19：记忆存储/抽取/检索/迁移/管理 API/`/memory` 等）、`npm run test:web` **162**（30 文件，v0.5.10 为 157，+5）；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**（`npm run test:coverage` exit 0）、`npm run build` 通过。
+- **v0.7.0 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **180 pass**（27 文件）；全量 `npm test` **478**；新增/更新覆盖工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
+  群记忆清空空竞态、lastError 派生、Webhook 限流分桶与审计聚合、burst.clear、名称词边界、孤儿清理保守化、关闭排空；生产真实 QQ/OpenCode 2.1.4 的 V10–V13 待部署后联调。
+- 历史基线（v0.5.11）：`npm test` 360、`npm run test:web` 162；v0.6.x 基线见 `CHANGELOG.md`/`docs/ACCEPTANCE.md`。真实平台负路径（限流/签名漂移/故障）仍需部署后联调。
 - **真实平台前置条件**（部署/联调前确认）：
   - QQ 开放平台已创建机器人并配置回调地址，`op=13` 校验通过；已订阅 C2C/群@/频道事件。
   - Bot 已加入目标群/频道；群/频道必须 @Bot 才会产生事件；C2C 私聊无需登记即可 Chat，命令仍需白名单。

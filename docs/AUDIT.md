@@ -1,4 +1,4 @@
-# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0）
+# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0）
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
@@ -209,7 +209,7 @@
 
 ### 3. 生产只读事实（审计证据摘要）
 
-- Pi `antifield@169.254.77.10`，Node v26.11.1，app v0.3.2 active，schema v4，release `20261020T102328Z`，磁盘 58G/25G 用/31G 余。
+- Pi `antifield@192.0.2.10`，Node v26.11.1，app v0.3.2 active，schema v4，release `20261020T102328Z`，磁盘 58G/25G 用/31G 余。
 - 世界 4.1 GiB（压缩约 3.0 GiB）；旧 cron 每日 23:00 无 save-off，保留约 3 份/9 GiB；RCON 25575 loopback 可达。
 - `antifield` sudo NOPASSWD ALL、SSH 密码登录、22 全源；nftables 生产 22 全源、25565 限 link-local/校园 `/21`。
 - 应用数据 `/var/lib/antifieldcloud` 0750 antifieldcloud:antifield；`backups` 2770；`backup-pull.json` 正常，`secretsOk=true`；PC `D:\Backups\AntifieldCloud` 有 daily/weekly/secrets + `.sha256`。
@@ -457,3 +457,105 @@
 4. **DR-1 增量水位、DR-7 导入归档保留、DR-22 告警跨周期重投、DR-23 锁心跳、DR-17 listTrash 性能等 P3**：本次未触及对应模块，不扩大 v0.6.4 范围；若后续改动备份/告警模块优先回看。
 5. **工具调用模型行为非强保证**：私聊/@ 的兜底保证“有回复”，但不保证模型一定调用工具；生产验收应观察 `bot.ai.send`/`bot.ai.send_fallback` 审计与真实 QQ 消息。
 
+## 第六轮（v0.6.6 基线 → v0.7.0，2026-10-24）
+
+### 0. 执行方式与记录边界
+
+- 基线：**v0.6.6 / schema v16 / OpenCode v2.1.3**；分支 `release/v0.7.0`（`b5264b4`，工作树干净）。
+- 方法：逐文件通读（不抽样）+ 不变量目录 + 对抗性假设与 PoC + 失败注入/并发推演 + 合成数据基准 + 生产只读核验；审计阶段**未修改任何 tracked 文件、未写生产、未访问真实 QQ/Cloudflare/模型**。
+- 边界：OpenCode 2.1.4 真实语义、archived 行为与 MCP elicitation 需升级后验证；未在 Pi 上做规模压测（基准在 PC）；未做真实浏览器 E2E/视觉验收；未运行在线 `npm audit`/OSV（依赖结论为静态版本核对）；多用户/权限分离不在本版范围。
+- 详细分报告与 PoC 为本地 gitignored 证据（`.local/audit/v070-*.md`、`.local/audit/poc/`），本文件只记录计数、结论、处置与明确残余。
+
+### 1. 范围与方法
+
+- 范围：服务端 77 文件 / 22,172 行、前端 136 文件 / 31,197 行、脚本/部署/CI/文档全量；五个并行审计流（安全、数据/灾备、Bot/AI、前端/契约、运维/供应链）+ Lead 架构/运行时流与综合。
+- 每流产出：finding 台账（ID/级别/证据 file:line/复现/影响/修复选项/置信度）、不变量目录、横切主题、未验证项；Lead 合并去重后形成 Gate-1 决策（D-01…D-19）。
+- 生产只读事实（审计时）：DB 1.4 MiB（WAL 4.1 MiB）、files 2、notes 0、sessions 3、audit 632、metrics 3619、bot_events 204、backups 59 行；服务全 active、无 failed unit、无 24h warning；`age 1.2.1` 与公钥可读；OpenCode v2.1.3、5 个会话、MCP 每服务 1 进程（日志有多次 spawn）。探测确认 `ai.<domain>` 未受 Cloudflare Access 保护（根路径 401 而非 Access 302），`app.<domain>` 302、`/healthz` 200。
+
+### 2. 计数与结论
+
+| 流 | P0 | P1 | P2 | P3 | 说明 |
+|---|---:|---:|---:|---:|---|
+| A 架构/运行时（Lead） | 0 | 0 | 3 | 13 | 基准：100k files usage 80ms；2000 回收站同步清理 1.06s；无循环依赖、事务无 await |
+| B 安全 | 0 | 0 | 2→1* | 13 | *SEC-10 经生产确认后升级 P1；核心控制无绕过 |
+| C 数据/灾备 | 0 | 0 | 4 | 10 | 24 条不变量：18 成立/5 部分/1 不成立；加密设计 2 处阻断 |
+| D 前端/契约 | 0 | 1 | 4 | 18 | 契约漂移 16 条；Web 覆盖率 47.8% |
+| E Bot/AI | 0 | 0 | 5 | 11 | 5 个 P2 均为可复现实现/设计缺陷；2.1.4 兼容有门禁 |
+| F 运维/供应链 | 0 | 1 | 9 | 11 | 文档漂移跨 10 文件；env/部署/密钥包缺口 |
+| **去重后** | **0** | **3** | **26** | **73** | 合并：ARCH-04=BOT-16、OPS-14=DATA-05、OPS-15=ARCH-08 |
+
+- 合计 **102 条唯一 finding**（另有 5 条低风险观察未计入）；去重后 P0=0、P1=3、P2=26、P3=73。
+- 总体判断：核心安全控制（认证/scrypt/TOTP/Cookie/SSO/CSRF/文件与分享隔离/tar 校验/Bot 签名/密钥加密/日志脱敏/systemd 加固）质量高，未发现 P0 或 P1 绕过；主要问题集中在**长任务超时与状态丢失、公开面写放大/限流信任、工具隔离永久降级、群共享记忆归属、拉取/恢复的容错与并发、备份加密设计缺口、文档/版本漂移**。
+- 最重要的 5 个结论：① 备份/恢复 UI 20s 统一超时 vs prepare 3300s，误报失败/结果丢失；② OpenCode 2.1.4 不能按旧文档直接升，缺 MCP lifecycle/compaction/permissions/密钥包/Bot 回归门禁；③ AI 主机公网可达且 SSO 失败写审计无认证限流（写放大）；④ 加密设计稿有 `plainSha256` 自引用与“不留明文”/2× 空间未闭环 2 个阻断级缺陷，修正后可行；⑤ 4 个数据 P2 与 2 个 Bot 线上 P2 可在无 schema 迁移下低风险修复。
+
+### 3. P1 详情与处置
+
+| ID | 问题/影响 | 处置与证据 |
+|---|---|---|
+| A7-WEB-01 | 备份/恢复长任务共用 20s 客户端超时：UI 误报失败、服务端继续、重试 409/410、恢复结果无入口 | 长任务端点显式超时（prepare 3300s、verify/entries/restore-plan/execute 600s），超时文案说明“服务端可能仍在执行”；恢复计划持久化 + 轮询结果；新增前端测试 |
+| A7-OPS-01 | OpenCode 2.1.4 升级/回滚程序与验证门禁不完整（未固定版本、无 MCP/compaction/permissions/密钥包/Bot 回归判据） | `docs/DEPLOY.md` §3.2 固定 `opencode upgrade 2.1.4`；补二进制/data/env/unit/MCP 配置备份、14 项矩阵与回滚；`smoke.ps1` 增加 OpenCode/MCP 只读检查；真实升级在发布门禁执行 |
+| A7-SEC-10 | AI 主机 `/__af/sso/*` 鉴权前无限流且每失败写 audit_log；生产确认 `ai` 主机未受 Access 保护 → 无认证写放大/磁盘耗尽 | proxy 层按 IP 限流（SSO 60/min、匿名 120/min），`auth.sso_ai`/`opencode_origin_rejected` 审计按 action+IP 60s 去重（容量上限 4096）；建议用户后续在 Cloudflare 后台给 `ai` 加 Access/WAF |
+
+### 4. P2 处置（26）
+
+全部 P2 在本版处置；无 schema 迁移。
+
+- **架构**：ARCH-04 关停前有限等待 Bot 在途回复/工具缓冲/投递排空（最多 15s，超时 warn）；**ARCH-05（D-17）** 审计统一事务外 best-effort，失败计数/最近错误经 `/api/version.audit` 暴露；**ARCH-01 记录不拆**——按 D-16 做行为保持的模块抽取（`bot/inbound.ts`、`bot/diagnostics.ts`、队列/串行逻辑、`BotService` facade），3195 行巨型模块的进一步拆分排后续版本。
+- **安全**：SEC-11/D-12 工具隔离 fail-closed（10 分钟重试窗口；启用发送工具且隔离不可用时新 Chat `503 bot_ai_tool_isolation_unavailable` + 固定提示 + 审计/状态；上游恢复自动恢复）；信任头（SEC-05/07/08/12/13）统一 `requestMeta`/代理 loopback Host 判定/Webhook 未验签桶分离；SEC-02/03/04/06/09/14/15 按报告修或明确残余（见本文件 §9）。
+- **数据**：DATA-01 拉取分项容错（缺/非法 sidecar 跳过不 ack，其余继续）；DATA-02 并发同索引分片幂等返回、不删共享块；DATA-03 启动/维护清理陈旧 `restore.lock`；DATA-04 分享下载原子计数；DATA-07/08/09/10/11/12/14 分别修分享列表计数、目录深度、唯一名并发、物理孤儿回收、verify 失败清状态、purge 分享吊销兜底、列表 N+1。
+- **Bot**：BOT-01 孤儿清理限定旧默认标题；BOT-02 混批任一 @ 即非静默；BOT-03/D-13 群记忆 key 改稳定 `member_openid` + 一次性迁移（无法映射标 `legacy:`）+ `/forget` 清本人群条目；BOT-04 回合异常补发已缓冲工具消息并审计 `partialTurn`；BOT-05 `/search` 复用会话串行锁。
+- **前端**：WEB-02 prepare warnings/skippedMissing 类型化与展示；WEB-03 断点命中 completed 消费 `fileId`；WEB-04 恢复计划持久化 + 轮询；WEB-05 补测试并逐步提高阈值（本版门禁 Lines 91 / Functions 85 / Branches 76）。
+- **运维**：OPS-02 restart 失败进入回滚 + 快照 SHA 校验；OPS-03 密钥包 `includesOpencode` 硬失败 + PC 校验；OPS-04 env 补键/`--prune-unknown`/模板默认；OPS-05 文档全量同步；OPS-06 加密+异地运维面并入特性；OPS-07 真实域名/网段占位符化；OPS-08 smoke `SKIP`/`SoftCheck` + OpenCode/MCP/fail2ban/unit/env/加密/异地/任务标记检查；OPS-09 `deploy/host/` 模板 + 密钥包可选打包；OPS-10 `deploy/tool-versions.json` + check-version 交叉校验。
+- 证据：各流新增/更新测试（`backup-encryption*`、`audit-policy`、`config-validation`、`bot-v070`、`files-guards`、`status-file`、`backup-service-hardening`、前端 `client.backups`/`useBackups`/`RestoreWizard-v07`/`backup-status-v07` 等）；逐条证据见本地分报告与 `v070-findings.md`。
+
+### 5. P3 处置与明确残余（73）
+
+- **随本版修的小项**：ARCH-08/10/13（配置默认与非法值拒绝启动、`/healthz` 增 `db/pendingBackups`、`/api/version` 诊断、可选早鉴权）、ARCH-04 相关关闭排空、SEC-02/03/05/07/08/12（publish/备份审计 IP 与限流、Webhook 限流桶、代理 loopback Host、SSO 审计去重）、SEC-13（unlock 失败审计入既有审计面）、BOT-06/07/08/11/12/13/15（群记忆清空取消在途、lastError 派生、Webhook 限流顺序、turn token HMAC 绑定目标/用户、permissions 判定收紧、burst.clear 竞态、名称词边界）、DATA-05/06/07/08/09/10/11/12/13/14、WEB-06…23 中可安全收敛项（truncated/审计中文/ConfirmDialog 焦点/version 重试/hash 崩溃/PWA 更新提示/轮询静默/Settings 告警字段等）、OPS-11…21（MCP lifecycle、世界拉取重试、drill 链连续、状态路径脱敏、安装脚本原子性、release 元数据、覆盖率门禁、backup-pull 卫生、Windows 任务标记）。
+- **明确残余（D-18：架构性/已接受，不本版强行改造；在 ARCHITECTURE §11、SECURITY §4、BACKUP §11 保留说明）**：
+  1. 单进程单点、同步维护任务可能短暂阻塞、`synchronous=NORMAL` 不抗突然断电最后写入；内存态限流/诊断在重启后清零。
+  2. 平台适配与模型路径 mock-only；真实 QQ/Cloudflare/模型负路径需部署后联调。
+  3. 物理孤儿文件只回收“超期且 DB 无行且 id 形状”文件，不含导入/笔记异常路径；审计失败计数不持久化。
+  4. 备份加密的 SIGKILL/断电/ENOSPC 残余窗口（`*.plain.tmp` 最长 24h；孤儿密文只报告不自动删）；预部署 DB 快照继续明文 0600、保留 2 份（自动回滚需要）。
+  5. 异地副本依赖用户配置 rclone 与 PC 在线，单一远端、非多副本；私钥/远端凭据丢失不可恢复。
+  6. `__Host-` Cookie 前缀、SSO ticket IP 绑定、scrypt N 提升、`http-proxy` 替换、Cloudflare 明文、单 SD/LUKS、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、mock-only 平台负路径等既有项按 SECURITY §4 管理。
+  7. `BotService` 进一步拆分（ARCH-01 剩余部分）、迁移校验和、内存态统一上限、`Intl` 开销等 P3 记录项未在本版改造。
+- 明细与逐项理由见本地分报告 `v070-*.md` §P3 与 `v070-findings.md`。
+
+### 6. 特性设计评审：备份整包加密 + 异地副本
+
+- 结论：初稿有条件可行，但需修正 2 个阻断级缺陷后实施。
+- **B1（阻断）**：`plainSha256/plainSize` 不能放在被它描述的明文归档内部（manifest 在归档内，循环定义）→ 改为归档外 sidecar（Pi `<archive>.meta.json`）+ `backup_archives.manifest_json`；归档内 manifest 只保留 `schema:2/encrypted/archiveFormat`；`drill-verify.mjs` 与应用侧都接受 manifest schema `1|2`。
+- **B2（阻断）**：“失败关闭、不留明文”无法对抗 SIGKILL/断电/ENOSPC；空间峰值≈2× → 专用 `*.plain.tmp` 命名 + 启动/超时/失败扫描清理（>24h）+ 2× 预算 + 残余文档化。
+- **B3（必须）**：启用前用私钥完成一次 `age -d` + drill；私钥离线 ≥2 份；`encryptedWith`/recipient 入 sidecar/DB/API 元数据支持轮换；独立于 `secrets-age`。
+- **M1–M10**：全链路后缀/命名正则（应用 `ARCHIVE_NAME_PATTERN`、PC `backup-pull.ps1`、CLI 孤儿正则、drill 过滤/解析）；`.age` 的 verify/import/entries/plan/execute 在 `validArchiveName` 之前返回 `archive_encrypted` 并关闭 Web 恢复入口；失败关闭不降级明文；PC `age` 安装/私钥/临时明文；drill 解密；offsite 只上传 `.age` + **链感知保留**（不能纯 `--min-age`，否则可能删最新 full）+ 上传后校验 + rclone 凭据/版本控制；`offsite_overdue` 告警处理 unknown/disabled 防误报；预部署快照决策；旧明文/密钥包/世界备份边界与回滚矩阵。
+- 产品取舍（用户 Gate-1 确认）：加密后 Web 校验/恢复关闭（依赖 PC/离线私钥）；预部署 DB 快照继续明文（自动回滚需要）；备份 age 密钥独立不复用 `secrets-age`；offsite 不纳入密钥包、世界备份默认不加密/不异地；私钥离线介质 + PC drill。
+- 实现顺序：B1/B2/B3 + M1/M2/M4/M5/M6 最小闭环（Pi 生成 `.age`、PC 拉取/ack、drill 解密、Web 明确拒绝）→ M7/M8（offsite/告警）→ M3/M9/M10（API/UI/文档/迁移），每步保持开关可回滚。
+
+### 7. OpenCode v2.1.4 兼容结论
+
+- 兼容（有条件，非阻断）：应用是纯 HTTP 客户端（非 SDK），依赖 5 个端点与 assistant content 形状；2.1.3 已验证 `[{type:'text',text}]`、permissions 200、wait 204；2.1.4 为补丁版，MCP lifecycle 修复是收益（2.1.3 生产日志多次 spawn）。
+- 硬门禁：升级后先验 assistant 消息/part 形状与 `type=assistant` 过滤、permissions 仍接受且 deny-all 负路径无 tool、wait 可用/回退、`GET /api/session` 是否含 archived 及 DELETE 语义、MCP 每服务恰 1 进程/无重复 spawn/`tools/list` 稳定/`botmsg` 与 `searxng` 名称与 permissions 匹配、后台 compaction 摘要不被当本轮回复；Bot 真实回归在应用部署后做。
+- 先决：升级前必须备份 v2.1.3 二进制 + data + env + unit + MCP 配置（现有 `/var/backups/opencode` 只有旧二进制）；失败回滚（必要时恢复 data tar）。升级步骤与 14 项矩阵见 `docs/DEPLOY.md` §3.2。
+
+### 8. 修复批次与验证证据
+
+- 批次：A 发布门禁（WEB-01/OPS-01/SEC-10、OPS-08/10、WEB 定向测试）→ B 安全与一致性（SEC-11、信任头簇、ARCH-04、BOT-02/04/05、DATA-02/03/04）→ C DR 与 UX（DATA-01、WEB-02/03/04、OPS-02/03/04、BOT-01）→ D 特性（加密核心 + 异地副本，默认关闭）→ E 文档与卫生（OPS-05/07/09、版本 0.7.0）。
+- 本地门禁（v0.7.0 发布门禁，2026-10-25 实测通过）：`npm run check`、`npm test` **478**、`npm run test:web` **222**（44 文件）、`npm run test:coverage`（Lines 92.63% / Branches 78.16% / Functions 87.84%）、`npm run test:web:coverage`（Lines 52.31% / Branches 47.32% / Functions 45.02%）、`npm run build`（`index-DoPUAny6.js` 726.64 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.0`）、PS 5.1 解析/BOM（7/7）、`check-prod-deps`、`scripts/test` 29 pass、`git grep` 占位符扫描；生产 release/smoke/Tag 与真实 QQ 联调待部署（见 ACCEPTANCE v0.7.0 待填清单）。
+- 生产验证：部署、smoke（含加密/异地只读检查）、OpenCode 2.1.4 升级矩阵、drill、PC 拉取/ack、用户验收均为发布后执行；本文件不以 mock 全绿代替。
+- 证据边界：与第五轮一致——平台/模型/网络负路径仍需真实环境；PoC 只证明本地可复现。
+
+### 9. 残余风险（明确）
+
+1. **AI 主机边缘暴露**：应用侧已限流/去重，但 `ai` 主机未受 Access/WAF 保护（用户后台项）；边缘限流配置未验证；公网匿名请求仍可消耗一定资源。
+2. **工具隔离 fail-closed 的产品代价**：隔离不可用时 Chat 暂停（503 + 固定提示），直到重试窗口恢复或重启；模型/上游异常期间 Bot 可用性下降属预期取舍。
+3. **审计 best-effort**：非安全审计在 DB 故障时丢失，只留进程内计数；进程重启清零；安全关键审计仍可能因同一故障失败（可见但可能丢失）。
+4. **备份加密残余**：明文临时文件窗口、2× 空间峰值、孤儿密文人工核对、私钥丢失不可恢复、Pi 不持私钥意味着 Web 不能恢复加密归档；预部署快照仍明文。
+5. **异地副本残余**：默认关闭；单远端、依赖 PC 与 rclone；状态文件可被 PC 端伪造（管理员信任边界内），告警只反映状态文件；未配置时不告警。
+6. **群记忆迁移**：无法映射归属的旧键保留 `legacy:` 且不参与按成员删除；同名用户历史覆盖无法自动还原。
+7. **既有残余**：单管理员、sudo/RCON/单 SD/Cloudflare 明文、mock-only 平台负路径、限流内存态、`http-proxy` 弃用等按 `docs/SECURITY.md` §4 管理。
+
+### 10. 结论
+
+- 第六轮去重后 **P0=0、P1=3、P2=26、P3=73**；P1/P2 全部在本版处置，P3 可修小项随版修、架构性/已接受项写入明确残余（不删除、不静默）。
+- 无 schema 迁移（保持 **v16**）；OpenCode 已按 §7 矩阵在生产只读升级 **v2.1.4**（V1–V9/V14 通过，V10–V13 待应用部署后真实 QQ 联调）。
+- 本版为审计修复 + 灾备特性 Minor，不是第三方独立审计；生产结论以发布门禁、部署、smoke、升级矩阵、drill 与用户验收为准。

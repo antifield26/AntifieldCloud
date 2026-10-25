@@ -51,6 +51,12 @@ export interface Config {
   backupRestoreMaxEntries: number
   /** 备份生成（Web prepare/CLI）超时秒数；需覆盖 5 GiB 打包，默认 55 分钟。 */
   backupPrepareTimeoutSec: number
+  /** 应用归档整包 age 加密开关；开启后 CLI 失败关闭，应用不持私钥。 */
+  backupArchiveEncryption: boolean
+  /** age 公钥文件（仅公钥；私钥离线保存，Pi 不可读）。 */
+  backupAgeRecipientFile: string
+  /** PC 异地副本状态文件（由 PC 脚本写入，应用只读）。 */
+  backupOffsiteStatusFile: string
   chunkedUploadEnabled: boolean
   chunkSizeBytes: number
   chunkMaxFileBytes: number
@@ -73,6 +79,8 @@ export interface Config {
   drillStatusFile: string
   alertWorldBackupMaxAgeHours: number
   alertDrillMaxAgeDays: number
+  /** 异地副本超期告警阈值（小时）；0 表示关闭该条件。 */
+  alertOffsiteMaxAgeHours: number
   sharesEnabled: boolean
   shareDefaultExpiryHours: number
   shareMaxExpiryHours: number
@@ -252,7 +260,10 @@ const GIB = 1024 * MIB
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const merged = loadEnv(env)
   const nodeEnvRaw = str(merged, 'NODE_ENV', 'development')
-  const nodeEnv = nodeEnvRaw === 'production' || nodeEnvRaw === 'test' ? nodeEnvRaw : 'development'
+  if (nodeEnvRaw !== 'production' && nodeEnvRaw !== 'test' && nodeEnvRaw !== 'development') {
+    throw new Error(`NODE_ENV 非法：${nodeEnvRaw}（允许 production/test/development）`)
+  }
+  const nodeEnv = nodeEnvRaw as 'production' | 'test' | 'development'
   const dataDir = resolve(str(merged, 'DATA_DIR', resolve(process.cwd(), 'data')))
   const webDistDir = resolve(str(merged, 'WEB_DIST_DIR', resolve(process.cwd(), 'web', 'dist')))
   const appOrigin = str(merged, 'APP_ORIGIN', 'https://app.example.com')
@@ -294,6 +305,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupRestorePlanTtlMinutes: int(merged, 'BACKUP_RESTORE_PLAN_TTL_MINUTES', 30, 5, 1440),
     backupRestoreMaxEntries: int(merged, 'BACKUP_RESTORE_MAX_ENTRIES', 5000, 1, 100_000),
     backupPrepareTimeoutSec: int(merged, 'BACKUP_PREPARE_TIMEOUT_SEC', 3300, 60, 7200),
+    backupArchiveEncryption: bool(merged, 'BACKUP_ARCHIVE_ENCRYPTION', false),
+    backupAgeRecipientFile: str(merged, 'BACKUP_AGE_RECIPIENT_FILE', '/etc/antifieldcloud/backup-age.pub'),
+    backupOffsiteStatusFile: str(
+      merged,
+      'BACKUP_OFFSITE_STATUS_FILE',
+      resolve(dataDir, 'backup-offsite-status.json'),
+    ),
     chunkedUploadEnabled: bool(merged, 'CHUNKED_UPLOAD_ENABLED', true),
     chunkSizeBytes: int(merged, 'CHUNK_SIZE_BYTES', 8 * MIB, 1 * MIB, 100 * MIB),
     chunkMaxFileBytes: int(merged, 'CHUNK_MAX_FILE_BYTES', 5 * GIB, 1 * MIB, 10 * GIB),
@@ -311,6 +329,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     drillStatusFile: str(merged, 'DRILL_STATUS_FILE', resolve(dataDir, 'drill-status.json')),
     alertWorldBackupMaxAgeHours: int(merged, 'ALERT_WORLD_BACKUP_MAX_AGE_HOURS', 192, 6, 8760),
     alertDrillMaxAgeDays: int(merged, 'ALERT_DRILL_MAX_AGE_DAYS', 35, 1, 365),
+    alertOffsiteMaxAgeHours: int(merged, 'ALERT_OFFSITE_MAX_AGE_HOURS', 48, 0, 8760),
     sharesEnabled: bool(merged, 'SHARES_ENABLED', true),
     shareDefaultExpiryHours: int(merged, 'SHARE_DEFAULT_EXPIRY_HOURS', 168, 1, 720),
     shareMaxExpiryHours: int(merged, 'SHARE_MAX_EXPIRY_HOURS', 720, 1, 8760),
@@ -325,7 +344,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
-    appVersion: str(merged, 'APP_VERSION', '0.5.6'),
+    appVersion: str(merged, 'APP_VERSION', '0.0.0-dev'),
     botEnabled: bool(merged, 'BOT_ENABLED', false),
     botSecretKey: str(merged, 'BOT_SECRET_KEY', ''),
     botWebhookMaxBodyBytes: int(merged, 'BOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
@@ -364,7 +383,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botSearchEnabled: bool(merged, 'BOT_SEARCH_ENABLED', false),
     botSearchUrl: str(merged, 'BOT_SEARCH_URL', ''),
     botSearchAuto: bool(merged, 'BOT_SEARCH_AUTO', true),
-    botSearchMode: str(merged, 'BOT_SEARCH_MODE', 'mcp') === 'prefetch' ? 'prefetch' : 'mcp',
+    botSearchMode: parseBotSearchMode(merged),
     botSearchMaxResults: int(merged, 'BOT_SEARCH_MAX_RESULTS', 5, 1, 10),
     botSearchTimeoutSeconds: int(merged, 'BOT_SEARCH_TIMEOUT_SECONDS', 8, 1, 30),
     botSearchMaxSnippetChars: int(merged, 'BOT_SEARCH_MAX_SNIPPET_CHARS', 500, 100, 1500),
@@ -397,6 +416,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   validateOrigin(config.appOrigin, 'APP_ORIGIN')
   validateOrigin(config.aiOrigin, 'AI_ORIGIN')
+  if (config.appOrigin === config.aiOrigin) {
+    throw new Error('APP_ORIGIN 与 AI_ORIGIN 不能相同（Host 分流会冲突）')
+  }
+  // 代理只允许固定 loopback 上游；非 loopback 会把应用会话/密码暴露给外部主机（配置错误即拒绝启动）。
+  validateLoopbackUrl(config.opencodeUrl, 'OPENCODE_URL')
   if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
   if (config.botSecretKey) {
     let key: Buffer
@@ -411,6 +435,30 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error('生产环境 HOST 必须是 loopback（应用只允许本地反代访问）')
   }
   return config
+}
+
+/** 搜索触发模式：非法值直接拒绝，避免拼写错误被静默当成 mcp。 */
+function parseBotSearchMode(env: Record<string, string>): 'mcp' | 'prefetch' {
+  const raw = (env.BOT_SEARCH_MODE ?? 'mcp').trim().toLowerCase()
+  if (raw !== 'mcp' && raw !== 'prefetch') {
+    throw new Error(`配置项 BOT_SEARCH_MODE 非法：${raw}（允许 mcp/prefetch）`)
+  }
+  return raw
+}
+
+/** OpenCode 上游必须是 loopback：代理会注入 Basic 凭据，不能指向外部主机。 */
+function validateLoopbackUrl(value: string, key: string): void {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error(`${key} 不是合法 URL`)
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`${key} 必须是 http(s) URL`)
+  const loopback = ['127.0.0.1', 'localhost', '::1', '[::1]']
+  if (!loopback.includes(url.hostname.toLowerCase())) {
+    throw new Error(`${key} 必须指向 loopback（当前 ${url.hostname}）`)
+  }
 }
 
 function validateOrigin(value: string, key: string): void {

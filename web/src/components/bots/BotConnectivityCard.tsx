@@ -1,10 +1,11 @@
 // Bot 出站网络卡片：展示外网与 QQ 平台 API 连通性，并提供手动复检。
 // Pi 直连 QQ 平台，不再依赖 PC 代理隧道；不读取或渲染任何 Bot 凭据。
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw, Wifi } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type { BotConnectivityProbe, BotConnectivitySnapshot, BotPlatform } from '../../api/types'
+import { usePolling } from '../../hooks/usePolling'
 import { Badge } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
@@ -31,40 +32,46 @@ export function BotConnectivityCard() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [checking, setChecking] = useState(false)
+  const requestSeqRef = useRef(0)
 
   const load = useCallback(async (signal?: AbortSignal): Promise<void> => {
+    const seq = requestSeqRef.current + 1
+    requestSeqRef.current = seq
     try {
       const snapshot = await api.bots.connectivity(signal)
+      if (seq !== requestSeqRef.current) return
       setData(snapshot)
       setError(null)
     } catch (loadError) {
-      if (signal?.aborted) return
+      if (signal?.aborted || seq !== requestSeqRef.current) return
       setError(toErrorMessage(loadError))
     } finally {
-      if (!signal?.aborted) setLoading(false)
+      if (!signal?.aborted && seq === requestSeqRef.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
     const controller = new AbortController()
     void load(controller.signal)
-    const timer = setInterval(() => void load(), 60_000)
-    return () => {
-      controller.abort()
-      clearInterval(timer)
-    }
+    return () => controller.abort()
   }, [load])
+
+  // 与其它轮询一致：页面隐藏时暂停，重新可见时补一次，避免后台空跑。
+  usePolling(() => load(), 60_000)
 
   const handleCheck = async (): Promise<void> => {
     if (checking) return
     setChecking(true)
     setError(null)
+    const seq = requestSeqRef.current + 1
+    requestSeqRef.current = seq
     try {
-      setData(await api.bots.checkConnectivity())
+      const next = await api.bots.checkConnectivity()
+      if (seq === requestSeqRef.current) setData(next)
     } catch (checkError) {
-      setError(toErrorMessage(checkError))
+      if (seq === requestSeqRef.current) setError(toErrorMessage(checkError))
     } finally {
-      setChecking(false)
+      if (seq === requestSeqRef.current) setChecking(false)
     }
   }
 

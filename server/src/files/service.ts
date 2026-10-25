@@ -9,7 +9,8 @@
  *   只能经笔记接口管理，内容仍走鉴权的 /api/files/:id/content），system=系统保留。
  *   用户可见查询与目录操作只作用于 origin='user' 的行。
  */
-import { closeSync, openSync, readSync, statfsSync, unlinkSync } from 'node:fs'
+import { closeSync, openSync, readdirSync, readSync, statfsSync, statSync, unlinkSync } from 'node:fs'
+import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import type { FileRow } from '../types.ts'
@@ -30,6 +31,15 @@ export interface FileServiceLogger {
 const MIN_FREE_DISK_BYTES = 1024 * 1024 * 1024
 /** 配额占用缓存的刷新间隔（用于流式上传预留，事务内仍以 DB 为准）。 */
 const RESERVATION_CACHE_MS = 500
+/**
+ * 目录树最大深度（根目录为 0，根下第一层为 1）。
+ * 与面包屑回溯上限、备份快照路径索引上限对齐，避免“可创建但不可浏览/恢复”的深层树。
+ */
+export const MAX_TREE_DEPTH = 64
+/** 物理孤儿文件回收的默认时间阈值：只清理超过 24h 且 DB 无对应行的 files/<xx>/<id>。 */
+export const ORPHAN_FILE_MAX_AGE_MS = 24 * 60 * 60 * 1000
+/** 物理孤儿文件扫描只处理服务端生成的 id 形状，避免误删目录内其它文件。 */
+const STORAGE_ID_PATTERN = /^[A-Za-z0-9_-]{8,64}$/
 
 export interface FileItem {
   id: string
@@ -63,6 +73,14 @@ export interface Actor {
 
 /** 文件可见性来源，与 files.origin 对应。 */
 export type FileOrigin = 'user' | 'note' | 'system'
+
+export interface FileServiceOptions {
+  /**
+   * 硬删除（回收站彻底删除/笔记附件硬删除）前的分享吊销兜底钩子。
+   * 由组合根延迟注入 ShareService（files 与 shares 构造顺序不同），缺省不注入=行为不变。
+   */
+  revokeSharesForFiles?: (fileIds: string[]) => void
+}
 
 export interface DeleteFilesOptions {
   /** 审计动作名，默认 file_delete。 */
@@ -129,24 +147,34 @@ function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`)
 }
 
-/** 同目录同 origin 唯一索引冲突（并发落库时重算名称并重试）。 */
+/**
+ * 同目录同 origin 唯一索引冲突（并发落库时重算名称并重试）。
+ * Node 内置 SQLite 对部分/表达式唯一索引的报错形如
+ * `UNIQUE constraint failed: index 'idx_files_unique_active_name'`，
+ * 旧版 SQLite 可能报 `UNIQUE constraint failed: files.parent_id, files.name`，两者都要识别。
+ */
 function isUniqueNameConflict(error: unknown): boolean {
   if (!(error instanceof Error)) return false
-  return /UNIQUE constraint failed: files\./.test(error.message)
+  return (
+    /UNIQUE constraint failed: index 'idx_files_unique_active_name'/.test(error.message) ||
+    /UNIQUE constraint failed: files\./.test(error.message)
+  )
 }
 
 export class FileService {
   private readonly db: DatabaseSync
   private readonly config: Config
   private readonly log: FileServiceLogger | null
+  private readonly revokeSharesForFiles: ((fileIds: string[]) => void) | null
   private reservedUploadBytes = 0
   private usageCache: { at: number; usedBytes: number } | null = null
   readonly storage: FileStorage
 
-  constructor(db: DatabaseSync, config: Config, log?: FileServiceLogger) {
+  constructor(db: DatabaseSync, config: Config, log?: FileServiceLogger, options: FileServiceOptions = {}) {
     this.db = db
     this.config = config
     this.log = log ?? null
+    this.revokeSharesForFiles = options.revokeSharesForFiles ?? null
     this.storage = new FileStorage(config.dataDir)
   }
 
@@ -179,6 +207,73 @@ export class FileService {
     if (!row) throw notFound('目标文件夹不存在')
     if (row.kind !== 'dir') throw badRequest('目标不是文件夹', 'not_a_directory')
     return row
+  }
+
+  /** 目录绝对深度：根（null）为 0，根下第一层为 1；带环保护。 */
+  private directoryDepth(parentId: string | null): number {
+    let depth = 0
+    let current = parentId
+    const seen = new Set<string>()
+    while (current) {
+      if (seen.has(current) || depth > MAX_TREE_DEPTH) break
+      seen.add(current)
+      const row = this.db.prepare('SELECT parent_id FROM files WHERE id = ?').get(current) as
+        | { parent_id: string | null }
+        | undefined
+      if (!row) break
+      depth += 1
+      current = row.parent_id
+    }
+    return depth
+  }
+
+  /** id 子树的最大相对深度（自身为 0）；用于移动时计算整棵子树的新深度。 */
+  private subtreeHeight(id: string): number {
+    const row = this.db
+      .prepare(
+        `WITH RECURSIVE tree(id, depth) AS (
+           SELECT id, 0 FROM files WHERE id = ?
+           UNION ALL
+           SELECT f.id, t.depth + 1 FROM files f JOIN tree t ON f.parent_id = t.id
+         )
+         SELECT MAX(depth) AS h FROM tree`,
+      )
+      .get(id) as { h: number | null } | undefined
+    return Number(row?.h ?? 0)
+  }
+
+  /** 校验“父目录下新增 height+1 层”的绝对深度不超过上限。 */
+  private assertTreeDepth(parentId: string | null, descendantHeight = 0): void {
+    const depth = this.directoryDepth(parentId) + 1 + Math.max(0, descendantHeight)
+    if (depth > MAX_TREE_DEPTH) {
+      throw badRequest(`目录层级不能超过 ${MAX_TREE_DEPTH} 层`, 'path_too_deep')
+    }
+  }
+
+  /**
+   * 同步写路径的唯一名重试：名称计算与 INSERT/UPDATE 放在同一事务内，
+   * 若仍因并发（多连接/未来工作线程）触发 UNIQUE，则重算名称最多 3 次。
+   */
+  private withUniqueNameRetry<T>(fn: () => T): T {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return fn()
+      } catch (error) {
+        if (attempt < 2 && isUniqueNameConflict(error)) continue
+        throw error
+      }
+    }
+  }
+
+  /** 硬删除前调用分享吊销兜底钩子；钩子失败则中止删除（安全方向：宁可不删，不留可下载的分享）。 */
+  private revokeSharesBeforeHardDelete(fileIds: string[]): void {
+    if (fileIds.length === 0 || !this.revokeSharesForFiles) return
+    try {
+      this.revokeSharesForFiles(fileIds)
+    } catch (error) {
+      this.log?.warn({ err: error, count: fileIds.length }, '硬删除前吊销分享失败，已中止删除')
+      throw error
+    }
   }
 
   get(id: string): { item: FileItem; path: Breadcrumb[] } {
@@ -313,18 +408,22 @@ export class FileService {
 
   createFolder(actor: Actor, parentId: string | null, rawName: string, origin: FileOrigin = 'user'): FileItem {
     this.activeDir(parentId)
+    this.assertTreeDepth(parentId)
     const name = sanitizeName(rawName)
     if (!name) throw badRequest('文件夹名不能为空', 'invalid_name')
     const now = nowIso()
     const id = newId()
-    const finalName = this.uniqueName(parentId, name, undefined, origin)
-    transaction(this.db, () => {
-      this.db
-        .prepare(
-          `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id, origin)
-           VALUES (?, ?, ?, 'dir', 0, NULL, NULL, NULL, ?, ?, NULL, NULL, ?)`,
-        )
-        .run(id, parentId, finalName, now, now, origin)
+    let finalName = name
+    this.withUniqueNameRetry(() => {
+      transaction(this.db, () => {
+        finalName = this.uniqueName(parentId, name, undefined, origin)
+        this.db
+          .prepare(
+            `INSERT INTO files (id, parent_id, name, kind, size, mime, sha256, storage_key, created_at, updated_at, deleted_at, deleted_parent_id, origin)
+             VALUES (?, ?, ?, 'dir', 0, NULL, NULL, NULL, ?, ?, NULL, NULL, ?)`,
+          )
+          .run(id, parentId, finalName, now, now, origin)
+      })
     })
     audit(this.db, actor.username, 'mkdir', finalName, { id, parentId, origin }, actor.ip)
     const row = this.db.prepare('SELECT * FROM files WHERE id = ?').get(id) as unknown as FileRow
@@ -366,6 +465,7 @@ export class FileService {
       throw badRequest('非用户文件必须位于根目录', 'invalid_parent')
     }
     this.activeDir(input.parentId)
+    this.assertTreeDepth(input.parentId)
     const name = sanitizeName(input.rawName)
     const id = newId()
     const mime = detectMime(name)
@@ -386,6 +486,7 @@ export class FileService {
         try {
           transaction(this.db, () => {
             this.activeDir(input.parentId)
+            this.assertTreeDepth(input.parentId)
             this.assertQuota(input.size, input.reservedBytes ?? 0)
             finalName = this.uniqueName(input.parentId, name, undefined, origin)
             this.db
@@ -417,8 +518,13 @@ export class FileService {
     const name = sanitizeName(rawName)
     if (!name) throw badRequest('名称不能为空', 'invalid_name')
     if (name.toLowerCase() === row.name.toLowerCase()) return toItem(row)
-    const finalName = this.uniqueName(row.parent_id, name, id)
-    this.db.prepare('UPDATE files SET name = ?, updated_at = ? WHERE id = ?').run(finalName, nowIso(), id)
+    let finalName = name
+    this.withUniqueNameRetry(() => {
+      transaction(this.db, () => {
+        finalName = this.uniqueName(row.parent_id, name, id)
+        this.db.prepare('UPDATE files SET name = ?, updated_at = ? WHERE id = ?').run(finalName, nowIso(), id)
+      })
+    })
     audit(this.db, actor.username, 'rename', finalName, { id, from: row.name }, actor.ip)
     return toItem(this.userActiveRow(id))
   }
@@ -436,10 +542,17 @@ export class FileService {
       const parent = this.db.prepare('SELECT * FROM files WHERE id = ?').get(cursor) as unknown as FileRow | undefined
       cursor = parent?.parent_id ?? null
     }
-    const finalName = this.uniqueName(targetParentId, row.name, id)
-    this.db
-      .prepare('UPDATE files SET parent_id = ?, name = ?, updated_at = ? WHERE id = ?')
-      .run(targetParentId, finalName, nowIso(), id)
+    // 移动会连同整棵子树改变绝对深度，必须按“目标深度 + 子树高度”预检。
+    this.assertTreeDepth(targetParentId, this.subtreeHeight(id))
+    let finalName = row.name
+    this.withUniqueNameRetry(() => {
+      transaction(this.db, () => {
+        finalName = this.uniqueName(targetParentId, row.name, id)
+        this.db
+          .prepare('UPDATE files SET parent_id = ?, name = ?, updated_at = ? WHERE id = ?')
+          .run(targetParentId, finalName, nowIso(), id)
+      })
+    })
     audit(this.db, actor.username, 'move', finalName, { id, parentId: targetParentId }, actor.ip)
     return toItem(this.userActiveRow(id))
   }
@@ -616,6 +729,8 @@ export class FileService {
     for (const entry of keys) {
       if (entry.kind === 'file') freedBytes += entry.size
     }
+    // 纵深防御：彻底删除前吊销仍在引用这些文件的分享（正常路径已在回收站前吊销）。
+    this.revokeSharesBeforeHardDelete(keys.filter((entry) => entry.kind === 'file').map((entry) => entry.id))
     transaction(this.db, () => {
       this.db.prepare('DELETE FROM files WHERE id = ?').run(id)
     })
@@ -706,6 +821,10 @@ export class FileService {
     const freedBytes = [...entries.values()].reduce((sum, entry) => (entry.kind === 'file' ? sum + Number(entry.size) : sum), 0)
     const target =
       entries.size === 1 ? ([...entries.values()][0]?.name ?? roots[0]!) : `${roots.length} 个文件`
+    // 纵深防御：笔记附件/其它硬删除路径也要保证不存在仍引用这些文件的分享。
+    this.revokeSharesBeforeHardDelete(
+      [...entries.entries()].filter(([, entry]) => entry.kind === 'file').map(([fileId]) => fileId),
+    )
     transaction(this.db, () => {
       for (const root of roots) this.db.prepare('DELETE FROM files WHERE id = ?').run(root)
     })
@@ -723,6 +842,64 @@ export class FileService {
       ...(options.detail ?? {}),
     }, actor.ip)
     return { count: entries.size, freedBytes }
+  }
+
+  /**
+   * 回收物理孤儿文件：`DATA_DIR/files/<xx>/<id>` 中 DB 无对应行且 mtime 超过 maxAge 的普通文件。
+   * 仅处理服务端 id 形状的条目、只删文件不删目录；返回删除数量。用于断电/删除失败后的对账清理。
+   */
+  cleanupOrphanFiles(maxAgeMs = ORPHAN_FILE_MAX_AGE_MS): number {
+    const cutoff = Date.now() - Math.max(0, maxAgeMs)
+    const candidates: { id: string; path: string }[] = []
+    let shards: string[]
+    try {
+      shards = readdirSync(this.storage.filesDir)
+    } catch {
+      return 0
+    }
+    for (const shard of shards) {
+      if (!/^[A-Za-z0-9_-]{2}$/.test(shard)) continue
+      let entries
+      try {
+        entries = readdirSync(join(this.storage.filesDir, shard), { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        if (!entry.isFile() || !STORAGE_ID_PATTERN.test(entry.name)) continue
+        const path = join(this.storage.filesDir, shard, entry.name)
+        try {
+          if (statSync(path).mtimeMs >= cutoff) continue
+        } catch {
+          continue
+        }
+        candidates.push({ id: entry.name, path })
+      }
+    }
+    if (candidates.length === 0) return 0
+    // 批量查 DB 现存 id，避免每个物理文件一次同步查询。
+    const listed = new Set<string>()
+    for (let offset = 0; offset < candidates.length; offset += 500) {
+      const batch = candidates.slice(offset, offset + 500)
+      const placeholders = batch.map(() => '?').join(', ')
+      const rows = this.db
+        .prepare(`SELECT id FROM files WHERE id IN (${placeholders})`)
+        .all(...batch.map((item) => item.id)) as unknown as { id: string }[]
+      for (const row of rows) listed.add(row.id)
+    }
+    let removed = 0
+    let failed = 0
+    for (const candidate of candidates) {
+      if (listed.has(candidate.id)) continue
+      try {
+        unlinkSync(candidate.path)
+        removed += 1
+      } catch {
+        failed += 1
+      }
+    }
+    if (failed > 0) this.log?.warn({ failed, removed }, '物理孤儿文件清理失败')
+    return removed
   }
 
   // ---------- 内容 ----------

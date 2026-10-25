@@ -36,8 +36,8 @@ test('限流 Map 有容量上限，不会无限增长', () => {
   const limiter = new SlidingWindowLimiter(60_000, 2, 50)
   for (let index = 0; index < 500; index += 1) limiter.hit(`key-${index}`)
   assert.ok(limiter.size <= 50)
-  // 淘汰后仍可继续消耗配额（key 重新计数）。
-  assert.equal(limiter.hit('fresh'), 0)
+  // 容量满后新 key 共享 overflow 桶：攻击洪泛期间新来源也被统一限流，不会因淘汰重置计数。
+  assert.ok(limiter.hit('fresh') > 0)
 })
 
 test('hashSecret/verifySecret：分享密码 1–256 字符，不受用户密码 ≥12 限制', async () => {

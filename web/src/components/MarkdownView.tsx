@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 
-// 预览内容一律视为不可信：禁止 style 标签/属性，外链统一新窗口打开。
+// 预览内容一律视为不可信：禁止 style 标签/属性与 class/id（防止仿冒应用按钮/卡片），外链统一新窗口打开。
 const SANITIZE_CONFIG = {
   USE_PROFILES: { html: true },
   FORBID_TAGS: ['style'],
-  FORBID_ATTR: ['style'],
+  FORBID_ATTR: ['style', 'class', 'id'],
 }
 
 /**

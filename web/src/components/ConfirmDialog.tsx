@@ -40,9 +40,11 @@ export function ConfirmDialog({
       ariaDescribedBy={messageId}
       onClose={loading ? () => undefined : onClose}
       busy={loading}
+      // UI-SPEC §12：危险操作默认焦点“取消”，避免回车误触确认按钮。
+      initialFocus=".confirm-cancel"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose} disabled={loading}>
+          <Button variant="ghost" onClick={onClose} disabled={loading} className="confirm-cancel">
             {cancelText}
           </Button>
           <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>

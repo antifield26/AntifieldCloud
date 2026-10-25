@@ -193,8 +193,8 @@ describe('BotDiagnosticsPanel 诊断', () => {
     expect(screen.getByText('发布内容为空')).toBeTruthy()
     expect(screen.getByText('请检查发布内容')).toBeTruthy()
     expect(screen.getByText('3 条')).toBeTruthy()
-    expect(mocks.deliveriesList).toHaveBeenCalledWith('bot-1')
-    expect(mocks.publishList).toHaveBeenCalledWith('bot-1')
+    expect(mocks.deliveriesList).toHaveBeenCalledWith('bot-1', 200)
+    expect(mocks.publishList).toHaveBeenCalledWith('bot-1', 200)
   })
 
   it('刷新按钮重新拉取事件与错误', async () => {

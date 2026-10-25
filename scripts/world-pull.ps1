@@ -232,10 +232,19 @@ function Get-RemoteSnapshot {
 function Get-RemoteArchiveSha {
   param([string]$Name)
   Assert-ArchiveName -Name $Name
-  $sidecarText = Invoke-PiSsh -Command "cat '$RemoteBackupDir/$Name.sha256' 2>/dev/null || echo SIDECAR_MISSING"
-  $sidecarText = $sidecarText.Trim()
+  # 世界备份先 rename 归档再写 sidecar：若拉取与备份刚好重叠，sidecar 可能晚几秒出现。
+  # 这里做 3 次短重试，避免整个周度拉取因竞态失败（OPS-12）。
+  $sidecarText = ""
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    $sidecarText = (Invoke-PiSsh -Command "cat '$RemoteBackupDir/$Name.sha256' 2>/dev/null || echo SIDECAR_MISSING").Trim()
+    if ($sidecarText -ne "SIDECAR_MISSING" -and $sidecarText -ne "") { break }
+    if ($attempt -lt 3) {
+      Write-Log "等待远端 .sha256 旁文件（可能世界备份仍在写，第 $attempt 次重试）：$Name"
+      Start-Sleep -Seconds (5 * $attempt)
+    }
+  }
   if ($sidecarText -eq "SIDECAR_MISSING" -or $sidecarText -eq "") {
-    Throw-PullError -Code "sidecar_missing" -Message "远端缺少 .sha256 旁文件：$Name"
+    Throw-PullError -Code "sidecar_missing" -Message "远端缺少 .sha256 旁文件（已重试 3 次，可能备份仍在进行）：$Name"
   }
   $match = [regex]::Match($sidecarText, '(?im)^([0-9a-f]{64})\s+')
   if (-not $match.Success) {
@@ -395,7 +404,13 @@ function Write-RemoteStatus {
   # 失败/成功统一语义：无错误时 error/message 输出 JSON null，而不是空字符串。
   $errorValue = $null
   if (-not [string]::IsNullOrWhiteSpace($ErrorCode)) { $errorValue = $ErrorCode }
-  $messageValue = ConvertTo-AsciiText -Text $ErrorMessage
+  # 状态文件 0644、应用只读展示：去掉远端/本地绝对路径（AGENTS 红线 #9 / OPS-14），日志保留完整信息。
+  $sanitizedMessage = $ErrorMessage
+  if (-not [string]::IsNullOrWhiteSpace($sanitizedMessage)) {
+    $sanitizedMessage = $sanitizedMessage -replace '[A-Za-z]:\\[^\s"''<>|]+', '<path>'
+    $sanitizedMessage = $sanitizedMessage -replace '/(?:var|home|etc|opt|tmp|run|srv|root|mnt|media|Users)/[^\s"''<>|]+', '<path>'
+  }
+  $messageValue = ConvertTo-AsciiText -Text $sanitizedMessage
   if ([string]::IsNullOrWhiteSpace($messageValue)) { $messageValue = $null }
   $status = [ordered]@{
     lastPullAt        = (Get-Date).ToUniversalTime().ToString("o")

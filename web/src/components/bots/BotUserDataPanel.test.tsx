@@ -311,7 +311,7 @@ describe('BotUserDataPanel 角色与记忆', () => {
     expect((await within(dialog).findAllByText('偏好')).length).toBeGreaterThan(0)
     expect((await within(dialog).findAllByText('事实')).length).toBeGreaterThan(0)
     expect(within(dialog).getAllByText('4').length).toBeGreaterThan(0)
-    expect(within(dialog).getAllByText('0.92').length).toBeGreaterThan(0)
+    expect(within(dialog).getAllByText('92%').length).toBeGreaterThan(0)
     expect(within(dialog).getAllByText('永不过期').length).toBeGreaterThan(0)
     expect(within(dialog).getAllByText(/2026-12-31 08:00/).length).toBeGreaterThan(0)
 

@@ -1,4 +1,4 @@
-# AntifieldCloud UI 规范（v13，2026-10-23）
+# AntifieldCloud UI 规范（v0.7.0）
 
 ## 1. 定位与基调
 
@@ -412,3 +412,39 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 所有开关有可访问名称（`aria-label` 含目标名）；新增表格有 `caption`/列标题；危险操作焦点默认在取消；图标按钮有 `aria-label`。
 - 不新增第三方组件库；沿用现有 `Button/Card/Modal/Toast/Table/Badge/FormField/ConfirmDialog/InlineError/EmptyState` 与 tokens；
   新样式集中在 `web/src/styles/v06.css`，在 `main.tsx` 引入。
+
+## 16. v0.7.0 界面（审计修复 + 备份加密/异地副本）
+
+### 备份与恢复（Settings → 备份与恢复）
+
+- **备份加密状态卡**（只读）：标题“备份加密”，状态徽标（已启用/未启用/公钥缺失）；展示 `age` 公钥是否就绪；
+  说明“加密归档文件名 `*.tar.gz.age`；Web 不持私钥，加密归档只能在 PC 用离线私钥校验/恢复”。公钥缺失且开关开启时显示 danger：
+  “公钥缺失，prepare 会失败关闭”。不展示任何密钥/私钥内容。
+- **异地副本状态卡**（只读）：标题“异地副本”；展示最近同步时间（相对时间）、目标别名（无则“未配置”，**不展示远端真实路径/URL/凭据**）、
+  本次上传/跳过/失败数量与字节数、远端保留份数、`plaintextSkipped>0` 安全信号（只展示为异常说明）；未配置时为空态“未配置（默认关闭）”。
+- **长任务**：prepare/verify/归档浏览/恢复计划/执行使用显式超时（prepare 3300s，其余 600s）；提交中禁用按钮并显示“服务端可能仍在执行，
+  请勿重复提交”；超时 Toast 明确“服务端可能仍在执行，刷新后查看 pending/计划状态”，不提示“失败可重试”造成重复任务。
+- **prepare 结果警告**：展示 `warnings[]` 与 `skippedMissing[]`（不完整备份不得显示为完全成功）；缺失文件说明“已跳过、游标不越过、
+  下次 prepare 自动补入”。加密归档另展示 `encrypted/archiveFormat/metaName` 与“明文哈希仅在 sidecar，PC 校验”。
+- **恢复计划持久化**：恢复计划 `planId` 存本地（`restore-plan-store`），刷新/断网后恢复向导可继续查看计划与结果并轮询；
+  计划过期/已完成/失败有明确状态；`skippedMissing` 在计划与结果中展示，非空时提示“非完整恢复”。
+- **加密归档边界**：列表对 `.age` 显示“加密归档（Web 不可校验/恢复）”徽标；校验/浏览/恢复/导入按钮禁用并提示 PC 流程；
+  收到 `409 archive_encrypted` 时显示说明而非通用错误；恢复目标选择自动跳过加密归档。
+- **分片上传断点**：`GET /api/uploads/:id` 命中 `status=completed` 时直接消费 `fileId` 结束，不重新 init/重传整文件。
+- **导入结果**：展示 `warnings[]`（如缺少字段/兼容提示），成功 Toast 不掩盖警告。
+
+### 通用与设置
+
+- **审计动作中文映射**：新增/修正 `backup_reauth_failed`、`bot.ai.send`（`partialTurn` 文本）、备份加密/异地相关动作的展示文案；未知动作按原文等宽显示。
+- **设置告警**：告警配置展示 `offsiteMaxAgeHours`（异地副本超期，小时，0 表示关闭）与世界备份/演练阈值；未配置异地副本时不误导为异常。
+- **`/api/version` 与元数据**：`MetaContext` 消费 `schemaVersion/backupArchiveEncryption/backupAgeRecipientConfigured/backupOffsiteStatusConfigured/audit`；
+  `/api/version` 失败重试一次并回退默认值；`audit.failureCount>0` 时可展示提示“审计写入存在失败（诊断）”，不展示明细。
+- **PWA 更新提示**：新版本可用时显示静默更新提示条（不强制刷新、不丢表单），由 `PwaUpdatePrompt` 控制；离线壳不缓存 API。
+- **导航与错误**：hash 路由异常/未知页面回退首页并提示；轮询失败静默保留上次数据并提供手动刷新；`ConfirmDialog` 默认焦点在“取消”，
+  危险操作需二次确认；错误码 `archive_encrypted`、`bot_ai_tool_isolation_unavailable`、`backup_busy`、`restore_busy`、`plan_expired` 有专门中文文案。
+- **响应式**：加密/异地状态卡与警告条在 390 px 纵向堆叠、不横向滚动；表格仍使用 `.bots-table-scroll`/既有滚动容器。
+
+### 前端工程
+
+- 新增/更新样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；新增测试覆盖长任务超时、恢复持久化、
+  加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。

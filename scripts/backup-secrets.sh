@@ -5,8 +5,26 @@
 # - 明文只在 0700 临时目录内存在，trap 清理；失败不留下未加密产物；
 # - 用 age 公钥加密为 secrets-<UTC>.tar.age，并写 .sha256 旁文件；保留最近 N 份并清理孤儿 sidecar；
 # - 公钥：/etc/antifieldcloud/secrets-age.pub（一行 age1...，root 所有、组/其他不可写；私钥离机保存）；
+# - 可选 --include-host-config：额外打包 deploy.conf、nftables、sshd drop-in、fail2ban、systemd drop-in 等
+#   主机级配置（纯配置、无密钥；用于 Pi 重建，默认关闭，打包后仍受 age 加密保护）；
+# - opencode 已安装但数据库缺失/快照失败时直接失败（不允许生成缺 opencode DB 的“成功”密钥包）；
 # - stdout 单行 JSON；失败输出 {ok:false,error} 且退出码 1；绝不输出密码/密钥。
 set -euo pipefail
+
+INCLUDE_HOST_CONFIG=""
+for arg in "$@"; do
+  case "$arg" in
+    --include-host-config) INCLUDE_HOST_CONFIG="1" ;;
+    --help)
+      printf '用法：sudo bash scripts/backup-secrets.sh [--include-host-config]\n'
+      exit 0
+      ;;
+    *)
+      printf '{"ok":false,"error":"unknown_argument"}\n'
+      exit 2
+      ;;
+  esac
+done
 
 BACKUP_DIR=${SECRETS_BACKUP_DIR:-/var/lib/antifieldcloud/backups/secrets}
 RECIPIENT_FILE=${SECRETS_AGE_RECIPIENT_FILE:-/etc/antifieldcloud/secrets-age.pub}
@@ -126,15 +144,50 @@ done
 if [[ ! -f /etc/antifieldcloud/env ]]; then
   json_error "缺少 /etc/antifieldcloud/env，无法做密钥备份"
 fi
+# 可选主机级配置（默认关闭）：Pi 重建所需、但不在应用归档/常规密钥包内的配置。
+host_files_count=0
+if [[ "$INCLUDE_HOST_CONFIG" == "1" ]]; then
+  for candidate in \
+    /etc/antifieldcloud/deploy.conf \
+    /etc/nftables.conf \
+    /etc/log2ram.conf \
+    /etc/ssh/sshd_config \
+    /etc/ssh/sshd_config.d/* \
+    /etc/fail2ban/jail.local \
+    /etc/fail2ban/jail.d/* \
+    /etc/systemd/system/cloudflared.service.d/* \
+    /etc/systemd/system/nftables.service.d/* \
+    /etc/systemd/journald.conf.d/* \
+    /etc/systemd/system/antifieldcloud.service \
+    /etc/systemd/system/antifieldcloud-world.service \
+    /etc/systemd/system/antifieldcloud-world.timer \
+    /etc/systemd/system/antifieldcloud-health.service \
+    /etc/systemd/system/antifieldcloud-health.timer \
+    /etc/systemd/system/searxng.service; do
+    if [[ -f "$candidate" ]]; then
+      root_files+=("${candidate#/}")
+      host_files_count=$((host_files_count + 1))
+    fi
+  done
+fi
 if [[ ${#root_files[@]} -eq 0 ]]; then
   json_error "没有可备份的密钥文件"
 fi
 
-# opencode 数据库一致性快照：以 opencode 用户执行固定 node:sqlite backup，不修改 opencode 服务。
-# 生产密钥包要求包含 opencode DB：目录不可写或快照失败时直接失败退出，由调用方把密钥包状态置为失败，
-# 避免只记 warning、PC 侧 secretsOk 仍为 true 的静默漏备（失败会保留 Pi 上既有密钥包，下次重试）。
+# opencode 一致性快照：已安装 opencode（存在 opencode 用户或数据目录）时，数据库必须存在且快照成功。
+# 失败直接退出：避免 PC 侧 secretsOk=true 但 includesOpencode=false 的静默漏备（OPS-03）。
 opencode_included=false
-if [[ -f "$OPENCODE_DB" ]] && getent passwd opencode >/dev/null 2>&1 && [[ -x "$NODE_BIN" ]]; then
+opencode_present=false
+if getent passwd opencode >/dev/null 2>&1 || [[ -d "$OPENCODE_HOME" ]]; then
+  opencode_present=true
+fi
+if [[ "$opencode_present" == "true" ]]; then
+  if [[ ! -f "$OPENCODE_DB" ]]; then
+    json_error "opencode 已安装但数据库不存在：$OPENCODE_DB（拒绝生成缺 opencode DB 的密钥包；请检查 OpenCode 版本/路径）"
+  fi
+  if [[ ! -x "$NODE_BIN" ]]; then
+    json_error "opencode 已安装但 Node 不可执行：$NODE_BIN（无法做一致性快照）"
+  fi
   snapshot_root=$(mktemp -d "$snapshot_parent/opencode.XXXXXX")
   snapshot_dir="$snapshot_root/opencode"
   mkdir -p "$snapshot_dir"
@@ -200,5 +253,5 @@ warnings_json="[]"
 if [[ -n "$opencode_warning" ]]; then
   warnings_json="[\"$opencode_warning\"]"
 fi
-printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"includesOpencode":%s,"createdAt":"%s","keep":%s,"warnings":%s}\n' \
-  "$archive" "$name" "$sha256" "$size" "$file_count" "$opencode_included" "$created_at" "$KEEP" "$warnings_json"
+printf '{"ok":true,"archive":"%s","archiveName":"%s","sha256":"%s","sizeBytes":%s,"fileCount":%s,"includesOpencode":%s,"includesHostConfig":%s,"hostConfigFileCount":%s,"createdAt":"%s","keep":%s,"warnings":%s}\n' \
+  "$archive" "$name" "$sha256" "$size" "$file_count" "$opencode_included" "$([[ "$INCLUDE_HOST_CONFIG" == "1" ]] && printf true || printf false)" "$host_files_count" "$created_at" "$KEEP" "$warnings_json"

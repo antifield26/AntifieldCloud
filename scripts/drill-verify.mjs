@@ -6,7 +6,7 @@
  * - parseSidecar：解析 `.sha256` 旁文件（`<sha>  <name>`），校验 SHA 与文件名；
  * - verifyArchiveSha：流式计算归档 SHA-256 并与旁文件/期望值比对；
  * - analyzeTarListing：校验 `tar -tzf` 条目安全（绝对路径、`..`、反斜杠、控制字符、白名单前缀）；
- * - verifyManifest：校验归档 manifest 的 schema/mode/fileCount/files/totalBytes/createdAt；
+ * - verifyManifest：校验归档 manifest 的 schema（1=旧规则，2=加密特性新规则）/mode/fileCount/files/totalBytes/createdAt；
  * - verifyDb：打开 SQLite 快照执行 `PRAGMA integrity_check`、`PRAGMA foreign_key_check` 并读取
  *   `meta.schema_version`；
  * - CLI：供 scripts/drill.ps1 调用，stdout 单行 JSON，失败退出码 1。
@@ -184,7 +184,7 @@ export function verifyManifest(manifest, options = {}) {
   details.totalBytes = manifest.totalBytes ?? null
   details.database = manifest.database ?? null
   details.createdAt = manifest.createdAt ?? null
-  if (manifest.schema !== 1) push('manifest_schema_invalid', `manifest.schema must be 1, got ${JSON.stringify(manifest.schema)}`)
+  if (manifest.schema !== 1 && manifest.schema !== 2) push('manifest_schema_invalid', `manifest.schema must be 1 or 2, got ${JSON.stringify(manifest.schema)}`)
   if (manifest.mode !== 'full' && manifest.mode !== 'inc') {
     push('manifest_mode_invalid', `manifest.mode must be full|inc, got ${JSON.stringify(manifest.mode)}`)
   }

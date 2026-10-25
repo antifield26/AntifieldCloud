@@ -20,9 +20,11 @@ export default defineConfig({
       include: ['src/**/*.{ts,tsx}'],
       exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/main.tsx', 'src/api/types.ts'],
       thresholds: {
-        lines: 35,
-        functions: 30,
-        branches: 33,
+        // v0.7.0 基线：Lines 52.33% / Branches 47.63% / Functions 45.05%（本轮从 35/33/30 提高，
+        // 后续按模块补测继续上调；门禁略低于当前实测值，避免环境差异导致误报）。
+        lines: 50,
+        functions: 42,
+        branches: 45,
       },
     },
   },

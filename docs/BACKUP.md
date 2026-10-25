@@ -1,16 +1,20 @@
-# 备份与恢复（v0.5.x）
+# 备份与恢复（v0.7.0）
 
 > 目标：SD 卡损坏、误删、升级失败或世界存档损坏时，能恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。
-> 备份分三条独立链路：**应用数据归档**（DB 快照 + 文件内容，明文，含 TOTP/会话）、**密钥包**（age 加密的
-> env/云隧道/Minecraft 配置/opencode 数据）与**世界备份**（Minecraft 世界一致性 gzip 归档）。
-> 归档与密钥包只允许落在 Pi 本机或离线介质，不上传公开网盘；恢复演练由 `scripts/drill.ps1` 自动校验。
+> 备份分四条链路：**应用数据归档**（DB 快照 + 文件内容；可选整包 age 加密，默认关闭）、**密钥包**（age 加密的
+> env/云隧道/Minecraft 配置/opencode 数据，可选纳入主机配置）、**世界备份**（Minecraft 世界一致性 gzip 归档）与
+> **异地副本**（PC 端只上传加密归档，默认关闭）。
+> 归档与密钥包只允许落在 Pi 本机、PC 备份目录或离线介质，不上传公开网盘；**Web 不持任何私钥**，加密归档只能在 PC 用
+> 离线私钥解密/校验/恢复；恢复演练由 `scripts/drill.ps1` 自动校验。
 
 ## 1. 策略
 
 | 链路 | 频率/触发 | 保留 | 确认方式 |
 |---|---|---|---|
-| 应用数据归档 | 每日（Windows 任务触发 `--prepare`，或 Web 手动 prepare） | Pi pending 直到确认、已确认 2 个；PC daily 30 天、weekly 56 天 | PC 校验 SHA-256 后 `--ack` 才推进游标 |
-| 密钥包 | 每日随应用拉取任务执行 `backup-secrets.sh` | Pi `KEEP=2` 滚动；PC 90 天 | PC 拉取并校验 `.sha256` |
+| 应用数据归档 | 每日（Windows 任务触发 `--prepare`，或 Web 手动 prepare） | Pi pending 直到确认、已确认 2 个；PC daily 30 天、weekly 56 天 | PC 校验密文/明文哈希后 `--ack` 才推进游标 |
+| 应用归档整包加密 | 随应用归档（`BACKUP_ARCHIVE_ENCRYPTION=true`，默认关闭） | 同应用归档；Pi 只存 `.age` 与外部 sidecar | PC 拉取 `.age` + `.meta.json`，私钥离线 |
+| 密钥包 | 每日随应用拉取任务执行 `backup-secrets.sh` | Pi `KEEP=2` 滚动；PC 90 天 | PC 拉取并校验 `.sha256` + `includesOpencode` |
+| 异地副本 | 每日/自定义（`AntifieldCloud-Backup-Offsite`，默认关闭） | 远端链感知保留（最新 full + 其后全部 inc + 最近 N 天） | `rclone copyto --checksum` + 远端大小校验 |
 | 世界备份 | 每周日 12:00（`antifieldcloud-world.timer`，显式 Asia/Shanghai，Persistent） | Pi 最新 4 份；PC `world\` 最新 4 份 | PC `world-pull.ps1` 校验 SHA 后删除远端（ack） |
 | 恢复演练 | 季度/升级前手动运行 `drill.ps1` | 报告 180 天 | 报告通过 + `drill-status.json` |
 
@@ -21,8 +25,10 @@
 - **增量依据**：文件内容不可变，只备份 `created_at > 上次已确认备份时间` 的新增文件；重命名/移动只改元数据，由 DB 快照覆盖。
   存在未确认 pending 时，增量起点取最新 pending 时间，避免重复打包；上次缺失（`skippedMissing`）的文件即使早于水位也强制纳入下次选择。
 - **空间保护**：生成前检查剩余空间（本次估算 + 现有 pending + 仍占盘的已确认归档 + 孤儿归档 + 2 GiB），不足则返回 JSON 错误且不生成归档；
-  世界备份按 `1.5 × 世界目录体积` 预检。
-- **完整性**：归档 SHA-256 写入 DB 与 PC 的 `.sha256` 旁文件；`--ack` 会再次校验 Pi 上文件；PC 下载后校验再原子改名。
+  **开启整包加密时本次估算按 2× 明文**（明文 tar 与密文峰值同时存在）+ 上述余量；世界备份按 `1.5 × 世界目录体积` 预检。
+- **完整性**：归档 SHA-256 写入 DB 与 PC 的 `.sha256` 旁文件（**加密归档的 `.sha256` 始终表示密文 SHA-256**）；`--ack` 会再次校验 Pi 上文件；PC 下载后校验再原子改名。
+- **整包加密（默认关闭）**：`BACKUP_ARCHIVE_ENCRYPTION=true` 时 `--prepare` 用独立备份 age 公钥生成 `*.tar.gz.age`，明文 SHA-256/大小只写归档外 sidecar 与 DB；失败关闭，绝不回退明文；私钥离线，Web 不持私钥（详见 §5.1）。
+- **异地副本（默认关闭）**：PC 端 `backup-offsite.mjs/.ps1` 只上传 `.age`，链感知保留并写状态回 Pi；应用只读展示与告警（详见 §5.2）。
 - **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
   旧世界归档命名 `world-<YYYYMMDD>.tar.gz` 不匹配新的 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 规则，永远不会被自动清理。
 - **Bot 密钥（v0.5.0 起）**：`/etc/antifieldcloud/env` 含 `BOT_SECRET_KEY`，已随密钥包加密备份；该 key 与 DB 中的 `bots` 密文必须成对恢复，
@@ -34,15 +40,27 @@
 ## 2. 应用归档结构与协议
 
 ```text
+# 明文（默认）
 snapshot-20261019T100101239Z-full.tar.gz
 ├── backups/db-20261019T100101239Z.sqlite    # 一致性 DB 快照
 ├── backups/manifest-20261019T100101239Z.json
 └── files/<xx>/<id>                           # 本次新增/全量文件内容
+
+# 加密（BACKUP_ARCHIVE_ENCRYPTION=true）
+snapshot-20261019T100101239Z-full.tar.gz.age          # age 密文（tar.gz 整体加密）
+snapshot-20261019T100101239Z-full.tar.gz.age.sha256   # 密文 SHA-256
+snapshot-20261019T100101239Z-full.tar.gz.age.meta.json# 归档外明文元数据（sidecar，schema 2）
 ```
 
-`manifest.json` 字段：`schema / createdAt / mode(full|inc) / since / database / files[] / fileCount / totalBytes /
+`manifest.json` 字段（明文归档）：`schema:1 / createdAt / mode(full|inc) / since / database / files[] / fileCount / totalBytes /
 skippedMissing[] / warnings[]`。`skippedMissing` 记录“DB 有行但磁盘文件缺失”的文件 id，恢复计划会据此剔除并报告；
 `warnings` 记录缺失/时钟回拨等告警。
+
+**加密归档（v0.7.0）**：归档内 manifest 使用 `schema:2`，只保留 `schema / createdAt / mode / since / database / files[] /
+fileCount / totalBytes / skippedMissing / warnings / encrypted:true / archiveFormat:"tar.gz.age"`；**明文 SHA-256 与明文大小不放进被加密的
+归档内部**（否则构成自引用），改由归档外 `<name>.meta.json`（`schema:2`，字段 `name/mode/createdAt/archiveFormat/encrypted/
+encryptedWith:"age"/recipient/plainSha256/plainSize/cipherSha256/cipherSize`）与 DB `backup_archives.manifest_json` 保存。
+归档名唯一可信来源是后缀 `.tar.gz.age`，不新增 DB 列/表（无 schema 迁移）。
 
 DB 表 `backup_archives` 记录：`name(PK) / mode / created_at / sha256 / size / file_count / pulled_at / acked_at /
 deleted_at / origin / verified_at / manifest_json / last_error`；`origin` 区分 `pi`（Pi 生成，参与 pending/ack）与
@@ -54,6 +72,7 @@ deleted_at / origin / verified_at / manifest_json / last_error`；`origin` 区�
 只有未 ack 的 Pi 归档或缺失的导入归档才会返回 `status=missing`。
 
 `--prepare` 先写 `snapshot-*.tar.gz.part`，tar 成功后才原子改名为正式归档；失败/超时清理本次 `.part` 与陈旧锁。
+**加密路径的崩溃一致性顺序**：tar → `*.plain.tmp` → 计算 plain SHA-256/size → age 加密到 `*.part.age` → rename `.age` → 写 sidecar（temp+rename）→ 写 DB 行 → unlink `.plain.tmp`；崩溃最多留下可清理临时文件或“有密文无 DB 行”的孤儿（只报告、不自动删除）。加密开启时 age 缺失/公钥非法/加密失败/空间不足均在 `--prepare` 阶段失败关闭，不产生 pending、不降级明文；启动/下次 prepare 清理超过 24h 的 `*.plain.tmp` 残留。
 Web `prepare` 超时由 `BACKUP_PREPARE_TIMEOUT_SEC` 控制（默认 3300 秒，允许 60–7200），与 CLI/PC 侧 55 分钟对齐，避免大归档中途被杀。
 陈旧锁（`.backup.lock` 超过 1 小时）可被接管并记录 warn；ack 的归档行、游标、`meta.backup_missing_files` 与审计在同一事务内提交。
 
@@ -71,8 +90,9 @@ $CLI --snapshot-db                # 仅做一致性 DB 快照（部署/升级前
 ```
 
 - 成功输出单行 JSON；失败 `{ok:false,error}` 且退出码 1。归档权限 0640；DB 快照与清单 0600；`.backup.lock` 超过 1 小时视为陈旧并可接管（记 warn）。
-- `--prepare` 额外返回 `warnings[]` 与 `skippedMissing[]`；`--pending` 额外返回
-  `orphans/partials/missingFiles/missingFileCount/warnings`。Windows 脚本用 `--no-warnings` 抑制重复提示（仍保留关键字段）。
+- `--prepare` 额外返回 `warnings[]` 与 `skippedMissing[]`；加密开启时另返回 `encrypted:true / archiveFormat:"tar.gz.age" / metaName / plainSha256 / plainSize`。`--pending` 额外返回
+  `orphans/partials/missingFiles/missingFileCount/warnings`；每个 pending 项带 `encrypted / archiveFormat / metaName / metaExists`，加密归档缺 sidecar 时在 `missingSidecars[]` 与 `warnings[]` 中提示（补齐前不得 ack/删除）。Windows 脚本用 `--no-warnings` 抑制重复提示（仍保留关键字段）。
+- `--ack` 对加密归档接受 `.age` 名与密文 SHA-256（`pending[].sha256` 即密文 SHA），ack 后清理归档 + `.sha256` + `.meta.json`；`--deadline/cleanup` 不误删仍属于 pending 的 `.meta.json`。
 - 上次缺失文件记录在 meta `backup_missing_files`：恢复物理文件后即使 `created_at` 早于增量水位，也会被强制纳入下一次增量并在 ack 时写回；
   这样不会因水位越过而永久漏备。
 - `--ack` 只接受与 DB 记录一致的 SHA-256，且只允许游标前进（乱序 ack 安全）；ack 的归档行、游标、meta 与审计在同一事务内提交。
@@ -86,27 +106,32 @@ $CLI --snapshot-db                # 仅做一致性 DB 快照（部署/升级前
 # 管理员 PowerShell；-PiHost/-BackupRoot 会显式写入任务参数（不要再依赖脚本默认占位值）
 cd "$env:USERPROFILE\projects\AntifieldCloud"
 .\scripts\install-backup-task.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
+# 可选：同时安装异地副本任务（默认关闭；需先配置 rclone remote）
+.\scripts\install-backup-task.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" `
+  -InstallOffsiteTask -OffsiteRemote myremote -OffsiteRemotePath AntifieldCloud/backups -OffsiteRemoteLabel myremote
 ```
 
-- 任务名 `AntifieldCloud-Backup-Pull`；每日 `12:00` + 登录后补跑；电池供电时也运行；仅当前用户登录时运行。
+- 任务名 `AntifieldCloud-Backup-Pull`；每日 `12:00` + 登录后补跑；电池供电时也运行；仅当前用户登录时运行。`-InstallOffsiteTask` 另建 `AntifieldCloud-Backup-Offsite`（默认每日 13:00、6h 超时、IgnoreNew）。
 - **更新仓库后必须重装任务（v0.5.2 起）**：`install-backup-task.ps1` 会把最新 `backup-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\` 并更新
   `backup-task.json` 的脚本 SHA/参数；重装后手跑一次，确认日志 `secrets=ok`、Pi `backup-pull.json` 的 `secretsOk=true`
   （密钥包内含 `BOT_SECRET_KEY`，脚本不打印值），且 archive/SHA 校验通过。
 - 安装脚本会：复制 `backup-pull.ps1` 到 `%LOCALAPPDATA%\AntifieldCloud\`；用 `icacls` 把备份目录 ACL 收紧为
   **当前用户 + Administrators + SYSTEM**（逐项校验，非白名单主体即失败）；安装前做 `PiHost:22` 可达性预检；
   回读校验任务参数并写安装标记 `backup-task.json`（版本/脚本 SHA/参数）；`-DryRun` 只打印计划不注册任务。
-- 拉取流程：`--pending` →（无 pending 才 `--prepare`）→ `.part` 下载 → SHA-256 校验 → 原子改名 → 写
-  `<archive>.sha256` → `--ack` → 删除 Pi 归档及 `.sha256`；失败保留 pending，下一轮重试同一归档，不重复生成；
-  同轮已 ack 的归档跳过。
+- 拉取流程：`--pending` →（无 pending 才 `--prepare`）→ `.part` 下载 → 密文 SHA-256 校验 → 原子改名 → 写
+  `<archive>.sha256` →（加密归档：先拉 `<archive>.meta.json` 并校验 schema/name/mode/archiveFormat/encrypted/encryptedWith/recipient/plainSha256/plainSize/cipherSha256/cipherSize 与 pending 一致）→ `--ack` → 删除 Pi 归档、`.sha256` 与 `.meta.json`；失败保留 pending，下一轮重试同一归档，不重复生成；
+  同轮已 ack 的归档跳过。**缺/非法 `.meta.json` 的加密归档按项跳过（不 ack、不删远端、`sidecarMissing` 记录），其余归档继续**；单个归档下载/SHA 失败仍中止本轮（避免错误 ack）。
+- `-AgeIdentityPath`（可选）：对加密归档用 `age -d -i` 解密到临时文件，校验 `plainSha256/plainSize` 后立即删除临时明文；私钥路径与明文内容不写日志/状态。未提供则只做密文校验，状态 `plainVerified=null`。
 - 所有 SSH/SCP 有硬超时（`Start-Process` + `taskkill /T /F`），secrets 拉取独立 try；`backup-pull.json` 分开记录
-  `secretsAttempted/secretsOk/lastSecretsAt/secretsLastError/secretsArchiveName`，secrets 失败 `ok=false` 且退出码 1。
+  `secretsAttempted/secretsOk/lastSecretsAt/secretsLastError/secretsArchiveName/secretsIncludesOpencode/includesHostConfig`，
+  加密状态另记 `encrypted/plainVerified`；secrets 失败 `ok=false` 且退出码 1。
 - 状态 JSON 在重试循环外一次性写入：写失败只记错误、不触发再次 prepare（避免重复归档）。
 - PC 保留：`daily` 目录按时间保留 30 天、`weekly` 保留 56 天（8 周）、`secrets` 保留 90 天；日志
   `%LOCALAPPDATA%\AntifieldCloud\backup.log`（超过 1 MiB 自动轮转为 `backup.log.1`）。
 - 状态：成功拉取后写 `/var/lib/antifieldcloud/backup-pull.json`，面板“备份”卡与告警读取；文件成功但密钥包失败会显示异常。
 - 旧任务 `PiBackUp-Nightly` 保持原样，不修改。
 
-## 5. 密钥包（age 加密，KEEP=2）
+## 5. 密钥包与备份整包加密（age；整包加密默认关闭）
 
 Pi 上安装 `age`，离线生成密钥对（私钥不要放 Pi/仓库）：
 
@@ -138,6 +163,50 @@ sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
 - **保留**：Pi 端 `SECRETS_KEEP`/默认 `KEEP=2` 滚动保留最新 2 份；Windows 任务拉到本地后**不再立即删除远端密钥包**
   （PC 失败时可复用同一份）；PC 保留 90 天。
 - 未安装 age/未配置公钥时只记录警告，不影响文件归档备份；但 secrets 状态会显示失败/未尝试。
+- **主机配置可选打包（v0.7.0/OPS-09）**：`backup-secrets.sh --include-host-config` 会把 `deploy.conf`、`/etc/nftables.conf`、
+  sshd drop-in、fail2ban jail、cloudflared/journald/nftables drop-in、应用 units、log2ram 配置中存在的文件一并打入密钥包，
+  输出 `includesHostConfig`/`hostConfigFileCount`；模板与重建清单见 `deploy/host/README.md`。
+- **`includesOpencode` 硬校验**：已安装 opencode（存在 opencode 用户或数据目录）但 DB 快照缺失/Node 不可执行时，
+  `backup-secrets.sh` 直接失败、不生成“缺 opencode DB 的成功密钥包”；PC 拉取校验 `meta.includesOpencode`，否则 `secretsOk=false`。
+
+### 5.1 备份整包加密（独立 age 密钥，默认关闭）
+
+- **目标**：应用归档落地即密文，避免 PC 备份目录/Pi 介质泄露直接暴露 TOTP secret、Bot 密文与文件内容。
+  默认关闭（`BACKUP_ARCHIVE_ENCRYPTION=false`）；与 `secrets-age` **使用独立密钥对**，互不复用。
+- **密钥**：Pi 只存公钥 `/etc/antifieldcloud/backup-age.pub`（root 属主、组/其他不可写、单行 `age1…`、≤4 KiB；
+  启动时校验属主/权限/格式）；私钥离线保存 ≥2 份，**禁止放 Pi/仓库/PC 备份目录**。启用前必须用私钥完成一次
+  `age -d` 解密 + 一次 `drill.ps1 -AgeIdentityPath` 演练，否则可能出现“备份成功但永不可恢复”。
+- **命名与元数据**：`snapshot-<stamp>[-n]-(full|inc).tar.gz.age`；sidecar `<name>.meta.json`（schema 2）；
+  `.sha256` 始终是**密文** SHA-256；`recipient`/`encryptedWith` 写入 sidecar、DB `manifest_json` 与 API 元数据（公钥非秘密），
+  便于密钥轮换时识别旧归档。
+- **失败关闭**：加密开启时 age 缺失/不可执行、公钥非法、加密失败、密文为空、空间不足（按 2× 明文）→ `--prepare` 失败，
+  不产生 pending、不留明文最终归档、**不得降级明文**。临时明文使用 `*.plain.tmp`，密文+sidecar 落盘后立即删除；
+  启动/每次 prepare 清理超过 24h 的残留。
+- **空间**：峰值 ≈ 明文 tar + 密文 ≈ 2× 本次估算；预算 = 2× 估算 + pending + acked 未清理 + 孤儿 + 2 GiB 保留。
+- **Web 边界**：应用不持私钥。`verify/import/entries/restore-plan/executeRestore` 对 `.age` 在归档名校验之前返回
+  `409 archive_encrypted`（加密归档是预期状态，不写 `last_error`）；自动恢复目标选择跳过加密归档；Web UI 禁用对应按钮并展示
+  “加密归档（Web 不可校验/恢复）”。整库恢复同样只能 PC 解密后走 §8.1。
+- **启用顺序**（默认全关，可逐步回滚）：部署 v0.7.0 → 离线生成备份 age 密钥 → Pi 写公钥 → 私钥完成一次解密/演练 →
+  `BACKUP_ARCHIVE_ENCRYPTION=true` 并重启 → 下一次 prepare 生成 `.age` → PC 拉取 + `--ack` → drill 解密校验 → 再配置异地副本。
+  **回滚**：关闭开关恢复明文；已生成的 `.age` 保留（PC 侧解密/演练），不要在 Pi 上尝试解密。
+- **环境变量**：`BACKUP_ARCHIVE_ENCRYPTION`、`BACKUP_AGE_RECIPIENT_FILE`（`bootstrap-env.sh` 已纳管）；测试夹具可用
+  `BACKUP_AGE_FAKE=1`/`BACKUP_SKIP_KEY_OWNER_CHECK=1`（仅本地夹具，生产禁用）。
+
+### 5.2 异地副本（PC 端 rclone，默认关闭）
+
+- **组成**：`scripts/backup-offsite.mjs`（纯逻辑 + CLI，链规划/保留/校验）+ `backup-offsite.ps1`（计划任务入口，硬超时、
+  日志轮转、状态回写）+ `install-backup-task.ps1 -InstallOffsiteTask`（安装 `AntifieldCloud-Backup-Offsite`）。
+- **只上传密文**：只选择 `.tar.gz.age`；明文归档拒绝上传并计入 `plaintextSkipped`；要求 `.sha256` 与 `.meta.json` 存在且
+  本地密文 SHA 与 sidecar/pending 一致，否则跳过并记录 `failed`。
+- **链感知保留**：先规划“最新 full + 其后全部 inc”，再叠加最近 N 天窗口；**绝不删除最新 full**；删除有上限（`--max-delete`）
+  且默认 dry-run 可先演练；不做纯 `--min-age` 删除（可能删掉最新 full）。
+- **上传与校验**：`rclone copyto --checksum` 上传归档 + `.sha256` + `.meta.json`，用 `rclone size` 校验远端大小；
+  remote/remotePath/name 做白名单校验，`execFile` 无 shell；脚本不创建 rclone remote/凭据。
+- **状态与告警**：状态 JSON 写 Pi `/var/lib/antifieldcloud/backup-offsite-status.json`（0644，随机 /tmp 名后 `sudo install`），
+  字段 `lastRunAt/ok/remoteLabel/uploaded/skipped/failed/bytes/keptRemote/plaintextSkipped/error`；不含远端真实路径/URL/凭据。
+  Dashboard `backup.offsite` 只读展示；`offsite_overdue` 告警阈值 `ALERT_OFFSITE_MAX_AGE_HOURS`（默认 48，0 关闭；
+  状态文件缺失/未配置不进入条件列表，避免误报）。
+- **回滚**：禁用/卸载异地任务即可；已上传副本保留，不影响应用归档主链路。
 
 ## 6. 世界备份（Minecraft 世界一致性归档）
 

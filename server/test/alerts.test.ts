@@ -1,6 +1,7 @@
 /** 告警模块测试：阈值评估、去重/冷却/恢复、webhook 投递与脱敏、路由与启停。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Config } from '../src/config.ts'
 import {
@@ -104,7 +105,7 @@ test('磁盘阈值：首次 firing、冷却内去重、冷却后重复通知与�
     fx.db.prepare('UPDATE backup_state SET last_backup_at = ? WHERE id = 1').run(T0)
     const first = await fx.alerts.evaluateOnce()
     assert.equal(first.skipped, false)
-    assert.equal(first.checked, 12, '12 个告警条件（含 v0.4.0 世界备份/拉取/演练）')
+    assert.equal(first.checked, 13, '13 个告警条件（v0.7.0 新增异地副本超期）')
     assert.equal(first.firing, 1)
     assert.match(eventNames(events(fx))[0] ?? '', /^disk_low:firing$/)
     assert.equal(events(fx)[0]?.severity, 'critical', '剩余 5% 低于阈值一半应为 critical')
@@ -479,4 +480,62 @@ test('启动/停止、关闭开关与 pi-health 解析', async () => {
   assert.equal(probe?.tempC, 48.2)
   assert.equal(probe?.throttledRaw, '0x50000')
   assert.equal(parsePiHealth('{"undervoltageNow":true,"tempC":70}')?.underVoltage, true)
+})
+
+test('offsite_overdue：状态文件存在才参与评估，超期/失败告警、缺失不误报', async () => {
+  const fx = alertFixture({
+    config: { alertOffsiteMaxAgeHours: 48 },
+    deps: { readFile: (path) => readFileSync(path, 'utf8') },
+  })
+  try {
+    // 未配置 offsite（文件不存在）：条件列表不增加，checked 保持 12。
+    const absent = await fx.alerts.evaluateOnce()
+    assert.equal(absent.checked, 12)
+
+    const path = fx.config.backupOffsiteStatusFile
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(
+      path,
+      JSON.stringify({ ok: true, lastRunAt: '2026-05-28T00:00:00.000Z', remoteLabel: 'remote:backup' }),
+    )
+    const stale = await fx.alerts.evaluateOnce()
+    assert.equal(stale.checked, 13)
+    const staleRow = fx.db
+      .prepare("SELECT status, severity, details_json FROM alert_events WHERE event = 'offsite_overdue' ORDER BY id DESC LIMIT 1")
+      .get() as { status: string; severity: string; details_json: string } | undefined
+    assert.equal(staleRow?.status, 'firing')
+    assert.equal(staleRow?.severity, 'warning')
+    assert.match(staleRow?.details_json ?? '', /thresholdHours/)
+
+    writeFileSync(
+      path,
+      JSON.stringify({ ok: true, lastRunAt: fx.clock.now().toISOString(), remoteLabel: 'remote:backup' }),
+    )
+    const fresh = await fx.alerts.evaluateOnce()
+    assert.equal(fresh.checked, 13)
+    const freshRow = fx.db
+      .prepare("SELECT status FROM alert_events WHERE event = 'offsite_overdue' ORDER BY id DESC LIMIT 1")
+      .get() as { status: string } | undefined
+    assert.equal(freshRow?.status, 'resolved')
+  } finally {
+    fx.close()
+  }
+})
+
+test('offsite_overdue：阈值 0 时关闭条件，即使状态文件存在也不参与评估', async () => {
+  const fx = alertFixture({
+    config: { alertOffsiteMaxAgeHours: 0 },
+    deps: { readFile: (path) => readFileSync(path, 'utf8') },
+  })
+  try {
+    mkdirSync(join(fx.config.backupOffsiteStatusFile, '..'), { recursive: true })
+    writeFileSync(
+      fx.config.backupOffsiteStatusFile,
+      JSON.stringify({ ok: false, lastRunAt: '2026-01-01T00:00:00.000Z' }),
+    )
+    const result = await fx.alerts.evaluateOnce()
+    assert.equal(result.checked, 12)
+  } finally {
+    fx.close()
+  }
 })

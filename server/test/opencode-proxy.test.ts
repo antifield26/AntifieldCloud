@@ -155,6 +155,37 @@ test('AI 主机 HTTP Origin 校验：app/ai 允许，兄弟子域/null/错误协
   }
 })
 
+test('SEC-10：AI SSO 入口未认证限流 + 审计窗口去重（公网写放大防护）', async () => {
+  const dir = tempDataDir()
+  const config = testConfig(dir, { opencodePassword: 'super-secret' })
+  const db = testDb(dir)
+  await seedAdmin(db)
+  const context = await buildApp(config, db)
+  const app = context.app
+  await app.listen({ host: '127.0.0.1', port: 0 })
+  const appAddress = app.server.address()
+  assert.ok(appAddress && typeof appAddress === 'object')
+  try {
+    const statuses: number[] = []
+    for (let index = 0; index < 70; index += 1) {
+      const response = await get(appAddress.port, `/__af/sso/not-a-ticket-${index}`, { host: 'ai.test' })
+      statuses.push(response.status)
+    }
+    // 前 60 次进入业务校验（400），之后同一 IP 被限流（429）。
+    assert.equal(statuses.filter((status) => status === 400).length, 60)
+    assert.equal(statuses.filter((status) => status === 429).length, 10)
+    // 审计去重：同 IP/result 窗口内只写一条，攻击请求不会线性放大审计表。
+    const rows = db
+      .prepare("SELECT detail_json FROM audit_log WHERE action = 'auth.sso_ai'")
+      .all() as unknown as Array<{ detail_json: string }>
+    assert.equal(rows.length, 1)
+    assert.match(rows[0]!.detail_json, /invalid_path/)
+  } finally {
+    await app.close()
+    cleanupDir(dir)
+  }
+})
+
 test('AI SSO：ticket 换 ai 主机 host-only 会话 Cookie，一次性/过期/错误 origin/next 校验', async () => {
   const upstreamRecords: UpstreamRecord[] = []
   const upstream = createServer((req, res) => {

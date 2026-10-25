@@ -2,7 +2,7 @@
 // 安全边界：只渲染服务端返回的事件元数据与脱敏错误文本，不展示消息正文、用户名或任何平台凭据；
 // 错误原文来自队列记录，中文提示由服务端根据错误类型映射。
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, Info, RefreshCw, TriangleAlert } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
 import type { BotDelivery, BotEventItem, BotPublishJob, BotSummary } from '../../api/types'
@@ -34,6 +34,7 @@ const HOUR_OPTIONS = [
 
 const OUTCOME_OPTIONS = [
   { value: '', label: '全部结果' },
+  { value: 'received', label: '已接收（received）' },
   { value: 'ok', label: '成功（ok）' },
   { value: 'denied', label: '拒绝（denied）' },
   { value: 'rate_limited', label: '限流（rate_limited）' },
@@ -121,6 +122,8 @@ export function BotDiagnosticsPanel({ bot, refreshToken }: BotDiagnosticsPanelPr
   const [errors, setErrors] = useState<RecentError[]>([])
   const [errorsLoading, setErrorsLoading] = useState(true)
   const [errorsError, setErrorsError] = useState<string | null>(null)
+  const eventsSeqRef = useRef(0)
+  const errorsSeqRef = useRef(0)
 
   const loadEvents = useCallback(async (): Promise<void> => {
     if (!botId) {
@@ -129,6 +132,8 @@ export function BotDiagnosticsPanel({ bot, refreshToken }: BotDiagnosticsPanelPr
       setEventsLoading(false)
       return
     }
+    const seq = eventsSeqRef.current + 1
+    eventsSeqRef.current = seq
     setEventsLoading(true)
     setEventsError(null)
     try {
@@ -138,12 +143,14 @@ export function BotDiagnosticsPanel({ bot, refreshToken }: BotDiagnosticsPanelPr
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
       })
+      if (seq !== eventsSeqRef.current) return
       setEvents(result.items)
       setEventsTotal(result.total)
     } catch (loadError) {
+      if (seq !== eventsSeqRef.current) return
       setEventsError(toErrorMessage(loadError, '读取入站事件失败'))
     } finally {
-      setEventsLoading(false)
+      if (seq === eventsSeqRef.current) setEventsLoading(false)
     }
   }, [botId, hours, outcome, page])
 
@@ -153,18 +160,22 @@ export function BotDiagnosticsPanel({ bot, refreshToken }: BotDiagnosticsPanelPr
       setErrorsLoading(false)
       return
     }
+    const seq = errorsSeqRef.current + 1
+    errorsSeqRef.current = seq
     setErrorsLoading(true)
     setErrorsError(null)
     try {
       const [deliveries, jobs] = await Promise.all([
-        api.bots.deliveries.list(botId),
-        api.bots.publish.list(botId),
+        api.bots.deliveries.list(botId, 200),
+        api.bots.publish.list(botId, 200),
       ])
+      if (seq !== errorsSeqRef.current) return
       setErrors(recentErrorsFrom(deliveries, jobs))
     } catch (loadError) {
+      if (seq !== errorsSeqRef.current) return
       setErrorsError(toErrorMessage(loadError, '读取最近错误失败'))
     } finally {
-      setErrorsLoading(false)
+      if (seq === errorsSeqRef.current) setErrorsLoading(false)
     }
   }, [botId])
 
@@ -175,6 +186,12 @@ export function BotDiagnosticsPanel({ bot, refreshToken }: BotDiagnosticsPanelPr
   useEffect(() => {
     void loadErrors()
   }, [loadErrors, refreshToken, reloadKey])
+
+  // 数据收缩（删除事件保留期/筛选变化）后回收越界页码。
+  const totalPages = Math.max(1, Math.ceil(eventsTotal / PAGE_SIZE))
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
   const handleRefresh = async (): Promise<void> => {
     if (refreshing) return
@@ -260,8 +277,6 @@ export function BotDiagnosticsPanel({ bot, refreshToken }: BotDiagnosticsPanelPr
       </Card>
     )
   }
-
-  const totalPages = Math.max(1, Math.ceil(eventsTotal / PAGE_SIZE))
 
   return (
     <div className="bot-diagnostics">

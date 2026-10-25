@@ -246,7 +246,7 @@ export function PublicShare() {
                   </form>
                 ) : isBundle ? (
                   <>
-                    <p className="field-hint">每个文件单独下载；下载次数按分享会话计一次。</p>
+                    <p className="field-hint">每个文件单独下载；同一分享会话首次成功下载计 1 次，会话内再次下载不增加次数。</p>
                     {items.length > 0 ? (
                       <ul className="public-share-items" aria-label="分享文件列表">
                         {items.map((item) => (
@@ -278,7 +278,7 @@ export function PublicShare() {
                       </div>
                     )}
                     {downloadStarted ? (
-                      <p className="field-hint">已开始下载；每次成功下载都会计入下载次数（按分享会话计一次）。</p>
+                      <p className="field-hint">已开始下载；同一分享会话首次成功下载计 1 次，会话内再次下载不增加次数。</p>
                     ) : null}
                   </>
                 ) : (
@@ -293,7 +293,7 @@ export function PublicShare() {
                       <span className="btn-label">下载文件</span>
                     </a>
                     {downloadStarted ? (
-                      <p className="field-hint">已开始下载；每次成功下载都会计入下载次数。</p>
+                      <p className="field-hint">已开始下载；同一分享会话首次成功下载计 1 次，会话内再次下载不增加次数。</p>
                     ) : null}
                   </>
                 )}

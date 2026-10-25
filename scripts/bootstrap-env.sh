@@ -16,6 +16,7 @@ ENV_FILE=${ENV_FILE:-/etc/antifieldcloud/env}
 DEPLOY_CONF=${DEPLOY_CONF:-/etc/antifieldcloud/deploy.conf}
 FORCE=""
 DRY_RUN=""
+PRUNE_UNKNOWN=""
 APP_ORIGIN_ARG=""
 AI_ORIGIN_ARG=""
 COOKIE_DOMAIN_ARG=""
@@ -28,8 +29,9 @@ OPENCODE_ENV_ARG=""
 
 usage() {
   cat >&2 <<'EOF'
-用法：sudo bash scripts/bootstrap-env.sh [--force] [--dry-run] [选项]
+用法：sudo bash scripts/bootstrap-env.sh [--force] [--dry-run] [--prune-unknown] [选项]
   --force                     覆盖已存在的 env（本脚本管理的键重新生成，未知键原样保留）
+  --prune-unknown             与 --force 联用：删除旧 env 中不由本脚本管理的键（先自行备份；默认保留）
   --dry-run                   只打印将解析出的配置，不写文件
   --app-origin=URL            应用公网地址（默认沿用旧值/example.com）
   --ai-origin=URL             AI 工作区地址
@@ -48,6 +50,7 @@ for arg in "$@"; do
   case "$arg" in
     --force) FORCE="1" ;;
     --dry-run) DRY_RUN="1" ;;
+    --prune-unknown) PRUNE_UNKNOWN="1" ;;
     --app-origin=*) APP_ORIGIN_ARG=${arg#*=} ;;
     --ai-origin=*) AI_ORIGIN_ARG=${arg#*=} ;;
     --cookie-domain=*) COOKIE_DOMAIN_ARG=${arg#*=} ;;
@@ -83,8 +86,10 @@ MANAGED_KEYS=(
   BOT_DELIVERY_MAX_ATTEMPTS BOT_EVENT_RETENTION_DAYS BOT_COMMAND_RATE_PER_MINUTE
   BOT_PUBLISH_MAX_SCHEDULED_DAYS BOT_MAX_BOTS
   BOT_AI_ENABLED BOT_AI_PROVIDER BOT_AI_MODEL BOT_AI_TIMEOUT_SECONDS BOT_AI_MAX_PROMPT_CHARS
-  BOT_AI_RATE_PER_HOUR BOT_AI_SESSION_RETENTION_DAYS BOT_AI_MEMORY_RETENTION_DAYS BOT_AI_MEMORY_BATCH_MESSAGES BOT_AI_MEMORY_IDLE_FLUSH_SECONDS BOT_MEMORY_MAX_ITEMS BOT_MEMORY_PROMPT_MAX_CHARS BOT_MEMORY_PROMPT_MAX_ITEMS BOT_MEMORY_TTL_EPISODE_DAYS BOT_MEMORY_TTL_TASK_DAYS
+  BOT_AI_RATE_PER_HOUR BOT_AI_SESSION_RETENTION_DAYS BOT_AI_MEMORY_RETENTION_DAYS BOT_AI_MEMORY_BATCH_MESSAGES BOT_AI_MEMORY_IDLE_FLUSH_SECONDS BOT_AI_MEMORY_MAX_CHARS BOT_MEMORY_MAX_ITEMS BOT_MEMORY_PROMPT_MAX_CHARS BOT_MEMORY_PROMPT_MAX_ITEMS BOT_MEMORY_TTL_EPISODE_DAYS BOT_MEMORY_TTL_TASK_DAYS
   BOT_AI_MAX_REPLY_CHARS BOT_AI_VISION_ENABLED BOT_AI_IMAGE_MAX_BYTES
+  BOT_CHAT_RATE_PER_MINUTE BOT_CONNECTIVITY_ENABLED BOT_CONNECTIVITY_INTERVAL_SECONDS BOT_CONNECTIVITY_TIMEOUT_SECONDS
+  BACKUP_ARCHIVE_ENCRYPTION BACKUP_AGE_RECIPIENT_FILE BACKUP_OFFSITE_STATUS_FILE ALERT_OFFSITE_MAX_AGE_HOURS
   BOT_CHAT_BURST_WINDOW_MS BOT_CHAT_BURST_MAX_WAIT_MS BOT_CHAT_BURST_MAX_MESSAGES
   BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS BOT_AI_SEND_TOOL_ENABLED
   BOT_SEARCH_ENABLED BOT_SEARCH_URL BOT_SEARCH_AUTO BOT_SEARCH_MODE BOT_SEARCH_MAX_RESULTS
@@ -133,14 +138,20 @@ if [[ -f "$ENV_FILE" && "$FORCE" != "1" ]]; then
   echo "已存在 $ENV_FILE，使用 --force 覆盖（本脚本管理的键重新生成，未知键保留）" >&2
   exit 1
 fi
+if [[ "$PRUNE_UNKNOWN" == "1" && "$FORCE" != "1" ]]; then
+  echo "--prune-unknown 必须与 --force 一起使用（删除未知键属于破坏性操作；请先备份 env）" >&2
+  exit 2
+fi
 
 if ! getent group antifieldcloud >/dev/null; then
   echo "服务组 antifieldcloud 不存在：请先创建服务账号与目录" >&2
   exit 1
 fi
 
-# 先收集旧 env 中不由本脚本管理的键，--force 时原样保留（不解析、不改写）。
+# 先收集旧 env 中不由本脚本管理的键：默认原样保留（--force 不丢手写配置）；
+# --prune-unknown 时改为删除并列出（需显式指定；本脚本不自动备份 env，操作前自行 cp -a）。
 PRESERVED=()
+PRUNED=()
 if [[ -r "$ENV_FILE" ]]; then
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -154,7 +165,11 @@ if [[ -r "$ENV_FILE" ]]; then
       fi
     done
     if [[ "$managed" != "true" ]]; then
-      PRESERVED+=("$line")
+      if [[ "$PRUNE_UNKNOWN" == "1" ]]; then
+        PRUNED+=("$key")
+      else
+        PRESERVED+=("$line")
+      fi
     fi
   done < "$ENV_FILE"
 fi
@@ -218,6 +233,11 @@ BACKUP_IMPORT_MAX_BYTES=$(resolve_opt BACKUP_IMPORT_MAX_BYTES 104857600)
 BACKUP_RESTORE_PLAN_TTL_MINUTES=$(resolve_opt BACKUP_RESTORE_PLAN_TTL_MINUTES 30)
 BACKUP_RESTORE_MAX_ENTRIES=$(resolve_opt BACKUP_RESTORE_MAX_ENTRIES 5000)
 BACKUP_PREPARE_TIMEOUT_SEC=$(resolve_opt BACKUP_PREPARE_TIMEOUT_SEC 3300)
+# v0.7.0 备份加密与异地副本（默认关闭；公钥只放 Pi，私钥离线；状态文件由 PC 脚本写、应用只读）。
+BACKUP_ARCHIVE_ENCRYPTION=$(resolve_opt BACKUP_ARCHIVE_ENCRYPTION false)
+BACKUP_AGE_RECIPIENT_FILE=$(resolve_opt BACKUP_AGE_RECIPIENT_FILE /etc/antifieldcloud/backup-age.pub)
+BACKUP_OFFSITE_STATUS_FILE=$(resolve_opt BACKUP_OFFSITE_STATUS_FILE "$DATA_DIR/backup-offsite-status.json")
+ALERT_OFFSITE_MAX_AGE_HOURS=$(resolve_opt ALERT_OFFSITE_MAX_AGE_HOURS 48)
 CHUNKED_UPLOAD_ENABLED=$(resolve_opt CHUNKED_UPLOAD_ENABLED true)
 CHUNK_SIZE_BYTES=$(resolve_opt CHUNK_SIZE_BYTES 8388608)
 CHUNK_MAX_FILE_BYTES=$(resolve_opt CHUNK_MAX_FILE_BYTES 5368709120)
@@ -335,7 +355,11 @@ if [[ "$DRY_RUN" == "1" ]]; then
   echo "WORLD_BACKUP_STATUS_FILE=$WORLD_BACKUP_STATUS_FILE"
   echo "DRILL_STATUS_FILE=$DRILL_STATUS_FILE"
   echo "BOT_ENABLED=$BOT_ENABLED（BOT_SECRET_KEY 已配置，不回显）"
-  echo "保留的未知键数量=${#PRESERVED[@]}"
+  echo "BACKUP_ARCHIVE_ENCRYPTION=$BACKUP_ARCHIVE_ENCRYPTION"
+  echo "BACKUP_AGE_RECIPIENT_FILE=$BACKUP_AGE_RECIPIENT_FILE"
+  echo "BACKUP_OFFSITE_STATUS_FILE=$BACKUP_OFFSITE_STATUS_FILE"
+  echo "ALERT_OFFSITE_MAX_AGE_HOURS=$ALERT_OFFSITE_MAX_AGE_HOURS"
+  echo "保留的未知键数量=${#PRESERVED[@]}（prune-unknown=${PRUNE_UNKNOWN:-0}，删除=${#PRUNED[@]}）"
   echo "（密码未显示）"
   exit 0
 fi
@@ -416,6 +440,13 @@ BACKUP_IMPORT_MAX_BYTES=$BACKUP_IMPORT_MAX_BYTES
 BACKUP_RESTORE_PLAN_TTL_MINUTES=$BACKUP_RESTORE_PLAN_TTL_MINUTES
 BACKUP_RESTORE_MAX_ENTRIES=$BACKUP_RESTORE_MAX_ENTRIES
 BACKUP_PREPARE_TIMEOUT_SEC=$BACKUP_PREPARE_TIMEOUT_SEC
+
+# 备份整包加密与异地副本状态（v0.7.0，默认关闭；启用顺序见 docs/DEPLOY.md）。
+# age 公钥只放 Pi；私钥离线保管；加密开启时 --prepare 失败关闭（不降级明文）。
+BACKUP_ARCHIVE_ENCRYPTION=$BACKUP_ARCHIVE_ENCRYPTION
+BACKUP_AGE_RECIPIENT_FILE=$BACKUP_AGE_RECIPIENT_FILE
+BACKUP_OFFSITE_STATUS_FILE=$BACKUP_OFFSITE_STATUS_FILE
+ALERT_OFFSITE_MAX_AGE_HOURS=$ALERT_OFFSITE_MAX_AGE_HOURS
 
 # 分片上传（v0.3.1）：默认开启，Cloudflare 代理下建议 8 MiB 块。
 CHUNKED_UPLOAD_ENABLED=$CHUNKED_UPLOAD_ENABLED
@@ -502,9 +533,18 @@ if [[ ${#PRESERVED[@]} -gt 0 ]]; then
   } >> "$tmp"
 fi
 
+# 写盘前做最后的安全检查：未知键删除只接受显式 --force --prune-unknown 组合。
+if [[ "$PRUNE_UNKNOWN" == "1" && "$FORCE" != "1" ]]; then
+  echo "内部错误：prune-unknown 未与 force 组合" >&2
+  exit 2
+fi
+
 install -o root -g antifieldcloud -m 0640 "$tmp" "$ENV_FILE"
 echo "已写入 $ENV_FILE（权限 0640 root:antifieldcloud），未回显密钥"
 echo "非敏感配置来源：命令行 > 现有 env > $DEPLOY_CONF > 默认值"
 if [[ ${#PRESERVED[@]} -gt 0 ]]; then
-  echo "旧 env 中未知键已原样保留：${#PRESERVED[@]} 个"
+  echo "旧 env 中未知键已原样保留：${#PRESERVED[@]} 个（可用 --prune-unknown 删除，先备份 env）"
+fi
+if [[ ${#PRUNED[@]} -gt 0 ]]; then
+  echo "已按 --prune-unknown 删除未知键 ${#PRUNED[@]} 个：${PRUNED[*]}"
 fi

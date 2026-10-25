@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.6.6（**已发布：Tag `v0.6.6` + GitHub Release**；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16；OpenCode v2.1.3）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.7.0（**待发布**；第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）；schema v16 无迁移；OpenCode 目标 v2.1.4）；v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -38,6 +38,25 @@
 > 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
+
+## v0.7.0（待发布；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode 已升级 v2.1.4，应用仍为 v0.6.6 待部署）
+
+- **交付范围**：
+  - 第六轮深度审计去重后 **P0=0、P1=3、P2=26、P3=73** 全部处置：P1（WEB-01 长任务超时、OPS-01 OpenCode 2.1.4 门禁、SEC-10 AI 主机 SSO 写放大）、P2 26 条全部修复；P3 可修小项随版修，架构性/已接受项写入 `docs/AUDIT.md` 第六轮 §5/§9、`docs/ARCHITECTURE.md` §11、`docs/SECURITY.md` §4 的明确残余。
+  - **备份整包加密（默认关闭）**：独立 age 密钥、归档即密文、明文哈希/大小外置 sidecar（`schema:2`）、失败关闭、2× 空间预算、崩溃一致性顺序、>24h `*.plain.tmp` 清理；Pi 不持私钥，Web 对 `.age` 一律 `409 archive_encrypted`。
+  - **异地副本（默认关闭，PC 端）**：`backup-offsite.mjs/.ps1` 只上传 `.age`、链感知保留、上传后校验、状态回写 Pi、`offsite_overdue` 告警（缺失/disabled 不误报）；`install-backup-task.ps1 -InstallOffsiteTask` 安装任务。
+  - **Bot/安全**：工具隔离 fail-closed（`503 bot_ai_tool_isolation_unavailable`，10 分钟重试窗口）、群共享记忆归属 `member_openid` + 一次性迁移、`/forget` 清本人群条目、孤儿清理保守化、混批/@、工具缓冲补发、`/search` 串行、Webhook 限流桶分离；审计策略 D-17（事务外 best-effort + `/api/version.audit` 诊断）。
+  - **运维/文档**：OPS-07 占位符化、OPS-09 `deploy/host/` 模板 + 密钥包可选打包、OPS-10 `deploy/tool-versions.json` + check-version 交叉校验、smoke 新检查、部署回滚与 release 元数据；文档统一 0.7.0 / schema v16 / OpenCode 2.1.4。
+- **数据/配置/兼容**：schema 保持 **v16（无迁移）**；新增 `BACKUP_ARCHIVE_ENCRYPTION`、`BACKUP_AGE_RECIPIENT_FILE`、`BACKUP_OFFSITE_STATUS_FILE`、`ALERT_OFFSITE_MAX_AGE_HOURS`（`bootstrap-env.sh` 已纳管）；OpenCode 目标 **v2.1.4**（升级/回滚/14 项矩阵见 `docs/DEPLOY.md` §3.2）。
+- **本地门禁（2026-10-25 实测）**：`npm run check` 通过；`npm test` **478**（server+scripts，含 29 个 scripts 用例）；`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.63% / Branches 78.16% / Functions 87.84%**（`npm run test:coverage` exit 0）；前端覆盖率 **Lines 52.31% / Branches 47.32% / Functions 45.02% / Statements 50.12%**（`npm run test:web:coverage` exit 0）；`npm run build` 通过（`index-DoPUAny6.js` 726.64 kB，gzip 216.25 kB）；`node scripts/check-version.mjs` 严格模式 `version ok 0.7.0`；`node scripts/check-prod-deps.mjs` 通过；PS 5.1 解析 7/7、BOM 齐全（ops 验证）。
+- **OpenCode v2.1.4（2026-10-25 08:21 CST 生产只读升级，应用未升级）**：升级前已完成 v2.1.3 二进制/data/env/unit/MCP 备份（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e68f25e69045a7ec5f518fccbad57e8f25d7853e66ba9677ddfaf28b19`；data/env/unit/config 同时间戳）；`opencode --version` **v2.1.4**、service active；矩阵 **V1–V9、V14 PASS**（版本/服务、Basic list 5 会话、deny-all 与 allow 工具会话、deny-all 工具负路径未写文件、wait 204、assistant `reasoning+text`/`finish=stop`、图片 prompt 识别 Red、MCP 每服务 1 进程、`/api/mcp` 200、磁盘 38G 余量/内存 4.5G、OpenCode DB 存在）；**V10–V13 待 v0.7.0 部署后真实 QQ/记忆/发送工具/搜索联调**。
+- **部署与验收（`待部署`）**：生产 release/commit/迁移前快照、`/healthz` 版本与 schema、部署内 smoke 与完整 Access smoke 计数、drill、PC 拉取/ack、加密归档与异地副本启用演练、用户验收、Tag/GitHub Release —— 均待发布门禁与部署确认后填写。**当前不得声明 v0.7.0 已验收或已发布；应用生产仍为 v0.6.6/schema16。**
+- **待填占位清单（集中；部署后 Lead/用户填数）**：
+  1. 部署：生产 release 目录名、commit、`/healthz` 的 version/schemaVersion、迁移前快照文件名与 sha256、部署后备份归档名/size/sha256、密钥包名/size/`secretsOk`。
+  2. 验证：部署内只读 smoke 通过数/总数、完整 Access smoke 通过数/总数、smoke 警告数、真实 QQ 联调 V10–V13、drill 报告 ID 与结果、加密归档启用后的首个 `.age` 与 PC 解密/`plainVerified` 结果、异地副本首次上传/`keptRemote`/告警状态。
+  3. 发布：Tag 名/指向 commit、GitHub Release 链接与时间、用户验收时间与结论。
+- **回滚**：schema 无迁移，回滚只需切回 v0.6.6 release + 还原同版本 env；备份加密回滚=关闭 `BACKUP_ARCHIVE_ENCRYPTION` 恢复明文（已生成 `.age` 保留，仅 PC 可解密）；异地副本回滚=禁用/卸载 offsite 任务；OpenCode 回滚=恢复 v2.1.3 二进制/data/env/unit/MCP 配置（见 `docs/DEPLOY.md` §3.2）。
+- **明确残余**：见 `docs/AUDIT.md` 第六轮 §9 与 `docs/SECURITY.md` §4（AI 主机边缘保护、工具隔离可用性取舍、审计 best-effort、加密临时明文窗口/私钥丢失、异地单远端依赖、群记忆 legacy 条目、既有单管理员/sudo/RCON/SD 等）。
 
 ## v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema 保持 v16）
 
@@ -246,7 +265,7 @@
   - **迁移 13 校验**：`bots` 仅剩 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1）；原 Discord Bot `853f85e6…` 在 `bot_targets`/`bot_deliveries`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_chat_roles`/`bot_inbound_targets` 均为 0 行；QQ 数据保留（targets 2 / deliveries 4 / events 44 / sessions 4 / memories 3 / roles 1 / inbound 4）；`chat_trigger` 列按设计保留但不读写。
   - **运行时配置**：`botAiVisionEnabled=true`（默认开启）、`botAiImageMaxBytes=10485760`、`botAiMaxReplyChars=4000`；`BOT_ENABLED`/`BOT_AI_ENABLED` 均为 true。
   - **连通性/Gateway**：出站连通性探测仅 `platforms:["qq"]`；新进程无 Discord Gateway；旧进程在切换时 `Discord Gateway 已停止`。
-  - **前端产物**：带 Access token 访问 `https://app.antifield.work/` 与 `/bots`（Accept: text/html）均 **200**；新 bundle `/assets/index-C-fPrxEf.js`（644795 bytes）与 `/assets/index-BJSYA4Y6.css`；bundle 含「AppID/检查连接/角色与记忆/诊断」，**不含**「Discord Gateway/Telegram/Slack」。
+  - **前端产物**：带 Access token 访问 `https://app.<domain>/` 与 `/bots`（Accept: text/html）均 **200**；新 bundle `/assets/index-C-fPrxEf.js`（644795 bytes）与 `/assets/index-BJSYA4Y6.css`；bundle 含「AppID/检查连接/角色与记忆/诊断」，**不含**「Discord Gateway/Telegram/Slack」。
   - **QQ Webhook 真实网络负路径**：`op=0` 无签名 → **401 `invalid_signature`**；`op=99` → **200 `{"ok":true}`**（仅确认不处理）；未知 bot → **404**。
   - **QQ 连接自检（真实网络）**：`access_token 已获取`，ok（经 PC 代理隧道）。
   - **QQ Webhook 端到端合成自检（非真实平台消息，2026-10-22 21:56）**：用生产 QQ AppSecret 派生密钥对合成事件签名后 POST 本机 webhook——① op=13 回调校验返回 **200** 且签名格式正确；② 合成 `/help` C2C 事件返回 **200 `{"opcode":12}`**，事件记录为 `command/denied`（假 openid 未登记命令白名单，符合预期）；③ 合成“仅图片无正文”C2C 事件返回 **200**，审计 `bot.chat` 记录 `chars:0, image:"image/png", open:qq_c2c`，日志出现“Bot 入站图片处理失败，降级为纯文本”（探测 URL 不存在，验证降级路径），因假 `msg_id` 回复发送失败属预期。自检后已清理探测事件/入站记录（仅保留审计），**该自检不能替代用户真实 QQ 消息验收**。
@@ -284,7 +303,7 @@
   - schema 校验：`bot_targets.chat_trigger` 存在，5 个既有目标全部为默认 `mention`；`bot_events` 的 event_kind/outcome/detail/target_external_id/user_id/updated_at 6 列存在（修复重部署无新迁移）。
   - **错误提示映射修复生产复验**：Discord dead 投递 `平台请求失败（0:network）` → “出站网络不可用：检查 Pi 出站代理/隧道与 BOT_PROXY_URL”；QQ dead 投递 `平台请求失败（0:qq_access_token_failed）` → “QQ access_token 获取失败：检查出站网络/代理与 AppSecret”；`metrics.lastErrorHint` 同步返回对应中文提示。
   - **生产服务层只读验证**：对真实 DB 只读调用 `listEvents`/`listRoles`/`listMemories`/`metrics`/`listDeliveries` 均通过；角色/记忆列表只返回元数据（未含 prompt/summary 正文）；events 查询正常（部署后暂无新入站事件）。
-  - **前端产物核验**：带 Access token 访问 `https://app.antifield.work/` 与 `/bots`（`Accept: text/html`）均 **200**；HTML 引用的新 bundle `/assets/index-CH38JtCp.js`、`/assets/index-BJSYA4Y6.css` 均 **200**（刷新后加载新版本）；部署 bundle 内已确认包含「角色与记忆」「诊断」「全部消息」「检查连接」「lastErrorHint」「重置当前对话」「清除长期记忆」等 v0.5.7 文案。
+  - **前端产物核验**：带 Access token 访问 `https://app.<domain>/` 与 `/bots`（`Accept: text/html`）均 **200**；HTML 引用的新 bundle `/assets/index-CH38JtCp.js`、`/assets/index-BJSYA4Y6.css` 均 **200**（刷新后加载新版本）；部署 bundle 内已确认包含「角色与记忆」「诊断」「全部消息」「检查连接」「lastErrorHint」「重置当前对话」「清除长期记忆」等 v0.5.7 文案。
   - **Webhook 真实网络负路径验证**：无签名 `POST /api/bot/webhook/<botId>`（Discord/QQ 各一次）均返回 **401 `invalid_signature`**；未知 `botId` 返回 **404**；Cloudflare Access 对 webhook 路径 bypass 生效（不带 Access token 也能到达应用鉴权层）。QQ 非 `op=0/13` 回调返回 **200 `{ok:true}`**(仅确认不处理)；审计写入 `bot.webhook.rejected`，**拒绝事件不写入 `bot_events`**（不可信输入不落诊断表，符合设计）。
   - **Discord 命令注册实测（只读）**：global + guild `950388705846255688` 现有 `/status`、`/backup`、`/world`、`/mc`、`/files`、`/help`、`/ask`；**缺 `/role`、`/reset`、`/forget`**（属用户在 Developer Portal 的平台后台步骤；Telegram/QQ 无需注册，Slack 尚未配置）。
   - 第二次部署后增量备份：`snapshot-20261022T132013585Z-inc.tar.gz`（125874 bytes，sha256 `fb01cc1724b32c4f3db6608934cf0cd9a622f67bf1c4b17ff171170093cbe423`）已由 PC 侧 `backup-pull` 拉取并 ack（保存于 PC 侧 `daily/2026-10-22` 目录）；密钥包 `secrets-20261022T132014Z.tar.age` 拉取成功，`secrets=ok`。
@@ -444,7 +463,7 @@ smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access serv
 | QQ 真实回调 | **通过**：回调地址 op=13 校验通过；C2C `C2C_MESSAGE_CREATE` 事件到达，登记 openid 后 `/help` 收到回复；仅文本，媒体未支持 |
 | AI 真实模型 | **通过**：OpenCode provider/model `opencode-go/deepseek-v4.1-flash`，真实回复 `MODEL_OK`；Discord `/ask` 正常响应；默认关闭已显式开启 |
 | Bot 指标/静默/二次确认 | 生产 API/BotService 实测指标：Discord 24h deliveries sent=2、successRate=100、events=1；发布 confirmText 服务端/前端测试覆盖；静默时段单测覆盖 |
-| Cloudflare Access | **通过**：主应用 `app.antifield.work`（One-time PIN + Owner allow + Service Auth）；4 个 Bypass：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`；未登录 `/` 302 到 `*.cloudflareaccess.com`，service token 访问应用返回 401；完整 smoke **24/24**（含 Access token 检查） |
+| Cloudflare Access | **通过**：主应用 `app.<domain>`（One-time PIN + Owner allow + Service Auth）；4 个 Bypass：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`；未登录 `/` 302 到 `*.cloudflareaccess.com`，service token 访问应用返回 401；完整 smoke **24/24**（含 Access token 检查） |
 | fail2ban 封禁持久化 | **生产实测通过**：nftables restart 后 15s 内 fail2ban 恢复封禁 set；drop-in 已安装；手工 `systemctl reload nftables` 仍需手动 `systemctl restart fail2ban` |
 | Bot 关闭态 | 本地测试覆盖：`BOT_ENABLED=false` Webhook 404、写接口 503、队列不启动；生产保持启用 |
 
@@ -610,7 +629,7 @@ release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.4.2
 | OpenCode 版本 | `opencode v2.1.1`；`opencode.service` active，监听 127.0.0.1:4096 |
 | 兼容性 API | Basic `/api/session` 200；`POST /api/session` 200（`data.id` 形状不变）；`/api/config|agent|provider` 均 200 |
 | HTML/垫片 | 真实首页 6,962 B、1 个 module script；`injectOpenCodeShim` 插入 `__af/oc-help.js` + 3 个 `data-cfasync="false"`；bundle 含“新建会话/New session/新会话” |
-| 公开入口 | `https://ai.antifield.work/` 401（未登录）；`https://app.antifield.work/healthz` 200 |
+| 公开入口 | `https://ai.<domain>/` 401（未登录）；`https://app.<domain>/healthz` 200 |
 | 密码轮换 | env(两份) 一致、Basic 200、应用 healthz 200、代理与 dashboard 探测路径不变 |
 | 旧归档清理 | `/home/antifield/minecraft-backups` 已删除；`df /` 可用 40 GiB；新 `world-backups` 与 PC 副本保留 |
 | 应用部署 | release `/opt/antifieldcloud/releases/20261020T150609Z`；healthz `0.4.1`；迁移前快照 `db-predeploy-20261020T150659110Z.sqlite`；部署后只读 smoke 15/15 |
@@ -929,7 +948,7 @@ release: https://github.com/antifield26/AntifieldCloud/releases/tag/v0.2.2
 | `npm run check`（tsc + ESLint + node:test + Vitest） | 通过；服务端 88/88、前端 23/23 |
 | `npm run build` | 通过；PWA 静态资源完整 |
 | `scripts/smoke.ps1`（公网 + Pi） | 16/16 通过 |
-| `GET https://app.antifield.work/healthz` | `{"ok":true,"version":"0.2.1"}` |
+| `GET https://app.<domain>/healthz` | `{"ok":true,"version":"0.2.1"}` |
 | 生产文件列表点击 | 通过（临时文件夹，已清理） |
 | 生产 OpenCode Android UA | 通过（临时 session，已清理） |
 

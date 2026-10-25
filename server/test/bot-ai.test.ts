@@ -447,7 +447,7 @@ test('wait 返回 404 时回退为 500ms 轮询消息，不忙等', async () => 
   }
 })
 
-test('OpenCode 以 400 拒绝 permissions 时回退并在日志中标注未隔离', async () => {
+test('OpenCode 以 400 拒绝 permissions 时保持回退（未启用发送工具）并标注隔离不可用', async () => {
   const fixture = setup(basicHandler({ rejectPermissionsFirst: true }))
   try {
     const reply = await fixture.ai.chat({
@@ -465,25 +465,94 @@ test('OpenCode 以 400 拒绝 permissions 时回退并在日志中标注未隔�
     assert.ok('permissions' in firstBody)
     assert.ok(!('permissions' in secondBody), '回退请求不应再带 permissions')
     assert.ok(
-      fixture.logs.some((entry) => entry.level === 'warn' && entry.message.includes('未隔离')),
-      '日志必须明确工具未隔离',
+      fixture.logs.some((entry) => entry.level === 'warn' && entry.message.includes('工具隔离不可用')),
+      '日志必须明确工具隔离不可用',
     )
     // 降级状态必须可被 BotService/状态接口读取（不能只藏在日志里）。
     const isolation = fixture.ai.toolIsolation()
     assert.equal(isolation.supported, false)
     assert.equal(isolation.fallbackCount, 1)
     assert.equal(typeof isolation.fallbackAt, 'string')
+    assert.equal(typeof isolation.retryAt, 'string', '降级后应提供下次重试时间（ISO）')
+    assert.ok(Date.parse(String(isolation.retryAt)) > Date.now(), 'retryAt 必须在未来（10 分钟重试窗口）')
     assertNoSecret(fixture.logs)
   } finally {
     dispose(fixture)
   }
 })
 
-test('工具隔离状态：未降级时 supported=true 且计数为 0', async () => {
+test('SEC-11：启用发送工具时 permissions 拒绝即 fail-closed 503，重试窗口后可恢复', async () => {
+  let createCalls = 0
+  const fixture = setup(
+    (call) => {
+      const path = call.url.pathname
+      if (call.method === 'POST' && path === '/api/session') {
+        createCalls += 1
+        const body = call.body as Record<string, unknown>
+        if (createCalls === 1 && 'permissions' in body) {
+          return jsonResponse({ _tag: 'InvalidRequestError', message: 'unsupported field', field: 'permissions' }, 400)
+        }
+        return jsonResponse({ data: { id: SESSION_ID } })
+      }
+      if (call.method === 'POST' && path === `/api/session/${SESSION_ID}/prompt`) {
+        return jsonResponse({ data: { id: 'inbox_test' } })
+      }
+      if (call.method === 'POST' && path === `/api/experimental/session/${SESSION_ID}/wait`) {
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && path === `/api/session/${SESSION_ID}/message`) {
+        return jsonResponse({ data: [assistant([{ type: 'text', text: '恢复后回答' }])] })
+      }
+      return jsonResponse({ message: 'unexpected' }, 404)
+    },
+    { botAiSendToolEnabled: true },
+  )
+  try {
+    await assert.rejects(
+      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第一次' }),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === 'bot_ai_tool_isolation_unavailable' &&
+        error.statusCode === 503,
+    )
+    assert.equal(fixture.ai.toolIsolation().supported, false)
+
+    // 重试窗口内仍 fail-closed，不再创建新会话。
+    const createsBefore = fixture.calls.filter(
+      (call) => call.method === 'POST' && call.url.pathname === '/api/session',
+    ).length
+    await assert.rejects(
+      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第二次' }),
+      (error: unknown) => error instanceof AppError && error.code === 'bot_ai_tool_isolation_unavailable',
+    )
+    assert.equal(
+      fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session').length,
+      createsBefore,
+      '重试窗口内不得再创建会话',
+    )
+
+    // 拨回重试窗口：重新带 permissions 创建成功 → 恢复隔离并正常对话。
+    ;(fixture.ai as unknown as { permissionsRetryAt: number }).permissionsRetryAt = 0
+    const reply = await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '第三次' })
+    assert.equal(reply, '恢复后回答')
+    assert.equal(fixture.ai.toolIsolation().supported, true)
+    assert.equal(fixture.ai.toolIsolation().fallbackCount, 1)
+    assert.equal(fixture.ai.toolIsolation().retryAt, null, '恢复后不再有重试时间')
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('工具隔离状态：未降级时 supported=true、计数为 0 且无重试时间', async () => {
   const fixture = setup(basicHandler())
   try {
     await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' })
-    assert.deepEqual(fixture.ai.toolIsolation(), { supported: true, fallbackCount: 0, fallbackAt: null })
+    assert.deepEqual(fixture.ai.toolIsolation(), {
+      supported: true,
+      fallbackCount: 0,
+      fallbackAt: null,
+      retryAt: null,
+    })
   } finally {
     dispose(fixture)
   }

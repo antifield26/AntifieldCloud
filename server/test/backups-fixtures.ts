@@ -305,7 +305,7 @@ export async function createBackupApp(fx: BackupsFixture): Promise<BackupTestApp
       request.auth = context
     }
   })
-  registerBackupRoutes(app, fx.config, fx.service)
+  registerBackupRoutes(app, fx.config, fx.service, fx.db)
   registerErrorHandler(app)
   return {
     app,

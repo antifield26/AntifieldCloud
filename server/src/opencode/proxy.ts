@@ -12,9 +12,10 @@ import httpProxy from 'http-proxy'
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify'
 import type { Config } from '../config.ts'
 import { hashUserAgent, isLoopbackAddress, type AuthService } from '../auth/service.ts'
+import { SlidingWindowLimiter } from '../auth/limiter.ts'
 import { readSessionToken, SESSION_COOKIE } from '../auth/cookies.ts'
 import { hostFromOrigin, isLoopbackHostname, normalizeHost } from '../http/host.ts'
-import { requestMeta } from '../http/request-meta.ts'
+import { requestMeta, resolveRequestMeta } from '../http/request-meta.ts'
 import { injectOpenCodeScriptOptOut, injectOpenCodeShim, OPENCODE_SHIM_PATH, OPENCODE_SHIM_SCRIPT } from './shim.ts'
 
 export { normalizeHost, hostFromOrigin }
@@ -107,6 +108,13 @@ export class OpenCodeProxy {
   private readonly upgradedSockets = new Set<Socket>()
   /** 代理到 opencode 的上游连接（包括 WS 隧道），关闭时一并断开。 */
   private readonly upstreamSockets = new Set<Socket>()
+  /** AI 主机未认证请求限流（SEC-10）：防止公网 SSO/匿名请求写放大与资源消耗。 */
+  private readonly aiSsoLimiter = new SlidingWindowLimiter(60_000, 60, 5_000)
+  private readonly aiAnonymousLimiter = new SlidingWindowLimiter(60_000, 120, 10_000)
+  /** 审计去重：同 action+结果+IP 每 60s 最多一条，避免“记录攻击变成放大攻击”。 */
+  private readonly auditSeen = new Map<string, number>()
+  private static readonly AUDIT_DEDUPE_WINDOW_MS = 60_000
+  private static readonly AUDIT_DEDUPE_MAX_ENTRIES = 4096
 
   constructor(config: Config, auth: AuthService, log?: FastifyBaseLogger, options: OpenCodeProxyOptions = {}) {
     this.config = config
@@ -159,7 +167,12 @@ export class OpenCodeProxy {
    * loopback 开发例外要求对端也是 loopback，避免生产环境被本机以外的 Origin 绕过。
    * 返回 false 表示应拒绝（403 + 审计）。
    */
-  private originAllowed(originHeader: string | string[] | undefined, kind: OriginKind, remoteIp: string | null): boolean {
+  private originAllowed(
+    originHeader: string | string[] | undefined,
+    kind: OriginKind,
+    remoteIp: string | null,
+    loopbackHost: boolean,
+  ): boolean {
     const origin = Array.isArray(originHeader) ? originHeader[0] : originHeader
     // 同源导航可能不带 Origin；WebSocket 必须带（浏览器都会发送）。
     if (origin === undefined || origin === '') return kind === 'http'
@@ -172,7 +185,9 @@ export class OpenCodeProxy {
     const hostname = parsed.hostname.toLowerCase()
     const isLoopbackPeer = remoteIp !== null && isLoopbackAddress(remoteIp)
     const loopbackOrigin = hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]'
-    if (this.config.allowInsecureLoopback && isLoopbackPeer && loopbackOrigin) return true
+    // 只有“请求 Host 本身也是 loopback”的本机开发场景才放行明文 loopback Origin；
+    // 生产经 cloudflared 时 socket 对端恒为 loopback，不能仅凭对端地址放行（SEC-08）。
+    if (this.config.allowInsecureLoopback && loopbackHost && isLoopbackPeer && loopbackOrigin) return true
     const protocol = parsed.protocol
     if (kind === 'websocket') {
       // 非 loopback（生产）只接受 TLS origin；浏览器 WS 握手的 Origin 通常为 https。
@@ -184,10 +199,31 @@ export class OpenCodeProxy {
     return host === this.aiHost || host === this.appHost
   }
 
-  /** 记录安全拒绝（不记录 token/Cookie）。 */
+  /** 记录安全拒绝（不记录 token/Cookie）；按 action+结果+IP 窗口去重，避免写放大。 */
   private auditOriginRejected(kind: OriginKind, origin: string | string[] | undefined, ip: string | null): void {
     const value = Array.isArray(origin) ? origin[0] : origin
-    this.audit?.('opencode_origin_rejected', value ? value.slice(0, 256) : null, { kind }, ip)
+    this.throttledAudit('opencode_origin_rejected', value ? value.slice(0, 256) : null, { kind }, ip)
+  }
+
+  /** 审计去重：同 action+detail+IP 在窗口内只写一条；容量上限防内存膨胀。 */
+  private throttledAudit(
+    action: string,
+    target: string | null,
+    detail: Record<string, unknown>,
+    ip: string | null,
+  ): void {
+    const key = `${action}|${target ?? ''}|${JSON.stringify(detail)}|${ip ?? ''}`
+    const now = Date.now()
+    const last = this.auditSeen.get(key)
+    if (last !== undefined && now - last < OpenCodeProxy.AUDIT_DEDUPE_WINDOW_MS) return
+    this.auditSeen.set(key, now)
+    if (this.auditSeen.size > OpenCodeProxy.AUDIT_DEDUPE_MAX_ENTRIES) {
+      for (const [entry, at] of this.auditSeen) {
+        if (now - at >= OpenCodeProxy.AUDIT_DEDUPE_WINDOW_MS) this.auditSeen.delete(entry)
+      }
+      if (this.auditSeen.size > OpenCodeProxy.AUDIT_DEDUPE_MAX_ENTRIES) this.auditSeen.clear()
+    }
+    this.audit?.(action, target, detail, ip)
   }
 
   /**
@@ -207,8 +243,16 @@ export class OpenCodeProxy {
     const context = this.auth.authenticate(readSessionToken(request))
     if (!context) return false
     request.auth = context
-    if (!this.originAllowed(request.headers.origin, 'http', request.socket.remoteAddress ?? null)) {
-      this.auditOriginRejected('http', request.headers.origin, request.socket.remoteAddress ?? null)
+    const shimHost = normalizeHost(request.headers.host)
+    if (
+      !this.originAllowed(
+        request.headers.origin,
+        'http',
+        requestMeta(request).ip,
+        shimHost === '' || isLoopbackHostname(shimHost),
+      )
+    ) {
+      this.auditOriginRejected('http', request.headers.origin, requestMeta(request).ip)
       reply.code(403).header('cache-control', 'no-store').send({
         error: { code: 'origin_rejected', message: '请求来源不受信任' },
       })
@@ -284,6 +328,15 @@ export class OpenCodeProxy {
     if (this.tryHandleAiSso(request, reply)) return
     const context = this.auth.authenticate(readSessionToken(request))
     if (!context) {
+      // 匿名请求限流：AI 主机公网可达（生产探测 401/302，无 Access），必须限制无认证资源消耗。
+      const anonymousIp = requestMeta(request).ip
+      const retry = this.aiAnonymousLimiter.hit(anonymousIp)
+      if (retry > 0) {
+        reply.code(429).header('retry-after', String(retry)).header('cache-control', 'no-store').send({
+          error: { code: 'rate_limited', message: '请求过于频繁' },
+        })
+        return
+      }
       if (request.method === 'GET' && this.wantsHtml(request)) {
         const next = encodeURIComponent(`${this.config.aiOrigin}${request.raw.url ?? '/'}`)
         reply
@@ -299,8 +352,16 @@ export class OpenCodeProxy {
       return
     }
     // 已登录后校验 Origin：防止被第三方站点借用浏览器 Cookie 发起跨站请求。
-    const remoteIp = request.socket.remoteAddress ?? null
-    if (!this.originAllowed(request.headers.origin, 'http', remoteIp)) {
+    const remoteIp = requestMeta(request).ip
+    const requestHost = normalizeHost(request.headers.host)
+    if (
+      !this.originAllowed(
+        request.headers.origin,
+        'http',
+        remoteIp,
+        requestHost === '' || isLoopbackHostname(requestHost),
+      )
+    ) {
       this.auditOriginRejected('http', request.headers.origin, remoteIp)
       reply.code(403).header('cache-control', 'no-store').send({
         error: { code: 'origin_rejected', message: '请求来源不受信任' },
@@ -330,10 +391,20 @@ export class OpenCodeProxy {
     const rawUrl = request.raw.url ?? ''
     const path = rawUrl.split('?')[0] ?? '/'
     if (request.method !== 'GET' || !path.startsWith('/__af/sso/')) return false
-    const remoteIp = request.socket.remoteAddress ?? null
+    const ip = requestMeta(request).ip
+    // SEC-10：SSO 入口在鉴权前限流（每 IP 60/min），超限直接 429，不写审计。
+    const retry = this.aiSsoLimiter.hit(ip)
+    if (retry > 0) {
+      reply
+        .code(429)
+        .header('retry-after', String(retry))
+        .header('cache-control', 'no-store')
+        .send({ error: { code: 'rate_limited', message: '请求过于频繁' } })
+      return true
+    }
     const match = AI_SSO_PATH_PATTERN.exec(path)
     if (!match) {
-      this.auditSso('invalid_path', remoteIp)
+      this.auditSso('invalid_path', ip)
       reply.code(400).header('cache-control', 'no-store').send({
         error: { code: 'invalid_sso_request', message: 'SSO 请求不合法' },
       })
@@ -343,7 +414,7 @@ export class OpenCodeProxy {
     const nextRaw = queryStart >= 0 ? new URLSearchParams(rawUrl.slice(queryStart + 1)).get('next') : null
     const next = nextRaw === null ? '/' : this.normalizeAiSsoNext(nextRaw)
     if (next === null) {
-      this.auditSso('invalid_next', remoteIp)
+      this.auditSso('invalid_next', ip)
       reply.code(400).header('cache-control', 'no-store').send({
         error: { code: 'invalid_next', message: 'SSO 跳转地址不合法' },
       })
@@ -356,7 +427,7 @@ export class OpenCodeProxy {
       hashUserAgent(request.headers['user-agent']),
     )
     if (!sessionToken) {
-      this.auditSso('invalid_ticket', remoteIp)
+      this.auditSso('invalid_ticket', ip)
       reply.code(401).header('cache-control', 'no-store').send({
         error: { code: 'sso_ticket_invalid', message: 'SSO 票据无效或已过期' },
       })
@@ -364,7 +435,7 @@ export class OpenCodeProxy {
     }
     const context = this.auth.authenticate(sessionToken)
     if (!context) {
-      this.auditSso('session_invalid', remoteIp)
+      this.auditSso('session_invalid', ip)
       reply.code(401).header('cache-control', 'no-store').send({
         error: { code: 'sso_session_invalid', message: '登录状态已失效，请重新登录' },
       })
@@ -378,7 +449,7 @@ export class OpenCodeProxy {
       secure: requestMeta(request).protocol === 'https',
       maxAge,
     })
-    this.auditSso('ok', remoteIp)
+    this.auditSso('ok', ip)
     reply.code(302).header('location', next).header('cache-control', 'no-store').send()
     return true
   }
@@ -403,7 +474,7 @@ export class OpenCodeProxy {
   }
 
   private auditSso(result: 'ok' | 'invalid_path' | 'invalid_next' | 'invalid_ticket' | 'session_invalid', ip: string | null): void {
-    this.audit?.('auth.sso_ai', null, { ok: result === 'ok', result }, ip)
+    this.throttledAudit('auth.sso_ai', null, { ok: result === 'ok', result }, ip)
   }
 
   /** 处理 WebSocket upgrade；只允许 ai 主机且会话有效。任何异常都只断开连接。 */
@@ -430,8 +501,13 @@ export class OpenCodeProxy {
       return
     }
     // WS 握手必须携带合法 Origin（浏览器总是发送）；不匹配/缺失一律 403 + 审计。
-    const remoteIp = request.socket.remoteAddress ?? null
-    if (!this.originAllowed(request.headers.origin, 'websocket', remoteIp)) {
+    const wsMeta = resolveRequestMeta({
+      peerAddress: request.socket.remoteAddress,
+      encrypted: Boolean((request.socket as { encrypted?: boolean }).encrypted),
+      headers: request.headers,
+    })
+    const remoteIp = wsMeta.ip
+    if (!this.originAllowed(request.headers.origin, 'websocket', remoteIp, wsMeta.loopback)) {
       this.auditOriginRejected('websocket', request.headers.origin, remoteIp)
       writeRawJson(socket, 403, JSON.stringify({ error: { code: 'origin_rejected', message: '请求来源不受信任' } }))
       return

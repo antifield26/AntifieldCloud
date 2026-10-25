@@ -218,6 +218,11 @@ export function Knowledge() {
 
   const currentTags = tab === 'notes' ? notes : bookmarks
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  // 删除/数据收缩后回收越界页码。
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
   const hasFilters = Boolean(debouncedQuery || tag || pinnedOnly)
 
   const clearFilters = (): void => {

@@ -493,3 +493,43 @@ test('删除文件时吊销包含它的多文件分享（files 路由钩子语�
     fx.close()
   }
 })
+
+test('revokeSharesForFiles：硬删除前按文件 id 批量吊销（DATA-12）', async () => {
+  const fx = shareFixture()
+  try {
+    const a = await uploadFile(fx.files, 'hard-a.txt', 'aaa')
+    const b = await uploadFile(fx.files, 'hard-b.txt', 'bbb')
+    const bundle = await fx.shares.createBundle(ACTOR, [a.id, b.id], {})
+    const single = await fx.shares.create(ACTOR, b.id, {})
+    // 先建立分享会话（懒创建），验证吊销时一并删除。
+    const unlocked = await fx.shares.metadata(tokenFromUrl(bundle.url), null)
+    assert.equal(unlocked.state, 'active')
+    const access = fx.shares.openItemContent(tokenFromUrl(bundle.url), null, a.id, 'GET')
+    assert.ok(access.newSessionToken)
+    assert.equal(
+      (fx.db.prepare('SELECT COUNT(*) AS c FROM share_sessions WHERE share_id = ?').get(bundle.share.id) as { c: number })
+        .c,
+      1,
+    )
+    const revoked = fx.shares.revokeSharesForFiles([a.id, b.id])
+    assert.equal(revoked, 2, 'bundle 与单文件分享都应命中')
+    for (const id of [bundle.share.id, single.share.id]) {
+      const row = fx.db.prepare('SELECT revoked_at FROM shares WHERE id = ?').get(id) as { revoked_at: string | null }
+      assert.ok(row.revoked_at)
+    }
+    assert.equal(
+      (fx.db.prepare('SELECT COUNT(*) AS c FROM share_sessions WHERE share_id = ?').get(bundle.share.id) as { c: number })
+        .c,
+      0,
+      '吊销时删除分享会话',
+    )
+    // 已吊销的分享不重复计数。
+    assert.equal(fx.shares.revokeSharesForFiles([a.id]), 0)
+    expectAppError(() => fx.shares.metadata(tokenFromUrl(bundle.url), null), 410, 'share_revoked')
+    // 未命中任何分享时返回 0。
+    const unrelated = await uploadFile(fx.files, 'unrelated.txt', 'x')
+    assert.equal(fx.shares.revokeSharesForFiles([unrelated.id]), 0)
+  } finally {
+    fx.close()
+  }
+})

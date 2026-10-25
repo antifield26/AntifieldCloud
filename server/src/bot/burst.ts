@@ -26,6 +26,8 @@ interface BurstState<T> {
   running: boolean
   windowMs: number
   maxWaitMs: number
+  /** 已被 clear 丢弃：运行中的批次在 finally 里不得再为这个 state 排队（/reset 清空语义）。 */
+  cancelled: boolean
 }
 
 /** 单次入队可覆盖默认窗口（例如全量群聊使用更长合并时间）。 */
@@ -53,6 +55,7 @@ export class BurstMerger<T> {
         running: false,
         windowMs: timing.windowMs ?? this.options.windowMs,
         maxWaitMs: timing.maxWaitMs ?? this.options.maxWaitMs,
+        cancelled: false,
       }
       this.states.set(key, state)
     } else {
@@ -71,15 +74,20 @@ export class BurstMerger<T> {
 
   /** 丢弃某会话（/reset、/forget、角色变更等），避免旧缓冲在操作后继续回复。 */
   clear(key?: string): void {
+    const discard = (state: BurstState<T>): void => {
+      state.cancelled = true
+      if (state.timer) clearTimeout(state.timer)
+      state.timer = null
+      // 运行中的批次由 flush 持有引用；清空 items 并标记 cancelled，防止其 finally 再为旧消息排队。
+      state.items = []
+    }
     if (key !== undefined) {
       const state = this.states.get(key)
-      if (state?.timer) clearTimeout(state.timer)
+      if (state) discard(state)
       this.states.delete(key)
       return
     }
-    for (const state of this.states.values()) {
-      if (state.timer) clearTimeout(state.timer)
-    }
+    for (const state of this.states.values()) discard(state)
     this.states.clear()
   }
 
@@ -117,6 +125,7 @@ export class BurstMerger<T> {
   }
 
   private schedule(key: string, state: BurstState<T>): void {
+    if (state.cancelled) return
     if (state.timer) clearTimeout(state.timer)
     const now = Date.now()
     const deadline = Math.min(now + Math.max(0, state.windowMs), state.firstAt + state.maxWaitMs)
@@ -128,6 +137,7 @@ export class BurstMerger<T> {
   }
 
   private trigger(key: string, state: BurstState<T>): void {
+    if (state.cancelled) return
     if (state.timer) {
       clearTimeout(state.timer)
       state.timer = null
@@ -136,6 +146,7 @@ export class BurstMerger<T> {
   }
 
   private async flush(key: string, state: BurstState<T>): Promise<void> {
+    if (state.cancelled) return
     if (state.running) return
     if (state.items.length === 0) {
       this.states.delete(key)
@@ -162,7 +173,9 @@ export class BurstMerger<T> {
     } finally {
       this.inflight.delete(task)
       state.running = false
-      if (state.items.length > 0) {
+      if (state.cancelled) {
+        this.states.delete(key)
+      } else if (state.items.length > 0) {
         if (state.windowMs <= 0) void this.flush(key, state)
         else this.schedule(key, state)
       } else {

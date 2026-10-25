@@ -88,8 +88,8 @@ test('v0.6.6：群聊提示词带用户名 head，共享记忆按“用户名：
 
     const stored = fixture.db
       .prepare('SELECT value FROM bot_memory_items WHERE bot_id = ? AND user_id = ? AND mem_key = ?')
-      .get(fixture.botId, scope, '小明:篮球') as { value: string } | undefined
-    assert.equal(stored?.value, '小明：喜欢篮球')
+      .get(fixture.botId, scope, `${MEMBER}:篮球`) as { value: string } | undefined
+    assert.equal(stored?.value, '小明：喜欢篮球', 'key 用稳定 member_openid，显示名只存 value')
     assert.equal(lastMessageText(fixture).includes('AI 回复'), true)
   } finally {
     fixture.cleanup()

@@ -22,6 +22,7 @@ import { useToast } from './Toast'
 import { Avatar } from './Avatar'
 import { Logo } from './Logo'
 import { PwaInstallPrompt } from './PwaInstallPrompt'
+import { PwaUpdatePrompt } from './PwaUpdatePrompt'
 import { cx } from '../lib/classnames'
 
 interface NavItem {
@@ -155,7 +156,17 @@ export function Layout() {
   useEffect(() => {
     setDrawerOpen(false)
     if (location.hash) {
-      const id = decodeURIComponent(location.hash.slice(1))
+      // 畸形 hash（如 #%）会让 decodeURIComponent 抛 URIError；这里按“无锚点”处理，避免整页崩溃。
+      let id: string
+      try {
+        id = decodeURIComponent(location.hash.slice(1))
+      } catch {
+        id = ''
+      }
+      if (!id) {
+        window.scrollTo({ top: 0, behavior: 'auto' })
+        return
+      }
       let timer = 0
       const scroll = (): void => {
         const target = document.getElementById(id)
@@ -299,6 +310,7 @@ export function Layout() {
       ) : null}
 
       <PwaInstallPrompt />
+      <PwaUpdatePrompt />
     </div>
   )
 }

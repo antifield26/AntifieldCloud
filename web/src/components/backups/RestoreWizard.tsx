@@ -2,11 +2,11 @@
 // 危险操作：默认焦点取消、执行中锁定 Esc/遮罩；整库恢复不在 Web 端开放。
 // 后端契约：restore-plan 单归档由服务端解析 full+inc 链；执行返回新目录 targetFolderId。
 
-import { useEffect, useId, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useReducer, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Check, FolderOpen, RefreshCw, ShieldAlert } from 'lucide-react'
 import { api, toErrorMessage } from '../../api/client'
-import type { BackupArchive, BackupArchiveEntry, RestoreResult } from '../../api/types'
+import type { BackupArchive, BackupArchiveEntry, RestorePlan, RestoreResult } from '../../api/types'
 import { useAppMeta } from '../../meta/MetaContext'
 import {
   buildRestorePlanInput,
@@ -18,7 +18,19 @@ import {
   validateRestoreConfirmation,
   validateSelectStep,
 } from '../../lib/restore-wizard'
-import { archiveStatusLabel, backupModeLabel } from '../../lib/backups'
+import {
+  archiveStatusLabel,
+  backupModeLabel,
+  isArchiveEncrypted,
+  isArchiveWebRestorable,
+  isArchiveWebVerifiable,
+} from '../../lib/backups'
+import {
+  clearStoredRestorePlan,
+  loadStoredRestorePlan,
+  saveStoredRestorePlan,
+  type StoredRestorePlan,
+} from '../../lib/restore-plan-store'
 import { formatBytes, formatDateTime } from '../../lib/format'
 import { Modal } from '../Modal'
 import { Button } from '../Button'
@@ -38,6 +50,10 @@ export interface RestoreWizardProps {
 
 const STEP_LABELS = ['选择范围', '校验摘要', '确认执行'] as const
 
+/** 执行中断/超时后的统一提示：不要直接重试（服务端可能仍在执行，重试会得到 409/410）。 */
+const INTERRUPTED_EXECUTE_MESSAGE =
+  '执行请求超时或中断，但服务端可能仍在恢复；请勿重复执行。本页会尝试查询计划状态，也可稍后刷新设置页查看最近恢复计划。'
+
 function stepIndex(step: string): number {
   if (step === 'select') return 0
   if (step === 'verify') return 1
@@ -45,39 +61,150 @@ function stepIndex(step: string): number {
   return 3
 }
 
+/** 不依赖 client mock 的 ApiError 形态读取错误码（测试常部分 mock client）。 */
+function errorCodeOf(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? code : null
+}
+
+function storedStatusLabel(status: string): string {
+  switch (status) {
+    case 'planned':
+      return '已创建，等待执行'
+    case 'executing':
+      return '执行中'
+    case 'completed':
+      return '已完成'
+    case 'failed':
+      return '失败'
+    case 'expired':
+      return '已过期'
+    default:
+      return '状态未知（可能仍在执行）'
+  }
+}
+
 export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWizardProps) {
   const { meta } = useAppMeta()
   const [state, dispatch] = useReducer(restoreWizardReducer, undefined, createRestoreState)
   const [entriesLoading, setEntriesLoading] = useState(false)
   const [entriesError, setEntriesError] = useState<string | null>(null)
+  const [entriesTruncated, setEntriesTruncated] = useState(false)
   const [completedNotified, setCompletedNotified] = useState(false)
+  const [storedPlan, setStoredPlan] = useState<StoredRestorePlan | null>(null)
+  const [storedPlanError, setStoredPlanError] = useState<string | null>(null)
+  const [storedPlanLoading, setStoredPlanLoading] = useState(false)
   const triedVerifyRef = useRef(false)
+  const planIdRef = useRef<string | null>(null)
+  const pollTimerRef = useRef<number | undefined>(undefined)
   const totpId = useId()
   const confirmId = useId()
+
+  const stopStoredPlanPolling = useCallback((): void => {
+    if (pollTimerRef.current !== undefined) {
+      window.clearTimeout(pollTimerRef.current)
+      pollTimerRef.current = undefined
+    }
+  }, [])
+
+  /**
+   * 查询已持久化计划的状态；planned/executing/unknown 时继续轮询（最多 20 分钟）。
+   * 只更新“最近恢复计划”提示，不修改向导步骤，避免与用户当前操作冲突。
+   */
+  const refreshStoredPlan = useCallback(
+    async (planId: string, attempt = 0): Promise<void> => {
+      if (!open) return
+      setStoredPlanLoading(true)
+      try {
+        const result = await api.backups.getRestore(planId)
+        const plan: RestorePlan = result.plan
+        setStoredPlan((previous) => {
+          const next: StoredRestorePlan = {
+            planId,
+            archive: previous?.archive ?? plan.archive ?? archive?.name ?? '',
+            status: plan.status,
+            savedAt: previous?.savedAt ?? new Date().toISOString(),
+            targetName: plan.targetName,
+            completedAt: plan.completedAt ?? null,
+            error: plan.error ?? null,
+            steps: typeof plan.fileCount === 'number' ? plan.fileCount : previous?.steps ?? null,
+            bytes: typeof plan.totalBytes === 'number' ? plan.totalBytes : previous?.bytes ?? null,
+          }
+          saveStoredRestorePlan(next)
+          return next
+        })
+        setStoredPlanError(null)
+        stopStoredPlanPolling()
+        if ((plan.status === 'planned' || plan.status === 'executing') && attempt < 400) {
+          pollTimerRef.current = window.setTimeout(() => {
+            void refreshStoredPlan(planId, attempt + 1)
+          }, 3000)
+        }
+      } catch (loadError) {
+        if (errorCodeOf(loadError) === null) setStoredPlanError(toErrorMessage(loadError, '查询恢复计划失败'))
+        // 查询失败不无限重试；保留本地最后状态，用户可手动刷新。
+      } finally {
+        setStoredPlanLoading(false)
+      }
+    },
+    [archive?.name, open, stopStoredPlanPolling],
+  )
+
+  const checkStoredPlan = useCallback((): void => {
+    const stored = loadStoredRestorePlan()
+    setStoredPlan(stored)
+    setStoredPlanError(null)
+    if (stored) void refreshStoredPlan(stored.planId)
+  }, [refreshStoredPlan])
+
+  const dismissStoredPlan = (): void => {
+    stopStoredPlanPolling()
+    clearStoredRestorePlan()
+    setStoredPlan(null)
+    setStoredPlanError(null)
+  }
 
   const resetWizard = (): void => {
     dispatch({ type: 'reset' })
     if (archive) dispatch({ type: 'select-archive', name: archive.name })
     setEntriesError(null)
+    setEntriesTruncated(false)
     setCompletedNotified(false)
     triedVerifyRef.current = false
+    planIdRef.current = null
   }
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      stopStoredPlanPolling()
+      return
+    }
     resetWizard()
+    checkStoredPlan()
   }, [open, archive?.name])
 
-  // 只读归档内容（最多 500 条），用于文件级选择
+  useEffect(() => {
+    return () => stopStoredPlanPolling()
+  }, [stopStoredPlanPolling])
+
+  // 只读归档内容（最多 500 条），用于文件级选择；加密归档 Web 不可读，不请求 entries。
   useEffect(() => {
     if (!open || !archive) return
+    if (isArchiveEncrypted(archive)) {
+      setEntriesLoading(false)
+      return
+    }
     let active = true
     setEntriesLoading(true)
     setEntriesError(null)
+    setEntriesTruncated(false)
     api.backups
       .entries(archive.name)
       .then((result) => {
-        if (active) dispatch({ type: 'set-entries', entries: result.items })
+        if (!active) return
+        dispatch({ type: 'set-entries', entries: result.items })
+        setEntriesTruncated(result.truncated === true)
       })
       .catch((loadError) => {
         if (active) setEntriesError(toErrorMessage(loadError, '读取归档内容失败'))
@@ -101,7 +228,13 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
         verification: buildRestoreVerification(result.archive, result.archive.manifest, state.entries.length),
       })
     } catch (verifyError) {
-      dispatch({ type: 'verify-failure', error: toErrorMessage(verifyError, '校验归档失败，请重试') })
+      const timedOut = errorCodeOf(verifyError) === 'timeout' || errorCodeOf(verifyError) === 'network_error'
+      dispatch({
+        type: 'verify-failure',
+        error: timedOut
+          ? '校验请求超时/中断：服务端可能仍在校验，请勿重复触发；稍后刷新归档列表查看校验状态。'
+          : toErrorMessage(verifyError, '校验归档失败，请重试'),
+      })
     }
   }
 
@@ -154,22 +287,109 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
     if (validation) return
     const input = buildRestorePlanInput(state)
     if (!input) return
+    let planId: string | null = null
     try {
       const planResult = await api.backups.restorePlan(input)
-      const executed = await api.backups.executeRestore(planResult.plan.id, input.totpCode)
+      planId = planResult.plan.id
+      planIdRef.current = planId
+      const planned: StoredRestorePlan = {
+        planId,
+        archive: archive.name,
+        status: planResult.plan.status,
+        savedAt: new Date().toISOString(),
+        targetName: planResult.plan.targetName,
+        completedAt: planResult.plan.completedAt ?? null,
+        error: planResult.plan.error ?? null,
+        steps: planResult.plan.fileCount,
+        bytes: planResult.plan.totalBytes,
+      }
+      saveStoredRestorePlan(planned)
+      setStoredPlan(planned)
+      const executed = await api.backups.executeRestore(planId, input.totpCode)
+      const completed: StoredRestorePlan = {
+        ...planned,
+        status: executed.plan.status,
+        completedAt: executed.plan.completedAt ?? new Date().toISOString(),
+        error: executed.plan.error ?? null,
+      }
+      saveStoredRestorePlan(completed)
+      setStoredPlan(completed)
       dispatch({
         type: 'execute-success',
         plan: executed.plan,
         result: executed.result,
       })
     } catch (executeError) {
-      dispatch({ type: 'execute-failure', error: toErrorMessage(executeError, '恢复失败，请重试') })
+      if (planId) {
+        // 计划已创建：服务端可能仍在执行（超时/断网）。记录 planId 并询问状态，绝不提示直接重试。
+        const code = errorCodeOf(executeError)
+        const interrupted = code === 'timeout' || code === 'network_error'
+        const updated: StoredRestorePlan = {
+          planId,
+          archive: archive.name,
+          status: interrupted ? 'unknown' : 'planned',
+          savedAt: new Date().toISOString(),
+        }
+        saveStoredRestorePlan(updated)
+        setStoredPlan(updated)
+        if (interrupted) {
+          dispatch({ type: 'execute-failure', error: INTERRUPTED_EXECUTE_MESSAGE })
+          void refreshStoredPlan(planId)
+        } else {
+          dispatch({
+            type: 'execute-failure',
+            error: `${toErrorMessage(executeError, '恢复失败，请重试')}（恢复计划 ${planId} 已保存，可在本页查询状态）`,
+          })
+          void refreshStoredPlan(planId)
+        }
+      } else {
+        dispatch({ type: 'execute-failure', error: toErrorMessage(executeError, '恢复失败，请重试') })
+      }
     }
   }
 
   const selectedPathSet = new Set(state.selectedPaths)
   const isSelected = (entry: BackupArchiveEntry): boolean => selectedPathSet.has(entry.path)
   const selectedCount = state.selectedPaths.length
+  const encryptedArchive = archive ? isArchiveEncrypted(archive) : false
+  const webVerifiable = archive ? !encryptedArchive && isArchiveWebVerifiable(archive) : true
+  const webRestorable = archive ? !encryptedArchive && isArchiveWebRestorable(archive) : true
+  const blocked = encryptedArchive || !webVerifiable || !webRestorable
+
+  const storedPlanBanner =
+    storedPlan && state.step !== 'done' ? (
+      <div className="notice notice-info" role="status">
+        <div>
+          <strong>最近恢复计划</strong>
+          <p>
+            状态：{storedStatusLabel(storedPlan.status)} · 计划 {storedPlan.planId.slice(0, 8)}… · 保存于{' '}
+            {formatDateTime(storedPlan.savedAt)}
+            {storedPlan.targetName ? ` · 目标 ${storedPlan.targetName}` : ''}
+            {storedPlan.steps !== null && storedPlan.steps !== undefined ? ` · ${storedPlan.steps} 个文件` : ''}
+          </p>
+          {storedPlan.status === 'planned' ? (
+            <p className="field-hint">计划 30 分钟后过期；如需继续执行请重新走本向导（会创建新计划）。</p>
+          ) : null}
+          {storedPlan.error ? <p className="field-hint">{storedPlan.error}</p> : null}
+          {storedPlanError ? <p className="field-hint">{storedPlanError}</p> : null}
+          <div className="form-actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              loading={storedPlanLoading}
+              onClick={() => {
+                if (storedPlan) void refreshStoredPlan(storedPlan.planId)
+              }}
+            >
+              刷新状态
+            </Button>
+            <Button size="sm" variant="ghost" onClick={dismissStoredPlan}>
+              清除记录
+            </Button>
+          </div>
+        </div>
+      </div>
+    ) : null
 
   const renderEntries = () => {
     if (entriesLoading) return <LoadingBlock text="正在读取归档内容…" />
@@ -189,6 +409,11 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
             </Button>
           </div>
         </div>
+        {entriesTruncated ? (
+          <div className="notice notice-warning" role="alert">
+            归档条目超过 500 条，列表不完整；未列出的文件无法逐项选择，留空表示恢复全部活动文件。
+          </div>
+        ) : null}
         <ul className="restore-entry-list" aria-label="归档内文件">
           {state.entries.map((entry) => (
             <li key={entry.path}>
@@ -216,7 +441,14 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
       return (
         <>
           <button type="button" className="btn btn-ghost btn-md" onClick={handleClose}>取消</button>
-          <Button variant="primary" onClick={handleGoVerify}>校验并继续</Button>
+          <Button
+            variant="primary"
+            onClick={handleGoVerify}
+            disabled={blocked}
+            title={encryptedArchive ? '加密归档（.tar.gz.age）只能在 PC 上用 age 私钥解密后恢复' : undefined}
+          >
+            校验并继续
+          </Button>
         </>
       )
     }
@@ -320,6 +552,17 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
       ) : null}
 
       <div className="restore-body" aria-live="polite">
+        {storedPlanBanner}
+        {encryptedArchive || !webVerifiable || !webRestorable ? (
+          <div className="notice notice-warning" role="alert">
+            <ShieldAlert size={16} aria-hidden="true" />
+            {encryptedArchive
+              ? '该归档已加密（.tar.gz.age）：Web 不持有私钥，不能校验或恢复；请在 PC 上用 age 私钥解密后按 docs/BACKUP.md 处理。'
+              : !webVerifiable
+                ? '服务端标记该归档不可在 Web 校验，请按服务端提示处理。'
+                : '服务端标记该归档不可在 Web 恢复，请按服务端提示处理。'}
+          </div>
+        ) : null}
         {state.step === 'select' ? (
           <>
             {archive ? (

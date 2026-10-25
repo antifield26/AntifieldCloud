@@ -41,7 +41,8 @@ export function useBackups(pollMs = 60_000): BackupDataState {
       if (isAbortError(loadError) || requestId !== requestIdRef.current) return
       const message = toErrorMessage(loadError, '加载备份列表失败')
       setErrorStatus(loadError instanceof ApiError ? loadError.status : null)
-      if (!dataRef.current) setError(message)
+      // 即使已有旧数据也暴露错误（卡片显示“刷新失败，数据可能过期”），不能把旧状态当成功。
+      setError(message)
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }

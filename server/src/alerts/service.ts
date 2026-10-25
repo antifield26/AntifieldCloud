@@ -111,6 +111,8 @@ export interface AlertConfigSummary {
   /** 世界备份/拉取超期阈值（小时）与世界恢复演练超期阈值（天）。 */
   worldBackupMaxAgeHours: number
   drillMaxAgeDays: number
+  /** 异地副本超期阈值（小时）；0 表示关闭。 */
+  offsiteMaxAgeHours: number
   cooldownMinutes: number
   checkIntervalSeconds: number
   lastEvaluatedAt: string | null
@@ -323,6 +325,7 @@ export class AlertService {
 
   private async collectConditions(): Promise<AlertCondition[]> {
     const health = this.readPiHealth()
+    const offsite = this.offsiteCondition()
     const conditions: AlertCondition[] = [
       this.diskCondition(),
       this.tempCondition(health),
@@ -334,6 +337,7 @@ export class AlertService {
       this.worldBackupCondition(),
       this.worldPullCondition(),
       this.drillCondition(),
+      ...(offsite ? [offsite] : []),
       await this.minecraftCondition(),
       this.underVoltageCondition(health),
     ]
@@ -611,6 +615,23 @@ export class AlertService {
       title: '恢复演练超期',
       path: this.config.drillStatusFile,
       thresholdMs: this.config.alertDrillMaxAgeDays * 86_400_000,
+      timeKeys: ['lastRunAt'],
+    })
+  }
+
+  /**
+   * 异地副本超期：未配置 offsite（状态文件不存在）时返回 null，不进入条件列表，
+   * 避免“从未配置”被降级为 unknown 并反复告警；文件存在但字段异常仍按 unknown 处理。
+   */
+  private offsiteCondition(): AlertCondition | null {
+    if (this.config.alertOffsiteMaxAgeHours <= 0) return null
+    const record = this.readStatusRecord(this.config.backupOffsiteStatusFile)
+    if (!record) return null
+    return this.statusFileCondition({
+      event: 'offsite_overdue',
+      title: '异地副本超期',
+      path: this.config.backupOffsiteStatusFile,
+      thresholdMs: this.config.alertOffsiteMaxAgeHours * 3_600_000,
       timeKeys: ['lastRunAt'],
     })
   }
@@ -1012,6 +1033,7 @@ export class AlertService {
       backupMaxAgeHours: this.config.alertBackupMaxAgeHours,
       worldBackupMaxAgeHours: this.config.alertWorldBackupMaxAgeHours,
       drillMaxAgeDays: this.config.alertDrillMaxAgeDays,
+      offsiteMaxAgeHours: this.config.alertOffsiteMaxAgeHours,
       cooldownMinutes: this.config.alertCooldownMinutes,
       checkIntervalSeconds: this.config.alertCheckIntervalSeconds,
       lastEvaluatedAt: this.lastEvaluatedAt,

@@ -495,3 +495,109 @@ test('错误密码限流：8 次/15 分钟后返回 429', async () => {
     fx.close()
   }
 })
+
+test('同一分享会话并发下载只计一次（DATA-04）', async () => {
+  const fx = shareFixture()
+  try {
+    const file = await uploadFile(fx.files, 'atomic-count.txt', 'hello')
+    const created = await fx.shares.create(ACTOR, file.id, { maxDownloads: 2 })
+    const token = tokenFromUrl(created.url)
+    // 模拟并发窗口：两个请求都在会话 downloaded=0 时取得 access。
+    const first = fx.shares.openContent(token, null, 'GET')
+    const second = fx.shares.openContent(token, first.newSessionToken, 'GET')
+    assert.equal(first.mustCount, true)
+    assert.equal(second.mustCount, true, '同一会话第二个并发请求在计数前仍会看到 downloaded=0')
+    fx.shares.markDownloaded(first, IP)
+    fx.shares.markDownloaded(second, IP)
+    const row = fx.db.prepare('SELECT download_count FROM shares WHERE id = ?').get(created.share.id) as {
+      download_count: number
+    }
+    assert.equal(Number(row.download_count), 1, '同一会话并发只应计 1 次')
+    const session = fx.db.prepare('SELECT downloaded FROM share_sessions WHERE share_id = ?').get(created.share.id) as {
+      downloaded: number
+    }
+    assert.equal(Number(session.downloaded), 1)
+    // 未耗尽：第三个独立会话仍可下载并再计一次。
+    const third = fx.shares.openContent(token, null, 'GET')
+    fx.shares.markDownloaded(third, IP)
+    const after = fx.db.prepare('SELECT download_count FROM shares WHERE id = ?').get(created.share.id) as {
+      download_count: number
+    }
+    assert.equal(Number(after.download_count), 2)
+    expectAppError(() => fx.shares.metadata(token, null), 410, 'share_exhausted')
+  } finally {
+    fx.close()
+  }
+})
+
+test('分享列表计数只统计未删除文件（DATA-07）', async () => {
+  const fx = shareFixture()
+  try {
+    const a = await uploadFile(fx.files, 'keep.txt', 'aaa')
+    const b = await uploadFile(fx.files, 'gone.txt', 'bb')
+    const created = await fx.shares.createBundle(ACTOR, [a.id, b.id], {})
+    const token = tokenFromUrl(created.url)
+    // 绕过路由钩子直接软删除 b，模拟吊销钩子失败/漏接：公开访问 410，但列表计数不应再含已删条目。
+    fx.files.trash(ACTOR, b.id)
+    expectAppError(() => fx.shares.metadata(token, null), 410, 'share_gone')
+    const item = fx.shares.list().items.find((share) => share.id === created.share.id)
+    assert.ok(item)
+    assert.equal(item.itemCount, 1, 'itemCount 只统计未删除文件')
+    assert.equal(item.totalSizeBytes, 3, 'totalSizeBytes 只统计未删除文件')
+  } finally {
+    fx.close()
+  }
+})
+
+test('分享列表批量查询：不再逐行 N+1（DATA-14）', async () => {
+  const fx = shareFixture()
+  try {
+    const file = await uploadFile(fx.files, 'batch.txt', 'batch')
+    for (let index = 0; index < 25; index += 1) {
+      await fx.shares.create(ACTOR, file.id, {})
+    }
+    let prepares = 0
+    const proxy = new Proxy(fx.db, {
+      get(target, property, receiver) {
+        if (property === 'prepare') {
+          return (...args: unknown[]) => {
+            prepares += 1
+            return (target.prepare as (...inner: unknown[]) => unknown).apply(target, args)
+          }
+        }
+        return Reflect.get(target, property, receiver)
+      },
+    }) as unknown as typeof fx.db
+    const batched = new ShareService(proxy, fx.config, { storage: fx.files.storage })
+    const before = prepares
+    const result = batched.list({ pageSize: 100 })
+    assert.equal(result.items.length, 25)
+    assert.equal(result.total, 25)
+    const used = prepares - before
+    assert.ok(used <= 6, `分享列表应批量查询（实际 ${used} 次 prepare）`)
+    assert.ok(used >= 3, '至少包含计数、行、条目/文件批量查询')
+  } finally {
+    fx.close()
+  }
+})
+
+test('SEC-13：公开分享密码解锁失败写审计（不记录 token/密码）', async () => {
+  const fx = shareFixture()
+  try {
+    const file = await uploadFile(fx.files, 'secret.txt', '0123456789')
+    const created = await fx.shares.create(ACTOR, file.id, { password: 'share-pass-123' })
+    const token = tokenFromUrl(created.url)
+    await expectRejects(fx.shares.unlock(token, 'wrong-password', IP), 401, 'invalid_password')
+    const row = fx.db
+      .prepare("SELECT actor, target, detail_json, ip FROM audit_log WHERE action = 'share_unlock_failed'")
+      .get() as { actor: string; target: string; detail_json: string; ip: string } | undefined
+    assert.ok(row)
+    assert.equal(row.target, created.share.id)
+    assert.equal(row.ip, IP)
+    assert.match(row.detail_json, /invalid_password/)
+    assert.doesNotMatch(row.detail_json, /wrong-password/)
+    assert.doesNotMatch(JSON.stringify(row), new RegExp(token))
+  } finally {
+    fx.close()
+  }
+})

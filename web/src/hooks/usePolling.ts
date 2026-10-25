@@ -13,6 +13,7 @@ export function usePolling(callback: () => void | Promise<void>, intervalMs: num
   useEffect(() => {
     if (!enabled) return
     let stopped = false
+    let inFlight = false
     let timer: number | undefined
 
     const schedule = (): void => {
@@ -24,11 +25,14 @@ export function usePolling(callback: () => void | Promise<void>, intervalMs: num
 
     const tick = async (): Promise<void> => {
       if (stopped) return
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && !inFlight) {
+        inFlight = true
         try {
           await savedCallback.current()
         } catch {
           // 错误由调用方写入状态并展示
+        } finally {
+          inFlight = false
         }
       }
       schedule()
@@ -36,8 +40,8 @@ export function usePolling(callback: () => void | Promise<void>, intervalMs: num
 
     const onVisibilityChange = (): void => {
       if (document.visibilityState !== 'visible') return
-      void savedCallback.current()
-      schedule()
+      // 页面恢复可见时立即补一次；若上次请求仍在进行则跳过，避免重复/乱序。
+      if (!inFlight) void tick()
     }
 
     schedule()

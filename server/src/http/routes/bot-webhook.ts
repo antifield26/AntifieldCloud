@@ -6,13 +6,14 @@ import type { FastifyInstance } from 'fastify'
 import type { Config } from '../../config.ts'
 import type { BotService } from '../../bot/service.ts'
 import { SlidingWindowLimiter } from '../../auth/limiter.ts'
+import { requestMeta } from '../request-meta.ts'
 
 export function registerBotWebhookRoutes(app: FastifyInstance, config: Config, bots: BotService): void {
   void app.register(async (scope) => {
     const limiter = new SlidingWindowLimiter(60_000, 120)
     scope.addHook('onRequest', async (request, reply) => {
-      const raw = request.headers['cf-connecting-ip']
-      const ip = (Array.isArray(raw) ? raw[0] : raw)?.trim() || request.ip
+      // 复用统一信任模型：仅当 socket 对端为 loopback 时才采信 CF-Connecting-IP（A5-BOT-06/SEC-05）。
+      const ip = requestMeta(request).ip
       const retry = limiter.hit(ip)
       if (retry > 0) {
         reply.code(429).header('retry-after', String(retry)).send({ error: { code: 'rate_limited' } })
