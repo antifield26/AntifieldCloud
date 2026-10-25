@@ -53,8 +53,9 @@
 - PC 任务需重装：`install-backup-task.ps1` 刷新 `backup-pull.ps1`/`backup-offsite.ps1/.mjs` 与安装标记；异地任务需先配置 rclone remote（脚本不创建 remote/凭据）。
 - `smoke.ps1` 新增 `-ExpectedOpenCodeVersion/-ExpectedSshSources/-MaxMcpProcesses` 与 `-Skip*` 开关。
 - 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **478**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.63/78.16/87.84**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-DoPUAny6.js` 726.64 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass。
-- OpenCode **v2.1.4** 已于 2026-10-25 08:21 CST 在生产只读升级（应用仍 v0.6.6/schema16）：升级前备份 v2.1.3 二进制/data/env/unit/MCP（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e6…8b19`）；V1–V9、V14 PASS，V10–V13（真实 QQ/记忆/发送工具/搜索）待 v0.7.0 部署后联调。
-- 生产应用部署/release/smoke/Tag/Release/加密与异地启用演练仍为 **待部署**（本次交付未部署应用）。
+- OpenCode **v2.1.4** 已于 2026-10-25 08:21 CST 在生产只读升级：升级前备份 v2.1.3 二进制/data/env/unit/MCP（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e6…8b19`）；V1–V9、V14 PASS，V10–V13（真实 QQ/记忆/发送工具/搜索）待真实用户联调。
+- 生产应用 **v0.7.0 已部署**（2026-10-25 08:53/09:06 CST，commit `5c31162`，release `/opt/antifieldcloud/releases/20261025T010620Z`；`/healthz` v0.7.0/schema16；迁移前快照 `db-predeploy-20261025T010652355Z.sqlite` sha256 `a9930dd0…b4f1`）；部署内 smoke 23/23、完整 Access smoke 31/0（MCP 修复后），1 个 env 警告（2 个废弃键）与 2 个 SKIP（加密/异地默认关闭）；Windows 备份任务安装标记需管理员重跑 `install-backup-task.ps1`。
+- Tag/GitHub Release 与加密/异地副本启用演练仍待用户验收/密钥与 rclone 配置后执行。
 
 ## [v0.6.6] - 2026-10-24（已发布）
 

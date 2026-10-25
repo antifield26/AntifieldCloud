@@ -39,7 +39,7 @@
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
 
-## v0.7.0（待发布；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode 已升级 v2.1.4，应用仍为 v0.6.6 待部署）
+## v0.7.0（已部署生产，待 Tag/Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode v2.1.4）
 
 - **交付范围**：
   - 第六轮深度审计去重后 **P0=0、P1=3、P2=26、P3=73** 全部处置：P1（WEB-01 长任务超时、OPS-01 OpenCode 2.1.4 门禁、SEC-10 AI 主机 SSO 写放大）、P2 26 条全部修复；P3 可修小项随版修，架构性/已接受项写入 `docs/AUDIT.md` 第六轮 §5/§9、`docs/ARCHITECTURE.md` §11、`docs/SECURITY.md` §4 的明确残余。
@@ -49,12 +49,10 @@
   - **运维/文档**：OPS-07 占位符化、OPS-09 `deploy/host/` 模板 + 密钥包可选打包、OPS-10 `deploy/tool-versions.json` + check-version 交叉校验、smoke 新检查、部署回滚与 release 元数据；文档统一 0.7.0 / schema v16 / OpenCode 2.1.4。
 - **数据/配置/兼容**：schema 保持 **v16（无迁移）**；新增 `BACKUP_ARCHIVE_ENCRYPTION`、`BACKUP_AGE_RECIPIENT_FILE`、`BACKUP_OFFSITE_STATUS_FILE`、`ALERT_OFFSITE_MAX_AGE_HOURS`（`bootstrap-env.sh` 已纳管）；OpenCode 目标 **v2.1.4**（升级/回滚/14 项矩阵见 `docs/DEPLOY.md` §3.2）。
 - **本地门禁（2026-10-25 实测）**：`npm run check` 通过；`npm test` **478**（server+scripts，含 29 个 scripts 用例）；`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.63% / Branches 78.16% / Functions 87.84%**（`npm run test:coverage` exit 0）；前端覆盖率 **Lines 52.31% / Branches 47.32% / Functions 45.02% / Statements 50.12%**（`npm run test:web:coverage` exit 0）；`npm run build` 通过（`index-DoPUAny6.js` 726.64 kB，gzip 216.25 kB）；`node scripts/check-version.mjs` 严格模式 `version ok 0.7.0`；`node scripts/check-prod-deps.mjs` 通过；PS 5.1 解析 7/7、BOM 齐全（ops 验证）。
-- **OpenCode v2.1.4（2026-10-25 08:21 CST 生产只读升级，应用未升级）**：升级前已完成 v2.1.3 二进制/data/env/unit/MCP 备份（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e68f25e69045a7ec5f518fccbad57e8f25d7853e66ba9677ddfaf28b19`；data/env/unit/config 同时间戳）；`opencode --version` **v2.1.4**、service active；矩阵 **V1–V9、V14 PASS**（版本/服务、Basic list 5 会话、deny-all 与 allow 工具会话、deny-all 工具负路径未写文件、wait 204、assistant `reasoning+text`/`finish=stop`、图片 prompt 识别 Red、MCP 每服务 1 进程、`/api/mcp` 200、磁盘 38G 余量/内存 4.5G、OpenCode DB 存在）；**V10–V13 待 v0.7.0 部署后真实 QQ/记忆/发送工具/搜索联调**。
-- **部署与验收（`待部署`）**：生产 release/commit/迁移前快照、`/healthz` 版本与 schema、部署内 smoke 与完整 Access smoke 计数、drill、PC 拉取/ack、加密归档与异地副本启用演练、用户验收、Tag/GitHub Release —— 均待发布门禁与部署确认后填写。**当前不得声明 v0.7.0 已验收或已发布；应用生产仍为 v0.6.6/schema16。**
-- **待填占位清单（集中；部署后 Lead/用户填数）**：
-  1. 部署：生产 release 目录名、commit、`/healthz` 的 version/schemaVersion、迁移前快照文件名与 sha256、部署后备份归档名/size/sha256、密钥包名/size/`secretsOk`。
-  2. 验证：部署内只读 smoke 通过数/总数、完整 Access smoke 通过数/总数、smoke 警告数、真实 QQ 联调 V10–V13、drill 报告 ID 与结果、加密归档启用后的首个 `.age` 与 PC 解密/`plainVerified` 结果、异地副本首次上传/`keptRemote`/告警状态。
-  3. 发布：Tag 名/指向 commit、GitHub Release 链接与时间、用户验收时间与结论。
+- **OpenCode v2.1.4（2026-10-25 08:21 CST 生产只读升级）**：升级前已完成 v2.1.3 二进制/data/env/unit/MCP 备份（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e68f25e69045a7ec5f518fccbad57e8f25d7853e66ba9677ddfaf28b19`；data/env/unit/config 同时间戳）；`opencode --version` **v2.1.4**、service active；矩阵 **V1–V9、V14 PASS**（版本/服务、Basic list 5 会话、deny-all 与 allow 工具会话、deny-all 工具负路径未写文件、wait 204、assistant `reasoning+text`/`finish=stop`、图片 prompt 识别 Red、MCP 每服务 1 进程、`/api/mcp` 200、磁盘 38G 余量/内存 4.5G、OpenCode DB 存在）；**V10–V13 待真实 QQ/记忆/发送工具/搜索联调**。
+- **生产部署（2026-10-25 08:53/09:06 CST，两次部署）**：最终 release `/opt/antifieldcloud/releases/20261025T010620Z`，commit **5c31162**（含 MCP 配置属主修复）；`/healthz` = `{"ok":true,"version":"0.7.0","schemaVersion":16,"db":"ok","pendingBackups":0}`；迁移前 DB 快照 `db-predeploy-20261025T010652355Z.sqlite`（sha256 `a9930dd0120352777f08c8f00cfd35fea1ce3fbd7ac58eec32a4bed1bf22b4f1`）；上一 release `20261025T005251Z`（v0.7.0 首个部署）保留可回滚。
+- **部署后 smoke**：部署内只读 smoke **23/23 PASS、0 FAIL、1 WARN（env 2 个废弃键）、2 SKIP（加密/异地默认关闭）**；独立完整 Access smoke **31 PASS、0 FAIL（MCP 修复/重试后）、1 WARN（同上）、2 SKIP**；唯一待用户处理项为 Windows 备份计划任务安装标记（需管理员 PowerShell 重跑 `install-backup-task.ps1`，当前任务仍存在/可运行）。MCP 配置属主问题已由 commit `5c31162` 修复并在生产恢复（`opencode.json` 必须 `opencode:opencode 0640`）。
+- **仍待用户/后续**：真实 QQ 联调 V10–V13、用户验收；Windows 任务重装（管理员）；可选清理 2 个废弃 env 键（`BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES`，先备份）；加密/异地副本按 `docs/DEPLOY.md` §9.10/§9.11 由用户密钥/rclone 启用；Tag/GitHub Release 待验收后。
 - **回滚**：schema 无迁移，回滚只需切回 v0.6.6 release + 还原同版本 env；备份加密回滚=关闭 `BACKUP_ARCHIVE_ENCRYPTION` 恢复明文（已生成 `.age` 保留，仅 PC 可解密）；异地副本回滚=禁用/卸载 offsite 任务；OpenCode 回滚=恢复 v2.1.3 二进制/data/env/unit/MCP 配置（见 `docs/DEPLOY.md` §3.2）。
 - **明确残余**：见 `docs/AUDIT.md` 第六轮 §9 与 `docs/SECURITY.md` §4（AI 主机边缘保护、工具隔离可用性取舍、审计 best-effort、加密临时明文窗口/私钥丢失、异地单远端依赖、群记忆 legacy 条目、既有单管理员/sudo/RCON/SD 等）。
 
