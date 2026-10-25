@@ -123,8 +123,7 @@
   启动一次性迁移旧显示名键，无法唯一映射的加 `legacy:` 保留且不参与按成员删除；`/forget confirm` 清除本人在各群贡献条目并取消在途抽取。
 - **Webhook 限流/审计收敛（v0.7.0）**：未验签与已验签请求分桶（120/min vs 300/min per Bot，验签后才扣业务桶），拒绝/限流审计按「每 Bot×动作×分钟」聚合
   （首条 + 每 50 条），未认证流量不能通过洪泛饿死合法事件或写满审计表。
-- **审计策略（v0.7.0/D-17）**：非安全审计事务外 best-effort，失败不阻断已完成的业务，进程内计数/最近错误经 `GET /api/version.audit` 可见；
-  安全关键审计（登录/再认证/发布/工具隔离/Webhook 拒绝）保持逐条记录；公开下载计数仍在事务内。
+- **审计策略（v0.7.0/D-17，v0.7.2 持久化）**：非安全审计事务外 best-effort，失败不阻断已完成的业务；失败计数/最近错误/时间在 v0.7.2 起 best-effort 写入 `audit_write_failures` 并经 `GET /api/version.audit` 暴露（含 `persisted`），跨重启可见；安全关键审计（登录/再认证/发布/工具隔离/Webhook 拒绝）保持逐条记录；公开下载计数仍在事务内。
 
 ### HTTP
 
@@ -174,8 +173,8 @@
 
 ## 4. 残留风险（按用户选择保留）
 
-1. **SSH 已改仅公钥，但仍保留 24h 回滚窗口**：`/etc/ssh/sshd_config.d/00-` drop-in 禁用密码/键盘交互，
-   旧配置备份在 24h 内可恢复（见 `docs/DEPLOY.md` §9.7）；回滚窗口结束后删除备份。`fail2ban` 已启用 `sshd` jail
+1. **SSH 已改仅公钥，v0.7.2 已清理回滚窗口**：`/etc/ssh/sshd_config.d/00-` drop-in 禁用密码/键盘交互；
+   v0.7.2 已把 `/root/sshd-before.txt`、`/root/sshd-cloudinit.conf.bak-20261021` 归档到 `/var/backups/antifieldcloud/`（0600 root）并清理 `/root` 残留，活动配置未改；`fail2ban` 已启用 `sshd` jail
    （nftables 后端、24h ban），但封禁 set 依赖 nftables，`nft -f`/重启 nftables 后必须重启 fail2ban 恢复已有封禁。
    **注意：若管理员当前来源不在允许网段内，应用 nftables 规则会锁死 SSH；须先确认来源网段并保留物理键鼠/已建立连接。**
 2. **Pi 登录用户 `antifield` 拥有 `NOPASSWD ALL` sudo（既有残留，未修改）**：任何拿到 `antifield` 账号的人可提权为 root；
@@ -183,7 +182,8 @@
 3. **RCON 已轮换为 32 位随机密码，但仍监听 0.0.0.0（Paper 无 bind 配置）**：nftables 仅放行 loopback；
    本机被攻破仍可控制 RCON。世界备份脚本以 root 使用固定命令，扩大了 RCON 凭据的暴露面（仅 root 可读）。
 4. **Cloudflare Access 已在生产配置**：主应用 `app.<domain>`（One-time PIN + Owner allow + Service Auth）与 4 个 Bypass 路径
-   （`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`）已通过 API 创建并验证；smoke 支持 `-AccessClientId/-AccessClientSecret`。
+   （`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`）已通过 API 创建并验证；v0.7.2 为 `ai.<domain>` 新增 Access 应用
+   （Owner allow + Smoke service token；Free 套餐无自定义 WAF 规则集），smoke 支持 `-AccessClientId/-AccessClientSecret`。
    service token 只保存在 PC gitignored `.local/cf-access.env`，应使用专用/最小范围并定期轮换；配置用高权限 API Token 完成后应 Revoke。
    仍建议给 Cloudflare 账号开启 2FA；Access 只作为应用 TOTP 之外的第二层，不替代应用认证。
 5. **Cloudflare 可见明文**：文件内容与登录流量对 Cloudflare 可见；敏感数据可考虑后续应用层加密。
@@ -205,7 +205,7 @@
 14. **scrypt 仍为 N=2^15**：升级到 2^16/2^17 需要密码哈希版本迁移，列入后续。
 15. **`http-proxy` 在 Node 26 有 `util._extend` 弃用警告**：Node 27 前需评估替换。
 16. **Cloudflare 约 100 MiB/100s 限制**：普通上传仍受单请求限制；分片承载 5 GiB 文件，但总时长仍受 Cloudflare/网络影响。
-17. **Windows 世界拉取/演练任务需用户手动安装**：未安装时面板为 unknown、告警可能触发；任务本身以当前用户运行，依赖直连网线与 SSH 公钥。
+17. **Windows 世界拉取/演练任务**：v0.7.2 已安装 `AntifieldCloud-World-Pull` 周任务（周日 12:00）并手动验证；恢复演练 `drill.ps1` 保持手动/季度；异地副本任务待 rclone remote 配置。任务以当前用户运行，依赖直连网线与 SSH 公钥；未安装/未运行时状态 unknown、告警可能触发。
 18. **Bot 测试为 mock-only**：QQ 适配器/队列/发布/Chat/记忆/文本分段/图片下载/自检/诊断/角色与记忆管理仅用进程内假平台、夹具与假 HTTP，未对真实 QQ 平台做限流、签名漂移、平台故障的负路径验收；
     上线前必须在 QQ 开放平台完成回调地址/事件订阅并联调（`docs/DEPLOY.md` §9.8）。v0.5.1 的 QQ 真实回调与真实模型已验证；v0.5.9 起 AI 仅 Chat（`/ask` 移除）；v0.5.7 已部署并完成生产只读验证；v0.5.8 已部署（release `20261022T134852Z`/schema v13，迁移 13 后仅剩 QQ Bot），图片/自助命令等真实消息已由用户实发验收通过（2026-10-22 21:59–22:08 CST，图片 148563 B jpeg 端到端成功）；诊断/角色记忆面板按用户确认整体通过。
 19. **Bot 仅文本、单平台**：QQ 官方 Bot 只支持文本（单条 ≤2000），无媒体/附件/按钮/引用；平台收敛后不再有 Telegram/Discord/Slack 备选通道，QQ 平台故障时 Bot 不可用；无多管理员审批流；发布仅有单管理员 TOTP + `PUBLISH` 双确认。
@@ -238,7 +238,7 @@
 33. **联网搜索外部数据（v0.6.1）**：SearXNG 仅监听 loopback；OpenCode MCP 配置 `codemode=false`，只暴露 `searxng_web_search`。Bot 会话 permissions 为 deny-all 后仅 allow `searxng_*`（v0.6.4 启用发送工具时另 allow `botmsg_*`），生产负路径已验证 shell 不可用；若 OpenCode 拒绝 permissions 会降级为默认工具权限并记录 `aiToolIsolation.supported=false`，此时不应把 Chat 当强隔离环境。搜索工具只访问 `BOT_SEARCH_URL`，不抓取结果网页；结果是不可信外部内容，提示词明确禁止执行其中指令。查询会发给私有 SearXNG 及其启用的引擎（生产仅 Bing），用户应知悉该外发范围；搜索失败降级为无搜索回答。审计只记结果数/错误码/是否强制，不记查询正文。
 34. **搜索限流与资源**：每 Bot×用户每小时 `BOT_SEARCH_RATE_PER_HOUR`；SearXNG/MCP 有超时/响应体上限/最多结果数/摘要截断；`mcp` 模式由模型决定搜索，`prefetch` 模式用保守关键词；`/search` 仍需可 Chat 权限，但不需要管理员命令白名单；MCP 工具输出含结果 URL，但 Bot 回复层会脱敏/只附标题与域名。
 35. **消息发送工具回调（v0.6.4；v0.7.0 强化）**：`POST /api/bot/ai/tool/send` 无 session/CSRF，只接受 `BOT_SECRET_KEY` HMAC 的 turn token；v0.7.0 起 token 绑定 `turnId + 目标 + 用户`（跨会话不能复用），只在本轮 3 分钟有效，单轮最多 5 条、单条 ≤1800 字；文本先进入内存缓冲，回合结束统一清洗/格式化/发送，不立即外发。路由不在 Cloudflare Access bypass 中，生产由本机 MCP 访问 `127.0.0.1`；公开请求即使命中路径也无法伪造 token。审计只记 `bot.ai.send`/`bot.ai.send_fallback` 的消息数与字符数（回合异常补发带 `partialTurn`），不记正文；`turn_id`/`turn_token` 不得进入日志或用户回复。
-36. **审计 best-effort（v0.7.0/D-17）**：非安全审计在 DB 故障/磁盘满时可能丢失，只保留进程内失败计数与最近错误（`/api/version.audit`），进程重启清零；安全关键审计仍逐条尝试写入，失败可见但不回滚已完成的业务。需要强审计保证的场景应监控 `audit.failureCount` 并修复底层 DB/磁盘问题。
+36. **审计 best-effort（v0.7.0/D-17，v0.7.2 持久化）**：非安全审计在 DB 故障/磁盘满时可能丢失；v0.7.2 起失败计数/最近错误/时间 best-effort 持久化到 `audit_write_failures`，`/api/version.audit` 跨重启可见（DB 不可用时 `persisted=false` 回退内存）；安全关键审计仍逐条尝试写入，失败可见但不回滚已完成的业务。需要强审计保证的场景应监控 `audit.failureCount` 并修复底层 DB/磁盘问题。
 37. **AI 主机边缘保护缺口（v0.7.0 部分缓解）**：应用侧已对 `/__af/sso/*` 与匿名请求限流并聚合审计，但 `ai` 主机仍未受 Cloudflare Access/WAF 保护（用户后台项）；边缘限流配置未验证，公网匿名请求仍可消耗一定资源。建议后续在 Cloudflare 后台给 `ai` 增加 Access 策略或 WAF 速率规则。
 38. **异地副本残余（v0.7.0）**：默认关闭；单远端、依赖 PC 在线与 rclone 配置/凭据；脚本不创建 remote、不管理凭据；状态文件由 PC 写入，应用只读展示，状态内容可信度取决于管理员 PC 边界；未配置时不告警，因此“从未配置”不会被提示为风险。
 39. **群共享记忆迁移残余（v0.7.0/D-13）**：无法唯一映射到 `member_openid` 的旧条目保留 `legacy:` 前缀、不参与按成员删除；历史同名用户互相覆盖的内容无法自动还原；迁移只执行一次（`meta.bot_group_memory_owner_migrated_v1`），迁移后旧格式不再生成。

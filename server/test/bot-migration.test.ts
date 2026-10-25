@@ -10,12 +10,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { SUPPORTED_SCHEMA_VERSION, openDatabase } from '../src/db.ts'
 
-test('v6 库升级到 v16：创建 Bot/AI/Chat/角色卡表，并补齐触发策略与事件诊断列', () => {
+test('v6 库升级到 v17：创建 Bot/AI/Chat/角色卡表，并补齐触发策略与事件诊断列', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-'))
   const path = join(dir, 'db.sqlite')
   try {
     const db = openDatabase({ path })
-    assert.equal(SUPPORTED_SCHEMA_VERSION, 16)
+    assert.equal(SUPPORTED_SCHEMA_VERSION, 17)
     // 模拟 v0.4.2 已升级到 v6、尚无 Bot 表的生产库；v7+ 新增表必须先删除，避免迁移建表冲突。
     db.exec(`
       DROP TABLE bot_group_roles;
@@ -35,7 +35,7 @@ test('v6 库升级到 v16：创建 Bot/AI/Chat/角色卡表，并补齐触发策
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '16')
+      assert.equal(version.value, '17')
       const tables = (
         upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
       ).map((row) => row.name)
@@ -97,7 +97,7 @@ test('v6 库升级到 v16：创建 Bot/AI/Chat/角色卡表，并补齐触发策
   }
 })
 
-test('v12 库升级到 v16：删除非 QQ Bot 及其级联数据，保留 QQ Bot', () => {
+test('v12 库升级到 v17：删除非 QQ Bot 及其级联数据，保留 QQ Bot', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-v13-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -143,7 +143,7 @@ test('v12 库升级到 v16：删除非 QQ Bot 及其级联数据，保留 QQ Bot
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '16')
+      assert.equal(version.value, '17')
       const bots = upgraded.prepare('SELECT id FROM bots ORDER BY id').all() as unknown as { id: string }[]
       assert.deepEqual(bots.map((row) => row.id), ['bot-qq'])
       const count = (table: string): number => {
@@ -166,7 +166,7 @@ test('v12 库升级到 v16：删除非 QQ Bot 及其级联数据，保留 QQ Bot
   }
 })
 
-test('v11 库升级到 v16：追加触发策略与事件诊断列，旧行按默认值可读', () => {
+test('v11 库升级到 v17：追加触发策略与事件诊断列，旧行按默认值可读', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-v12-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -194,7 +194,7 @@ test('v11 库升级到 v16：追加触发策略与事件诊断列，旧行按默
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '16')
+      assert.equal(version.value, '17')
       const target = upgraded
         .prepare("SELECT chat_trigger FROM bot_targets WHERE id = 'target-v11'")
         .get() as { chat_trigger: string }
@@ -213,7 +213,7 @@ test('v11 库升级到 v16：追加触发策略与事件诊断列，旧行按默
   }
 })
 
-test('v9/v10 库升级到 v16：旧会话归 Chat，主键允许 task/chat 两行', () => {
+test('v9/v10 库升级到 v17：旧会话归 Chat，主键允许 task/chat 两行', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-session-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -278,7 +278,7 @@ test('v9/v10 库升级到 v16：旧会话归 Chat，主键允许 task/chat 两�
   }
 })
 
-test('v13 库升级到 v16：创建结构化记忆表并保留旧滚动摘要', () => {
+test('v13 库升级到 v17：创建结构化记忆表并保留旧滚动摘要', () => {
   const dir = mkdtempSync(join(tmpdir(), 'antifieldcloud-bot-migration-v14-'))
   const path = join(dir, 'db.sqlite')
   try {
@@ -298,7 +298,7 @@ test('v13 库升级到 v16：创建结构化记忆表并保留旧滚动摘要', 
     const upgraded = openDatabase({ path })
     try {
       const version = upgraded.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string }
-      assert.equal(version.value, '16')
+      assert.equal(version.value, '17')
       const tables = (
         upgraded.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as unknown as { name: string }[]
       ).map((row) => row.name)

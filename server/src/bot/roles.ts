@@ -83,6 +83,28 @@ export function validateRole(name: string, prompt: string): RoleValidationError 
   return null
 }
 
+/** 角色卡校验错误的中文提示（命令回复与管理 API 共用）。 */
+export function roleValidationMessage(error: RoleValidationError): string {
+  switch (error) {
+    case 'role_name_empty':
+      return '请提供名字。用法：/role set <名字> <设定>'
+    case 'role_name_too_long':
+      return '名字过长，请控制在 32 字以内。'
+    case 'role_name_has_whitespace':
+      return '名字不能包含空格。'
+    case 'role_name_invalid_chars':
+      return '名字不能包含方括号等符号。'
+    case 'role_prompt_empty':
+      return '请提供设定内容。'
+    case 'role_prompt_too_long':
+      return '设定过长，请控制在 1000 字以内。'
+    case 'role_prompt_reserved_marker':
+      return '设定包含不支持的格式，请换一种写法。'
+    default:
+      return '设定格式无法识别。'
+  }
+}
+
 function mapRow(row: RoleRow): BotChatRole {
   return {
     botId: row.bot_id,

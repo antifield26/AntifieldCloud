@@ -1,4 +1,4 @@
-# Bot 集成（v0.7.1，QQ 官方 Bot 单平台）
+# Bot 集成（v0.7.2，QQ 官方 Bot 单平台）
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）、QQ 入站图片理解和手动/定时文本发布接到 **QQ 官方 Bot**。
 v0.5.8 起平台收敛为 **QQ 单平台**：Telegram / Discord / Slack 适配器、Discord Gateway、只读按钮、多附件/媒体发布、群聊触发方式（`chatTrigger`）
@@ -310,7 +310,7 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；v0.6.4 新增 `BOT_CHAT_BU
 - **真实用户边界**：限流（`botId:userId`）、结构化记忆 scope/归属、审计 actor 与发送工具 `turn_id`/`turn_token` 仍归属真实成员，不因共享会话合并。
 - **启动清理**：`BotService.start()` 在群记忆迁移后清理所有群目标的旧版分用户 Chat 映射，并异步尽力删除远端旧会话；首条群消息创建唯一共享会话。旧摘要迁移的参与者查询排除 `__group__`。
 - **范围**：本版仅 QQ 群目标（`kind=group`）；QQ 频道（channel）行为未变，仍按原有会话归属。
-- **测试**：`bot-v071.test.ts` 覆盖同群共享键/真实用户记账、私聊不共享、启动清理；`bot-ai.test.ts` 覆盖真实 `OpenCodeBotAi` 同群单会话与旧映射删除。Bot 定向 **193 pass**、全量 **491**。
+- **测试**：`bot-v071.test.ts` 覆盖同群共享键/真实用户记账、私聊不共享、启动清理；`bot-ai.test.ts` 覆盖真实 `OpenCodeBotAi` 同群单会话与旧映射删除。Bot 定向 **195 pass**、全量 **497**。
 
 ## 6. 网络出站（QQ / OpenCode，Pi 直连）
 
@@ -367,8 +367,8 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 
 - 适配器/验签/队列/命令白名单/发布 TOTP+`PUBLISH`/AI/Chat/记忆/文本分段/图片下载/连接自检/诊断/角色与记忆管理均有进程内测试（不访问真实平台/模型）。
 - QQ 适配器以 mock/fixture 覆盖（op=13/op=0、C2C/群@/频道、attachments 图片、access_token 自检、长文本分段）；AI 使用假 OpenCode HTTP 服务。
-- **v0.7.1 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **193 pass**（30 文件）；全量 `npm test` **491**；新增/更新覆盖群聊共享会话键/串行、真实 `OpenCodeBotAi` 同群单会话与旧映射清理、Bot 启动时旧群映射清理、私聊独立会话；并保留工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
-  群记忆清空空竞态、lastError 派生、Webhook 限流分桶与审计聚合、burst.clear、名称词边界、孤儿清理保守化、关闭排空；**D-20 连续外发 1000ms 间隔**（分段/发送工具多条/兜底/队列统一，按 Bot/AppID 串行）已由 `bot-send-interval.test.ts` 覆盖；生产真实 QQ/OpenCode 2.1.4 的 V10–V13 待真实用户联调。
+- **v0.7.1 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **195 pass**；全量 `npm test` **497**；新增/更新覆盖群聊共享会话键/串行、真实 `OpenCodeBotAi` 同群单会话与旧映射清理、Bot 启动时旧群映射清理、私聊独立会话；v0.7.2 新增 Bot 记忆镜像孤儿清理、BotService 拆分（targets/roles-admin/memory-admin）与 AI 429 负路径；并保留工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
+  群记忆清空空竞态、lastError 派生、Webhook 限流分桶与审计聚合、burst.clear、名称词边界、孤儿清理保守化、关闭排空；**D-20 连续外发 1000ms 间隔**（分段/发送工具多条/兜底/队列统一，按 Bot/AppID 串行）已由 `bot-send-interval.test.ts` 覆盖；生产真实 QQ/OpenCode 2.1.4 的 V10–V13 正向验收通过，真实平台限流/签名漂移/故障负路径仍待联调。
 - 历史基线（v0.5.11）：`npm test` 360、`npm run test:web` 162；v0.6.x 基线见 `CHANGELOG.md`/`docs/ACCEPTANCE.md`。真实平台负路径（限流/签名漂移/故障）仍需部署后联调。
 - **真实平台前置条件**（部署/联调前确认）：
   - QQ 开放平台已创建机器人并配置回调地址，`op=13` 校验通过；已订阅 C2C/群@/频道事件。

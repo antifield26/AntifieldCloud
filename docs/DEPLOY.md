@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.7.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.7.2）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -13,10 +13,11 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v16**（本版 v0.7.1 **无新迁移**；迁移 16 新增 `bot_group_roles` 群聊角色卡表，群消息模式复用 `bot_targets.chat_trigger`；迁移 15 保留 `bot_targets.qq_number` 兼容列；迁移 14 新增 `bot_memory_items`/`bot_memory_state`，迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
+- 当前 schema **v17**（v0.7.2 新增 `audit_write_failures` 单行诊断表；迁移 16 新增 `bot_group_roles` 群聊角色卡表，群消息模式复用 `bot_targets.chat_trigger`；迁移 15 保留 `bot_targets.qq_number` 兼容列；迁移 14 新增 `bot_memory_items`/`bot_memory_state`，迁移 5 结构、迁移 6 孤儿 shares 数据修复、迁移 7 新增 Bot 表、迁移 8 重建 Bot 表扩展 QQ/静默/AI 会话、
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
+- **v0.7.2（已实现，待部署验收；schema v16→v17）**：D-18 收口——审计失败持久化（`audit_write_failures`）、Bot 记忆镜像孤儿清理、Web 导入归档 `BACKUP_IMPORT_RETENTION_DAYS=90`、告警 `ALERT_REPEAT_HOURS=24`、备份锁 30s 心跳、DR-1 `clockSkew`、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径测试；运维侧 Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务、rclone v1.75.2；备份加密/异地副本仍默认关闭。部署前快照、迁移、smoke、Tag/Release 待补。
 - **v0.7.1（已发布：Tag `v0.7.1` + GitHub Release；本版无 schema 迁移，保持 v16）**：群聊共享唯一 OpenCode Chat 会话（合成键 `__group__`，群内按目标串行；私聊仍每用户独立会话）；真实用户仍用于限流/记忆/审计/发送工具令牌。生产 release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16；迁移前快照 `db-predeploy-20261025T031929034Z.sqlite`（sha256 `c61e1e32…47cc`）；部署内 smoke 23/23、完整 Access smoke **33/0/0/2**（env 已清理；Windows 任务标记 0.7.1/脚本 SHA 一致，手动运行 result=0）；启动时清理旧版分用户群映射（生产已清零）；真实 Bot Test 群两个成员进入同一共享会话。首次群聊会自动清理旧映射并尽力删除远端旧会话。
 - **v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；本版无 schema 迁移，保持 v16）**：第六轮审计修复 + 备份整包加密 + 异地副本（默认关闭）；OpenCode **v2.1.4**。
   部署步骤：按 §3.0 走 `deploy.ps1`（自动迁移前快照/回滚/`release.json`/`deploy-history.log`），smoke 使用
@@ -98,6 +99,8 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
 - v0.3 可选 env（写入 `/etc/antifieldcloud/env`，按需）：
   - `BACKUP_RESTORE_ENABLED=true`：启用 Web 备份列表/导入/文件级恢复；默认 false 时恢复计划/执行返回 403。
   - `BACKUP_IMPORT_MAX_BYTES=104857600`：Web 归档导入上限，实际还受 `MAX_UPLOAD_BYTES` 限制。
+  - `BACKUP_IMPORT_RETENTION_DAYS=90`（v0.7.2）：Web 导入归档保留天数，0=永久；活动恢复计划引用的归档不删。
+  - `ALERT_REPEAT_HOURS=24`（v0.7.2）：持续 firing 的重通知间隔（小时），0=关闭；新键优先于旧 `ALERT_COOLDOWN_MINUTES`。
   - `OPENCODE_HTML_MODE=shim|attributes|passthrough`：默认 `shim`；Cloudflare 关闭注入并验证后可切 `passthrough`。
   - `CHUNKED_UPLOAD_ENABLED=true`：启用 5 GiB 分片上传（默认 true）。
   - `CHUNK_SIZE_BYTES=8388608`：块大小，1–100 MiB；Cloudflare 代理下建议 8 MiB。
@@ -179,18 +182,18 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.0 v0.7.1 应用部署步骤（当前版本；schema 保持 v16，无迁移）
+### 3.0 v0.7.2 应用部署步骤（当前版本；schema v16→v17 迁移）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 491（Bot 定向 193）、`test:web` 222、服务端覆盖率 92.75/78.23/87.82、前端 52.31/47.32/45.02、bundle `index-C0QZV4hZ.js` 726.72 kB、check-version `version ok 0.7.1`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 497（Bot 定向 195）、`test:web` 222、服务端覆盖率 92.85/78.35/88.11、前端 52.31/47.32/45.02、check-version `version ok 0.7.2`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.1.4 升级（先于应用部署，按 §3.2）**：备份 v2.1.3 二进制/data/env/unit/MCP 配置 → `opencode upgrade 2.1.4` → 14 项矩阵验收 → 失败回滚；
    升级与回滚矩阵结果记为发布门禁证据。
 4. **部署**：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本执行预检/构建/上传 tar SHA-256 校验/`npm ci --omit=dev`/迁移前 DB 快照/
-   `APP_VERSION=0.7.1` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
-5. **验证**：预期 `/healthz` = `{"ok":true,"version":"0.7.1","schemaVersion":16,...}`；smoke 使用
-   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.1 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`
+   `APP_VERSION=0.7.2` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
+5. **验证**：预期 `/healthz` = `{"ok":true,"version":"0.7.2","schemaVersion":17,...}`；smoke 使用
+   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.2 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4`
    （带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/本地任务安装标记；
    缺状态文件返回 `SKIP:` 不计入 PASS。
 6. **加密/异地（默认关闭，按需）**：按 §9.10 启用备份整包加密（先私钥解密演练）、§9.11 启用异地副本；默认不启用时状态卡显示“未启用/未配置”。
@@ -336,7 +339,7 @@ sudo install -m 0755 /usr/local/lib/nodejs/node-v26.12.1-linux-arm64/bin/node /u
 # 3) 重启并验证；npm 仍为 nvm 的 12.2.0，不改其 symlink
 sudo systemctl restart antifieldcloud
 curl -fsS http://127.0.0.1:3000/healthz
-# 带 Access token 的完整 smoke：-ExpectedVersion 0.7.1 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4
+# 带 Access token 的完整 smoke：-ExpectedVersion 0.7.2 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4
 ```
 
 验证记录（2026-10-23）：`opencode --version=v2.1.3`；Basic `GET/POST/DELETE /api/session` 200/200/204；带 deny-all `permissions` 创建会话 200；生产模型 `opencode-go/deepseek-v4.1-flash` prompt 200、wait 204、assistant content `[{type:"text",text:"OK"}]`、finish=stop；应用 `/healthz` 200、公开 ai 未登录 401；本地 `opencode-shim`/`opencode-proxy` 19 用例通过。
@@ -473,11 +476,12 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 目标：在 Cloudflare 边缘给 `app.<domain>` 增加第二层身份校验（应用 TOTP 仍是最终认证），同时保证 Bot 回调、健康检查与公开分享不被 Access 拦截。
 **Access 配置不在仓库内；未配置/漏配时表现为 Webhook 404/302、`/healthz` 302、公开分享被重定向。**
 
-生产当前配置（2026-10-21，API 创建）：
+生产当前配置（2026-10-21，API 创建；v0.7.2 增补 AI 主机）：
 - 主应用 `AntifieldCloud`：`app.<domain>`，One-time PIN IdP，策略 `Owner allow`（指定邮箱）+ `Smoke service token`（`non_identity`，指定 service token）。
 - 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`。
-- service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库。
-- 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/bots/status` 为 401；smoke 24/24。
+- v0.7.2 新增 `AntifieldCloud AI`：`ai.<domain>`，同样的 One-time PIN + `Owner allow` + `Smoke service token`；未认证 302、service token 401，smoke 通过。当前 Cloudflare 套餐为 Free Website，**无自定义 WAF 规则集**，保留应用侧 SSO/匿名限流与审计去重。
+- service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库；`CF_ACCESS_APP_AI_ID` 也已写入该文件。
+- 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/bots/status` 为 401；`ai` 未认证 302、service token 401；smoke 33/33（含任务标记）。
 
 手工重建/迁移时按以下步骤：
 
@@ -510,7 +514,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 6. **service token（供 smoke/CI）**：Zero Trust → Access → Service Auth → Create Service Token，绑定到主应用 `Service Auth` 策略；
    把 Client ID/Secret 通过命令行传给 smoke：
    ```powershell
-   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.1 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4 `
+   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.2 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 `
      -AccessClientId "<id>" -AccessClientSecret "<secret>"
    ```
    两者必须同时提供，否则脚本直接报错；凭据只用于请求头，不打印/不写仓库。建议专用、最小范围、定期轮换；
@@ -529,7 +533,7 @@ curl -H 'Host: app.example.com' -fsS http://127.0.0.1:3000/healthz
 
 ```powershell
 .\scripts\smoke.ps1 -PiHost 192.0.2.10 -AppUrl https://app.<domain> -AiUrl https://ai.<domain> `
-  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.7.1 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4
+  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.7.2 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4
 ```
 
 配置 Cloudflare Access 后，可在同一命令追加 `-AccessClientId/-AccessClientSecret`：脚本会给公网请求附加
@@ -572,7 +576,7 @@ Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 AC
   v0.5.8 已删除 `BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`，`BOT_AI_VISION_ENABLED` 默认 true。
   **`BOT_SECRET_KEY` 必须与 DB 一起恢复**，否则 QQ AppSecret 不可解密。首次部署后立即跑一次 `backup-secrets.sh` 并确认 PC 拉取成功。
 - 启用 Bot 后：`/api/version` 返回 `botsEnabled:true` 与 `botPlatforms:["qq"]`；`/api/bots/status` 的 `keyConfigured/enabled` 均为 true；
-  `POST /api/bots/:id/check` 与 `GET /api/bots/:id/events` 可读；`smoke.ps1 -ExpectedVersion 0.7.1 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4` 通过（公网 Webhook 路径不应被 Access 302）。
+  `POST /api/bots/:id/check` 与 `GET /api/bots/:id/events` 可读；`smoke.ps1 -ExpectedVersion 0.7.2 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4` 通过（公网 Webhook 路径不应被 Access 302）。
 - QQ Chat/图片：C2C 私聊直接进入 Chat，群/频道仅 @Bot；`BOT_AI_VISION_ENABLED=true` 时 `d.attachments` 图片按 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、
   image mime 白名单与 `BOT_AI_IMAGE_MAX_BYTES` 下载后交给模型；失败/关闭降级。长回复按 2000 字符分段，partial 不自动重试。
 - 自助/管理：`/help`（按身份动态）、`/role`（私聊）、`/reset`、`/forget confirm` 对所有用户开放；非管理员 `/help` 不显示管理命令，`/ask` 已移除；角色/记忆管理 API 只返回元数据，删除不可撤销；诊断事件只含元数据。
@@ -697,7 +701,7 @@ ls -lh /var/lib/antifieldcloud/world-backups/
 - 定时策略（用户 2026-10-21 确认）：仅项目世界备份 timer 统一到周日 12:00；`antifieldcloud-health.timer` 保持每 60s；
   apt-daily/logrotate/fstrim 等系统维护 timer 保持发行版默认，不纳入统一调整。
 
-### 9.4 世界拉取（Windows 周任务，用户手动安装）
+### 9.4 世界拉取（Windows 周任务，v0.7.2 已安装）
 
 ```powershell
 # 先手动跑一次（直连网线可达；脚本在仓库 scripts/ 下，也可自行复制到固定路径）
@@ -713,17 +717,17 @@ Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Tr
 - 两阶段：scp `.part` → 远端 `.sha256` 比对 → 原子改名 → 删除远端归档/旁文件（ack）；**失败不 ack、不动远端**，退出码 1。
 - 本地保留最新 4 份；日志 `%LOCALAPPDATA%\AntifieldCloud\world-pull.log`；远端状态写 `world-pull-status.json`。
 - 回滚/停用：`Unregister-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Confirm:$false`；已拉取归档保留。
-- `install-backup-task.ps1` **只安装每日应用归档任务**，不会创建世界拉取/演练任务。
+- `install-backup-task.ps1` **只安装每日应用归档任务**，不会创建世界拉取/演练任务。v0.7.2 已通过管理员 UAC 安装 `AntifieldCloud-World-Pull`（周日 12:00，Pi 直连 + `D:\Backups\AntifieldCloud`），手动运行成功拉取 3.2 GB 世界归档；恢复演练仍按 §9.5 手动/季度执行。
 
 ### 9.5 恢复演练（drill.ps1，季度/升级前）
 
 ```powershell
 cd "$env:USERPROFILE\projects\AntifieldCloud"
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 16
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 17
 # 加密归档：提供离线私钥（先解密校验 plainSha/plainSize，再复用 drill-verify 全量校验）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 16 -AgeIdentityPath "$env:USERPROFILE\.age\backup-age-identity.txt"
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 17 -AgeIdentityPath "$env:USERPROFILE\.age\backup-age-identity.txt"
 # 需要验证世界解包时（先确认临时盘 ≥3× 世界归档体积）
-.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 16 -IncludeWorld
+.\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 17 -IncludeWorld
 # 回写 Pi 状态（可选）
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -PiHost 192.0.2.10
 ```
@@ -746,7 +750,7 @@ cd "$env:USERPROFILE\projects\AntifieldCloud"
   （nftables 后端，24h ban，dbfile 持久化）；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步恢复封禁 set；
   `antifield` 用户的 `NOPASSWD ALL` sudo 仍属既有残留，风险见 `docs/SECURITY.md` §4。
 
-### 9.7 SSH 仅公钥（00- drop-in）与 24h 回滚
+### 9.7 SSH 仅公钥（00- drop-in）与回滚窗口
 
 目标：禁用密码/键盘交互登录，只允许公钥；用 `00-` 前缀确保在 `sshd_config.d` 中优先于云镜像/发行版其它 drop-in 生效。
 操作前必须保留一个已建立的 SSH 会话/物理键鼠，并确认当前公钥可登录（`ssh -o PreferredAuthentications=publickey ...`）。
@@ -778,8 +782,9 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 ```
 
 - 期望：`passwordauthentication no`、`kbdinteractiveauthentication no`、`pubkeyauthentication yes`；密码登录被拒。
-- **24h 回滚窗口**：保留 `/var/backups/antifieldcloud/sshd_config.$TS` 与 drop-in 的副本，记录切换时间；24h 内确认 smoke、备份、
-  世界拉取、部署脚本（全部依赖公钥）均正常后，再删除备份中的旧配置副本（至少保留一份到下次演练）。
+- **回滚窗口（v0.7.2 已清理）**：保留 `/var/backups/antifieldcloud/sshd_config.$TS` 与 drop-in 的副本，记录切换时间；确认 smoke、备份、
+  世界拉取、部署脚本（全部依赖公钥）均正常后再删除旧配置副本（至少保留一份到下次演练）。v0.7.2 已把 `/root/sshd-before.txt`、
+  `/root/sshd-cloudinit.conf.bak-20261021` 归档到 `/var/backups/antifieldcloud/`（0600 root），活动配置未改。
   回滚：`sudo rm /etc/ssh/sshd_config.d/00-antifield-hardening.conf`（或恢复备份）→ `sudo sshd -t` → `sudo systemctl reload ssh`，
   用密码/公钥重新验证；不要在只剩一条 SSH 连接时回滚。
 - `fail2ban` 已启用：`sshd` jail 使用 nftables 后端、`bantime=24h`，只对公网/直连网段内的失败公钥/密码尝试封禁。
@@ -899,7 +904,7 @@ BACKUP_ARCHIVE_ENCRYPTION=true
 BACKUP_AGE_RECIPIENT_FILE=/etc/antifieldcloud/backup-age.pub
 
 # 4) 私钥完成一次解密演练（PC：先做一次加密 prepare 并拉取，或手工加密/解密小文件验证）
-#    drill.ps1 -BackupRoot <root> -AgeIdentityPath <identity> -ExpectedSchemaVersion 16
+#    drill.ps1 -BackupRoot <root> -AgeIdentityPath <identity> -ExpectedSchemaVersion 17
 sudo systemctl restart antifieldcloud
 
 # 5) 下一次 prepare 生成 .age；PC 拉取（会校验 .meta.json）并 ack；再跑 drill 解密校验

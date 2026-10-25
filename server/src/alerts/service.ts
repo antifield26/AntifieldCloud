@@ -114,6 +114,8 @@ export interface AlertConfigSummary {
   /** 异地副本超期阈值（小时）；0 表示关闭。 */
   offsiteMaxAgeHours: number
   cooldownMinutes: number
+  /** 持续 firing 的重通知间隔（小时）；0=关闭。 */
+  repeatHours: number
   checkIntervalSeconds: number
   lastEvaluatedAt: string | null
 }
@@ -778,10 +780,11 @@ export class AlertService {
     const state = this.db.prepare('SELECT * FROM alert_state WHERE event = ?').get(condition.event) as unknown as
       | AlertStateRow
       | undefined
-    const cooldownMs = this.config.alertCooldownMinutes * 60_000
+    const repeatMs =
+      this.config.alertRepeatHours > 0 ? this.config.alertRepeatHours * 3_600_000 : Number.POSITIVE_INFINITY
     if (condition.status === 'firing') {
       const lastFired = state?.last_fired_at ? Date.parse(state.last_fired_at) : Number.NaN
-      const inCooldown = state?.status === 'firing' && Number.isFinite(lastFired) && nowMs - lastFired < cooldownMs
+      const inCooldown = state?.status === 'firing' && Number.isFinite(lastFired) && nowMs - lastFired < repeatMs
       if (inCooldown) return null
       return transaction(this.db, () => {
         const event = this.insertEvent(condition, 'firing', now)
@@ -1035,6 +1038,7 @@ export class AlertService {
       drillMaxAgeDays: this.config.alertDrillMaxAgeDays,
       offsiteMaxAgeHours: this.config.alertOffsiteMaxAgeHours,
       cooldownMinutes: this.config.alertCooldownMinutes,
+      repeatHours: this.config.alertRepeatHours,
       checkIntervalSeconds: this.config.alertCheckIntervalSeconds,
       lastEvaluatedAt: this.lastEvaluatedAt,
     }

@@ -737,6 +737,8 @@ export interface AlertsConfig {
   /** 异地副本超期阈值（小时，v0.7.0）。 */
   offsiteMaxAgeHours?: number | null
   cooldownMinutes: number | null
+  /** 持续 firing 的重通知间隔（小时，v0.7.2；旧服务端可能不下发）。 */
+  repeatHours?: number | null
   checkIntervalSeconds: number | null
   /** 最近一次告警评估时间。 */
   lastEvaluatedAt?: string | null

@@ -47,6 +47,8 @@ export interface Config {
   /** 备份管理/文件级恢复功能开关；关闭时 API 仍可列出状态但拒绝导入/恢复。 */
   backupRestoreEnabled: boolean
   backupImportMaxBytes: number
+  /** Web 导入归档保留天数；0=永久保留（默认 90）。 */
+  backupImportRetentionDays: number
   backupRestorePlanTtlMinutes: number
   backupRestoreMaxEntries: number
   /** 备份生成（Web prepare/CLI）超时秒数；需覆盖 5 GiB 打包，默认 55 分钟。 */
@@ -93,6 +95,8 @@ export interface Config {
   alertTempC: number
   alertBackupMaxAgeHours: number
   alertCooldownMinutes: number
+  /** 持续 firing 的重通知间隔（小时）；0=不重通知。新键优先，旧 ALERT_COOLDOWN_MINUTES 兼容推导。 */
+  alertRepeatHours: number
   alertCheckIntervalSeconds: number
   piHealthFile: string
   appVersion: string
@@ -302,6 +306,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     backupPullFile: str(merged, 'BACKUP_PULL_FILE', resolve(dataDir, 'backup-pull.json')),
     backupRestoreEnabled: bool(merged, 'BACKUP_RESTORE_ENABLED', false),
     backupImportMaxBytes: int(merged, 'BACKUP_IMPORT_MAX_BYTES', 100 * MIB, 1 * MIB, 1024 * GIB),
+    backupImportRetentionDays: int(merged, 'BACKUP_IMPORT_RETENTION_DAYS', 90, 0, 3650),
     backupRestorePlanTtlMinutes: int(merged, 'BACKUP_RESTORE_PLAN_TTL_MINUTES', 30, 5, 1440),
     backupRestoreMaxEntries: int(merged, 'BACKUP_RESTORE_MAX_ENTRIES', 5000, 1, 100_000),
     backupPrepareTimeoutSec: int(merged, 'BACKUP_PREPARE_TIMEOUT_SEC', 3300, 60, 7200),
@@ -342,6 +347,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertTempC: int(merged, 'ALERT_TEMP_C', 80, 40, 110),
     alertBackupMaxAgeHours: int(merged, 'ALERT_BACKUP_MAX_AGE_HOURS', 48, 6, 720),
     alertCooldownMinutes: int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440),
+    alertRepeatHours:
+      'ALERT_REPEAT_HOURS' in merged
+        ? int(merged, 'ALERT_REPEAT_HOURS', 24, 0, 168)
+        : Math.max(0, int(merged, 'ALERT_COOLDOWN_MINUTES', 360, 5, 1440) / 60),
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
     appVersion: str(merged, 'APP_VERSION', '0.0.0-dev'),

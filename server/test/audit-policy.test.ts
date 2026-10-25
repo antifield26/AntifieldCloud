@@ -2,6 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { audit, getAuditDiagnostics, resetAuditDiagnostics } from '../src/auth/audit.ts'
+import { openDatabase } from '../src/db.ts'
 import { cleanupDir, tempDataDir, testDb } from './helpers.ts'
 
 test('审计成功不累计失败；DB 关闭后审计失败不抛错且诊断可见', () => {
@@ -33,6 +34,39 @@ test('审计成功不累计失败；DB 关闭后审计失败不抛错且诊断�
     } catch {
       // 已关闭。
     }
+    cleanupDir(dir)
+  }
+})
+
+test('审计失败计数持久化：重启后仍可见，DB 不可用时回退内存诊断', () => {
+  const dir = tempDataDir()
+  const path = `${dir}/db.sqlite`
+  const db = openDatabase({ path })
+  try {
+    resetAuditDiagnostics(db)
+    // 删除审计表制造写入失败，但保留持久化诊断表可用。
+    db.exec('DROP TABLE audit_log')
+    audit(db, 'admin', 'test.action', 'target', { ok: true }, '127.0.0.1')
+    const diagnostics = getAuditDiagnostics(db)
+    assert.equal(diagnostics.failureCount, 1)
+    assert.equal(diagnostics.persisted, true)
+    assert.ok(diagnostics.lastError)
+    assert.ok(diagnostics.lastFailureAt)
+  } finally {
+    db.close()
+  }
+  // 重新打开数据库：持久化计数应保留。
+  const reopened = openDatabase({ path })
+  try {
+    const diagnostics = getAuditDiagnostics(reopened)
+    assert.equal(diagnostics.failureCount, 1)
+    assert.equal(diagnostics.persisted, true)
+    assert.ok(diagnostics.lastError)
+    resetAuditDiagnostics(reopened)
+    assert.equal(getAuditDiagnostics(reopened).failureCount, 0)
+  } finally {
+    reopened.close()
+    resetAuditDiagnostics()
     cleanupDir(dir)
   }
 })

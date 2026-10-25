@@ -4,7 +4,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync, utimesSync } from 'node:fs'
 import { join } from 'node:path'
 import { cleanupDir, tempDataDir, testDb } from './helpers.ts'
 import { BotMemoryStore } from '../src/bot/memory.ts'
@@ -202,6 +202,40 @@ test('v0.5.11 记忆：legacy 清理只删已迁移用户的行与镜像，dry-r
     assert.equal(done.files, 1)
     assert.equal(existsSync(mirror), false)
     assert.equal(fixture.memory.legacySummary(BOT_ID, USER), null)
+  } finally {
+    fixture.db.close()
+    cleanupDir(fixture.dir)
+  }
+})
+
+test('v0.7.2 记忆：镜像孤儿清理只删无引用且超期文件，删除 Bot 可定位镜像', () => {
+  const fixture = setup()
+  try {
+    mkdirSync(fixture.memory.dir, { recursive: true })
+    const referencedId = '44444444-4444-4444-8444-444444444444'
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_ai_memories (bot_id, user_id, memory_id, summary, summary_session_id, created_at, updated_at)
+         VALUES (?, ?, ?, '旧摘要正文', NULL, '2026-10-22T00:00:00.000Z', '2026-10-22T00:00:00.000Z')`,
+      )
+      .run(BOT_ID, USER, referencedId)
+    const referenced = join(fixture.memory.dir, `memory-${referencedId}.md`)
+    const orphanOld = join(fixture.memory.dir, 'memory-55555555-5555-4555-8555-555555555555.md')
+    const orphanFresh = join(fixture.memory.dir, 'memory-66666666-6666-4666-8666-666666666666.md')
+    writeFileSync(referenced, '# referenced\n')
+    writeFileSync(orphanOld, '# orphan old\n')
+    writeFileSync(orphanFresh, '# orphan fresh\n')
+    const old = new Date(Date.now() - 48 * 3600_000)
+    utimesSync(orphanOld, old, old)
+    utimesSync(referenced, old, old)
+    const removed = fixture.memory.cleanupOrphanMirrors()
+    assert.equal(removed, 1)
+    assert.ok(existsSync(referenced))
+    assert.equal(existsSync(orphanOld), false)
+    assert.ok(existsSync(orphanFresh))
+    assert.deepEqual(fixture.memory.listBotMemoryIds(BOT_ID), [referencedId])
+    assert.equal(fixture.memory.removeMirrorFiles([referencedId]), 1)
+    assert.equal(existsSync(referenced), false)
   } finally {
     fixture.db.close()
     cleanupDir(fixture.dir)

@@ -36,6 +36,7 @@ function alertFixture(options: AlertFixtureOptions = {}): AlertFixture {
     alertTempC: 80,
     alertBackupMaxAgeHours: 48,
     alertCooldownMinutes: 5,
+    alertRepeatHours: 5 / 60,
     alertCheckIntervalSeconds: 60,
     ...options.config,
   })
@@ -393,6 +394,7 @@ test('GET/POST 告警路由：认证、CSRF、形状与测试限流', async () =
         memoryUsedPct: number
         backupMaxAgeHours: number
         cooldownMinutes: number
+        repeatHours: number
         checkIntervalSeconds: number
       }
     }
@@ -404,6 +406,7 @@ test('GET/POST 告警路由：认证、CSRF、形状与测试限流', async () =
     assert.equal(body.config.tempC, 80)
     assert.equal(body.config.backupMaxAgeHours, 48)
     assert.equal(body.config.cooldownMinutes, 5)
+    assert.equal(body.config.repeatHours, 5 / 60)
     assert.equal(body.config.checkIntervalSeconds, 60)
 
     const noCsrf = await app.inject({ method: 'POST', url: '/api/alerts/test', headers: csrfHeadersOnly() })

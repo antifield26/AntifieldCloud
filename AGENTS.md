@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.1（已发布：Tag `v0.7.1` + GitHub Release；生产 release `20261025T031856Z`/代码提交 `d8bdfc5`；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本补丁修复群聊会话归属：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话（模型可见多用户历史），群内 Chat 按目标串行；私聊仍每用户独立会话；真实用户仍用于限流、记忆/审计/发送工具令牌，用户消息继续带用户名 head；启动时清理旧版分用户群映射。此前 v0.7.0 语义为**审计修复 + 备份整包加密 + 异地副本（默认关闭）**：第六轮深度审计 P0=0/P1=3/P2=26/P3=73 全部处置（P3 可修小项随本版修、架构性/已接受项写入明确残余）；备份归档可用独立 age 公钥整包加密（Web 不持私钥，`.age` 在 Web 一律 `409 archive_encrypted`）；PC 端可链感知上传密文到异地；Bot AI 工具隔离降级 fail-closed（`503 bot_ai_tool_isolation_unavailable`）；群共享记忆归属改为稳定 `member_openid`；Bot 连续外发文本最小间隔 1000ms（按 Bot/AppID 串行，D-20）；模型 DSML 原始工具调用文本不回显（只提取正文/固定兜底，审计 `bot.ai.tool_call_text`）；审计写入事务外 best-effort 并经 `/api/version.audit` 暴露失败计数。**schema 保持 v16（无迁移）**；**OpenCode v2.1.4**（已于 2026-10-25 08:21 CST 升级；升级/回滚与矩阵见 `docs/DEPLOY.md` §3.2，V1–V9/V14 通过，V10–V13 用户真实 QQ 验收通过）。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.7.2（已实现，待部署验收；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版收口 D-18 可落地残余：审计写入失败诊断持久化（`audit_write_failures`，schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 **90 天**保留（`BACKUP_IMPORT_RETENTION_DAYS`）、告警持续 firing **24h** 重通知（`ALERT_REPEAT_HOURS`）、备份锁 **30s** 心跳续租、DR-1 `clockSkew` 状态、BotService 拆分（`targets.ts`/`roles-admin.ts`/`memory-admin.ts`）与平台/模型负路径测试；运维侧完成 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 24h 回滚窗口清理、Windows 世界拉取周任务与 rclone v1.75.2 安装。备份整包加密/异地副本仍默认关闭（异地副本待 rclone remote）。上一发布 v0.7.1（群聊共享唯一 OpenCode Chat 会话，Tag/Release；生产 release `20261025T031856Z`/commit `d8bdfc5`）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.1，2026-10-25 本地门禁）：`npm test` **491**（server+scripts，含 scripts 29；新增 v0.7.1 群会话 4 例）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.75% / Branches 78.23% / Functions 87.82%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%、build `index-C0QZV4hZ.js` 726.72 kB；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.1 已部署并完成真实群聊验收**（release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16；部署内 smoke 23/23、完整 Access smoke **33/0/0/2**（env 已清理；Windows 任务标记 0.7.1/脚本 SHA 一致，手动任务运行 result=0）；启动后旧分用户群映射清零；Bot Test 群两个成员 3 条 prompt 进入同一 `__group__` 会话，旧映射已清理）；Tag `v0.7.1` + GitHub Release 已发布。上一发布 v0.7.0（Tag/Release）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 验收通过。
+当前基线（v0.7.2，2026-10-25 本地门禁）：`npm test` **497**（server+scripts，含 scripts 29；新增审计持久化/Bot 镜像/导入保留/告警重通知/锁心跳/负路径测试）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.85% / Branches 78.35% / Functions 88.11%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用仍为 **v0.7.1**（release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16）；v0.7.2 已实现，待部署验收。上一发布 v0.7.1（Tag/Release）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -57,7 +57,7 @@ server/src/
   main.ts            进程入口：配置、DB、Fastify、信号退出、启动指标采样
   config.ts          环境变量解析与校验（非法值/不安全组合失败即退出）
   logger.ts          Fastify/pino 日志与脱敏
-  db.ts              SQLite 打开、迁移（当前 schema v16）、事务辅助
+  db.ts              SQLite 打开、迁移（当前 schema v17）、事务辅助
   auth/              scrypt、TOTP、会话、CSRF、限流、恢复码、审计（字段截断 + 失败诊断）、Bot 发布 TOTP 再认证
   files/             存储、上传、配额、搜索、预览、回收站、files.origin 可见性、物理孤儿回收
   uploads/           分片上传会话/块索引、配额预留、拼接、过期与终态清理
@@ -70,7 +70,8 @@ server/src/
                      原始 DSML 工具调用文本只提取正文或固定兜底，不回显协议标记。
                      行为保持拆分：inbound.ts（入站验签/限流/命令与 Chat 分发）、chat.ts（Chat 回合/工具缓冲/记忆触发）、
                      diagnostics.ts（事件/入站目标/指标/最近错误）、queue.ts（投递/发布状态机），
-                     BotService 保留 facade/依赖装配
+                     BotService 保留 facade/依赖装配；v0.7.2 已抽出 targets.ts（目标 CRUD）、
+                     roles-admin.ts（用户/群角色卡管理）、memory-admin.ts（记忆管理），service.ts 只做 facade
   backups/           归档导入/校验、文件级恢复（skippedMissing）、Web 对加密归档的 409 边界、状态只读
   dashboard/         主机指标、服务状态、备份状态（含加密/异地）、Bot 开关、轻量存储用量
   metrics/           60s 主机指标采样、按范围分桶聚合、30 天保留清理
@@ -115,8 +116,8 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 6. 数据库与数据
 
-- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，当前 schema **v16**。
-  **本版无 schema 迁移**：加密归档通过归档名后缀 `.tar.gz.age` + `manifest_json`（含 `encrypted:true`）识别，不新增列/表；群共享记忆归属迁移复用现有 `bot_memory_items` 行（一次性 meta 标记 `bot_group_memory_owner_migrated_v1`），不改表结构。
+- schema 迁移集中在 `server/src/db.ts` 的 `MIGRATIONS`，启动时按 `meta.schema_version` 顺序执行；迁移只追加，当前 schema **v17**（v0.7.2 新增 `audit_write_failures` 单行诊断表，不改既有表）。
+  v0.7.2 仅新增该表；备份加密/异地副本仍通过归档名后缀、sidecar 与 `manifest_json` 识别，不新增列/表；群共享记忆归属迁移复用现有 `bot_memory_items` 行（一次性 meta 标记 `bot_group_memory_owner_migrated_v1`）。
   数据库 schema 高于程序支持版本时拒绝启动。
 - 时间统一存 ISO 8601 UTC 字符串；展示用 `Asia/Shanghai`。
 - 文件物理路径 `DATA_DIR/files/<id 前两位>/<id>`；上传先写 `DATA_DIR/tmp/` 再原子 rename；物理孤儿回收只删除超期且 DB 无行的 id 形状文件。
@@ -159,7 +160,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - 备份/灾备状态文件由脚本写入、应用只读：`/var/lib/antifieldcloud/world-backup-status.json`、`world-pull-status.json`、`drill-status.json`、`backup-offsite-status.json`（0644）；Dashboard/Settings 与告警读取。
 - systemd 加固：`antifieldcloud.service` 已加 `CapabilityBoundingSet=`（空）、`RestrictAddressFamilies`、`PrivateDevices`、`ProtectClock/Hostname/KernelLogs`、`RestrictSUIDSGID/Realtime` 等；`antifieldcloud-world.service` 同样加固并有 `flock`、4h 超时。
 - nftables：默认拒绝入站；22 仅 `192.0.2.0/24` + `198.51.100.0/24`（TEST-NET 占位，安装前替换为实际直连/校园网段）且新建连接限速 20/min；25565 仅同网段；25575 仅 loopback；DHCP 仅 `eth0`/`wlan0`。**改 22 网段前先确认当前 SSH 来源在允许集合内**。
-- SSH 仅公钥：`/etc/ssh/sshd_config.d/00-` drop-in 先于其它配置生效（禁用密码/键盘交互，保留公钥）；旧配置备份保留 **24h 回滚窗口**，回滚见 `docs/DEPLOY.md` §9.7；`fail2ban` 已安装并启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set。**手工 `systemctl reload nftables` 不触发该 drop-in，仍需 `systemctl restart fail2ban`**。主机级配置模板见 `deploy/host/`（sshd/fail2ban/cloudflared/journald/log2ram），`backup-secrets.sh --include-host-config` 可纳入密钥包。
+- SSH 仅公钥：`/etc/ssh/sshd_config.d/00-` drop-in 先于其它配置生效（禁用密码/键盘交互，保留公钥）；v0.7.2 已把旧回滚备份归档到 `/var/backups/antifieldcloud/`（0600 root）并清理 `/root` 残留，活动配置未改；`fail2ban` 已安装并启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set。**手工 `systemctl reload nftables` 不触发该 drop-in，仍需 `systemctl restart fail2ban`**。主机级配置模板见 `deploy/host/`（sshd/fail2ban/cloudflared/journald/log2ram），`backup-secrets.sh --include-host-config` 可纳入密钥包。
 - Bot 环境变量：`BOT_ENABLED`（默认 **false**）、`BOT_SECRET_KEY`（32 字节 base64，`bootstrap-env.sh` 仅在缺失时生成，`--force` 复用旧值）；`BOT_WEBHOOK_MAX_BODY_BYTES=262144`、`BOT_DELIVERY_INTERVAL_SECONDS=30`、`BOT_DELIVERY_MAX_ATTEMPTS=5`、`BOT_EVENT_RETENTION_DAYS=7`、`BOT_COMMAND_RATE_PER_MINUTE=120`、`BOT_PUBLISH_MAX_SCHEDULED_DAYS=30`、`BOT_MAX_BOTS=10`。
   AI：`BOT_AI_ENABLED=false`、`BOT_AI_PROVIDER=`、`BOT_AI_MODEL=`、`BOT_AI_TIMEOUT_SECONDS=60`、`BOT_AI_MAX_PROMPT_CHARS=2000`、`BOT_AI_RATE_PER_HOUR=120`、`BOT_AI_SESSION_RETENTION_DAYS=7`、`BOT_AI_MAX_REPLY_CHARS=4000`、`BOT_AI_VISION_ENABLED=true`、`BOT_AI_IMAGE_MAX_BYTES=10485760`、`BOT_AI_MEMORY_MAX_CHARS=4096`、`BOT_AI_MEMORY_RETENTION_DAYS=365`、`BOT_AI_MEMORY_BATCH_MESSAGES=3`、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；
   Chat/记忆：`BOT_CHAT_RATE_PER_MINUTE=30`、`BOT_MEMORY_MAX_ITEMS=200`、`BOT_MEMORY_PROMPT_MAX_CHARS=3000`、`BOT_MEMORY_PROMPT_MAX_ITEMS=12`、`BOT_MEMORY_TTL_EPISODE_DAYS=90`、`BOT_MEMORY_TTL_TASK_DAYS=30`；
@@ -168,11 +169,12 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   **连续外发：生产固定 1000ms 最小间隔（按 Bot/AppID 串行，代码内 `DEFAULT_SEND_INTERVAL_MS`；无 env 开关；测试注入 0）。**
   搜索：`BOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`BOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。
+- 备份/灾备新增 env：`BACKUP_IMPORT_RETENTION_DAYS=90`（0=永久）、`ALERT_REPEAT_HOURS=24`（0=关闭；旧 `ALERT_COOLDOWN_MINUTES` 仅兼容保留）。
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对 `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。`BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（QQ 开放平台）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；仅 QQ 官方 Bot。
 - 测试证据边界：平台适配/Chat/记忆/图片/自检/诊断/备份 tar/告警投递以进程内 mock/夹具为主，未做真实 QQ 平台限流/签名漂移/故障负路径；真实 QQ 消息验收记录见 `docs/ACCEPTANCE.md`。
-- Windows 世界拉取（`scripts/world-pull.ps1`，周度）、恢复演练（`scripts/drill.ps1`）与异地副本任务由用户手动安装/配置；`install-backup-task.ps1` 安装每日应用归档拉取任务（可选 offsite）。
-- Cloudflare：zone 使用占位 `example.com`；tunnel 名称 `pi`；`mc.<domain>` CNAME 到 SakuraFRP，**不要改**；`app/ai` 的 DNS 由用户手动添加；Access 主应用 + 4 个 bypass + service token 已在生产配置（见 `docs/DEPLOY.md` §5.2），service token 只保存在 gitignored `.local/cf-access.env`；严格 CSP 会拦截 Web Analytics/Challenge 注入，需后台关闭自动注入或接受报错。生产探测确认 `ai` 主机未受 Access 保护，应用侧已加未认证限流与审计去重，建议后续在 Cloudflare 后台补 Access/WAF。
+- Windows 世界拉取（`scripts/world-pull.ps1`，周度）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证成功；恢复演练（`scripts/drill.ps1`）保持手动/季度；异地副本任务待 rclone remote 后安装。`install-backup-task.ps1` 安装每日应用归档拉取任务（可选 offsite）。
+- Cloudflare：zone 使用占位 `example.com`；tunnel 名称 `pi`；`mc.<domain>` CNAME 到 SakuraFRP，**不要改**；`app/ai` 的 DNS 由用户手动添加；Access 主应用 + 4 个 bypass + service token 已在生产配置（见 `docs/DEPLOY.md` §5.2），v0.7.2 已为 `ai` 新增 Access 应用（Owner allow + Smoke service token；Free 套餐无自定义 WAF），service token 只保存在 gitignored `.local/cf-access.env`；严格 CSP 会拦截 Web Analytics/Challenge 注入，需后台关闭自动注入或接受报错。
 - 旧项目 PiForge 的残留（sudoers 注释、禁用的计划任务）保持原样，不继承、不清理。
 - 公开仓库中的域名/IP/网段/备份路径均为示例/占位值；本机实际部署信息见 `.local/DEPLOYMENT.md`（gitignored，不提交）。
 
@@ -182,11 +184,11 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 2. 交互式运行 provisioning，设置密码、扫描 TOTP、保存恢复码。
 3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。
 4. 离线保存 age 私钥（密钥包与备份整包加密各一套，互不复用）；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
-5. 手动安装 Windows 周度世界拉取任务（`scripts/world-pull.ps1`，`-PiHost/-BackupRoot`）与恢复演练任务/手跑（`scripts/drill.ps1`，建议季度或升级前；schema 期望值默认来自 `deploy/tool-versions.json`）；确认直连网线可通。
+5. Windows 周度世界拉取任务（`scripts/world-pull.ps1`）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证；恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本任务待 rclone remote。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在允许网段内（模板为 TEST-NET 占位，先替换为实际网段，否则会锁死）；保留物理键鼠/已建立 SSH 作为回滚通道。
 7. 备份整包加密启用（默认关闭）：离线生成独立 age 密钥 → Pi 写公钥（root、组/其他不可写）→ 用私钥完成一次 `age -d` 解密与 `drill.ps1 -AgeIdentityPath` 演练 → 设 `BACKUP_ARCHIVE_ENCRYPTION=true` 并重启 → 下一次 prepare 生成 `.age` → PC 拉取/ack → 再演练。回滚：关开关恢复明文，已生成 `.age` 保留（仅 PC 可解密）。
 8. 异地副本启用（默认关闭）：PC 安装配置 rclone remote/凭据 → `install-backup-task.ps1 -InstallOffsiteTask -OffsiteRemote …` → 手跑一次确认状态 JSON 回写与 `plaintextSkipped=0` → 确认告警阈值 `ALERT_OFFSITE_MAX_AGE_HOURS`。
-9. Cloudflare Access：已通过 API 配置主应用（One-time PIN + Owner allow + Service Auth）与 4 个 bypass；service token 存放在 PC `.local/cf-access.env`（gitignored）。轮换 service token 后同步该文件，并用 `smoke.ps1 -AccessClientId/-AccessClientSecret` 重跑；配置用高权限 API Token 完成后应 Revoke。
+9. Cloudflare Access：已通过 API 配置主应用（One-time PIN + Owner allow + Service Auth）与 4 个 bypass；v0.7.2 已为 `ai` 新增 Access 应用（Owner allow + Smoke service token；Free 无自定义 WAF）。service token 存放在 PC `.local/cf-access.env`（gitignored）。轮换 service token 后同步该文件，并用 `smoke.ps1 -AccessClientId/-AccessClientSecret` 重跑；配置用高权限 API Token 完成后应 Revoke。
 10. Bot 平台后台注册（QQ 官方 Bot，用户在 q.qq.com 完成，Agent 不代替）：创建机器人取得 AppID/AppSecret → 在 `/bots` 新建 QQ Bot 录入 → 回调地址填 `https://app.<domain>/api/bot/webhook/<botId>` 并处理 `op=13` 校验 → 订阅 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE` → 登记目标 → 开启 `BOT_ENABLED=true` 并重启。图片理解需 `BOT_AI_ENABLED=true` 且模型支持 image。
 11. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/BACKUP.md` §7 与 `docs/ACCEPTANCE.md`。
-12. SSH 仅公钥切换后保留 **24h 回滚窗口**：确认新会话/自动化脚本（smoke、备份、世界拉取）均能公钥登录后，再按 `docs/DEPLOY.md` §9.7 结束回滚窗口。
+12. SSH 仅公钥切换后的回滚窗口已在 v0.7.2 清理：旧备份归档到 `/var/backups/antifieldcloud/`（0600 root），活动配置未改；后续如再次变更仍按 `docs/DEPLOY.md` §9.7 保留 24h 回滚窗口。

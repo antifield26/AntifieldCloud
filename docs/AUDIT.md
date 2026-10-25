@@ -559,3 +559,9 @@
 - 第六轮去重后 **P0=0、P1=3、P2=26、P3=73**；P1/P2 全部在本版处置，P3 可修小项随版修、架构性/已接受项写入明确残余（不删除、不静默）。
 - 无 schema 迁移（保持 **v16**）；OpenCode 已按 §7 矩阵在生产只读升级 **v2.1.4**（V1–V9/V14 通过，V10–V13 待应用部署后真实 QQ 联调）。
 - 本版为审计修复 + 灾备特性 Minor，不是第三方独立审计；生产结论以发布门禁、部署、smoke、升级矩阵、drill 与用户验收为准。
+
+### 11. v0.7.2 残余收口记录
+
+- **已收口**：审计失败计数持久化（schema v17）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留（DR-7）、告警 24h 重通知（DR-22）、备份锁心跳（DR-23）、DR-1 `clockSkew` 状态、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径夹具补强。
+- **仍保留**：单进程/HA、内存限流、同步维护、SQLite `synchronous=NORMAL`、单 SD/LUKS、NOPASSWD sudo、RCON 监听、Cloudflare 明文、真实平台负路径（mock-only 之外的线上联调）、备份加密临时明文窗口/私钥丢失、异地副本单远端、群记忆 `legacy:` 不可恢复等，按 `docs/ARCHITECTURE.md` §11 与 `docs/SECURITY.md` §4 管理。
+- **V10–V13**：用户真实 QQ 正向验收通过；真实平台限流/签名漂移/故障负路径仍待部署后联调，不再表述为“未验收”。

@@ -15,7 +15,6 @@ import {
   BotInboundHandler,
   cleanText,
   errorShortCode,
-  normalizeGroupReplyMode,
   sanitizeExternalText,
   sentExternalIdsOf,
   type BurstTimingLike,
@@ -36,7 +35,6 @@ import {
   type BotGroupRoleSummary,
   type BotHealthCheck,
   type BotInboundTarget,
-  type BotInboundTargetRow,
   type BotMemoryItemSummary,
   type BotMemoryGroupSummary,
   type BotMemoryKind,
@@ -55,19 +53,21 @@ import {
   type BotTarget,
   type BotTargetRow,
   type BotToolIsolationStatus,
-  type GroupReplyMode,
   type InboundVerification,
 } from './types.ts'
 import { decodeBotKey, decryptBotSecret, encryptBotSecret } from './crypto.ts'
 import { describeBotError } from './errors.ts'
-import { BotMemoryStore, GROUP_MEMORY_PREFIX, groupMemoryScope } from './memory.ts'
+import { BotMemoryStore, groupMemoryScope } from './memory.ts'
 import {
   BotChatRoleStore,
   normalizeRolePrompt,
+  roleValidationMessage,
   validateRole,
-  type RoleValidationError,
 } from './roles.ts'
 import { BotGroupRoleStore } from './group-roles.ts'
+import { BotTargetAdmin, type CreateTargetInput, type UpdateTargetInput } from './targets.ts'
+import { BotMemoryAdmin } from './memory-admin.ts'
+import { BotRoleAdmin } from './roles-admin.ts'
 import { GROUP_CHAT_SESSION_USER_ID } from './session.ts'
 import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
 import { QqAdapter, DEFAULT_SEND_INTERVAL_MS } from './adapters/qq.ts'
@@ -86,8 +86,6 @@ import {
 } from './templates.ts'
 
 const NAME_MAX = 80
-const TARGET_MAX = 128
-const MAX_TARGETS_PER_BOT = 100
 /** QQ 单条文本上限；发布内容在入队前先校验。 */
 const PUBLISH_TEXT_MAX = BOT_TEXT_LIMITS.qq
 /** 结构化记忆类型的中文标签；仅用于 /memory 状态展示（不展示 key/value）。 */
@@ -110,27 +108,6 @@ const GROUP_MEMORY_OWNER_MIGRATION_KEY = 'bot_group_memory_owner_migrated_v1'
 const WEBHOOK_UNAUTHENTICATED_PER_MINUTE = 120
 /** Webhook 已验签事件每 Bot 分钟桶上限（业务限流，验签通过后才扣减）。 */
 const WEBHOOK_AUTHENTICATED_PER_MINUTE = 300
-
-function roleValidationMessage(error: RoleValidationError): string {
-  switch (error) {
-    case 'role_name_empty':
-      return '请提供名字。用法：/role set <名字> <设定>'
-    case 'role_name_too_long':
-      return '名字过长，请控制在 32 字以内。'
-    case 'role_name_has_whitespace':
-      return '名字不能包含空格。'
-    case 'role_name_invalid_chars':
-      return '名字不能包含方括号等符号。'
-    case 'role_prompt_empty':
-      return '请提供设定内容。'
-    case 'role_prompt_too_long':
-      return '设定过长，请控制在 1000 字以内。'
-    case 'role_prompt_reserved_marker':
-      return '设定包含不支持的格式，请换一种写法。'
-    default:
-      return '设定格式无法识别。'
-  }
-}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -161,30 +138,6 @@ export interface UpdateBotInput {
   enabled?: boolean
   config?: Record<string, unknown>
   token?: string
-}
-
-export interface CreateTargetInput {
-  externalId: string
-  label: string
-  kind: 'channel' | 'user' | 'group'
-  allowCommands: boolean
-  allowNotifications: boolean
-  allowChat?: boolean
-  /** 仅群聊目标：mention=仅 @/名字提及；all=全部消息（实验性）。 */
-  groupReplyMode?: GroupReplyMode
-  quietStartMinute?: number | null
-  quietEndMinute?: number | null
-}
-
-export interface UpdateTargetInput {
-  label?: string
-  kind?: 'channel' | 'user' | 'group'
-  allowCommands?: boolean
-  allowNotifications?: boolean
-  allowChat?: boolean
-  groupReplyMode?: GroupReplyMode
-  quietStartMinute?: number | null
-  quietEndMinute?: number | null
 }
 
 export interface CreatePublishInput {
@@ -225,8 +178,11 @@ export class BotService {
   /** Webhook 拒绝/限流审计的窗口聚合计数（避免每次 401/429 各写一条审计）。 */
   private readonly webhookAuditWindows = new Map<string, { minute: number; count: number }>()
   private readonly memory: BotMemoryStore
+  private readonly memoryAdmin: BotMemoryAdmin
   private readonly roles: BotChatRoleStore
   private readonly groupRoles: BotGroupRoleStore
+  private readonly roleAdmin: BotRoleAdmin
+  private readonly targetsAdmin: BotTargetAdmin
   private readonly connectivity: BotConnectivityMonitor
   /** 入站 Webhook 处理（验签/限流/去重/命令与 Chat 路由）；行为与重构前一致。 */
   private readonly inbound: BotInboundHandler
@@ -289,6 +245,35 @@ export class BotService {
     })
     this.roles = new BotChatRoleStore(deps.db)
     this.groupRoles = new BotGroupRoleStore(deps.db)
+    this.roleAdmin = new BotRoleAdmin({
+      db: this.db,
+      requireEnabled: () => this.requireEnabled(),
+      botRow: (id) => this.botRow(id),
+      targetRowForBot: (botId, targetId) => this.targetRowForBot(botId, targetId),
+      roles: this.roles,
+      groupRoles: this.groupRoles,
+      inboundUserNames: (botId) => this.inboundUserNames(botId),
+      deleteRemoteSessions: (botId, filter) => this.deleteRemoteSessions(botId, filter),
+      audit: this.deps.audit,
+    })
+    this.memoryAdmin = new BotMemoryAdmin({
+      requireEnabled: () => this.requireEnabled(),
+      botRow: (id) => this.botRow(id),
+      memory: this.memory,
+      audit: this.deps.audit,
+      cancelUserMemory: (botId, userId) => this.cancelUserMemory(botId, userId),
+      cancelGroupMemoryScope: (botId, scope) => this.cancelGroupMemoryScope(botId, scope),
+    })
+    this.targetsAdmin = new BotTargetAdmin({
+      db: this.db,
+      requireEnabled: () => this.requireEnabled(),
+      botRow: (id) => this.botRow(id),
+      targetRow: (id) => this.targetRow(id),
+      targetRowForBot: (botId, targetId) => this.targetRowForBot(botId, targetId),
+      audit: this.deps.audit,
+      groupRoles: this.groupRoles,
+      dropGroupTargetMemory: (botId, externalId) => this.dropGroupTargetMemory(botId, externalId),
+    })
     this.resetSessionsForToolMode()
     this.connectivity = new BotConnectivityMonitor({
       enabled: deps.config.botEnabled && deps.config.botConnectivityEnabled,
@@ -564,127 +549,32 @@ export class BotService {
   deleteBot(id: string): void {
     this.requireEnabled()
     this.botRow(id)
+    const mirrorIds = this.memory.listBotMemoryIds(id)
     this.db.prepare('DELETE FROM bots WHERE id = ?').run(id)
+    // DB 行已删；镜像清理 best-effort，失败不改变删除结果。
+    this.memory.removeMirrorFiles(mirrorIds)
     this.deps.audit('bot.delete', id)
   }
 
   listTargets(botId: string): BotTarget[] {
-    this.requireEnabled()
-    this.botRow(botId)
-    const rows = this.db
-      .prepare('SELECT * FROM bot_targets WHERE bot_id = ? ORDER BY created_at ASC')
-      .all(botId) as unknown as BotTargetRow[]
-    return rows.map(toTarget)
+    return this.targetsAdmin.listTargets(botId)
   }
 
   /** 最近入站目标发现：只含平台 ID/类型/用户名/时间，不含消息正文。 */
   listInboundTargets(botId: string, limit = 50): BotInboundTarget[] {
-    this.requireEnabled()
-    this.botRow(botId)
-    const rows = this.db
-      .prepare('SELECT * FROM bot_inbound_targets WHERE bot_id = ? ORDER BY last_seen_at DESC LIMIT ?')
-      .all(botId, Math.max(1, Math.min(200, limit))) as unknown as BotInboundTargetRow[]
-    return rows.map((row) => ({
-      botId: row.bot_id,
-      targetExternalId: row.target_external_id,
-      targetKind: row.target_kind,
-      userId: row.user_id,
-      userName: row.user_name,
-      isDirect: row.is_direct === 1,
-      lastSeenAt: row.last_seen_at,
-    }))
+    return this.targetsAdmin.listInboundTargets(botId, limit)
   }
 
   createTarget(botId: string, input: CreateTargetInput): BotTarget {
-    this.requireEnabled()
-    this.botRow(botId)
-    const externalId = cleanText(input.externalId, TARGET_MAX)
-    const label = cleanText(input.label, NAME_MAX)
-    if (!externalId || !label) throw badRequest('目标 ID 与名称不能为空')
-    const count = this.db.prepare('SELECT COUNT(*) AS c FROM bot_targets WHERE bot_id = ?').get(botId) as { c: number }
-    if (count.c >= MAX_TARGETS_PER_BOT) throw badRequest('目标数量过多')
-    const quiet = this.normalizeQuiet(input.quietStartMinute, input.quietEndMinute)
-    const groupReplyMode = normalizeGroupReplyMode(input.groupReplyMode, input.kind)
-    const id = newId()
-    try {
-      this.db
-        .prepare(
-          `INSERT INTO bot_targets
-           (id, bot_id, external_id, label, kind, allow_commands, allow_notifications, allow_chat, chat_trigger, quiet_start_minute, quiet_end_minute, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          id,
-          botId,
-          externalId,
-          label,
-          input.kind,
-          input.allowCommands ? 1 : 0,
-          input.allowNotifications ? 1 : 0,
-          input.allowChat ? 1 : 0,
-          groupReplyMode,
-          quiet.start,
-          quiet.end,
-          nowIso(),
-        )
-    } catch {
-      throw new AppError(409, 'conflict', '该目标已存在')
-    }
-    this.deps.audit('bot.target.create', `${botId}:${id}`, { kind: input.kind })
-    return toTarget(this.targetRow(id))
+    return this.targetsAdmin.createTarget(botId, input)
   }
 
   updateTarget(botId: string, targetId: string, input: UpdateTargetInput): BotTarget {
-    this.requireEnabled()
-    this.botRow(botId)
-    const row = this.targetRowForBot(botId, targetId)
-    const label = input.label !== undefined ? cleanText(input.label, NAME_MAX) : row.label
-    if (!label) throw badRequest('目标名称不能为空')
-    const kind = input.kind ?? row.kind
-    const groupReplyMode = normalizeGroupReplyMode(
-      input.groupReplyMode === undefined
-        ? kind === row.kind
-          ? row.chat_trigger
-          : undefined
-        : input.groupReplyMode,
-      kind,
-    )
-    const quiet = this.normalizeQuiet(
-      input.quietStartMinute === undefined ? row.quiet_start_minute : input.quietStartMinute,
-      input.quietEndMinute === undefined ? row.quiet_end_minute : input.quietEndMinute,
-    )
-    this.db
-      .prepare(
-        `UPDATE bot_targets
-         SET label = ?, kind = ?, allow_commands = ?, allow_notifications = ?, allow_chat = ?, chat_trigger = ?,
-             quiet_start_minute = ?, quiet_end_minute = ?
-         WHERE id = ?`,
-      )
-      .run(
-        label,
-        kind,
-        input.allowCommands === undefined ? row.allow_commands : input.allowCommands ? 1 : 0,
-        input.allowNotifications === undefined ? row.allow_notifications : input.allowNotifications ? 1 : 0,
-        input.allowChat === undefined ? row.allow_chat : input.allowChat ? 1 : 0,
-        groupReplyMode,
-        quiet.start,
-        quiet.end,
-        targetId,
-      )
-    if (kind !== 'group') this.groupRoles.remove(botId, targetId)
-    // 目标从群聊改为其它类型后，原群共享记忆 scope 会变成不可管理的孤儿，直接清理。
-    if (row.kind === 'group' && kind !== 'group') this.dropGroupTargetMemory(botId, row.external_id)
-    this.deps.audit('bot.target.update', `${botId}:${targetId}`)
-    return toTarget(this.targetRowForBot(botId, targetId))
+    return this.targetsAdmin.updateTarget(botId, targetId, input)
   }
 
   deleteTarget(botId: string, targetId: string): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    const row = this.targetRowForBot(botId, targetId)
-    this.db.prepare('DELETE FROM bot_targets WHERE id = ?').run(targetId)
-    if (row.kind === 'group') this.dropGroupTargetMemory(botId, row.external_id)
-    this.deps.audit('bot.target.delete', `${botId}:${targetId}`)
+    this.targetsAdmin.deleteTarget(botId, targetId)
   }
 
   /** 目标删除/改类型后清理其群共享记忆 scope（含状态/旧摘要），避免孤儿记忆无法再被管理。 */
@@ -699,134 +589,40 @@ export class BotService {
    * userName 取自最近入站目标记录（没有则为 null）。
    */
   listRoles(botId: string, options: { limit?: number; offset?: number } = {}): { items: BotRoleSummary[]; total: number } {
-    this.requireEnabled()
-    this.botRow(botId)
-    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(options.limit) ? (options.limit as number) : 20)))
-    const offset = Math.max(0, Math.floor(Number.isFinite(options.offset) ? (options.offset as number) : 0))
-    const names = this.inboundUserNames(botId)
-    const items = this.roles.list(botId, limit, offset).map((item) => ({
-      ...item,
-      userName: names.get(item.userId) ?? null,
-    }))
-    return { items, total: this.roles.count(botId) }
+    return this.roleAdmin.listRoles(botId, options)
   }
 
   /** 启用/停用指定用户的角色卡；不存在时 404。 */
   setRoleEnabled(botId: string, userId: string, enabled: boolean): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    const card = this.roles.get(botId, userId)
-    if (!card || !this.roles.setEnabled(botId, userId, enabled)) throw notFound('角色卡不存在')
-    this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
-      action: enabled ? 'enable' : 'disable',
-      user: userId.slice(0, 64),
-      nameLength: card.name.length,
-      promptLength: card.prompt.length,
-      at: nowIso(),
-    })
+    this.roleAdmin.setRoleEnabled(botId, userId, enabled)
   }
 
   /** 删除角色卡，并清理该 Bot×用户的全部会话映射与远端会话（下次 Chat 重新创建会话）。 */
   deleteRole(botId: string, userId: string): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    const card = this.roles.get(botId, userId)
-    if (!card || !this.roles.remove(botId, userId)) throw notFound('角色卡不存在')
-    this.deleteRemoteSessions(botId, { userId })
-    this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(botId, userId)
-    this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
-      action: 'delete',
-      user: userId.slice(0, 64),
-      nameLength: card.name.length,
-      promptLength: card.prompt.length,
-      at: nowIso(),
-    })
+    this.roleAdmin.deleteRole(botId, userId)
   }
 
   /** 群聊角色卡列表：始终列出群聊目标，未配置时 role 元数据为空。 */
   listGroupRoles(botId: string): { items: BotGroupRoleSummary[] } {
-    this.requireEnabled()
-    this.botRow(botId)
-    return { items: this.groupRoles.list(botId) }
+    return this.roleAdmin.listGroupRoles(botId)
   }
 
   /** 群聊角色卡正文仅供管理员编辑；目标必须是群聊。 */
   getGroupRole(botId: string, targetId: string): BotGroupRoleDetail | null {
-    this.requireEnabled()
-    this.botRow(botId)
-    const target = this.targetRowForBot(botId, targetId)
-    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
-    const card = this.groupRoles.getByTargetId(botId, targetId)
-    if (!card) return null
-    return {
-      targetId: target.id,
-      targetLabel: target.label,
-      targetExternalId: target.external_id,
-      name: card.name,
-      prompt: card.prompt,
-      enabled: card.enabled,
-      createdAt: card.createdAt,
-      updatedAt: card.updatedAt,
-    }
+    return this.roleAdmin.getGroupRole(botId, targetId)
   }
 
   /** 新建/覆盖群聊角色卡；正文只保存在 DB，不写入日志/审计。 */
   saveGroupRole(botId: string, targetId: string, name: string, prompt: string): BotGroupRoleDetail {
-    this.requireEnabled()
-    this.botRow(botId)
-    const target = this.targetRowForBot(botId, targetId)
-    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
-    const normalizedPrompt = normalizeRolePrompt(prompt)
-    const trimmedName = name.trim()
-    const error = validateRole(trimmedName, normalizedPrompt)
-    if (error) throw badRequest(roleValidationMessage(error))
-    const card = this.groupRoles.save(target, trimmedName, normalizedPrompt)
-    this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
-      action: 'save',
-      nameLength: card.name.length,
-      promptLength: card.prompt.length,
-      at: nowIso(),
-    })
-    return {
-      targetId: target.id,
-      targetLabel: target.label,
-      targetExternalId: target.external_id,
-      name: card.name,
-      prompt: card.prompt,
-      enabled: card.enabled,
-      createdAt: card.createdAt,
-      updatedAt: card.updatedAt,
-    }
+    return this.roleAdmin.saveGroupRole(botId, targetId, name, prompt)
   }
 
   setGroupRoleEnabled(botId: string, targetId: string, enabled: boolean): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    const target = this.targetRowForBot(botId, targetId)
-    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
-    const card = this.groupRoles.getByTargetId(botId, targetId)
-    if (!card || !this.groupRoles.setEnabled(botId, targetId, enabled)) throw notFound('群聊角色卡不存在')
-    this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
-      action: enabled ? 'enable' : 'disable',
-      nameLength: card.name.length,
-      promptLength: card.prompt.length,
-      at: nowIso(),
-    })
+    this.roleAdmin.setGroupRoleEnabled(botId, targetId, enabled)
   }
 
   deleteGroupRole(botId: string, targetId: string): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    const target = this.targetRowForBot(botId, targetId)
-    if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
-    const card = this.groupRoles.getByTargetId(botId, targetId)
-    if (!card || !this.groupRoles.remove(botId, targetId)) throw notFound('群聊角色卡不存在')
-    this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
-      action: 'delete',
-      nameLength: card.name.length,
-      promptLength: card.prompt.length,
-      at: nowIso(),
-    })
+    this.roleAdmin.deleteGroupRole(botId, targetId)
   }
 
   /**
@@ -837,11 +633,7 @@ export class BotService {
     botId: string,
     options: { limit?: number; offset?: number } = {},
   ): { items: BotMemoryUserSummary[]; total: number } {
-    this.requireEnabled()
-    this.botRow(botId)
-    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(options.limit) ? (options.limit as number) : 20)))
-    const offset = Math.max(0, Math.floor(Number.isFinite(options.offset) ? (options.offset as number) : 0))
-    return this.memory.listUsers(botId, limit, offset)
+    return this.memoryAdmin.listMemories(botId, options)
   }
 
   /** 群聊共享记忆管理：按群目标聚合的元数据分页，不含 key/value。 */
@@ -849,19 +641,12 @@ export class BotService {
     botId: string,
     options: { limit?: number; offset?: number } = {},
   ): { items: BotMemoryGroupSummary[]; total: number } {
-    this.requireEnabled()
-    this.botRow(botId)
-    return this.memory.listGroups(botId, options.limit ?? 20, options.offset ?? 0)
+    return this.memoryAdmin.listGroupMemories(botId, options)
   }
 
   /** 清空某个群目标的共享记忆；scope 必须是内部群 scope，避免误删用户记忆。 */
   deleteGroupMemory(botId: string, scope: string): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    if (!scope.startsWith(GROUP_MEMORY_PREFIX)) throw badRequest('群聊记忆标识无效')
-    // 先取消该 scope 下所有成员的在途抽取/待处理批次，避免清空后旧批次写回（BOT-06）。
-    this.cancelGroupMemoryScope(botId, scope)
-    this.deleteMemory(botId, scope)
+    this.memoryAdmin.deleteGroupMemory(botId, scope)
   }
 
   /**
@@ -913,41 +698,17 @@ export class BotService {
     userId: string,
     options: { limit?: number; offset?: number } = {},
   ): { items: BotMemoryItemSummary[]; total: number } {
-    this.requireEnabled()
-    this.botRow(botId)
-    const limit = Math.max(1, Math.min(200, Math.floor(Number.isFinite(options.limit) ? (options.limit as number) : 20)))
-    const offset = Math.max(0, Math.floor(Number.isFinite(options.offset) ? (options.offset as number) : 0))
-    return this.memory.listItems(botId, userId, limit, offset)
+    return this.memoryAdmin.listMemoryItems(botId, userId, options)
   }
 
   /** 删除单条结构化记忆（管理端）；不存在时 404。审计不含 key/value。 */
   deleteMemoryItem(botId: string, userId: string, itemId: string): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    const id = itemId.trim().slice(0, 64)
-    if (!id) throw badRequest('记忆条目 ID 不能为空')
-    if (!this.memory.deleteItem(botId, userId, id)) throw notFound('记忆条目不存在')
-    this.deps.audit('bot.memory.delete_item', `${botId}:${userId.slice(0, 64)}`, {
-      bot: botId,
-      user: userId.slice(0, 64),
-      item: id,
-    })
+    this.memoryAdmin.deleteMemoryItem(botId, userId, itemId)
   }
 
   /** 整用户删除结构化记忆（条目+状态+旧摘要+镜像）；不存在时 404。审计不含正文。 */
   deleteMemory(botId: string, userId: string): void {
-    this.requireEnabled()
-    this.botRow(botId)
-    // 先取消待处理批次并递增 generation，防止删除后在途抽取回写。
-    this.cancelUserMemory(botId, userId)
-    const result = this.memory.deleteUser(botId, userId)
-    if (result.deletedItems === 0 && !result.deletedState && !result.deletedLegacy) throw notFound('长期记忆不存在')
-    this.deps.audit('bot.memory.delete_user', `${botId}:${userId.slice(0, 64)}`, {
-      bot: botId,
-      user: userId.slice(0, 64),
-      items: result.deletedItems,
-      legacy: result.deletedLegacy ? 1 : 0,
-    })
+    this.memoryAdmin.deleteMemory(botId, userId)
   }
 
   /**
@@ -1233,6 +994,14 @@ export class BotService {
       this.migrateLegacyGroupSessions()
     } catch (error) {
       this.deps.log('warn', '群聊旧分用户会话清理失败', {
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
+    try {
+      const removed = this.memory.cleanupOrphanMirrors()
+      if (removed > 0) this.deps.log('info', '已清理 Bot 记忆镜像孤儿', { removed })
+    } catch (error) {
+      this.deps.log('warn', 'Bot 记忆镜像孤儿清理失败', {
         error: error instanceof Error ? error.message : 'unknown',
       })
     }
@@ -1922,6 +1691,7 @@ export class BotService {
       this.db.prepare('DELETE FROM bot_events WHERE received_at < ?').run(cutoff)
       this.db.prepare('DELETE FROM bot_inbound_targets WHERE last_seen_at < ?').run(cutoff)
       this.memory.cleanup()
+      this.memory.cleanupOrphanMirrors()
       this.queue.cleanupExpired()
       this.deps.ai?.cleanup?.()
     } catch {
@@ -2079,22 +1849,6 @@ export class BotService {
     if (errors.length > 0) throw badRequest(`Bot 配置无效：${errors.join(', ')}`, 'invalid_bot_config')
   }
 
-  private normalizeQuiet(start: number | null | undefined, end: number | null | undefined): {
-    start: number | null
-    end: number | null
-  } {
-    const clean = (value: number | null | undefined): number | null => {
-      if (value === null || value === undefined) return null
-      if (!Number.isInteger(value) || value < 0 || value > 1439) throw badRequest('静默时段必须是 0-1439 分钟')
-      return value
-    }
-    const cleanStart = clean(start)
-    const cleanEnd = clean(end)
-    if ((cleanStart === null) !== (cleanEnd === null)) throw badRequest('静默时段起止必须同时设置或同时留空')
-    if (cleanStart !== null && cleanStart === cleanEnd) throw badRequest('静默时段起止不能相同')
-    return { start: cleanStart, end: cleanEnd }
-  }
-
   private parseSchedule(scheduledAt: string | null | undefined): string | null {
     if (!scheduledAt) return null
     const time = Date.parse(scheduledAt)
@@ -2104,24 +1858,6 @@ export class BotService {
       throw badRequest(`定时时间不能超过 ${this.config.botPublishMaxScheduledDays} 天`)
     }
     return new Date(time).toISOString()
-  }
-}
-
-/** 目标显示名称用于管理识别；不改 openid、权限或投递目标。 */
-function toTarget(row: BotTargetRow): BotTarget {
-  return {
-    id: row.id,
-    botId: row.bot_id,
-    externalId: row.external_id,
-    label: row.label,
-    kind: row.kind,
-    allowCommands: row.allow_commands === 1,
-    allowNotifications: row.allow_notifications === 1,
-    allowChat: row.allow_chat === 1,
-    groupReplyMode: row.chat_trigger === 'all' ? 'all' : 'mention',
-    quietStartMinute: row.quiet_start_minute,
-    quietEndMinute: row.quiet_end_minute,
-    createdAt: row.created_at,
   }
 }
 

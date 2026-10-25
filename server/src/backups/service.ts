@@ -73,6 +73,8 @@ export interface BackupServiceConfig {
   backupPullFile: string
   /** Web 导入归档大小上限，默认 100 MiB（与任务约定一致）。 */
   backupImportMaxBytes?: number
+  /** Web 导入归档保留天数；0=永久保留，默认 90。 */
+  backupImportRetentionDays?: number
   /** 恢复计划有效期（分钟），默认 30。 */
   backupRestorePlanTtlMinutes?: number
   /** 单次恢复的文件数上限，默认 2000。 */
@@ -376,6 +378,7 @@ export class BackupService {
       maxUploadBytes: config.maxUploadBytes,
       backupPullFile: config.backupPullFile,
       backupImportMaxBytes: Math.min(config.backupImportMaxBytes ?? MAX_IMPORT_BYTES, MAX_IMPORT_BYTES),
+      backupImportRetentionDays: Math.max(0, Math.min(3650, Math.floor(config.backupImportRetentionDays ?? 90))),
       backupRestorePlanTtlMinutes: config.backupRestorePlanTtlMinutes ?? 30,
       backupRestoreMaxEntries: config.backupRestoreMaxEntries ?? MAX_RESTORE_FILES,
       backupRestoreEnabled: config.backupRestoreEnabled ?? true,
@@ -1653,7 +1656,14 @@ export class BackupService {
 
   // ---------- 清理 ----------
 
-  cleanup(): { expiredPlans: number; interruptedPlans: number; stagingDirs: number; partialImports: number } {
+  cleanup(): {
+    expiredPlans: number
+    interruptedPlans: number
+    stagingDirs: number
+    partialImports: number
+    importedArchives: number
+    orphanImportFiles: number
+  } {
     const now = this.clock()
     // 恢复锁崩溃残留：每次维护任务也尝试清理（启动时已清一次）。
     this.cleanupStaleRestoreLock()
@@ -1692,6 +1702,47 @@ export class BackupService {
     } catch {
       // imports 目录不存在时忽略。
     }
+    // DR-7：导入归档按保留期清理；活动恢复计划引用的归档不删。
+    let importedArchives = 0
+    if (this.config.backupImportRetentionDays > 0) {
+      const cutoff = new Date(now.getTime() - this.config.backupImportRetentionDays * 86_400_000).toISOString()
+      const active = new Set<string>()
+      try {
+        const plans = this.db
+          .prepare("SELECT archives_json FROM restore_plans WHERE status IN ('planned', 'executing')")
+          .all() as unknown as { archives_json: string }[]
+        for (const plan of plans) {
+          try {
+            const names = JSON.parse(plan.archives_json) as unknown
+            if (Array.isArray(names)) {
+              for (const name of names) if (typeof name === 'string') active.add(name)
+            }
+          } catch {
+            // 损坏的计划 JSON 不应导致清理失败；保守跳过该计划。
+          }
+        }
+      } catch {
+        // DB 不可用时不做破坏性清理。
+      }
+      try {
+        const rows = this.db
+          .prepare("SELECT name FROM backup_archives WHERE origin = 'import' AND created_at < ?")
+          .all(cutoff) as unknown as { name: string }[]
+        for (const row of rows) {
+          if (active.has(row.name) || !ARCHIVE_NAME_PATTERN.test(row.name)) continue
+          const full = join(this.importsDir, row.name)
+          try {
+            rmSync(full, { force: true })
+            this.db.prepare("DELETE FROM backup_archives WHERE name = ? AND origin = 'import'").run(row.name)
+            importedArchives += 1
+          } catch {
+            // 单个导入归档失败不阻断其余清理。
+          }
+        }
+      } catch {
+        // DB 不可用时忽略。
+      }
+    }
     // 加密 prepare 崩溃遗留的明文临时归档：超过 TTL 统一删除，避免“失败关闭”之外长期驻留明文。
     let abandonedPlainTemps = 0
     try {
@@ -1706,11 +1757,34 @@ export class BackupService {
     } catch {
       // backups 目录不存在时忽略。
     }
+    // 导入目录中没有 DB 记录的归档文件：只清理超过 24h 的残留，避免误删正在导入的文件。
+    let orphanImportFiles = 0
+    try {
+      const known = new Set(
+        (
+          this.db.prepare("SELECT name FROM backup_archives WHERE origin = 'import'").all() as unknown as {
+            name: string
+          }[]
+        ).map((row) => row.name),
+      )
+      for (const entry of readdirSync(this.importsDir, { withFileTypes: true })) {
+        if (!entry.isFile() || !ARCHIVE_NAME_PATTERN.test(entry.name) || known.has(entry.name)) continue
+        const full = join(this.importsDir, entry.name)
+        if (now.getTime() - statSync(full).mtimeMs > STAGING_TTL_MS) {
+          rmSync(full, { force: true })
+          orphanImportFiles += 1
+        }
+      }
+    } catch {
+      // imports 目录不存在时忽略。
+    }
     if (
       Number(expiredPlans.changes) > 0 ||
       Number(interruptedPlans.changes) > 0 ||
       stagingDirs > 0 ||
       partialImports > 0 ||
+      importedArchives > 0 ||
+      orphanImportFiles > 0 ||
       abandonedPlainTemps > 0
     ) {
       this.log('info', '备份维护清理完成', {
@@ -1718,6 +1792,8 @@ export class BackupService {
         interruptedPlans: Number(interruptedPlans.changes),
         stagingDirs,
         partialImports,
+        importedArchives,
+        orphanImportFiles,
         abandonedPlainTemps,
       })
     }
@@ -1726,6 +1802,8 @@ export class BackupService {
       interruptedPlans: Number(interruptedPlans.changes),
       stagingDirs,
       partialImports,
+      importedArchives,
+      orphanImportFiles,
     }
   }
 }

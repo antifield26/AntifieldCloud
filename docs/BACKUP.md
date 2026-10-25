@@ -471,20 +471,20 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 ## 11. 覆盖、残余风险与限制
 
 - **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照，
-  v0.5.0 起 env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练。
-- **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、VPS 远端/异地副本、对象存储、整包加密；
-  普通归档仍含 TOTP/会话明文与 Bot 凭据密文，PC ACL/离线介质是最后防线；age 私钥或 `BOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
+  v0.5.0 起 env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
+  v0.7.0 起可选整包 age 加密与 PC 端异地副本（默认关闭）。
+- **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、对象存储；普通归档仍含 TOTP/会话明文与 Bot 凭据密文，
+  PC ACL/离线介质是最后防线；age 私钥或 `BOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
+- **导入归档保留**：v0.7.2 起 `BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）控制 Web 导入归档保留；维护任务清理超期
+  `origin='import'` 归档（跳过活动恢复计划引用），并清理无 DB 记录的超期导入文件。
 - 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。
-- 世界备份依赖 Minecraft 运行与 RCON；Windows 世界拉取/演练任务需用户手动安装；未安装时状态 unknown、告警可能触发。
+- 世界备份依赖 Minecraft 运行与 RCON；v0.7.2 已安装 Windows 世界拉取周任务并手动验证；恢复演练保持手动/季度，异地副本任务待 rclone remote。
 - 恢复演练记录见 §7 与 `.local/DR-DRILL.md`；每次升级前重新演练。
 
 ### 本轮明确不修 / 已知残留（DR 系列）
 
 - **DR-1（时钟回拨/同毫秒）**：增量依赖 `created_at > 上次水位`；系统时钟回拨或同一毫秒内的写入仍可能漏备。
-  `--prepare` 会对“文件 `created_at` 晚于当前时间/水位倒退”写 `warnings`，但不会自动修正；依赖 NTP 正常 + 每周全量兜底。
-- **DR-7（导入归档无删除/保留策略）**：Web 导入的 `origin='import'` 归档只登记、不参与 ack，也没有自动清理/保留期；
-  会持续占用磁盘，需要人工在 `DATA_DIR/backups/imports/` 与 DB 记录之间核对后处理。
-- **DR-22（告警跨周期不重投）**：告警只在状态变化（firing/resolved/unknown）时投递；同一状态跨评估周期不会重复发送 webhook，
-  持续故障不会每天提醒（面板状态仍在）。
-- **DR-23（锁心跳）**：`.backup.lock` 只有 mtime，没有心跳续租；超过 1 小时按陈旧锁接管。若单次 prepare 合法运行超过 1 小时，
-  另一进程可能误判并接管（CC 已检查 stale 只记 warn，CLI 仍会竞争），依赖定时任务不重叠 + 手动运行时避免并发。
+  `--prepare` 会对“文件 `created_at` 晚于当前时间/水位倒退”写 `warnings` 与 `clockSkew` 状态，但不会自动修正；依赖 NTP 正常 + 每周全量兜底。
+- **DR-7（导入归档无删除/保留策略）**：v0.7.2 已收口，见上方 `BACKUP_IMPORT_RETENTION_DAYS`；活动恢复计划引用的归档不会删除。
+- **DR-22（告警跨周期不重投）**：v0.7.2 已收口；持续 firing 按 `ALERT_REPEAT_HOURS`（默认 24，0=关闭）重发 webhook，状态仍为 firing。
+- **DR-23（锁心跳）**：v0.7.2 已收口；`.backup.lock` 持有期间每 30s 刷新 mtime，超过 1 小时才按陈旧锁接管。

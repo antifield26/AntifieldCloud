@@ -251,6 +251,11 @@ test('时钟告警：未来 created_at 与水位晚于当前时间写入 warning
     const warnings = prepared.json.warnings as string[]
     assert.ok(warnings.some((warning) => warning.includes('晚于当前时间')), warnings.join('\n'))
     assert.ok(warnings.some((warning) => warning.includes('时钟可能回拨')), warnings.join('\n'))
+    assert.deepEqual(prepared.json.clockSkew, {
+      detected: true,
+      futureFiles: 1,
+      watermarkRollback: true,
+    })
   } finally {
     cleanupDir(dir)
   }

@@ -632,6 +632,25 @@ test('上游 HTTP 失败抛出短码 AppError，不泄漏密码或 URL', async (
   }
 })
 
+test('上游 429 限流归一化为 http_error，不泄漏密码或 URL', async () => {
+  const fixture = setup(basicHandler({ promptStatus: 429 }))
+  try {
+    await assert.rejects(
+      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' }),
+      (error: unknown) => {
+        assert.ok(error instanceof AppError)
+        assert.equal(error.code, 'bot_ai_http_error')
+        assert.ok(!error.message.includes(PASSWORD))
+        assert.ok(!error.message.includes('127.0.0.1'))
+        return true
+      },
+    )
+    assertNoSecret(fixture.logs)
+  } finally {
+    dispose(fixture)
+  }
+})
+
 test('网络失败归一化为不可达错误，不转发原始异常 URL', async () => {
   const fixture = setup(() => {
     throw new Error('connect ECONNREFUSED 127.0.0.1:4096')

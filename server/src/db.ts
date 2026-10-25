@@ -678,6 +678,18 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX IF NOT EXISTS idx_bot_group_roles_updated ON bot_group_roles(updated_at);
   `,
+  `
+  -- v0.7.2：审计写入失败诊断持久化；单行累计计数 + 最近错误，跨进程重启仍可见。
+  CREATE TABLE IF NOT EXISTS audit_write_failures (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    last_failure_at TEXT,
+    updated_at TEXT NOT NULL
+  );
+  INSERT OR IGNORE INTO audit_write_failures (id, failure_count, updated_at)
+    VALUES (1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+  `,
 ]
 
 export interface OpenOptions {

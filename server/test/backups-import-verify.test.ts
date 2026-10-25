@@ -240,3 +240,34 @@ test('verify 不存在归档返回 404', async () => {
     fx.close()
   }
 })
+
+test('DR-7：导入归档超过保留期清理，活动恢复计划引用时保留', async () => {
+  const fx = backupsFixture({ serviceConfig: { backupImportRetentionDays: 90 } })
+  try {
+    const archive = buildArchive({ createdAt: T0, mode: 'full', workDir: fx.dir, snapshotRows: [], contents: [] })
+    await importBuffer(fx, archive.name, archive.buffer)
+    const file = join(fx.importsDir, archive.name)
+    assert.ok(existsSync(file))
+    fx.clock.advanceMs(91 * 86_400_000)
+
+    // 活动计划引用的归档不删。
+    fx.db
+      .prepare(
+        `INSERT INTO restore_plans (id, archives_json, selection_json, target_name, status, created_by, created_at, expires_at)
+         VALUES ('active-plan', ?, '{}', 'x', 'planned', 'admin', ?, ?)`,
+      )
+      .run(JSON.stringify([archive.name]), T0, '2099-01-01T00:00:00.000Z')
+    const kept = fx.service.cleanup()
+    assert.equal(kept.importedArchives, 0)
+    assert.ok(existsSync(file))
+
+    // 计划结束后再清理，文件与 DB 行都删除。
+    fx.db.prepare("UPDATE restore_plans SET status = 'completed' WHERE id = 'active-plan'").run()
+    const removed = fx.service.cleanup()
+    assert.equal(removed.importedArchives, 1)
+    assert.equal(existsSync(file), false)
+    assert.equal(fx.db.prepare('SELECT COUNT(*) AS c FROM backup_archives WHERE name = ?').get(archive.name)!.c, 0)
+  } finally {
+    fx.close()
+  }
+})

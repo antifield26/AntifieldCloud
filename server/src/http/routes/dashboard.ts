@@ -72,6 +72,6 @@ export function registerDashboardRoutes(
     botsEnabled: config.botEnabled && config.botSecretKey.length > 0,
     botPlatforms: [...BOT_PLATFORMS],
     /** 审计写入诊断：失败计数/最近错误（不含明细），用于发现 DB 忙/磁盘满导致的审计丢失。 */
-    audit: getAuditDiagnostics(),
+    audit: getAuditDiagnostics(db),
   }))
 }

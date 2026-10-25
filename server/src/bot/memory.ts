@@ -4,7 +4,7 @@
  * （key 与 value 均过滤），旧摘要注入前按行过滤；记忆内容只作为提示词背景资料，不是指令；/memory off 时既不抽取也不注入。
  */
 import type { DatabaseSync } from 'node:sqlite'
-import { existsSync, rmSync, readFileSync } from 'node:fs'
+import { existsSync, rmSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { transaction } from '../db.ts'
 import { newId } from '../util/ids.ts'
@@ -836,6 +836,67 @@ export class BotMemoryStore {
       .prepare('DELETE FROM bot_memory_items WHERE expires_at IS NOT NULL AND expires_at <= ?')
       .run(nowIso())
     return Number(result.changes)
+  }
+
+  /** 收集某 Bot 的 legacy 摘要 memory_id（删除 Bot 前调用，避免删行后无法定位镜像）。 */
+  listBotMemoryIds(botId: string): string[] {
+    const rows = this.db
+      .prepare('SELECT memory_id FROM bot_ai_memories WHERE bot_id = ?')
+      .all(botId) as unknown as { memory_id: string }[]
+    return rows.map((row) => row.memory_id)
+  }
+
+  /** 删除指定镜像文件；只接受合法 memory_id，返回实际尝试删除的数量。 */
+  removeMirrorFiles(memoryIds: readonly string[]): number {
+    let removed = 0
+    for (const memoryId of memoryIds) {
+      try {
+        this.removeMirror(memoryId)
+        removed += 1
+      } catch {
+        // 非法 id/不可删时跳过，不影响 DB 删除结果。
+      }
+    }
+    return removed
+  }
+
+  /**
+   * 清理没有 DB 引用的镜像孤儿：只处理严格 `memory-<uuid>.md` 文件名，
+   * 且 mtime 超过 maxAgeMs（默认 24h），避免与正在写入的摘要竞争。
+   */
+  cleanupOrphanMirrors(maxAgeMs = 24 * 3600_000): number {
+    if (!existsSync(this.dir)) return 0
+    let referenced: Set<string>
+    try {
+      const rows = this.db.prepare('SELECT memory_id FROM bot_ai_memories').all() as unknown as {
+        memory_id: string
+      }[]
+      referenced = new Set(rows.map((row) => row.memory_id))
+    } catch {
+      // DB 不可用时不做破坏性清理。
+      return 0
+    }
+    const now = Date.now()
+    let removed = 0
+    try {
+      for (const entry of readdirSync(this.dir, { withFileTypes: true })) {
+        if (!entry.isFile()) continue
+        const match = /^memory-([0-9a-f-]{36})\.md$/i.exec(entry.name)
+        if (!match) continue
+        if (referenced.has(match[1]!)) continue
+        const full = join(this.dir, entry.name)
+        try {
+          if (now - statSync(full).mtimeMs < maxAgeMs) continue
+          rmSync(full, { force: true })
+          removed += 1
+        } catch {
+          // 单个文件失败不影响其余清理。
+        }
+      }
+    } catch {
+      // 目录读取失败时保持现状。
+    }
+    return removed
   }
 
   /** 已迁移用户列表（legacy 清理 CLI 使用，只返回内部 id，不含正文）。 */

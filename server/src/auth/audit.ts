@@ -22,28 +22,83 @@ function clampDetail(detail: Record<string, unknown> | null | undefined): string
 }
 
 export interface AuditDiagnostics {
-  /** 进程启动以来审计写入失败次数（DB 忙/磁盘满等）。 */
+  /** 进程启动以来审计写入失败次数（DB 忙/磁盘满等）；有持久化行时为累计值。 */
   failureCount: number
   /** 最近一次失败的错误摘要（不含敏感内容）；无失败为 null。 */
   lastError: string | null
   /** 最近一次失败时间（ISO 8601）；无失败为 null。 */
   lastFailureAt: string | null
+  /** 是否来自 DB 持久化行；DB 不可用时为 false，仅内存诊断。 */
+  persisted: boolean
 }
 
 let auditFailureCount = 0
 let auditLastError: string | null = null
 let auditLastFailureAt: string | null = null
 
-/** 审计写入诊断：供 /api/version 暴露，避免“审计失败完全不可见”（ARCH-05）。 */
-export function getAuditDiagnostics(): AuditDiagnostics {
-  return { failureCount: auditFailureCount, lastError: auditLastError, lastFailureAt: auditLastFailureAt }
+/**
+ * 审计写入诊断：优先读 DB 持久化行，DB 不可用时回退进程内计数。
+ * 持久化写入本身失败时只保留内存值，不递归审计、不阻断业务。
+ */
+export function getAuditDiagnostics(db?: DatabaseSync): AuditDiagnostics {
+  if (db) {
+    try {
+      const row = db
+        .prepare('SELECT failure_count, last_error, last_failure_at FROM audit_write_failures WHERE id = 1')
+        .get() as { failure_count: number; last_error: string | null; last_failure_at: string | null } | undefined
+      if (row) {
+        return {
+          failureCount: Number(row.failure_count),
+          lastError: row.last_error,
+          lastFailureAt: row.last_failure_at,
+          persisted: true,
+        }
+      }
+    } catch {
+      // DB 不可用时回退内存诊断。
+    }
+  }
+  return {
+    failureCount: auditFailureCount,
+    lastError: auditLastError,
+    lastFailureAt: auditLastFailureAt,
+    persisted: false,
+  }
 }
 
-/** 测试用：重置诊断计数。 */
-export function resetAuditDiagnostics(): void {
+/** 测试/维护用：重置诊断计数；传入 db 时同时清零持久化行。 */
+export function resetAuditDiagnostics(db?: DatabaseSync): void {
   auditFailureCount = 0
   auditLastError = null
   auditLastFailureAt = null
+  if (!db) return
+  try {
+    db.prepare(
+      "UPDATE audit_write_failures SET failure_count = 0, last_error = NULL, last_failure_at = NULL, updated_at = ? WHERE id = 1",
+    ).run(nowIso())
+  } catch {
+    // DB 不可用时只清内存。
+  }
+}
+
+/** 记录审计写入失败：内存诊断必更新，DB 持久化 best-effort。 */
+function recordAuditFailure(db: DatabaseSync, error: unknown): void {
+  auditFailureCount += 1
+  auditLastFailureAt = nowIso()
+  auditLastError = (error instanceof Error ? error.message : String(error)).slice(0, 200)
+  try {
+    db.prepare(
+      `INSERT INTO audit_write_failures (id, failure_count, last_error, last_failure_at, updated_at)
+       VALUES (1, 1, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         failure_count = audit_write_failures.failure_count + 1,
+         last_error = excluded.last_error,
+         last_failure_at = excluded.last_failure_at,
+         updated_at = excluded.updated_at`,
+    ).run(auditLastError, auditLastFailureAt, auditLastFailureAt)
+  } catch {
+    // DB 故障时保留内存诊断；不能因持久化失败再次抛错。
+  }
 }
 
 /**
@@ -70,10 +125,8 @@ export function audit(
       clampText(ip, 64),
     )
   } catch (error) {
-    // 审计失败不静默：进程内计数 + 最近错误，交由 /api/version 诊断与日志观察。
-    auditFailureCount += 1
-    auditLastFailureAt = nowIso()
-    auditLastError = (error instanceof Error ? error.message : String(error)).slice(0, 200)
+    // 审计失败不静默：内存计数 + 最近错误 + best-effort 持久化，交由 /api/version 诊断观察。
+    recordAuditFailure(db, error)
   }
 }
 

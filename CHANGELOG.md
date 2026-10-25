@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.7.2] - 2026-10-25（已实现，待部署验收）
+
+### Added
+
+- **审计失败诊断持久化（schema v17）**：新增 `audit_write_failures` 单行表；`audit()` 失败时 best-effort 持久化计数/最近错误/时间，`/api/version.audit` 增加 `persisted`，跨进程重启仍可见；DB 不可用时回退内存诊断，不阻断业务。
+- **Bot 记忆镜像孤儿清理**：`BotMemoryStore.cleanupOrphanMirrors()` 只删除无 `bot_ai_memories` 引用且超过 24h 的严格 `memory-<uuid>.md`；启动/维护执行；删除 Bot 前收集 memory_id，删除 DB 后清理镜像。
+- **Web 导入归档保留（DR-7）**：新增 `BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）；维护任务清理超期 `origin='import'` 归档（跳过活动恢复计划引用），并清理无 DB 记录的超期导入文件。
+- **告警持续 firing 重通知（DR-22）**：新增 `ALERT_REPEAT_HOURS`（默认 24，0=关闭）；持续 firing 超过间隔按同一 event 重发 webhook，`/api/alerts` 配置摘要增加 `repeatHours`。
+- **备份锁心跳（DR-23）**：`acquireLock()` 持有期间每 30s 刷新 mtime，释放时清理定时器；超过 1h 的陈旧锁仍可接管。
+- **DR-1 时钟状态**：`--prepare` 输出与 manifest 增加 `clockSkew`（detected/futureFiles/watermarkRollback）；仍只提示，不自动修正水位。
+- **BotService 拆分**：新增 `targets.ts`（目标 CRUD/校验）、`roles-admin.ts`（用户/群角色卡管理）、`memory-admin.ts`（记忆管理），`service.ts` 保留 facade 与依赖装配，公开 API 不变。
+- **Cloudflare `ai` Access**：为 `ai.antifield.work` 新增 Access 应用（Owner allow + Smoke service token）；Free 套餐无自定义 WAF 规则集，保留应用侧限流。
+- **Windows 世界拉取任务**：通过 UAC 安装 `AntifieldCloud-World-Pull`（周日 12:00），手动运行成功拉取 3.2 GB 世界归档。
+- **rclone v1.75.2**：已安装到本机；异地副本仍待 remote 配置。
+
+### Tests
+
+- 新增审计持久化跨重启、Bot 镜像孤儿、导入归档保留/活动计划保护、告警重通知、备份锁心跳、AI 429 负路径、DR-1 `clockSkew` 断言。
+- 本地门禁：`npm test` **497**、`test:web` **222**（44 文件）、服务端覆盖率 **92.85/78.35/88.11**（Lines/Branches/Functions）、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version` 严格 `0.7.2` 通过。
+- **部署后待补**：生产 release/commit、schema v16→v17 迁移、smoke 结果、回滚快照与用户验收证据。
+
 ## [v0.7.1] - 2026-10-25（已发布：Tag `v0.7.1` + GitHub Release）
 
 ### Fixed

@@ -2,9 +2,9 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.7.1（**已发布：Tag `v0.7.1` + GitHub Release [AntifieldCloud v0.7.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.1)**）。本补丁修复群聊会话归属：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话，模型可见群内多用户历史；私聊保持每用户独立会话。真实用户仍分别用于限流、记忆归属、审计与发送工具令牌；用户消息继续带用户名 head。schema 保持 **v16**（无迁移），OpenCode 仍为 **v2.1.4**。
-> 发布：当前生产发布为 v0.7.1（release `20261025T031856Z`/代码提交 `d8bdfc5`，`/healthz` v0.7.1/schema16）；上一发布 v0.7.0（Tag `v0.7.0`，GitHub Release [AntifieldCloud v0.7.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.0)）。
-> 测试基线（2026-10-25）：`npm test` **491**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.75% / Branches 78.23% / Functions 87.82%**，前端 **Lines 52.31% / Branches 47.32% / Functions 45.02%**；`npm run check`、`check-version`（严格 `0.7.1`）、`build`（`index-C0QZV4hZ.js` 726.72 kB）均通过；Node.js **v26.12.1**；OpenCode **v2.1.4**。
+> 状态：v0.7.2（**已实现，待部署验收**）。本版收口 D-18 可落地残余：审计写入失败诊断持久化（schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警持续 firing 24h 重通知、备份锁心跳续租、DR-1 时钟回拨状态、BotService 拆分（targets/roles/memory admin）与平台负路径测试；同时完成 Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务和 rclone 安装。备份整包加密/异地副本仍默认关闭；schema 从 v16 迁移到 **v17**；OpenCode 仍为 **v2.1.4**。
+> 发布：上一发布 v0.7.1（Tag `v0.7.1`，release `20261025T031856Z`/代码提交 `d8bdfc5`，`/healthz` v0.7.1/schema16）；更早 v0.7.0（Tag `v0.7.0`）。
+> 测试基线（2026-10-25）：`npm test` **497**、`npm run test:web` **222**（44 文件）；`npm run check`、`check-version`（严格 `0.7.2`）、`build` 均通过；Node.js **v26.12.1**；OpenCode **v2.1.4**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
 ## 技术栈
@@ -12,9 +12,9 @@
 - 服务端：Node.js >= 26（生产安全更新至 v26.12.1；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用（其尚不支持 TS7 API）；v0.5.1 评估结论（v0.5.2 未变）为**暂不升级、保留双 alias**
-- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI（v0.5.9 起 AI 仅 Chat 模式），结构化长期记忆落 DB（schema v16；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
+- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI（v0.5.9 起 AI 仅 Chat 模式），结构化长期记忆落 DB（schema v17；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **487**）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 92.67/78.14/87.95；前端 52.31/47.32/45.02，Lines/Branches/Functions）
+- 测试：`node --test`（服务端 + 运维脚本 **497**）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 Lines/Functions/Branches 91/85/76；前端 50/45/42）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -70,6 +70,7 @@
 - **AI 仅普通消息 Chat（v0.5.9）**：提示词固定为「角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息」，全量群消息追加 `NO_REPLY` 决策段；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；`/reset` 与私聊角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 mode。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
 - **默认角色、私聊角色卡与群聊角色卡**：内置默认角色 `lofii` 只保留名字与简短对话风格；群聊使用管理员在“角色与记忆”配置的共享角色卡（每个群目标一张，覆盖成员私聊卡，停用/删除回退 lofii）；C2C `/role` 对 QQ 私聊用户开放，每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；`/role show` 对用户自定义卡返回完整详细文本，默认角色卡只返回名称、不展示内置详情；个人卡只覆盖私聊；群聊不执行 `/role`，也不再接受任何斜杠命令。私聊角色卡变更会清理该范围会话映射。
 - **群聊共享会话（v0.7.1）**：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话，模型可见群内不同成员的历史消息；群内 Chat 按目标串行，私聊仍每用户独立会话；真实用户仍分别用于限流、记忆归属、审计与发送工具令牌；首次群聊会清理旧版分用户群映射并尽力删除远端旧会话。
+- **D-18 残余收口（v0.7.2）**：审计失败诊断持久化（schema v17，`/api/version.audit.persisted`）；Bot 记忆镜像孤儿清理；Web 导入归档 90 天保留；告警持续 firing 24h 重通知；备份锁 30s 心跳；DR-1 `clockSkew` 状态；BotService 拆分 targets/roles-admin/memory-admin；补 429/5xx/超时/permissions 负路径夹具。
 - **群聊用户名与共享记忆**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话；Web「角色与记忆」按用户记忆/群聊记忆左右两栏展示元数据并支持清空群共享记忆。v0.7.0 起条目归属键使用稳定 `member_openid`（显示名只存 value），启动一次性迁移旧显示名键、无法映射者标 `legacy:` 保留；`/forget confirm` 同时清除本人在各群贡献的条目并取消在途抽取。
 - **自助命令（仅 C2C 私聊）**：`/help`（按身份动态帮助）、`/memory`（查看记忆计数/类型/启停与最近更新，不含 key/value；`/memory off|on` 暂停/恢复）、`/role`（仅私聊）、`/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目、状态、legacy 旧摘要与该 Bot×用户全部会话，含远端）；对 C2C 用户开放；`/reset` 与私聊角色卡变更会尽力删除对应远端会话。
 - **出站连通性（v0.5.10，Pi 直连）**：`server/src/bot/connectivity.ts` 每 60 秒探测外网与 QQ 平台只读 API；`GET /api/bots/connectivity` 仅返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/bots/connectivity/check` 手动复检；网络恢复后触发队列扫描；`/bots` 概览展示外网/QQ 平台状态。
@@ -123,7 +124,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.1 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.2 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
 
 ## 目录
 
@@ -158,23 +159,22 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 
 ## 已知限制
 
-- SSH 密码登录已关闭（仅公钥，`00-` drop-in，24h 回滚窗口）；`antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择保留）；`fail2ban` 已启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化与 nftables 启动后恢复 drop-in 已安装。
-- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并验证，service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。生产探测确认 `ai` 主机未受 Access 保护，本版已在其未认证路径加限流（60/min SSO、120/min 匿名）与审计去重；建议后续在 Cloudflare 后台给 `ai` 增加 Access/WAF。
+- SSH 密码登录已关闭（仅公钥，`00-` drop-in；v0.7.2 已归档旧回滚备份并清理 24h 窗口）；`antifield` 的 `NOPASSWD ALL` sudo 属既有残留（用户选择保留）；`fail2ban` 已启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化与 nftables 启动后恢复 drop-in 已安装。
+- RCON 仍监听所有接口（Paper 无 bind 配置），仅由 nftables 限制为 loopback；Cloudflare Access 主应用 + 4 个 bypass + service token 已配置并验证，v0.7.2 已为 `ai` 主机新增 Access 应用（Owner allow + Smoke service token），Free 套餐无自定义 WAF 规则集，保留应用侧限流；service token 只保存在 PC gitignored `.local/cf-access.env`，应定期轮换。
 - Cloudflare 终止 TLS，可见明文；单 SD 卡、无全盘加密。
 - 限流状态在内存中，应用重启清零；`http-proxy` 在 Node 26 有弃用警告，Node 27 前需评估替换；scrypt 仍为 N=2^15；单进程单点，`synchronous=NORMAL` 不抗突然断电最后若干毫秒写入。
 - 分享不支持目录打包，多文件分享不提供服务端 zip；下载次数为会话级近似限制；无公开笔记分享。
 - 不支持 WebDAV、Minecraft 启停/控制台、多用户/权限分离；Cloudflare 约 100 MiB/100s 请求限制仍约束单请求上传。
-- 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练/异地副本计划任务需用户手动安装，未装时状态为“未运行/unknown”。
+- 世界备份依赖 Minecraft 运行与 RCON 可达；v0.7.2 已安装 Windows 世界拉取周任务（周日 12:00）并手动验证成功；恢复演练保持手动/季度，异地副本任务待 rclone remote 配置。
 - **备份整包加密默认关闭且 Web 不可恢复**：加密归档（`.age`）只能在 PC 用离线私钥解密/校验/恢复；私钥丢失即无法恢复明文，Pi 不持私钥也无法代解密。预部署 DB 快照继续明文（0600、保留 2 份，供自动回滚），属威胁模型明确豁免项。
 - **加密失败关闭的残余窗口**：SIGKILL/断电/ENOSPC 可能残留 `*.plain.tmp`（正常路径立即删除，>24h 由下次 prepare 清理）；崩溃只允许产生可清理临时文件或“有密文无 DB 行”孤儿（只报告、不自动删除），后者需人工核对。
-- **异地副本默认关闭**：需用户在 PC 配置 rclone remote/凭据（脚本不创建），只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。
-- **明确残余（D-18 记录、不本版强行改造）**：BotService 仍为大型 facade（D-16 已抽出 inbound/diagnostics 等，进一步拆分排 v0.8）；服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；审计失败计数为进程内、不持久化；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/BACKUP.md` §11。
+- **异地副本默认关闭**：需用户在 PC 配置 rclone remote/凭据（脚本不创建），只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。v0.7.2 已安装 rclone v1.75.2，remote 尚未配置。
+- **明确残余（D-18 记录、不本版强行改造）**：服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/BACKUP.md` §11。
 - Bot 已知限制：仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件（或显式开启全量消息后由模型决定是否回复）；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批留待后续。
 - 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
-- 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1）；Web 导入归档无自动保留策略（DR-7）；
-  告警跨周期不重复投递（DR-22）；`.backup.lock` 无心跳续租（DR-23，>1h 可按陈旧锁接管）。
+- 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1，v0.7.2 增加 `clockSkew` 状态可见性，不自动修正）；Web 导入归档已按 90 天保留（DR-7 已收口）；告警持续 firing 每 24h 重通知（DR-22 已收口）；`.backup.lock` 已加 30s 心跳续租（DR-23 已收口）。
 
 详细设计与验收标准见 `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`、`docs/BOT.md`、`docs/API.md`、`docs/UI-SPEC.md`。
 

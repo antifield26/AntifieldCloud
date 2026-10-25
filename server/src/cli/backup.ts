@@ -17,11 +17,9 @@ import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import {
   chmodSync,
-  closeSync,
   createReadStream,
   existsSync,
   mkdirSync,
-  openSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -36,6 +34,7 @@ import { promisify } from 'node:util'
 import { ensureRuntimeDirs, loadConfig, type Config } from '../config.ts'
 import { getMeta, openDatabase, setMeta, transaction } from '../db.ts'
 import { audit } from '../auth/audit.ts'
+import { acquireLock, releaseLock } from './backup-lock.ts'
 import {
   archiveSidecarName,
   assertAgeBinary,
@@ -118,6 +117,8 @@ interface ArchiveResult {
   orphans: OrphanArchive[]
   /** 缺失物理文件被跳过时的告警；空数组表示全部落盘文件都已归档。 */
   warnings: string[]
+  /** DR-1：时钟回拨/未来时间戳检测状态；只提示，不自动修正水位。 */
+  clockSkew: { detected: boolean; futureFiles: number; watermarkRollback: boolean }
   /** 快照中存在但磁盘缺失、本次未归档的文件 id（已写入 manifest 便于人工核对）。 */
   skippedMissing: string[]
   /** 上次 ack 记录、本次强制重新检查的历史缺失文件数。 */
@@ -212,42 +213,6 @@ function sha256File(path: string): Promise<string> {
     stream.on('error', reject)
     stream.on('end', () => resolvePromise(hash.digest('hex')))
   })
-}
-
-function acquireLock(path: string): number {
-  try {
-    const fd = openSync(path, 'wx')
-    writeFileSync(fd, String(process.pid))
-    return fd
-  } catch (error) {
-    try {
-      const stats = statSync(path)
-      // 进程被杀后遗留的锁：超过 1 小时视为陈旧，允许接管。
-      if (Date.now() - stats.mtimeMs > 60 * 60 * 1000) {
-        unlinkSync(path)
-        return acquireLock(path)
-      }
-    } catch {
-      // 锁文件不可读时继续抛原始错误。
-    }
-    throw new Error(
-      `另一个备份操作正在进行（锁文件 ${path}）：${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    )
-  }
-}
-
-function releaseLock(fd: number, path: string): void {
-  try {
-    closeSync(fd)
-  } catch {
-    // 忽略关闭失败。
-  }
-  try {
-    unlinkSync(path)
-  } catch {
-    // 忽略清理失败。
-  }
 }
 
 function maxTimestamp(...values: Array<string | null | undefined>): string | null {
@@ -611,12 +576,14 @@ async function createArchive(
     // 时针回拨/未来时间戳检测：增量依赖 created_at > 上次水位，回拨会永久漏备。
     const clockWarnings: string[] = []
     const futureCount = files.filter((file) => file.created_at > createdAt).length
+    const watermarkRollback = Boolean(previous && previous > createdAt)
     if (futureCount > 0) {
       clockWarnings.push(`${futureCount} 个文件 created_at 晚于当前时间，请检查系统时钟（NTP）`)
     }
-    if (previous && previous > createdAt) {
+    if (watermarkRollback) {
       clockWarnings.push('备份水位晚于当前时间，系统时钟可能回拨；建议立即做一次 --full')
     }
+    const clockSkew = { detected: futureCount > 0 || watermarkRollback, futureFiles: futureCount, watermarkRollback }
     const warnings: string[] = []
     if (skippedMissing.length > 0) {
       warnings.push(
@@ -650,6 +617,7 @@ async function createArchive(
       totalBytes,
       skippedMissing,
       warnings,
+      clockSkew,
       ...(encryptionEnabled ? { encrypted: true, archiveFormat: 'tar.gz.age' as const } : {}),
     }
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), { mode: 0o600 })
@@ -768,6 +736,7 @@ async function createArchive(
       orphanBytes,
       orphans,
       warnings,
+      clockSkew,
       skippedMissing,
       previousMissing: previousMissing.length,
       encrypted: encryptionEnabled,
@@ -1020,7 +989,7 @@ async function main(): Promise<void> {
     }
 
     const lockPath = join(backupsDir, '.backup.lock')
-    const lockFd = acquireLock(lockPath)
+    const lock = acquireLock(lockPath)
     try {
       if (args.command === 'ack') {
         emit(await ackArchive(db, backupsDir, args.name!, args.sha256!))
@@ -1043,7 +1012,7 @@ async function main(): Promise<void> {
         legacy: true,
       })
     } finally {
-      releaseLock(lockFd, lockPath)
+      releaseLock(lock)
     }
   } finally {
     try {

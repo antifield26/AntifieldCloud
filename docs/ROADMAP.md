@@ -1,5 +1,11 @@
 # 路线图
 
+## v0.7.2（已实现，待部署验收；D-18 收口；schema v17；OpenCode v2.1.4）
+
+- **范围**：审计失败持久化（schema v17）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew`、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径测试；Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务、rclone 安装。
+- **明确不改造**：单进程/HA、内存限流、同步维护、SQLite `synchronous=NORMAL`、单 SD/LUKS、NOPASSWD sudo、RCON 监听、Cloudflare 明文、真实平台负路径（只补夹具）等继续作为明确残余。
+- **状态**：本地实现与门禁完成（`npm test` 497、`test:web` 222、服务端覆盖率 92.85/78.35/88.11）；生产部署/schema v16→v17 迁移/smoke/用户验收待补；备份加密/异地副本保持关闭，异地副本待 rclone remote。
+
 ## v0.7.1（已发布：Tag `v0.7.1` + GitHub Release；群聊共享会话；schema 保持 v16；OpenCode v2.1.4）
 
 - **范围**：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话，模型可见群内多用户历史；群内 Chat 批次/命令按目标串行，避免并发写同一会话；私聊保持每用户独立会话；真实用户仍用于限流、记忆/审计/发送工具令牌。
@@ -230,7 +236,7 @@
 1. **更多 Bot 平台**：企业微信/钉钉/飞书（原 v0.5.4 计划，未排期；需各自回调签名/加解密与媒体模型）；QQ 媒体能力待平台开放后再评估。
 2. **Bot 多人审批/发布复核**：在单管理员 TOTP + `PUBLISH` 之外增加第二人复核或延时窗口；需先定义多管理员模型。
 3. **Slack 按钮**：Slack interactivity 与 `response_url`/`trigger_id` 语义，补齐与 Telegram/Discord 一致的只读按钮。
-4. **整包加密 + 异地副本**：普通归档仍含 TOTP/会话明文；优先评估 age/restic 整包加密、VPS/对象存储异地副本与生命周期。
+4. **备份/灾备增强**：整包加密与异地副本已于 v0.7.0 实现（默认关闭），后续仅做启用/演练与多远端评估，不再作为未实现候选。
 5. **目录/打包分享**：目录选择、流式 zip（不落盘）、分享内相对路径；需处理配额、次数与 tar 安全。
 6. **笔记公开分享**：只读 token + 密码/过期，沿用分享限流与 noindex；需先定义 Markdown/附件外链的泄漏边界。
 7. **WebDAV / rclone（只读优先）**：读写需处理锁/并发/配额；复用现有 DB id 与不可变语义。
