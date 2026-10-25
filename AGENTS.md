@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.0，2026-10-25 本地门禁）：`npm test` **482**（server+scripts，含 scripts 29）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.63% / Branches 78.16% / Functions 87.77%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%、build `index-DoPUAny6.js` 726.64 kB；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.0 已部署**（2026-10-25 09:06 CST，release `20261025T010620Z`/commit `5c31162`，`/healthz` v0.7.0/schema16；D-20 连续外发 1000ms 间隔为部署后追加项，待再次部署）；OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 待真实 QQ 联调。
+当前基线（v0.7.0，2026-10-25 本地门禁）：`npm test` **482**（server+scripts，含 scripts 29）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.63% / Branches 78.16% / Functions 87.77%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%、build `index-DoPUAny6.js` 726.64 kB；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.0 已部署**（2026-10-25 09:45 CST，release `20261025T014533Z`/commit `ac4b2f9`，`/healthz` v0.7.0/schema16；含 D-20 连续外发 1000ms 间隔，生产代码探针实测 1001ms）；OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 待真实 QQ 联调。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 

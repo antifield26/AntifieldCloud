@@ -20,7 +20,7 @@
 - **v0.7.0（已部署生产，待 Tag/Release；本版无 schema 迁移，保持 v16）**：第六轮审计修复 + 备份整包加密 + 异地副本（默认关闭）；OpenCode **v2.1.4**。
   部署步骤：按 §3.0 走 `deploy.ps1`（自动迁移前快照/回滚/`release.json`/`deploy-history.log`），smoke 使用
   `-ExpectedVersion 0.7.0 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`；OpenCode 升级按 §3.2 矩阵；
-  备份加密/异地副本默认关闭，启用顺序与回滚见 §9.10/§9.11。生产指纹：release `20261025T010620Z`/commit `5c31162`、`/healthz` v0.7.0/schema16；部署内 smoke 23/23、完整 Access smoke 31/0/1/2；D-20 Bot 连续外发 1000ms 为部署后追加项。
+  备份加密/异地副本默认关闭，启用顺序与回滚见 §9.10/§9.11。生产指纹：release `20261025T014533Z`/commit `ac4b2f9`、`/healthz` v0.7.0/schema16；部署内 smoke 23/23、完整 Access smoke 31/0/1/2；D-20 Bot 连续外发 1000ms 已包含（生产代码探针 1001ms）。
 - **上一版本 v0.6.6（已发布：Tag `v0.6.6` + GitHub Release）**：系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16（无迁移）。
   生产 release/commit/备份证据与回滚目标见 `docs/ACCEPTANCE.md`、`CHANGELOG.md` 与历史发布记录；回滚可切回 v0.6.6 release（同 schema16）。
 - **更早版本**：v0.6.5/v0.6.4/v0.6.3/v0.6.2/v0.6.1/v0.6.0/v0.5.x 的部署证据、release 目录与回滚对照见 `docs/ACCEPTANCE.md`/`CHANGELOG.md`。

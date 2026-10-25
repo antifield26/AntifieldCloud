@@ -27,7 +27,7 @@
   - D-18 P3 处置：可修小项随本版修；架构性/已接受项写入 ARCHITECTURE/SECURITY 明确残余，不强行改造。
   - D-19 版本：`0.7.0`；schema v16 无迁移；OpenCode v2.1.4；加密/异地默认关闭；生产部署已执行，Tag 待验收后。
   - D-20 Bot 连续外发：同一 Bot（AppID）外发文本按 **1000ms 最小间隔**串行，覆盖长文本分段、发送工具多条消息、兜底文本与队列发送；测试可注入 0，生产默认固定 1000ms。
-- **门禁**：`npm run check`/`test:coverage`/`test:web:coverage`/`build`/`check-version`/`check-prod-deps` 全绿；2026-10-25 实测：`npm test` **482**、Bot 定向 **184**、`test:web` **222**、服务端覆盖率 **92.63/78.16/87.77**、前端 **52.31/47.32/45.02**、build `index-DoPUAny6.js` 726.64 kB；生产 release `20261025T010620Z`/commit `5c31162`、smoke 23/23 与完整 31/0/1/2；D-20 追加后为本地门禁结果，待再次部署。Tag/真实 QQ 验收待用户确认。
+- **门禁**：`npm run check`/`test:coverage`/`test:web:coverage`/`build`/`check-version`/`check-prod-deps` 全绿；2026-10-25 实测：`npm test` **482**、Bot 定向 **184**、`test:web` **222**、服务端覆盖率 **92.63/78.16/87.77**、前端 **52.31/47.32/45.02**、build `index-DoPUAny6.js` 726.64 kB；生产 release `20261025T014533Z`/commit `ac4b2f9`、smoke 23/23 与完整 31/0/1/2；D-20 已随该 release 部署（生产代码探针 1001ms）。Tag/真实 QQ 验收待用户确认。
 
 ## v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移）
 
