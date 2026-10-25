@@ -139,6 +139,11 @@ export interface AiCall {
   image?: BotAiImage
   /** v0.6.4：新会话标题，便于断言目标名称 + Chat。 */
   sessionTitle?: string
+  /** 真实触发用户（用于群聊共享会话仍然按真实用户记账）。 */
+  userId?: string
+  /** 会话归属键；群聊为共享合成键。 */
+  sessionUserId?: string
+  sharedSession?: boolean
 }
 
 /** 一次结构化记忆抽取调用的输入（用于断言批次内容/旧摘要迁移）。 */
@@ -237,11 +242,21 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
     ...(options.aiEnabled
       ? {
           ai: {
-            chat: async (input: { prompt: string; image?: BotAiImage; sessionTitle?: string }) => {
+            chat: async (input: {
+              prompt: string
+              image?: BotAiImage
+              sessionTitle?: string
+              userId?: string
+              sessionUserId?: string
+              sharedSession?: boolean
+            }) => {
               const call: AiCall = {
                 prompt: input.prompt,
                 ...(input.image ? { image: input.image } : {}),
                 ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
+                ...(input.userId ? { userId: input.userId } : {}),
+                ...(input.sessionUserId ? { sessionUserId: input.sessionUserId } : {}),
+                ...(input.sharedSession ? { sharedSession: true } : {}),
               }
               aiCalls.push(call)
               return aiHandler(call)

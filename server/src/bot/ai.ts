@@ -85,6 +85,8 @@ interface ChatTarget {
   botId: string
   targetExternalId: string
   userId: string
+  /** 群聊共享会话（多用户）；首次使用时清理旧版按用户拆分的映射。 */
+  sharedSession: boolean
 }
 
 interface HttpResult {
@@ -220,6 +222,8 @@ export class OpenCodeBotAi implements BotAi {
     botId: string
     targetExternalId: string
     userId: string
+    sessionUserId?: string
+    sharedSession?: boolean
     prompt: string
     sessionTitle?: string
     image?: BotAiImage
@@ -227,7 +231,8 @@ export class OpenCodeBotAi implements BotAi {
     const target: ChatTarget = {
       botId: input.botId,
       targetExternalId: input.targetExternalId,
-      userId: input.userId,
+      userId: input.sessionUserId ?? input.userId,
+      sharedSession: input.sharedSession === true,
     }
     // fail-closed（SEC-11）：启用发送工具时不允许在未隔离的默认权限会话里继续对话。
     // 若已到重试窗口，允许 ensureSession 重新尝试带 permissions 的新会话；仍失败则抛 503。
@@ -430,6 +435,8 @@ export class OpenCodeBotAi implements BotAi {
 
   /** 按 (botId,targetExternalId,userId) 复用 Chat 会话；数据库 mode 固定写 chat。 */
   private async ensureSession(target: ChatTarget, title?: string): Promise<{ sessionId: string; created: boolean }> {
+    // v0.7.1：旧版群聊按用户各建一个会话；首次使用共享会话时清理这些映射，远端旧会话尽力异步删除。
+    if (target.sharedSession) this.dropLegacySharedSessionMappings(target)
     const existing = this.db
       .prepare(
         "SELECT session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ? AND mode = 'chat'",
@@ -451,6 +458,31 @@ export class OpenCodeBotAi implements BotAi {
       )
       .run(target.botId, target.targetExternalId, target.userId, sessionId, this.modelLabel, now, now)
     return { sessionId, created: true }
+  }
+
+  /**
+   * 旧版群聊会话按真实用户拆分；升级到共享会话后清理同目标下的其它 Chat 映射。
+   * 仅删除本地映射并异步尽力删除远端会话，不阻塞当前对话；新共享会话随后创建。
+   */
+  private dropLegacySharedSessionMappings(target: ChatTarget): void {
+    const rows = this.db
+      .prepare(
+        "SELECT session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND mode = 'chat' AND user_id <> ?",
+      )
+      .all(target.botId, target.targetExternalId, target.userId) as unknown as AiSessionRow[]
+    if (rows.length === 0) return
+    this.db
+      .prepare(
+        "DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND mode = 'chat' AND user_id <> ?",
+      )
+      .run(target.botId, target.targetExternalId, target.userId)
+    this.log?.('info', '群聊旧分用户会话映射已合并', {
+      target: target.targetExternalId.slice(0, 32),
+      removed: rows.length,
+    })
+    for (const row of rows) {
+      void this.deleteSession(row.session_id).catch(() => undefined)
+    }
   }
 
   private async createSession(title = 'AntifieldCloud Bot'): Promise<string> {

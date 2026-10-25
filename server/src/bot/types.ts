@@ -263,6 +263,10 @@ export interface BotAi {
     botId: string
     targetExternalId: string
     userId: string
+    /** 会话归属键；群聊传共享合成键，缺省使用真实 userId。 */
+    sessionUserId?: string
+    /** 是否为多用户共享会话（群聊）；用于清理旧版按用户拆分的群会话映射。 */
+    sharedSession?: boolean
     prompt: string
     /** 新会话标题；为空时使用内置默认标题。 */
     sessionTitle?: string

@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { transaction } from '../db.ts'
 import { newId } from '../util/ids.ts'
 import { nowIso } from '../util/time.ts'
+import { GROUP_CHAT_SESSION_USER_ID } from './session.ts'
 import type {
   BotMemoryItemPrompt,
   BotMemoryItemSummary,
@@ -567,9 +568,11 @@ export class BotMemoryStore {
              WHERE bot_id = ? AND target_external_id = ? AND is_direct = 0
              UNION
              SELECT DISTINCT user_id FROM bot_ai_sessions
-             WHERE bot_id = ? AND target_external_id = ?`,
+             WHERE bot_id = ? AND target_external_id = ? AND user_id <> ?`,
           )
-          .all(group.bot_id, group.external_id, group.bot_id, group.external_id) as unknown as { user_id: string }[]
+          .all(group.bot_id, group.external_id, group.bot_id, group.external_id, GROUP_CHAT_SESSION_USER_ID) as unknown as {
+          user_id: string
+        }[]
         for (const participant of participants) {
           const nameRow = this.db
             .prepare(

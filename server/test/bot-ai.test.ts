@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../src/config.ts'
 import { OpenCodeBotAi } from '../src/bot/ai.ts'
+import { GROUP_CHAT_SESSION_USER_ID } from '../src/bot/session.ts'
 import { AppError } from '../src/util/errors.ts'
 import { cleanupDir, tempDataDir, testConfig, testDb } from './helpers.ts'
 
@@ -333,6 +334,60 @@ test('第二次对话复用同一 session_id，不重复创建会话', async () 
     assert.equal(row.session_id, SESSION_ID)
     assert.notEqual(row.updated_at, '2000-01-01T00:00:00.000Z')
     assert.ok(String(row.updated_at) > '2000-01-01T00:00:00.000Z')
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.7.1：同一群不同成员复用同一个共享会话，并清理旧版分用户映射', async () => {
+  const fixture = setup(basicHandler())
+  try {
+    const groupTarget = 'group-shared-target'
+    const now = '2026-10-25T00:00:00.000Z'
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_ai_sessions (bot_id, target_external_id, user_id, mode, session_id, model, created_at, updated_at)
+         VALUES (?, ?, 'user-a', 'chat', 'ses_old_a', 'm', ?, ?), (?, ?, 'user-b', 'chat', 'ses_old_b', 'm', ?, ?)`,
+      )
+      .run(BOT_ID, groupTarget, now, now, BOT_ID, groupTarget, now, now)
+
+    const first = await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: groupTarget,
+      userId: 'user-a',
+      sessionUserId: GROUP_CHAT_SESSION_USER_ID,
+      sharedSession: true,
+      prompt: '甲：你好',
+      sessionTitle: '测试群 Chat',
+    })
+    const second = await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: groupTarget,
+      userId: 'user-b',
+      sessionUserId: GROUP_CHAT_SESSION_USER_ID,
+      sharedSession: true,
+      prompt: '乙：你好',
+      sessionTitle: '测试群 Chat',
+    })
+    assert.equal(first, '默认回答')
+    assert.equal(second, '默认回答')
+
+    const createCalls = fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session')
+    assert.equal(createCalls.length, 1, '群聊只应创建一个 OpenCode 会话')
+    const rows = fixture.db
+      .prepare('SELECT user_id, session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ?')
+      .all(BOT_ID, groupTarget) as unknown as { user_id: string; session_id: string }[]
+    assert.equal(rows.length, 1, '同一群只保留一条会话映射')
+    assert.equal(rows[0]?.user_id, GROUP_CHAT_SESSION_USER_ID)
+    assert.equal(rows[0]?.session_id, SESSION_ID)
+    assert.ok(
+      fixture.calls.some((call) => call.method === 'DELETE' && call.url.pathname === '/api/session/ses_old_a'),
+      '应尽力删除旧分用户远端会话',
+    )
+    assert.ok(
+      fixture.calls.some((call) => call.method === 'DELETE' && call.url.pathname === '/api/session/ses_old_b'),
+      '应尽力删除旧分用户远端会话',
+    )
   } finally {
     dispose(fixture)
   }

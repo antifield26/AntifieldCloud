@@ -17,6 +17,7 @@ import { BurstMerger, type BurstTiming } from './burst.ts'
 import { buildBotPrompt, type BotSendToolPrompt, type GroupChatMode } from './prompts.ts'
 import { formatAiReply } from './format.ts'
 import { extractRawToolCallText, stripRawToolCallText } from './dsml.ts'
+import { GROUP_CHAT_SESSION_USER_ID } from './session.ts'
 import type { BotChatRole, BotChatRoleStore } from './roles.ts'
 import type { BotGroupRoleStore } from './group-roles.ts'
 import { groupMemoryScope, type BotMemoryStore } from './memory.ts'
@@ -114,6 +115,14 @@ function isNoReplyAnswer(answer: string): boolean {
 /** 会话 key：Bot×目标×用户（与 burst 合并键一致）。 */
 function botChatKey(botId: string, targetExternalId: string, userId: string): string {
   return `${botId}:${targetExternalId}:${userId}`
+}
+
+/**
+ * 群聊 AI 会话串行键：同一群的所有成员共享一个 OpenCode 会话，因此按目标串行；
+ * 私聊仍按 Bot×目标×用户串行。
+ */
+function botChatSerializationKey(botId: string, targetExternalId: string, userId: string, isGroup: boolean): string {
+  return isGroup ? `${botId}:${targetExternalId}:group` : botChatKey(botId, targetExternalId, userId)
 }
 
 /** Chat 管线需要 BotService 提供的能力（facade 反向注入，避免循环依赖）。 */
@@ -328,7 +337,12 @@ export class BotChatPipeline {
     if (items.length === 0) return
     const last = items[items.length - 1]
     if (!last) return
-    const key = botChatKey(last.bot.id, last.result.targetExternalId, last.result.userId)
+    const key = botChatSerializationKey(
+      last.bot.id,
+      last.result.targetExternalId,
+      last.result.userId,
+      last.result.targetKind === 'group',
+    )
     return this.runChatExclusive(key, () => this.executeChatBatchUnlocked(items, forceSearch))
   }
 
@@ -797,6 +811,7 @@ export class BotChatPipeline {
         botId: bot.id,
         targetExternalId,
         userId,
+        ...(groupMemory ? { sessionUserId: GROUP_CHAT_SESSION_USER_ID, sharedSession: true } : {}),
         prompt,
         ...(sessionTitle ? { sessionTitle } : {}),
         ...(image ? { image } : {}),
