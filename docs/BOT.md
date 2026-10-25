@@ -61,7 +61,8 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 - `server/src/bot/text.ts`：QQ 单条文本上限 2000、分段（最多 4 段、续段前缀、截断标记、代理对安全切分）。
 - `server/src/bot/format.ts`：AI Markdown → QQ 纯文本（去代码块/标题/粗体/列表/链接标记，仅 http(s) 链接保留为文字）。
 - `server/src/bot/errors.ts`：平台/队列错误 → 中文提示（管理页 `lastErrorHint`），不含凭据/URL/响应正文。
-- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、工具白名单、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；v0.6.4 起按配置放行 `botmsg_*` MCP 发送工具；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；降级后 fail-closed 与 10 分钟重试窗口见 §5.9；兼容性基于 OpenCode v2.1.4）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
+- `server/src/bot/ai.ts`：OpenCode 本地 API 客户端，提供 Chat 会话复用、工具白名单、超时/截断、图片 prompt files 与记忆抽取（v0.5.9 起 AI 仅 Chat；v0.5.10 摘要使用一次性远端会话并在 `finally` 删除；v0.6.0 起 wait 回退轮询只接受本次 prompt 之后的新 assistant 消息，避免复用会话返回旧回答；v0.6.4 起按配置放行 `botmsg_*` MCP 发送工具；v0.7.1 起群聊使用共享会话键并在首次使用时清理旧版分用户映射；permissions 降级会累计并通过 `toolIsolation()` 暴露到 `GET /api/bots/status` 与审计 `bot.ai.permissions_fallback`；降级后 fail-closed 与 10 分钟重试窗口见 §5.9；兼容性基于 OpenCode v2.1.4）。回答上限 `BOT_AI_MAX_REPLY_CHARS`，QQ 层再分段。
+- `server/src/bot/session.ts`：群聊共享 AI 会话的合成键 `__group__` 与判定函数；v0.7.1 起同一群聊目标唯一会话，私聊仍用真实用户键。
 - `server/src/bot/group-roles.ts`：群聊目标共享角色卡存储；`server/src/http/routes/bot-ai-tool.ts`：消息发送 MCP 的内部回调路由（turn token HMAC、无 session/CSRF）。
 - `server/src/bot/memory.ts`：结构化长期记忆（v0.5.11）：`bot_memory_items` 7 类条目 + `bot_memory_state` 启停/legacy 标记；抽取校验/敏感过滤/容量与 TTL/分层召回；v0.6.0 起 key/value/legacy 均过滤敏感内容，读取侧也排除旧版本已落库的敏感条目；旧摘要仅作 legacy 来源与 fallback，抽取 ops=0 不置迁移标记。
 - `server/src/bot/roles.ts`：每 Bot×用户私聊角色卡；提供元数据列表、启停、删除（正文只供 `/role show` 与 Chat 提示词）。内置默认角色 `lofii` 自 v0.6.0 起只保留名字与简短对话风格，不注入详细人设/背景；v0.6.5 起 `/role show` 对用户自定义卡返回完整详情，默认角色卡只显示名称、不展示内置设定。
@@ -357,7 +358,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 
 - 适配器/验签/队列/命令白名单/发布 TOTP+`PUBLISH`/AI/Chat/记忆/文本分段/图片下载/连接自检/诊断/角色与记忆管理均有进程内测试（不访问真实平台/模型）。
 - QQ 适配器以 mock/fixture 覆盖（op=13/op=0、C2C/群@/频道、attachments 图片、access_token 自检、长文本分段）；AI 使用假 OpenCode HTTP 服务。
-- **v0.7.0 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **189 pass**（29 文件）；全量 `npm test` **487**；新增/更新覆盖工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
+- **v0.7.1 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **192 pass**（30 文件）；全量 `npm test` **490**；新增/更新覆盖群聊共享会话键/串行、真实 `OpenCodeBotAi` 同群单会话与旧映射清理、私聊独立会话；并保留工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
   群记忆清空空竞态、lastError 派生、Webhook 限流分桶与审计聚合、burst.clear、名称词边界、孤儿清理保守化、关闭排空；**D-20 连续外发 1000ms 间隔**（分段/发送工具多条/兜底/队列统一，按 Bot/AppID 串行）已由 `bot-send-interval.test.ts` 覆盖；生产真实 QQ/OpenCode 2.1.4 的 V10–V13 待真实用户联调。
 - 历史基线（v0.5.11）：`npm test` 360、`npm run test:web` 162；v0.6.x 基线见 `CHANGELOG.md`/`docs/ACCEPTANCE.md`。真实平台负路径（限流/签名漂移/故障）仍需部署后联调。
 - **真实平台前置条件**（部署/联调前确认）：

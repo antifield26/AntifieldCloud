@@ -84,7 +84,7 @@ v0.5.10 删除 PC 代理隧道脚本/计划任务与 `BOT_PROXY_URL`，生产 en
 - 发布（仅文本）：`POST /api/bots/:id/publish` 先做管理员 TOTP 再认证、`confirmText='PUBLISH'` 校验与 20 次/小时限流，再写 `bot_publish_jobs`（`draft→queued`）；
   队列发送纯文本（≤2000，超长分段；不支持媒体）；长文本 partial 失败标记 `failed`/`partial_text_sent` 且不自动重试；支持 `DELETE` 取消 `draft/queued`。
 - 指标：`GET /api/bots/:id/metrics?hours=24` 聚合 `bot_deliveries`/`bot_publish_jobs`/`bot_events` 的窗口统计（含 `lastErrorHint`），供 `/bots` 指标卡使用；不返回 AppSecret。
-- AI：v0.5.9 起仅普通消息 Chat 在 `BOT_AI_ENABLED=true` 时调用 `OpenCodeBotAi`；按 `(bot,target,user,mode)` 复用 `bot_ai_sessions.session_id`（v0.5.9 起只写 chat），新建会话传 deny-all Permission.Ruleset；
+- AI：v0.5.9 起仅普通消息 Chat 在 `BOT_AI_ENABLED=true` 时调用 `OpenCodeBotAi`；v0.7.1 起私聊按 `(bot,target,user,mode)` 复用 `bot_ai_sessions.session_id`，群聊按 `(bot,target,__group__,mode)` 复用唯一共享会话（模型可见群内多用户历史），群内 Chat 按目标串行；新建会话传 deny-all Permission.Ruleset；
   只读取 assistant text，按 `BOT_AI_MAX_REPLY_CHARS` 截断后交给回复管线；图片以 prompt files data URL 交给模型 provider；超时/HTTP 错误只返回短码，不泄漏 OpenCode 密码/URL。
 - 配置/密钥：Bot 配置只存公开字段（QQ `appId`）；AppSecret 经 `crypto.ts` AES-256-GCM 加密后存 `bots` 三个密文字段；任何读取都只在服务端短生命周期解密。
 
@@ -143,7 +143,7 @@ SQLite（WAL）核心表（schema v14）：
 - `bot_publish_jobs`：发布任务（纯文本 + `scheduled_at`；`media_file_ids_json` 列保留但写空、不再外发媒体），状态 `draft|queued|sending|sent|failed|canceled`。
 - `bot_events`：`(bot_id, platform_event_id)` 主键，用于 Webhook 重放去重；诊断列 `event_kind/outcome/detail/target_external_id/user_id/updated_at` 与 `(bot_id, outcome, received_at)` 索引；
   只存事件元数据（不存正文），按 `received_at` 保留 7 天。
-- `bot_ai_sessions`：`(bot_id, target_external_id, user_id, mode)` 主键（mode=chat/task；v0.5.9 起只写 `chat`，列保留），映射 OpenCode `session_id`、模型标签与更新时间；旧会话归 chat；按保留期清理，不删除远端会话。
+- `bot_ai_sessions`：`(bot_id, target_external_id, user_id, mode)` 主键（mode=chat/task；v0.5.9 起只写 `chat`，列保留），映射 OpenCode `session_id`、模型标签与更新时间；v0.7.1 起群聊目标固定用合成 `user_id=__group__`，同一群只有一条 Chat 映射（旧分用户映射在首次群 Chat 时清理并尽力删除远端会话）；私聊仍用真实 user_id；按保留期清理，不删除远端会话。
 - `bot_chat_roles`：`(bot_id,user_id)` 主键，保存私聊个人角色卡名字/设定/启用状态与时间戳；仅私聊 Chat 读取，启用时覆盖默认 lofii；角色变更删除对应 chat 会话映射；
 - `bot_group_roles`：`target_id` 主键 FK 到 `bot_targets`（级联），保存群聊目标共享角色卡名字/设定/启用状态与时间戳；群聊 Chat 读取，覆盖成员私聊个人卡；停用/删除回退默认 lofii；
   正文不通过 API/UI 暴露（管理接口只返回元数据）。

@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.7.0（**已发布：Tag `v0.7.0` + GitHub Release [AntifieldCloud v0.7.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.0)**；第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）；schema v16 无迁移；OpenCode v2.1.4）；v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.7.1（**本地修复，待部署/发布**；群聊共享会话；schema v16 无迁移；OpenCode v2.1.4）；v0.7.0（已发布：Tag `v0.7.0` + GitHub Release [AntifieldCloud v0.7.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.0)；第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）；schema v16 无迁移；OpenCode v2.1.4）；v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -38,6 +38,13 @@
 > 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
+
+## v0.7.1（本地修复，待部署/发布；群聊共享会话；schema 保持 v16；OpenCode v2.1.4）
+
+- **问题**：真实群聊中，`bot_ai_sessions` 仍按 `(bot_id,target_external_id,user_id,mode)` 为每个成员分别建会话；模型只能看到单个用户的历史，前版加入的用户名 head 无法发挥多用户上下文作用。
+- **修复**：群聊（`target.kind = group`）统一使用合成会话键 `__group__`，同一群只复用一个 OpenCode Chat 会话；群内 Chat 批次/命令按群目标串行，避免多成员并发写同一会话；私聊保持每用户独立会话。真实用户仍用于限流、记忆 scope、审计和发送工具 turn token；用户消息继续带用户名 head。
+- **兼容/清理**：首次使用群共享会话时删除旧版按用户拆分的 `bot_ai_sessions` 群映射，并尽力异步删除远端旧会话；旧摘要迁移参与者查询排除共享合成键。schema 保持 **v16（无迁移）**。
+- **本地验证（2026-10-25 实测）**：`npm test` **490**（新增 `bot-v071.test.ts` 2 例、`bot-ai.test.ts` 1 例；Bot 定向 **192**）；`npm run test:web` **222**；服务端覆盖率 **Lines 92.69% / Branches 78.27% / Functions 87.86%**；前端覆盖率不变（52.31/47.32/45.02）；`npm run check`、`npm run build`（`index-C0QZV4hZ.js` 726.72 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.1`）通过。待生产部署与真实双用户群聊验收。
 
 ## v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode v2.1.4）
 
