@@ -70,6 +70,31 @@ test('v0.7.1：同一群不同成员的 AI 调用使用共享会话键，真实�
   }
 })
 
+test('v0.7.1：Bot 启动时清理旧版分用户群会话映射并尽力删除远端会话', async () => {
+  const fixture = createQqServiceFixture({ aiEnabled: true })
+  try {
+    const target = createGroupTarget(fixture)
+    const now = '2026-10-25T00:00:00.000Z'
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_ai_sessions (bot_id, target_external_id, user_id, mode, session_id, model, created_at, updated_at)
+         VALUES (?, ?, 'member-a', 'chat', 'ses_group_old_a', 'm', ?, ?), (?, ?, 'member-b', 'chat', 'ses_group_old_b', 'm', ?, ?)`,
+      )
+      .run(fixture.botId, target.externalId, now, now, fixture.botId, target.externalId, now, now)
+    fixture.service.start()
+    // 等待启动调度的一次 tick 结束，避免测试清理 DB 时仍有异步队列访问。
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const rows = fixture.db
+      .prepare('SELECT user_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ?')
+      .all(fixture.botId, target.externalId) as unknown as { user_id: string }[]
+    assert.equal(rows.length, 0, '启动后旧分用户群映射应被清理，等待首条群消息创建共享会话')
+    assert.deepEqual(fixture.deletedSessions.sort(), ['ses_group_old_a', 'ses_group_old_b'])
+  } finally {
+    fixture.service.stop()
+    fixture.cleanup()
+  }
+})
+
 test('v0.7.1：私聊仍按真实用户独立会话，不传共享会话键', async () => {
   const fixture = createQqServiceFixture({
     aiEnabled: true,

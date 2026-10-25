@@ -68,6 +68,7 @@ import {
   type RoleValidationError,
 } from './roles.ts'
 import { BotGroupRoleStore } from './group-roles.ts'
+import { GROUP_CHAT_SESSION_USER_ID } from './session.ts'
 import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
 import { QqAdapter, DEFAULT_SEND_INTERVAL_MS } from './adapters/qq.ts'
 import { BOT_TEXT_LIMITS } from './text.ts'
@@ -1181,6 +1182,35 @@ export class BotService {
     void task.finally(() => this.pending.delete(task))
   }
 
+  /**
+   * v0.7.1：旧版群聊会话按成员拆分；启动时清理所有群目标的非共享 Chat 映射。
+   * 仅保留 `__group__` 映射（若已存在），并异步尽力删除远端旧会话；下次群 Chat 会创建共享会话。
+   */
+  private migrateLegacyGroupSessions(): void {
+    const groups = this.db
+      .prepare("SELECT bot_id, external_id FROM bot_targets WHERE kind = 'group'")
+      .all() as unknown as { bot_id: string; external_id: string }[]
+    let removed = 0
+    for (const group of groups) {
+      const stale = this.db
+        .prepare(
+          "SELECT session_id FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND mode = 'chat' AND user_id <> ?",
+        )
+        .all(group.bot_id, group.external_id, GROUP_CHAT_SESSION_USER_ID) as unknown as { session_id: string }[]
+      if (stale.length === 0) continue
+      this.db
+        .prepare(
+          "DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND mode = 'chat' AND user_id <> ?",
+        )
+        .run(group.bot_id, group.external_id, GROUP_CHAT_SESSION_USER_ID)
+      removed += stale.length
+      for (const row of stale) {
+        void this.deps.ai?.deleteSession?.(row.session_id)?.catch(() => undefined)
+      }
+    }
+    if (removed > 0) this.deps.log('info', '旧群聊分用户会话已清理', { removed })
+  }
+
   start(): void {
     if (!this.enabled || this.timer) return
     try {
@@ -1196,6 +1226,13 @@ export class BotService {
       this.migrateGroupMemoryOwners()
     } catch (error) {
       this.deps.log('warn', '群聊共享记忆归属迁移失败', {
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+    }
+    try {
+      this.migrateLegacyGroupSessions()
+    } catch (error) {
+      this.deps.log('warn', '群聊旧分用户会话清理失败', {
         error: error instanceof Error ? error.message : 'unknown',
       })
     }
@@ -1217,8 +1254,7 @@ export class BotService {
     this.connectivity.stop()
   }
 
-  async tick(): Promise<void> {
-    if (!this.enabled || this.stopped || this.ticking) return
+  async tick(): Promise<void> {    if (!this.enabled || this.stopped || this.ticking) return
     this.ticking = true
     try {
       this.queue.recoverStaleQueue()
