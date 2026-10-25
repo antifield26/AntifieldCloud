@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.2（已实现，待部署验收；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版收口 D-18 可落地残余：审计写入失败诊断持久化（`audit_write_failures`，schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 **90 天**保留（`BACKUP_IMPORT_RETENTION_DAYS`）、告警持续 firing **24h** 重通知（`ALERT_REPEAT_HOURS`）、备份锁 **30s** 心跳续租、DR-1 `clockSkew` 状态、BotService 拆分（`targets.ts`/`roles-admin.ts`/`memory-admin.ts`）与平台/模型负路径测试；运维侧完成 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 24h 回滚窗口清理、Windows 世界拉取周任务与 rclone v1.75.2 安装。备份整包加密/异地副本仍默认关闭（异地副本待 rclone remote）。上一发布 v0.7.1（群聊共享唯一 OpenCode Chat 会话，Tag/Release；生产 release `20261025T031856Z`/commit `d8bdfc5`）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.7.2（已部署生产，待用户验收；生产 release `20261025T132950Z`/commit `eb74382`；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版收口 D-18 可落地残余：审计写入失败诊断持久化（`audit_write_failures`，schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 **90 天**保留（`BACKUP_IMPORT_RETENTION_DAYS`）、告警持续 firing **24h** 重通知（`ALERT_REPEAT_HOURS`）、备份锁 **30s** 心跳续租、DR-1 `clockSkew` 状态、BotService 拆分（`targets.ts`/`roles-admin.ts`/`memory-admin.ts`）与平台/模型负路径测试；运维侧完成 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 24h 回滚窗口清理、Windows 世界拉取周任务与 rclone v1.75.2 安装。备份整包加密/异地副本仍默认关闭（异地副本待 rclone remote）。上一发布 v0.7.1（群聊共享唯一 OpenCode Chat 会话，Tag/Release；生产 release `20261025T031856Z`/commit `d8bdfc5`）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.2，2026-10-25 本地门禁）：`npm test` **497**（server+scripts，含 scripts 29；新增审计持久化/Bot 镜像/导入保留/告警重通知/锁心跳/负路径测试）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.85% / Branches 78.35% / Functions 88.11%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用仍为 **v0.7.1**（release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16）；v0.7.2 已实现，待部署验收。上一发布 v0.7.1（Tag/Release）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
+当前基线（v0.7.2，2026-10-25 本地门禁）：`npm test` **497**（server+scripts，含 scripts 29；新增审计持久化/Bot 镜像/导入保留/告警重通知/锁心跳/负路径测试）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.85% / Branches 78.35% / Functions 88.11%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.2 已部署**（release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；迁移前快照 `db-predeploy-20261025T133023319Z.sqlite` sha256 `127c1a3e…53de`；部署内 smoke 24/0/1/2、完整 Access smoke 32/0/0/2（`-SkipLocalTaskCheck`；Windows 每日备份任务标记仍为 0.7.1，需管理员重跑）；drill 报告 `20261025T133743Z` schema17 通过；备份加密/异地副本保持关闭）。上一发布 v0.7.1（Tag/Release）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
