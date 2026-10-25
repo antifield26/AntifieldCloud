@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.7.0] - 待发布
+## [v0.7.0] - 已部署生产（待 Tag/Release）
 
 ### Added
 
@@ -18,6 +18,7 @@
 - **OpenCode 目标版本 v2.1.4**：`DEPLOY.md` §3.2 固定 `opencode upgrade 2.1.4`，补二进制/data/env/unit/MCP 配置备份、14 项兼容矩阵（assistant 形状、permissions、wait、archived、MCP 进程/工具、compaction、密钥包 opencode DB、Bot 真实回归）与回滚判据；`smoke.ps1` 增加 OpenCode/MCP/fail2ban/unit 漂移只读检查。
 - **Bot 群共享记忆归属（D-13/BOT-03）**：群共享记忆 key 前缀由显示名改为稳定 `member_openid`，显示名只存 value；启动一次性 meta 迁移（`bot_group_memory_owner_migrated_v1`），无法映射的条目加 `legacy:` 保留；`/forget confirm` 同时清除本人在各群贡献的条目并取消在途抽取。
 - **Bot 行为保持重构（D-16）**：抽出入站处理 `bot/inbound.ts`、诊断存储 `bot/diagnostics.ts` 与队列/串行逻辑，`BotService` 保留 facade 与依赖装配；不改变 schema、提示词与外部行为。
+- **Bot 连续外发间隔（D-20）**：同一 Bot（按 AppID）外发文本按 **1000ms 最小间隔**串行，覆盖长文本分段、发送工具多条、兜底文本、命令/通知与队列；`access_token` 换取在闸门外不占间隔；多个 Bot 互不阻塞；测试可注入 0（生产默认 1000ms）。
 - **env/模板治理（OPS-04）**：`bootstrap-env.sh` 补齐 5 个未纳管键、纳管 4 个 v0.7.0 新键、新增 `--prune-unknown`（必须与 `--force` 联用）；`deploy/env.example` 的 `BACKUP_RESTORE_ENABLED=false` 与生成器一致并补全新键注释。
 - **验收/文档**：版本统一 `0.7.0`，schema 保持 **v16 无迁移**；`docs/AUDIT.md` 新增第六轮（P0=0/P1=3/P2=26/P3=73）；PLAN/ROADMAP/ACCEPTANCE/UI-SPEC/BOT/API/ARCHITECTURE/SECURITY/BACKUP/DEPLOY/README/AGENTS 全量同步。
 
@@ -37,7 +38,7 @@
 ### Security
 
 - 备份整包加密默认关闭；开启后 Pi 只存 age 公钥（root 属主、组/其他不可写、`age1` 格式校验），私钥离线 ≥2 份，启用前必须用私钥完成一次 `age -d` + 演练；失败关闭（age 缺失/公钥非法/加密失败即 prepare 失败，不产生 pending、不回退明文）；空间按 2× 明文预算；崩溃只允许残留可清理 `*.plain.tmp`/`.part` 或“有密文无 DB 行”孤儿（只报告不自动删）。
-- Web 不持私钥：`verify/import/entries/restore-plan/executeRestore` 对 `.age` 统一返回 `409 archive_encrypted`（在 `validArchiveName` 之前），恢复目标自动选择跳过加密归档；PC `backup-pull.ps1` 校验 `.meta.json`（schema/name/mode/archiveFormat/encrypted/encryptedWith/recipient/plainSha256/plainSize/cipherSha256/cipherSize 与 pending 一致）后才下载/ack，可选 `-AgeIdentityPath` 解密校验后立即删除临时明文。
+- Web 不持私钥：`verify/import/entries/restore-plan/executeRestore` 对 `.age` 统一返回 `409 archive_encrypted`（归档名合法化后、读取/解包前），恢复目标自动选择跳过加密归档；PC `backup-pull.ps1` 校验 `.meta.json`（schema/name/mode/archiveFormat/encrypted/encryptedWith/recipient/plainSha256/plainSize/cipherSha256/cipherSize 与 pending 一致）后才下载/ack，可选 `-AgeIdentityPath` 解密校验后立即删除临时明文。
 - 异地副本只上传 `.age`，明文计入 `plaintextSkipped`；状态文件只含别名/计数/时间，不含远端真实路径/URL/凭据。
 - 群共享记忆归属改为稳定 `member_openid`，同名/改名成员不再互相覆盖或删除。
 - 审计失败不再静默也不阻断业务：计数 + 最近错误经 `/api/version.audit` 可见。
@@ -52,9 +53,9 @@
 - 启用顺序（默认全部关闭）：部署 v0.7.0 → 离线生成备份 age 密钥并把公钥放 Pi → 用私钥完成一次解密演练 → 开 `BACKUP_ARCHIVE_ENCRYPTION=true` → 下一次 prepare 生成 `.age` → PC 拉取/ack → drill → 配置 rclone 与异地任务。回滚：关开关恢复明文，已生成的 `.age` 保留并在 PC 侧解密/演练。
 - PC 任务需重装：`install-backup-task.ps1` 刷新 `backup-pull.ps1`/`backup-offsite.ps1/.mjs` 与安装标记；异地任务需先配置 rclone remote（脚本不创建 remote/凭据）。
 - `smoke.ps1` 新增 `-ExpectedOpenCodeVersion/-ExpectedSshSources/-MaxMcpProcesses` 与 `-Skip*` 开关。
-- 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **478**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.63/78.16/87.84**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-DoPUAny6.js` 726.64 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass。
+- 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **482**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.63/78.16/87.77**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-DoPUAny6.js` 726.64 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass；Bot 定向 184 pass。追加 D-20：同一 Bot 连续外发文本最小间隔 1000ms（分段/发送工具/兜底/队列统一，按 AppID 串行；测试注入 0）。
 - OpenCode **v2.1.4** 已于 2026-10-25 08:21 CST 在生产只读升级：升级前备份 v2.1.3 二进制/data/env/unit/MCP（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e6…8b19`）；V1–V9、V14 PASS，V10–V13（真实 QQ/记忆/发送工具/搜索）待真实用户联调。
-- 生产应用 **v0.7.0 已部署**（2026-10-25 08:53/09:06 CST，commit `5c31162`，release `/opt/antifieldcloud/releases/20261025T010620Z`；`/healthz` v0.7.0/schema16；迁移前快照 `db-predeploy-20261025T010652355Z.sqlite` sha256 `a9930dd0…b4f1`）；部署内 smoke 23/23、完整 Access smoke 31/0（MCP 修复后），1 个 env 警告（2 个废弃键）与 2 个 SKIP（加密/异地默认关闭）；Windows 备份任务安装标记需管理员重跑 `install-backup-task.ps1`。
+- 生产应用 **v0.7.0 已部署**（2026-10-25 08:53/09:06 CST，commit `5c31162`，release `/opt/antifieldcloud/releases/20261025T010620Z`；`/healthz` v0.7.0/schema16；迁移前快照 `db-predeploy-20261025T010652355Z.sqlite` sha256 `a9930dd0…b4f1`）；部署内 smoke 23/23、完整 Access smoke 31 PASS/0 FAIL/1 WARN/2 SKIP（MCP 修复后），1 个 env 警告（2 个废弃键）与 2 个 SKIP（加密/异地默认关闭）；Windows 备份任务安装标记需管理员重跑 `install-backup-task.ps1`。D-20 连续外发 1000ms 为部署后追加项，需再次部署。
 - Tag/GitHub Release 与加密/异地副本启用演练仍待用户验收/密钥与 rclone 配置后执行。
 
 ## [v0.6.6] - 2026-10-24（已发布）

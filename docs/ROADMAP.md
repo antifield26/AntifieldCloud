@@ -1,10 +1,10 @@
 # 路线图
 
-## v0.7.0（待发布；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode 目标 v2.1.4）
+## v0.7.0（已部署生产，待 Tag/Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode v2.1.4）
 
 - **范围**：第六轮深度审计全部处置（P0=0/P1=3/P2=26/P3=73；P1/P2 全修，P3 可修小项随版修、架构性/已接受项写明确残余）；备份归档可选独立 age 整包加密（Web 不持私钥、`.age` 在 Web 一律 `409 archive_encrypted`、失败关闭、2× 空间、sidecar 元数据外置）；PC 端异地副本（只上传 `.age`、链感知保留、状态回写 Pi + `offsite_overdue` 告警）；Bot 工具隔离 fail-closed、群共享记忆归属 `member_openid`、D-16 行为保持重构；审计策略 best-effort（D-17）；真实域名/网段占位符化（OPS-07）；主机配置模板（OPS-09）；OpenCode 2.1.4 升级/回滚门禁。
 - **明确不做/记录**：`BotService` 进一步拆分（ARCH-01 剩余）、单进程/`synchronous=NORMAL`、平台 mock-only 负路径、`__Host-`/SSO IP 绑定/scrypt/`http-proxy` 等既有 P3（见 `docs/AUDIT.md` 第六轮 §5/§9 与 `docs/SECURITY.md` §4）。
-- **状态**：本地实现、门禁与文档同步完成（`npm test` 478、`test:web` 222、覆盖率服务端 92.63/78.16/87.84、前端 52.31/47.32/45.02、`check-version` 严格通过、build 通过）；OpenCode 已生产只读升级 v2.1.4（V1–V9/V14 通过，V10–V13 待部署后真实 QQ 联调）；生产应用 release/smoke/Tag 为 **待部署**。schema v16 无迁移；加密/异地默认关闭，启用顺序与回滚见 `docs/BACKUP.md` §5.1/§5.2、`docs/DEPLOY.md`。
+- **状态**：本地实现、门禁与文档同步完成；**生产应用已部署 v0.7.0**（release `20261025T010620Z`/commit `5c31162`，`/healthz` v0.7.0/schema16；部署内 smoke 23/23、完整 Access smoke 31/0/1/2，唯一待用户项为 Windows 备份任务安装标记）；OpenCode v2.1.4（V1–V9/V14 通过，V10–V13 待真实 QQ 联调）；追加 D-20 Bot 连续外发 1000ms 间隔待本次门禁/部署。Tag/Release 待用户验收。schema v16 无迁移；加密/异地默认关闭，启用顺序与回滚见 `docs/BACKUP.md` §5.1/§5.2、`docs/DEPLOY.md`。
 
 ## v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema 保持 v16）
 

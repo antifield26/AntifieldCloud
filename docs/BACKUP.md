@@ -72,7 +72,7 @@ deleted_at / origin / verified_at / manifest_json / last_error`；`origin` 区�
 只有未 ack 的 Pi 归档或缺失的导入归档才会返回 `status=missing`。
 
 `--prepare` 先写 `snapshot-*.tar.gz.part`，tar 成功后才原子改名为正式归档；失败/超时清理本次 `.part` 与陈旧锁。
-**加密路径的崩溃一致性顺序**：tar → `*.plain.tmp` → 计算 plain SHA-256/size → age 加密到 `*.part.age` → rename `.age` → 写 sidecar（temp+rename）→ 写 DB 行 → unlink `.plain.tmp`；崩溃最多留下可清理临时文件或“有密文无 DB 行”的孤儿（只报告、不自动删除）。加密开启时 age 缺失/公钥非法/加密失败/空间不足均在 `--prepare` 阶段失败关闭，不产生 pending、不降级明文；启动/下次 prepare 清理超过 24h 的 `*.plain.tmp` 残留。
+**加密路径的崩溃一致性顺序**：tar → `*.plain.tmp` → 计算 plain SHA-256/size → age 加密到 `*.part.age` → rename `.age` → 写 sidecar（temp+rename）→ unlink `.plain.tmp` → 写 DB 行；崩溃最多留下可清理临时文件或“有密文无 DB 行”的孤儿（只报告、不自动删除）。unlink 先于 DB 行以缩短明文窗口，sidecar 已先落盘，因此密文/元数据仍可诊断。加密开启时 age 缺失/公钥非法/加密失败/空间不足均在 `--prepare` 阶段失败关闭，不产生 pending、不降级明文；启动/下次 prepare 清理超过 24h 的 `*.plain.tmp` 残留。
 Web `prepare` 超时由 `BACKUP_PREPARE_TIMEOUT_SEC` 控制（默认 3300 秒，允许 60–7200），与 CLI/PC 侧 55 分钟对齐，避免大归档中途被杀。
 陈旧锁（`.backup.lock` 超过 1 小时）可被接管并记录 warn；ack 的归档行、游标、`meta.backup_missing_files` 与审计在同一事务内提交。
 

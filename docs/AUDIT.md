@@ -527,7 +527,7 @@
 - **B1（阻断）**：`plainSha256/plainSize` 不能放在被它描述的明文归档内部（manifest 在归档内，循环定义）→ 改为归档外 sidecar（Pi `<archive>.meta.json`）+ `backup_archives.manifest_json`；归档内 manifest 只保留 `schema:2/encrypted/archiveFormat`；`drill-verify.mjs` 与应用侧都接受 manifest schema `1|2`。
 - **B2（阻断）**：“失败关闭、不留明文”无法对抗 SIGKILL/断电/ENOSPC；空间峰值≈2× → 专用 `*.plain.tmp` 命名 + 启动/超时/失败扫描清理（>24h）+ 2× 预算 + 残余文档化。
 - **B3（必须）**：启用前用私钥完成一次 `age -d` + drill；私钥离线 ≥2 份；`encryptedWith`/recipient 入 sidecar/DB/API 元数据支持轮换；独立于 `secrets-age`。
-- **M1–M10**：全链路后缀/命名正则（应用 `ARCHIVE_NAME_PATTERN`、PC `backup-pull.ps1`、CLI 孤儿正则、drill 过滤/解析）；`.age` 的 verify/import/entries/plan/execute 在 `validArchiveName` 之前返回 `archive_encrypted` 并关闭 Web 恢复入口；失败关闭不降级明文；PC `age` 安装/私钥/临时明文；drill 解密；offsite 只上传 `.age` + **链感知保留**（不能纯 `--min-age`，否则可能删最新 full）+ 上传后校验 + rclone 凭据/版本控制；`offsite_overdue` 告警处理 unknown/disabled 防误报；预部署快照决策；旧明文/密钥包/世界备份边界与回滚矩阵。
+- **M1–M10**：全链路后缀/命名正则（应用 `ARCHIVE_NAME_PATTERN`、PC `backup-pull.ps1`、CLI 孤儿正则、drill 过滤/解析）；`.age` 的 verify/import/entries/plan/execute 在归档名合法化后、读取/解包前返回 `archive_encrypted` 并关闭 Web 恢复入口；失败关闭不降级明文；PC `age` 安装/私钥/临时明文；drill 解密；offsite 只上传 `.age` + **链感知保留**（不能纯 `--min-age`，否则可能删最新 full）+ 上传后校验 + rclone 凭据/版本控制；`offsite_overdue` 告警处理 unknown/disabled 防误报；预部署快照决策；旧明文/密钥包/世界备份边界与回滚矩阵。
 - 产品取舍（用户 Gate-1 确认）：加密后 Web 校验/恢复关闭（依赖 PC/离线私钥）；预部署 DB 快照继续明文（自动回滚需要）；备份 age 密钥独立不复用 `secrets-age`；offsite 不纳入密钥包、世界备份默认不加密/不异地；私钥离线介质 + PC drill。
 - 实现顺序：B1/B2/B3 + M1/M2/M4/M5/M6 最小闭环（Pi 生成 `.age`、PC 拉取/ack、drill 解密、Web 明确拒绝）→ M7/M8（offsite/告警）→ M3/M9/M10（API/UI/文档/迁移），每步保持开关可回滚。
 
@@ -540,7 +540,7 @@
 ### 8. 修复批次与验证证据
 
 - 批次：A 发布门禁（WEB-01/OPS-01/SEC-10、OPS-08/10、WEB 定向测试）→ B 安全与一致性（SEC-11、信任头簇、ARCH-04、BOT-02/04/05、DATA-02/03/04）→ C DR 与 UX（DATA-01、WEB-02/03/04、OPS-02/03/04、BOT-01）→ D 特性（加密核心 + 异地副本，默认关闭）→ E 文档与卫生（OPS-05/07/09、版本 0.7.0）。
-- 本地门禁（v0.7.0 发布门禁，2026-10-25 实测通过）：`npm run check`、`npm test` **478**、`npm run test:web` **222**（44 文件）、`npm run test:coverage`（Lines 92.63% / Branches 78.16% / Functions 87.84%）、`npm run test:web:coverage`（Lines 52.31% / Branches 47.32% / Functions 45.02%）、`npm run build`（`index-DoPUAny6.js` 726.64 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.0`）、PS 5.1 解析/BOM（7/7）、`check-prod-deps`、`scripts/test` 29 pass、`git grep` 占位符扫描；生产 release/smoke/Tag 与真实 QQ 联调待部署（见 ACCEPTANCE v0.7.0 待填清单）。
+- 本地门禁（v0.7.0 发布门禁，2026-10-25 实测通过）：`npm run check`、`npm test` **482**、`npm run test:web` **222**（44 文件）、`npm run test:coverage`（Lines 92.63% / Branches 78.16% / Functions 87.77%）、`npm run test:web:coverage`（Lines 52.31% / Branches 47.32% / Functions 45.02%）、`npm run build`（`index-DoPUAny6.js` 726.64 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.0`）、PS 5.1 解析/BOM（7/7）、`check-prod-deps`、`scripts/test` 29 pass、`git grep` 占位符扫描；**生产已部署 v0.7.0**（release `20261025T010620Z`/commit `5c31162`）：部署内 smoke 23/23、完整 Access smoke 31/0/1/2；Tag 与真实 QQ 联调待用户验收。D-20 连续外发 1000ms 间隔为部署后追加项，门禁/部署记录见 `docs/ACCEPTANCE.md`。
 - 生产验证：部署、smoke（含加密/异地只读检查）、OpenCode 2.1.4 升级矩阵、drill、PC 拉取/ack、用户验收均为发布后执行；本文件不以 mock 全绿代替。
 - 证据边界：与第五轮一致——平台/模型/网络负路径仍需真实环境；PoC 只证明本地可复现。
 

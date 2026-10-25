@@ -1,8 +1,8 @@
 # AntifieldCloud v0.7.0 实施计划（摘要）
 
-本文件是 v0.7.0 的权威范围/决策摘要；历史版本见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.7.0（待发布）**：第六轮深度审计修复（P0=0/P1=3/P2=26/P3=73）+ 备份整包加密 + 异地副本（默认关闭）；schema 保持 **v16（无迁移）**；OpenCode 目标 **v2.1.4**。上一发布 v0.6.6（Tag `v0.6.6`，生产 release `20261024T100522Z`/commit `1f6980e`）。
+本文件是 v0.7.0 的权威范围/决策摘要；历史版本见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.7.0（已部署生产，待 Tag/Release）**：第六轮深度审计修复（P0=0/P1=3/P2=26/P3=73）+ 备份整包加密 + 异地副本（默认关闭）；schema 保持 **v16（无迁移）**；OpenCode **v2.1.4**。上一发布 v0.6.6（Tag `v0.6.6`，生产 release `20261024T100522Z`/commit `1f6980e`）。
 
-## v0.7.0（待发布；审计修复 + 备份整包加密 + 异地副本默认关闭；schema v16 无迁移；OpenCode v2.1.4）
+## v0.7.0（已部署生产，待 Tag/Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema v16 无迁移；OpenCode v2.1.4）
 
 - **范围**：全量修复第六轮审计发现（含结构性重构与 P3）；完整实现「备份整包加密 + 异地副本」，两者默认关闭；真实域名/网段占位符化；主机配置模板入仓；OpenCode 2.1.4 升级门禁。
 - **审计**：五个并行流 + Lead 架构/运行时；去重后 **P0=0、P1=3、P2=26、P3=73**（合计 102 条唯一 finding）。P1：长任务 20s 客户端超时、OpenCode 2.1.4 门禁缺失、AI 主机 SSO 未认证写放大。P1/P2 全部处置；P3 可修小项随版修，架构性/已接受项写入明确残余。详见 `docs/AUDIT.md` 第六轮。
@@ -11,9 +11,9 @@
   - D-02 无 schema 迁移：加密标志由归档名后缀 `.age` + `manifest_json.encrypted` 识别，不加列/表。
   - D-03 命名：`snapshot-<stamp>[-n]-(full|inc).tar.gz.age`；sidecar `<name>.meta.json`；`.sha256` 始终表示密文 SHA-256。
   - D-04 失败关闭：加密开启时 age 缺失/公钥非法/加密失败 → `--prepare` 失败、不产生 pending、不留明文最终归档；临时明文 `*.plain.tmp`，>24h 残留由启动/下次 prepare 清理；空间按 2× 明文预算；不得降级明文。
-  - D-05 崩溃一致性：tar → `*.plain.tmp` → plain sha/size → age → `*.part.age` → rename `.age` → sidecar（temp+rename）→ DB 行 → unlink plain；崩溃只允许可清理临时文件或“有密文无 DB 行”孤儿（只报告不自动删）。
+  - D-05 崩溃一致性：tar → `*.plain.tmp` → plain sha/size → age → `*.part.age` → rename `.age` → sidecar（temp+rename）→ unlink plain → DB 行；崩溃只允许可清理临时文件或“有密文无 DB 行”孤儿（只报告不自动删）。unlink 先于 DB 行以缩短明文窗口，sidecar 已先落盘，因此密文/元数据可诊断。
   - D-06 密钥：Pi 只存独立 backup age 公钥（root、组/其他不可写），私钥离线 ≥2 份；启用前必须用私钥完成一次 `age -d` + 演练；独立于 `secrets-age`。
-  - D-07 Web 边界：应用不持私钥；`verify/import/entries/restore-plan/executeRestore` 对 `.age` 返回 `409 archive_encrypted`（在 `validArchiveName` 之前），Web UI 禁用并提示。
+  - D-07 Web 边界：应用不持私钥；`verify/import/entries/restore-plan/executeRestore` 在归档名合法化后、读取/解包前对 `.age` 返回 `409 archive_encrypted`，不进入解密/恢复；恢复目标自动跳过加密归档；Web UI 禁用并提示。
   - D-08 PC/演练：`backup-pull.ps1` 支持 `.age` + `.meta.json` 与可选 `-AgeIdentityPath` 解密校验；`drill.ps1` 支持解密/链连续/默认 schema 来自 `deploy/tool-versions.json`；无身份且存在加密归档明确失败。
   - D-09 异地副本：PC 端 `backup-offsite.mjs/.ps1` 只上传 `.age`，链感知保留（绝不删最新 full），上传后校验，状态写 Pi，Dashboard 只读 + `offsite_overdue` 告警（缺失/disabled 不误报）。
   - D-10 默认关闭与启用顺序/回滚：部署 → 备份 age 密钥/公钥 → 私钥演练 → 开开关 → 下次 prepare 生成 `.age` → PC 拉取/ack → drill → offsite；回滚关开关恢复明文，已生成 `.age` 保留。
@@ -22,11 +22,12 @@
   - D-13 群共享记忆归属：key 前缀改稳定 `member_openid`，显示名只存 value；一次性 meta 迁移，无法映射保留 `legacy:`；`/forget` 行为更新。
   - D-14 真实值占位符化：文档/模板用 `app.<domain>`/`ai.<domain>`/`mc.<domain>` 与 TEST-NET 网段，安装前替换。
   - D-15 主机配置模板：`deploy/host/`（sshd/fail2ban/cloudflared/journald/log2ram）+ 密钥包可选打包。
-  - D-16 重构：`bot/inbound.ts`、`diagnostics.ts`、队列/串行逻辑行为保持抽取，`BotService` facade；每步测试全绿；不做 schema/提示词行为变更。
+  - D-16 重构：`bot/inbound.ts`、`bot/chat.ts`、`diagnostics.ts`、队列/串行/工具缓冲逻辑行为保持抽取，`BotService` facade；每步测试全绿；不做 schema/提示词行为变更。
   - D-17 审计策略：非安全审计事务外 best-effort（失败计数/最近错误经 `/api/version.audit`）；安全关键审计失败可见但不阻断业务；公开下载计数保持在事务内。
   - D-18 P3 处置：可修小项随本版修；架构性/已接受项写入 ARCHITECTURE/SECURITY 明确残余，不强行改造。
-  - D-19 版本：`0.7.0`；schema v16 无迁移；OpenCode v2.1.4；加密/异地默认关闭；生产部署/Tag 待确认。
-- **门禁**：`npm run check` 全绿；覆盖率不低于基线且新增逻辑有成功+失败测试；`npm run build`；`check-version`（严格模式，含 schema/OpenCode 交叉校验）；PS 5.1 解析/BOM；`check-prod-deps`。2026-10-25 本地实测：`npm test` 478、`test:web` 222、服务端覆盖率 92.63/78.16/87.84、前端 52.31/47.32/45.02、check-version `version ok 0.7.0`、check-prod-deps 通过；生产 release/smoke/Tag 待部署确认（集中列在 CHANGELOG/ACCEPTANCE）。
+  - D-19 版本：`0.7.0`；schema v16 无迁移；OpenCode v2.1.4；加密/异地默认关闭；生产部署已执行，Tag 待验收后。
+  - D-20 Bot 连续外发：同一 Bot（AppID）外发文本按 **1000ms 最小间隔**串行，覆盖长文本分段、发送工具多条消息、兜底文本与队列发送；测试可注入 0，生产默认固定 1000ms。
+- **门禁**：`npm run check`/`test:coverage`/`test:web:coverage`/`build`/`check-version`/`check-prod-deps` 全绿；2026-10-25 实测：`npm test` **482**、Bot 定向 **184**、`test:web` **222**、服务端覆盖率 **92.63/78.16/87.77**、前端 **52.31/47.32/45.02**、build `index-DoPUAny6.js` 726.64 kB；生产 release `20261025T010620Z`/commit `5c31162`、smoke 23/23 与完整 31/0/1/2；D-20 追加后为本地门禁结果，待再次部署。Tag/真实 QQ 验收待用户确认。
 
 ## v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移）
 

@@ -59,7 +59,7 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
   处理结果回写 `bot_events.outcome`（ok/denied/rate_limited/ignored/error）与短码 detail；成功/忽略/重复事件统一返回 `{opcode:12}`。
 - 回复管线：模型文本 → `sanitizeAiText`（去路径/URL/控制字符）→ `format.ts` QQ 纯文本（去 Markdown 标记，仅 http(s) 链接保留为文字）
   → `text.ts` 按 QQ 单条 2000 字符分段（最多 4 段、续段前缀、截断标记）→ 适配器发送；无引用/线程/HTML/按钮；
-  第二段起失败时已发送 ID 挂到错误对象，队列记录 `partial_text_sent` 且不自动重试。
+  第二段起失败时已发送 ID 挂到错误对象，队列记录 `partial_text_sent` 且不自动重试。适配器按 Bot/AppID 对实际消息请求串行并保持 **1000ms 最小间隔**（v0.7.0 D-20，覆盖分段、发送工具多条、兜底与队列；`access_token` 换取不占间隔）。
 - 图片管线（默认开启）：QQ 事件 `d.attachments` → 首个 `image/*` 附件（`content_type`/`filename`/`size`/`url`）→ `BOT_AI_VISION_ENABLED` 且适配器实现 `loadImage` 时，
   仅从域名后缀 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、内存不落盘）→ base64 → OpenCode prompt files `data:` URL 随本轮 prompt 发送；
   关闭/失败/mime 非法时降级为纯文字回答；仅图片无文字时也可进入 Chat。

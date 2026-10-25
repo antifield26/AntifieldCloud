@@ -17,10 +17,10 @@
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- **v0.7.0（待发布；本版无 schema 迁移，保持 v16）**：第六轮审计修复 + 备份整包加密 + 异地副本（默认关闭）；OpenCode 目标 **v2.1.4**。
+- **v0.7.0（已部署生产，待 Tag/Release；本版无 schema 迁移，保持 v16）**：第六轮审计修复 + 备份整包加密 + 异地副本（默认关闭）；OpenCode **v2.1.4**。
   部署步骤：按 §3.0 走 `deploy.ps1`（自动迁移前快照/回滚/`release.json`/`deploy-history.log`），smoke 使用
   `-ExpectedVersion 0.7.0 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`；OpenCode 升级按 §3.2 矩阵；
-  备份加密/异地副本默认关闭，启用顺序与回滚见 §9.10/§9.11。测试计数/覆盖率/生产 release/`/healthz`/smoke 计数/Tag **待门禁实测/待部署**。
+  备份加密/异地副本默认关闭，启用顺序与回滚见 §9.10/§9.11。生产指纹：release `20261025T010620Z`/commit `5c31162`、`/healthz` v0.7.0/schema16；部署内 smoke 23/23、完整 Access smoke 31/0/1/2；D-20 Bot 连续外发 1000ms 为部署后追加项。
 - **上一版本 v0.6.6（已发布：Tag `v0.6.6` + GitHub Release）**：系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16（无迁移）。
   生产 release/commit/备份证据与回滚目标见 `docs/ACCEPTANCE.md`、`CHANGELOG.md` 与历史发布记录；回滚可切回 v0.6.6 release（同 schema16）。
 - **更早版本**：v0.6.5/v0.6.4/v0.6.3/v0.6.2/v0.6.1/v0.6.0/v0.5.x 的部署证据、release 目录与回滚对照见 `docs/ACCEPTANCE.md`/`CHANGELOG.md`。
@@ -181,7 +181,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 ### 3.0 v0.7.0 应用部署步骤（当前版本；schema 保持 v16，无迁移）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 478、`test:web` 222、服务端覆盖率 92.63/78.16/87.84、前端 52.31/47.32/45.02、bundle `index-DoPUAny6.js` 726.64 kB、check-version `version ok 0.7.0`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 482（Bot 定向 184）、`test:web` 222、服务端覆盖率 92.63/78.16/87.77、前端 52.31/47.32/45.02、bundle `index-DoPUAny6.js` 726.64 kB、check-version `version ok 0.7.0`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.1.4 升级（先于应用部署，按 §3.2）**：备份 v2.1.3 二进制/data/env/unit/MCP 配置 → `opencode upgrade 2.1.4` → 14 项矩阵验收 → 失败回滚；

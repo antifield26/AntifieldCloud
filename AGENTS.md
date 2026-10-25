@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.0（已部署生产，待 Tag/Release；分支 `release/v0.7.0`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版语义为**审计修复 + 备份整包加密 + 异地副本（默认关闭）**：第六轮深度审计 P0=0/P1=3/P2=26/P3=73 全部处置（P3 可修小项随本版修、架构性/已接受项写入明确残余）；备份归档可用独立 age 公钥整包加密（Web 不持私钥，`.age` 在 Web 一律 `409 archive_encrypted`）；PC 端可链感知上传密文到异地；Bot AI 工具隔离降级 fail-closed（`503 bot_ai_tool_isolation_unavailable`）；群共享记忆归属改为稳定 `member_openid`；审计写入事务外 best-effort 并经 `/api/version.audit` 暴露失败计数。**schema 保持 v16（无迁移）**；**OpenCode v2.1.4**（已于 2026-10-25 08:21 CST 升级；应用 v0.7.0 已部署生产；升级/回滚与矩阵见 `docs/DEPLOY.md` §3.2，V1–V9/V14 通过，V10–V13 待真实 QQ 联调）。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.7.0（已部署生产，待 Tag/Release；分支 `release/v0.7.0`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版语义为**审计修复 + 备份整包加密 + 异地副本（默认关闭）**：第六轮深度审计 P0=0/P1=3/P2=26/P3=73 全部处置（P3 可修小项随本版修、架构性/已接受项写入明确残余）；备份归档可用独立 age 公钥整包加密（Web 不持私钥，`.age` 在 Web 一律 `409 archive_encrypted`）；PC 端可链感知上传密文到异地；Bot AI 工具隔离降级 fail-closed（`503 bot_ai_tool_isolation_unavailable`）；群共享记忆归属改为稳定 `member_openid`；Bot 连续外发文本最小间隔 1000ms（按 Bot/AppID 串行，D-20）；审计写入事务外 best-effort 并经 `/api/version.audit` 暴露失败计数。**schema 保持 v16（无迁移）**；**OpenCode v2.1.4**（已于 2026-10-25 08:21 CST 升级；应用 v0.7.0 已部署生产；升级/回滚与矩阵见 `docs/DEPLOY.md` §3.2，V1–V9/V14 通过，V10–V13 待真实 QQ 联调）。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.0，2026-10-25 本地门禁）：`npm test` **478**（server+scripts，含 scripts 29）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.63% / Branches 78.16% / Functions 87.84%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%、build `index-DoPUAny6.js` 726.64 kB；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.0 已部署**（2026-10-25 09:06 CST，release `20261025T010620Z`/commit `5c31162`，`/healthz` v0.7.0/schema16）；OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 待真实 QQ 联调。
+当前基线（v0.7.0，2026-10-25 本地门禁）：`npm test` **482**（server+scripts，含 scripts 29）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.63% / Branches 78.16% / Functions 87.77%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%、build `index-DoPUAny6.js` 726.64 kB；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.0 已部署**（2026-10-25 09:06 CST，release `20261025T010620Z`/commit `5c31162`，`/healthz` v0.7.0/schema16；D-20 连续外发 1000ms 间隔为部署后追加项，待再次部署）；OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 待真实 QQ 联调。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -64,7 +64,8 @@ server/src/
   mc/                SLP、RCON、白名单
   opencode/          ai.* Host 的认证反代 + HTML 模式 + Origin 校验 + AI 主机限流/审计去重
   bot/               QQ 官方 Bot 适配器、Chat AI、结构化长期记忆、私聊/群聊角色卡、连通性、
-                     凭据 AES-256-GCM、Webhook 验签/去重、命令、回复管线、图片下载、自检、告警/发布队列。
+                     凭据 AES-256-GCM、Webhook 验签/去重、命令、回复管线、图片下载、自检、告警/发布队列；
+                     外发文本按 Bot/AppID 以 1000ms 最小间隔串行（分段/发送工具/兜底/队列统一）。
                      行为保持拆分：inbound.ts（入站验签/限流/命令与 Chat 分发）、chat.ts（Chat 回合/工具缓冲/记忆触发）、
                      diagnostics.ts（事件/入站目标/指标/最近错误）、queue.ts（投递/发布状态机），
                      BotService 保留 facade/依赖装配
@@ -105,7 +106,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
     Webhook 只以 QQ Ed25519 签名/时间戳（含 op=13 回调校验）鉴权；群聊/频道不执行任何斜杠命令；C2C 命令除自助命令（`/help`、`/memory`、`/role` 仅私聊、`/reset`、`/forget confirm`）外，需目标 `allow_commands` + 显式 user 白名单；
     发布必须 TOTP 再认证；通知/命令输出不得包含内部路径、URL 或密钥；`BOT_ENABLED=false` 时 Webhook 返回 404。
 11. 备份整包加密：Pi 只读取独立 backup age 公钥（root 属主、组/其他不可写、`age1` 格式）；私钥离线 ≥2 份，应用/CLI 永不读取；**失败关闭**——age 缺失/公钥非法/加密失败/空间不足时 prepare 失败，不产生 pending、不降级明文；明文 tar 只允许短暂使用 `*.plain.tmp` 并在密文+sidecar 落盘后立即删除；空间按 2× 明文预算；明文 SHA-256/大小必须放归档外 sidecar 与 DB `manifest_json`（归档内 manifest 不得自引用）。
-12. Web 不持备份私钥：`verify/import/entries/restore-plan/executeRestore` 对 `.age` 在名称校验之前返回 `409 archive_encrypted`，恢复目标自动跳过加密归档；加密归档只能由 PC/离线私钥解密、校验与恢复。
+12. Web 不持备份私钥：`verify/import/entries/restore-plan/executeRestore` 在归档名合法化后、读取/解包前对 `.age` 返回 `409 archive_encrypted`，恢复目标自动跳过加密归档；加密归档只能由 PC/离线私钥解密、校验与恢复。
 13. 异地副本只上传 `.age`（拒绝明文），链感知保留且绝不删除最新 full；状态只写别名/计数/时间，不写远端路径/URL/凭据；未配置（状态文件缺失）不得产生超期告警。
 14. Bot AI 工具隔离 fail-closed：OpenCode 拒绝 `permissions` 时不得以默认权限继续对话；启用发送工具且隔离不可用时新 Chat 返回 `503 bot_ai_tool_isolation_unavailable` 并回固定提示、写审计/状态；10 分钟重试窗口到点放行重试，上游恢复后自动恢复。
 15. 审计写入不得静默失败也不得回滚已完成的业务状态：非安全审计事务外 best-effort，失败计数 + 最近错误暴露到 `/api/version.audit`；安全关键审计逐条记录；公开下载计数保持在事务内。
@@ -162,6 +163,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   Chat/记忆：`BOT_CHAT_RATE_PER_MINUTE=30`、`BOT_MEMORY_MAX_ITEMS=200`、`BOT_MEMORY_PROMPT_MAX_CHARS=3000`、`BOT_MEMORY_PROMPT_MAX_ITEMS=12`、`BOT_MEMORY_TTL_EPISODE_DAYS=90`、`BOT_MEMORY_TTL_TASK_DAYS=30`；
   连通性：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`；
   群聊：`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`、`BOT_AI_SEND_TOOL_ENABLED=false`（启用前安装 `botmsg` MCP）；
+  **连续外发：生产固定 1000ms 最小间隔（按 Bot/AppID 串行，代码内 `DEFAULT_SEND_INTERVAL_MS`；无 env 开关；测试注入 0）。**
   搜索：`BOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`BOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对 `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。`BOT_ENABLED=false` 时该路径返回 404。
