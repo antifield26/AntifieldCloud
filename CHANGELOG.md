@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.7.0] - 已部署生产（待 Tag/Release）
+## [v0.7.0] - 2026-10-25（已发布：Tag `v0.7.0` + GitHub Release）
 
 ### Added
 
@@ -57,7 +57,7 @@
 - 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **487**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.67/78.14/87.95**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-C0QZV4hZ.js` 726.72 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass；Bot 定向 189 pass。追加 D-20：同一 Bot 连续外发文本最小间隔 1000ms（分段/发送工具/兜底/队列统一，按 AppID 串行；测试注入 0）。
 - OpenCode **v2.1.4** 已于 2026-10-25 08:21 CST 在生产只读升级：升级前备份 v2.1.3 二进制/data/env/unit/MCP（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e6…8b19`）；V1–V9、V14 PASS，V10–V13（真实 QQ/记忆/发送工具/搜索）待真实用户联调。
 - 生产应用 **v0.7.0 已部署**（2026-10-25 08:53/09:06/09:45/10:16 CST，最终 commit `4f40ccd`，release `/opt/antifieldcloud/releases/20261025T021609Z`；`/healthz` v0.7.0/schema16；迁移前快照 `db-predeploy-20261025T021642566Z.sqlite` sha256 `fa0696bf…bf05`；上一 release `20261025T014533Z` 保留可回滚）；部署内 smoke 23/23；完整 Access smoke 网络恢复后 **31 PASS/0 FAIL/1 WARN/2 SKIP**（两次中间复核曾遇公网 curl 超时，非应用回归）；D-20 与 DSML 修复均已包含（生产代码探针分别验证 1001ms 与真实 DSML 文本清洗）；Windows 备份任务安装标记需管理员重跑 `install-backup-task.ps1`。
-- Tag/GitHub Release 与加密/异地副本启用演练仍待用户验收/密钥与 rclone 配置后执行。
+- Tag/GitHub Release 已发布：annotated Tag `v0.7.0` + [AntifieldCloud v0.7.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.0)（2026-10-25 用户验收通过）；加密/异地副本启用演练仍待用户密钥/rclone 配置后执行。
 
 ## [v0.6.6] - 2026-10-24（已发布）
 

@@ -540,7 +540,7 @@
 ### 8. 修复批次与验证证据
 
 - 批次：A 发布门禁（WEB-01/OPS-01/SEC-10、OPS-08/10、WEB 定向测试）→ B 安全与一致性（SEC-11、信任头簇、ARCH-04、BOT-02/04/05、DATA-02/03/04）→ C DR 与 UX（DATA-01、WEB-02/03/04、OPS-02/03/04、BOT-01）→ D 特性（加密核心 + 异地副本，默认关闭）→ E 文档与卫生（OPS-05/07/09、版本 0.7.0）。
-- 本地门禁（v0.7.0 发布门禁，2026-10-25 实测通过）：`npm run check`、`npm test` **487**、`npm run test:web` **222**（44 文件）、`npm run test:coverage`（Lines 92.67% / Branches 78.14% / Functions 87.95%）、`npm run test:web:coverage`（Lines 52.31% / Branches 47.32% / Functions 45.02%）、`npm run build`（`index-C0QZV4hZ.js` 726.72 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.0`）、PS 5.1 解析/BOM（7/7）、`check-prod-deps`、`scripts/test` 29 pass、`git grep` 占位符扫描；**生产已部署 v0.7.0**（最终 release `20261025T021609Z`/commit `4f40ccd`）：部署内 smoke 23/23；D-20 连续外发 1000ms 已部署（生产代码探针 1001ms）；DSML 原始工具调用回显修复已部署并用真实会话文本验证；Tag 与真实 QQ 联调待用户验收。
+- 本地门禁（v0.7.0 发布门禁，2026-10-25 实测通过）：`npm run check`、`npm test` **487**、`npm run test:web` **222**（44 文件）、`npm run test:coverage`（Lines 92.67% / Branches 78.14% / Functions 87.95%）、`npm run test:web:coverage`（Lines 52.31% / Branches 47.32% / Functions 45.02%）、`npm run build`（`index-C0QZV4hZ.js` 726.72 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.0`）、PS 5.1 解析/BOM（7/7）、`check-prod-deps`、`scripts/test` 29 pass、`git grep` 占位符扫描；**生产已部署 v0.7.0**（最终 release `20261025T021609Z`/commit `4f40ccd`）：部署内 smoke 23/23、完整 Access smoke 31/0/1/2；D-20 连续外发 1000ms 与 DSML 回显修复均已部署并验证；**用户验收通过并发布 Tag `v0.7.0` + GitHub Release**。
 - 生产验证：部署、smoke（含加密/异地只读检查）、OpenCode 2.1.4 升级矩阵、drill、PC 拉取/ack、用户验收均为发布后执行；本文件不以 mock 全绿代替。
 - 证据边界：与第五轮一致——平台/模型/网络负路径仍需真实环境；PoC 只证明本地可复现。
 

@@ -334,4 +334,4 @@
   - AI 主机：`/__af/sso/*` 超限 429、匿名请求 429、审计按 action+IP 去重。
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`BOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
-  - 上述为 2026-10-25 本地测试/发布门禁结果（`npm test` 487、`test:web` 222、服务端覆盖率 92.67/78.14/87.95、前端 52.31/47.32/45.02、`check-version` 严格通过、`check-prod-deps` 通过）；生产应用 **v0.7.0 已部署**（最终 release `20261025T021609Z`/commit `4f40ccd`，部署内 smoke 23/23；D-20 连续外发 1000ms 与 DSML 原始工具调用回显修复均已部署，生产探针验证）；OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 待真实 QQ 联调。
+  - 上述为 2026-10-25 本地测试/发布门禁结果（`npm test` 487、`test:web` 222、服务端覆盖率 92.67/78.14/87.95、前端 52.31/47.32/45.02、`check-version` 严格通过、`check-prod-deps` 通过）；生产应用 **v0.7.0 已发布**（最终 release `20261025T021609Z`/commit `4f40ccd`，部署内 smoke 23/23、完整 Access smoke 31/0/1/2；D-20 连续外发 1000ms 与 DSML 原始工具调用回显修复均已部署，生产探针验证；Tag `v0.7.0` + GitHub Release）；OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 验收通过。

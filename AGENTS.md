@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.0（已部署生产，待 Tag/Release；分支 `release/v0.7.0`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版语义为**审计修复 + 备份整包加密 + 异地副本（默认关闭）**：第六轮深度审计 P0=0/P1=3/P2=26/P3=73 全部处置（P3 可修小项随本版修、架构性/已接受项写入明确残余）；备份归档可用独立 age 公钥整包加密（Web 不持私钥，`.age` 在 Web 一律 `409 archive_encrypted`）；PC 端可链感知上传密文到异地；Bot AI 工具隔离降级 fail-closed（`503 bot_ai_tool_isolation_unavailable`）；群共享记忆归属改为稳定 `member_openid`；Bot 连续外发文本最小间隔 1000ms（按 Bot/AppID 串行，D-20）；模型 DSML 原始工具调用文本不回显（只提取正文/固定兜底，审计 `bot.ai.tool_call_text`）；审计写入事务外 best-effort 并经 `/api/version.audit` 暴露失败计数。**schema 保持 v16（无迁移）**；**OpenCode v2.1.4**（已于 2026-10-25 08:21 CST 升级；应用 v0.7.0 已部署生产；升级/回滚与矩阵见 `docs/DEPLOY.md` §3.2，V1–V9/V14 通过，V10–V13 待真实 QQ 联调）。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；生产 release `20261025T021609Z`/代码提交 `4f40ccd`；分支 `release/v0.7.0`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版语义为**审计修复 + 备份整包加密 + 异地副本（默认关闭）**：第六轮深度审计 P0=0/P1=3/P2=26/P3=73 全部处置（P3 可修小项随本版修、架构性/已接受项写入明确残余）；备份归档可用独立 age 公钥整包加密（Web 不持私钥，`.age` 在 Web 一律 `409 archive_encrypted`）；PC 端可链感知上传密文到异地；Bot AI 工具隔离降级 fail-closed（`503 bot_ai_tool_isolation_unavailable`）；群共享记忆归属改为稳定 `member_openid`；Bot 连续外发文本最小间隔 1000ms（按 Bot/AppID 串行，D-20）；模型 DSML 原始工具调用文本不回显（只提取正文/固定兜底，审计 `bot.ai.tool_call_text`）；审计写入事务外 best-effort 并经 `/api/version.audit` 暴露失败计数。**schema 保持 v16（无迁移）**；**OpenCode v2.1.4**（已于 2026-10-25 08:21 CST 升级；应用 v0.7.0 已部署生产；升级/回滚与矩阵见 `docs/DEPLOY.md` §3.2，V1–V9/V14 通过，V10–V13 待真实 QQ 联调）。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.0，2026-10-25 本地门禁）：`npm test` **487**（server+scripts，含 scripts 29）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.67% / Branches 78.14% / Functions 87.95%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%、build `index-C0QZV4hZ.js` 726.72 kB；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.0 已部署**（2026-10-25 10:16 CST，release `20261025T021609Z`/commit `4f40ccd`，`/healthz` v0.7.0/schema16；含 D-20 连续外发 1000ms 间隔与 DSML 原始工具调用文本回显修复；D-20 生产代码探针 1001ms，DSML 用真实会话文本验证）；OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 待真实 QQ 联调。
+当前基线（v0.7.0，2026-10-25 本地门禁）：`npm test` **487**（server+scripts，含 scripts 29）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.67% / Branches 78.14% / Functions 87.95%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%、build `index-C0QZV4hZ.js` 726.72 kB；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用 **v0.7.0 已发布**（Tag `v0.7.0` + GitHub Release；release `20261025T021609Z`/commit `4f40ccd`，`/healthz` v0.7.0/schema16；含 D-20 连续外发 1000ms 间隔与 DSML 原始工具调用文本回显修复；D-20 生产代码探针 1001ms，DSML 用真实会话文本验证）；OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
