@@ -1,12 +1,12 @@
 # AntifieldCloud v0.7.1 实施计划（摘要）
 
-本文件是 v0.7.1 的权威范围/决策摘要；历史版本见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.7.1（本地修复，待部署/发布）**：群聊共享唯一 OpenCode Chat 会话（模型可见多用户历史，群内按目标串行；私聊仍每用户独立会话）；schema 保持 **v16（无迁移）**；OpenCode **v2.1.4**。上一发布 v0.7.0（Tag/Release，生产 release `20261025T021609Z`/commit `4f40ccd`）。
+本文件是 v0.7.1 的权威范围/决策摘要；历史版本见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.7.1（已部署生产，待真实群聊验收/Tag）**：群聊共享唯一 OpenCode Chat 会话（模型可见多用户历史，群内按目标串行；私聊仍每用户独立会话）；schema 保持 **v16（无迁移）**；OpenCode **v2.1.4**。上一发布 v0.7.0（Tag/Release，生产 release `20261025T021609Z`/commit `4f40ccd`）。
 
-## v0.7.1（本地修复，待部署/发布；群聊共享会话；schema v16 无迁移；OpenCode v2.1.4）
+## v0.7.1（已部署生产，待真实群聊验收/Tag；群聊共享会话；schema v16 无迁移；OpenCode v2.1.4）
 
 - **范围**：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话（合成键 `__group__`）；群内 Chat 批次/命令按目标串行；私聊保持每用户独立会话；真实用户仍用于限流、记忆 scope、审计、发送工具令牌；用户消息带用户名 head。
 - **兼容/清理**：首次使用群共享会话时删除旧版按用户拆分的 `bot_ai_sessions` 群映射，并尽力删除远端旧会话；旧摘要迁移排除共享合成键；无 schema 迁移。
-- **验收**：本地 `npm test`/`check`/`build`/`check-version` 通过；生产部署后真实群聊双用户验收。
+- **验收**：本地 `npm test`/`check`/`build`/`check-version` 通过；已部署 release `20261025T030526Z`/commit `cc4faf9`（部署内 smoke 23/23、完整 Access smoke 31/0/1/2，部署代码探针验证同群单会话与旧映射清理）；真实群聊双用户验收与 Tag/Release 待用户确认。
 
 ## v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema v16 无迁移；OpenCode v2.1.4）
 

@@ -358,7 +358,7 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
 
 - 适配器/验签/队列/命令白名单/发布 TOTP+`PUBLISH`/AI/Chat/记忆/文本分段/图片下载/连接自检/诊断/角色与记忆管理均有进程内测试（不访问真实平台/模型）。
 - QQ 适配器以 mock/fixture 覆盖（op=13/op=0、C2C/群@/频道、attachments 图片、access_token 自检、长文本分段）；AI 使用假 OpenCode HTTP 服务。
-- **v0.7.1 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **192 pass**（30 文件）；全量 `npm test` **490**；新增/更新覆盖群聊共享会话键/串行、真实 `OpenCodeBotAi` 同群单会话与旧映射清理、私聊独立会话；并保留工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
+- **v0.7.1 测试（2026-10-25 本地门禁）**：Bot 定向 `node --test server/test/bot-*.test.ts` **193 pass**（30 文件）；全量 `npm test` **491**；新增/更新覆盖群聊共享会话键/串行、真实 `OpenCodeBotAi` 同群单会话与旧映射清理、Bot 启动时旧群映射清理、私聊独立会话；并保留工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、
   群记忆清空空竞态、lastError 派生、Webhook 限流分桶与审计聚合、burst.clear、名称词边界、孤儿清理保守化、关闭排空；**D-20 连续外发 1000ms 间隔**（分段/发送工具多条/兜底/队列统一，按 Bot/AppID 串行）已由 `bot-send-interval.test.ts` 覆盖；生产真实 QQ/OpenCode 2.1.4 的 V10–V13 待真实用户联调。
 - 历史基线（v0.5.11）：`npm test` 360、`npm run test:web` 162；v0.6.x 基线见 `CHANGELOG.md`/`docs/ACCEPTANCE.md`。真实平台负路径（限流/签名漂移/故障）仍需部署后联调。
 - **真实平台前置条件**（部署/联调前确认）：

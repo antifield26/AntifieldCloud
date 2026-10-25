@@ -17,7 +17,7 @@
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- **v0.7.1（本地修复，待部署/发布；本版无 schema 迁移，保持 v16）**：群聊共享唯一 OpenCode Chat 会话（合成键 `__group__`，群内按目标串行；私聊仍每用户独立会话）；真实用户仍用于限流/记忆/审计/发送工具令牌。部署时仍使用 `-ExpectedVersion 0.7.1 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`；首次群聊会自动清理旧版按用户拆分的群会话映射并尽力删除远端旧会话。
+- **v0.7.1（已部署生产，待真实群聊验收/Tag；本版无 schema 迁移，保持 v16）**：群聊共享唯一 OpenCode Chat 会话（合成键 `__group__`，群内按目标串行；私聊仍每用户独立会话）；真实用户仍用于限流/记忆/审计/发送工具令牌。生产 release `20261025T030526Z`/commit `cc4faf9`，`/healthz` v0.7.1/schema16；迁移前快照 `db-predeploy-20261025T030702602Z.sqlite`（sha256 `0f667529…97b0`）；部署内 smoke 23/23、完整 Access smoke 31/0/1/2；部署代码探针验证同群单会话与旧映射清理。首次群聊会自动清理旧版按用户拆分的群会话映射并尽力删除远端旧会话。
 - **v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；本版无 schema 迁移，保持 v16）**：第六轮审计修复 + 备份整包加密 + 异地副本（默认关闭）；OpenCode **v2.1.4**。
   部署步骤：按 §3.0 走 `deploy.ps1`（自动迁移前快照/回滚/`release.json`/`deploy-history.log`），smoke 使用
   `-ExpectedVersion 0.7.0 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`；OpenCode 升级按 §3.2 矩阵；
@@ -182,7 +182,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 ### 3.0 v0.7.1 应用部署步骤（当前版本；schema 保持 v16，无迁移）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 490（Bot 定向 192）、`test:web` 222、服务端覆盖率 92.69/78.27/87.86、前端 52.31/47.32/45.02、bundle `index-C0QZV4hZ.js` 726.72 kB、check-version `version ok 0.7.1`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-25 本地实测：`npm test` 491（Bot 定向 193）、`test:web` 222、服务端覆盖率 92.75/78.23/87.82、前端 52.31/47.32/45.02、bundle `index-C0QZV4hZ.js` 726.72 kB、check-version `version ok 0.7.1`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.1.4 升级（先于应用部署，按 §3.2）**：备份 v2.1.3 二进制/data/env/unit/MCP 配置 → `opencode upgrade 2.1.4` → 14 项矩阵验收 → 失败回滚；
