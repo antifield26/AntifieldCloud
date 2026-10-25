@@ -16,6 +16,7 @@ import { SlidingWindowLimiter } from '../auth/limiter.ts'
 import { BurstMerger, type BurstTiming } from './burst.ts'
 import { buildBotPrompt, type BotSendToolPrompt, type GroupChatMode } from './prompts.ts'
 import { formatAiReply } from './format.ts'
+import { extractRawToolCallText, stripRawToolCallText } from './dsml.ts'
 import type { BotChatRole, BotChatRoleStore } from './roles.ts'
 import type { BotGroupRoleStore } from './group-roles.ts'
 import { groupMemoryScope, type BotMemoryStore } from './memory.ts'
@@ -306,7 +307,7 @@ export class BotChatPipeline {
     imageNote: string,
   ): Promise<void> {
     const formatted = messages
-      .map((message) => formatAiReply(this.sanitizeAiText(message)))
+      .map((message) => formatAiReply(this.cleanAiReply(message)))
       .filter((message) => message.length > 0)
     if (formatted.length === 0) {
       throw new AppError(502, 'bot_ai_send_empty', '消息发送内容为空')
@@ -456,7 +457,7 @@ export class BotChatPipeline {
         if (toolMessages.length > 0) {
           await this.sendAiToolMessages(result, toolMessages, sourceNote, imageNote)
           const memoryText = toolMessages
-            .map((message) => this.sanitizeAiText(message))
+            .map((message) => this.cleanAiReply(message))
             .filter(Boolean)
             .join('\n')
           if (userText && memoryText) {
@@ -490,7 +491,20 @@ export class BotChatPipeline {
         finishAll('ignored', 'no_reply')
         return
       }
-      const fallbackAnswer = sendTurn && isNoReplyAnswer(answer) ? '暂时没回应上来，稍后再试。' : answer
+      // 模型可能把工具调用协议当作普通文本返回。识别后只提取模型本来要发送的 text 参数；
+      // 无法提取时使用固定兜底，绝不把 DSML/tool_token/参数原文回显给用户。
+      const rawToolCall = extractRawToolCallText(answer)
+      if (rawToolCall.detected) {
+        this.deps.audit('bot.ai.tool_call_text', `${bot.platform}:${result.targetExternalId}`, {
+          bot: bot.id,
+          user: result.userId.slice(0, 64),
+          extracted: rawToolCall.text.length > 0,
+        })
+      }
+      const answerCandidate = rawToolCall.detected
+        ? rawToolCall.text || '暂时没回应上来，稍后再试。'
+        : answer
+      const fallbackAnswer = sendTurn && isNoReplyAnswer(answer) ? '暂时没回应上来，稍后再试。' : answerCandidate
       const plain = this.sanitizeAiText(fallbackAnswer)
       const formatted = formatAiReply(plain)
       const replyText = `${formatted}${sourceNote}${imageNote}`
@@ -794,13 +808,19 @@ export class BotChatPipeline {
     return answer
   }
 
+  /** 统一外发/记忆清洗：优先提取原始工具调用中的 text 参数，再走常规 sanitize。 */
+  private cleanAiReply(value: string): string {
+    const rawToolCall = extractRawToolCallText(value)
+    return this.sanitizeAiText(rawToolCall.detected ? rawToolCall.text : value)
+  }
+
   /**
    * AI 回答清洗：去除内部路径/URL 与控制字符，保留换行/分段，按配置上限截断。
    * 与 sanitizeExternalText 的固定 1500 截断区分：AI 回答由 QQ 适配器按 2000 上限分段发送。
    */
   private sanitizeAiText(value: string): string {
     if (typeof value !== 'string') return ''
-    const replaced = value
+    const replaced = stripRawToolCallText(value)
       .replace(/\r\n?/g, '\n')
       // 某些模型在工具 schema 不可用时会输出 DSML 工具调用文本；不能把内部语法回显给用户。
       .replace(/<\|DSML\|>[\s\S]*?<\/\|DSML\|>/gi, '')

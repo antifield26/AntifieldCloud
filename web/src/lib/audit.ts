@@ -101,6 +101,7 @@ const ACTION_META: Record<string, AuditActionMeta> = {
   'bot.ai.image': { label: 'Bot AI 图片', category: 'bot' },
   'bot.ai.send': { label: 'Bot AI 发送工具', category: 'bot' },
   'bot.ai.send_fallback': { label: 'Bot AI 发送降级', category: 'bot' },
+  'bot.ai.tool_call_text': { label: 'Bot AI 工具调用文本兜底', category: 'bot' },
   'bot.ai.permissions_fallback': { label: 'Bot AI 工具隔离降级', category: 'bot' },
   'bot.ai.tool_mode_reset': { label: 'Bot AI 工具模式重置', category: 'bot' },
   'bot.ai.orphan_sessions_removed': { label: '清理 Bot 孤儿会话', category: 'bot' },
