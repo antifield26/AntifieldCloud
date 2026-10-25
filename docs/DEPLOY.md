@@ -184,7 +184,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 应用是纯 HTTP 客户端（非 SDK），预期无需业务改造，但**必须按本矩阵硬门禁验收，门禁未过不得声明兼容**，失败按回滚条件切回 v2.1.3。
 
 ```bash
-# 0) 备份（root）：二进制、data、env、unit、MCP 配置（升级前必须做；现有 /var/backups/opencode 仅有旧 v2.0.32）
+# 0) 备份（root）：二进制、data、env、unit、MCP 配置（升级前必须做）
 TS=$(date -u +%Y%m%dT%H%M%SZ); BK=/var/backups/opencode
 sudo install -d -o root -g root -m 0700 "$BK"
 sudo tar -C /var/lib/opencode -czf "$BK/opencode-bin-$TS.tar.gz" .opencode/bin/opencode
@@ -849,7 +849,7 @@ sudo systemctl daemon-reload && sudo systemctl restart cloudflared
 
 ```bash
 ls -1dt /opt/antifieldcloud/releases/*
-# 优先使用 deploy.ps1 的自动回滚；手工回滚按以下顺序（schema v13 只向上）
+# 优先使用 deploy.ps1 的自动回滚；手工回滚按以下顺序（schema v17 只向上）
 sudo systemctl stop antifieldcloud
 sudo cp -a /var/lib/antifieldcloud/backups/db-predeploy-<最新>.sqlite /var/lib/antifieldcloud/db.sqlite
 sudo rm -f /var/lib/antifieldcloud/db.sqlite-wal /var/lib/antifieldcloud/db.sqlite-shm
