@@ -45,8 +45,8 @@
 - **修复**：群聊（`target.kind = group`）统一使用合成会话键 `__group__`，同一群只复用一个 OpenCode Chat 会话；群内 Chat 批次/命令按群目标串行，避免多成员并发写同一会话；私聊保持每用户独立会话。真实用户仍用于限流、记忆 scope、审计和发送工具 turn token；用户消息继续带用户名 head。
 - **兼容/清理**：首次使用群共享会话时删除旧版按用户拆分的 `bot_ai_sessions` 群映射，并尽力异步删除远端旧会话；旧摘要迁移参与者查询排除共享合成键。schema 保持 **v16（无迁移）**。
 - **本地验证（2026-10-25 实测）**：`npm test` **491**（新增 `bot-v071.test.ts` 3 例、`bot-ai.test.ts` 1 例；Bot 定向 **193**）；`npm run test:web` **222**；服务端覆盖率 **Lines 92.75% / Branches 78.23% / Functions 87.82%**；前端覆盖率不变（52.31/47.32/45.02）；`npm run check`、`npm run build`（`index-C0QZV4hZ.js` 726.72 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.1`）通过。
-- **生产部署（2026-10-25 11:05 CST）**：release `/opt/antifieldcloud/releases/20261025T030526Z`，commit **cc4faf9**；`/healthz` = `{"ok":true,"version":"0.7.1","schemaVersion":16,"db":"ok","pendingBackups":0}`；迁移前快照 `db-predeploy-20261025T030702602Z.sqlite`（sha256 `0f6675295daf9891bb57c00ebfeaa2cd305f557c6ce2b086d14ba8b0a09397b0`）；部署内只读 smoke **23/23**、完整 Access smoke **31/0/1/2**。
-- **部署代码验证**：在 Pi 上导入当前 release 的 `OpenCodeBotAi`，以临时 SQLite + 假 OpenCode 模拟同群两个成员：只创建 **1** 个会话、只保留 `user_id=__group__` 一条映射，旧版两条分用户映射被清理并各发一次远端 DELETE；两次对话均复用同一 `session_id`。真实双用户群聊验收待用户执行，Tag/Release 待验收后。
+- **生产部署（2026-10-25 11:18 CST）**：release `/opt/antifieldcloud/releases/20261025T031856Z`，commit **d8bdfc5**；`/healthz` = `{"ok":true,"version":"0.7.1","schemaVersion":16,"db":"ok","pendingBackups":0}`；迁移前快照 `db-predeploy-20261025T031929034Z.sqlite`（sha256 `c61e1e329ee6d0b141723ecae39648a7a1997f810f8e6dffff3eedc2c28047cc`）；部署内只读 smoke **23/23**、完整 Access smoke **31/0/1/2**。
+- **部署代码验证**：在 Pi 上导入当前 release 的 `OpenCodeBotAi`，以临时 SQLite + 假 OpenCode 模拟同群两个成员：只创建 **1** 个会话、只保留 `user_id=__group__` 一条映射，旧版两条分用户映射被清理并各发一次远端 DELETE；两次对话均复用同一 `session_id`。生产启动后群聊旧分用户映射已清零（群目标会话记录 0 条）；首条真实群消息将创建唯一共享会话，真实双用户群聊验收待用户执行，Tag/Release 待验收后。
 
 ## v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode v2.1.4）
 

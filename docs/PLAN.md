@@ -6,7 +6,7 @@
 
 - **范围**：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话（合成键 `__group__`）；群内 Chat 批次/命令按目标串行；私聊保持每用户独立会话；真实用户仍用于限流、记忆 scope、审计、发送工具令牌；用户消息带用户名 head。
 - **兼容/清理**：首次使用群共享会话时删除旧版按用户拆分的 `bot_ai_sessions` 群映射，并尽力删除远端旧会话；旧摘要迁移排除共享合成键；无 schema 迁移。
-- **验收**：本地 `npm test`/`check`/`build`/`check-version` 通过；已部署 release `20261025T030526Z`/commit `cc4faf9`（部署内 smoke 23/23、完整 Access smoke 31/0/1/2，部署代码探针验证同群单会话与旧映射清理）；真实群聊双用户验收与 Tag/Release 待用户确认。
+- **验收**：本地 `npm test`/`check`/`build`/`check-version` 通过；已部署 release `20261025T031856Z`/commit `d8bdfc5`（部署内 smoke 23/23、完整 Access smoke 31/0/1/2；启动后生产群聊旧分用户映射清零，部署代码探针验证同群单会话与旧映射清理）；真实群聊双用户验收与 Tag/Release 待用户确认。
 
 ## v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema v16 无迁移；OpenCode v2.1.4）
 

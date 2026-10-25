@@ -17,7 +17,7 @@
   迁移 9 增加 `bot_targets.allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 把 `bot_ai_sessions` 主键加入 mode、迁移 11 新增 `bot_chat_roles` 私聊角色卡、
   迁移 12 增加 `bot_targets.chat_trigger` 与 `bot_events` 诊断列/索引、迁移 13 删除非 QQ Bot 及其级联数据）；迁移前会执行 `PRAGMA foreign_key_check`，
   其它外键损坏会拒绝启动；数据库 schema 高于程序支持版本时拒绝启动。部署脚本切换前会自动做迁移前 DB 快照，回滚必须使用该快照。
-- **v0.7.1（已部署生产，待真实群聊验收/Tag；本版无 schema 迁移，保持 v16）**：群聊共享唯一 OpenCode Chat 会话（合成键 `__group__`，群内按目标串行；私聊仍每用户独立会话）；真实用户仍用于限流/记忆/审计/发送工具令牌。生产 release `20261025T030526Z`/commit `cc4faf9`，`/healthz` v0.7.1/schema16；迁移前快照 `db-predeploy-20261025T030702602Z.sqlite`（sha256 `0f667529…97b0`）；部署内 smoke 23/23、完整 Access smoke 31/0/1/2；部署代码探针验证同群单会话与旧映射清理。首次群聊会自动清理旧版按用户拆分的群会话映射并尽力删除远端旧会话。
+- **v0.7.1（已部署生产，待真实群聊验收/Tag；本版无 schema 迁移，保持 v16）**：群聊共享唯一 OpenCode Chat 会话（合成键 `__group__`，群内按目标串行；私聊仍每用户独立会话）；真实用户仍用于限流/记忆/审计/发送工具令牌。生产 release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16；迁移前快照 `db-predeploy-20261025T031929034Z.sqlite`（sha256 `c61e1e32…47cc`）；部署内 smoke 23/23、完整 Access smoke 31/0/1/2；启动时清理旧版分用户群映射（生产已清零），部署代码探针验证同群单会话。首次群聊会自动清理旧映射并尽力删除远端旧会话。
 - **v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；本版无 schema 迁移，保持 v16）**：第六轮审计修复 + 备份整包加密 + 异地副本（默认关闭）；OpenCode **v2.1.4**。
   部署步骤：按 §3.0 走 `deploy.ps1`（自动迁移前快照/回滚/`release.json`/`deploy-history.log`），smoke 使用
   `-ExpectedVersion 0.7.0 -ExpectedSchemaVersion 16 -ExpectedOpenCodeVersion 2.1.4`；OpenCode 升级按 §3.2 矩阵；

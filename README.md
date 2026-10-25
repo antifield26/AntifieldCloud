@@ -3,7 +3,7 @@
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
 > 状态：v0.7.1（**已部署生产，待真实群聊验收/Tag**）。本补丁修复群聊会话归属：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话，模型可见群内多用户历史；私聊保持每用户独立会话。真实用户仍分别用于限流、记忆归属、审计与发送工具令牌；用户消息继续带用户名 head。schema 保持 **v16**（无迁移），OpenCode 仍为 **v2.1.4**。
-> 发布：当前生产发布为 v0.7.1（release `20261025T030526Z`/代码提交 `cc4faf9`，`/healthz` v0.7.1/schema16）；上一发布 v0.7.0（Tag `v0.7.0`，GitHub Release [AntifieldCloud v0.7.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.0)）。v0.7.1 的 Tag/Release 待真实群聊验收后补。
+> 发布：当前生产发布为 v0.7.1（release `20261025T031856Z`/代码提交 `d8bdfc5`，`/healthz` v0.7.1/schema16）；上一发布 v0.7.0（Tag `v0.7.0`，GitHub Release [AntifieldCloud v0.7.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.0)）。v0.7.1 的 Tag/Release 待真实群聊验收后补。
 > 测试基线（2026-10-25）：`npm test` **491**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.75% / Branches 78.23% / Functions 87.82%**，前端 **Lines 52.31% / Branches 47.32% / Functions 45.02%**；`npm run check`、`check-version`（严格 `0.7.1`）、`build`（`index-C0QZV4hZ.js` 726.72 kB）均通过；Node.js **v26.12.1**；OpenCode **v2.1.4**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 
