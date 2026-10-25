@@ -1,4 +1,4 @@
-# 备份与恢复（v0.7.0）
+# 备份与恢复
 
 > 目标：SD 卡损坏、误删、升级失败或世界存档损坏时，能恢复 `/var/lib/antifieldcloud` 与 Minecraft 世界。
 > 备份分四条链路：**应用数据归档**（DB 快照 + 文件内容；可选整包 age 加密，默认关闭）、**密钥包**（age 加密的
@@ -31,10 +31,10 @@
 - **异地副本（默认关闭）**：PC 端 `backup-offsite.mjs/.ps1` 只上传 `.age`，链感知保留并写状态回 Pi；应用只读展示与告警（详见 §5.2）。
 - **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
   旧世界归档命名 `world-<YYYYMMDD>.tar.gz` 不匹配新的 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 规则，永远不会被自动清理。
-- **Bot 密钥（v0.5.0 起）**：`/etc/antifieldcloud/env` 含 `BOT_SECRET_KEY`，已随密钥包加密备份；该 key 与 DB 中的 `bots` 密文必须成对恢复，
+- **Bot 密钥**：`/etc/antifieldcloud/env` 含 `BOT_SECRET_KEY`，已随密钥包加密备份；该 key 与 DB 中的 `bots` 密文必须成对恢复，
   否则 Bot Token 不可解密（只能重新录入）。`BOT_SECRET_KEY` 不在普通应用归档内，必须用密钥包（或离线副本）恢复。
   普通归档含 TOTP/会话与 Bot 密文，仍按敏感数据处理；发布媒体不会进入备份之外的新位置。
-- **Bot 长期记忆（v0.5.2）/私聊角色卡（v0.5.5）**：DB `bot_ai_memories` 摘要与 `bot_chat_roles` 角色卡随数据库快照备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 镜像不在应用归档内，
+- **Bot 长期记忆/私聊角色卡**：DB `bot_ai_memories` 摘要与 `bot_chat_roles` 角色卡随数据库快照备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 镜像不在应用归档内，
   但可由 DB 摘要重建，不作为恢复必需项；镜像目录不对外暴露，按保留期/人工清理。
 
 ## 2. 应用归档结构与协议
@@ -56,7 +56,7 @@ snapshot-20261019T100101239Z-full.tar.gz.age.meta.json# 归档外明文元数据
 skippedMissing[] / warnings[]`。`skippedMissing` 记录“DB 有行但磁盘文件缺失”的文件 id，恢复计划会据此剔除并报告；
 `warnings` 记录缺失/时钟回拨等告警。
 
-**加密归档（v0.7.0）**：归档内 manifest 使用 `schema:2`，只保留 `schema / createdAt / mode / since / database / files[] /
+**加密归档**：归档内 manifest 使用 `schema:2`，只保留 `schema / createdAt / mode / since / database / files[] /
 fileCount / totalBytes / skippedMissing / warnings / encrypted:true / archiveFormat:"tar.gz.age"`；**明文 SHA-256 与明文大小不放进被加密的
 归档内部**（否则构成自引用），改由归档外 `<name>.meta.json`（`schema:2`，字段 `name/mode/createdAt/archiveFormat/encrypted/
 encryptedWith:"age"/recipient/plainSha256/plainSize/cipherSha256/cipherSize`）与 DB `backup_archives.manifest_json` 保存。
@@ -67,7 +67,7 @@ deleted_at / origin / verified_at / manifest_json / last_error`；`origin` 区�
 `import`（Web 导入，不参与 ack 游标）。`backup_state.last_backup_at` 只在 `--ack` 后推进。
 `restore_plans` 记录文件级恢复计划（归档链、选择、目标名、状态、操作者、过期、`skippedMissing`）。
 `meta.backup_missing_files` 记录上次缺失、等待恢复后补入增量的文件 id。
-**归档状态语义（v0.6.1）**：已 ack 的 Pi 归档在 PC 拉取确认后可能主动删除服务端文件；API 对这类行返回
+**归档状态语义**：已 ack 的 Pi 归档在 PC 拉取确认后可能主动删除服务端文件；API 对这类行返回
 `status=acked`、`available=false`，Dashboard 显示“已确认”而不是“文件缺失”，Backups 页恢复按钮禁用并提示“服务端副本已清理”。
 只有未 ack 的 Pi 归档或缺失的导入归档才会返回 `status=missing`。
 
@@ -112,7 +112,7 @@ cd "$env:USERPROFILE\projects\AntifieldCloud"
 ```
 
 - 任务名 `AntifieldCloud-Backup-Pull`；每日 `12:00` + 登录后补跑；电池供电时也运行；仅当前用户登录时运行。`-InstallOffsiteTask` 另建 `AntifieldCloud-Backup-Offsite`（默认每日 13:00、6h 超时、IgnoreNew）。
-- **更新仓库后必须重装任务（v0.5.2 起）**：`install-backup-task.ps1` 会把最新 `backup-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\` 并更新
+- **更新仓库后必须重装任务**：`install-backup-task.ps1` 会把最新 `backup-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\` 并更新
   `backup-task.json` 的脚本 SHA/参数；重装后手跑一次，确认日志 `secrets=ok`、Pi `backup-pull.json` 的 `secretsOk=true`
   （密钥包内含 `BOT_SECRET_KEY`，脚本不打印值），且 archive/SHA 校验通过。
 - 安装脚本会：复制 `backup-pull.ps1` 到 `%LOCALAPPDATA%\AntifieldCloud\`；用 `icacls` 把备份目录 ACL 收紧为
@@ -163,7 +163,7 @@ sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
 - **保留**：Pi 端 `SECRETS_KEEP`/默认 `KEEP=2` 滚动保留最新 2 份；Windows 任务拉到本地后**不再立即删除远端密钥包**
   （PC 失败时可复用同一份）；PC 保留 90 天。
 - 未安装 age/未配置公钥时只记录警告，不影响文件归档备份；但 secrets 状态会显示失败/未尝试。
-- **主机配置可选打包（v0.7.0/OPS-09）**：`backup-secrets.sh --include-host-config` 会把 `deploy.conf`、`/etc/nftables.conf`、
+- **主机配置可选打包**：`backup-secrets.sh --include-host-config` 会把 `deploy.conf`、`/etc/nftables.conf`、
   sshd drop-in、fail2ban jail、cloudflared/journald/nftables drop-in、应用 units、log2ram 配置中存在的文件一并打入密钥包，
   输出 `includesHostConfig`/`hostConfigFileCount`；模板与重建清单见 `deploy/host/README.md`。
 - **`includesOpencode` 硬校验**：已安装 opencode（存在 opencode 用户或数据目录）但 DB 快照缺失/Node 不可执行时，
@@ -178,7 +178,7 @@ sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
   `age -d` 解密 + 一次 `drill.ps1 -AgeIdentityPath` 演练，否则可能出现“备份成功但永不可恢复”。
 - **命名与元数据**：`snapshot-<stamp>[-n]-(full|inc).tar.gz.age`；sidecar `<name>.meta.json`（schema 2）；
   `.sha256` 始终是**密文** SHA-256；`recipient`/`encryptedWith` 写入 sidecar、DB `manifest_json` 与 API 元数据（公钥非秘密），
-  便于密钥轮换时识别旧归档。
+  便于密钥轮换时识别不同公钥的归档。
 - **失败关闭**：加密开启时 age 缺失/不可执行、公钥非法、加密失败、密文为空、空间不足（按 2× 明文）→ `--prepare` 失败，
   不产生 pending、不留明文最终归档、**不得降级明文**。临时明文使用 `*.plain.tmp`，密文+sidecar 落盘后立即删除；
   启动/每次 prepare 清理超过 24h 的残留。
@@ -186,7 +186,7 @@ sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
 - **Web 边界**：应用不持私钥。`verify/import/entries/restore-plan/executeRestore` 对 `.age` 在归档名校验之前返回
   `409 archive_encrypted`（加密归档是预期状态，不写 `last_error`）；自动恢复目标选择跳过加密归档；Web UI 禁用对应按钮并展示
   “加密归档（Web 不可校验/恢复）”。整库恢复同样只能 PC 解密后走 §8.1。
-- **启用顺序**（默认全关，可逐步回滚）：部署 v0.7.0 → 离线生成备份 age 密钥 → Pi 写公钥 → 私钥完成一次解密/演练 →
+- **启用顺序**（默认全关，可逐步回滚）：离线生成备份 age 密钥 → Pi 写公钥 → 私钥完成一次解密/演练 →
   `BACKUP_ARCHIVE_ENCRYPTION=true` 并重启 → 下一次 prepare 生成 `.age` → PC 拉取 + `--ack` → drill 解密校验 → 再配置异地副本。
   **回滚**：关闭开关恢复明文；已生成的 `.age` 保留（PC 侧解密/演练），不要在 Pi 上尝试解密。
 - **环境变量**：`BACKUP_ARCHIVE_ENCRYPTION`、`BACKUP_AGE_RECIPIENT_FILE`（`bootstrap-env.sh` 已纳管）；测试夹具可用
@@ -319,7 +319,7 @@ cd "$env:USERPROFILE\projects\AntifieldCloud"
 
 | 日期 | 操作人 | 全量归档 | 增量数量 | 最新 DB schema | 世界归档 | 结果 | 报告/备注 |
 |---|---|---|---|---|---|---|---|
-| 2026-10-19 | （首次部署验收） | snapshot-…-full.tar.gz | 2 | 2 | 未覆盖 | 通过 | v0.2.x 全量+增量+密钥包解包验证 |
+| 2026-10-25 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 0 | 17 | 通过 | 通过 | drill 报告 `20261025T133743Z`；链连续性/SHA/解包/DB integrity/FK/schema |
 |  |  |  |  |  |  |  | （下一次演练填写） |
 
 - 未填写记录的“演练通过”声明无效；报告文件与 `.local/DR-DRILL.md` 作为证据保存。
@@ -411,7 +411,7 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 # 核对 .sha256 后，把 /etc/antifieldcloud/env、/etc/cloudflared/*、server.properties、opencode env 按原权限放回
 ```
 
-- 解密在可信机器上做；恢复后检查 `/etc/antifieldcloud/env` 的域名/APP_ORIGIN/COOKIE_DOMAIN 与实际一致（COOKIE_DOMAIN 自 v0.6.0 起仅用于清理旧父域 Cookie，不再设置新 Cookie）。
+- 解密在可信机器上做；恢复后检查 `/etc/antifieldcloud/env` 的域名/APP_ORIGIN/COOKIE_DOMAIN 与实际一致（COOKIE_DOMAIN 自 仅用于清理旧父域 Cookie，不再设置新 Cookie）。
 - 密钥包不含普通文件内容；文件恢复走 §8.1，世界走 §8.2。
 
 ### 8.4 验证清单
@@ -449,7 +449,7 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 
 | 现象 | 处理 |
 |---|---|
-| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为 v0.5.8/schema 13 |
+| `--pending` 报 `no such table: backup_archives` | Pi 未跑迁移：重启一次服务或先升级部署；确认代码/schema 为当前 v17 |
 | pending 一直不减少 | PC 下载失败：看 `backup.log`；确认直连/SSH；保留 pending 是预期行为，不要手工删 DB 行 |
 | `--ack` 报 SHA 不匹配 | 归档损坏/被替换；对比 PC `.sha256`，从 PC 副本重新确认或重新 `--prepare --full` |
 | `磁盘空间不足` | 先完成 pending 拉取；清理旧 release/日志；空间预算含 pending+已确认+孤儿+2 GiB；世界备份另需 1.5× 世界体积 |
@@ -464,27 +464,27 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 | 恢复演练报告失败 | 看 `report.json` 的 `errors`：sidecar/链缺失、tar 不安全条目、DB integrity/FK/schema、manifest 不一致；先修备份再演练 |
 | 演练状态 unknown | 从未运行或未指定 `-PiHost` 回写；运行 `drill.ps1 -PiHost ...` 或接受 unknown（不误报通过） |
 | PC 有旧世界归档占空间 | 旧 cron 已停用；按 §6.4 手动清理，保留至少一份可解包副本 |
-| 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN 一致；COOKIE_DOMAIN 自 v0.6.0 起仅用于清理旧父域 Cookie，必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
+| 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN 一致；COOKIE_DOMAIN 自 仅用于清理旧父域 Cookie，必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
 | 恢复后 Bot 显示 `bot_key_missing`/密文不可解密 | `BOT_SECRET_KEY` 与 DB 快照不匹配：从同批密钥包恢复 env，或接受重新录入 Bot Token；不要重置 key 后保留旧 `bots` 行 |
 | 密钥包过大/失败但文件归档成功 | 看 `secretsLastError`；`BOT_SECRET_KEY` 在 env 内，env 不可读会导致密钥包失败；修复 `/etc/antifieldcloud/env` 权限 0640 root:antifieldcloud |
 
 ## 11. 覆盖、残余风险与限制
 
 - **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照，
-  v0.5.0 起 env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
-  v0.7.0 起可选整包 age 加密与 PC 端异地副本（默认关闭）。
+  env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
+  可选整包 age 加密与 PC 端异地副本（默认关闭）。
 - **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、对象存储；普通归档仍含 TOTP/会话明文与 Bot 凭据密文，
   PC ACL/离线介质是最后防线；age 私钥或 `BOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
-- **导入归档保留**：v0.7.2 起 `BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）控制 Web 导入归档保留；维护任务清理超期
+- **导入归档保留**：`BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）控制 Web 导入归档保留；维护任务清理超期
   `origin='import'` 归档（跳过活动恢复计划引用），并清理无 DB 记录的超期导入文件。
 - 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。
-- 世界备份依赖 Minecraft 运行与 RCON；v0.7.2 已安装 Windows 世界拉取周任务并手动验证；恢复演练保持手动/季度，异地副本按用户决定保持关闭。
+- 世界备份依赖 Minecraft 运行与 RCON；Windows 世界拉取周任务已安装并手动验证；恢复演练保持手动/季度，异地副本保持关闭。
 - 恢复演练记录见 §7 与 `.local/DR-DRILL.md`；每次升级前重新演练。
 
 ### 本轮明确不修 / 已知残留（DR 系列）
 
 - **DR-1（时钟回拨/同毫秒）**：增量依赖 `created_at > 上次水位`；系统时钟回拨或同一毫秒内的写入仍可能漏备。
   `--prepare` 会对“文件 `created_at` 晚于当前时间/水位倒退”写 `warnings` 与 `clockSkew` 状态，但不会自动修正；依赖 NTP 正常 + 每周全量兜底。
-- **DR-7（导入归档无删除/保留策略）**：v0.7.2 已收口，见上方 `BACKUP_IMPORT_RETENTION_DAYS`；活动恢复计划引用的归档不会删除。
-- **DR-22（告警跨周期不重投）**：v0.7.2 已收口；持续 firing 按 `ALERT_REPEAT_HOURS`（默认 24，0=关闭）重发 webhook，状态仍为 firing。
-- **DR-23（锁心跳）**：v0.7.2 已收口；`.backup.lock` 持有期间每 30s 刷新 mtime，超过 1 小时才按陈旧锁接管。
+- **DR-7（导入归档无删除/保留策略）**：已由 `BACKUP_IMPORT_RETENTION_DAYS` 控制；活动恢复计划引用的归档不会删除。
+- **DR-22（告警跨周期不重投）**：持续 firing 按 `ALERT_REPEAT_HOURS`（默认 24，0=关闭）重发 webhook，状态仍为 firing。
+- **DR-23（锁心跳）**：`.backup.lock` 持有期间每 30s 刷新 mtime，超过 1 小时才按陈旧锁接管。
