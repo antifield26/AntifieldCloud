@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.7.1] - 2026-10-25（已部署生产并完成真实群聊验收，待 Tag/Release）
+## [v0.7.1] - 2026-10-25（已发布：Tag `v0.7.1` + GitHub Release）
 
 ### Fixed
 
@@ -14,7 +14,8 @@
 - 新增 `server/test/bot-v071.test.ts`：群内两个成员共享 `sessionUserId`/串行键、真实用户分别记账；私聊不传共享键。
 - `bot-ai.test.ts` 新增真实 `OpenCodeBotAi` 用例：同群两个成员只创建一个会话、只保留一条映射，并清理旧分用户映射。
 - 本地门禁：`npm test` **491**（Bot 定向 **193**）、`test:web` **222**、服务端覆盖率 **92.75/78.23/87.82**（Lines/Branches/Functions）、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`（`index-C0QZV4hZ.js`）、`check-version` 严格 `0.7.1` 通过。
-- 生产部署：release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16；迁移前快照 `db-predeploy-20261025T031929034Z.sqlite`（sha256 `c61e1e32…47cc`）；部署内 smoke **23/23**、完整 Access smoke **31/0/1/2**；启动后生产群聊旧分用户映射清零；部署代码探针验证同群两个成员只创建 1 个会话并清理旧映射；真实 Bot Test 群由两个成员产生 3 条 prompt、4 条 assistant，数据库仅一条 `__group__` 映射，用户确认验收通过。Tag/Release 待用户确认。
+- 生产部署：release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16；迁移前快照 `db-predeploy-20261025T031929034Z.sqlite`（sha256 `c61e1e32…47cc`）；部署内 smoke **23/23**、完整 Access smoke **31/0/1/2**；启动后生产群聊旧分用户映射清零；部署代码探针验证同群两个成员只创建 1 个会话并清理旧映射；真实 Bot Test 群由两个成员产生 3 条 prompt、4 条 assistant，数据库仅一条 `__group__` 映射，用户确认验收通过。
+- Tag/GitHub Release 已发布：annotated Tag `v0.7.1` + [AntifieldCloud v0.7.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.1)。
 
 ## [v0.7.0] - 2026-10-25（已发布：Tag `v0.7.0` + GitHub Release）
 

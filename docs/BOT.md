@@ -1,4 +1,4 @@
-# Bot 集成（v0.7.0，QQ 官方 Bot 单平台）
+# Bot 集成（v0.7.1，QQ 官方 Bot 单平台）
 
 AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（命令与普通消息 Chat）、QQ 入站图片理解和手动/定时文本发布接到 **QQ 官方 Bot**。
 v0.5.8 起平台收敛为 **QQ 单平台**：Telegram / Discord / Slack 适配器、Discord Gateway、只读按钮、多附件/媒体发布、群聊触发方式（`chatTrigger`）
@@ -302,6 +302,15 @@ v0.6.1 新增 `BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；v0.6.4 新增 `BOT_CHAT_BU
 - **burst.clear 竞态（BOT-13）**：`clear` 标记 cancelled 并清空 items，运行中批次的 finally 不再为旧消息排队；`/reset`/`/forget`/角色变更后的旧缓冲不会再回复。
 - **名称匹配（BOT-15）**：Bot 名称提及按词边界匹配，降低短名/子串过度触发；未 @ 的群消息仍可由模型选择沉默。
 - **关闭排空（ARCH-04）**：应用关闭时有限等待在途回复/工具缓冲/投递（最多 15s，超时 warn），减少部署/重启丢回复与重复投递。
+
+## 5.10 v0.7.1 群聊共享会话
+
+- **唯一会话**：`target.kind = group` 的群聊目标统一使用合成会话键 `__group__`，每个群只保留一条 `bot_ai_sessions` Chat 映射；同一群的不同成员不再各建会话。私聊（C2C）仍按真实用户独立会话。
+- **多用户上下文**：群内用户消息继续带 `<用户名>：` head；同一群的 Chat 批次/命令按群目标串行，模型可在同一 OpenCode 会话中看到群内不同成员的历史消息。
+- **真实用户边界**：限流（`botId:userId`）、结构化记忆 scope/归属、审计 actor 与发送工具 `turn_id`/`turn_token` 仍归属真实成员，不因共享会话合并。
+- **启动清理**：`BotService.start()` 在群记忆迁移后清理所有群目标的旧版分用户 Chat 映射，并异步尽力删除远端旧会话；首条群消息创建唯一共享会话。旧摘要迁移的参与者查询排除 `__group__`。
+- **范围**：本版仅 QQ 群目标（`kind=group`）；QQ 频道（channel）行为未变，仍按原有会话归属。
+- **测试**：`bot-v071.test.ts` 覆盖同群共享键/真实用户记账、私聊不共享、启动清理；`bot-ai.test.ts` 覆盖真实 `OpenCodeBotAi` 同群单会话与旧映射删除。Bot 定向 **193 pass**、全量 **491**。
 
 ## 6. 网络出站（QQ / OpenCode，Pi 直连）
 
