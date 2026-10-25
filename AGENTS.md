@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；生产 release `20261025T132950Z`/commit `eb74382`；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版收口 D-18 可落地残余：审计写入失败诊断持久化（`audit_write_failures`，schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 **90 天**保留（`BACKUP_IMPORT_RETENTION_DAYS`）、告警持续 firing **24h** 重通知（`ALERT_REPEAT_HOURS`）、备份锁 **30s** 心跳续租、DR-1 `clockSkew` 状态、BotService 拆分（`targets.ts`/`roles-admin.ts`/`memory-admin.ts`）与平台/模型负路径测试；运维侧完成 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 24h 回滚窗口清理、Windows 世界拉取周任务与 rclone v1.75.2 安装。备份整包加密/异地副本仍默认关闭（异地副本待 rclone remote）。上一发布 v0.7.1（群聊共享唯一 OpenCode Chat 会话，Tag/Release；生产 release `20261025T031856Z`/commit `d8bdfc5`）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；生产 release `20261025T132950Z`/commit `eb74382`；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。本版收口 D-18 可落地残余：审计写入失败诊断持久化（`audit_write_failures`，schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 **90 天**保留（`BACKUP_IMPORT_RETENTION_DAYS`）、告警持续 firing **24h** 重通知（`ALERT_REPEAT_HOURS`）、备份锁 **30s** 心跳续租、DR-1 `clockSkew` 状态、BotService 拆分（`targets.ts`/`roles-admin.ts`/`memory-admin.ts`）与平台/模型负路径测试；运维侧完成 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 24h 回滚窗口清理、Windows 世界拉取周任务与 rclone v1.75.2 安装。备份整包加密/异地副本仍默认关闭（用户确认保持关闭，不配置 rclone remote）。上一发布 v0.7.1（群聊共享唯一 OpenCode Chat 会话，Tag/Release；生产 release `20261025T031856Z`/commit `d8bdfc5`）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -173,7 +173,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对 `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。`BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（QQ 开放平台）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；仅 QQ 官方 Bot。
 - 测试证据边界：平台适配/Chat/记忆/图片/自检/诊断/备份 tar/告警投递以进程内 mock/夹具为主，未做真实 QQ 平台限流/签名漂移/故障负路径；真实 QQ 消息验收记录见 `docs/ACCEPTANCE.md`。
-- Windows 世界拉取（`scripts/world-pull.ps1`，周度）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证成功；恢复演练（`scripts/drill.ps1`）保持手动/季度；异地副本任务待 rclone remote 后安装。`install-backup-task.ps1` 安装每日应用归档拉取任务（可选 offsite）。
+- Windows 世界拉取（`scripts/world-pull.ps1`，周度）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证成功；恢复演练（`scripts/drill.ps1`）保持手动/季度；异地副本按用户决定保持关闭、未配置 remote。`install-backup-task.ps1` 安装每日应用归档拉取任务（可选 offsite）。
 - Cloudflare：zone 使用占位 `example.com`；tunnel 名称 `pi`；`mc.<domain>` CNAME 到 SakuraFRP，**不要改**；`app/ai` 的 DNS 由用户手动添加；Access 主应用 + 4 个 bypass + service token 已在生产配置（见 `docs/DEPLOY.md` §5.2），v0.7.2 已为 `ai` 新增 Access 应用（Owner allow + Smoke service token；Free 套餐无自定义 WAF），service token 只保存在 gitignored `.local/cf-access.env`；严格 CSP 会拦截 Web Analytics/Challenge 注入，需后台关闭自动注入或接受报错。
 - 旧项目 PiForge 的残留（sudoers 注释、禁用的计划任务）保持原样，不继承、不清理。
 - 公开仓库中的域名/IP/网段/备份路径均为示例/占位值；本机实际部署信息见 `.local/DEPLOYMENT.md`（gitignored，不提交）。
@@ -184,7 +184,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 2. 交互式运行 provisioning，设置密码、扫描 TOTP、保存恢复码。
 3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。
 4. 离线保存 age 私钥（密钥包与备份整包加密各一套，互不复用）；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
-5. Windows 周度世界拉取任务（`scripts/world-pull.ps1`）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证；恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本任务待 rclone remote。
+5. Windows 周度世界拉取任务（`scripts/world-pull.ps1`）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证；恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本按用户决定保持关闭。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在允许网段内（模板为 TEST-NET 占位，先替换为实际网段，否则会锁死）；保留物理键鼠/已建立 SSH 作为回滚通道。
 7. 备份整包加密启用（默认关闭）：离线生成独立 age 密钥 → Pi 写公钥（root、组/其他不可写）→ 用私钥完成一次 `age -d` 解密与 `drill.ps1 -AgeIdentityPath` 演练 → 设 `BACKUP_ARCHIVE_ENCRYPTION=true` 并重启 → 下一次 prepare 生成 `.age` → PC 拉取/ack → 再演练。回滚：关开关恢复明文，已生成 `.age` 保留（仅 PC 可解密）。
 8. 异地副本启用（默认关闭）：PC 安装配置 rclone remote/凭据 → `install-backup-task.ps1 -InstallOffsiteTask -OffsiteRemote …` → 手跑一次确认状态 JSON 回写与 `plaintextSkipped=0` → 确认告警阈值 `ALERT_OFFSITE_MAX_AGE_HOURS`。
