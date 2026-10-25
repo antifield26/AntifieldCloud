@@ -27,7 +27,7 @@
   - D-18 P3 处置：可修小项随本版修；架构性/已接受项写入 ARCHITECTURE/SECURITY 明确残余，不强行改造。
   - D-19 版本：`0.7.0`；schema v16 无迁移；OpenCode v2.1.4；加密/异地默认关闭；生产部署已执行，Tag 待验收后。
   - D-20 Bot 连续外发：同一 Bot（AppID）外发文本按 **1000ms 最小间隔**串行，覆盖长文本分段、发送工具多条消息、兜底文本与队列发送；测试可注入 0，生产默认固定 1000ms。
-- **门禁**：`npm run check`/`test:coverage`/`test:web:coverage`/`build`/`check-version`/`check-prod-deps` 全绿；2026-10-25 实测：`npm test` **487**、Bot 定向 **189**、`test:web` **222**、服务端覆盖率 **92.67/78.14/87.95**、前端 **52.31/47.32/45.02**、build `index-C0QZV4hZ.js` 726.72 kB；生产 release `20261025T014533Z`/commit `ac4b2f9`、smoke 23/23 与完整 31/0/1/2；D-20 已随该 release 部署（生产代码探针 1001ms）；DSML 原始工具调用回显修复待部署。Tag/真实 QQ 验收待用户确认。
+- **门禁**：`npm run check`/`test:coverage`/`test:web:coverage`/`build`/`check-version`/`check-prod-deps` 全绿；2026-10-25 实测：`npm test` **487**、Bot 定向 **189**、`test:web` **222**、服务端覆盖率 **92.67/78.14/87.95**、前端 **52.31/47.32/45.02**、build `index-C0QZV4hZ.js` 726.72 kB；生产 release `20261025T021609Z`/commit `4f40ccd`、smoke 23/23；D-20 与 DSML 回显修复均已部署（生产探针验证）。Tag/真实 QQ 验收待用户确认。
 
 ## v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移）
 
