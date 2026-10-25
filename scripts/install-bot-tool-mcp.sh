@@ -65,6 +65,9 @@ finally:
     if os.path.exists(tmp_path):
         os.unlink(tmp_path)
 PY
+# 该文件由 root 原子替换；OpenCode 以 opencode 用户读取，必须恢复属主/权限（否则 MCP 配置被静默忽略）。
+chown opencode:opencode "$CONFIG"
+chmod 0640 "$CONFIG"
 
 if systemctl list-unit-files opencode.service >/dev/null 2>&1; then
   systemctl restart opencode

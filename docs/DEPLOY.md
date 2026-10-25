@@ -311,6 +311,8 @@ sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 必须�
 `sudo systemctl start opencode` → 按 V1–V5 复验；应用侧无需回滚（无 schema 迁移）。OpenCode 原生按钮/WS 实时事件仍需浏览器复测。
 备份保留到下一轮确认稳定（建议 ≥7 天）再清理。
 
+**MCP 配置属主约束（安装脚本已修复）**：`/var/lib/opencode/.config/opencode/opencode.json` 必须由 `opencode:opencode` 拥有且 `0640`；root 写的临时文件经 `os.replace` 后若保留 root 属主，OpenCode 以 opencode 用户读不到配置，会表现为 `/api/mcp` 仅 `opencode_console`、Bot 发送工具/搜索 MCP 不加载。运行 `install-bot-tool-mcp.sh` / `install-searxng-mcp.sh` 后应 `stat -c '%a %U %G'` 校验并重启 OpenCode；脚本现已内置 `chown opencode:opencode`。MCP 为懒加载，重启后 `/api/mcp` 可能需要数秒至十余秒才显示 connected，冒烟脚本对 MCP 检查有重试。
+
 ### 3.3 Node.js 运行时安全更新（v26.12.1）
 
 生产应用使用 `/usr/local/bin/node`（systemd `ExecStart`）；npm/npx 仍指向 nvm（仅构建/部署工具）。

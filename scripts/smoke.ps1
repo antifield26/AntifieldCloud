@@ -348,10 +348,16 @@ if (-not $SkipMcp) {
     $command = @'
 sudo sh -c 'P=$(grep -E "^OPENCODE_PASSWORD=" /etc/opencode/opencode.env | head -n1 | cut -d= -f2-); AUTH=$(printf "%s" "opencode:$P" | base64 -w0); curl -fsS --max-time 5 -H "Authorization: Basic $AUTH" http://127.0.0.1:4096/api/mcp' 2>&1
 '@
-    $out = (Invoke-PiSsh $command.Trim() -TimeoutSeconds 30 | Out-String).Trim()
-    if ($out -notmatch 'botmsg') { throw "MCP 输出中未发现 botmsg：$(($out -split "`n")[0])" }
-    if ($out -notmatch 'searxng') { throw "MCP 输出中未发现 searxng：$(($out -split "`n")[0])" }
-    if ($out -notmatch 'connected|ready') { throw "MCP 服务未显示 connected/ready：$(($out -split "`n")[0])" }
+    # MCP 在 2.1.4 为懒加载：重启/升级后可能数秒才 connected，最多重试 6 次（约 12s）。
+    $out = ""
+    for ($attempt = 0; $attempt -lt 6; $attempt++) {
+      $out = (Invoke-PiSsh $command.Trim() -TimeoutSeconds 30 | Out-String).Trim()
+      if ($out -match 'botmsg' -and $out -match 'searxng' -and $out -match 'connected|ready') { break }
+      Start-Sleep -Seconds 2
+    }
+    if ($out -notmatch 'botmsg') { throw "MCP 输出中未发现 botmsg（重试后）：$(($out -split "`n")[0])" }
+    if ($out -notmatch 'searxng') { throw "MCP 输出中未发现 searxng（重试后）：$(($out -split "`n")[0])" }
+    if ($out -notmatch 'connected|ready') { throw "MCP 服务未显示 connected/ready（重试后）：$(($out -split "`n")[0])" }
     "botmsg+searxng 已连接"
   }
   SoftCheck "MCP 进程数量（<= $MaxMcpProcesses）" {
