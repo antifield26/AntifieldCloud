@@ -1,13 +1,13 @@
 # AntifieldCloud v0.7.2 实施计划（摘要）
 
-本文件是 v0.7.2 的权威范围/决策摘要；历史版本见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.7.2（已部署生产，待用户验收）**：D-18 可落地残余收口——审计失败持久化（schema **v17**）、Bot 镜像清理、导入归档 90 天保留、告警 24h 重通知、备份锁心跳、DR-1 状态、BotService 拆分与负路径测试；OpenCode **v2.1.4**。上一发布 v0.7.1（Tag/Release，生产 release `20261025T031856Z`/commit `d8bdfc5`）。
+本文件是 v0.7.2 的权威范围/决策摘要；历史版本见下方补充；完整交付与验收见 `docs/ACCEPTANCE.md`，界面见 `docs/UI-SPEC.md`，契约见 `docs/API.md`。当前版本 **v0.7.2（已发布：Tag `v0.7.2` + GitHub Release）**：D-18 可落地残余收口——审计失败持久化（schema **v17**）、Bot 镜像清理、导入归档 90 天保留、告警 24h 重通知、备份锁心跳、DR-1 状态、BotService 拆分与负路径测试；OpenCode **v2.1.4**。上一发布 v0.7.1（Tag/Release，生产 release `20261025T031856Z`/commit `d8bdfc5`）。
 
-## v0.7.2（已部署生产，待用户验收；D-18 收口；schema v17；OpenCode v2.1.4）
+## v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口；schema v17；OpenCode v2.1.4）
 
 - **范围**：审计写入失败持久化（`audit_write_failures`，`/api/version.audit.persisted`）；Bot 记忆镜像孤儿清理；Web 导入归档保留 `BACKUP_IMPORT_RETENTION_DAYS=90`；告警持续 firing `ALERT_REPEAT_HOURS=24`；备份锁 30s 心跳；DR-1 `clockSkew`；BotService 拆分 `targets.ts`/`roles-admin.ts`/`memory-admin.ts`；平台/模型负路径测试。
 - **运维**：Cloudflare `ai` Access（Owner allow + Smoke service token；Free 无自定义 WAF）；SSH 回滚窗口清理；Windows 世界拉取周任务安装并手动验证；rclone v1.75.2 安装，异地副本待 remote；备份加密保持关闭。
 - **明确不改造**：单进程/HA、内存限流、同步维护、SQLite `synchronous=NORMAL`、单 SD/LUKS、NOPASSWD sudo、RCON 监听、Cloudflare 明文、真实平台负路径（只补夹具）等继续作为明确残余。
-- **验收**：本地 `npm test` **497**、`test:web` **222**、服务端覆盖率 **92.85/78.35/88.11**；`npm run check`、`build`、`check-version` 严格 `0.7.2` 通过。生产 release `20261025T132950Z`/commit `eb74382`，schema17；部署内 smoke 24/0/1/2、完整 Access smoke 32/0/0/2（任务标记待刷新）；drill `20261025T133743Z` schema17 通过。用户验收/Tag/Release 待补。
+- **验收**：本地 `npm test` **497**、`test:web` **222**、服务端覆盖率 **92.85/78.35/88.11**；`npm run check`、`build`、`check-version` 严格 `0.7.2` 通过。生产 release `20261025T132950Z`/commit `eb74382`，schema17；部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**（任务标记 0.7.2）；drill `20261025T133743Z` schema17 通过；Tag `v0.7.2` + GitHub Release 已发布。
 
 ## v0.7.1（已发布：Tag `v0.7.1` + GitHub Release；群聊共享会话；schema v16 无迁移；OpenCode v2.1.4）
 

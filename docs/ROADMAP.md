@@ -1,10 +1,10 @@
 # 路线图
 
-## v0.7.2（已部署生产，待用户验收；D-18 收口；schema v17；OpenCode v2.1.4）
+## v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口；schema v17；OpenCode v2.1.4）
 
 - **范围**：审计失败持久化（schema v17）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew`、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径测试；Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务、rclone 安装。
 - **明确不改造**：单进程/HA、内存限流、同步维护、SQLite `synchronous=NORMAL`、单 SD/LUKS、NOPASSWD sudo、RCON 监听、Cloudflare 明文、真实平台负路径（只补夹具）等继续作为明确残余。
-- **状态**：本地实现与门禁完成（`npm test` 497、`test:web` 222、服务端覆盖率 92.85/78.35/88.11）；生产 release `20261025T132950Z`/commit `eb74382`（schema17；部署内 smoke 24/0/1/2、完整 Access smoke 32/0/0/2（任务标记待刷新）；drill `20261025T133743Z` schema17 通过）；用户验收/Tag/Release 待补；备份加密/异地副本保持关闭，异地副本待 rclone remote。
+- **状态**：本地实现与门禁完成（`npm test` 497、`test:web` 222、服务端覆盖率 92.85/78.35/88.11）；生产 release `20261025T132950Z`/commit `eb74382`（schema17；部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill `20261025T133743Z` schema17 通过）；Tag `v0.7.2` + GitHub Release 已发布；备份加密/异地副本保持关闭，异地副本待 rclone remote。
 
 ## v0.7.1（已发布：Tag `v0.7.1` + GitHub Release；群聊共享会话；schema 保持 v16；OpenCode v2.1.4）
 

@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人（v0.5.8 起单平台）、PWA、副机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.7.2（**已部署生产，待用户验收**）。本版收口 D-18 可落地残余：审计写入失败诊断持久化（schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警持续 firing 24h 重通知、备份锁心跳续租、DR-1 时钟回拨状态、BotService 拆分（targets/roles/memory admin）与平台负路径测试；同时完成 Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务和 rclone 安装。备份整包加密/异地副本仍默认关闭；schema 从 v16 迁移到 **v17**；OpenCode 仍为 **v2.1.4**。
-> 发布：生产 release `20261025T132950Z`/代码提交 `eb74382`（`/healthz` v0.7.2/schema17）；迁移前快照 `db-predeploy-20261025T133023319Z.sqlite`；部署内 smoke 24/0/1/2、完整 Access smoke 32/0/0/2（`-SkipLocalTaskCheck`；Windows 每日备份任务标记仍为 0.7.1，需管理员重跑）。上一发布 v0.7.1（Tag `v0.7.1`，release `20261025T031856Z`/commit `d8bdfc5`）。
+> 状态：v0.7.2（**已部署生产，用户确认发布**）。本版收口 D-18 可落地残余：审计写入失败诊断持久化（schema **v17**）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警持续 firing 24h 重通知、备份锁心跳续租、DR-1 时钟回拨状态、BotService 拆分（targets/roles/memory admin）与平台负路径测试；同时完成 Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务和 rclone 安装。备份整包加密/异地副本仍默认关闭；schema 从 v16 迁移到 **v17**；OpenCode 仍为 **v2.1.4**。
+> 发布：生产 release `20261025T132950Z`/代码提交 `eb74382`（`/healthz` v0.7.2/schema17）；迁移前快照 `db-predeploy-20261025T133023319Z.sqlite`；部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**（Windows 每日备份任务标记已刷新到 0.7.2）；drill `20261025T133743Z` schema17 通过。上一发布 v0.7.1（Tag `v0.7.1`，release `20261025T031856Z`/commit `d8bdfc5`）。
 > 测试基线（2026-10-25）：`npm test` **497**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.85/78.35/88.11**、前端 **52.31/47.32/45.02**；`npm run check`、`check-version`（严格 `0.7.2`）、`build`（`index-C0QZV4hZ.js` 726.72 kB）均通过；Node.js **v26.12.1**；OpenCode **v2.1.4**。
 > 部署与运维见 `docs/DEPLOY.md`，备份/恢复见 `docs/BACKUP.md`，路线见 [docs/ROADMAP.md](docs/ROADMAP.md)，当前与历史验收见 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)，审计修复记录见 [docs/AUDIT.md](docs/AUDIT.md)。
 

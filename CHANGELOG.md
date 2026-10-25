@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.7.2] - 2026-10-25（已部署生产，待用户验收）
+## [v0.7.2] - 2026-10-25（已发布：Tag `v0.7.2` + GitHub Release）
 
 ### Added
 
@@ -19,7 +19,7 @@
 
 - 新增审计持久化跨重启、Bot 镜像孤儿、导入归档保留/活动计划保护、告警重通知、备份锁心跳、AI 429 负路径、DR-1 `clockSkew` 断言。
 - 本地门禁：`npm test` **497**、`test:web` **222**（44 文件）、服务端覆盖率 **92.85/78.35/88.11**（Lines/Branches/Functions）、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version` 严格 `0.7.2` 通过。
-- **部署证据**：生产 release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；迁移前快照 `db-predeploy-20261025T133023319Z.sqlite`（sha256 `127c1a3e4d9e2a64c3ebc133a2e1a8766333a293984bb3ced3153a1ccfd153de`）；部署内 smoke **24/0/1/2**、完整 Access smoke **32/0/0/2**（`-SkipLocalTaskCheck`；Windows 每日备份任务标记仍为 0.7.1，需管理员重跑）；生产 env 已补 `BACKUP_IMPORT_RETENTION_DAYS=90`/`ALERT_REPEAT_HOURS=24`；新建 full 备份 `snapshot-20261025T133725908Z-full.tar.gz`（711204 bytes）已拉取/ack，drill 报告 `20261025T133743Z` schema17 **通过**。用户验收/Tag/Release 待补。
+- **部署证据**：生产 release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；迁移前快照 `db-predeploy-20261025T133023319Z.sqlite`（sha256 `127c1a3e4d9e2a64c3ebc133a2e1a8766333a293984bb3ced3153a1ccfd153de`）；部署内 smoke **24/0/1/2**、完整 Access smoke **33/0/0/2**（Windows 每日备份任务标记已刷新到 0.7.2）；生产 env 已补 `BACKUP_IMPORT_RETENTION_DAYS=90`/`ALERT_REPEAT_HOURS=24`；新建 full 备份 `snapshot-20261025T133725908Z-full.tar.gz`（711204 bytes）已拉取/ack，drill 报告 `20261025T133743Z` schema17 **通过**。用户确认发布；Tag/GitHub Release 已发布。
 
 ## [v0.7.1] - 2026-10-25（已发布：Tag `v0.7.1` + GitHub Release）
 
