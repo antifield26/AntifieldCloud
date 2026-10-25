@@ -69,7 +69,7 @@ import {
 } from './roles.ts'
 import { BotGroupRoleStore } from './group-roles.ts'
 import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
-import { QqAdapter } from './adapters/qq.ts'
+import { QqAdapter, DEFAULT_SEND_INTERVAL_MS } from './adapters/qq.ts'
 import { BOT_TEXT_LIMITS } from './text.ts'
 import {
   commandDenied,
@@ -1995,7 +1995,11 @@ export class BotService {
   private adapterFor(row: BotRow): BotAdapter {
     const config = parseConfig(row.config_json)
     const secret = this.secretOf(row)
-    return new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
+    return new QqAdapter(config, secret, {
+      fetch: this.deps.fetch,
+      now: this.deps.now,
+      sendIntervalMs: this.deps.sendIntervalMs ?? DEFAULT_SEND_INTERVAL_MS,
+    })
   }
 
   private toSummary(row: BotRow): BotSummary {
@@ -2030,7 +2034,11 @@ export class BotService {
   }
 
   private validateOrThrow(config: Record<string, unknown>, secret: BotSecret): void {
-    const adapter = new QqAdapter(config, secret, { fetch: this.deps.fetch, now: this.deps.now })
+    const adapter = new QqAdapter(config, secret, {
+      fetch: this.deps.fetch,
+      now: this.deps.now,
+      sendIntervalMs: this.deps.sendIntervalMs ?? DEFAULT_SEND_INTERVAL_MS,
+    })
     const errors = adapter.validate(config, secret)
     if (errors.length > 0) throw badRequest(`Bot 配置无效：${errors.join(', ')}`, 'invalid_bot_config')
   }

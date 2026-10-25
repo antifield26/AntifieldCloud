@@ -47,6 +47,22 @@ const ED25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'he
 const QQ_ACK_BODY = { opcode: 12 }
 /** 入站图片允许下载的 QQ CDN 域名后缀；后缀前导点保证完整 DNS 标签边界。 */
 const QQ_IMAGE_HOST_SUFFIXES = ['.qpic.cn', '.qq.com', '.qq.com.cn', '.gtimg.cn'] as const
+/** 生产 Bot 连续外发消息的最小间隔（毫秒）；由 BotService 注入，测试可设 0。 */
+export const DEFAULT_SEND_INTERVAL_MS = 1000
+
+/**
+ * 每个 Bot（AppID）的连续发送节流状态：同一 Bot 的多条外发文本串行，
+ * 且相邻两次发送至少间隔 sendIntervalMs，避免 QQ 侧连续消息触发风控。
+ */
+interface SendGateState {
+  tail: Promise<void>
+  lastSentAt: number
+}
+const sendGates = new Map<string, SendGateState>()
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
 
 interface AccessTokenCacheEntry {
   token: string
@@ -177,16 +193,21 @@ export class QqAdapter implements BotAdapter {
   private readonly secret: BotSecret
   private readonly fetchImpl?: typeof fetch
   private readonly now: () => Date
+  private readonly sendIntervalMs: number
+  private readonly sendGateKey: string
 
   constructor(
     config: Record<string, unknown>,
     secret: BotSecret,
-    deps: { fetch?: typeof fetch; now?: () => Date } = {},
+    deps: { fetch?: typeof fetch; now?: () => Date; sendIntervalMs?: number } = {},
   ) {
     this.config = config
     this.secret = secret
     this.fetchImpl = deps.fetch
     this.now = deps.now ?? (() => new Date())
+    this.sendIntervalMs = Math.max(0, Math.floor(deps.sendIntervalMs ?? 0))
+    const appId = typeof config.appId === 'string' ? config.appId.trim() : ''
+    this.sendGateKey = appId || 'unknown'
   }
 
   validate(config: Record<string, unknown>, secret: BotSecret): string[] {
@@ -425,6 +446,34 @@ export class QqAdapter implements BotAdapter {
     return { externalId: ids[0] ?? null, externalIds: ids }
   }
 
+  /**
+   * 连续外发节流：按 AppID 串行；相邻实际消息请求（包括分段、发送工具多条、兜底）至少间隔 sendIntervalMs。
+   * 闸门覆盖实际 HTTP 请求，避免 access_token 换取耗时把间隔吃掉；失败也不会让下一条立即重试。
+   */
+  private async withSendGate<T>(send: () => Promise<T>): Promise<T> {
+    const interval = this.sendIntervalMs
+    if (interval <= 0) return send()
+    const state = sendGates.get(this.sendGateKey) ?? { tail: Promise.resolve(), lastSentAt: 0 }
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const previous = state.tail
+    state.tail = previous.then(() => gate)
+    sendGates.set(this.sendGateKey, state)
+    await previous
+    try {
+      if (state.lastSentAt > 0) {
+        const wait = state.lastSentAt + interval - this.now().getTime()
+        if (wait > 0) await sleep(wait)
+      }
+      state.lastSentAt = this.now().getTime()
+      return await send()
+    } finally {
+      release()
+    }
+  }
+
   /** 连接自检：换取 access_token 成功即视为可用；detail 固定文案，绝不返回 token。 */
   async check(_input: { botId: string; appOrigin: string }): Promise<BotHealthCheck> {
     const items: BotHealthItem[] = []
@@ -459,16 +508,19 @@ export class QqAdapter implements BotAdapter {
       body.msg_id = messageId
       body.msg_seq = randomInt(1, 10_001)
     }
-    const response = await fetchJson(
-      messageUrl(target),
-      {
-        method: 'POST',
-        headers: { authorization: `QQBot ${accessToken}`, 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      },
-      { fetch: this.fetchImpl },
-    )
-    return { externalId: responseExternalId(response.body) }
+    // 闸门内只放实际消息请求；token 换取在闸门外，不占用 1s 间隔。
+    return this.withSendGate(async () => {
+      const response = await fetchJson(
+        messageUrl(target),
+        {
+          method: 'POST',
+          headers: { authorization: `QQBot ${accessToken}`, 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+        { fetch: this.fetchImpl },
+      )
+      return { externalId: responseExternalId(response.body) }
+    })
   }
 
   private async accessToken(): Promise<string> {

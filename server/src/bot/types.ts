@@ -466,6 +466,8 @@ export interface BotServiceDeps {
   search?: import('./search.ts').WebSearchClient
   fetch?: typeof fetch
   now?: () => Date
+  /** 连续外发消息最小间隔（毫秒）；默认 1000，测试可设 0（不改变生产默认）。 */
+  sendIntervalMs?: number
 }
 
 export interface BotStatus {

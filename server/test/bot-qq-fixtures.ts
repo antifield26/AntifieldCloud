@@ -233,6 +233,7 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
     },
     fetch: fetch.fetchImpl,
     now: () => QQ_NOW,
+    sendIntervalMs: 0,
     ...(options.aiEnabled
       ? {
           ai: {
