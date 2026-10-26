@@ -283,8 +283,8 @@ export class TaskManager implements TaskController {
   private async launch (active: ActiveTask, message: string): Promise<void> {
     this.active = active
     this.controller = new AbortController()
-    await this.persistNow(active)
     this.publish(active, 'starting')
+    await this.persistNow(active)
     this.logger.info('task starting', { name: active.name, taskId: active.taskId })
     await this.say(message)
     this.loop = this.run(active)

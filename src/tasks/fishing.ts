@@ -35,7 +35,18 @@ async function equipRod (ctx: TaskContext, bot: Bot): Promise<void> {
 
 async function faceWater (ctx: TaskContext, bot: Bot): Promise<void> {
   const water = new Vec3(ctx.config.fishWater.x, ctx.config.fishWater.y, ctx.config.fishWater.z)
-  const block = bot.blockAt(water, false)
+  let block = bot.blockAt(water, false)
+  if (block?.name !== 'water') {
+    try {
+      await bot.waitForChunksToLoad()
+    } catch {
+      // continue with retries below
+    }
+    for (let attempt = 0; attempt < 10 && block?.name !== 'water'; attempt++) {
+      await sleep(500)
+      block = bot.blockAt(water, false)
+    }
+  }
   if (!block || block.name !== 'water') throw new TaskError('钓点前面没有水了')
   await bot.lookAt(water, true)
 }
