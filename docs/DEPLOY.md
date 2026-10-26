@@ -28,7 +28,7 @@ npm run check
 3. 远端解包到 `/opt/lofii-bot/releases/<UTC>` → `npm ci --omit=dev --ignore-scripts`。
 4. 首次 `deploy/provision.sh`：
    - 创建系统用户 `lofiibot`、`/var/lib/lofii-bot`、`/etc/lofii-bot`；
-   - `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读密码、生成 64 位 `HTTP_TOKEN`，写 `/etc/lofii-bot/env`（root:lofiibot 0640）；
+   - `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读密码、生成 64 位 `HTTP_TOKEN` 与独立的 `HTTP_CONTROL_TOKEN`，写 `/etc/lofii-bot/env`（root:lofiibot 0640）；
    - 安装并 enable `lofii-bot.service`；
    - `--server-config`：备份 `server.properties`/`whitelist.json`/`ops.json`，`max-players=6`，重启 Paper，RCON `whitelist add lofii` + `op lofii`。
 5. 原子切换 `/opt/lofii-bot/current`，重启服务，轮询 `/healthz` 校验版本；失败回滚上一 release。
@@ -77,9 +77,11 @@ curl -fsS http://127.0.0.1:3010/healthz
 ```text
 /opt/lofii-bot/releases/<UTC>/    # 每次部署一个 release（root:root 只读）
 /opt/lofii-bot/current -> ...     # 原子切换
-/etc/lofii-bot/env                # root:lofiibot 0640（含 Token/OpenCode 密码）
+/etc/lofii-bot/env                # root:lofiibot 0640（含读/控制 Token、OpenCode 密码）
 /var/lib/lofii-bot/               # lofiibot:lofiibot 0700
 /var/lib/lofii-bot/memory/        # 0600，按玩家 UUID
+/var/lib/lofii-bot/task-state.json # 0600，任务跨重启 pending
+/var/lib/lofii-bot/audit.jsonl     # 0600，审计元数据，5 MB 轮转
 /etc/systemd/system/lofii-bot.service
 ```
 
@@ -98,8 +100,11 @@ sudo systemctl restart lofii-bot
 
 安全注意：
 
-- `HTTP_TOKEN` 轮换：`sudo bash /opt/lofii-bot/current/deploy/bootstrap-env.sh --rotate-token`，然后把新 Token 同步给 AntifieldCloud。
+- `HTTP_TOKEN` 轮换：`sudo bash /opt/lofii-bot/current/deploy/bootstrap-env.sh --rotate-token`，然后把新读 Token 同步给 AntifieldCloud。
+- `HTTP_CONTROL_TOKEN` 轮换：`sudo bash /opt/lofii-bot/current/deploy/bootstrap-env.sh --rotate-control-token`；只同步给面板后端，不下发浏览器。
+- 控制 Token 未配置或为空时，`/task/*` 与 `/move` 返回 503 `control_disabled`，读接口仍可用。
 - `OPENCODE_PASSWORD` 由 `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读取；重跑默认保留旧值。
+- v0.3 新增变量：`HTTP_CONTROL_ENABLED`、`HTTP_ONLY_HIGH_RISK`、`SSE_MAX_CLIENTS`、`SSE_HEARTBEAT_MS`、`SSE_BUFFER_EVENTS`、`CONTROL_RATE_LIMIT`、`TASK_PENDING_TTL_MS`、`TASK_STATE_FILE`、`AUDIT_FILE`、`AUDIT_MAX_BYTES`、`AUDIT_RETENTION_DAYS`。
 - 不要把 `/etc/lofii-bot/env` 放进仓库或日志。
 
 ## 6. 日常运维
@@ -110,15 +115,28 @@ sudo systemctl restart lofii-bot
 sudo journalctl -u lofii-bot -f
 curl -fsS http://127.0.0.1:3010/healthz
 TOKEN="$(sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
+CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
 curl -fsS http://127.0.0.1:3010/status -H "Authorization: Bearer $TOKEN"
-curl -fsS -X POST http://127.0.0.1:3010/say \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-  -d '{"message":"来自运维的问候"}'
+curl -fsS http://127.0.0.1:3010/task -H "Authorization: Bearer $TOKEN"
+# SSE（15 秒后自动断开；面板后端用同样 header）
+timeout 15 curl -sS -N http://127.0.0.1:3010/events -H "Authorization: Bearer $TOKEN"
+# 控制：启动/停止/恢复/移动（示例；面板后端使用）
+curl -fsS -X POST http://127.0.0.1:3010/task/start \
+  -H "Authorization: Bearer $CTRL" -H 'Content-Type: application/json' \
+  -d '{"name":"fishing"}'
+curl -fsS -X POST http://127.0.0.1:3010/task/stop \
+  -H "Authorization: Bearer $CTRL" -H 'Content-Type: application/json' -d '{}'
+curl -fsS -X POST http://127.0.0.1:3010/move \
+  -H "Authorization: Bearer $CTRL" -H 'Content-Type: application/json' \
+  -d '{"action":"home"}'
 ```
 
 - 动态模式：无玩家时状态 `idle`、`/say` 返回 409，这是正常的；玩家上线后 15 秒内自动加入。
 - 任务模式：任务 active 时即使 Antifield 下线也保持在线，`/status.presence.lastDecision = connected: task active`；任务结束且无玩家时恢复 60 秒 grace 后下线。
 - 任务恢复：死亡/Paper 重启后回到任务点，最多 3 次；工具/种子丢失会停止并提示，需从箱子补货。
+- systemd 重启：任务会写盘并在启动后进入 `pending_resume`；10 分钟内 `POST /task/resume` 继续，否则标记 `interrupted`。pending 期间 Lofii 按动态在线策略（通常离线）。
+- SSE：最多 8 个客户端；断线用 `Last-Event-ID` 重连；进程重启后 ring 清空，面板重新拉 `/status`/`/task`。
+- 审计：`/var/lib/lofii-bot/audit.jsonl` 只记元数据；轮转 `audit.1.jsonl`…`audit.5.jsonl`，保留 30 天；无查询接口。
 - 需要临时常驻：`FORCE_ONLINE=true` 后重启；验证完记得改回。
 - 服务器重启：Bot 不退出；任务 active 时会重连并恢复；无任务时等玩家上线后重连。
 - Bot 崩溃：systemd 5 秒后拉起；若反复崩溃看 journal 与 `/status.ai.lastError`。
@@ -138,6 +156,13 @@ curl -fsS -X POST http://127.0.0.1:3010/say \
 | 种田不收割 | 作物是否成熟（`age=7`）；任务是否在 30 分钟上限/收工；`/status.task.progress` |
 | 钓鱼不捡鱼 | 掉落物是否落在深水/安全区外；日志 `fishing: item pickup skipped`；必要时调整钓点/加小平台（需确认） |
 | 任务后不下线 | `/status.task.active` 是否为 false；Antifield 是否仍在线；`PRESENCE_GRACE_MS` |
+| 任务重启后不继续 | `/task.task.state` 是否 `pending_resume`；`POST /task/resume` 是否 409；`pendingResume.expiresAt` 是否已过 |
+| 控制接口 503 | `HTTP_CONTROL_TOKEN` 是否为空；`HTTP_CONTROL_ENABLED` 是否为 true |
+| 控制接口 401 | 是否误用读 Token；`Authorization: Bearer <HTTP_CONTROL_TOKEN>` |
+| SSE 401/断流 | 是否用读 Token；是否超过 `SSE_MAX_CLIENTS`；反向代理是否关闭 buffering |
+| SSE 重连丢事件 | `Last-Event-ID` 是否属于当前 bootId；`resync:true` 时重新拉 `/status`/`/task` |
+| 移动 409 | 任务是否 active（先 `/task/stop`）；目标玩家是否在线；Bot 是否连接 |
+| 审计为空/过大 | 检查 `/var/lib/lofii-bot/audit.jsonl` 权限；轮转大小/保留天数 |
 | 端口占用 | `ss -tlnp | grep 3010`；改 `HTTP_PORT` 并同步对接方 |
 
 ## 8. 卸载
@@ -155,5 +180,7 @@ node /opt/lofii-bot/scripts/rcon.mjs "deop lofii" "whitelist remove lofii" 2>/de
 ## 9. 与 AntifieldCloud 的边界
 
 - 本仓库不修改 AntifieldCloud；只提供 `docs/API.md` 契约。
-- Token 注入、面板展示、调用逻辑由用户自行接入。
+- Token 注入、面板展示、调用逻辑由用户自行接入；面板后端消费 SSE，使用读 Token header。
+- 控制 Token 只放面板后端 env，不下发浏览器。
+- **HTTP-only 不是强制边界**：默认保留游戏内 `Antifield` 与 AI 意图直接触发，同名冒用风险仍在；严格模式设 `HTTP_ONLY_HIGH_RISK=true`。
 - 不要为了对接改动 nftables/FRP/Cloudflare；HTTP 只在本机回环。

@@ -139,7 +139,7 @@ export class TaskManager implements TaskController {
   }
 
   snapshot (): TaskSnapshot {
-    return this.deps.state.task
+    return this.deps.state.snapshot().task
   }
 
   keepOnline (): boolean {
@@ -368,11 +368,16 @@ export class TaskManager implements TaskController {
   private async ensureSupplies (active: ActiveTask): Promise<void> {
     const ctx = this.context(active)
     const bot = requireBot(ctx)
+    const rods = active.name === 'fishing'
+      ? bot.inventory.items().filter(item => item.name === 'fishing_rod')
+      : []
+    const hasFreshRod = rods.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)
     const requests = active.name === 'fishing'
-      ? [{ name: 'fishing_rod', count: 1 }, { name: 'food', count: 4 }]
+      ? [{ name: 'fishing_rod', count: Math.max(2, rods.length + 1) }, { name: 'food', count: 4 }]
       : [{ name: 'iron_hoe', count: 1 }, { name: 'wheat_seeds', count: 64 }, { name: 'food', count: 4 }]
     const missing = requests.some(request => {
       if (request.name === 'food') return countFood(bot) < request.count
+      if (request.name === 'fishing_rod' && active.name === 'fishing') return !hasFreshRod
       return countItem(bot, request.name) < request.count
     })
     if (missing) {
@@ -386,8 +391,9 @@ export class TaskManager implements TaskController {
       }
     }
     const fresh = requireBot(ctx)
-    if (active.name === 'fishing' && !findItem(fresh, 'fishing_rod')) {
-      throw new TaskError('箱子里没有鱼竿')
+    const freshRods = fresh.inventory.items().filter(item => item.name === 'fishing_rod')
+    if (active.name === 'fishing' && !freshRods.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)) {
+      throw new TaskError('鱼竿快坏了，箱子里没有备用鱼竿')
     }
     if (active.name === 'farming' && !findItem(fresh, 'iron_hoe')) {
       throw new TaskError('箱子里没有锄头')

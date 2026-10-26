@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer'
 import { Vec3 } from 'vec3'
 import { depositProduce } from './deposit.ts'
-import { countFish, eatIfNeeded, emptySlots, equipItem, findItem } from './inventory.ts'
+import { countFish, eatIfNeeded, emptySlots, equipItem } from './inventory.ts'
 import { nearbyHostile } from './safety.ts'
 import {
   isExpired,
@@ -15,6 +15,18 @@ import {
 
 const CAST_TIMEOUT_MS = 45000
 const MAX_CAST_TIMEOUTS = 3
+const MIN_ROD_REMAINING = 10
+
+function rodRemaining (item: { durabilityUsed?: number | null, maxDurability?: number | null }): number {
+  return (item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)
+}
+
+function freshRod (bot: Bot): ReturnType<Bot['inventory']['items']>[number] | null {
+  return bot.inventory.items()
+    .filter(item => item.name === 'fishing_rod')
+    .sort((a, b) => rodRemaining(b) - rodRemaining(a))
+    .find(item => rodRemaining(item) > MIN_ROD_REMAINING) ?? null
+}
 
 function reelIn (bot: Bot): void {
   try {
@@ -25,11 +37,8 @@ function reelIn (bot: Bot): void {
 }
 
 async function equipRod (ctx: TaskContext, bot: Bot): Promise<void> {
-  const rod = findItem(bot, 'fishing_rod')
-  if (!rod) throw new TaskError('没有鱼竿，先放一根到箱子里')
-  if ((rod.durabilityUsed ?? 0) >= (rod.maxDurability ?? 0) - 2) {
-    throw new TaskError('鱼竿快坏了，先换一根')
-  }
+  const rod = freshRod(bot)
+  if (!rod) throw new TaskError('没有可用的鱼竿，先放一根到箱子里')
   await equipItem(bot, rod)
 }
 

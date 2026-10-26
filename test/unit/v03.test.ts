@@ -123,6 +123,46 @@ test('task manager exposes a pending resume and can discard it', async () => {
   }
 })
 
+test('task manager expires an old pending resume', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'lofii-expire-'))
+  const config = makeConfig({ taskPendingTtlMs: 1000 })
+  const state = makeState(config)
+  const events = new EventBus(50)
+  const audit = { append: () => {} } as unknown as AuditLogger
+  const store = new TaskStore(path.join(dir, 'task-state.json'), logger)
+  const manager = new TaskManager({
+    config,
+    logger,
+    state,
+    chatSender: { say: async () => [] } as unknown as ChatSender,
+    movement: {} as MovementManager,
+    events,
+    audit,
+    store,
+    getBot: () => null as Bot | null
+  })
+  try {
+    await store.save({
+      version: 1,
+      taskId: 'expired-1',
+      name: 'fishing',
+      startedAt: Date.now() - 60_000,
+      deadline: Date.now() + 600000,
+      progress: { fishCaught: 1, wheatHarvested: 0, planted: 0, deposited: 0 },
+      failures: 0,
+      savedAt: Date.now() - 60_000
+    })
+    await manager.init()
+    assert.equal(state.task.state, 'idle')
+    assert.equal(state.task.pendingResume, null)
+    assert.match(state.task.lastError ?? '', /过期/)
+    assert.equal(await store.load(), null)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+    await manager.shutdown()
+  }
+})
+
 test('HTTP control uses a separate token and emits SSE hello', async () => {
   const config = makeConfig(
     { httpPort: 0, httpHost: '127.0.0.1', httpControlToken: controlToken, httpControlEnabled: true },

@@ -259,9 +259,32 @@ export class RuntimeState {
   }
 
   snapshot (): StatusSnapshot {
+    const now = Date.now()
+    const task: TaskSnapshot = {
+      ...this.task,
+      progress: { ...this.task.progress },
+      pendingResume: this.task.pendingResume
+        ? { ...this.task.pendingResume, progress: { ...this.task.pendingResume.progress } }
+        : null
+    }
+    if (task.startedAt && (task.active || task.state === 'pending_resume')) {
+      const startedAt = Date.parse(task.startedAt)
+      if (Number.isFinite(startedAt)) {
+        task.elapsedSec = Math.max(task.elapsedSec, Math.floor((now - startedAt) / 1000))
+        if (task.pendingResume) {
+          const pendingStartedAt = Date.parse(task.pendingResume.startedAt)
+          if (Number.isFinite(pendingStartedAt)) {
+            task.pendingResume.elapsedSec = Math.max(
+              task.pendingResume.elapsedSec,
+              Math.floor((now - pendingStartedAt) / 1000)
+            )
+          }
+        }
+      }
+    }
     return {
       version: this.version,
-      uptimeSec: Math.floor((Date.now() - this.startedAt) / 1000),
+      uptimeSec: Math.floor((now - this.startedAt) / 1000),
       state: this.state,
       minecraft: { ...this.minecraft, lastDisconnect: this.minecraft.lastDisconnect ? { ...this.minecraft.lastDisconnect } : null },
       player: { ...this.player, position: roundPosition(this.player.position) },
@@ -269,13 +292,7 @@ export class RuntimeState {
       presence: { ...this.presence },
       ai: { ...this.ai },
       memory: { ...this.memory },
-      task: {
-        ...this.task,
-        progress: { ...this.task.progress },
-        pendingResume: this.task.pendingResume
-          ? { ...this.task.pendingResume, progress: { ...this.task.pendingResume.progress } }
-          : null
-      }
+      task
     }
   }
 }

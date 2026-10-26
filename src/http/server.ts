@@ -169,7 +169,7 @@ export class HttpApi {
     if (pathname === '/task') {
       if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
       if (!this.authorizeRead(req, res)) return
-      sendJson(res, { status: 200, body: { task: this.deps.state.task } })
+      sendJson(res, { status: 200, body: { task: this.deps.state.snapshot().task } })
       return
     }
     if (pathname === '/task/start') {

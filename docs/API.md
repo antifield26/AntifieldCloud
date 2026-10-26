@@ -1,43 +1,51 @@
-# AntifieldCloud 瀵规帴濂戠害锛圠ofii Bot锛?
-> 鏈枃鍙弿杩?lofii-bot 渚х殑绋冲畾鎺ュ彛銆?*鏈細璇濅笉淇敼 AntifieldCloud 浠撳簱/鏈嶅姟**锛汿oken 娉ㄥ叆銆侀潰鏉垮睍绀轰笌璋冪敤閫昏緫鐢辩敤鎴疯嚜琛屾帴鍏ャ€?
-## 1. 鍩虹淇℃伅
+# AntifieldCloud 对接契约（Lofii Bot v0.3.0）
 
-| 椤圭洰 | 鍊?|
+> 本文只描述 `lofii-bot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
+
+## 1. 基础信息
+
+| 项目 | 值 |
 |---|---|
-| Base URL | `http://127.0.0.1:3010`锛堜粎鍥炵幆锛屼笉瀵瑰寮€鏀撅級 |
-| 閴存潈 | `Authorization: Bearer <HTTP_TOKEN>`锛坄/healthz` 闄ゅ锛?|
-| Token 浣嶇疆 | Pi锛歚/etc/lofii-bot/env` 鐨?`HTTP_TOKEN`锛坮oot:lofiibot 0640锛?|
-| 鏁版嵁鏍煎紡 | JSON锛孶TF-8 |
-| 璇锋眰浣撲笂闄?| 8 KiB |
-| `/say` 闄愭祦 | 10 娆?鍒嗛挓锛堣繘绋嬪唴锛?|
+| Base URL | `http://127.0.0.1:3010`（仅回环，不对外） |
+| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/task`、`/events`、`/say` |
+| 控制 Token | `HTTP_CONTROL_TOKEN`，仅用于 `/task/*` 与 `POST /move` |
+| Token 位置 | Pi：`/etc/lofii-bot/env`（root:lofiibot 0640） |
+| 数据格式 | JSON / SSE，UTF-8 |
+| 请求体上限 | 8 KiB |
+| `/say` 限流 | 10 次/分钟（进程内） |
+| 控制接口限流 | 30 次/分钟（`CONTROL_RATE_LIMIT`） |
+| 鉴权头 | `Authorization: Bearer <token>`；不支持 URL query token |
 
-Token 鑾峰彇锛堝湪 Pi 涓婁互 root锛夛細
+读/控制 Token 必须分离。用读 Token 调控制接口返回 401；用控制 Token 调读接口返回 401。控制 Token 为空时，控制接口返回 503 `control_disabled`，读接口不受影响。
 
 ```bash
-sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env
+READ="$(sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
+CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
 ```
 
-鐢ㄦ埛鍙皢璇ュ€煎啓鍏?AntifieldCloud 鐨勫彈闄?env锛涗笉瑕佹彁浜ゅ埌浠撳簱鎴栧墠绔€?
 ## 2. GET /healthz
 
-鏃犻渶閴存潈锛屾渶灏忓仴搴蜂俊鎭€傝繘绋嬪瓨娲诲嵆 200銆?
+无需鉴权。
+
 ```json
 {
   "status": "ok",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "uptimeSec": 123,
   "state": "connected",
   "connected": true
 }
 ```
 
-`state` 鍙栧€硷細`idle` / `connecting` / `connected` / `backoff` / `cooldown`銆傚姩鎬佹ā寮忎笅 `idle` 鏄甯哥姸鎬侊紙鏃犵帺瀹跺湪绾匡級銆?
+`state`：`idle` / `connecting` / `connected` / `backoff` / `cooldown`。动态模式下 `idle` 是正常状态（无玩家在线）。
+
 ## 3. GET /status
 
-闇€瑕?Bearer銆傚瓧娈电ǔ瀹氾紝鍙洿鎺ユ槧灏勫埌闈㈡澘銆?
+需要读 Token。返回完整快照；v0.2 字段保持兼容，`task` 增加 `pendingResume`。
+
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "uptimeSec": 123,
   "state": "connected",
   "minecraft": {
@@ -50,8 +58,8 @@ sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env
     "lastDisconnect": null
   },
   "player": {
-    "dimension": "涓讳笘鐣?,
-    "position": { "x": 9.5, "y": 105, "z": -8.5 },
+    "dimension": "主世界",
+    "position": { "x": 204.5, "y": 63, "z": 469.5 },
     "health": 20,
     "food": 20
   },
@@ -62,7 +70,7 @@ sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env
     "versionName": "Paper 26.1.2",
     "motd": "Raspberry Pi 5 | Minecraft LAN",
     "latencyMs": 5,
-    "lastPingAt": "2026-10-22T11:42:37.603Z"
+    "lastPingAt": "2026-10-26T13:25:01.000Z"
   },
   "presence": {
     "enabled": true,
@@ -70,91 +78,270 @@ sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env
     "graceMs": 60000,
     "checkMs": 5000,
     "otherPlayers": 0,
-    "lastDecision": "connected: alone"
+    "lastDecision": "connected"
   },
-  "ai": {
-    "enabled": true,
-    "provider": "opencode-go",
-    "model": "deepseek-v4.1-flash",
-    "inFlight": 0,
-    "queued": 0,
-    "failures": 0,
-    "lastLatencyMs": 2359,
-    "lastError": null
-  },
+  "ai": { "enabled": true, "provider": "opencode-go", "model": "deepseek-v4.1-flash", "inFlight": 0, "queued": 0, "failures": 0, "lastLatencyMs": 2359, "lastError": null },
   "memory": { "players": 1, "turns": 2 },
   "task": {
     "enabled": true,
-    "active": false,
-    "name": null,
-    "state": "idle",
-    "startedAt": null,
-    "elapsedSec": 0,
-    "progress": {
-      "fishCaught": 0,
-      "wheatHarvested": 0,
-      "planted": 0,
-      "deposited": 0
-    },
+    "active": true,
+    "name": "fishing",
+    "state": "running",
+    "startedAt": "2026-10-26T13:22:43.689Z",
+    "elapsedSec": 170,
+    "progress": { "fishCaught": 5, "wheatHarvested": 0, "planted": 0, "deposited": 0 },
     "failures": 0,
-    "lastError": null
+    "lastError": null,
+    "pendingResume": null
   }
 }
 ```
 
-璇存槑锛?
-- `minecraft.connected` 鏄?Bot 鑷韩鏄惁宸?spawn锛沗server.online` 鏄湇鍔″櫒鍦ㄧ嚎浜烘暟锛圔ot 鍦ㄧ嚎鏃跺寘鍚?Bot锛夈€?- `presence.otherPlayers` 涓嶅惈 Lofii銆?- `ai.lastError` 宸叉埅鏂紝涓嶅惈鎻愮ず璇嶆垨瀵嗛挜銆?- `task` 鏄?v0.2.0 鏂板瀛楁锛屽悜鍚庡吋瀹癸紱`state` 鍙栧€?`idle/starting/running/depositing/recovering/stopping`銆俙name` 涓?`fishing`/`farming`/`null`銆?- 璇ユ帴鍙ｄ笉鏆撮湶璁板繂鍐呭銆乀oken銆丱penCode 瀵嗙爜銆?
-閿欒锛歚401 {"error":"unauthorized","message":"..."}`銆?
-## 4. POST /say
+`task.state`：`idle` / `starting` / `running` / `depositing` / `recovering` / `stopping` / `pending_resume`。
 
-闇€瑕?Bearer + `Content-Type: application/json`銆傝 Lofii 鍦ㄦ父鎴忓叕灞忚涓€娈佃瘽锛?*鍙亰澶╋紝涓嶆墽琛屼换浣曟寚浠?*銆?
-璇锋眰锛?
-```json
-{ "message": "鏉ヨ嚜 AntifieldCloud 鐨勯棶鍊? }
-```
-
-鎴愬姛锛圔ot 鍦ㄧ嚎锛夛細
+有待恢复任务时：
 
 ```json
-{ "ok": true, "lines": 1 }
+"task": {
+  "enabled": true,
+  "active": false,
+  "name": "fishing",
+  "state": "pending_resume",
+  "startedAt": "2026-10-26T13:22:43.689Z",
+  "elapsedSec": 137,
+  "progress": { "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0 },
+  "failures": 0,
+  "lastError": null,
+  "pendingResume": {
+    "taskId": "46451943-eae1-41c0-8df3-beef3c7b60f4",
+    "name": "fishing",
+    "startedAt": "2026-10-26T13:22:43.689Z",
+    "elapsedSec": 137,
+    "progress": { "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0 },
+    "expiresAt": "2026-10-26T13:35:00.619Z"
+  }
+}
 ```
 
-琛屼负涓庨敊璇爜锛?
-| 鏉′欢 | HTTP | 鍝嶅簲 |
+- `minecraft.connected` 是 Bot 自身是否已 spawn；`server.online` 是服务器在线人数（Bot 在线时包含 Bot）。
+- `presence.otherPlayers` 不含 Lofii。
+- `ai.lastError` 已截断，不含提示词或密钥。
+- 不暴露记忆内容、Token、OpenCode 密码。
+- 401：`{"error":"unauthorized","message":"..."}`。
+
+## 4. GET /task
+
+需要读 Token。返回当前任务（与 `/status.task` 一致，含 `pendingResume`）。
+
+```json
+{ "task": { "...": "..." } }
+```
+
+## 5. GET /events（SSE）
+
+需要读 Token；仅支持 `GET`。
+
+```http
+GET /events HTTP/1.1
+Authorization: Bearer <HTTP_TOKEN>
+Accept: text/event-stream
+Last-Event-ID: <bootId>-<seq>   # 可选
+```
+
+响应头：
+
+```text
+Content-Type: text/event-stream; charset=utf-8
+Cache-Control: no-cache, no-transform
+Connection: keep-alive
+X-Accel-Buffering: no
+```
+
+连接后先发 `retry: 5000`，再发 `hello`；每 15 秒发 `: ping` 注释。最多 8 个并发客户端（`SSE_MAX_CLIENTS`），超过返回 503。
+
+### 5.1 事件 envelope
+
+```json
+{
+  "id": "036e732d-10",
+  "type": "task",
+  "ts": "2026-10-26T13:24:14.828Z",
+  "data": {}
+}
+```
+
+SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `chat` / `presence` / `movement`。
+
+### 5.2 hello
+
+`hello` 的 `data` 直接是快照：
+
+```json
+{
+  "version": "0.3.0",
+  "bootId": "036e732d",
+  "lastEventId": "036e732d-10",
+  "resync": false,
+  "snapshot": { "...StatusSnapshot..." }
+}
+```
+
+- `Last-Event-ID` 属于当前 `bootId` 且在 ring（500 条）内：回放该 ID 之后的事件。
+- `bootId` 不同、ID 过旧、非法：`resync: true`；面板应重新拉 `/status` 与 `/task`。
+- SSE 是内存 ring，进程重启后清空；不要把 SSE 当持久消息队列。
+
+### 5.3 task
+
+```json
+{
+  "action": "started|progress|depositing|recovering|stopping|stopped|completed|failed|resume_required|resumed|interrupted",
+  "task": { "...TaskSnapshot..." }
+}
+```
+
+### 5.4 chat
+
+只发 Lofii 对话：
+
+```json
+{ "direction": "in", "username": "Antifield", "message": "Lofii 去钓鱼", "source": "chat" }
+{ "direction": "out", "source": "ai|command|task|proactive|movement|http", "text": "好，我去钓鱼啦。", "lines": ["好，我去钓鱼啦。"] }
+```
+
+- `in` 仅被点名/唤醒的消息；无关公屏不发。
+- `out` 是 Lofii 的回复/任务/主动消息；`source` 用于面板筛选。
+- 不包含记忆全文、Token、密码。
+
+### 5.5 presence
+
+```json
+{
+  "state": "connected",
+  "connected": true,
+  "otherPlayers": 0,
+  "lastDecision": "connected",
+  "taskActive": true,
+  "taskName": "fishing",
+  "taskState": "running"
+}
+```
+
+状态变化时最多约 2 秒内推送。
+
+### 5.6 movement
+
+```json
+{ "action": "home|come|follow|stop", "target": "Antifield", "status": "started|completed|failed", "error": null, "requestId": "..." }
+```
+
+`follow` 只发 `started`；`/move stop` 时发 `stop` 的完成事件。
+
+## 6. 控制接口
+
+### 6.1 POST /task/start
+
+需要控制 Token + `Content-Type: application/json`。
+
+```json
+{ "name": "fishing" }
+```
+
+- `fishing` / `farming`；其他 400。
+- 202：`{"ok":true,"requestId":"...","task":{...}}`。
+- 任务 active：409 `task_active`。
+- 有 pending：409 `resume_pending`。
+- 任务开关关闭：503 `task_disabled`。
+- 不需要 Bot 已在线：任务会先进入 active，由动态存在逻辑自动连接 Lofii。
+
+### 6.2 POST /task/stop
+
+```json
+{ "reason": "panel" }
+```
+
+- active：202，任务进入 `stopping`。
+- 只有 pending：202，取消 pending（审计 `task.discard_pending`）。
+- 都没有：409 `no_active_task`。
+
+### 6.3 POST /task/resume
+
+需要控制 Token。body 可为空，或：
+
+```json
+{ "taskId": "46451943-eae1-41c0-8df3-beef3c7b60f4" }
+```
+
+- pending 未过期：202，恢复原进度与剩余时间。
+- 无 pending：409 `no_pending_task`。
+- 过期/taskId 不匹配：409 `resume_failed`。
+- 10 分钟（`TASK_PENDING_TTL_MS`）未确认：自动 `interrupted`，清空 pending。
+
+### 6.4 POST /move
+
+需要控制 Token + JSON。
+
+```json
+{ "action": "home|come|follow|stop", "target": "Antifield" }
+```
+
+- `home`：回家；忽略 `target`。
+- `come` / `follow`：`target` 可省略，默认 `COMMAND_ALLOWLIST[0]`（Antifield）；必须在线，否则 409 `target_not_online`。
+- `stop`：只停移动，不停止任务。
+- 任务 active：409 `task_active`（先 `/task/stop`）。
+- Bot 未连接：409 `not_connected`。
+- 202 只表示已接受；结果通过 SSE `movement` 事件返回。
+
+### 6.5 错误码汇总
+
+| 条件 | HTTP | error |
 |---|---|---|
-| 姝ｅ父鍙戦€?| 200 | `{"ok":true,"lines":N}` |
-| 鏈甫/閿欒 Token | 401 | `{"error":"unauthorized",...}` |
-| 鏈湪绾匡紙鍔ㄦ€佹ā寮忎笅绌烘湇锛?| 409 | `{"error":"not_connected",...}` |
-| 棣栧瓧绗︿负 `/` | 400 | `{"error":"message_must_not_start_with_slash",...}` |
-| 绌烘秷鎭?瓒?720 瀛楃/JSON 閿欒 | 400 | `{"error":"invalid_request",...}` |
-| 闈?JSON Content-Type | 415 | `{"error":"unsupported_media_type",...}` |
-| 瓒呰繃 10 娆?鍒嗛挓 | 429 | `{"error":"rate_limited",...}` |
-| 璇锋眰浣?> 8 KiB | 413 | `{"error":"payload_too_large",...}` |
-| 鍏朵粬鏂规硶 | 405 | `{"error":"method_not_allowed",...}` |
+| 缺失/错误 Token | 401 | `unauthorized` |
+| 控制 Token 未配置 | 503 | `control_disabled` |
+| 任务开关关闭 | 503 | `task_disabled` |
+| 请求体非 JSON | 415 | `unsupported_media_type` |
+| 请求体过大 | 413 | `payload_too_large` |
+| 非法 JSON/字段 | 400 | `invalid_request` |
+| 任务 active / pending 冲突 | 409 | `task_active` / `resume_pending` |
+| 无任务 | 409 | `no_active_task` / `no_pending_task` |
+| 移动目标离线 | 409 | `target_not_online` |
+| Bot 未连接 | 409 | `not_connected` |
+| 限流 | 429 | `rate_limited` |
 
-```bash
-TOKEN="$(sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
-curl -fsS http://127.0.0.1:3010/status -H "Authorization: Bearer $TOKEN"
-curl -fsS -X POST http://127.0.0.1:3010/say \
-  -H "Authorization: Bearer $TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"鏉ヨ嚜闈㈡澘鐨勯棶鍊?}'
+## 7. POST /say
+
+需要读 Token + JSON。只聊天，不执行命令。
+
+```json
+{ "message": "来自 AntifieldCloud 的问候" }
 ```
 
-## 5. 娓告垙鍐呰涓猴紙渚涢潰鏉垮睍绀哄弬鑰冿級
+成功：`{"ok":true,"lines":1}`。错误：
 
-- 鍞ら啋璇嶏細`Lofii` / `@Lofii`锛堜笉鍖哄垎澶у皬鍐欙紱鍙湪琚偣鍚嶆椂鍥炲锛夈€?- 鎸囦护锛堜粎 `COMMAND_ALLOWLIST` 鍐呯帺瀹讹紝榛樿 `Antifield`锛夛細
-  - `Lofii 鐘舵€乣 / `status`锛堝惈浠诲姟杩涘害锛?  - `Lofii 鍘婚挀楸糮 / `閽撻奔` / `fish`
-  - `Lofii 鍘荤鐢癭 / `绉嶇敯` / `鏀惰彍` / `farm`
-  - `Lofii 鏀跺伐` / `鍋滄浠诲姟` / `stop task`
-  - `Lofii 鍥炲` / `home`
-  - `Lofii 瀛樹笢瑗縛 / `瀛樼` / `deposit`
-  - `Lofii 杩囨潵` / `come`
-  - `Lofii 璺熼殢鎴慲 / `follow [鐜╁]`
-  - `Lofii 鍋滀笅` / `stop`锛堜粎鍋滄绉诲姩锛屼笉鍋滄浠诲姟锛?  - `Lofii 鐪嬫垜` / `look`
-  - `Lofii 鎸ユ墜` / `wave`
-  - `Lofii 甯姪` / `help`
-- 闈炴巿鏉冪帺瀹跺彂鎸囦护锛氬浐瀹氭嫆缁濓紝涓嶇Щ鍔ㄣ€佷笉鍚姩浠诲姟銆?- AI 鍥炲鍏睆鍙戦€侊紝鑷姩鎷嗚锛堟瘡琛?鈮?40 瀛楃銆佹渶澶?3 琛岋級锛岄瀛楃 `/` 浼氳杞箟銆?- 浠诲姟鏈熼棿鍗充娇 Antifield 涓嬬嚎锛孡ofii 淇濇寔鍦ㄧ嚎锛涗换鍔＄粨鏉熷悗鎭㈠鍔ㄦ€佷笅绾裤€?- AI 鎰忓浘鍏滃簳鍙 Antifield 鐨勪换鍔＄被妯＄硦璇彞鐢熸晥锛涙ā鍨嬭緭鍑虹粡杩囨灇涓?缃俊搴︽牎楠岋紝涓嶈兘鎼哄甫鍧愭爣鎴栦换鎰忓懡浠ゃ€?
-## 6. 瀵规帴寤鸿
+| 条件 | HTTP | error |
+|---|---|---|
+| 未连接 | 409 | `not_connected` |
+| 首字符 `/` | 400 | `message_must_not_start_with_slash` |
+| 空消息/超 720 字符/非法 JSON | 400 | `invalid_request` |
+| 非 JSON | 415 | `unsupported_media_type` |
+| 超 8 KiB | 413 | `payload_too_large` |
+| 超过 10 次/分钟 | 429 | `rate_limited` |
 
-- 闈㈡澘杞 `/status`锛堜緥濡?10鈥?0 绉掞級鍗冲彲灞曠ず鍦ㄧ嚎鐘舵€?鐜╁/浣嶇疆/浠诲姟杩涘害锛涗笉瑕侀珮棰戣疆璇€?- `/say` 浠呯敤浜庝富鍔ㄦ挱鎶ワ紱涓嶈鎶婂畠褰撳懡浠ら€氶亾銆?- `409 not_connected` 鏄姩鎬佹ā寮忕殑姝ｅ父鐘舵€侊細绛夌帺瀹朵笂绾垮悗 Lofii 浼氳嚜鍔ㄥ姞鍏ャ€?- v0.2.0 浠嶄笉鎻愪緵 HTTP 浠诲姟鍚姩/鍋滄鎺ュ彛锛涗换鍔＄敱娓告垙鍐呭浐瀹氱煭璇垨 Antifield 鐨?AI 鎰忓浘瑙﹀彂銆傝嫢闇€瑕侀潰鏉挎帶鍒讹紝鍚庣画澧炲姞 `POST /task/start|stop` 涓?SSE锛堣 `docs/ROADMAP.md`锛夈€?- 浠讳綍 AntifieldCloud 渚ф敼鍔ㄣ€乀oken 娉ㄥ叆銆侀潰鏉?UI 鍧囩敱鐢ㄦ埛鑷瀹炴柦锛涙湰浠撳簱涓嶅寘鍚繖浜涙敼鍔ㄣ€?
+## 8. 游戏内行为
+
+- 唤醒词：`Lofii` / `@Lofii`（不区分大小写；只回应被点名的消息）。
+- 仅 `COMMAND_ALLOWLIST` 内玩家可下命令，默认 `Antifield`。
+- 命令：状态、钓鱼、种田、收工、回家、存东西、过来、跟随、停下、看我、挥手、帮助。
+- v0.3 默认保留游戏内/AI 意图直接触发，HTTP 控制是新增面板通道；HTTP-only **不是强制边界**。同名冒用风险仍在，只能靠审计追溯。
+- 设 `HTTP_ONLY_HIGH_RISK=true` 可关闭游戏内/AI 高风险触发（严格模式）；此时任务/移动只能走 HTTP。
+- 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
+- AI 意图只对 Antifield 的任务类模糊语句生效；模型输出经过枚举/置信度校验，不能携带坐标或任意命令。
+
+## 9. 对接建议
+
+- 面板后端用 `fetch` + `Authorization` 消费 `/events`，不要用浏览器 EventSource 直连。
+- 初始展示先拉 `/status` 与 `/task`，再用 SSE 增量更新；断线按 `Last-Event-ID` 重连，`resync:true` 时重新拉快照。
+- 控制调用只从面板后端发出，控制 Token 放后端 env；不要下发到浏览器。
+- `/say` 仅用于主动播报；不要当命令通道。
+- `409 not_connected` 是动态模式的正常状态：任务/移动需要等 Lofii 在线；`/task/start` 例外，会在后台自动连接。
+- v0.3 不提供管理助手、RCON、`/metrics`、告警 webhook、审计查询接口。
+- 任何 AntifieldCloud 侧改动、Token 注入、面板 UI 均由用户自行实施；本仓库不包含这些改动。
