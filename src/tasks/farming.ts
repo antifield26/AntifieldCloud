@@ -8,7 +8,6 @@ import {
   isExpired,
   requireBot,
   sleep,
-  stopSignal,
   TaskError,
   TaskStopError,
   type TaskContext

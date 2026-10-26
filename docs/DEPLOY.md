@@ -30,7 +30,7 @@ npm run check
    - 创建系统用户 `lofiibot`、`/var/lib/lofii-bot`、`/etc/lofii-bot`；
    - `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读密码、生成 64 位 `HTTP_TOKEN`，写 `/etc/lofii-bot/env`（root:lofiibot 0640）；
    - 安装并 enable `lofii-bot.service`；
-   - `--server-config`：备份 `server.properties`/`whitelist.json`/`ops.json`，`max-players=5→6`，重启 Paper，RCON `whitelist add lofii` + `op lofii`。
+   - `--server-config`：备份 `server.properties`/`whitelist.json`/`ops.json`，`max-players=6`，重启 Paper，RCON `whitelist add lofii` + `op lofii`。
 5. 原子切换 `/opt/lofii-bot/current`，重启服务，轮询 `/healthz` 校验版本；失败回滚上一 release。
 
 ## 2. 后续部署/回滚
@@ -60,6 +60,17 @@ curl -fsS http://127.0.0.1:3010/healthz
 | Paper | 重启一次使 max-players 生效 | — |
 
 不改：`online-mode`、`white-list`、`enforce-whitelist`、`pause-when-empty-seconds`、RCON、插件、世界、FRP/Cloudflare。
+
+### v0.2.0 任务前置条件（只在基地，不涉及服务器配置）
+
+- 家/重生点：`/spawnpoint lofii 175 64 410`（已设置）。
+- 安全区：`x175–239, z410–474`；农田 `x177–183, z432–439`（6 列 × 8 行 = 48 格，中间 `x180` 水渠）。
+- 混放箱：`(184,64,435)`；建议常备：
+  - 2–3 根鱼竿、2–3 把铁锄、至少 128 个小麦种子、16+ 熟食；
+  - 鱼/小麦自动存入同一个箱子。
+- 钓点：站在 `(204.5,63,469.5)`，面向 `(204.5,62.5,470.5)` 水面。
+- 世界修改边界：只允许农田作物/耕地；箱子只存/取物品；不修改安全区其他方块。
+- `spawn-monsters` 以实际 gamerule/服务器设置为准；任务在夜间/附近有敌对生物时会暂停回家。
 
 ## 4. 目录与权限
 
@@ -106,8 +117,10 @@ curl -fsS -X POST http://127.0.0.1:3010/say \
 ```
 
 - 动态模式：无玩家时状态 `idle`、`/say` 返回 409，这是正常的；玩家上线后 15 秒内自动加入。
+- 任务模式：任务 active 时即使 Antifield 下线也保持在线，`/status.presence.lastDecision = connected: task active`；任务结束且无玩家时恢复 60 秒 grace 后下线。
+- 任务恢复：死亡/Paper 重启后回到任务点，最多 3 次；工具/种子丢失会停止并提示，需从箱子补货。
 - 需要临时常驻：`FORCE_ONLINE=true` 后重启；验证完记得改回。
-- 服务器重启：Bot 不退出，等服务器恢复且有玩家后自动重连。
+- 服务器重启：Bot 不退出；任务 active 时会重连并恢复；无任务时等玩家上线后重连。
 - Bot 崩溃：systemd 5 秒后拉起；若反复崩溃看 journal 与 `/status.ai.lastError`。
 
 ## 7. 排障
@@ -120,6 +133,11 @@ curl -fsS -X POST http://127.0.0.1:3010/say \
 | AI 不回复 | `curl -u opencode:<pw> http://127.0.0.1:4096/api/info`；`/status.ai.lastError`；OpenCode 服务状态 |
 | `/say` 409 | Bot 不在线（动态模式空服）；让玩家上线或临时 `FORCE_ONLINE=true` |
 | 移动失败 | 目标实体未加载/跨维度/无路；`Lofii 状态` 看位置；需要时先 `/tp` |
+| 任务不启动 | 箱子是否有鱼竿/锄/种子/食物；`/status.task.lastError`；`Lofii 状态` 看位置 |
+| 任务停在任务点外 | 恢复次数是否到 3；死亡是否掉工具；箱内备用工具/种子是否足够 |
+| 种田不收割 | 作物是否成熟（`age=7`）；任务是否在 30 分钟上限/收工；`/status.task.progress` |
+| 钓鱼不捡鱼 | 掉落物是否落在深水/安全区外；日志 `fishing: item pickup skipped`；必要时调整钓点/加小平台（需确认） |
+| 任务后不下线 | `/status.task.active` 是否为 false；Antifield 是否仍在线；`PRESENCE_GRACE_MS` |
 | 端口占用 | `ss -tlnp | grep 3010`；改 `HTTP_PORT` 并同步对接方 |
 
 ## 8. 卸载

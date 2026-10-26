@@ -147,3 +147,41 @@ test('forceOnline connects even with no players and never auto-leaves', async ()
     await manager.stop()
   }
 })
+
+test('an active task keeps the bot online with zero players, then returns to grace', async () => {
+  const config = makeConfig({
+    presenceEnabled: true,
+    forceOnline: false,
+    presencePollMs: 30,
+    presenceGraceMs: 80,
+    presenceQuitCooldownMs: 30,
+    presenceCheckMs: 30,
+    reconnectMinMs: 30,
+    reconnectMaxMs: 60
+  })
+  const state = makeState(config)
+  const controller = new FakeController()
+  let keepOnline = true
+  const sample = { online: 0, sample: [] }
+  const manager = new PresenceManager({
+    config,
+    logger,
+    state,
+    controller,
+    keepOnline: () => keepOnline,
+    ping: makePing(sample)
+  })
+  try {
+    manager.start()
+    await waitFor(() => state.state === 'connected', 1500)
+    await new Promise(resolve => setTimeout(resolve, 200))
+    assert.equal(state.state, 'connected')
+    assert.equal(controller.stops, 0)
+    keepOnline = false
+    manager.notifyTaskEnded()
+    await waitFor(() => state.state === 'idle', 2000)
+    assert.ok(controller.stops >= 1)
+  } finally {
+    await manager.stop()
+  }
+})

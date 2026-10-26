@@ -11,7 +11,6 @@ export class ProactiveManager {
   private readonly logger: Logger
   private readonly chatSender: ChatSender
   private bot: Bot | null = null
-  private readonly lastGreetAt = new Map<string, number>()
   private readonly lastEventAt = new Map<string, number>()
   private lastNightDay = -1
   private wasRaining = false

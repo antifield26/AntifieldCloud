@@ -5,6 +5,7 @@ import type { Block } from 'prismarine-block'
 import { TaskError } from './types.ts'
 
 const HAZARD_BLOCKS = new Set(['water', 'lava', 'fire', 'soul_fire', 'cactus', 'magma_block', 'powder_snow', 'sweet_berry_bush'])
+const CROP_BLOCKS = new Set(['wheat', 'carrots', 'potatoes', 'beetroot', 'pumpkin_stem', 'melon_stem', 'nether_wart'])
 
 export function insideSafeZone (config: Config, x: number, z: number): boolean {
   return x >= config.safeZone.minX && x <= config.safeZone.maxX &&
@@ -28,7 +29,7 @@ function isSolidGround (block: Block | null): boolean {
 
 function isClear (block: Block | null): boolean {
   if (!block) return true
-  if (HAZARD_BLOCKS.has(block.name)) return false
+  if (HAZARD_BLOCKS.has(block.name) || CROP_BLOCKS.has(block.name)) return false
   return block.boundingBox === 'empty' || block.name === 'air' || block.name === 'cave_air'
 }
 

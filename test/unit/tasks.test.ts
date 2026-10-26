@@ -5,7 +5,9 @@ import { loadConfig, ConfigError } from '../../src/config.ts'
 import { parseCommand } from '../../src/minecraft/commands.ts'
 import { buildStatusLines } from '../../src/minecraft/status.ts'
 import { insideFarm, insideSafeZone, isMatureWheat } from '../../src/tasks/navigation.ts'
+import { isKeptItem } from '../../src/tasks/inventory.ts'
 import type { TaskSnapshot } from '../../src/state.ts'
+import type { Item } from 'prismarine-item'
 import { baseEnv, makeConfig } from '../helpers.ts'
 
 test('v0.2 config defaults match the prepared base', () => {
@@ -47,6 +49,16 @@ test('task bounds and mature wheat detection', () => {
   assert.equal(isMatureWheat({ name: 'wheat', getProperties: () => ({ age: 7 }) } as never), true)
   assert.equal(isMatureWheat({ name: 'wheat', getProperties: () => ({ age: 3 }) } as never), false)
   assert.equal(isMatureWheat({ name: 'carrots', getProperties: () => ({ age: 7 }) } as never), false)
+})
+
+test('fish are deposited even though they are edible', () => {
+  const bot = {
+    registry: { foodsByName: { cod: {}, cooked_beef: {} } }
+  } as unknown as Bot
+  assert.equal(isKeptItem(bot, { name: 'cod' } as Item), false)
+  assert.equal(isKeptItem(bot, { name: 'cooked_beef' } as Item), true)
+  assert.equal(isKeptItem(bot, { name: 'fishing_rod' } as Item), true)
+  assert.equal(isKeptItem(bot, { name: 'wheat' } as Item), false)
 })
 
 test('status lines include the active task progress', () => {

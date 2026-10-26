@@ -2,21 +2,26 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：v0.1.0（MVP）。详细计划与验收记录见 `docs/`。
+> 当前版本：v0.2.0（钓鱼 / 种田 / 自动存箱）。详细计划与验收记录见 `docs/`。
 
 ## 能做什么
 
 - **AI 陪伴聊天**：只有被 `Lofii` / `@Lofii` 点名时回复；中文、温柔助手人设；复用 Pi 本机 OpenCode 的 `opencode-go/deepseek-v4.1-flash`。
 - **按玩家动态上线**：SLP 每 15 秒探测；有玩家在线时上线；最后一名玩家离开 60 秒后下线，让服务器在空服时正常 pause。
-- **有限自然语言指令**：`Lofii 状态 / 过来 / 跟随我 / 停下 / 看我 / 挥手 / 帮助`，仅 `Antifield` 可执行。
+- **自动化任务**：`Lofii 去钓鱼` / `去种田` / `收工` / `回家` / `存东西`；钓鱼自动抛竿/收竿/捡鱼/存箱；种田自动播种/收割/补种/存箱。
+- **任务期间保持在线**：Antifield 下线后任务继续；任务结束且无玩家时恢复动态下线。
+- **任务恢复**：死亡/Paper 重启后自动回任务点，最多 3 次；工具/种子丢失时停止并提示。
+- **移动与家**：`回家`、远距离 `过来`、`跟随` 超过 64 格或跨维度时安全传送；只允许代码生成的 `/tp`。
+- **主动行为**：Antifield 加入问候；夜晚/雷雨/死亡固定短文；可关闭。
+- **AI 意图兜底**：固定短语优先；Antifield 的任务类模糊语句才调用 AI 分类，AI 不能直接执行任意动作。
 - **按玩家记忆**：最近 20 轮、保留 30 天，落盘到 `/var/lib/lofii-bot/memory`，重启后仍能记住。
-- **本机 HTTP 接口**：只读状态 + `/say`，供 AntifieldCloud 对接；仅监听 `127.0.0.1:3010`。
-- **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起；30–60 分钟 soak 验收。
+- **本机 HTTP 接口**：只读状态（含 `task`）+ `/say`，供 AntifieldCloud 对接；仅监听 `127.0.0.1:3010`。
+- **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
 ## 不做什么
 
 - 不修改 AntifieldCloud 仓库、数据库或服务；本仓库只提供接口契约。
-- 不做挖矿、种田、钓鱼、战斗、建筑、踢人/封禁/备份触发。
+- 不做挖矿、砍树、战斗、建筑、睡觉跳夜、踢人/封禁/备份触发。
 - 不默认 24/7 保活；空服时服务器会 pause。需要常驻时把 `FORCE_ONLINE=true`。
 - 不把 HTTP 接口暴露到内网/公网；不改 nftables、FRP、Cloudflare。
 
@@ -40,13 +45,17 @@
 ```
 
 ```text
-玩家聊天 ─► chat router ─┬─ 授权指令 ─► command executor ─► reply queue ─► bot.chat
+玩家聊天 ─► chat router ─┬─ 固定指令（状态/移动/任务）─► command executor ─► reply queue
+                         ├─ 任务类模糊语句（仅 Antifield）─► AI 意图分类 ─► 固定任务
                          ├─ 未授权指令 ─► 固定拒绝
-                         └─ 唤醒词 ─► AI queue ─► OpenCode ─► 清洗/拆行 ─► reply queue
-                                                                  │
-                                                             memory store
+                         └─ 聊天 ─► AI queue ─► OpenCode ─► 清洗/拆行 ─► reply queue
 
-HTTP /status ─► state 快照
+任务管理器 ─► 导航/安全区/传送 ─► 钓鱼/种田 ─► 库存/存箱 ─► 状态快照
+      │
+      ├─ 任务 active 时 presence 保持在线
+      └─ 死亡/Paper 重启 ─► 回家/回任务点 ─► 最多 3 次恢复
+
+HTTP /status ─► state 快照（含 task）
 HTTP /say ─► reply queue（只聊天，不执行指令）
 ```
 
@@ -54,6 +63,8 @@ HTTP /say ─► reply queue（只聊天，不执行指令）
 
 - 所有外发聊天统一经过 `sanitizeOutgoing`：**首字符 `/` 会被替换为全角 `／`**，防止 AI 或 HTTP 输入变成 OP 命令。
 - AI 没有任何工具/命令执行能力；指令只由确定性解析器执行，且仅 `Antifield`（`COMMAND_ALLOWLIST`）有效。
+- 内部 `/tp` 只由移动/任务代码用固定坐标或在线玩家名生成，AI/HTTP 无法触发；传送目标必须在安全区内。
+- 自动化只修改农田范围 `x177–183, z432–439` 的作物/耕地；越界即停止；箱子只存/取物品。
 - `/say` 拒绝以 `/` 开头的消息；HTTP 仅回环、Bearer Token、8 KiB 请求体上限、10 次/分钟限流。
 - 服务以 `lofiibot` 非 root 用户运行；env `0640 root:lofiibot`；记忆文件 `0600`。
 
@@ -105,15 +116,23 @@ sudo systemctl restart lofii-bot
 
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `COMMAND_ALLOWLIST` | `Antifield` | 可执行移动/状态指令的玩家名，逗号分隔 |
+| `COMMAND_ALLOWLIST` | `Antifield` | 可执行指令/任务的玩家名，逗号分隔 |
 | `PRESENCE_ENABLED` | `true` | 动态上下线开关 |
 | `FORCE_ONLINE` | `false` | 强制常驻（不因空服下线） |
+| `TASK_ENABLED` | `true` | 自动化任务总开关 |
+| `TASK_MAX_MINUTES` | `30` | 单任务时长上限 |
+| `TASK_RECOVERY_MAX` | `3` | 死亡/重启连续恢复上限 |
+| `TELEPORT_DISTANCE` | `64` | 超过该距离使用安全传送 |
+| `PROACTIVE_ENABLED` | `true` | 主动问候/事件总开关 |
+| `AI_INTENT_ENABLED` | `true` | AI 意图兜底 |
 | `AI_ENABLED` | `true` | AI 总开关 |
 | `AI_MODEL_PROVIDER` / `AI_MODEL_ID` | `opencode-go` / `deepseek-v4.1-flash` | OpenCode 模型 |
 | `AI_COOLDOWN_MS` | `10000` | 每玩家 AI 冷却 |
 | `AI_RATE_PER_HOUR` | `60` | 每玩家每小时 AI 上限 |
 | `MEMORY_MAX_TURNS` | `20` | 每玩家记忆轮数 |
 | `HTTP_PORT` | `3010` | 仅回环 HTTP 端口 |
+
+任务坐标默认值见 `deploy/env.example`（家 `175.5/64/410.5`、安全区 `175–239/410–474`、农田 `177–183/432–439`、箱子 `184/64/435`、钓点 `204.5/63/469.5`）。
 
 ## 测试
 
@@ -136,7 +155,11 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 
 - 离线服务器按玩家名鉴权，理论上可被同白名单/内网他人冒充 `Antifield`；请保持白名单与 FRP 地址可信，后续可改为 HTTP-only 管理指令。
 - 动态在线意味着空服时服务器会 pause；如要 7×24 保活，设 `FORCE_ONLINE=true`（注意功耗/发热）。
-- `come` / `follow` 依赖 mineflayer-pathfinder 与当前 26.1 方块数据；跨维度、目标实体未加载或地形无路时会明确失败。
+- `come` / `follow` 依赖 mineflayer-pathfinder 与当前 26.1 方块数据；跨维度/目标实体未加载时会走安全传送，找不到落点则明确失败。
+- 任务死亡恢复依赖箱子里的备用工具/种子/食物；死亡会掉落当前背包，建议箱内常备 2–3 套鱼竿/锄头与至少 128 个种子。
+- 任务状态只在进程内保存：Paper 重启可恢复；`systemctl restart lofii-bot` 会丢失当前任务。
+- 农田实际为 48 格（6 列 × 8 行，中间水渠）；首次任务会自动播种，验收用 `/setblock` 催熟。
+- 钓鱼掉落物可能落在浅水；拾取会走向岸边/浅水，深水或危险区域会放弃。
 - AI 输出只用于聊天；不会触发任何游戏操作。
 
 ## License
