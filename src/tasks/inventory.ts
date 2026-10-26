@@ -20,7 +20,9 @@ export function isFood (bot: Bot, item: Item): boolean {
 }
 
 export function isKeptItem (bot: Bot, item: Item): boolean {
-  return TOOL_NAMES.has(item.name) || isFood(bot, item)
+  if (TOOL_NAMES.has(item.name)) return true
+  // Fish are edible, but they are the fishing product and must be deposited.
+  return isFood(bot, item) && !isFish(item)
 }
 
 export function isFish (item: Item): boolean {
