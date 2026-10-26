@@ -17,18 +17,20 @@
 - 主动行为：Antifield 加入问候、夜晚/雷雨/死亡固定文案、冷却。
 - 验收：`docs/ACCEPTANCE.md`（8+ 条鱼、8 格小麦收割/补种、死亡/服务器重启恢复、0 玩家任务在线、动态下线）。
 
-## v0.3 对接与运维增强
+## v0.3.0（已完成：SSE / HTTP 控制 / 审计 / 任务跨重启）
 
-- AntifieldCloud 面板展示 Lofii 状态/任务/聊天记录（用户主导）。
-- 事件推送：SSE 或 webhook，供面板实时显示游戏内聊天与任务进度。
-- 可选 HTTP 任务控制接口（严格 Token + 指令白名单 + 审计）；当前 v0.2 不提供。
-- 管理助手只读：经 RCON 查询 TPS、白名单、备份状态；不做踢人/封禁/备份触发。
-- 命令审计、Token 轮换、指标历史、告警。
-- 离线模式名称冒用的缓解（HTTP-only 管理指令或共享口令）。
+- SSE `GET /events`：`hello/presence/task/chat/movement`；内存 ring 500、`Last-Event-ID`、心跳、最多 8 客户端。
+- HTTP 控制：独立 `HTTP_CONTROL_TOKEN`；`POST /task/start|stop|resume`、`POST /move`（home/come/follow/stop）。
+- 任务跨 systemd 重启：`task-state.json` 原子写盘；重启后 `pending_resume`，10 分钟内面板确认；不自动恢复。
+- 审计 JSONL：`/var/lib/lofii-bot/audit.jsonl`，0600、5 MB 轮转、30 天；仅元数据，不含聊天正文/Token/密码。
+- 读/控制 Token 分离；SSE 只读 Token，控制 Token 不下发浏览器。
+- 验收：mock SSE/控制 + 服务重启 pending/resume + 20–30 分钟 soak；详见 `docs/ACCEPTANCE.md`。
+- 边界：默认保留游戏内 Antifield/AI 直接触发，HTTP-only 非强制；严格模式 `HTTP_ONLY_HIGH_RISK=true`。
 
 ## v0.4 自动化扩展
 
+- 管理助手只读（RCON TPS/白名单/备份状态）、指标历史与告警。
 - 采集/砍树、战斗/保护、睡觉跳夜（Vote2Sleep）、巡逻。
-- 更稳的跨维度/实体未加载移动；任务跨 systemd 重启持久化。
+- 更稳的跨维度/实体未加载移动；多次 pending 任务链。
 - 多角色人设、记忆摘要、皮肤、语音。
 - 聊天与 Discord/QQ 互通（复用 AntifieldCloud Bot 能力，用户主导）。
