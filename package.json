@@ -1,6 +1,6 @@
 {
   "name": "lofii-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -17,7 +17,8 @@
   },
   "dependencies": {
     "mineflayer": "^4.39.0",
-    "mineflayer-pathfinder": "^2.4.5"
+    "mineflayer-pathfinder": "^2.4.5",
+    "vec3": "^0.1.10"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

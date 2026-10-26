@@ -8,10 +8,13 @@ import { MovementManager } from './minecraft/movement.ts'
 import { MinecraftClient } from './minecraft/bot.ts'
 import { CommandExecutor } from './minecraft/commands.ts'
 import { OpenCodeClient } from './ai/opencode.ts'
+import { IntentClassifier } from './ai/intent.ts'
 import { AiChatService } from './ai/queue.ts'
 import { ChatRouter } from './chat/router.ts'
 import { HttpApi } from './http/server.ts'
 import { PresenceManager } from './presence/manager.ts'
+import { TaskManager } from './tasks/manager.ts'
+import { ProactiveManager } from './proactive.ts'
 
 async function main (): Promise<void> {
   const packageInfo = readPackageInfo()
@@ -29,7 +32,8 @@ async function main (): Promise<void> {
     presenceCheckMs: config.presenceCheckMs,
     aiEnabled: config.aiEnabled,
     aiProvider: config.aiModelProvider,
-    aiModel: config.aiModelId
+    aiModel: config.aiModelId,
+    taskEnabled: config.taskEnabled
   })
 
   const memory = new MemoryStore({
@@ -41,7 +45,7 @@ async function main (): Promise<void> {
   await memory.init()
   state.setMemory(memory.stats())
 
-  const movement = new MovementManager(logger.withScope('movement'))
+  const movement = new MovementManager(logger.withScope('movement'), config)
   const client = new MinecraftClient({
     config,
     logger: logger.withScope('minecraft'),
@@ -58,15 +62,26 @@ async function main (): Promise<void> {
     void chatSender.say(message, 'movement').catch(() => {})
   })
 
-  const commands = new CommandExecutor({
+  const tasks = new TaskManager({
     config,
-    logger: logger.withScope('commands'),
+    logger: logger.withScope('tasks'),
+    state,
     chatSender,
     movement,
     getBot: () => client.getBot()
   })
 
+  const commands = new CommandExecutor({
+    config,
+    logger: logger.withScope('commands'),
+    chatSender,
+    movement,
+    tasks,
+    getBot: () => client.getBot()
+  })
+
   const aiClient = new OpenCodeClient(config, logger.withScope('opencode'))
+  const intent = new IntentClassifier(config, logger.withScope('intent'), aiClient)
   const ai = new AiChatService({
     config,
     logger: logger.withScope('ai'),
@@ -83,9 +98,15 @@ async function main (): Promise<void> {
     state,
     chatSender,
     commands,
+    intent,
     ai
   })
   client.setChatHandler(message => router.handle(message))
+
+  const proactive = new ProactiveManager(config, logger.withScope('proactive'), chatSender)
+  client.setSpawnHandler(() => {
+    proactive.attach(client.getBot())
+  })
 
   const http = new HttpApi({
     config,
@@ -99,8 +120,10 @@ async function main (): Promise<void> {
     config,
     logger: logger.withScope('presence'),
     state,
-    controller: client
+    controller: client,
+    keepOnline: () => tasks.keepOnline()
   })
+  tasks.setTaskEndedHandler(() => presence.notifyTaskEnded())
   presence.start()
 
   logger.info('lofii-bot started', {
@@ -126,6 +149,8 @@ async function main (): Promise<void> {
     force.unref?.()
     try {
       ai.stop()
+      await tasks.shutdown()
+      proactive.detach()
       await presence.stop()
       await client.stop('shutdown')
       await http.stop()

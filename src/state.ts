@@ -63,6 +63,28 @@ export interface MemorySnapshot {
   turns: number
 }
 
+export type TaskName = 'fishing' | 'farming'
+export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping'
+
+export interface TaskProgress {
+  fishCaught: number
+  wheatHarvested: number
+  planted: number
+  deposited: number
+}
+
+export interface TaskSnapshot {
+  enabled: boolean
+  active: boolean
+  name: TaskName | null
+  state: TaskState
+  startedAt: string | null
+  elapsedSec: number
+  progress: TaskProgress
+  failures: number
+  lastError: string | null
+}
+
 export interface StatusSnapshot {
   version: string
   uptimeSec: number
@@ -73,6 +95,7 @@ export interface StatusSnapshot {
   presence: PresenceSnapshot
   ai: AiSnapshot
   memory: MemorySnapshot
+  task: TaskSnapshot
 }
 
 function roundPosition (position: Position | null): Position | null {
@@ -104,6 +127,7 @@ export class RuntimeState {
   presence: PresenceSnapshot
   ai: AiSnapshot
   memory: MemorySnapshot = { players: 0, turns: 0 }
+  task: TaskSnapshot
   lastDecision = 'startup'
 
   constructor (options: {
@@ -119,6 +143,7 @@ export class RuntimeState {
     aiEnabled: boolean
     aiProvider: string
     aiModel: string
+    taskEnabled: boolean
   }) {
     this.version = options.version
     this.minecraft = {
@@ -146,6 +171,17 @@ export class RuntimeState {
       queued: 0,
       failures: 0,
       lastLatencyMs: null,
+      lastError: null
+    }
+    this.task = {
+      enabled: options.taskEnabled,
+      active: false,
+      name: null,
+      state: 'idle',
+      startedAt: null,
+      elapsedSec: 0,
+      progress: { fishCaught: 0, wheatHarvested: 0, planted: 0, deposited: 0 },
+      failures: 0,
       lastError: null
     }
   }
@@ -200,6 +236,14 @@ export class RuntimeState {
     this.memory = memory
   }
 
+  setTask (patch: Partial<TaskSnapshot>): void {
+    this.task = {
+      ...this.task,
+      ...patch,
+      progress: patch.progress ? { ...patch.progress } : this.task.progress
+    }
+  }
+
   snapshot (): StatusSnapshot {
     return {
       version: this.version,
@@ -210,7 +254,11 @@ export class RuntimeState {
       server: { ...this.server },
       presence: { ...this.presence },
       ai: { ...this.ai },
-      memory: { ...this.memory }
+      memory: { ...this.memory },
+      task: {
+        ...this.task,
+        progress: { ...this.task.progress }
+      }
     }
   }
 }

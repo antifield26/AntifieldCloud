@@ -31,7 +31,8 @@ export function makeState (config: Config): RuntimeState {
     presenceCheckMs: config.presenceCheckMs,
     aiEnabled: config.aiEnabled,
     aiProvider: config.aiModelProvider,
-    aiModel: config.aiModelId
+    aiModel: config.aiModelId,
+    taskEnabled: config.taskEnabled
   })
 }
 

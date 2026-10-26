@@ -9,6 +9,7 @@ export interface PresenceDeps {
   logger: Logger
   state: RuntimeState
   controller: BotController
+  keepOnline?: () => boolean
   ping?: () => Promise<SlpResult>
 }
 
@@ -90,6 +91,18 @@ export class PresenceManager {
     this.deps.state.setState('idle', 'stopped')
   }
 
+  notifyTaskEnded (): void {
+    this.lastOthersAt = Date.now()
+  }
+
+  private keepOnline (): boolean {
+    try {
+      return this.deps.keepOnline?.() === true
+    } catch {
+      return false
+    }
+  }
+
   private schedule (ms: number): void {
     if (this.stopped) return
     this.clearTimer()
@@ -158,7 +171,10 @@ export class PresenceManager {
       lastPingAt: new Date().toISOString()
     })
     this.deps.state.setPresence(otherPlayers, otherPlayers > 0 ? `players online: ${otherPlayers}` : 'idle: no players')
-    if (otherPlayers > 0) {
+    if (otherPlayers > 0 || this.keepOnline()) {
+      if (otherPlayers === 0) {
+        this.deps.state.setPresence(0, 'task active: staying online')
+      }
       void this.connectNow()
       this.schedule(500)
       return
@@ -197,6 +213,10 @@ export class PresenceManager {
     if (this.alwaysOnline) return true
     if (others.length > 0) {
       this.lastOthersAt = Date.now()
+      return true
+    }
+    if (this.keepOnline()) {
+      state.setPresence(0, 'connected: task active')
       return true
     }
     if (Date.now() - this.lastOthersAt < this.deps.config.presenceGraceMs) return true

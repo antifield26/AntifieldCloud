@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer'
-import type { PlayerSnapshot } from '../state.ts'
+import type { PlayerSnapshot, TaskSnapshot } from '../state.ts'
 import type { MovementManager } from './movement.ts'
 
 const DIMENSION_LABELS: Record<string, string> = {
@@ -36,7 +36,7 @@ export function minecraftClock (timeOfDay: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`
 }
 
-export function buildStatusLines (bot: Bot, movement: MovementManager): string[] {
+export function buildStatusLines (bot: Bot, movement: MovementManager, task?: TaskSnapshot): string[] {
   if (!bot.entity) return ['我还没完全加载好，稍等一下。']
   const position = bot.entity.position
   const posText = `${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}`
@@ -46,8 +46,12 @@ export function buildStatusLines (bot: Bot, movement: MovementManager): string[]
   const players = Object.keys(bot.players).sort((a, b) => a.localeCompare(b))
   const visible = players.slice(0, 6).join('、')
   const playersText = players.length > 6 ? `${visible} 等${players.length}人` : visible
+  const taskText = task?.active
+    ? `任务: ${task.name === 'fishing' ? '钓鱼' : '种田'} ${task.state} · 鱼 ${task.progress.fishCaught} · 收 ${task.progress.wheatHarvested} · 种 ${task.progress.planted} · 存 ${task.progress.deposited}`
+    : '任务: 待机'
   return [
     `位置 (${posText}) · ${dimensionLabel(bot.game.dimension)} · 血量 ${health}/20 · 饥饿 ${food}/20`,
-    `在线: ${playersText || '无'} · 时间 ${time} · ${movement.describe()}`
+    `在线: ${playersText || '无'} · 时间 ${time} · ${movement.describe()}`,
+    taskText
   ]
 }

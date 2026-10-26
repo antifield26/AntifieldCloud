@@ -45,6 +45,10 @@ class FakeController implements BotController {
 
   setChatHandler (): void {}
 
+  setDeathHandler (): void {}
+
+  setSpawnHandler (): void {}
+
   setDisconnectHandler (handler: (reason: string) => void): void {
     this.disconnectHandler = handler
   }

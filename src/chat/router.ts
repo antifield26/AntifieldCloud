@@ -2,8 +2,9 @@ import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
 import type { RuntimeState } from '../state.ts'
 import type { AiChatService } from '../ai/queue.ts'
+import type { IntentClassifier } from '../ai/intent.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
-import type { CommandExecutor } from '../minecraft/commands.ts'
+import type { CommandExecutor, CommandName } from '../minecraft/commands.ts'
 import {
   hasWakeWord,
   sanitizeInput,
@@ -18,6 +19,7 @@ export interface ChatRouterDeps {
   state: RuntimeState
   chatSender: ChatSender
   commands: CommandExecutor
+  intent: IntentClassifier
   ai: AiChatService
 }
 
@@ -52,8 +54,38 @@ export class ChatRouter {
       })
       return
     }
+    if (commands.isAuthorized(message.username) && this.deps.intent.shouldClassify(text)) {
+      void this.handleIntent(text, message.username)
+      return
+    }
     logger.debug('ai chat requested', { username: message.username, chars: text.length })
     ai.ask(message.username, text)
+  }
+
+  private async handleIntent (text: string, username: string): Promise<void> {
+    const { logger, commands, intent, ai } = this.deps
+    const result = await intent.classify(text)
+    if (!result || result.action === 'chat') {
+      ai.ask(username, text)
+      return
+    }
+    const map: Record<string, CommandName> = {
+      fish: 'fish',
+      farm: 'farm',
+      stopTask: 'stopTask',
+      home: 'home',
+      deposit: 'deposit',
+      status: 'status'
+    }
+    const command = map[result.action]
+    if (!command) {
+      ai.ask(username, text)
+      return
+    }
+    logger.info('intent: mapped to command', { username, action: result.action, confidence: result.confidence })
+    void commands.execute({ name: command }, username).catch(error => {
+      logger.error('intent command failed', { username, action: result.action, error: error instanceof Error ? error.message : String(error) })
+    })
   }
 
   private refuse (username: string): void {

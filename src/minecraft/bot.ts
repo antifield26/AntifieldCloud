@@ -38,6 +38,8 @@ export interface BotController {
   getOtherPlayers: () => string[]
   setChatHandler: (handler: (message: ParsedChatMessage) => void) => void
   setDisconnectHandler: (handler: (reason: string) => void) => void
+  setDeathHandler: (handler: () => void) => void
+  setSpawnHandler: (handler: () => void) => void
 }
 
 const PLAYER_STATE_THROTTLE_MS = 500
@@ -55,6 +57,8 @@ export class MinecraftClient implements BotController {
   private lastPlayerStateAt = 0
   private chatHandler: ((message: ParsedChatMessage) => void) | null = null
   private disconnectHandler: ((reason: string) => void) | null = null
+  private deathHandler: (() => void) | null = null
+  private spawnHandler: (() => void) | null = null
   private lastKickReason: string | null = null
   private stopping: Promise<void> | null = null
 
@@ -68,6 +72,14 @@ export class MinecraftClient implements BotController {
 
   setDisconnectHandler (handler: (reason: string) => void): void {
     this.disconnectHandler = handler
+  }
+
+  setDeathHandler (handler: () => void): void {
+    this.deathHandler = handler
+  }
+
+  setSpawnHandler (handler: () => void): void {
+    this.spawnHandler = handler
   }
 
   getBot (): Bot | null {
@@ -146,6 +158,11 @@ export class MinecraftClient implements BotController {
           dimension: bot.game.dimension,
           version: bot.version
         })
+        try {
+          this.spawnHandler?.()
+        } catch (error) {
+          logger.error('spawn handler failed', { error: error instanceof Error ? error.message : String(error) })
+        }
         this.startResolve?.()
         this.clearStartHandles()
       })
@@ -164,6 +181,11 @@ export class MinecraftClient implements BotController {
       bot.on('death', () => {
         logger.info('minecraft death', { position: bot.entity?.position })
         movement.stop('death')
+        try {
+          this.deathHandler?.()
+        } catch (error) {
+          logger.error('death handler failed', { error: error instanceof Error ? error.message : String(error) })
+        }
         setTimeout(() => {
           if (this.bot && this.spawned) {
             try {

@@ -1,11 +1,13 @@
 import type { Bot } from 'mineflayer'
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
+import type { TaskController } from '../tasks/types.ts'
+import { TaskError } from '../tasks/types.ts'
 import { ChatSender } from './chat.ts'
 import { MovementError, MovementManager } from './movement.ts'
 import { buildStatusLines } from './status.ts'
 
-export type CommandName = 'status' | 'come' | 'follow' | 'stop' | 'look' | 'wave' | 'help'
+export type CommandName = 'status' | 'come' | 'follow' | 'stop' | 'look' | 'wave' | 'help' | 'fish' | 'farm' | 'stopTask' | 'home' | 'deposit'
 
 export interface ParsedCommand {
   name: CommandName
@@ -13,7 +15,12 @@ export interface ParsedCommand {
 }
 
 const COMMAND_PATTERNS: Array<{ name: CommandName, pattern: RegExp }> = [
+  { name: 'stopTask', pattern: /^(收工|停止任务|别干了|不干了|stop\s*task)/i },
   { name: 'stop', pattern: /^(停下|停止|停一下|停|别动|别跟了|别跟|取消|stop|halt)/i },
+  { name: 'home', pattern: /^(回家|回基地|home)/i },
+  { name: 'deposit', pattern: /^(存东西|存箱|存一下|deposit)/i },
+  { name: 'fish', pattern: /^(去钓鱼|钓鱼|开始钓鱼|fish)/i },
+  { name: 'farm', pattern: /^(去种田|种田|收菜|开始种田|farm)/i },
   { name: 'follow', pattern: /^(跟随|跟着我|跟着|跟好|follow|跟)\s*(我|[A-Za-z0-9_]{1,16})?/i },
   { name: 'come', pattern: /^(过来|来我身边|来我这|来这边|到这里|come)\s*([A-Za-z0-9_]{1,16})?/i },
   { name: 'look', pattern: /^(看我|看过来|看向我|look)/i },
@@ -37,7 +44,8 @@ export function parseCommand (text: string): ParsedCommand | null {
   for (const entry of COMMAND_PATTERNS) {
     const match = entry.pattern.exec(normalized)
     if (!match) continue
-    if (entry.name === 'stop' || entry.name === 'status' || entry.name === 'help' || entry.name === 'look' || entry.name === 'wave') {
+    if (entry.name === 'stop' || entry.name === 'status' || entry.name === 'help' || entry.name === 'look' || entry.name === 'wave' ||
+      entry.name === 'fish' || entry.name === 'farm' || entry.name === 'stopTask' || entry.name === 'home' || entry.name === 'deposit') {
       return { name: entry.name }
     }
     const rawTarget = match[2]?.trim()
@@ -54,6 +62,7 @@ export interface CommandDeps {
   logger: Logger
   chatSender: ChatSender
   movement: MovementManager
+  tasks: TaskController
   getBot: () => Bot | null
 }
 
@@ -82,10 +91,27 @@ export class CommandExecutor {
     try {
       switch (command.name) {
         case 'status': {
-          const lines = buildStatusLines(bot, this.deps.movement)
+          const lines = buildStatusLines(bot, this.deps.movement, this.deps.tasks.snapshot())
           for (const line of lines) await this.deps.chatSender.say(line, 'command:status')
           return
         }
+        case 'fish':
+          await this.deps.tasks.start('fishing', username)
+          return
+        case 'farm':
+          await this.deps.tasks.start('farming', username)
+          return
+        case 'stopTask':
+          this.deps.tasks.requestStop('user')
+          return
+        case 'home':
+          await this.deps.tasks.stopAndWait('home')
+          await this.deps.movement.home()
+          await this.safeSay('我回家啦。')
+          return
+        case 'deposit':
+          await this.deps.tasks.depositNow()
+          return
         case 'come': {
           const target = command.target ?? username
           this.deps.movement.stop('replace')
@@ -114,12 +140,12 @@ export class CommandExecutor {
           await this.safeSay('嗨～')
           return
         case 'help':
-          await this.safeSay('你可以说：Lofii 状态 / 过来 / 跟随我 / 停下 / 看我 / 挥手 / 帮助')
+          await this.safeSay('你可以说：Lofii 状态 / 去钓鱼 / 去种田 / 收工 / 回家 / 存东西 / 过来 / 跟随我 / 停下 / 看我 / 挥手 / 帮助')
           return
       }
     } catch (error) {
-      if (error instanceof MovementError) {
-        this.deps.logger.info('movement command failed', { command: command.name, reason: error.message })
+      if (error instanceof TaskError || error instanceof MovementError) {
+        this.deps.logger.info('command failed with friendly error', { command: command.name, reason: error.message })
         await this.safeSay(`抱歉，${error.message}`)
         return
       }
