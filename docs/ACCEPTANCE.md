@@ -100,7 +100,7 @@
 |---|---|
 | 验收日期 | 2026-10-26（Asia/Shanghai） |
 | Lofii 版本 | 0.3.0 |
-| 部署 release | `/opt/lofii-bot/releases/20261026T132859Z`（soak）；最终 release 见 §6.7 |
+| 部署 release | `/opt/lofii-bot/releases/20261026T135428Z`（最终 docs）；代码/soak release `20261026T132859Z` |
 | 读/控制 Token | 分离；`/etc/lofii-bot/env` 0640 root:lofiibot |
 | 控制 Token | 独立 64 hex；验收期间不轮换生产 Token |
 | 旧版本对照 | v0.2.0 release `20261026T121621Z` |
@@ -168,6 +168,7 @@
 
 ### 6.7 最终 release
 
-- 最终文档 release 以部署后的 `/opt/lofii-bot/current` 为准；代码与 `docs/` 同仓库提交。
-- v0.3.0 验收通过；v0.2.0 的钓鱼/种田/恢复功能回归由 58 个测试与 soak 覆盖。
+- 最终 release：`/opt/lofii-bot/releases/20261026T135428Z`（docs 提交；运行时代码与 `20261026T132859Z` 相同）。
+- `/healthz` 200，version 0.3.0；验收结束时 0 玩家、`state=idle`、任务 idle。
+- 代码与 `docs/` 同仓库提交；v0.3.0 验收通过；v0.2.0 的钓鱼/种田/恢复功能回归由 58 个测试与 soak 覆盖。
 
