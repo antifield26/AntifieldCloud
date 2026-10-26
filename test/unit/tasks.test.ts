@@ -6,8 +6,10 @@ import { parseCommand } from '../../src/minecraft/commands.ts'
 import { buildStatusLines } from '../../src/minecraft/status.ts'
 import { insideFarm, insideSafeZone, isMatureWheat } from '../../src/tasks/navigation.ts'
 import { isKeptItem } from '../../src/tasks/inventory.ts'
+import { nearbyHostile } from '../../src/tasks/safety.ts'
 import type { TaskSnapshot } from '../../src/state.ts'
 import type { Item } from 'prismarine-item'
+import { Vec3 } from 'vec3'
 import { baseEnv, makeConfig } from '../helpers.ts'
 
 test('v0.2 config defaults match the prepared base', () => {
@@ -59,6 +61,22 @@ test('fish are deposited even though they are edible', () => {
   assert.equal(isKeptItem(bot, { name: 'cooked_beef' } as Item), true)
   assert.equal(isKeptItem(bot, { name: 'fishing_rod' } as Item), true)
   assert.equal(isKeptItem(bot, { name: 'wheat' } as Item), false)
+})
+
+test('detects nearby hostile mobs', () => {
+  const bot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    entities: {
+      1: { name: 'zombie', type: 'mob', position: new Vec3(2, 64, 0) },
+      2: { name: 'cow', type: 'mob', position: new Vec3(1, 64, 0) }
+    }
+  } as unknown as Bot
+  assert.equal(nearbyHostile(bot), 'zombie')
+  const farBot = {
+    entity: { position: new Vec3(0, 64, 0) },
+    entities: { 1: { name: 'zombie', type: 'mob', position: new Vec3(30, 64, 0) } }
+  } as unknown as Bot
+  assert.equal(nearbyHostile(farBot), null)
 })
 
 test('status lines include the active task progress', () => {
