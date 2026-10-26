@@ -217,7 +217,7 @@ export class TaskManager implements TaskController {
     this.logger.info('task supplies ready', { name: active.name, food: fresh.food })
   }
 
-  private context (active: ActiveTask): TaskContext {
+  private context (active: ActiveTask, publish = true): TaskContext {
     return {
       config: this.deps.config,
       logger: this.logger,
@@ -233,7 +233,7 @@ export class TaskManager implements TaskController {
         Object.assign(active.progress, patch)
         active.failures = 0
         active.lastError = null
-        this.publish(active, 'running')
+        if (publish) this.publish(active, 'running')
       },
       requestDeposit: () => { active.depositRequested = true },
       depositRequested: () => active.depositRequested,
@@ -316,18 +316,30 @@ export class TaskManager implements TaskController {
       await this.say('我还没连上服务器。')
       return
     }
+    const previous = this.deps.state.task
     const fake: ActiveTask = {
       name: 'fishing',
       startedAt: Date.now(),
       deadline: Date.now() + 30000,
-      progress: { ...EMPTY_PROGRESS },
+      progress: { ...previous.progress },
       failures: 0,
       lastError: null,
       stopRequested: false,
       depositRequested: false
     }
     try {
-      const count = await oneShotDeposit(this.context(fake))
+      const count = await oneShotDeposit(this.context(fake, false))
+      this.deps.state.setTask({
+        enabled: this.deps.config.taskEnabled,
+        active: false,
+        name: null,
+        state: 'idle',
+        startedAt: null,
+        elapsedSec: previous.elapsedSec,
+        progress: { ...fake.progress, deposited: previous.progress.deposited + count },
+        failures: previous.failures,
+        lastError: previous.lastError
+      })
       await this.say(count > 0 ? `存好了，共 ${count} 个。` : '背包里没有需要存的东西。')
     } catch (error) {
       await this.say(`存箱失败：${error instanceof Error ? error.message : String(error)}`)
