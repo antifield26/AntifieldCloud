@@ -36,7 +36,10 @@ export class IntentClassifier {
   }
 
   shouldClassify (text: string): boolean {
-    return this.config.aiEnabled && this.config.aiIntentEnabled && TASK_HINT.test(text)
+    return this.config.aiEnabled &&
+      this.config.aiIntentEnabled &&
+      !this.config.httpOnlyHighRisk &&
+      TASK_HINT.test(text)
   }
 
   async classify (text: string): Promise<IntentResult | null> {

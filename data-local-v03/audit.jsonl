@@ -1,0 +1,2 @@
+{"ts":"2026-10-26T13:16:31.570Z","event":"service.start","source":"system","actor":"system","action":"start","result":"accepted","details":{"version":"0.2.0"}}
+{"ts":"2026-10-26T13:16:37.620Z","event":"http.auth","source":"http_control","actor":"unknown","action":"/task/start","result":"denied","details":{}}

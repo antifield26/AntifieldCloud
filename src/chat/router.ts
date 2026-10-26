@@ -3,15 +3,17 @@ import type { Logger } from '../logger.ts'
 import type { RuntimeState } from '../state.ts'
 import type { AiChatService } from '../ai/queue.ts'
 import type { IntentClassifier } from '../ai/intent.ts'
+import type { AuditLogger } from '../audit.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
 import type { CommandExecutor, CommandName } from '../minecraft/commands.ts'
+import type { EventBus } from '../events/bus.ts'
+import { parseCommand } from '../minecraft/commands.ts'
 import {
   hasWakeWord,
   sanitizeInput,
   stripWakeWord,
   type ParsedChatMessage
 } from '../minecraft/chat.ts'
-import { parseCommand } from '../minecraft/commands.ts'
 
 export interface ChatRouterDeps {
   config: Config
@@ -21,6 +23,8 @@ export interface ChatRouterDeps {
   commands: CommandExecutor
   intent: IntentClassifier
   ai: AiChatService
+  events: EventBus
+  audit?: AuditLogger
 }
 
 const REFUSAL_INTERVAL_MS = 10000
@@ -37,6 +41,12 @@ export class ChatRouter {
     const { config, logger, chatSender, commands, ai } = this.deps
     const input = sanitizeInput(message.message, config.chatMaxInputChars)
     if (!hasWakeWord(input)) return
+    this.deps.events.emit('chat', {
+      direction: 'in',
+      username: message.username,
+      message: input,
+      source: 'chat'
+    })
     const text = stripWakeWord(input)
     if (text === '') {
       void chatSender.say('我在。', 'wake').catch(() => {})
@@ -83,6 +93,14 @@ export class ChatRouter {
       return
     }
     logger.info('intent: mapped to command', { username, action: result.action, confidence: result.confidence })
+    this.deps.audit?.append({
+      event: 'command.ai_intent',
+      source: 'ai_intent',
+      actor: username,
+      action: command,
+      result: 'accepted',
+      details: { confidence: result.confidence }
+    })
     void commands.execute({ name: command }, username).catch(error => {
       logger.error('intent command failed', { username, action: result.action, error: error instanceof Error ? error.message : String(error) })
     })

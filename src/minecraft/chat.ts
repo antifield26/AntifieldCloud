@@ -156,6 +156,7 @@ export interface ChatSenderOptions {
   maxLineChars: number
   maxLines: number
   gapMs: number
+  onSay?: (event: { text: string, lines: string[], source: string }) => void
 }
 
 export class ChatSender {
@@ -188,6 +189,11 @@ export class ChatSender {
     })
     try {
       await this.tail
+      try {
+        this.options.onSay?.({ text, lines, source })
+      } catch {
+        // observers must not break chat delivery
+      }
       return lines
     } catch (error) {
       this.logger.warn('chat send failed', { source, error: error instanceof Error ? error.message : String(error) })

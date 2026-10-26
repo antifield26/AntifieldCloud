@@ -5,10 +5,12 @@ set -euo pipefail
 ENV_FILE="/etc/lofii-bot/env"
 OPENCODE_ENV="/etc/opencode/opencode.env"
 ROTATE_TOKEN=0
+ROTATE_CONTROL_TOKEN=0
 
 for arg in "$@"; do
   case "$arg" in
     --rotate-token) ROTATE_TOKEN=1 ;;
+    --rotate-control-token) ROTATE_CONTROL_TOKEN=1 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -66,11 +68,28 @@ if [ -z "$HTTP_TOKEN" ] || [ "$ROTATE_TOKEN" -eq 1 ]; then
   HTTP_TOKEN="$(openssl rand -hex 32)"
 fi
 
+HTTP_CONTROL_TOKEN="$(existing HTTP_CONTROL_TOKEN)"
+if [ -z "$HTTP_CONTROL_TOKEN" ] || [ "$ROTATE_CONTROL_TOKEN" -eq 1 ]; then
+  HTTP_CONTROL_TOKEN="$(openssl rand -hex 32)"
+fi
+
+HTTP_CONTROL_ENABLED="$(choose HTTP_CONTROL_ENABLED true)"
+HTTP_ONLY_HIGH_RISK="$(choose HTTP_ONLY_HIGH_RISK false)"
+SSE_MAX_CLIENTS="$(choose SSE_MAX_CLIENTS 8)"
+SSE_HEARTBEAT_MS="$(choose SSE_HEARTBEAT_MS 15000)"
+SSE_BUFFER_EVENTS="$(choose SSE_BUFFER_EVENTS 500)"
+CONTROL_RATE_LIMIT="$(choose CONTROL_RATE_LIMIT 30)"
+TASK_PENDING_TTL_MS="$(choose TASK_PENDING_TTL_MS 600000)"
+AUDIT_MAX_BYTES="$(choose AUDIT_MAX_BYTES 5242880)"
+AUDIT_RETENTION_DAYS="$(choose AUDIT_RETENTION_DAYS 30)"
+
 BOT_USERNAME="$(choose BOT_USERNAME lofii)"
 MC_HOST="$(choose MC_HOST 127.0.0.1)"
 MC_PORT="$(choose MC_PORT 25565)"
 MC_VERSION="$(choose MC_VERSION 26.1)"
 DATA_DIR="$(choose DATA_DIR /var/lib/lofii-bot)"
+TASK_STATE_FILE="$(choose TASK_STATE_FILE "$DATA_DIR/task-state.json")"
+AUDIT_FILE="$(choose AUDIT_FILE "$DATA_DIR/audit.jsonl")"
 MEMORY_DIR="$(choose MEMORY_DIR "$DATA_DIR/memory")"
 HTTP_HOST="$(choose HTTP_HOST 127.0.0.1)"
 HTTP_PORT="$(choose HTTP_PORT 3010)"
@@ -116,6 +135,18 @@ umask 027
   echo "HTTP_HOST=$HTTP_HOST"
   echo "HTTP_PORT=$HTTP_PORT"
   echo "HTTP_TOKEN=$HTTP_TOKEN"
+  echo "HTTP_CONTROL_TOKEN=$HTTP_CONTROL_TOKEN"
+  echo "HTTP_CONTROL_ENABLED=$HTTP_CONTROL_ENABLED"
+  echo "HTTP_ONLY_HIGH_RISK=$HTTP_ONLY_HIGH_RISK"
+  echo "SSE_MAX_CLIENTS=$SSE_MAX_CLIENTS"
+  echo "SSE_HEARTBEAT_MS=$SSE_HEARTBEAT_MS"
+  echo "SSE_BUFFER_EVENTS=$SSE_BUFFER_EVENTS"
+  echo "CONTROL_RATE_LIMIT=$CONTROL_RATE_LIMIT"
+  echo "TASK_PENDING_TTL_MS=$TASK_PENDING_TTL_MS"
+  echo "TASK_STATE_FILE=$TASK_STATE_FILE"
+  echo "AUDIT_FILE=$AUDIT_FILE"
+  echo "AUDIT_MAX_BYTES=$AUDIT_MAX_BYTES"
+  echo "AUDIT_RETENTION_DAYS=$AUDIT_RETENTION_DAYS"
   echo "COMMAND_ALLOWLIST=$COMMAND_ALLOWLIST"
   echo "PRESENCE_ENABLED=$PRESENCE_ENABLED"
   echo "FORCE_ONLINE=$FORCE_ONLINE"
@@ -151,7 +182,7 @@ rm -f "$TMP_FILE"
 trap - EXIT
 
 echo "wrote $ENV_FILE (mode 0640 root:lofiibot)"
-echo "http=http://$HTTP_HOST:$HTTP_PORT token_length=${#HTTP_TOKEN}"
+echo "http=http://$HTTP_HOST:$HTTP_PORT token_length=${#HTTP_TOKEN} control_token_length=${#HTTP_CONTROL_TOKEN}"
 echo "opencode=$OPENCODE_URL user=$OPENCODE_USERNAME model=$AI_MODEL_PROVIDER/$AI_MODEL_ID"
 
 if [ -n "$OPENCODE_PASSWORD" ] && command -v curl >/dev/null 2>&1; then

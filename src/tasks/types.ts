@@ -80,6 +80,8 @@ export interface TaskController {
   requestStop: (reason: string) => void
   stopAndWait: (reason: string) => Promise<void>
   depositNow: () => Promise<void>
+  confirmResume: (taskId?: string) => Promise<void>
+  discardPending: (reason: string) => Promise<void>
   snapshot: () => TaskSnapshot
   keepOnline: () => boolean
   isActive: () => boolean

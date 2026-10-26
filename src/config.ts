@@ -64,6 +64,18 @@ export interface Config {
   aiIntentEnabled: boolean
   aiIntentTimeoutMs: number
   aiIntentMinConfidence: number
+  httpControlToken: string
+  httpControlEnabled: boolean
+  httpOnlyHighRisk: boolean
+  sseMaxClients: number
+  sseHeartbeatMs: number
+  sseBufferEvents: number
+  taskPendingTtlMs: number
+  taskStateFile: string
+  auditFile: string
+  auditMaxBytes: number
+  auditRetentionDays: number
+  controlRateLimit: number
   logLevel: LogLevel
   logAiPrompt: boolean
 }
@@ -281,6 +293,22 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     aiIntentEnabled: readBool(env, 'AI_INTENT_ENABLED', true),
     aiIntentTimeoutMs: readInt(env, 'AI_INTENT_TIMEOUT_MS', 5000, 1000, 30000),
     aiIntentMinConfidence: readNumber(env, 'AI_INTENT_MIN_CONFIDENCE', 0.7, 0, 1),
+    httpControlToken: (() => {
+      const token = readString(env, 'HTTP_CONTROL_TOKEN', '')
+      if (token !== '' && token.length < 16) throw new ConfigError('HTTP_CONTROL_TOKEN must be at least 16 characters')
+      return token
+    })(),
+    httpControlEnabled: readBool(env, 'HTTP_CONTROL_ENABLED', true),
+    httpOnlyHighRisk: readBool(env, 'HTTP_ONLY_HIGH_RISK', false),
+    sseMaxClients: readInt(env, 'SSE_MAX_CLIENTS', 8, 1, 64),
+    sseHeartbeatMs: readInt(env, 'SSE_HEARTBEAT_MS', 15000, 1000, 600000),
+    sseBufferEvents: readInt(env, 'SSE_BUFFER_EVENTS', 500, 10, 10000),
+    taskPendingTtlMs: readInt(env, 'TASK_PENDING_TTL_MS', 600000, 60000, 3600000),
+    taskStateFile: readString(env, 'TASK_STATE_FILE', `${dataDir}/task-state.json`),
+    auditFile: readString(env, 'AUDIT_FILE', `${dataDir}/audit.jsonl`),
+    auditMaxBytes: readInt(env, 'AUDIT_MAX_BYTES', 5242880, 65536, 1073741824),
+    auditRetentionDays: readInt(env, 'AUDIT_RETENTION_DAYS', 30, 1, 3650),
+    controlRateLimit: readInt(env, 'CONTROL_RATE_LIMIT', 30, 1, 1000),
     logLevel: readLogLevel(env),
     logAiPrompt: readBool(env, 'LOG_AI_PROMPT', false)
   })

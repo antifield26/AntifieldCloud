@@ -2,6 +2,9 @@ import { loadConfig } from './config.ts'
 import { createLogger } from './logger.ts'
 import { readPackageInfo } from './version.ts'
 import { RuntimeState } from './state.ts'
+import { AuditLogger } from './audit.ts'
+import { EventBus } from './events/bus.ts'
+import { StatePublisher } from './events/state-publisher.ts'
 import { MemoryStore } from './memory/store.ts'
 import { ChatSender } from './minecraft/chat.ts'
 import { MovementManager } from './minecraft/movement.ts'
@@ -14,6 +17,7 @@ import { ChatRouter } from './chat/router.ts'
 import { HttpApi } from './http/server.ts'
 import { PresenceManager } from './presence/manager.ts'
 import { TaskManager } from './tasks/manager.ts'
+import { TaskStore } from './tasks/store.ts'
 import { ProactiveManager } from './proactive.ts'
 
 async function main (): Promise<void> {
@@ -45,6 +49,23 @@ async function main (): Promise<void> {
   await memory.init()
   state.setMemory(memory.stats())
 
+  const events = new EventBus(config.sseBufferEvents)
+  const audit = new AuditLogger({
+    file: config.auditFile,
+    maxBytes: config.auditMaxBytes,
+    retentionDays: config.auditRetentionDays,
+    logger: logger.withScope('audit')
+  })
+  await audit.init()
+  audit.append({
+    event: 'service.start',
+    source: 'system',
+    actor: 'system',
+    action: 'start',
+    result: 'accepted',
+    details: { version: config.version }
+  })
+
   const movement = new MovementManager(logger.withScope('movement'), config)
   const client = new MinecraftClient({
     config,
@@ -56,7 +77,15 @@ async function main (): Promise<void> {
   const chatSender = new ChatSender(() => client.getBot(), logger.withScope('chat'), {
     maxLineChars: config.aiMaxLineChars,
     maxLines: config.aiMaxLines,
-    gapMs: 250
+    gapMs: 250,
+    onSay: event => {
+      events.emit('chat', {
+        direction: 'out',
+        source: event.source,
+        text: event.text,
+        lines: event.lines
+      })
+    }
   })
   movement.setNotify(message => {
     void chatSender.say(message, 'movement').catch(() => {})
@@ -68,8 +97,12 @@ async function main (): Promise<void> {
     state,
     chatSender,
     movement,
+    events,
+    audit,
+    store: new TaskStore(config.taskStateFile, logger.withScope('tasks.store')),
     getBot: () => client.getBot()
   })
+  await tasks.init()
 
   const commands = new CommandExecutor({
     config,
@@ -77,6 +110,7 @@ async function main (): Promise<void> {
     chatSender,
     movement,
     tasks,
+    audit,
     getBot: () => client.getBot()
   })
 
@@ -99,7 +133,9 @@ async function main (): Promise<void> {
     chatSender,
     commands,
     intent,
-    ai
+    ai,
+    events,
+    audit
   })
   client.setChatHandler(message => router.handle(message))
 
@@ -112,7 +148,12 @@ async function main (): Promise<void> {
     config,
     logger: logger.withScope('http'),
     state,
-    chatSender
+    chatSender,
+    movement,
+    tasks,
+    events,
+    audit,
+    getBot: () => client.getBot()
   })
   await http.start()
 
@@ -125,6 +166,8 @@ async function main (): Promise<void> {
   })
   tasks.setTaskEndedHandler(() => presence.notifyTaskEnded())
   presence.start()
+  const statePublisher = new StatePublisher({ state, events })
+  statePublisher.start()
 
   logger.info('lofii-bot started', {
     version: config.version,
@@ -134,7 +177,9 @@ async function main (): Promise<void> {
     forceOnline: config.forceOnline,
     aiEnabled: config.aiEnabled,
     model: `${config.aiModelProvider}/${config.aiModelId}`,
-    http: `${config.httpHost}:${config.httpPort}`
+    http: `${config.httpHost}:${config.httpPort}`,
+    controlEnabled: config.httpControlEnabled && config.httpControlToken !== '',
+    sseMaxClients: config.sseMaxClients
   })
 
   let shuttingDown = false
@@ -149,11 +194,13 @@ async function main (): Promise<void> {
     force.unref?.()
     try {
       ai.stop()
+      statePublisher.stop()
       await tasks.shutdown()
       proactive.detach()
       await presence.stop()
       await client.stop('shutdown')
       await http.stop()
+      await audit.close()
       await memory.stop()
     } catch (error) {
       logger.warn('shutdown error', { error: error instanceof Error ? error.message : String(error) })

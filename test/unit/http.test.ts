@@ -1,11 +1,30 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { HttpApi } from '../../src/http/server.ts'
+import type { AuditLogger } from '../../src/audit.ts'
+import { EventBus } from '../../src/events/bus.ts'
 import type { ChatSender } from '../../src/minecraft/chat.ts'
+import type { MovementManager } from '../../src/minecraft/movement.ts'
+import type { TaskController } from '../../src/tasks/types.ts'
+import type { Bot } from 'mineflayer'
 import { createLogger } from '../../src/logger.ts'
 import { makeConfig, makeState } from '../helpers.ts'
 
 const token = '0123456789abcdef0123456789abcdef'
+
+function fakeDeps (config: ReturnType<typeof makeConfig>, state: ReturnType<typeof makeState>, chatSender: ChatSender): ConstructorParameters<typeof HttpApi>[0] {
+  return {
+    config,
+    logger: createLogger('error'),
+    state,
+    chatSender,
+    movement: {} as MovementManager,
+    tasks: { snapshot: () => state.task } as unknown as TaskController,
+    events: new EventBus(20),
+    audit: { append: () => {} } as unknown as AuditLogger,
+    getBot: () => null as Bot | null
+  }
+}
 
 test('HTTP API enforces auth and /say rules', async () => {
   let connected = false
@@ -19,7 +38,7 @@ test('HTTP API enforces auth and /say rules', async () => {
   } as unknown as ChatSender
   const config = makeConfig({ httpPort: 0, httpHost: '127.0.0.1' })
   const state = makeState(config)
-  const api = new HttpApi({ config, logger: createLogger('error'), state, chatSender })
+  const api = new HttpApi(fakeDeps(config, state, chatSender))
   const port = await api.start()
   const base = `http://127.0.0.1:${port}`
   const headers = { Authorization: `Bearer ${token}` }

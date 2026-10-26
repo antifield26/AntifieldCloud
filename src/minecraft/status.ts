@@ -48,7 +48,9 @@ export function buildStatusLines (bot: Bot, movement: MovementManager, task?: Ta
   const playersText = players.length > 6 ? `${visible} 等${players.length}人` : visible
   const taskText = task?.active
     ? `任务: ${task.name === 'fishing' ? '钓鱼' : '种田'} ${task.state} · 鱼 ${task.progress.fishCaught} · 收 ${task.progress.wheatHarvested} · 种 ${task.progress.planted} · 存 ${task.progress.deposited}`
-    : '任务: 待机'
+    : task?.pendingResume
+      ? `任务: 等待恢复 ${task.pendingResume.name === 'fishing' ? '钓鱼' : '种田'} · 10 分钟内面板确认`
+      : '任务: 待机'
   return [
     `位置 (${posText}) · ${dimensionLabel(bot.game.dimension)} · 血量 ${health}/20 · 饥饿 ${food}/20`,
     `在线: ${playersText || '无'} · 时间 ${time} · ${movement.describe()}`,

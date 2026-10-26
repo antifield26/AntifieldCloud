@@ -64,13 +64,22 @@ export interface MemorySnapshot {
 }
 
 export type TaskName = 'fishing' | 'farming'
-export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping'
+export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping' | 'pending_resume'
 
 export interface TaskProgress {
   fishCaught: number
   wheatHarvested: number
   planted: number
   deposited: number
+}
+
+export interface PendingResume {
+  taskId: string
+  name: TaskName
+  startedAt: string
+  elapsedSec: number
+  progress: TaskProgress
+  expiresAt: string
 }
 
 export interface TaskSnapshot {
@@ -83,6 +92,7 @@ export interface TaskSnapshot {
   progress: TaskProgress
   failures: number
   lastError: string | null
+  pendingResume: PendingResume | null
 }
 
 export interface StatusSnapshot {
@@ -182,7 +192,8 @@ export class RuntimeState {
       elapsedSec: 0,
       progress: { fishCaught: 0, wheatHarvested: 0, planted: 0, deposited: 0 },
       failures: 0,
-      lastError: null
+      lastError: null,
+      pendingResume: null
     }
   }
 
@@ -240,7 +251,10 @@ export class RuntimeState {
     this.task = {
       ...this.task,
       ...patch,
-      progress: patch.progress ? { ...patch.progress } : this.task.progress
+      progress: patch.progress ? { ...patch.progress } : this.task.progress,
+      pendingResume: patch.pendingResume === undefined
+        ? this.task.pendingResume
+        : (patch.pendingResume ? { ...patch.pendingResume, progress: { ...patch.pendingResume.progress } } : null)
     }
   }
 
@@ -257,7 +271,10 @@ export class RuntimeState {
       memory: { ...this.memory },
       task: {
         ...this.task,
-        progress: { ...this.task.progress }
+        progress: { ...this.task.progress },
+        pendingResume: this.task.pendingResume
+          ? { ...this.task.pendingResume, progress: { ...this.task.pendingResume.progress } }
+          : null
       }
     }
   }

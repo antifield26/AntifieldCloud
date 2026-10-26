@@ -1,4 +1,5 @@
 import type { Bot } from 'mineflayer'
+import type { AuditLogger } from '../audit.ts'
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
 import type { TaskController } from '../tasks/types.ts'
@@ -63,8 +64,11 @@ export interface CommandDeps {
   chatSender: ChatSender
   movement: MovementManager
   tasks: TaskController
+  audit?: AuditLogger
   getBot: () => Bot | null
 }
+
+const HIGH_RISK_COMMANDS = new Set<CommandName>(['fish', 'farm', 'stopTask', 'home', 'deposit', 'come', 'follow', 'stop'])
 
 export class CommandExecutor {
   private readonly deps: CommandDeps
@@ -82,6 +86,27 @@ export class CommandExecutor {
     if (!this.isAuthorized(username)) {
       this.deps.logger.warn('unauthorized command blocked', { username, command: command.name })
       return
+    }
+    if (this.deps.config.httpOnlyHighRisk && HIGH_RISK_COMMANDS.has(command.name)) {
+      this.deps.audit?.append({
+        event: 'command.denied',
+        source: 'chat',
+        actor: username,
+        action: command.name,
+        result: 'denied',
+        details: { reason: 'http_only_high_risk' }
+      })
+      await this.safeSay('这个动作现在需要从面板操作哦。')
+      return
+    }
+    if (HIGH_RISK_COMMANDS.has(command.name)) {
+      this.deps.audit?.append({
+        event: 'command.accepted',
+        source: 'chat',
+        actor: username,
+        action: command.name,
+        result: 'accepted'
+      })
     }
     const bot = this.deps.getBot()
     if (!bot || !bot.entity) {

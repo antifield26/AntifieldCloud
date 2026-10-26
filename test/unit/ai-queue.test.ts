@@ -72,6 +72,7 @@ test('AI service replies, writes memory and respects cooldown', async () => {
     await waitFor(() => sent.length === 1, 2000)
     assert.equal(sent[0], '你好呀')
     await waitFor(() => memory.stats().turns === 2, 2000)
+    await waitFor(() => state.ai.lastLatencyMs === 5, 2000)
     assert.equal(state.ai.lastLatencyMs, 5)
     service.ask(playerName, '再说一句')
     await new Promise(resolve => setTimeout(resolve, 100))

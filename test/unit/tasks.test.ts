@@ -97,7 +97,8 @@ test('status lines include the active task progress', () => {
     elapsedSec: 12,
     progress: { fishCaught: 3, wheatHarvested: 0, planted: 0, deposited: 0 },
     failures: 0,
-    lastError: null
+    lastError: null,
+    pendingResume: null
   }
   const lines = buildStatusLines(bot, { describe: () => '待机' } as never, task)
   assert.equal(lines.length, 3)
