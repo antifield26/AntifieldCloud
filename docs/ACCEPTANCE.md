@@ -1,79 +1,92 @@
-# 验收记录（Lofii Bot MVP）
+# 验收记录（Lofii Bot v0.2.0）
 
 ## 1. 环境
 
 | 项目 | 值 |
 |---|---|
-| 验收日期 | 2026-10-22（Asia/Shanghai） |
+| 验收日期 | 2026-10-26（Asia/Shanghai） |
 | Pi | Raspberry Pi 5 8GB / Debian 13 trixie |
-| Minecraft | Paper 26.1.2 build 74，协议 775 |
-| Node | v26.12.1（Windows 与 Pi 相同） |
-| Lofii 版本 | 0.1.0 |
-| 部署 release | `/opt/lofii-bot/releases/20261022T121638Z` |
-| Bot 账号 | `lofii`（白名单，OP 4） |
-| max-players | 6 |
+| Minecraft | Paper 26.1.2，协议 775 |
+| Node | v26.12.1 |
+| Lofii 版本 | 0.2.0 |
+| 部署 release | `/opt/lofii-bot/releases/20261026T114957Z` |
+| 家/重生点 | `(175,64,410)`（`/spawnpoint`） |
+| 安全区 | `x175–239, z410–474` |
+| 农田 | `x177–183, z432–439`，6×8=48 格，中间 `x180` 水渠 |
+| 混放箱 | `(184,64,435)` |
+| 钓点 | 站 `(204.5,63,469.5)`，水 `(204.5,62.5,470.5)` |
 
 ## 2. 结果汇总
 
 | # | 检查 | 结果 | 证据/备注 |
 |---|---|---|---|
-| 1 | 本地 `npm run check` | ✅ 40/40 通过 | `tsc --noEmit` + `node --test`（40 tests, 0 fail） |
-| 2 | 服务与健康 | ✅ | `lofii-bot.service` active/enabled；`/healthz` 200，version 0.1.0 |
-| 3 | mineflayer 登录 | ✅ | `root` 日志：spawn，`version=26.1`，Paper 26.1.2；持续 11 分钟无 keepalive 踢出 |
-| 4 | 动态上线 | ✅ | SmokeTester 加入后 ≤15s 内 Lofii 上线；`/list` 2 人 |
-| 5 | 动态下线 | ✅ | 最后一名玩家离开 60s grace + 5s check + 10s cooldown 后 Lofii 退出；`/status` = `idle` |
-| 6 | 空服 pause | ⚠️ 配置确认 | `pause-when-empty-seconds=300`；验收时 0 人后观察约 5 分钟，`journalctl -u minecraft` 与 `latest.log` 未见 pause 关键字（Paper 可能不打印），Lofii 已 `idle` 且不阻止 pause |
-| 7 | 状态指令 | ✅ | `Lofii 状态` → 位置/维度/血量/饥饿/在线/时间 |
-| 8 | 挥手指令 | ✅ | `Lofii 挥手` → `嗨～` |
-| 9 | 移动指令（come/follow/stop） | ⚠️ 部分 | 指令解析、`好，我跟着你`/`好，我过来了`/`停下了`、错误处理均验证；测试地形为浮空/洞穴，实际路径查找多次 `NoPath`/`Timeout`，未能获得稳定到达距离。v0.2 加强 |
-| 10 | 未授权指令拒绝 | ✅ | `COMMAND_ALLOWLIST=Antifield` 时 SmokeTester 发 `Lofii 过来` → `抱歉，只有 Antifield 可以指挥我行动。`，无移动、无状态回复；AI 聊天仍可用 |
-| 11 | AI 真实回复 | ✅ | OpenCode `opencode-go/deepseek-v4.1-flash`；示例：“你好呀，我是 Lofii，服务器里陪你聊天的温柔 AI 助手。”；延迟约 2.1–2.5s |
-| 12 | 跨重启记忆 | ✅ | 记住“测试暗号是紫罗兰”；`systemctl restart lofii-bot` 后询问仍回答“紫罗兰” |
-| 13 | HTTP 鉴权/错误码 | ✅ | `/healthz` 200；`/status` 无 Token 401、有 Token 200；在线 `/say` 200；空闲 `/say` 409；`/` 开头 400；405/404/413/429 单测覆盖 |
-| 14 | 崩溃恢复 | ✅ | `systemctl kill -s SIGKILL lofii-bot` → systemd 5s 拉起，MainPID 变化；SmokeTester 仍在线时 Lofii 自动重连，`/list` 2 人 |
-| 15 | 服务器重启恢复 | ✅ | 重启 Paper 后 Lofii 进入 `idle`；玩家重新上线后自动重连；`lastDisconnect.reason = "Server closed"`（字符串） |
-| 16 | 11 分钟 soak | ✅ | 2 人在线 11 分钟：`reconnects` 未新增；RSS 131.3 MB / peak 137.1 MB；TPS 20.0/20.0/20.0 |
-| 17 | 发布回滚 | ✅ | 切到上一 release `20261022T115540Z` → 重启 → `/healthz` 200；切回 `20261022T121638Z` → 200 |
-| 18 | 运行用户/权限 | ✅ | 进程用户 `lofiibot`；env `0640 root:lofiibot`；memory 目录 `0700`，文件 `0600`；服务 `MemoryMax=512M` |
-| 19 | 白名单/OP 收尾 | ✅ | 最终白名单 6 人：`lofii, SFZ, Jay, Antifield, GAY, shoayu`；lofii OP 4；SmokeTester 已移除 |
-| 20 | AntifieldCloud 边界 | ✅ | 未修改 AntifieldCloud 仓库/`/opt/antifieldcloud`/服务；仅提供 `docs/API.md` |
+| 1 | 本地 `npm run check` | ✅ 51/51 | `tsc --noEmit` + 51 个 `node:test` |
+| 2 | 0.2.0 部署/健康 | ✅ | release `20261026T114957Z`；`/healthz` 200，version 0.2.0 |
+| 3 | 钓鱼 | ✅ | 实际钓到 9 条鱼并自动存箱；箱子含 cod 6、pufferfish 2、tropical_fish 1；task progress `fishCaught=9, deposited=9` |
+| 4 | 种田 | ✅ | 首次播种 48 格；`/setblock` 8 格成熟小麦；收割 8、补种 8；箱子含 wheat 8；任务 summary “收了 8 格小麦，补种 56 格”（累计） |
+| 5 | 自动存箱 | ✅ | 鱼/小麦进入 `(184,64,435)`；保留工具/种子/食物；手动 `存东西` 后 task 保持 idle |
+| 6 | AI 意图 | ✅ | `Lofii 帮我弄点鱼` → “好，我去钓鱼啦”；随后钓到 1 条并正常收工 |
+| 7 | 任务中 0 玩家保持在线 | ✅ | Paper 重启后 `otherPlayers=0`、`presence.lastDecision=connected: task active`；`/list` 仅 lofii；任务继续并钓到鱼 |
+| 8 | Paper 重启恢复 | ✅ | 任务 active 时重启 Paper；Lofii 重连（`reconnects=1`）并恢复钓鱼；`lastDisconnect.reason="Server closed"` |
+| 9 | 死亡恢复 | ✅ | 备好备用鱼竿/食物后，任务中 `/kill lofii`；自动回任务点并继续钓到 1 条；无备用工具时会在 3 次内停止并提示 |
+| 10 | 家/远距离移动 | ✅ | `Lofii 回家` → `(175.5,64,410.5)`；`Lofii 过来` → 传送到测试玩家附近 `(8.5,300,3.5)` |
+| 11 | 动态下线 | ✅ | 任务结束后无玩家，约 60–80 秒后 `state=idle`、`/list` 0 人 |
+| 12 | 主动行为 | ✅（单测） | 问候/夜晚文案、问候去重通过单测；现场测试期间 Antifield 离线，未触发加入问候 |
+| 13 | HTTP `/status.task` | ✅ | `active/name/state/progress/failures/lastError` 正常；v0.1 字段兼容 |
+| 14 | 权限边界 | ✅ | 测试用 `SmokeTester` 临时加入 allowlist/whitelist；验收后恢复 `COMMAND_ALLOWLIST=Antifield`、白名单 6 人 |
+| 15 | AntifieldCloud | ✅ | 未修改 AntifieldCloud 仓库/`/opt/antifieldcloud`/服务；只更新本仓库 `docs/API.md` |
+| 16 | 20 分钟任务 soak | ✅ | 0 玩家钓鱼 20 分 52 秒，49 条鱼，0 失败/0 重连；TPS 20.0；RSS 137.8 MB / peak 139.2 MB；见 §4 |
 
 ## 3. 关键证据
 
-### 3.1 健康/状态
+### 3.1 钓鱼/存箱
 
-```json
-{"status":"ok","version":"0.1.0","uptimeSec":9,"state":"idle","connected":false}
-```
+- 任务启动：`Lofii 去钓鱼` → `好，我去钓鱼啦。`
+- 钓鱼日志：`fishing: caught {"gained":1,"total":9}`。
+- 收工：`收工啦，钓了 9 条鱼，已经存好了。`
+- 箱子：cod 6、pufferfish 2、tropical_fish 1；`/status.task.progress = {fishCaught:9, deposited:9}`。
+- 第二轮 AI 意图测试：`Lofii 帮我弄点鱼` → 开始钓鱼；收工 `钓了 1 条鱼，已经存好了`。
 
-`/status`（空闲时）：`state=idle`、`server.reachable=true`、`server.online=0`、`max=6`、`presence.lastDecision=idle: no players`、`memory.players=0`。
+### 3.2 种田
 
-### 3.2 动态在线（经验）
+- 首次任务自动播种 48 格（农田实际 6×8=48；此前计划文案的 56 是笔误）。
+- 用 `/setblock 177/178/179 64 432-434 minecraft:wheat[age=7]` 放 8 格成熟小麦。
+- 任务日志：`farming: harvested` 8 次，`planted` 累计到 56（48 首播 + 8 补种）；箱子 `wheat 8`。
+- 观察到 1 格作物被临时踩空；已修复该格，并新增 `safeSpotNear` 作物避让，避免传送落点踩作物。后续钓鱼 soak 不涉及农田。
 
-- 玩家加入 → Lofii 15 秒内加入，`/status` 显示 `connected`、`presence.otherPlayers=1`。
-- 最后一名玩家退出 → 约 70–90 秒后 Lofii 退出并回到 `idle`；`/list` 0 人。
-- 服务器重启期间：`server.reachable=false`；重启完成后自动恢复探测。
+### 3.3 恢复
 
-### 3.3 AI 与记忆
+- 任务中 `/kill lofii` 后，Lofii 回到任务点继续；`/status.task` 为 `running`，`failures` 在成功后归零。
+- 第一次死亡测试因箱内没有备用鱼竿而停止（符合预期）；补入备用鱼竿/锄/种子/食物后重测成功。
+- Paper 重启时任务 active：Lofii 自动重连，状态 `connected: task active`，0 其他玩家仍在线并继续钓鱼。
 
-- 真实模型：`opencode-go/deepseek-v4.1-flash`，Basic Auth 校验通过。
-- 示例回复：“好的，我记住了，你的测试暗号是紫罗兰。”
-- 服务重启后：“你的测试暗号是紫罗兰呀。”
-- 记忆文件：`/var/lib/lofii-bot/memory/<uuid>.json`，`0600`，验收后已清空测试数据。
+### 3.4 主动行为（单测）
 
-### 3.4 崩溃/重启
+- Antifield 加入只问候一次（10 分钟冷却）。
+- 夜晚只发一次“天黑了，要睡觉吗？”；雷雨事件同理。
+- 现场测试期间 Antifield 离线，因此没有可观察的加入问候；逻辑由 `test/unit/proactive.test.ts` 覆盖。
 
-- `MainPID=44076` → SIGKILL → systemd 拉起 `MainPID=44221`；`/healthz` 200、`/list` 2 人。
-- Paper 重启：Lofii 断开 → `state=idle`、`lastDisconnect.reason="Server closed"`；玩家重新上线后 Lofii 自动重连。
+## 4. 20 分钟任务 soak
 
-## 4. 待观察/说明
+- 环境：Antifield 离线，0 其他玩家；Lofii 任务 active，服务器未 pause。
+- 时长：`elapsedSec=1252`（20 分 52 秒）。
+- 鱼获：`fishCaught=49`，`failures=0`，`reconnects=0`。
+- TPS：`20.0 / 20.0 / 20.0`（1m/5m/15m）。
+- 内存：`MemoryCurrent=137.8 MB`，`MemoryPeak=139.2 MB`。
+- 收工：`钓了 49 条鱼，已经存好了。`；`deposited=54`（含此前 5 个）。
+- 箱子（抽样）：cod 30、pufferfish 7、tropical_fish 1、wheat 8、lily_pad 2、leather_boots 1；工具/种子/食物保留。
+- 收工后无玩家：约 60–80 秒后 `state=idle`，`/list` 0 人，服务器可正常 pause。
+- 结论：20 分钟自动化 soak 通过。
 
-- 空服 5 分钟 pause：`pause-when-empty-seconds=300` 已配置；验收时 0 人后观察约 5 分钟，未在 `journalctl -u minecraft`/`latest.log` 看到 pause 关键字。Lofii 在空服时保持 `idle`，不会阻止 Paper pause。
-- 移动类指令的实际路径查找受测试地形（出生平台浮空/洞穴）影响；指令链路与失败话术已验证，v0.2 将加强跨地形/跨维度处理。
-- OpenCode 不可用降级已由单元测试覆盖（超时/5xx/空响应 → 固定降级文案）；未做生产环境断网演练。
-- 离线模式名称冒用风险仍存在（见 README「已知限制」）。
-- 最终运行态：release `20261022T121638Z`，MainPID 46072，idle RSS 约 54–106 MB，peak 137 MB（2 人在线 soak）；白名单 6 人；`/list` 0 人。
+## 5. 验收结论
 
-## 5. 结论
+**v0.2.0 通过**：钓鱼、种田、自动存箱、任务中保持在线、Paper 重启/死亡恢复、回家/远距离传送、AI 意图、20 分钟 0 玩家 soak 均已现场验证；51 个单元测试通过。
 
-**MVP 通过**（核心：登录/动态上下线/聊天/记忆/AI/HTTP/崩溃与服务器重启恢复/回滚）。移动路径成功率与 30–60 分钟长时间 soak 作为 v0.2 改进项；本次已做 11 分钟 2 人在线 soak，无新增重连、内存与 TPS 稳定。
+已知限制：
+
+- 任务状态只在进程内：Paper 重启可恢复，`systemctl restart lofii-bot` 会丢失。
+- 死亡会掉当前背包；箱内必须常备备用鱼竿/锄/种子/食物（本次已备）。
+- 农田实际 48 格；`setblock` 催熟仅用于验收。
+- 钓鱼掉落物可能落在浅水，拾取会走到岸边；深水/危险区域会放弃。
+- `spawn-monsters` 的 `server.properties` 仍显示 true，实际以 gamerule/世界行为为准；任务在夜间/附近有敌对生物时会暂停回家。
+- 主动问候/事件的现场触发需 Antifield 在线后观察；单测已覆盖。
