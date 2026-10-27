@@ -8,12 +8,12 @@
 - 方法：只读静态审查 + 进程内 PoC + 只读线上检查 + 回归测试；审计阶段未修改生产。
 - 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12，Bot WIP P1=2、P2=4 均已修复；第五轮（v0.5.11→v0.6.0）P0=0、P1=1、P2=14 均已在本版修复，P3=54 记录；残余见各节“延后/残留”。
 
-## v0.8.0 Lofii 对接（本地实现，生产待部署/验收；2026-10-27）
+## v0.8.0 Lofii 对接（本地实现与生产部署/只读验收完成，待 Tag/Release 收尾；2026-10-27）
 
 ### 1. 范围与方法
 
 - 范围：`server/src/lofii/client.ts`/`service.ts`、`server/src/http/routes/lofii.ts`、`alerts/service.ts recordExternal`、`config.ts` 的 `LOFII_*`、`app.ts`/`main.ts` 生命周期、`web/src/components/lofii/*`、`web/src/pages/Minecraft.tsx`、`web/src/lib/lofii.ts`、`AlertsCard` 事件状态、`scripts/sync-lofii-tokens.sh`、`bootstrap-env.sh`、`deploy/env.example`、`smoke.ps1` Lofii 检查与对应文档。
-- 方法：只读代码审查 + 单元/路由/服务测试（进程内夹具，不访问真实 lofii-bot/网络）+ 本地门禁（typecheck/eslint/测试/覆盖率/build/check-version）；未在审计阶段修改生产、未部署 v0.8.0。
+- 方法：只读代码审查 + 单元/路由/服务测试（进程内夹具，不访问真实 lofii-bot/网络）+ 本地门禁（typecheck/eslint/测试/覆盖率/build/check-version）；本审计为部署前自检，不含生产渗透；生产部署与只读/API 验收证据见 `docs/ACCEPTANCE.md` v0.8.0 节。
 - 计数：本轮为 v0.8.0 发布前自检，**P0=0 / P1=0 / P2=0**；未发现需要阻断发布的安全问题；以下为明确残余与验收边界，不是缺陷清单。
 
 ### 2. 关键安全/正确性结论
@@ -28,7 +28,7 @@
 
 - `npm run check` 通过；`npm test` **566**（565 pass、1 skip；91 文件）、`npm run test:web` **250**（47 文件）；服务端覆盖率 **93.06/78.67/88.70**、前端 **55.48/49.91/48.45**（门禁通过）；`npm run build` 通过（`index-DHjowEA5.js` 761.09 kB）。
 - 定向：`node --test server/test/lofii-client.test.ts server/test/lofii-service.test.ts server/test/lofii-routes.test.ts` 覆盖 Token 分离/重定向拒绝/超限/错误映射/游标/告警映射/限流/CSRF/参数校验；`web/src/pages/Minecraft.test.tsx`、`LofiiPanel.test.tsx`、`client.lofii.test.ts` 覆盖标签、降级、二次确认、纯文本渲染。
-- 证据边界：lofii-bot 为进程内假平台/夹具，未访问真实服务；真实生产 `/api/lofii/status`、smoke、drill 与只读/控制分支待 Lead 部署后回填 `docs/ACCEPTANCE.md`。
+- 证据边界：lofii-bot 为进程内假平台/夹具，未访问真实服务；生产 `/api/lofii/status`、smoke、控制分支已由 Lead 于 2026-10-27 实测回填（见 `docs/ACCEPTANCE.md`）；真实 Lofii 告警触发、生产 `/minecraft` UI 截图与完整公网 Access smoke 仍未做/未记录。
 
 ### 4. v0.8.0 明确残余/已知限制
 
@@ -37,7 +37,7 @@
 3. **轮询延迟与单实例**：状态/事件最多滞后一个 `LOFII_POLL_MS`（默认 5s），控制结果最终一致；单进程内存缓存、单 Lofii 上游，不支持多实例/多副本。
 4. **控制面是真实写操作**：启用控制 Token 后可启停任务/移动/游戏内发言（仍受 Lofii 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
 5. **依赖独立服务**：需先部署 lofii-bot v0.6.0+（仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
-6. **生产验收待执行**：生产当前仍为 v0.7.3；在部署 v0.8.0、smoke（含 `-ExpectedLofiiVersion 0.6.0` 或 `-SkipLofii`）、drill 与生产 `/api/lofii/status` 联调前，不声明上线/验收通过。
+6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`），API 探针与 patrol start/stop 已验证）；但真实 Lofii 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）、生产 `/minecraft` UI 视觉确认待用户浏览器复核、**Windows 每日备份任务安装标记仍为旧版本**（需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新，非失败）、**尚未 Tag/GitHub Release**。
 
 ## 第一轮（v0.2.0，2026-10-19）
 

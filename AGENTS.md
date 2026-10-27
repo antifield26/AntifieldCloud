@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.8.0（本地实现与本地门禁完成，生产部署/验收待执行；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、Lofii Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.8.0 新增 Lofii 对接：服务端轮询独立 Lofii Bot（仅 loopback `127.0.0.1:3010`，lofii-bot v0.6.0 契约 v1）的 `/status` 与 `/events/recent`，缓存快照与最近 100 条事件，读/控制 Token 分离（控制 Token 为空即只读），上游 `alert` 映射为告警事件 `status='event'`，`/minecraft` 合并为「服务器 / Lofii」双标签；默认关闭，回滚即 `LOFII_ENABLED=false`。当前生产仍为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；文档 mode `mcp:send:read:aad221f1`；读范围矩阵 7/7；drill `20261027T061319Z` 通过；真实 QQ 私聊首轮/后续与群聊首轮通过）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.8.0（生产部署与只读/API 验收已完成 2026-10-27；待 Tag/Release 收尾；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、Lofii Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.8.0 新增 Lofii 对接：服务端轮询独立 Lofii Bot（仅 loopback `127.0.0.1:3010`，lofii-bot v0.6.0 契约 v1）的 `/status` 与 `/events/recent`，缓存快照与最近 100 条事件，读/控制 Token 分离（控制 Token 为空即只读），上游 `alert` 映射为告警事件 `status='event'`，`/minecraft` 合并为「服务器 / Lofii」双标签；回滚即 `LOFII_ENABLED=false`。生产应用 **v0.8.0**（release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`）；lofii-bot v0.6.0 release `20261027T092737Z` 已部署，`LOFII_ENABLED=true`，`meta.lofii.event_cursor` 已建立），**尚未 Tag/GitHub Release（待收尾）**；生产 UI 视觉确认待用户浏览器复核；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（非失败）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.8.0 本地，2026-10-27 本地门禁）：`npm test` **566**（565 pass、1 skip，server=87 + scripts=4 共 91 文件）、`npm run test:web` **250**（47 文件）、服务端覆盖率 Lines 93.06% / Branches 78.67% / Functions 88.70%、前端覆盖率 Lines 55.48% / Branches 49.91% / Functions 48.45%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；读范围矩阵 7/7；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记已刷新到 0.7.3）；**v0.8.0 生产部署/验收待执行，完成前不得声明已上线/已验收**。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
+当前基线（v0.8.0，2026-10-27）：`npm test` **566**（565 pass、1 skip，server=87 + scripts=4 共 91 文件）、`npm run test:web` **250**（47 文件）、服务端覆盖率 Lines 93.06% / Branches 78.67% / Functions 88.70%、前端覆盖率 Lines 55.48% / Branches 49.91% / Functions 48.45%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用已部署 **v0.8.0**（release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，2 SKIP=加密/异地默认关闭）；lofii-bot v0.6.0 release `20261027T092737Z` 已部署且仅 loopback，`LOFII_ENABLED=true`、读/控制 Token 匹配，`meta.lofii.event_cursor` 已建立；生产 API 探针 status/version/history、CSRF 403、patrol start/stop 与审计已验证）。**尚未 Tag/GitHub Release（待收尾）**；生产 UI 视觉确认待用户浏览器复核；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（非失败）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -194,7 +194,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 1. Cloudflare 后台添加 `app`/`ai` CNAME（已由用户完成）。
 2. 交互式运行 provisioning，设置密码、扫描 TOTP、保存恢复码。
-3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。
+3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。**v0.8.0 现状（待用户执行，非失败）**：任务安装标记仍为旧版本，完整 Access smoke 以 `-SkipLocalTaskCheck` 跳过该项；需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0 后再复跑（smoke 不计 FAIL）。
 4. 离线保存 age 私钥（密钥包与备份整包加密各一套，互不复用）；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
 5. Windows 周度世界拉取任务（`scripts/world-pull.ps1`）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证；恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本按用户决定保持关闭。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在允许网段内（模板为 TEST-NET 占位，先替换为实际网段，否则会锁死）；保留物理键鼠/已建立 SSH 作为回滚通道。
@@ -205,4 +205,4 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 11. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/BACKUP.md` §7 与 `docs/ACCEPTANCE.md`。
 12. SSH 仅公钥的回滚窗口当前已关闭：旧备份归档到 `/var/backups/antifieldcloud/`（0600 root），活动配置未改；后续如再次变更仍按 `docs/DEPLOY.md` §9.7 保留 24h 回滚窗口。
 13. v0.7.3 Bot 文档模式启用（默认关闭，生产已于 2026-10-27 启用）：读范围矩阵 7/7 通过（作用域内正向；作用域外/env/DB/其他作用域/shell/注入全部拒绝），真实 QQ 私聊首轮/后续与群聊首轮通过；生产 `BOT_AI_CONTEXT_READ_ENABLED=true`。回滚设 `false` 重启，无需恢复 schema/DB。
-14. Lofii 对接启用（v0.8.0，待 Lead 部署后执行，Agent 不代替）：部署/升级 lofii-bot **v0.6.0+**（仅 loopback）→ root 执行 `scripts/sync-lofii-tokens.sh`（先 `--check`）→ 设 `LOFII_ENABLED=true` 并重启 → 验证 `/api/lofii/status` 与 `smoke.ps1 -ExpectedLofiiVersion 0.6.0`；回滚设 `false` 重启。v0.8.0 生产部署/验收完成前不得声明已上线。
+14. Lofii 对接启用（v0.8.0，**已由 Lead 于 2026-10-27 执行**，后续沿用）：lofii-bot **v0.6.0** 已部署（release `/opt/lofii-bot/releases/20261027T092737Z`，仅 loopback）→ root 执行 `scripts/sync-lofii-tokens.sh`（同步前后 `--check` 从 mismatch 到 match）→ `LOFII_ENABLED=true` 并重启 → 生产 `/api/lofii/status`、`/api/version`、history、CSRF 403、patrol start/stop 与审计已验证，`meta.lofii.event_cursor` 已建立。回滚设 `false` 重启；**尚未 Tag/GitHub Release，待收尾**；生产 UI 视觉确认待用户浏览器复核，真实 Lofii 告警联动未触发（单元/集成覆盖）。

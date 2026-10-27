@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.8.0] - 2026-10-27（本地实现完成，生产部署/验收待执行；生产当前仍为 v0.7.3；schema 保持 v17）
+## [v0.8.0] - 2026-10-27（生产部署与只读/API 验收已完成（2026-10-27）；待 Tag/Release 收尾；schema 保持 v17）
 
 ### Added
 
@@ -28,13 +28,16 @@
 
 ### Deploy
 
-- 发布前置：lofii-bot **v0.6.0+** 已作为独立服务仅监听 `127.0.0.1:3010`（契约 `contractVersion=1`）；root 执行 `scripts/sync-lofii-tokens.sh`（先从 `/etc/lofii-bot/env` 同步到应用 env，`--check` 只比较），再设 `LOFII_ENABLED=true` 并重启应用；默认保持 false，不需要 Lofii 时无定时器/网络请求。
-- 部署/验证：`deploy.ps1` 流程不变（schema v17 无迁移，迁移前 DB 快照仍生成）；smoke 新增 `-ExpectedLofiiVersion 0.6.0`（校验 `systemctl is-active lofii-bot`、`/healthz.version`、`contractVersion=1`），未启用 Lofii 用 `-SkipLofii` 且跳过项不计 PASS；`/api/version` 增 `lofiiEnabled/lofiiControlEnabled`。
-- 回滚：`LOFII_ENABLED=false`（可选清空 Token）+ 重启即回到 v0.7.3 行为，`meta.lofii.event_cursor` 可保留/删除，无 schema/DB 回滚；只读模式只需清空 `LOFII_CONTROL_TOKEN`。生产部署/验收证据回填 `docs/ACCEPTANCE.md` 后再发布 Tag。
+- 发布前置：lofii-bot **v0.6.0** 已部署（release `/opt/lofii-bot/releases/20261027T092737Z`，`/healthz` `version=0.6.0`/`contractVersion=1`），仅监听 `127.0.0.1:3010`；root 执行 `scripts/sync-lofii-tokens.sh`（同步前 mismatch/mismatch，同步后 match/match；脚本不回显 Token、自动备份 env），再设 `LOFII_ENABLED=true` 并重启应用。
+- 应用部署（2026-10-27 CST）：release `/opt/antifieldcloud/releases/20261027T094412Z`，commit `9ae5809`；`/healthz` = `{"ok":true,"version":"0.8.0","schemaVersion":17,"db":"ok","pendingBackups":0}`；迁移前 DB 快照 `db-predeploy-20261027T094446781Z.sqlite`（sha256 `7606f2e33ac9582a22b65b9f17871761602993476954d9e688be391b047ef65f`）；env 备份 `env.bak.lofii.20261027T094610Z`、`env.lofii-tokens.bak.20261027T094617Z`；部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=备份整包加密/异地副本默认关闭）。
+- 完整公网 Access smoke（2026-10-27，`smoke.ps1 ... -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；域名/主机/备份目录按实际替换）：**35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭），含 Lofii Bot active/version 0.6.0/contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。`-SkipLocalTaskCheck` 原因：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤/残余，**不是失败**；不声称任务已刷新）。
+- 运行验证：`meta.lofii.event_cursor` 已建立 `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`（轮询成功）；生产 API 探针 `/api/lofii/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2；无 CSRF 的 POST `403 csrf_failed`；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文；临时验收会话已删除（`user_agent='v080-acceptance'` 计数 0）。
+- 回滚：`LOFII_ENABLED=false`（可选清空 Token）+ 重启即回到 v0.7.3 行为，`meta.lofii.event_cursor` 可保留/删除，无 schema/DB 回滚；只读模式只需清空 `LOFII_CONTROL_TOKEN`。
+- 发布状态：**尚未 Tag/GitHub Release**（待收尾）；生产 `/minecraft` 的 UI 视觉确认待用户浏览器复核；未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，告警映射/webhook/Bot 由单元/集成测试覆盖，`alert_events` 暂无 `lofii_*`）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败；smoke 用 `-SkipLocalTaskCheck`）。
 
 ### Pending
 
-- **生产部署与验收待执行**：生产当前仍为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`）；v0.8.0 需 Lead 部署后补 `/healthz`、`smoke.ps1 -ExpectedLofiiVersion 0.6.0`（或 `-SkipLofii`）、drill 与生产 `/api/lofii/status` 验证；完成前不声明已部署/已验收。本版不新增 Tag/GitHub Release（待部署与验收通过后由 Lead 决定）。
+- **发布收尾**：尚未创建 Tag `v0.8.0`/GitHub Release（由 Lead 处理后完成）；生产 UI 视觉确认待用户浏览器复核；真实 Lofii 告警联动待触发/联调；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤/残余，非失败）；完整 Access smoke 已完成 35/0/0/2（`-SkipLocalTaskCheck`），无需复跑；drill 未记录（如需由 Lead 补跑后回填 `docs/ACCEPTANCE.md`）。
 
 ## [v0.7.3] - 2026-10-27（已发布：Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围/QQ 正向验收；schema 保持 v17）
 

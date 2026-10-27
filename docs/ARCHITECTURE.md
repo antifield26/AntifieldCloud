@@ -310,4 +310,4 @@ SQLite（WAL）核心表（schema v17）：
 10. **Lofii 事件告警语义（v0.8.0）**：外部 `alert` 仅以 `status='event'` 记录，不进入 firing/resolved 状态机，无恢复通知/冷却/去重（由上游负责）；告警只在轮询时发现，最多滞后一个 `LOFII_POLL_MS` 周期。
 11. **Lofii 聊天/事件不持久化（v0.8.0）**：事件与聊天只存在服务端内存（≤100 条），应用/Lofii 重启即丢失；不提供历史查询、导出或搜索。
 12. **Lofii 单实例与轮询延迟（v0.8.0）**：单进程内存缓存、单 Lofii 上游；控制结果最终一致，状态/事件最多滞后一个轮询周期；Lofii 不可达时仅展示缓存并降级。
-13. **v0.8.0 生产验收待执行**：本地实现与门禁完成，生产仍为 v0.7.3；在 Lead 完成部署、smoke（`-ExpectedLofiiVersion 0.6.0` 或 `-SkipLofii`）、drill 与生产 `/api/lofii/status` 联调前，不声明已上线/已验收。
+13. **v0.8.0 生产验收边界**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`），Lofii token 匹配、`meta.lofii.event_cursor` 已建立、patrol start/stop 已验证）；但真实 Lofii 告警联动未触发（单元/集成覆盖）、生产 UI 视觉确认待用户浏览器复核、**Windows 每日备份任务安装标记仍为旧版本**（需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新，非失败）、**尚未 Tag/GitHub Release**。
