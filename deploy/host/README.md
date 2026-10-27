@@ -20,7 +20,7 @@
 | `journald.conf.d/60-workbench-persistent.conf` | `/etc/systemd/journald.conf.d/` | 日志持久化与容量上限 |
 | `log2ram.conf` | `/etc/log2ram.conf` | log2ram 容量（已安装 log2ram 时） |
 
-安装顺序（详见 `docs/DEPLOY.md`）：
+安装顺序（详见 `docs/app/DEPLOY.md`）：
 
 1. 备份现有文件（`cp -a` 到 `/root/host-config-backup-<UTC>/`）；
 2. 复制模板并替换占位值（`sed`/编辑器）；

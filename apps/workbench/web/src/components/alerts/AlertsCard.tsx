@@ -85,7 +85,7 @@ const STATUS_LABELS: Record<string, string> = {
   event: '已记录',
 }
 
-/** 服务端支持的状态筛选值（docs/API.md §12）。 */
+/** 服务端支持的状态筛选值（docs/app/API.md §12）。 */
 const STATUS_FILTERS = [
   { value: '', label: '全部状态' },
   { value: 'firing', label: '触发中' },

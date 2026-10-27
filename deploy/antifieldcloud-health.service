@@ -1,6 +1,6 @@
 [Unit]
 Description=AntifieldComplexx host health probe (throttled/temp/fan)
-Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
+Documentation=file:///opt/antifieldcloud/current/docs/app/DEPLOY.md
 After=multi-user.target
 
 [Service]

@@ -28,7 +28,7 @@ export const MAX_BOOKMARK_URL_LENGTH = 2048
 export const MAX_DESCRIPTION_LENGTH = 2000
 export const DEFAULT_PAGE_SIZE = 20
 export const MAX_PAGE_SIZE = 100
-/** 单次笔记附件上传的文件数上限（与 docs/API.md §13 一致）。 */
+/** 单次笔记附件上传的文件数上限（与 docs/app/API.md §13 一致）。 */
 export const MAX_ATTACHMENTS_PER_REQUEST = 5
 /** 版本列表分页上限。 */
 export const MAX_VERSION_PAGE_SIZE = 100

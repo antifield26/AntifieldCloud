@@ -1,4 +1,4 @@
-# 部署与运维（Lofii Bot）
+# 部署与运维（mcbot）
 
 > 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。
 > 服务器：Paper 26.1.2，`~/minecraft-server`，RCON 已启用。
@@ -13,7 +13,7 @@
 ## 1. 首次部署
 
 ```powershell
-cd C:\Users\25371\projects\lofii-bot
+cd C:\Users\25371\projects\mcbot
 npm install
 npm run check
 
@@ -25,13 +25,13 @@ npm run check
 
 1. 本地 `npm run check`（可 `-SkipChecks`）。
 2. 打包（排除 `node_modules`、`.git`、`data*`）→ SSH/SCP 到 `/tmp` → 校验 SHA-256。
-3. 远端解包到 `/opt/lofii-bot/releases/<UTC>` → `npm ci --omit=dev --ignore-scripts`。
+3. 远端解包到 `/opt/mcbot/releases/<UTC>` → `npm ci --omit=dev --ignore-scripts`。
 4. 首次 `deploy/provision.sh`：
-   - 创建系统用户 `lofiibot`、`/var/lib/lofii-bot`、`/etc/lofii-bot`；
-   - `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读密码、生成 64 位 `HTTP_TOKEN` 与独立的 `HTTP_CONTROL_TOKEN`，写 `/etc/lofii-bot/env`（root:lofiibot 0640）；
-   - 安装并 enable `lofii-bot.service`；
+   - 创建系统用户 `lofiibot`、`/var/lib/mcbot`、`/etc/mcbot`；
+   - `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读密码、生成 64 位 `HTTP_TOKEN` 与独立的 `HTTP_CONTROL_TOKEN`，写 `/etc/mcbot/env`（root:lofiibot 0640）；
+   - 安装并 enable `mcbot.service`；
    - `--server-config`：备份 `server.properties`/`whitelist.json`/`ops.json`，`max-players=6`，重启 Paper，RCON `whitelist add lofii` + `op lofii`。
-5. 原子切换 `/opt/lofii-bot/current`，重启服务，轮询 `/healthz` 校验版本；失败回滚上一 release。
+5. 原子切换 `/opt/mcbot/current`，重启服务，轮询 `/healthz` 校验版本；失败回滚上一 release。
 
 ## 2. 后续部署/回滚
 
@@ -39,12 +39,12 @@ npm run check
 .\scripts\deploy.ps1
 ```
 
-- 部署失败会自动切回上一 release 并重启，输出 `journalctl -u lofii-bot -n 80`。
+- 部署失败会自动切回上一 release 并重启，输出 `journalctl -u mcbot -n 80`。
 - 手工回滚：
 
 ```bash
-sudo ln -sfn /opt/lofii-bot/releases/<上一个UTC> /opt/lofii-bot/current
-sudo systemctl restart lofii-bot
+sudo ln -sfn /opt/mcbot/releases/<上一个UTC> /opt/mcbot/current
+sudo systemctl restart mcbot
 curl -fsS http://127.0.0.1:3010/healthz
 ```
 
@@ -75,15 +75,15 @@ curl -fsS http://127.0.0.1:3010/healthz
 ## 4. 目录与权限
 
 ```text
-/opt/lofii-bot/releases/<UTC>/    # 每次部署一个 release（root:root 只读）
-/opt/lofii-bot/current -> ...     # 原子切换
-/etc/lofii-bot/env                # root:lofiibot 0640（含读/控制 Token、OpenCode 密码）
-/var/lib/lofii-bot/               # lofiibot:lofiibot 0700
-/var/lib/lofii-bot/memory/        # 0600，按玩家 UUID
-/var/lib/lofii-bot/task-state.json # 0600，v2 active+queue+pending
-/var/lib/lofii-bot/audit.jsonl     # 0600，审计元数据，5 MB 轮转
-/var/lib/lofii-bot/history.db      # 0600，SQLite 60s 采样/告警，30 天
-/etc/systemd/system/lofii-bot.service
+/opt/mcbot/releases/<UTC>/    # 每次部署一个 release（root:root 只读）
+/opt/mcbot/current -> ...     # 原子切换
+/etc/mcbot/env                # root:lofiibot 0640（含读/控制 Token、OpenCode 密码）
+/var/lib/mcbot/               # lofiibot:lofiibot 0700
+/var/lib/mcbot/memory/        # 0600，按玩家 UUID
+/var/lib/mcbot/task-state.json # 0600，v2 active+queue+pending
+/var/lib/mcbot/audit.jsonl     # 0600，审计元数据，5 MB 轮转
+/var/lib/mcbot/history.db      # 0600，SQLite 60s 采样/告警，30 天
+/etc/systemd/system/mcbot.service
 ```
 
 - 服务用户：`lofiibot`（nologin，非 root）。
@@ -95,32 +95,32 @@ curl -fsS http://127.0.0.1:3010/healthz
 见 `deploy/env.example`。生产修改后：
 
 ```bash
-sudo nano /etc/lofii-bot/env
-sudo systemctl restart lofii-bot
+sudo nano /etc/mcbot/env
+sudo systemctl restart mcbot
 ```
 
 安全注意：
 
-- `HTTP_TOKEN` 轮换：`sudo bash /opt/lofii-bot/current/deploy/bootstrap-env.sh --rotate-token`，然后把新读 Token 同步给 AntifieldCloud。
-- `HTTP_CONTROL_TOKEN` 轮换：`sudo bash /opt/lofii-bot/current/deploy/bootstrap-env.sh --rotate-control-token`；只同步给面板后端，不下发浏览器。
+- `HTTP_TOKEN` 轮换：`sudo bash /opt/mcbot/current/deploy/bootstrap-env.sh --rotate-token`，然后把新读 Token 同步给 AntifieldCloud。
+- `HTTP_CONTROL_TOKEN` 轮换：`sudo bash /opt/mcbot/current/deploy/bootstrap-env.sh --rotate-control-token`；只同步给面板后端，不下发浏览器。
 - 控制 Token 未配置或为空时，`/task/*` 与 `/move` 返回 503 `control_disabled`，读接口仍可用。
 - `OPENCODE_PASSWORD` 由 `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读取；重跑默认保留旧值。
 - v0.3 新增变量：`HTTP_CONTROL_ENABLED`、`HTTP_ONLY_HIGH_RISK`、`SSE_MAX_CLIENTS`、`SSE_HEARTBEAT_MS`、`SSE_BUFFER_EVENTS`、`CONTROL_RATE_LIMIT`、`TASK_PENDING_TTL_MS`、`TASK_STATE_FILE`、`AUDIT_FILE`、`AUDIT_MAX_BYTES`、`AUDIT_RETENTION_DAYS`。
 - v0.4 新增变量：`QUEUE_MAX`、`TREE_FARM_MIN_X/MAX_X/MIN_Z/MAX_Z`、`TREE_FARM_GROUND_Y=63`、`TREE_FARM_LOG_MIN_Y=64`、`TREE_FARM_MAX_Y`、`TREE_LOG_TYPE`、`TREE_SAPLING_TYPE`、`TREE_MAX_LOGS`、`TREE_DEPOSIT_EVERY_MS`、`DEFENSE_ENABLED/RADIUS/HEALTH_THRESHOLD/FOOD_THRESHOLD/MAX_HOSTILES/TARGETS`、`CHUNK_WAIT_MS`、`MEMORY_SUMMARY_ENABLED/TURNS/MAX_CHARS`。
 - v0.5 新增变量：`SAFE_MIN_X=111`、`SAFE_MAX_X=239`、`SAFE_MIN_Z=410`、`SAFE_MAX_Z=474`、`TASK_MAX_MINUTES=60`、`RCON_ENABLED/HOST/PORT/PASSWORD/TIMEOUT_MS`、`ADMIN_POLL_MS`、`HISTORY_ENABLED/DB/SAMPLE_MS/RETENTION_DAYS`、`ALERTS_ENABLED/COOLDOWN_MS/HEALTH_THRESHOLD`、`MINE_MIN_Y/MAX_Y/MAX_ORES/MAX_MINUTES/PROTECT_RADIUS/ORES`、`FOREST_SPECIES/PROTECT_RADIUS/MAX_LOGS/DEPOSIT_EVERY_MS`、`BED_SEARCH_RADIUS`、`SLEEP_VOTE_WAIT_MS`、`PATROL_MAX_MINUTES`。
-- RCON 只有一个密码，所谓“只读”是 Bot 端命令白名单；生产 `/etc/lofii-bot/env` 需要 `RCON_PASSWORD`（从 `server.properties` 读取，不打印）。
+- RCON 只有一个密码，所谓“只读”是 Bot 端命令白名单；生产 `/etc/mcbot/env` 需要 `RCON_PASSWORD`（从 `server.properties` 读取，不打印）。
 - 树场实际布局：地面块 y=63，原木从 y=64 起；`TREE_FARM_GROUND_Y=63`、`TREE_FARM_LOG_MIN_Y=64`。
-- 不要把 `/etc/lofii-bot/env` 放进仓库或日志。
+- 不要把 `/etc/mcbot/env` 放进仓库或日志。
 
 ## 6. 日常运维
 
 ```bash
-sudo systemctl status lofii-bot
-sudo systemctl restart lofii-bot
-sudo journalctl -u lofii-bot -f
+sudo systemctl status mcbot
+sudo systemctl restart mcbot
+sudo journalctl -u mcbot -f
 curl -fsS http://127.0.0.1:3010/healthz
-TOKEN="$(sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
-CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
+TOKEN="$(sudo grep '^HTTP_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
+CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 curl -fsS http://127.0.0.1:3010/status -H "Authorization: Bearer $TOKEN"
 curl -fsS http://127.0.0.1:3010/task -H "Authorization: Bearer $TOKEN"
 # SSE（15 秒后自动断开；面板后端用同样 header）
@@ -147,7 +147,7 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 - 历史/告警：`GET /history?kind=samples|alerts`（读 Token）；SQLite 60s/30 天；SSE `alert` 覆盖低血量/任务失败/断线/箱子满/防御撤退，5 分钟冷却。
 - systemd 重启：任务会写盘并在启动后进入 `pending_resume`；10 分钟内 `POST /task/resume` 继续，否则标记 `interrupted`。pending 期间 Lofii 按动态在线策略（通常离线）。
 - SSE：最多 8 个客户端；断线用 `Last-Event-ID` 重连；进程重启后 ring 清空，面板重新拉 `/status`/`/task`。
-- 审计：`/var/lib/lofii-bot/audit.jsonl` 只记元数据；轮转 `audit.1.jsonl`…`audit.5.jsonl`，保留 30 天；无查询接口。
+- 审计：`/var/lib/mcbot/audit.jsonl` 只记元数据；轮转 `audit.1.jsonl`…`audit.5.jsonl`，保留 30 天；无查询接口。
 - 需要临时常驻：`FORCE_ONLINE=true` 后重启；验证完记得改回。
 - 服务器重启：Bot 不退出；任务 active 时会重连并恢复；无任务时等玩家上线后重连。
 - Bot 崩溃：systemd 5 秒后拉起；若反复崩溃看 journal 与 `/status.ai.lastError`。
@@ -156,7 +156,7 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 
 | 现象 | 检查 |
 |---|---|
-| 服务起不来 | `journalctl -u lofii-bot -n 100`；`/etc/lofii-bot/env` 是否 0640 且包含 `HTTP_TOKEN`/`OPENCODE_PASSWORD` |
+| 服务起不来 | `journalctl -u mcbot -n 100`；`/etc/mcbot/env` 是否 0640 且包含 `HTTP_TOKEN`/`OPENCODE_PASSWORD` |
 | 登录被拒 | `whitelist list` 是否含 `lofii`；`ops.json`；`/status.minecraft.lastDisconnect` |
 | 连接节流 | Paper 的 *Connection throttled* 属正常；退避会自动重试，避免短时间反复重启 |
 | AI 不回复 | `curl -u opencode:<pw> http://127.0.0.1:4096/api/info`；`/status.ai.lastError`；OpenCode 服务状态 |
@@ -180,24 +180,24 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 | SSE 401/断流 | 是否用读 Token；是否超过 `SSE_MAX_CLIENTS`；反向代理是否关闭 buffering |
 | SSE 重连丢事件 | `Last-Event-ID` 是否属于当前 bootId；`resync:true` 时重新拉 `/status`/`/task` |
 | 移动 409 | 任务是否 active（先 `/task/stop`）；目标玩家是否在线；Bot 是否连接 |
-| 审计为空/过大 | 检查 `/var/lib/lofii-bot/audit.jsonl` 权限；轮转大小/保留天数 |
+| 审计为空/过大 | 检查 `/var/lib/mcbot/audit.jsonl` 权限；轮转大小/保留天数 |
 | 端口占用 | `ss -tlnp | grep 3010`；改 `HTTP_PORT` 并同步对接方 |
 
 ## 8. 卸载
 
 ```bash
-sudo systemctl disable --now lofii-bot
-sudo rm -f /etc/systemd/system/lofii-bot.service
+sudo systemctl disable --now mcbot
+sudo rm -f /etc/systemd/system/mcbot.service
 sudo systemctl daemon-reload
 # 按需删除（会丢失记忆）：
-sudo rm -rf /opt/lofii-bot /etc/lofii-bot /var/lib/lofii-bot
+sudo rm -rf /opt/mcbot /etc/mcbot /var/lib/mcbot
 # Minecraft：RCON 撤销
-node /opt/lofii-bot/scripts/rcon.mjs "deop lofii" "whitelist remove lofii" 2>/dev/null || true
+node /opt/mcbot/scripts/rcon.mjs "deop lofii" "whitelist remove lofii" 2>/dev/null || true
 ```
 
 ## 9. 与 AntifieldCloud 的边界
 
-- 本仓库不修改 AntifieldCloud；只提供 `docs/API.md` 契约。
+- 本仓库不修改 AntifieldCloud；只提供 `docs/mcbot/API.md` 契约。
 - Token 注入、面板展示、调用逻辑由用户自行接入；面板后端消费 SSE，使用读 Token header。
 - 控制 Token 只放面板后端 env，不下发浏览器。
 - **HTTP-only 不是强制边界**：默认保留游戏内 `Antifield` 与 AI 意图直接触发，同名冒用风险仍在；严格模式设 `HTTP_ONLY_HIGH_RISK=true`。

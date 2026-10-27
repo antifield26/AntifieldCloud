@@ -1,4 +1,4 @@
-# 验收记录（Lofii Bot v0.2.0 / v0.3.0 / v0.4.0 / v0.5.0 / v0.6.0 本地）
+# 验收记录（mcbot v0.2.0 / v0.3.0 / v0.4.0 / v0.5.0 / v0.6.0 本地）
 
 ## 1. 环境
 
@@ -9,7 +9,7 @@
 | Minecraft | Paper 26.1.2，协议 775 |
 | Node | v26.12.1 |
 | Lofii 版本 | 0.2.0 |
-| 部署 release | `/opt/lofii-bot/releases/20261026T121621Z`（soak 在 `20261026T114957Z` 完成，之后仅新增敌对生物保护） |
+| 部署 release | `/opt/mcbot/releases/20261026T121621Z`（soak 在 `20261026T114957Z` 完成，之后仅新增敌对生物保护） |
 | 家/重生点 | `(175,64,410)`（`/spawnpoint`） |
 | 安全区 | `x175–239, z410–474` |
 | 农田 | `x177–183, z432–439`，6×8=48 格，中间 `x180` 水渠 |
@@ -34,7 +34,7 @@
 | 12 | 主动行为 | ✅（单测） | 问候/夜晚文案、问候去重通过单测；现场测试期间 Antifield 离线，未触发加入问候 |
 | 13 | HTTP `/status.task` | ✅ | `active/name/state/progress/failures/lastError` 正常；v0.1 字段兼容 |
 | 14 | 权限边界 | ✅ | 测试用 `SmokeTester` 临时加入 allowlist/whitelist；验收后恢复 `COMMAND_ALLOWLIST=Antifield`、白名单 6 人 |
-| 15 | AntifieldCloud | ✅ | 未修改 AntifieldCloud 仓库/`/opt/antifieldcloud`/服务；只更新本仓库 `docs/API.md` |
+| 15 | AntifieldCloud | ✅ | 未修改 AntifieldCloud 仓库/`/opt/antifieldcloud`/服务；只更新本仓库 `docs/mcbot/API.md` |
 | 16 | 20 分钟任务 soak | ✅ | 0 玩家钓鱼 20 分 52 秒，49 条鱼，0 失败/0 重连；TPS 20.0；RSS 137.8 MB / peak 139.2 MB；见 §4 |
 
 ## 3. 关键证据
@@ -85,7 +85,7 @@
 
 已知限制：
 
-- 任务状态只在进程内：Paper 重启可恢复，`systemctl restart lofii-bot` 会丢失。
+- 任务状态只在进程内：Paper 重启可恢复，`systemctl restart mcbot` 会丢失。
 - 死亡会掉当前背包；箱内必须常备备用鱼竿/锄/种子/食物（本次已备）。
 - 农田实际 48 格；`setblock` 催熟仅用于验收。
 - 钓鱼掉落物可能落在浅水，拾取会走到岸边；深水/危险区域会放弃。
@@ -100,8 +100,8 @@
 |---|---|
 | 验收日期 | 2026-10-26（Asia/Shanghai） |
 | Lofii 版本 | 0.3.0 |
-| 部署 release | `/opt/lofii-bot/releases/20261026T135428Z`（最终 docs）；代码/soak release `20261026T132859Z` |
-| 读/控制 Token | 分离；`/etc/lofii-bot/env` 0640 root:lofiibot |
+| 部署 release | `/opt/mcbot/releases/20261026T135428Z`（最终 docs）；代码/soak release `20261026T132859Z` |
+| 读/控制 Token | 分离；`/etc/mcbot/env` 0640 root:lofiibot |
 | 控制 Token | 独立 64 hex；验收期间不轮换生产 Token |
 | 旧版本对照 | v0.2.0 release `20261026T121621Z` |
 
@@ -117,7 +117,7 @@
 | 6 | HTTP 移动 | ✅ | 任务 active 时 `/move` → 409 `task_active`；停止后 `/move home` → 202，位置 `(175.5,64,410.5)`；`/move stop` → 202 |
 | 7 | 任务跨 systemd 重启 | ✅ | active 任务重启后 `pending_resume`、`pendingResume.taskId/progress/expiresAt`；`POST /task/resume` → 202 并继续 |
 | 8 | 10 分钟确认窗口 | ✅（单测） | `TASK_PENDING_TTL_MS` 过期路径由 `test/unit/v03.test.ts` 覆盖；生产不等待 10 分钟 |
-| 9 | 审计 JSONL | ✅ | `/var/lib/lofii-bot/audit.jsonl` 0600；task/move/auth 元数据；无 Token/聊天正文 |
+| 9 | 审计 JSONL | ✅ | `/var/lib/mcbot/audit.jsonl` 0600；task/move/auth 元数据；无 Token/聊天正文 |
 | 10 | 动态在线 | ✅ | 任务结束后约 60–80 秒 `state=idle`、`players=0`、`connected=false` |
 | 11 | 21 分 46 秒 soak | ✅ | `fishCaught=57`、`deposited=60`、`failures=0`、`reconnects=0`；见 §6.4 |
 | 12 | 内存 | ✅ | `MemoryCurrent=145.0 MB`、`MemoryPeak=147.0 MB`；低于 384/512MB |
@@ -152,7 +152,7 @@
 
 ### 6.5 跨重启 pending/resume
 
-- active 钓鱼任务（4 条鱼）时 `sudo systemctl restart lofii-bot`。
+- active 钓鱼任务（4 条鱼）时 `sudo systemctl restart mcbot`。
 - 重启后 `/task`：`state=pending_resume`，`active=false`，`pendingResume={taskId, name, progress.fishCaught=4, expiresAt}`；Lofii 按动态策略离线。
 - `POST /task/resume` → 202；任务从原进度继续，Lofii 自动连接；随后钓到第 5 条鱼。
 - 审计：`task.shutdown_pending`、`task.resume`；`task-state.json` 0600。
@@ -168,7 +168,7 @@
 
 ### 6.7 最终 release
 
-- 最终 release：`/opt/lofii-bot/releases/20261026T135428Z`（docs 提交；运行时代码与 `20261026T132859Z` 相同）。
+- 最终 release：`/opt/mcbot/releases/20261026T135428Z`（docs 提交；运行时代码与 `20261026T132859Z` 相同）。
 - `/healthz` 200，version 0.3.0；验收结束时 0 玩家、`state=idle`、任务 idle。
 - 代码与 `docs/` 同仓库提交；v0.3.0 验收通过；v0.2.0 的钓鱼/种田/恢复功能回归由 58 个测试与 soak 覆盖。
 
@@ -182,7 +182,7 @@
 | Lofii 版本 | 0.4.0 |
 | Pi | Raspberry Pi 5 8GB / Debian 13；Node v26.12.1 |
 | Minecraft | Paper 26.1.2，协议 775 |
-| 代码/soak release | `/opt/lofii-bot/releases/20261027T024631Z`；最终 docs release `/opt/lofii-bot/releases/20261027T033756Z` |
+| 代码/soak release | `/opt/mcbot/releases/20261027T024631Z`；最终 docs release `/opt/mcbot/releases/20261027T033756Z` |
 | 树场 | `x180–193, z455–464`；实际地面块 y=63、原木从 y=64 起 |
 | 玩家 | Antifield 在线/离线混合；最终 0 玩家 |
 
@@ -342,7 +342,7 @@
 
 ### 8.8 最终 release
 
-- 最终 release：`/opt/lofii-bot/releases/20261027T084117Z`。
+- 最终 release：`/opt/mcbot/releases/20261027T084117Z`。
 - 运行时代码/soak release：`20261027T080045Z`（最终 docs release `20261027T084117Z`）。
 - v0.5.0 验收通过：只读管理、SQLite 历史、SSE 告警、安全区表层矿/天然林、Vote2Sleep、四角巡逻、60 分钟队列、约 28.6 分钟混合 soak；75 个测试全绿。
 
@@ -372,12 +372,12 @@
 
 ### 9.3 说明与边界
 
-- 本轮只做本地验证与提交：未部署到 Pi，未触发 AntifieldCloud 改动，生产接入由用户按 `docs/API.md` 实施。
+- 本轮只做本地验证与提交：未部署到 Pi，未触发 AntifieldCloud 改动，生产接入由用户按 `docs/mcbot/API.md` 实施。
 - `/events/recent` 读内存 ring（`SSE_BUFFER_EVENTS`，默认 500），进程重启后清空；`bootId` 变化时面板应重新拉 `/status` 与 `/task`。
 - `limit` 只接受十进制整数（重复参数取第一个值）；非法值统一 400，不影响 SSE `/events`。
 - 未新增依赖/schema/DB/环境变量；不改任务/AI/控制行为；无 Token 写入日志或响应。
 
-## 10. v0.6.1 安全修复（聊天切行命令注入）
+## 10. v1.0.0 安全修复（聊天切行命令注入）
 
 ### 10.1 环境
 

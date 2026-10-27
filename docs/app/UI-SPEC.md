@@ -111,17 +111,17 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 说明文字：“回收站中的文件仍占用配额；30 天后自动清理。”
 - 空态：“回收站是空的”。
 
-### 4.5 Minecraft `/minecraft`（服务器 / Lofii 双标签）
+### 4.5 Minecraft `/minecraft`（服务器 / mcbot 双标签）
 
-- 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；Lofii 标签标题“Lofii”、副标题“Lofii Bot 运行状态、任务控制、事件流与历史（数据来自本机 Lofii 接口）”。
-- **标签栏**（仅 `/api/version.lofiiEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“Lofii”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=lofii` 或 `#lofii` 深链进入 Lofii 标签，切回服务器清理由 Lofii 标签写入的 `?tab=lofii` 与 `#lofii`。
-- Lofii 未启用（`lofiiEnabled=false` 或旧服务端不下发）时不渲染标签栏，直接展示服务器内容，页面行为与旧版一致。
+- 页头与内容由当前标签决定：服务器标签标题“Minecraft”、副标题“服务器只读状态与白名单管理”；mcbot 标签标题“mcbot”、副标题“mcbot Bot 运行状态、任务控制、事件流与历史（数据来自本机 mcbot 接口）”。
+- **标签栏**（仅 `/api/version.lofiiEnabled=true` 时显示）：`role=tablist` + 两个 `role=tab` 按钮（“服务器”“mcbot”），`aria-selected`/`aria-controls`/`tabIndex` 随激活标签变化，面板 `role=tabpanel` 与 `aria-labelledby` 联动；左右方向键循环、Home/End 跳转，焦点随选中移动；`?tab=lofii` 或 `#lofii` 深链进入 mcbot 标签，切回服务器清理由 mcbot 标签写入的 `?tab=lofii` 与 `#lofii`。
+- mcbot 未启用（`lofiiEnabled=false` 或旧服务端不下发）时不渲染标签栏，直接展示服务器内容，页面行为与旧版一致。
 - **服务器标签**（原 `/minecraft` 内容）：
   - 顶部状态卡：在线/离线、版本、MOTD、在线人数、TPS、服务状态、公共地址（复制）；RCON 降级时黄色提示。
   - 玩家列表：在线玩家名（头像用首字母圆形）。
   - 白名单管理：输入玩家名 + “添加”；校验 `^[A-Za-z0-9_]{3,16}$`；成功后列表刷新 + Toast；表格列玩家名、添加时间（若可得）、移除按钮（确认）；说明“白名单修改立即生效；不支持启停服务器或任意命令。”
   - 只读提示：本页不提供服务器启停/控制台。
-- **Lofii 标签**：见 §17。
+- **mcbot 标签**：见 §17。
 
 ### 4.6 活动 `/activity`
 
@@ -193,7 +193,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 笔记附件上传/删除/插入、版本查看/恢复可用；Activity 关键词/时间范围筛选与 Alerts 筛选分页可用（详见 §14）。
 - Bot 页：未启用时配置指引、启用后六分区（概览/配置/目标/投递与发布/角色与记忆/诊断）可键盘切换；AppSecret 不回显；目标含 `allowChat` 与最近入站目标登记；
   发布表单含 TOTP + `PUBLISH` 且仅文本（QQ 单条 ≤2000；超过返回 400 `publish_text_too_long`，不静默截断、不服务端分段）；配置页“检查连接”展示 QQ access_token 自检结果（详见 §15）。
-- `/minecraft`：启用 Lofii 时双标签可键盘切换、`?tab=lofii`/`#lofii` 深链生效；服务器标签保持原状态/白名单功能；Lofii 面板状态/任务/移动/聊天/事件/历史可用，开始/停止/恢复/发送有二次确认，禁用/不可达/过期/只读分别降级，不展示 Token/地址（详见 §17）。
+- `/minecraft`：启用 mcbot 时双标签可键盘切换、`?tab=lofii`/`#lofii` 深链生效；服务器标签保持原状态/白名单功能；mcbot 面板状态/任务/移动/聊天/事件/历史可用，开始/停止/恢复/发送有二次确认，禁用/不可达/过期/只读分别降级，不展示 Token/地址（详见 §17）。
 - 键盘可完成登录、打开弹窗、关闭弹窗。
 
 ## 10. 知识库与文件界面
@@ -224,7 +224,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 ### 告警
 
 - Dashboard“告警”卡片：当前 active 条件、最近历史、webhook 状态、严重度中文标签。
-- 历史状态含 `firing/resolved/unknown/event`：`event` 显示“已记录”并使用中性色调，表示 Lofii 等外部服务的事件记录，**不当作活跃告警**；状态筛选含“已记录”；`lofii_*` 事件名有中文映射（血量过低/任务失败/断线/箱子已满/防御撤退/告警）。
+- 历史状态含 `firing/resolved/unknown/event`：`event` 显示“已记录”并使用中性色调，表示 mcbot 等外部服务的事件记录，**不当作活跃告警**；状态筛选含“已记录”；`lofii_*` 事件名有中文映射（血量过低/任务失败/断线/箱子已满/防御撤退/告警）。
 - Settings“监控告警”：只读阈值/检查间隔/webhook 是否配置/最近评估；“测试 Webhook”按钮（POST /api/alerts/test）。
 - 未配置 webhook 时仍显示面板告警，不阻塞。
 
@@ -234,7 +234,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - Files/搜索/Trash 请求可取消，旧响应不会覆盖新目录。
 - 上传逐文件取消/超时（15 分钟）/卸载 abort；恢复码弹窗复制/下载前禁止误关。
 - 改密/恢复码表单含 TOTP；密码 ≥12；429 显示 `details.retryAfterSec`。
-- `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关与 Lofii 标签/控制显隐（`lofiiEnabled`/`lofiiControlEnabled`）。
+- `/api/version` 元数据驱动域名、回收站天数、上传上限、功能开关与 mcbot 标签/控制显隐（`lofiiEnabled`/`lofiiControlEnabled`）。
 - a11y：移动抽屉焦点陷阱、Dropdown 方向键、FormField aria-required、ConfirmDialog describedby、NotFound 标题。
 - OpenCode Web：不展示自定义“新会话”按钮；代理只接管原生按钮 click/pointerup，并 opt-out Rocket Loader 改写模块脚本。
 
@@ -313,11 +313,11 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 入口与布局
 
-- 侧栏“机器人”（`Bot` 图标，路由 `/bots`），页面标题“机器人”，副标题“QQ 官方 Bot 通知、Chat 与只读命令、角色与记忆、诊断”。
+- 侧栏“机器人”（`Bot` 图标，路由 `/chatbots`），页面标题“机器人”，副标题“QQ 官方 Bot 通知、Chat 与只读命令、角色与记忆、诊断”。
 - 顶部工具栏：左侧“当前 Bot”下拉（`label` 关联 select；无 Bot 时显示“暂无 Bot”并禁用），右侧“新建 Bot”主按钮 + “刷新”。
 - 标签页（`role=tablist`，6 个：“概览/配置/目标/投递与发布/角色与记忆/诊断”）：左右方向键/Home/End 切换，`aria-selected`/`aria-controls` 与面板联动；面板可聚焦。
-- 未启用（`BOT_ENABLED=false` 或 `bot_key_missing/bot_key_invalid`）：不请求 Bot 列表，展示 `Card` 指引：
-  设置 `BOT_ENABLED=true`、生成/写入 `BOT_SECRET_KEY`（示例 `openssl rand -base64 32`）、重启服务、点击“重新检测”；
+- 未启用（`CHATBOT_ENABLED=false` 或 `chatbot_key_missing/chatbot_key_invalid`）：不请求 Bot 列表，展示 `Card` 指引：
+  设置 `CHATBOT_ENABLED=true`、生成/写入 `CHATBOT_SECRET_KEY`（示例 `openssl rand -base64 32`）、重启服务、点击“重新检测”；
   不显示任何密钥值，说明密钥只保存在服务端。
 
 ### 概览
@@ -325,8 +325,8 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）；AI 工具隔离状态（`aiToolIsolation`）降级时显示 warning 与降级次数/时间。
 - 概览提示：命令与 Chat 均为只读，发布需 TOTP + `PUBLISH` 双确认；`/help`、`/memory`、`/role`（私聊）、`/reset`、`/forget confirm` 为全用户自助命令；QQ 仅文本，入站图片默认交 AI 理解。
 - Bot 列表/选择：名称、平台（QQ 官方）、启用徽章、目标数、密钥版本、最近检查时间；点击切换到该 Bot（并进入配置分区）。
-- “出站网络”卡片：外网可达/延迟、QQ 平台探测状态与延迟（不再显示设备在线/代理主机端口）；“检测”按钮调用 `POST /api/bots/connectivity/check`，
-  页面每 60 秒读取 `GET /api/bots/connectivity`；不可达时显示 warning，不展示任何 AppSecret。
+- “出站网络”卡片：外网可达/延迟、QQ 平台探测状态与延迟（不再显示设备在线/代理主机端口）；“检测”按钮调用 `POST /api/chatbots/connectivity/check`，
+  页面每 60 秒读取 `GET /api/chatbots/connectivity`；不可达时显示 warning，不展示任何 AppSecret。
 - 空态：“还没有机器人” + “新建 Bot”（仅 QQ）；加载中 `SkeletonText`；错误 `InlineError` + 重试。
 
 ### 配置
@@ -335,15 +335,15 @@ CSS 变量（`web/src/styles/tokens.css`）：
   不再有 Webhook Secret/Public Key/Signing Secret 等其它平台字段。
 - 密钥输入 `type=password`、`autocomplete=new-password`，编辑时留空表示保持原值，**永不回显**；不写入 localStorage/DOM 默认值。
 - 开关“启用 Bot”（默认关）；保存/删除（`ConfirmDialog`，危险按钮默认焦点“取消”）。
-- **“检查连接”**：编辑已有 Bot 时显示“检查连接”按钮（`Stethoscope` 图标，`loading` 态禁用重复点击）；调用 `POST /api/bots/:id/check`，
+- **“检查连接”**：编辑已有 Bot 时显示“检查连接”按钮（`Stethoscope` 图标，`loading` 态禁用重复点击）；调用 `POST /api/chatbots/:id/check`，
   结果区显示“全部通过/存在异常项”徽章、检查时间、项数（“共 N 项，不含任何密钥”），逐项列表：名称、通过/异常徽章、脱敏 detail 与状态图标
   （QQ 自检项为 `access_token`）；失败时 `InlineError` + “重新检查”。不展示 AppSecret/access_token 或完整平台 URL。
 - 右列接入信息：`webhookUrl` + 复制按钮、`setupSteps` 有序列表（QQ 开放平台后台步骤）、`keyVersion`/时间等只读元数据；
   提示“URL 只用于 QQ 开放平台后台，AppSecret 不会显示”。setup 步骤包含回调地址 `op=13` 校验、事件订阅与 `/reset`/`/forget confirm` 用法说明。
 - 平台提示：QQ 群/频道只有 @Bot 消息进入 Bot（平台限制），C2C 私聊直接进入 Chat；仅支持文本；图片默认交给 AI 理解；
   先把 Bot 拉群并 @Bot 触发，再到目标分区从“最近入站目标”登记。
-- 校验：必填/长度/数字规则在前端即时提示，服务端 `invalid_bot_config` 错误映射到表单顶部；非 QQ 平台值不再提供入口。
-- AI 提示词固定为「角色卡 + 固定安全边界 + 记忆 + 用户」，不存在 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`；本页不提供提示词编辑。
+- 校验：必填/长度/数字规则在前端即时提示，服务端 `invalid_chatbot_config` 错误映射到表单顶部；非 QQ 平台值不再提供入口。
+- AI 提示词固定为「角色卡 + 固定安全边界 + 记忆 + 用户」，不存在 `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT`；本页不提供提示词编辑。
 - 个人角色卡由用户在私聊通过 `/role` 管理，默认 lofii 为内置角色；本页不展示角色正文，也不提供正文编辑入口（仅“角色与记忆”元数据管理）。
 
 ### 目标
@@ -394,21 +394,21 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 - **单列布局**：指标卡、投递记录、发布表单/任务卡在同一 `.bot-delivery-grid` 内纵向单列排列，桌面与窄屏一致；内部发布表单字段仍可窄屏单列。
 - 顶部“近 24 小时指标”卡：投递成功数、成功率（sent/(sent+failed)）、失败/死信、发布 sent/失败、最近发送时间、事件数；
-  有 `lastError` 时显示脱敏错误条，有 `lastErrorHint` 时追加中文提示；数据来自 `GET /api/bots/:id/metrics?hours=24`。
+  有 `lastError` 时显示脱敏错误条，有 `lastErrorHint` 时追加中文提示；数据来自 `GET /api/chatbots/:id/metrics?hours=24`。
 - 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要（错误原文 + 中文提示）；
   `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）。
 - 发布表单（仅文本）：目标（仅频道/群组）、文本（显示 QQ 单条上限 2000 字符；超过提示错误 `publish_text_too_long`，不静默截断）、
   定时时间（可空；≤30 天）、**TOTP 验证码**（6 位、`autocomplete=one-time-code`，必填）、
   **二次确认输入**（必须输入 `PUBLISH`，与 TOTP 共同构成双确认）；提交后进入列表。不提供媒体选择器与多附件。
 - 发布列表：状态、目标、文本摘要、定时/发送时间、错误（含中文提示）；`queued/draft` 可“取消”（确认）。
-- 提交中禁用按钮；`totp_required`、`invalid_code`、`publish_confirm_required`、`rate_limited`、`bot_health_unsupported` 用字段错误/Toast 明确提示；
+- 提交中禁用按钮；`totp_required`、`invalid_code`、`publish_confirm_required`、`rate_limited`、`chatbot_health_unsupported` 用字段错误/Toast 明确提示；
   不展示 AppSecret/access_token/完整平台 URL。
 
 ### 响应式与可访问性
 
 - 390 px：工具栏纵向堆叠，Bot 选择/按钮全宽；6 个标签两行/三行换行且不溢出（`flex:1 1 30%`、文本省略）；
   标签页键盘可操作；表单单列；诊断筛选控件换行，分页按钮可换行。
-- **窄屏表格**：角色/记忆/诊断表格放入 `.bots-table-scroll` 容器内横向滚动（`overflow-x:auto`、最小宽度 660px，卡片化视图隐藏）；
+- **窄屏表格**：角色/记忆/诊断表格放入 `.chatbots-table-scroll` 容器内横向滚动（`overflow-x:auto`、最小宽度 660px，卡片化视图隐藏）；
   页面本身不横向滚动；目标/投递/发布既有表格行为不变。
 - 所有开关有可访问名称（`aria-label` 含目标名）；表格有 `caption`/列标题；危险操作焦点默认在取消；图标按钮有 `aria-label`。
 - 不引入第三方组件库；沿用现有 `Button/Card/Modal/Toast/Table/Badge/FormField/ConfirmDialog/InlineError/EmptyState` 与 tokens；
@@ -436,64 +436,64 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 通用与设置
 
-- **审计动作中文映射**：包含 `backup_reauth_failed`、`bot.ai.send`（`partialTurn` 文本）、备份加密/异地相关动作的展示文案；未知动作按原文等宽显示。
+- **审计动作中文映射**：包含 `backup_reauth_failed`、`chatbot.ai.send`（`partialTurn` 文本）、备份加密/异地相关动作的展示文案；未知动作按原文等宽显示。
 - **设置告警**：告警配置展示 `offsiteMaxAgeHours`（异地副本超期，小时，0 表示关闭）与世界备份/演练阈值；未配置异地副本时不误导为异常。
 - **`/api/version` 与元数据**：`MetaContext` 消费 `schemaVersion/backupArchiveEncryption/backupAgeRecipientConfigured/backupOffsiteStatusConfigured/audit`；
   `/api/version` 失败重试一次并回退默认值；`audit.failureCount>0` 时可展示提示“审计写入存在失败（诊断）”，不展示明细。
 - **PWA 更新提示**：新版本可用时显示静默更新提示条（不强制刷新、不丢表单），由 `PwaUpdatePrompt` 控制；离线壳不缓存 API。
 - **导航与错误**：hash 路由异常/未知页面回退首页并提示；轮询失败静默保留上次数据并提供手动刷新；`ConfirmDialog` 默认焦点在“取消”，
-  危险操作需二次确认；错误码 `archive_encrypted`、`bot_ai_tool_isolation_unavailable`、`backup_busy`、`restore_busy`、`plan_expired` 有专门中文文案。
-- **响应式**：加密/异地状态卡与警告条在 390 px 纵向堆叠、不横向滚动；表格仍使用 `.bots-table-scroll`/既有滚动容器。
+  危险操作需二次确认；错误码 `archive_encrypted`、`chatbot_ai_tool_isolation_unavailable`、`backup_busy`、`restore_busy`、`plan_expired` 有专门中文文案。
+- **响应式**：加密/异地状态卡与警告条在 390 px 纵向堆叠、不横向滚动；表格仍使用 `.chatbots-table-scroll`/既有滚动容器。
 
 ### 前端工程
 
 - 样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
   加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。
 
-## 17. Lofii 面板（`/minecraft?tab=lofii`，v0.8.0 引入，v0.8.1 安全/健壮性加固）
+## 17. mcbot 面板（`/minecraft?tab=lofii`，v0.8.0 引入，v0.8.1 安全/健壮性加固）
 
-Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofii/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/lofii/history`；写操作走 `POST /api/lofii/*`。仅当 `/api/version.lofiiEnabled=true` 时显示入口；`lofiiControlEnabled=false` 时只读（**聊天输入同样禁用**）。状态快照先经 `safeLofiiStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
+mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/mcbot/history`；写操作走 `POST /api/mcbot/*`。仅当 `/api/version.lofiiEnabled=true` 时显示入口；`lofiiControlEnabled=false` 时只读（**聊天输入同样禁用**）。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
 
 ### 入口与布局
 
-- 标签栏与深链见 §4.5；Lofii 标签页内容自上而下：全局状态提示条 → 状态卡 → 任务卡 → 双列（移动控制 / 游戏内聊天）→ 事件流卡 → 历史记录卡。
+- 标签栏与深链见 §4.5；mcbot 标签页内容自上而下：全局状态提示条 → 状态卡 → 任务卡 → 双列（移动控制 / 游戏内聊天）→ 事件流卡 → 历史记录卡。
 - 全局提示条（按优先级，只显示最相关的一条）：
-  - 等待首次轮询：`notice-muted`“正在等待 Lofii 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。”
-  - 不可达：`notice-warning`“无法连接 Lofii：<中文错误>。当前显示上次成功轮询的缓存数据，控制操作不可用。”
-  - 数据过期：`notice-warning`“Lofii 数据已过期（上次成功轮询 …），请检查 Lofii 进程；新数据恢复前请勿依赖当前状态。”
-  - **部分失败**：`notice-warning`“Lofii 状态可达，但事件流/告警游标异常：<中文错误>；事件流可能停止更新，控制仍可尝试。”——`reachable=true` 且 `error≠null` 时必须可见（v0.8.1），不得把“可达”当成“事件正常”。
-  - 控制未启用：`notice-muted`“Lofii 控制未启用：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。”（由 `lofiiControlEnabled` 驱动，不展示 env 名/Token）
-- 集成禁用（`lofiiEnabled=false`）：只显示 `notice-muted` 说明“Lofii 集成未启用（服务端 LOFII_ENABLED=false）。启用后需要配置 Lofii 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区。
+  - 等待首次轮询：`notice-muted`“正在等待 mcbot 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。”
+  - 不可达：`notice-warning`“无法连接 mcbot：<中文错误>。当前显示上次成功轮询的缓存数据，控制操作不可用。”
+  - 数据过期：`notice-warning`“mcbot 数据已过期（上次成功轮询 …），请检查 mcbot 进程；新数据恢复前请勿依赖当前状态。”
+  - **部分失败**：`notice-warning`“mcbot 状态可达，但事件流/告警游标异常：<中文错误>；事件流可能停止更新，控制仍可尝试。”——`reachable=true` 且 `error≠null` 时必须可见（v0.8.1），不得把“可达”当成“事件正常”。
+  - 控制未启用：`notice-muted`“mcbot 控制未启用：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。”（由 `lofiiControlEnabled` 驱动，不展示 env 名/Token）
+- 集成禁用（`lofiiEnabled=false`）：只显示 `notice-muted` 说明“mcbot 集成未启用（服务端 MCBOT_ENABLED=false）。启用后需要配置 mcbot 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区。
 
 ### 状态卡
 
-- 标题“Lofii 状态”，描述“Lofii 每 5 秒被轮询一次；页面隐藏时暂停请求，刷新失败时保留上次成功的数据。”
+- 标题“mcbot 状态”，描述“mcbot 每 5 秒被轮询一次；页面隐藏时暂停请求，刷新失败时保留上次成功的数据。”
 - 头部操作：可达/不可达徽章（带圆点）、控制可用/控制未启用徽章、刷新按钮（`aria-label`、loading 态）。
-- 刷新失败时卡片内 `InlineError`“<错误>（显示上次成功获取的数据）”+ 重试；无快照时 `EmptyState`“暂无 Lofii 状态快照”。
-- 状态栅格（缺失字段显示“—”）：运行状态（中文徽章：空闲（动态下线）/连接中/已连接/重连等待/冷却中）、Minecraft 连接（已连接（用户名）/未连接）、服务器在线/上限（服务器不可达时提示）、TPS（1m/5m/15m，RCON 不可用时提示）、Lofii 血量/饥饿（维度作 hint）、AI 队列（排队/处理中，失败次数与最近延迟；AI 关闭时“—”）、记忆（玩家数/轮数）、Lofii 版本 + 契约版本、运行时长、白名单数量（上游 lastError 作 hint）、告警联动（已启用/未启用）、事件流条数（“内存环”）。
+- 刷新失败时卡片内 `InlineError`“<错误>（显示上次成功获取的数据）”+ 重试；无快照时 `EmptyState`“暂无 mcbot 状态快照”。
+- 状态栅格（缺失字段显示“—”）：运行状态（中文徽章：空闲（动态下线）/连接中/已连接/重连等待/冷却中）、Minecraft 连接（已连接（用户名）/未连接）、服务器在线/上限（服务器不可达时提示）、TPS（1m/5m/15m，RCON 不可用时提示）、mcbot 血量/饥饿（维度作 hint）、AI 队列（排队/处理中，失败次数与最近延迟；AI 关闭时“—”）、记忆（玩家数/轮数）、mcbot 版本 + 契约版本、运行时长、白名单数量（上游 lastError 作 hint）、告警联动（已启用/未启用）、事件流条数（“内存环”）。
 - 附加警告：上次 Minecraft 断线（相对时间 + 原因 + 累计重连次数）、AI 最近错误（文本）。
 - 脚注：上次轮询相对时间；“契约版本 < 1”时提示契约版本过低；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
 
 ### 任务卡
 
-- 标题“任务”，描述“任务由 Lofii 自动执行；开始、停止与恢复都需要二次确认。”；右上角状态徽章：进行中/待恢复/空闲。
+- 标题“任务”，描述“任务由 mcbot 自动执行；开始、停止与恢复都需要二次确认。”；右上角状态徽章：进行中/待恢复/空闲。
 - 待恢复任务 `notice-warning`：任务名、已运行时长、恢复截止时间（相对时间）+“恢复”“放弃”按钮（均需确认）。
-- 任务功能关闭时 `notice-muted`“Lofii 任务功能未启用（TASK_ENABLED=false）。”；任务最近错误显示 warning 文本。
+- 任务功能关闭时 `notice-muted`“mcbot 任务功能未启用（TASK_ENABLED=false）。”；任务最近错误显示 warning 文本。
 - 事实行：当前任务、任务状态（中文徽章）、已运行、失败次数、排队任务数。
 - “任务进度”：按任务类型展示非零计数（钓鱼/种田/砍树/挖矿/天然林/睡觉/巡逻，含击杀怪物），无数据显示“当前任务没有进度数据。”。
 - “任务队列”：有序列表（序号/任务名/发起相对时间），空队列显示“队列为空。”。
 - 控制行：任务下拉（7 种中文名）；“开始任务”（primary，进行中时可入队，最多 3 个；有待恢复任务、任务功能关闭、控制未启用时禁用并给出 hint）、“停止任务”（danger，中断当前任务并清空队列）、“恢复任务”（仅有待恢复时显示）。
-- 停止确认文案区分“停止任务”与“放弃待恢复任务”，均说明会清空队列、不可撤销；开始确认说明任务由 Lofii 自动执行。
+- 停止确认文案区分“停止任务”与“放弃待恢复任务”，均说明会清空队列、不可撤销；开始确认说明任务由 mcbot 自动执行。
 
 ### 移动控制
 
-- 卡片标题“移动控制”，描述“手动让 Lofii 移动；移动可随时停下，不改变任务状态。”
-- 目标玩家下拉（来自 Lofii 在线列表、排除 Lofii 自身；无玩家时“暂无在线玩家”并禁用过来/跟随）；按钮“回家/过来/跟随/停下”，加载态按动作区分；结果以 Toast 反馈并刷新状态。
-- 禁用条件与 hint：控制未启用/不可达、任务进行中（需先停止任务）、Lofii 未连接 Minecraft、无其他在线玩家；说明“回家/停下不需要目标玩家”。
+- 卡片标题“移动控制”，描述“手动让 mcbot 移动；移动可随时停下，不改变任务状态。”
+- 目标玩家下拉（来自 mcbot 在线列表、排除 mcbot 自身；无玩家时“暂无在线玩家”并禁用过来/跟随）；按钮“回家/过来/跟随/停下”，加载态按动作区分；结果以 Toast 反馈并刷新状态。
+- 禁用条件与 hint：控制未启用/不可达、任务进行中（需先停止任务）、mcbot 未连接 Minecraft、无其他在线玩家；说明“回家/停下不需要目标玩家”。
 
 ### 游戏内聊天
 
-- 卡片标题“游戏内聊天”，描述“以 Lofii 的身份向游戏内发送聊天；只聊天，绝不执行命令。”
+- 卡片标题“游戏内聊天”，描述“以 mcbot 的身份向游戏内发送聊天；只聊天，绝不执行命令。”
 - `textarea`（`rows=3`、`maxLength=720`、`aria-label`）；字数计数“n/720 · 发送前需要二次确认”；发送按钮在空内容、控制未启用（含只读模式）时禁用。
 - 前端校验：空内容、**任意位置包含 ASCII `/`**（提示“聊天内容不能包含 /（不支持命令，含切分后的命令行）”）、C0 控制字符/DEL、超过 720 字符；错误用 `role="alert"` 展示。
 - **`/say` 是写操作，v0.8.1 起必须启用控制 Token**：只读部署时输入与发送均禁用，服务端返回 `503 lofii_control_disabled`；不得再出现“只读模式仍可聊天”的引导。
@@ -502,17 +502,17 @@ Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofi
 
 ### 事件流
 
-- 卡片标题“事件流”，描述“Lofii 内存事件环的最近事件（按时间倒序，最多显示 100 条）。”；右上角条数徽章。
-- 旧版 Lofii（`eventsSupported=false`）显示 warning：“Lofii 需升级到 v0.6.0 才能显示事件流（当前 Lofii 未提供 /events/recent 或事件契约）。”
-- 类型筛选按钮组（全部/聊天/任务/状态/移动/告警，`aria-pressed`）；列表项 = 类型徽章（聊天 accent、任务 info、状态 muted、移动 info、告警 warning）+ 相对时间 + 纯文本正文：聊天事件显示“用户名：内容”或“Lofii：内容”，其余显示结构化摘要（任务动作/状态、连接状态/其他玩家、移动动作/目标/状态/错误、告警类型/级别/内容）；`data` 一律视为不可信 unknown，不使用 HTML 注入。
-- 空态区分“暂无事件”与“暂无「<类型>」事件”；脚注说明事件来自 Lofii 内存环、重启清空、本页不保存历史。
+- 卡片标题“事件流”，描述“mcbot 内存事件环的最近事件（按时间倒序，最多显示 100 条）。”；右上角条数徽章。
+- 旧版 mcbot（`eventsSupported=false`）显示 warning：“mcbot 需升级到 v0.6.0 才能显示事件流（当前 mcbot 未提供 /events/recent 或事件契约）。”
+- 类型筛选按钮组（全部/聊天/任务/状态/移动/告警，`aria-pressed`）；列表项 = 类型徽章（聊天 accent、任务 info、状态 muted、移动 info、告警 warning）+ 相对时间 + 纯文本正文：聊天事件显示“用户名：内容”或“mcbot：内容”，其余显示结构化摘要（任务动作/状态、连接状态/其他玩家、移动动作/目标/状态/错误、告警类型/级别/内容）；`data` 一律视为不可信 unknown，不使用 HTML 注入。
+- 空态区分“暂无事件”与“暂无「<类型>」事件”；脚注说明事件来自 mcbot 内存环、重启清空、本页不保存历史。
 
 ### 历史记录
 
 - 卡片标题“历史记录”，描述“最近 24 小时的告警或采样记录，只读表格。”；右上角“告警/采样”分段切换 + 刷新按钮。
 - 告警表：时间、类型（中文映射，未知显示原文）、级别（critical/error/warning/info → 中文徽章与色调）、内容（纯文本）；空态“暂无告警记录”。
 - 采样表：时间、连接（在线/离线徽章）、状态（中文）、任务（名称·状态或“—”）、血量/饥饿、TPS、队列、内存/RSS（MB）；空态“暂无采样记录”。
-- 脚注：“最近 24 小时 · 最多 100 条；采样由 Lofii 每 60 秒写入一次，时间按 Asia/Shanghai 展示。”
+- 脚注：“最近 24 小时 · 最多 100 条；采样由 mcbot 每 60 秒写入一次，时间按 Asia/Shanghai 展示。”
 - 响应形状异常（`kind` 不匹配/缺数组/服务端 `502 lofii_upstream_error`）显示可见错误与重试，不进入永久骨架屏；只透传对象行。
 - 只读：不展开 `details`，不提供修改/删除/导出；`details` 中的任意字段不渲染。
 
@@ -520,7 +520,7 @@ Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofi
 
 - 二次确认：开始任务、停止/放弃任务、恢复任务、发送游戏内聊天均使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。
 - 降级矩阵：禁用 → 仅说明；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告（当前仍用 `lastPollAt`；快照未下发 `lastSuccessAt`，见 AUDIT 残余 ARCH6-03）；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
-- 隐私与安全：不展示 Lofii URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `lofiiControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
+- 隐私与安全：不展示 mcbot URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `lofiiControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
 - 历史错误码/错误提示使用中文映射（含 `lofii_cursor_failed`/`lofii_not_found`/`lofii_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库，样式集中在 `web/src/styles/v08.css`。
 - **生产验收状态（v0.8.0，2026-10-27）**：生产部署与只读/API 验收完成；`/minecraft` 生产 UI 视觉确认已完成（Edge 157 headless 经本地 SSH 隧道打开 `/minecraft?tab=lofii`，临时验收会话已清理；状态卡/任务/移动/聊天/事件流/历史/告警均正常渲染，756×900 viewport；用户仍可在自己的浏览器复核，非阻塞）。**v0.8.0 已发布**：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release（publishedAt `2026-10-27T12:02:45Z`）。

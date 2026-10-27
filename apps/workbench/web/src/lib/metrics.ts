@@ -10,7 +10,7 @@ export interface MetricsRangeOption {
   label: string
 }
 
-/** 时间范围切换项；与 docs/API.md §12 的 range 取值一致。 */
+/** 时间范围切换项；与 docs/app/API.md §12 的 range 取值一致。 */
 export const METRICS_RANGES: MetricsRangeOption[] = [
   { value: '1h', label: '1 小时' },
   { value: '6h', label: '6 小时' },

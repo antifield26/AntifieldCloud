@@ -30,7 +30,7 @@ export function BackupEncryptionCard({ encryption = null }: BackupEncryptionCard
         </div>
       </dl>
       <p className="field-hint">
-        加密归档文件名为 <span className="mono">*.tar.gz.age</span>；Web 禁用校验/恢复与导入，PC 端使用离线 age 私钥（见 docs/BACKUP.md）。
+        加密归档文件名为 <span className="mono">*.tar.gz.age</span>；Web 禁用校验/恢复与导入，PC 端使用离线 age 私钥（见 docs/app/BACKUP.md）。
       </p>
     </Card>
   )

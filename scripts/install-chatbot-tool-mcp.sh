@@ -73,7 +73,7 @@ if systemctl list-unit-files opencode.service >/dev/null 2>&1; then
   systemctl restart opencode
   sleep 3
   systemctl is-active opencode
-  # 版本粗检：只确认 opencode 可执行且能输出版本（详细契约验证见 docs/DEPLOY.md §3.2）。
+  # 版本粗检：只确认 opencode 可执行且能输出版本（详细契约验证见 docs/app/DEPLOY.md §3.2）。
   opencode_bin=/var/lib/opencode/.opencode/bin/opencode
   if [ -x "$opencode_bin" ]; then
     ( cd /var/lib/opencode && runuser -u opencode -- env HOME=/var/lib/opencode "$opencode_bin" --version ) || {

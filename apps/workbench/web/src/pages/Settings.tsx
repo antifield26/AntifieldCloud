@@ -589,7 +589,7 @@ export function Settings() {
             </div>
             <div className="settings-list-row">
               <dt>文档</dt>
-              <dd className="mono settings-doc-paths">docs/PLAN.md · docs/API.md · docs/UI-SPEC.md · docs/SECURITY.md</dd>
+              <dd className="mono settings-doc-paths">docs/app/PLAN.md · docs/app/API.md · docs/app/UI-SPEC.md · docs/app/SECURITY.md</dd>
             </div>
           </dl>
         </Card>

@@ -1,6 +1,6 @@
 {
   "name": "@antifieldcomplexx/workbench",
-  "version": "0.8.1",
+  "version": "1.0.0",
   "private": true,
   "license": "MIT",
   "description": "AntifieldComplexx 工作台应用（server + web；含 chatbot 与 mcbot 对接）",

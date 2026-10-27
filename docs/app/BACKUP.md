@@ -31,10 +31,10 @@
 - **异地副本（默认关闭）**：PC 端 `backup-offsite.mjs/.ps1` 只上传 `.age`，链感知保留并写状态回 Pi；应用只读展示与告警（详见 §5.2）。
 - **孤儿/legacy**：备份目录中无 DB 记录的归档只报告、不自动删除；无参数 legacy 入口必须显式 `--legacy`，不再隐式 ack。
   旧世界归档命名 `world-<YYYYMMDD>.tar.gz` 不匹配新的 `world-<YYYYMMDDTHHMMSSZ>.tar.gz` 规则，永远不会被自动清理。
-- **Bot 密钥**：`/etc/antifieldcloud/env` 含 `BOT_SECRET_KEY`，已随密钥包加密备份；该 key 与 DB 中的 `bots` 密文必须成对恢复，
-  否则 Bot Token 不可解密（只能重新录入）。`BOT_SECRET_KEY` 不在普通应用归档内，必须用密钥包（或离线副本）恢复。
+- **Bot 密钥**：`/etc/antifieldcloud/env` 含 `CHATBOT_SECRET_KEY`，已随密钥包加密备份；该 key 与 DB 中的 `chatbots` 密文必须成对恢复，
+  否则 Bot Token 不可解密（只能重新录入）。`CHATBOT_SECRET_KEY` 不在普通应用归档内，必须用密钥包（或离线副本）恢复。
   普通归档含 TOTP/会话与 Bot 密文，仍按敏感数据处理；发布媒体不会进入备份之外的新位置。
-- **Bot 长期记忆/私聊角色卡**：DB `bot_ai_memories` 摘要与 `bot_chat_roles` 角色卡随数据库快照备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 镜像不在应用归档内，
+- **Bot 长期记忆/私聊角色卡**：DB `chatbot_ai_memories` 摘要与 `chatbot_chat_roles` 角色卡随数据库快照备份；`DATA_DIR/bot-memory/memory-<uuid>.md` 镜像不在应用归档内，
   但可由 DB 摘要重建，不作为恢复必需项；镜像目录不对外暴露，按保留期/人工清理。
 
 ## 2. 应用归档结构与协议
@@ -114,7 +114,7 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
 - 任务名 `AntifieldCloud-Backup-Pull`；每日 `12:00` + 登录后补跑；电池供电时也运行；仅当前用户登录时运行。`-InstallOffsiteTask` 另建 `AntifieldCloud-Backup-Offsite`（默认每日 13:00、6h 超时、IgnoreNew）。
 - **更新仓库后必须重装任务**：`install-backup-task.ps1` 会把最新 `backup-pull.ps1` 复制到 `%LOCALAPPDATA%\AntifieldCloud\` 并更新
   `backup-task.json` 的脚本 SHA/参数；重装后手跑一次，确认日志 `secrets=ok`、Pi `backup-pull.json` 的 `secretsOk=true`
-  （密钥包内含 `BOT_SECRET_KEY`，脚本不打印值），且 archive/SHA 校验通过。
+  （密钥包内含 `CHATBOT_SECRET_KEY`，脚本不打印值），且 archive/SHA 校验通过。
 - 安装脚本会：复制 `backup-pull.ps1` 到 `%LOCALAPPDATA%\AntifieldCloud\`；用 `icacls` 把备份目录 ACL 收紧为
   **当前用户 + Administrators + SYSTEM**（逐项校验，非白名单主体即失败）；安装前做 `PiHost:22` 可达性预检；
   回读校验任务参数并写安装标记 `backup-task.json`（版本/脚本 SHA/参数）；`-DryRun` 只打印计划不注册任务。
@@ -150,7 +150,7 @@ EOF
 sudo bash /opt/antifieldcloud/current/scripts/backup-secrets.sh
 ```
 
-- 打包内容：`/etc/antifieldcloud/env`（含 `BOT_SECRET_KEY` 与 `BOT_*`）、`/etc/cloudflared/config.yml`、`/etc/cloudflared/cert.pem`、
+- 打包内容：`/etc/antifieldcloud/env`（含 `CHATBOT_SECRET_KEY` 与 `CHATBOT_*`）、`/etc/cloudflared/config.yml`、`/etc/cloudflared/cert.pem`、
   `/etc/cloudflared/<tunnel-uuid>.json`、`/home/antifield/minecraft-server/server.properties`、
   `/etc/opencode/opencode.env`、opencode `opencode.json`/`service.json` 及 opencode SQLite 一致性快照。
 - 明文只在 0700 临时目录：优先 `/run/antifieldcloud/secrets-tmp`（tmpfs，重启即清），不可用时回退 `/tmp`；
@@ -425,8 +425,8 @@ tar -xzf secrets.tar -C "$env:TEMP\antifieldcloud-secrets"
 4. 图片/文本/PDF/预览正常，回收站内容与备份时一致；多文件分享/笔记版本可打开。
 5. 白名单列表与备份时一致（RCON 可用时）；世界恢复后玩家可进入。
 6. 备份 pending/状态正常（`backup.mjs --pending`、`backup-pull.json`、世界/拉取/演练状态文件）。
-7. Bot：`/api/bots/status` 可读；若恢复了 Bot，确认 `BOT_SECRET_KEY` 与 DB 快照成对、`/api/bots` 能解密显示 Bot（不显示 Token）；
-   `BOT_ENABLED=false` 时 Webhook 仍 404。
+7. Bot：`/api/chatbots/status` 可读；若恢复了 Bot，确认 `CHATBOT_SECRET_KEY` 与 DB 快照成对、`/api/chatbots` 能解密显示 Bot（不显示 Token）；
+   `CHATBOT_ENABLED=false` 时 Webhook 仍 404。
 8. 确认无误后再删除 `/var/lib/antifieldcloud.before-restore` 与 `world.before-restore`。
 
 > 数据库迁移只向上、无 down 迁移：若回滚到旧 release，务必同时恢复升级前的 `--snapshot-db` 快照
@@ -468,16 +468,16 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
 | 演练状态 unknown | 从未运行或未指定 `-PiHost` 回写；运行 `drill.ps1 -PiHost ...` 或接受 unknown（不误报通过） |
 | PC 有旧世界归档占空间 | 旧 cron 已停用；按 §6.4 手动清理，保留至少一份可解包副本 |
 | 恢复后登录异常 | 确认恢复的是最新 DB、`/etc/antifieldcloud/env` 的域名与 APP_ORIGIN 一致；COOKIE_DOMAIN 自 仅用于清理旧父域 Cookie，必要时 `bootstrap-env.sh --force`（会沿用现有非敏感值） |
-| 恢复后 Bot 显示 `bot_key_missing`/密文不可解密 | `BOT_SECRET_KEY` 与 DB 快照不匹配：从同批密钥包恢复 env，或接受重新录入 Bot Token；不要重置 key 后保留旧 `bots` 行 |
-| 密钥包过大/失败但文件归档成功 | 看 `secretsLastError`；`BOT_SECRET_KEY` 在 env 内，env 不可读会导致密钥包失败；修复 `/etc/antifieldcloud/env` 权限 0640 root:antifieldcloud |
+| 恢复后 Bot 显示 `chatbot_key_missing`/密文不可解密 | `CHATBOT_SECRET_KEY` 与 DB 快照不匹配：从同批密钥包恢复 env，或接受重新录入 Bot Token；不要重置 key 后保留旧 `chatbots` 行 |
+| 密钥包过大/失败但文件归档成功 | 看 `secretsLastError`；`CHATBOT_SECRET_KEY` 在 env 内，env 不可读会导致密钥包失败；修复 `/etc/antifieldcloud/env` 权限 0640 root:antifieldcloud |
 
 ## 11. 覆盖、残余风险与限制
 
 - **已覆盖**：应用数据归档（DB + 普通文件）、密钥包（env/cloudflared/Minecraft 配置/opencode env + opencode DB/config 一致性快照，
-  env 含 `BOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
+  env 含 `CHATBOT_SECRET_KEY`）、Minecraft 世界一致性归档（Pi 拉取前暂存最多 4 份、PC ack 删除远端；PC `world\` 长期保留 4 份）、自动化恢复演练；
   可选整包 age 加密与 PC 端异地副本（默认关闭）。
 - **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、对象存储；普通归档仍含 TOTP/会话明文与 Bot 凭据密文，
-  PC ACL/离线介质是最后防线；age 私钥或 `BOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
+  PC ACL/离线介质是最后防线；age 私钥或 `CHATBOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
 - **v0.7.3 Bot 上下文文档不进入备份**：`/var/lib/antifieldcloud-context` 为派生数据（角色卡/记忆权威在 DB 与角色卡表），
   不在 `DATA_DIR` 下、不被应用归档 tar 包含；恢复后首轮 Chat 自动重建。该目录含个人记忆文本，权限 0640/0750，不随备份扩散。
 - **导入归档保留**：`BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）控制 Web 导入归档保留；维护任务清理超期

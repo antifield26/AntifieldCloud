@@ -14,12 +14,12 @@
 { "error": { "code": "invalid_credentials", "message": "用户名或密码错误", "details": { } } }
 ```
 
-- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 lofii_auth_failed/lofii_upstream_error`、`503 bot_disabled/bot_key_missing/bot_ai_tool_isolation_unavailable/bot_ai_context_unavailable/lofii_disabled/lofii_control_disabled/lofii_unavailable/lofii_task_disabled/lofii_history_disabled/lofii_not_found`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
-- 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/bot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。
+- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 lofii_auth_failed/lofii_upstream_error`、`503 chatbot_disabled/chatbot_key_missing/chatbot_ai_tool_isolation_unavailable/chatbot_ai_context_unavailable/lofii_disabled/lofii_control_disabled/lofii_unavailable/lofii_task_disabled/lofii_history_disabled/lofii_not_found`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
+- 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/chatbot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。
-- Bot 功能开关：`BOT_ENABLED=false` 或缺少 `BOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/bots*` 写操作返回 `503 bot_disabled`/`bot_key_missing`；`GET /api/bots/status` 仍可读。
-- Lofii 功能开关（v0.8.0 引入，v0.8.1 安全加固）：`LOFII_ENABLED=false` 时 `/api/lofii/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/lofii/*` 返回 `503 lofii_disabled`；`LOFII_CONTROL_TOKEN` 为空（只读模式）时 `/tasks*`、`/move` **与 `/say`** 均返回 `503 lofii_control_disabled`（`/status`、`/history` 仍可读）。`LOFII_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 lofii_unavailable`；鉴权失败/上游异常返回 `502 lofii_auth_failed`/`lofii_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`。响应与错误文本不包含 Lofii URL/Token。
-- 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/SECURITY.md）。
+- Bot 功能开关：`CHATBOT_ENABLED=false` 或缺少 `CHATBOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/chatbots*` 写操作返回 `503 chatbot_disabled`/`chatbot_key_missing`；`GET /api/chatbots/status` 仍可读。
+- mcbot 功能开关（v0.8.0 引入，v0.8.1 安全加固）：`MCBOT_ENABLED=false` 时 `/api/mcbot/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/mcbot/*` 返回 `503 lofii_disabled`；`MCBOT_CONTROL_TOKEN` 为空（只读模式）时 `/tasks*`、`/move` **与 `/say`** 均返回 `503 lofii_control_disabled`（`/status`、`/history` 仍可读）。`MCBOT_URL` 只允许 `http(s)://loopback[:port]` 根地址（拒绝 userinfo/路径/查询/片段）。上游未启用/网络不可达返回 `503 lofii_unavailable`；鉴权失败/上游异常返回 `502 lofii_auth_failed`/`lofii_upstream_error`；上游 5xx 的稳定业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`。响应与错误文本不包含 mcbot URL/Token。
+- 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/app/SECURITY.md）。
 - 登录限制：每 IP 5 次失败/15 分钟；全局 60 次/小时（密码）、120 次/小时（TOTP），loopback 来源不占全局桶。`429` 响应包含 `retryAfterSec`。
 - 单文件上限：普通 multipart **100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；更大文件走分片上传。超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
 - 未登录访问 `ai.example.com` 的 HTML 请求：`302` 到 `https://app.example.com/login?next=https%3A%2F%2Fai.example.com%2F`；app 登录页对 ai 外部 `next` 先走 `/api/auth/ai-ticket` → ai `/__af/sso/<ticket>`，再由代理设置 ai host-only 会话 Cookie；API/WebSocket 未认证返回 `401`。
@@ -35,7 +35,7 @@
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
-- 失败时返回 503/错误体；`/healthz` 仍为 Cloudflare Access bypass（见 `docs/DEPLOY.md` §5.2）。
+- 失败时返回 503/错误体；`/healthz` 仍为 Cloudflare Access bypass（见 `docs/app/DEPLOY.md` §5.2）。
 
 ## 2. 认证与账号
 
@@ -396,7 +396,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 - `GET /api/version`（需要会话）：`{ "version": "0.8.0", "schemaVersion": 17, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "lofiiEnabled": false, "lofiiControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
-  - `lofiiEnabled`/`lofiiControlEnabled`（v0.8.0）：Lofii 集成是否启用、控制接口是否可用（`LOFII_ENABLED=true` 且 `LOFII_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 Lofii 标签与控制操作。两者都不含 Lofii 地址/Token。
+  - `lofiiEnabled`/`lofiiControlEnabled`（v0.8.0）：mcbot 集成是否启用、控制接口是否可用（`MCBOT_ENABLED=true` 且 `MCBOT_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 mcbot 标签与控制操作。两者都不含 mcbot 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
   - `backupRestoreEnabled` 与 `deploy/env.example` 默认一致（默认 `false`；Web 文件级恢复需显式开启）。
 - `GET /api/storage`（需要会话；轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
@@ -454,7 +454,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
 - 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）、世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
   `config` 含 `offsiteMaxAgeHours`（小时，0 表示关闭；状态文件缺失/未配置时该条件不进入列表，不误报）；`status` 字段另含世界备份/拉取/演练阈值。
-- 外部事件告警（v0.8.0，Lofii）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `lofii_low_health`/`lofii_task_failed`/`lofii_disconnected`/`lofii_chest_full`/`lofii_defense_retreat`/`lofii_alert`（未知），`details` 含 `source:"lofii"`、`lofiiEventId`、`lofiiType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。
+- 外部事件告警（v0.8.0，mcbot）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `lofii_low_health`/`lofii_task_failed`/`lofii_disconnected`/`lofii_chest_full`/`lofii_defense_retreat`/`lofii_alert`（未知），`details` 含 `source:"lofii"`、`lofiiEventId`、`lofiiType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。
 
 ## 11. 备份管理 / 文件级恢复
 
@@ -470,7 +470,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - `GET /api/restores/:planId` → `{plan}`（用于恢复向导刷新/断网后继续轮询）。
 - 错误码：`archive_encrypted` 409（加密归档 Web 不可操作）、`restore_disabled` 403、`archive_not_verified`/`archive_chain_invalid` 409、`invalid_selection`/`confirmation_failed` 400、`invalid_totp` 401、`restore_too_many_files` 400。
 - 归档导入的信任边界：归档来自管理员（TOTP 门禁），但 tar 仍按不可信输入校验路径穿越/链接/设备/超大条目；不提供归档下载。schema v16 启动时会拒绝高于支持版本的数据库（迁移 5–16 保留；本版无新迁移）。
-- 整库恢复：不在 Web API 内，按 `docs/BACKUP.md` §8.1 的离线 root 手工流程执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；加密归档必须先在 PC 用离线私钥解密，再按同流程恢复。
+- 整库恢复：不在 Web API 内，按 `docs/app/BACKUP.md` §8.1 的离线 root 手工流程执行（停服、解包校验、替换数据、pre-restore 备份与失败回滚）；加密归档必须先在 PC 用离线私钥解密，再按同流程恢复。
 
 ## 12. 可观测性与备份状态
 
@@ -507,7 +507,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ### 告警与审计筛选
 
-- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown|event`（`event` 为 Lofii 等外部服务的事件记录），`event` 为条件名，全部参数可选。
+- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown|event`（`event` 为 mcbot 等外部服务的事件记录），`event` 为条件名，全部参数可选。
 - `GET /api/audit?limit=50&offset=0&action=&q=&from=&to=` → `{items,total}`；`q` 对 action/target/ip 做转义 LIKE 搜索；`from/to` 为 ISO 时间；参数可选。
 
 ### 备份状态对象
@@ -585,127 +585,127 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 14. Bot 平台
 
-Bot 功能默认关闭：`BOT_ENABLED=false` 或缺少有效 `BOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/bots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/bot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/DEPLOY.md` §5.2）。
+Bot 功能默认关闭：`CHATBOT_ENABLED=false` 或缺少有效 `CHATBOT_SECRET_KEY` 时，Webhook 与写接口不可用（见 §0），`GET /api/chatbots/status` 仍可读并返回 `enabled=false/keyConfigured=false`。所有管理端点需要会话；写操作需要 CSRF；凭据字段只写不读。Cloudflare Access 必须对 `/api/chatbot/webhook/*` 做 bypass，否则平台回调会被边缘拦截（见 `docs/app/DEPLOY.md` §5.2）。
 
-平台：仅 `qq`（QQ 官方 Bot）。API 不接受其它平台值，`BotSummary` 无 `gateway`，目标无 `chatTrigger`，发布无 `mediaFileIds`。QQ 仅支持文本（单条 ≤2000 字符），入站图片默认交给 AI 理解；AI 仅普通消息 Chat，需 `BOT_AI_ENABLED=true`。
+平台：仅 `qq`（QQ 官方 Bot）。API 不接受其它平台值，`ChatbotSummary` 无 `gateway`，目标无 `chatTrigger`，发布无 `mediaFileIds`。QQ 仅支持文本（单条 ≤2000 字符），入站图片默认交给 AI 理解；AI 仅普通消息 Chat，需 `CHATBOT_AI_ENABLED=true`。
 
-普通消息 Chat：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat；C2C 私聊直接进入，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”触发）；非管理员只能 Chat，不能执行斜杠命令。限速：Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 **30**）次、每小时 `BOT_AI_RATE_PER_HOUR`（默认 **120**）次；Chat 是只读 AI 对话，不产生写操作。
+普通消息 Chat：非斜杠消息在目标 `allow_chat=1` 时进入 AI Chat；C2C 私聊直接进入，QQ 群/频道只有 @Bot 事件进入（平台限制，无“全部消息”触发）；非管理员只能 Chat，不能执行斜杠命令。限速：Chat 每 Bot×用户每分钟 `CHATBOT_CHAT_RATE_PER_MINUTE`（默认 **30**）次、每小时 `CHATBOT_AI_RATE_PER_HOUR`（默认 **120**）次；Chat 是只读 AI 对话，不产生写操作。
 
-出站连通性：服务端每 `BOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测外网与 QQ 平台 API；`GET /api/bots/connectivity` 返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/bots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 AppSecret 或平台响应正文；网络恢复后触发投递/发布队列扫描。
+出站连通性：服务端每 `CHATBOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测外网与 QQ 平台 API；`GET /api/chatbots/connectivity` 返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/chatbots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 AppSecret 或平台响应正文；网络恢复后触发投递/发布队列扫描。
 
-角色卡：`/role` 仅私聊，个人卡可覆盖默认 lofii，群聊使用管理员配置的共享卡；角色设定不通过 HTTP API/UI 暴露。`/role show` 对用户自定义卡返回完整设定文本，默认角色卡只返回名称、不展示内置详情。默认内联提示词为「角色卡 + 固定安全边界 + 长期记忆 + 用户」；v0.7.3 文档模式（`BOT_AI_CONTEXT_READ_ENABLED=true`，默认关闭）首轮发送角色卡、后续轮只发送角色名/记忆条数/文档路径，模型按需 `read`；`bot_ai_sessions.mode` 只写 `chat`；`/reset` 与角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不记录 `mode`/正文/路径。
+角色卡：`/role` 仅私聊，个人卡可覆盖默认 lofii，群聊使用管理员配置的共享卡；角色设定不通过 HTTP API/UI 暴露。`/role show` 对用户自定义卡返回完整设定文本，默认角色卡只返回名称、不展示内置详情。默认内联提示词为「角色卡 + 固定安全边界 + 长期记忆 + 用户」；v0.7.3 文档模式（`CHATBOT_AI_CONTEXT_READ_ENABLED=true`，默认关闭）首轮发送角色卡、后续轮只发送角色名/记忆条数/文档路径，模型按需 `read`；`chatbot_ai_sessions.mode` 只写 `chat`；`/reset` 与角色卡变更清理该范围全部会话映射；审计 `chatbot.ai.chat` 不记录 `mode`/正文/路径。
 
-群聊目标共享唯一 OpenCode Chat 会话（`bot_ai_sessions.user_id=__group__`），群内 Chat 按目标串行，模型可见多用户历史；私聊仍按真实用户独立会话。真实用户仍用于限流/记忆/审计/发送工具 turn token；群聊/频道不执行 `/reset` 等斜杠命令，`/reset` 仅私聊生效。
+群聊目标共享唯一 OpenCode Chat 会话（`chatbot_ai_sessions.user_id=__group__`），群内 Chat 按目标串行，模型可见多用户历史；私聊仍按真实用户独立会话。真实用户仍用于限流/记忆/审计/发送工具 turn token；群聊/频道不执行 `/reset` 等斜杠命令，`/reset` 仅私聊生效。
 
-平台连接自检 `POST /api/bots/:id/check`；诊断事件 `GET /api/bots/:id/events`（无正文）；投递/发布/指标 `lastErrorHint`；角色/记忆元数据管理；自助命令 `/help`（按身份动态）、`/reset`、`/forget confirm`（全用户）。
-`BOT_AI_VISION_ENABLED` 默认 `true`，QQ 入站图片（`d.attachments` 中 `image/*`）经固定域名后缀白名单（`.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`））下载后交给 AI。
+平台连接自检 `POST /api/chatbots/:id/check`；诊断事件 `GET /api/chatbots/:id/events`（无正文）；投递/发布/指标 `lastErrorHint`；角色/记忆元数据管理；自助命令 `/help`（按身份动态）、`/reset`、`/forget confirm`（全用户）。
+`CHATBOT_AI_VISION_ENABLED` 默认 `true`，QQ 入站图片（`d.attachments` 中 `image/*`）经固定域名后缀白名单（`.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`））下载后交给 AI。
 
-记忆摘要会话一次性（每次新建远端 OpenCode 会话并在 `finally` 删除；响应 `BotMemorySummary` 不含会话 id）；记忆更新按 Bot×用户串行队列；合并策略=累计 `BOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）轮或用户空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s，0 关闭）触发，`bot.ai.memory` 审计增加 `rounds`。保留期分离：会话 `BOT_AI_SESSION_RETENTION_DAYS`（默认 7 天）与记忆 `BOT_AI_MEMORY_RETENTION_DAYS`（默认 365 天，30–3650）独立；`/reset`、`/forget confirm`、角色卡变更（含管理员删除）清理本地映射时尽力删除远端会话与旧摘要会话。
+记忆摘要会话一次性（每次新建远端 OpenCode 会话并在 `finally` 删除；响应 `ChatbotMemorySummary` 不含会话 id）；记忆更新按 Bot×用户串行队列；合并策略=累计 `CHATBOT_AI_MEMORY_BATCH_MESSAGES`（默认 3）轮或用户空闲 `CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS`（默认 120s，0 关闭）触发，`chatbot.ai.memory` 审计增加 `rounds`。保留期分离：会话 `CHATBOT_AI_SESSION_RETENTION_DAYS`（默认 7 天）与记忆 `CHATBOT_AI_MEMORY_RETENTION_DAYS`（默认 365 天，30–3650）独立；`/reset`、`/forget confirm`、角色卡变更（含管理员删除）清理本地映射时尽力删除远端会话与旧摘要会话。
 
 ### 对象
 
 ```json
-BotStatus:  { "enabled": true, "keyConfigured": true, "bots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null, "aiToolIsolation": { "supported": true, "fallbackCount": 0, "fallbackAt": null, "retryAt": null } }
-BotSummary: { "id": "uuid", "platform": "qq", "name": "运维通知", "enabled": true, "config": { "appId": "1029…" }, "webhookUrl": "https://app.example.com/api/bot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1 }
-BotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "user_openid/group_openid/channel_id", "label": "运维告警群", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "groupReplyMode": "mention|all", "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
-BotInboundTarget: { "botId": "uuid", "targetExternalId": "QQ 目标 ID", "targetKind": "channel|user|group", "userId": "QQ 用户 openid", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
-BotDelivery:{ "id": "uuid", "botId": "uuid", "targetId": "uuid|null", "kind": "notification|command_reply|publish|test", "status": "queued|sending|sent|failed|dead", "attempts": 0, "nextAttemptAt": null, "lastError": null, "lastErrorHint": "中文提示|null", "externalId": null, "createdAt": "…", "sentAt": null }
-BotPublishJob: { "id": "uuid", "botId": "uuid", "targetId": "uuid", "text": "…", "scheduledAt": null, "status": "draft|queued|sending|sent|failed|canceled", "attempts": 0, "lastError": null, "lastErrorHint": "中文提示|null", "createdAt": "…", "sentAt": null }
-BotMetrics: { "hours": 24, "deliveries": { "total": 10, "sent": 8, "failed": 1, "dead": 1, "successRate": 88.9 }, "publishes": { "total": 2, "sent": 2, "failed": 0 }, "events": 5, "lastError": null, "lastErrorHint": "中文提示|null", "lastSentAt": "…" }
-BotHealthCheck: { "ok": true, "items": [{ "name": "access_token", "ok": true, "detail": "access_token 已获取" }], "checkedAt": "…" }
-BotEventItem: { "eventId": "qq:message_id", "kind": "command|chat|ignored", "outcome": "received|ok|denied|rate_limited|ignored|error", "detail": "短码|null（如 command_denied/chat_rate_limited）", "targetExternalId": "…|null", "userId": "…|null", "receivedAt": "…", "updatedAt": "…|null" }
-BotRoleSummary: { "userId": "…", "userName": "…|null", "name": "角色名", "enabled": true, "promptLength": 320, "createdAt": "…", "updatedAt": "…" }
-BotGroupRoleSummary: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手|null", "enabled": true, "promptLength": 120, "updatedAt": "…|null" }
-BotMemoryGroupSummary: { "scope": "group:<group_openid>", "targetExternalId": "group_openid", "targetName": "测试群", "itemCount": 3, "kinds": { "fact": 2, "preference": 1 }, "updatedAt": "…|null" }
-BotGroupRoleDetail: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手", "prompt": "管理员可编辑正文", "enabled": true, "createdAt": "…", "updatedAt": "…" }
-BotMemoryUserSummary: { "userId": "…", "userName": "…|null", "itemCount": 7, "kinds": { "profile": 2, "preference": 3, "task": 2 }, "memoryEnabled": true, "updatedAt": "…|null" }
-BotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|project|task|relationship|episode", "importance": 3, "confidence": 0.8, "updatedAt": "…", "expiresAt": "…|null" }
+ChatbotStatus:  { "enabled": true, "keyConfigured": true, "chatbots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null, "aiToolIsolation": { "supported": true, "fallbackCount": 0, "fallbackAt": null, "retryAt": null } }
+ChatbotSummary: { "id": "uuid", "platform": "qq", "name": "运维通知", "enabled": true, "config": { "appId": "1029…" }, "webhookUrl": "https://app.example.com/api/chatbot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1 }
+ChatbotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "user_openid/group_openid/channel_id", "label": "运维告警群", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "groupReplyMode": "mention|all", "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
+ChatbotInboundTarget: { "botId": "uuid", "targetExternalId": "QQ 目标 ID", "targetKind": "channel|user|group", "userId": "QQ 用户 openid", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
+ChatbotDelivery:{ "id": "uuid", "botId": "uuid", "targetId": "uuid|null", "kind": "notification|command_reply|publish|test", "status": "queued|sending|sent|failed|dead", "attempts": 0, "nextAttemptAt": null, "lastError": null, "lastErrorHint": "中文提示|null", "externalId": null, "createdAt": "…", "sentAt": null }
+ChatbotPublishJob: { "id": "uuid", "botId": "uuid", "targetId": "uuid", "text": "…", "scheduledAt": null, "status": "draft|queued|sending|sent|failed|canceled", "attempts": 0, "lastError": null, "lastErrorHint": "中文提示|null", "createdAt": "…", "sentAt": null }
+ChatbotMetrics: { "hours": 24, "deliveries": { "total": 10, "sent": 8, "failed": 1, "dead": 1, "successRate": 88.9 }, "publishes": { "total": 2, "sent": 2, "failed": 0 }, "events": 5, "lastError": null, "lastErrorHint": "中文提示|null", "lastSentAt": "…" }
+ChatbotHealthCheck: { "ok": true, "items": [{ "name": "access_token", "ok": true, "detail": "access_token 已获取" }], "checkedAt": "…" }
+ChatbotEventItem: { "eventId": "qq:message_id", "kind": "command|chat|ignored", "outcome": "received|ok|denied|rate_limited|ignored|error", "detail": "短码|null（如 command_denied/chat_rate_limited）", "targetExternalId": "…|null", "userId": "…|null", "receivedAt": "…", "updatedAt": "…|null" }
+ChatbotRoleSummary: { "userId": "…", "userName": "…|null", "name": "角色名", "enabled": true, "promptLength": 320, "createdAt": "…", "updatedAt": "…" }
+ChatbotGroupRoleSummary: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手|null", "enabled": true, "promptLength": 120, "updatedAt": "…|null" }
+ChatbotMemoryGroupSummary: { "scope": "group:<group_openid>", "targetExternalId": "group_openid", "targetName": "测试群", "itemCount": 3, "kinds": { "fact": 2, "preference": 1 }, "updatedAt": "…|null" }
+ChatbotGroupRoleDetail: { "targetId": "uuid", "targetLabel": "测试群", "targetExternalId": "group_openid", "name": "群助手", "prompt": "管理员可编辑正文", "enabled": true, "createdAt": "…", "updatedAt": "…" }
+ChatbotMemoryUserSummary: { "userId": "…", "userName": "…|null", "itemCount": 7, "kinds": { "profile": 2, "preference": 3, "task": 2 }, "memoryEnabled": true, "updatedAt": "…|null" }
+ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|project|task|relationship|episode", "importance": 3, "confidence": 0.8, "updatedAt": "…", "expiresAt": "…|null" }
 ```
 
-`BotSummary.config` 只含公开配置（QQ `appId`）；QQ AppSecret 永不返回，也不出现在审计/日志中。`webhookUrl` 与 `setupSteps` 由服务端按 `APP_ORIGIN` 和 QQ 平台模板生成。
-`BotMetrics.deliveries.successRate = sent / (sent + failed) × 100`（保留 1 位小数，无尝试时为 0）；`lastError`/`lastErrorHint`/`lastSentAt` 取投递与发布的最近值。
-`BotSummary` 无 `gateway`、`BotTarget` 无旧 `chatTrigger` 字段、`BotPublishJob` 无 `mediaFileIds`；`BotDelivery` 的 `partial` 语义仅针对长文本分段。
-`BotTarget.groupReplyMode` 仅群聊目标可设为 `all`（实验性全量消息），其余目标固定 `mention`；群聊/频道不再执行斜杠命令。
+`ChatbotSummary.config` 只含公开配置（QQ `appId`）；QQ AppSecret 永不返回，也不出现在审计/日志中。`webhookUrl` 与 `setupSteps` 由服务端按 `APP_ORIGIN` 和 QQ 平台模板生成。
+`ChatbotMetrics.deliveries.successRate = sent / (sent + failed) × 100`（保留 1 位小数，无尝试时为 0）；`lastError`/`lastErrorHint`/`lastSentAt` 取投递与发布的最近值。
+`ChatbotSummary` 无 `gateway`、`ChatbotTarget` 无旧 `chatTrigger` 字段、`ChatbotPublishJob` 无 `mediaFileIds`；`ChatbotDelivery` 的 `partial` 语义仅针对长文本分段。
+`ChatbotTarget.groupReplyMode` 仅群聊目标可设为 `all`（实验性全量消息），其余目标固定 `mention`；群聊/频道不再执行斜杠命令。
 普通消息 Chat 可启用模型消息发送工具：OpenCode 通过 `botmsg` MCP 调用 `botmsg_send_message`，每轮由提示词携带一次性 `turn_id`/`turn_token`；
-应用内部回调 `POST /api/bot/ai/tool/send`（无 session/CSRF，`turn_token` 由 `BOT_SECRET_KEY` HMAC，只写本轮缓冲）接收文本，回合结束由服务端统一发送。
-私聊与 @ 提及必须至少发送一条，模型漏调用时服务端兜底发送最终文本并审计 `bot.ai.send_fallback`；全量群聊未调用工具即静默（替代旧 `NO_REPLY` 文本哨兵）。
-全量群聊非 @ 消息使用 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`（默认 8000）与 `BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`（默认 20000）延长合并窗口。
+应用内部回调 `POST /api/chatbot/ai/tool/send`（无 session/CSRF，`turn_token` 由 `CHATBOT_SECRET_KEY` HMAC，只写本轮缓冲）接收文本，回合结束由服务端统一发送。
+私聊与 @ 提及必须至少发送一条，模型漏调用时服务端兜底发送最终文本并审计 `chatbot.ai.send_fallback`；全量群聊未调用工具即静默（替代旧 `NO_REPLY` 文本哨兵）。
+全量群聊非 @ 消息使用 `CHATBOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`（默认 8000）与 `CHATBOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`（默认 20000）延长合并窗口。
 新创建的 OpenCode Chat/Memory 会话标题为「目标名称 + Chat/Memory」。
 
 （审计修复）：
-- `BotStatus.aiToolIsolation` 增加 `retryAt`（下一次允许重试 `permissions` 的时间；未降级为 null）；`BotStatus.lastError`/`BotSummary.lastError` 改为从 `bot_deliveries`/`bot_publish_jobs` 失败派生（不再依赖 `bots.last_error` 死字段）。工具隔离 fail-closed：启用 `BOT_AI_SEND_TOOL_ENABLED` 且隔离不可用时，新 Chat 返回固定提示并写 `bot_events`（忽略/拒绝），OpenCode 层返回 `503 bot_ai_tool_isolation_unavailable`；10 分钟窗口到点后放行一次重试，上游恢复后自动恢复隔离。
-- 群共享记忆归属：条目 key 前缀为稳定 `<member_openid>:`（显示名只存 value）；启动一次性迁移 `bot_group_memory_owner_migrated_v1`，无法映射的旧键加 `legacy:` 保留；`/forget confirm` 清除本人在各群共享记忆中的条目并取消在途抽取，审计 `bot.memory.forget` 增加 `groupItems/groupScopes`。
+- `ChatbotStatus.aiToolIsolation` 增加 `retryAt`（下一次允许重试 `permissions` 的时间；未降级为 null）；`ChatbotStatus.lastError`/`ChatbotSummary.lastError` 改为从 `chatbot_deliveries`/`chatbot_publish_jobs` 失败派生（不再依赖 `chatbots.last_error` 死字段）。工具隔离 fail-closed：启用 `CHATBOT_AI_SEND_TOOL_ENABLED` 且隔离不可用时，新 Chat 返回固定提示并写 `chatbot_events`（忽略/拒绝），OpenCode 层返回 `503 chatbot_ai_tool_isolation_unavailable`；10 分钟窗口到点后放行一次重试，上游恢复后自动恢复隔离。
+- 群共享记忆归属：条目 key 前缀为稳定 `<member_openid>:`（显示名只存 value）；启动一次性迁移 `chatbot_group_memory_owner_migrated_v1`，无法映射的旧键加 `legacy:` 保留；`/forget confirm` 清除本人在各群共享记忆中的条目并取消在途抽取，审计 `chatbot.memory.forget` 增加 `groupItems/groupScopes`。
 - Webhook 限流：未通过验签的请求使用独立每 Bot 每分钟 120 次桶，已验签业务事件 300 次/分钟（验签后才扣减），无效流量不能饿死合法事件；拒绝/限流审计按「每 Bot×动作×分钟」聚合（首条 + 每 50 条），降低未认证写放大。
 - 其它：孤儿 OpenCode 会话清理只针对旧默认标题（不误删新命名/前缀相似会话）；全量群混批中任一 @ 即整批按被点名处理；发送工具已缓冲消息在回合异常时先补发并审计 `partialTurn`；`/search` 与普通 Chat 共用会话串行锁；群聊名称匹配按词边界；`burst.clear` 取消运行中批次的后续排队。
 
 ### 管理端点
 
-- `POST /api/bot/ai/tool/send`（内部工具回调，无 session/CSRF）：body `{turn_id,turn_token,text}`；只接受当前活跃回合的 HMAC token，单轮最多 5 条、单条 ≤1800 字；返回 `{ok:true,index}`，非法/过期/超限分别 `400/403/404/410/429`；文本只进入缓冲，不立即外发。该路由不在 Cloudflare Access bypass 中，生产由本机 MCP 访问 `127.0.0.1`。
-- `GET /api/bots/status` → `BotStatus`（功能关闭时也可读；用于前端判断是否展示配置指引）。
-- `GET /api/bots/connectivity` → `BotConnectivitySnapshot`；需要会话，功能关闭时仍返回当前快照/未检测状态。
-- `POST /api/bots/connectivity/check` → `BotConnectivitySnapshot`；需要会话 + CSRF，30 次/分钟；手动复检外网/QQ 平台。
-- `GET /api/bots` → `{ "items": [BotSummary] }`；`GET /api/bots/:id` → `{ "bot": BotSummary }`；不存在/已删除 `404 not_found`。
-  功能未启用时列表/详情返回 `503 bot_disabled|bot_key_missing`（前端应先用 `/api/bots/status` 判断）。
-- `GET /api/bots/:id/metrics?hours=24` → `{ "metrics": BotMetrics }`；`hours` 默认 24、范围 1–720，非法/越界值回退 24；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`lastErrorHint` 为服务端按 `lastError` 映射的中文提示（未知为 null）。
-- `POST /api/bots/:id/check` → `{ "health": BotHealthCheck }`；需要会话 + CSRF，30 次/分钟；调用 QQ 适配器换取 `access_token` 做只读自检，
-  结果脱敏并刷新 `lastCheckedAt`；即使失败也返回 200 + `ok:false` 项；适配器不支持自检时 `400 bot_health_unsupported`；Bot 关闭/不存在 `503/404`。
-- `GET /api/bots/:id/events?hours=24&limit=50&offset=0&outcome=ok` → `{ "items": [BotEventItem], "total": n }`；需要会话；`hours` 1–720（默认 24）、`limit` 1–200（默认 50）、`offset` ≥0；
+- `POST /api/chatbot/ai/tool/send`（内部工具回调，无 session/CSRF）：body `{turn_id,turn_token,text}`；只接受当前活跃回合的 HMAC token，单轮最多 5 条、单条 ≤1800 字；返回 `{ok:true,index}`，非法/过期/超限分别 `400/403/404/410/429`；文本只进入缓冲，不立即外发。该路由不在 Cloudflare Access bypass 中，生产由本机 MCP 访问 `127.0.0.1`。
+- `GET /api/chatbots/status` → `ChatbotStatus`（功能关闭时也可读；用于前端判断是否展示配置指引）。
+- `GET /api/chatbots/connectivity` → `ChatbotConnectivitySnapshot`；需要会话，功能关闭时仍返回当前快照/未检测状态。
+- `POST /api/chatbots/connectivity/check` → `ChatbotConnectivitySnapshot`；需要会话 + CSRF，30 次/分钟；手动复检外网/QQ 平台。
+- `GET /api/chatbots` → `{ "items": [ChatbotSummary] }`；`GET /api/chatbots/:id` → `{ "bot": ChatbotSummary }`；不存在/已删除 `404 not_found`。
+  功能未启用时列表/详情返回 `503 chatbot_disabled|chatbot_key_missing`（前端应先用 `/api/chatbots/status` 判断）。
+- `GET /api/chatbots/:id/metrics?hours=24` → `{ "metrics": ChatbotMetrics }`；`hours` 默认 24、范围 1–720，非法/越界值回退 24；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`lastErrorHint` 为服务端按 `lastError` 映射的中文提示（未知为 null）。
+- `POST /api/chatbots/:id/check` → `{ "health": ChatbotHealthCheck }`；需要会话 + CSRF，30 次/分钟；调用 QQ 适配器换取 `access_token` 做只读自检，
+  结果脱敏并刷新 `lastCheckedAt`；即使失败也返回 200 + `ok:false` 项；适配器不支持自检时 `400 chatbot_health_unsupported`；Bot 关闭/不存在 `503/404`。
+- `GET /api/chatbots/:id/events?hours=24&limit=50&offset=0&outcome=ok` → `{ "items": [ChatbotEventItem], "total": n }`；需要会话；`hours` 1–720（默认 24）、`limit` 1–200（默认 50）、`offset` ≥0；
   `outcome` 缺省返回全部，只接受 `received|ok|denied|rate_limited|ignored|error`，非法值 `400 invalid_request`；只返回事件元数据，**不含消息正文/用户名**。
-- `GET /api/bots/:id/roles?limit=20&offset=0` → `{ "items": [BotRoleSummary], "total": n }`；需要会话；只返回元数据（用户/名字/长度/启停/时间），不返回角色设定正文。
-  - `PATCH /api/bots/:id/roles/:userId` body `{enabled:boolean}` → `{ "ok": true }`；需要会话 + CSRF；启停指定用户角色卡，不存在/非布尔值 `404/400`。
-  - `DELETE /api/bots/:id/roles/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除角色卡并清理该用户 chat 会话（task 会话与记忆保留），不存在 `404`。
-  - `GET /api/bots/:id/group-roles` → `{ "items": [BotGroupRoleSummary] }`；需要会话；列出全部群聊目标及角色卡元数据（未配置时 name/updatedAt 为 null）。
-  - `GET /api/bots/:id/group-roles/:targetId` → `{ "groupRole": BotGroupRoleDetail|null }`；需要会话；群聊角色卡正文仅管理员可读；目标不是群聊 `400`，不存在 `404`。
-  - `PUT /api/bots/:id/group-roles/:targetId` body `{name,prompt}` → `{ "groupRole": BotGroupRoleDetail }`；需要会话 + CSRF；新建/覆盖并启用角色卡；名字 1–32、正文 1–1000，非法 `400`；目标必须为群聊。
-  - `PATCH /api/bots/:id/group-roles/:targetId` body `{enabled:boolean}` → `{ "ok": true }`；需要会话 + CSRF；启停群聊角色卡，不存在 `404`。
-  - `DELETE /api/bots/:id/group-roles/:targetId` → `{ "ok": true }`；需要会话 + CSRF；删除群聊角色卡，不存在 `404`。
-- `GET /api/bots/:id/memories?limit=20&offset=0` → `{ "items": [BotMemoryUserSummary], "total": n }`；需要会话；用户级元数据（itemCount/kinds/memoryEnabled/updatedAt），**不返回 key/value 或摘要正文**。
-  - `GET /api/bots/:id/memories/:userId/items?limit=20&offset=0` → `{ "items": [BotMemoryItemSummary], "total": n }`；需要会话；条目元数据（id/kind/importance/confidence/updatedAt/expiresAt），不过期条目的 `expiresAt` 为 null。
-  - `DELETE /api/bots/:id/memories/:userId/items/:itemId` → `{ "ok": true }`；需要会话 + CSRF；删除单条结构化记忆（审计 `bot.memory.delete_item`），不存在 `404`。
-  - `DELETE /api/bots/:id/memories/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除该用户结构化条目、状态与 legacy 摘要（不清 AI 会话；清全部会话与远端会话由用户自助 `/forget confirm`）；审计 `bot.memory.delete_user`；不存在 `404`。
-  - `GET /api/bots/:id/group-memories?limit=20&offset=0` → `{ "items": [BotMemoryGroupSummary], "total": n }`；需要会话；按群目标聚合的共享记忆元数据（scope/targetExternalId/targetName/itemCount/kinds/updatedAt），**不返回 key/value 正文**。
-  - `DELETE /api/bots/:id/group-memories/:scope` → `{ "ok": true }`；需要会话 + CSRF；scope 必须为 `group:<targetExternalId>`，只清空该群共享记忆，不影响用户记忆/群目标/会话；审计 `bot.memory.delete_user`。
-  - 群聊记忆条目复用 `GET .../memories/:scope/items` 与 `DELETE .../memories/:scope/items/:itemId`；启动时一次性把现有群聊参与者的用户级记忆复制到对应群共享记忆（仅群聊用户执行移动），`meta.bot_group_memory_migrated_v1` 保证幂等。
-- `GET /api/bots/:id/inbound-targets?limit=50` → `{ "items": [BotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50；越界按边界截断）。
-  只记录最近命令/Chat 事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `BOT_EVENT_RETENTION_DAYS` 清理。`/bots` 目标分区用该接口做“最近入站目标”登记。
-- `POST /api/bots` body `{platform,name,token,config?}` → `200 { "bot": BotSummary }`。
-  - `platform` 必须为 `qq`（其它平台值 `400 invalid_bot_config`）；`name` ≤80；最多 `BOT_MAX_BOTS`（默认 10）个。
+- `GET /api/chatbots/:id/roles?limit=20&offset=0` → `{ "items": [ChatbotRoleSummary], "total": n }`；需要会话；只返回元数据（用户/名字/长度/启停/时间），不返回角色设定正文。
+  - `PATCH /api/chatbots/:id/roles/:userId` body `{enabled:boolean}` → `{ "ok": true }`；需要会话 + CSRF；启停指定用户角色卡，不存在/非布尔值 `404/400`。
+  - `DELETE /api/chatbots/:id/roles/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除角色卡并清理该用户 chat 会话（task 会话与记忆保留），不存在 `404`。
+  - `GET /api/chatbots/:id/group-roles` → `{ "items": [ChatbotGroupRoleSummary] }`；需要会话；列出全部群聊目标及角色卡元数据（未配置时 name/updatedAt 为 null）。
+  - `GET /api/chatbots/:id/group-roles/:targetId` → `{ "groupRole": ChatbotGroupRoleDetail|null }`；需要会话；群聊角色卡正文仅管理员可读；目标不是群聊 `400`，不存在 `404`。
+  - `PUT /api/chatbots/:id/group-roles/:targetId` body `{name,prompt}` → `{ "groupRole": ChatbotGroupRoleDetail }`；需要会话 + CSRF；新建/覆盖并启用角色卡；名字 1–32、正文 1–1000，非法 `400`；目标必须为群聊。
+  - `PATCH /api/chatbots/:id/group-roles/:targetId` body `{enabled:boolean}` → `{ "ok": true }`；需要会话 + CSRF；启停群聊角色卡，不存在 `404`。
+  - `DELETE /api/chatbots/:id/group-roles/:targetId` → `{ "ok": true }`；需要会话 + CSRF；删除群聊角色卡，不存在 `404`。
+- `GET /api/chatbots/:id/memories?limit=20&offset=0` → `{ "items": [ChatbotMemoryUserSummary], "total": n }`；需要会话；用户级元数据（itemCount/kinds/memoryEnabled/updatedAt），**不返回 key/value 或摘要正文**。
+  - `GET /api/chatbots/:id/memories/:userId/items?limit=20&offset=0` → `{ "items": [ChatbotMemoryItemSummary], "total": n }`；需要会话；条目元数据（id/kind/importance/confidence/updatedAt/expiresAt），不过期条目的 `expiresAt` 为 null。
+  - `DELETE /api/chatbots/:id/memories/:userId/items/:itemId` → `{ "ok": true }`；需要会话 + CSRF；删除单条结构化记忆（审计 `chatbot.memory.delete_item`），不存在 `404`。
+  - `DELETE /api/chatbots/:id/memories/:userId` → `{ "ok": true }`；需要会话 + CSRF；删除该用户结构化条目、状态与 legacy 摘要（不清 AI 会话；清全部会话与远端会话由用户自助 `/forget confirm`）；审计 `chatbot.memory.delete_user`；不存在 `404`。
+  - `GET /api/chatbots/:id/group-memories?limit=20&offset=0` → `{ "items": [ChatbotMemoryGroupSummary], "total": n }`；需要会话；按群目标聚合的共享记忆元数据（scope/targetExternalId/targetName/itemCount/kinds/updatedAt），**不返回 key/value 正文**。
+  - `DELETE /api/chatbots/:id/group-memories/:scope` → `{ "ok": true }`；需要会话 + CSRF；scope 必须为 `group:<targetExternalId>`，只清空该群共享记忆，不影响用户记忆/群目标/会话；审计 `chatbot.memory.delete_user`。
+  - 群聊记忆条目复用 `GET .../memories/:scope/items` 与 `DELETE .../memories/:scope/items/:itemId`；启动时一次性把现有群聊参与者的用户级记忆复制到对应群共享记忆（仅群聊用户执行移动），`meta.chatbot_group_memory_migrated_v1` 保证幂等。
+- `GET /api/chatbots/:id/inbound-targets?limit=50` → `{ "items": [ChatbotInboundTarget] }`；需要会话，Bot 功能关闭时 `503`，Bot 不存在 `404`；`limit` 1–200（默认 50；越界按边界截断）。
+  只记录最近命令/Chat 事件的目标、用户、类型、时间与是否私聊，不返回消息正文；每 Bot 最多保留 500 条、按 `CHATBOT_EVENT_RETENTION_DAYS` 清理。`/chatbots` 目标分区用该接口做“最近入站目标”登记。
+- `POST /api/chatbots` body `{platform,name,token,config?}` → `200 { "bot": ChatbotSummary }`。
+  - `platform` 必须为 `qq`（其它平台值 `400 invalid_chatbot_config`）；`name` ≤80；最多 `CHATBOT_MAX_BOTS`（默认 10）个。
   - QQ 需 `token`（AppSecret，≥16）与 `config.appId`（5–32 位数字）；`token` 只存密文，AppID 可公开；不再接受 `webhookSecret/publicKey/signingSecret`。
-  - 校验失败 `400 invalid_bot_config`（`details` 为 `qq_token_invalid` 等错误码数组）；超过上限 `400`。
+  - 校验失败 `400 invalid_chatbot_config`（`details` 为 `qq_token_invalid` 等错误码数组）；超过上限 `400`。
   - 新建 Bot 默认 `enabled=false`；需显式 `PATCH enabled=true` 才处理 Webhook/队列。
-- `PATCH /api/bots/:id` body 任意 `{name?,enabled?,config?,token?}` → `200 { "bot": BotSummary }`；`token` 省略或空串表示保持原值；修改成功会清空 `lastError`。
-  `DELETE /api/bots/:id` → `{ "ok": true }`（级联删除目标/投递/发布/事件/AI 会话/记忆/角色卡）。
-- `POST /api/bots/:id/test` body `{targetId?}` → `{ "ok": true }`；缺目标 `400`；未配置目标时使用最早登记的目标；限流 20 次/小时。
+- `PATCH /api/chatbots/:id` body 任意 `{name?,enabled?,config?,token?}` → `200 { "bot": ChatbotSummary }`；`token` 省略或空串表示保持原值；修改成功会清空 `lastError`。
+  `DELETE /api/chatbots/:id` → `{ "ok": true }`（级联删除目标/投递/发布/事件/AI 会话/记忆/角色卡）。
+- `POST /api/chatbots/:id/test` body `{targetId?}` → `{ "ok": true }`；缺目标 `400`；未配置目标时使用最早登记的目标；限流 20 次/小时。
 - 目标：
-  - `GET /api/bots/:id/targets` → `{ "items": [BotTarget] }`。
-  - `POST /api/bots/:id/targets` body `{externalId,label,kind,allowCommands?,allowNotifications?,allowChat?,groupReplyMode?,quietStartMinute?,quietEndMinute?}` → `200 { "target": BotTarget }`；`allowCommands` 默认 false、`allowNotifications` 默认 true、`allowChat` 默认 false、`groupReplyMode` 默认 `mention`；每 Bot ≤100；`(bot_id, external_id)` 唯一，重复 `409 conflict`。
+  - `GET /api/chatbots/:id/targets` → `{ "items": [ChatbotTarget] }`。
+  - `POST /api/chatbots/:id/targets` body `{externalId,label,kind,allowCommands?,allowNotifications?,allowChat?,groupReplyMode?,quietStartMinute?,quietEndMinute?}` → `200 { "target": ChatbotTarget }`；`allowCommands` 默认 false、`allowNotifications` 默认 true、`allowChat` 默认 false、`groupReplyMode` 默认 `mention`；每 Bot ≤100；`(chatbot_id, external_id)` 唯一，重复 `409 conflict`。
     `quietStartMinute`/`quietEndMinute` 为 Asia/Shanghai 本地分钟（0–1439），必须同时设置或同时留空，不能相同；窗口跨午夜（start > end）按跨越处理；设置后该目标的告警通知在窗口内延后到结束时刻。
     `groupReplyMode=all` 仅 `kind=group` 可传（实验性）；非群聊传 `all` 返回 `400`。全量消息需 QQ 后台开启“接收所有消息”并订阅 `GROUP_MESSAGE_CREATE`；默认 `mention` 仅接受 @Bot 或文本包含 Bot 名称的消息。
-  - `PATCH /api/bots/:id/targets/:targetId` body `{label?,kind?,allowCommands?,allowNotifications?,allowChat?,groupReplyMode?,quietStartMinute?,quietEndMinute?}` → `{ "target": BotTarget }`；`null` 表示清空，未传字段沿用当前值；合并后静默起止必须同时有值或同时为空且不能相同，否则 `400`；`all` 仅群聊目标可用；`DELETE` → `{ "ok": true }`。
-  - 群聊/频道目标不再执行任何斜杠命令（含自助命令）；收到 `/` 开头消息只写 `bot.command.disabled` 审计并返回 200，不回复。C2C 私聊命令仍需目标 `allow_commands=1` + 用户白名单；`/help`、`/role`（仅私聊）、`/reset`、`/forget confirm`、`/memory`、`/search` 为自助命令，不要求目标/用户白名单；`/ask` 为未知命令（非管理员被拒、管理员回全量帮助）。
+  - `PATCH /api/chatbots/:id/targets/:targetId` body `{label?,kind?,allowCommands?,allowNotifications?,allowChat?,groupReplyMode?,quietStartMinute?,quietEndMinute?}` → `{ "target": ChatbotTarget }`；`null` 表示清空，未传字段沿用当前值；合并后静默起止必须同时有值或同时为空且不能相同，否则 `400`；`all` 仅群聊目标可用；`DELETE` → `{ "ok": true }`。
+  - 群聊/频道目标不再执行任何斜杠命令（含自助命令）；收到 `/` 开头消息只写 `chatbot.command.disabled` 审计并返回 200，不回复。C2C 私聊命令仍需目标 `allow_commands=1` + 用户白名单；`/help`、`/role`（仅私聊）、`/reset`、`/forget confirm`、`/memory`、`/search` 为自助命令，不要求目标/用户白名单；`/ask` 为未知命令（非管理员被拒、管理员回全量帮助）。
   - `/reset`、`/forget confirm`、角色卡变更（含管理员删除角色）在清理本地映射时尽力删除对应远端 OpenCode 会话与旧摘要会话（删除失败只记日志，不影响响应）。
-  - `allowChat` 只授权普通消息 Chat，不授予斜杠命令：Chat 只需目标 `allow_chat=1`（不要求用户白名单）；C2C 私聊直接进入；群/频道默认仅 @Bot 事件进入，群目标设为 `groupReplyMode=all` 且 QQ 后台开启全量消息后进入 `GROUP_MESSAGE_CREATE`。非管理员只能 Chat，不能借 Chat 执行命令；Chat 仍受 `BOT_CHAT_RATE_PER_MINUTE` 与 `BOT_AI_RATE_PER_HOUR` 限制。
+  - `allowChat` 只授权普通消息 Chat，不授予斜杠命令：Chat 只需目标 `allow_chat=1`（不要求用户白名单）；C2C 私聊直接进入；群/频道默认仅 @Bot 事件进入，群目标设为 `groupReplyMode=all` 且 QQ 后台开启全量消息后进入 `GROUP_MESSAGE_CREATE`。非管理员只能 Chat，不能借 Chat 执行命令；Chat 仍受 `CHATBOT_CHAT_RATE_PER_MINUTE` 与 `CHATBOT_AI_RATE_PER_HOUR` 限制。
 - 投递：
-  - `GET /api/bots/:id/deliveries?limit=50`（1–200）→ `{ "items": [BotDelivery] }`，按创建时间倒序。
-  - `POST /api/bots/:id/deliveries/:deliveryId/retry` → `{ "ok": true }`；仅 `failed|dead` 可重投，其它 `404`。
+  - `GET /api/chatbots/:id/deliveries?limit=50`（1–200）→ `{ "items": [ChatbotDelivery] }`，按创建时间倒序。
+  - `POST /api/chatbots/:id/deliveries/:deliveryId/retry` → `{ "ok": true }`；仅 `failed|dead` 可重投，其它 `404`。
 - 发布（仅文本）：
-  - `GET /api/bots/:id/publish?limit=50`（1–200）→ `{ "items": [BotPublishJob] }`。
-  - `POST /api/bots/:id/publish` body `{targetId,text,scheduledAt?,totpCode,confirmText}` → `200 { "job": BotPublishJob }`。
-    - **必须** `totpCode`：缺码 `400 totp_required`；验证失败 `401 invalid_code`（计入 TOTP/再认证限流，审计 `reauth_bot_publish`）。不能用会话 + CSRF 直接外发。
+  - `GET /api/chatbots/:id/publish?limit=50`（1–200）→ `{ "items": [ChatbotPublishJob] }`。
+  - `POST /api/chatbots/:id/publish` body `{targetId,text,scheduledAt?,totpCode,confirmText}` → `200 { "job": ChatbotPublishJob }`。
+    - **必须** `totpCode`：缺码 `400 totp_required`；验证失败 `401 invalid_code`（计入 TOTP/再认证限流，审计 `reauth_chatbot_publish`）。不能用会话 + CSRF 直接外发。
     - **必须** `confirmText: "PUBLISH"`：缺失/不匹配 `400 publish_confirm_required`；与 TOTP 共同构成双确认。
     - `targetId` 必须是本 Bot 的 `channel|group` 目标（`user` 返回 400）；`text` 非空，**≤2000 字符**（QQ 单条上限）；超过返回 `400 publish_text_too_long`，不再静默截断或服务端分段。
     - 不再支持 `mediaFileIds`/媒体附件；带媒体字段不再校验或外发，QQ 仅文本。
-    - `scheduledAt` 为 ISO 时间，可为空（立即入队）；不得早于当前时间 30 秒以上，最长 `BOT_PUBLISH_MAX_SCHEDULED_DAYS`（默认 30）天。
+    - `scheduledAt` 为 ISO 时间，可为空（立即入队）；不得早于当前时间 30 秒以上，最长 `CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS`（默认 30）天。
     - 发布文本不再分段：单条 ≤2000 字符；已发送后失败时任务标记 `failed` 且 `last_error` 含 `partial_text_sent`，**不自动重试**（避免重复外发），需人工确认后重建任务。
-    - 限流 20 次/小时；队列每 `BOT_DELIVERY_INTERVAL_SECONDS`（30）扫描，失败按指数退避（30s 起，≤1h），达到 `BOT_DELIVERY_MAX_ATTEMPTS`（5）标记 `failed`/死信。
-  - `DELETE /api/bots/:id/publish/:jobId` → `{ "ok": true }`；仅 `queued|draft` 可取消，其它 `404`。
-- 审计动作：`bot.create/update/delete`、`bot.target.create/update/delete`、`bot.delivery.retry/partial`、`bot.publish.create/sent/cancel/partial`、`bot.command`、`bot.command.denied`、`bot.chat`、`bot.chat.denied`、`bot.ai.chat`（detail 含 `context: docs|inline`/`docBytes`/`memoryItems`）、`bot.ai.context_failed`、`bot.ai.memory`（legacy）、`bot.ai.permissions_fallback`、`bot.memory.extract`、`bot.memory.toggle`、`bot.memory.delete_item`、`bot.memory.delete_user`、`bot.memory.legacy_cleanup`、`bot.ai.image`、`bot.webhook.challenge`、`bot.webhook.rejected/rate_limited`、`bot.event.ignored`、`bot.test`、`bot.check`、`bot.reset`、`bot.memory.forget`、`bot.role.admin`、`bot.memory.admin`、`reauth_bot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。备份危险操作用 `backup_reauth_failed` 记录 TOTP 再认证失败（route/错误摘要/IP，不含 TOTP）。
+    - 限流 20 次/小时；队列每 `CHATBOT_DELIVERY_INTERVAL_SECONDS`（30）扫描，失败按指数退避（30s 起，≤1h），达到 `CHATBOT_DELIVERY_MAX_ATTEMPTS`（5）标记 `failed`/死信。
+  - `DELETE /api/chatbots/:id/publish/:jobId` → `{ "ok": true }`；仅 `queued|draft` 可取消，其它 `404`。
+- 审计动作：`chatbot.create/update/delete`、`chatbot.target.create/update/delete`、`chatbot.delivery.retry/partial`、`chatbot.publish.create/sent/cancel/partial`、`chatbot.command`、`chatbot.command.denied`、`chatbot.chat`、`chatbot.chat.denied`、`chatbot.ai.chat`（detail 含 `context: docs|inline`/`docBytes`/`memoryItems`）、`chatbot.ai.context_failed`、`chatbot.ai.memory`（legacy）、`chatbot.ai.permissions_fallback`、`chatbot.memory.extract`、`chatbot.memory.toggle`、`chatbot.memory.delete_item`、`chatbot.memory.delete_user`、`chatbot.memory.legacy_cleanup`、`chatbot.ai.image`、`chatbot.webhook.challenge`、`chatbot.webhook.rejected/rate_limited`、`chatbot.event.ignored`、`chatbot.test`、`chatbot.check`、`chatbot.reset`、`chatbot.memory.forget`、`chatbot.role.admin`、`chatbot.memory.admin`、`reauth_chatbot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。备份危险操作用 `backup_reauth_failed` 记录 TOTP 再认证失败（route/错误摘要/IP，不含 TOTP）。
 
 ### 公开 Webhook
 
-`POST /api/bot/webhook/:botId`（无会话/CSRF/Origin 校验；独立 raw body scope；Cloudflare Access 需 bypass；仅 QQ 官方 Bot）
+`POST /api/chatbot/webhook/:botId`（无会话/CSRF/Origin 校验；独立 raw body scope；Cloudflare Access 需 bypass；仅 QQ 官方 Bot）
 
-- Content-Type：`application/json` 或 `application/x-www-form-urlencoded`；body ≤ `BOT_WEBHOOK_MAX_BODY_BYTES`（默认 256 KiB）。
+- Content-Type：`application/json` 或 `application/x-www-form-urlencoded`；body ≤ `CHATBOT_WEBHOOK_MAX_BODY_BYTES`（默认 256 KiB）。
 - 成功：QQ op=13 回调校验返回 `{"plain_token":"…","signature":"…"}`；普通事件/重复事件/未授权目标或用户统一返回 `200 {"opcode":12}`（不泄露是否存在/是否授权）。
 - 失败：签名缺失/错误 `401 invalid_signature`；时间戳超出 ±300 秒 `401 stale_signature`；payload 无效/缺字段 `400 invalid_payload|missing_fields`；Bot 未启用/不存在/未启用 `404 not_found`；限流 `429 rate_limited`（IP scope 带 `Retry-After`，Bot scope 不带）。
 - 验签规则（QQ）：
@@ -714,41 +714,41 @@ BotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|project|t
     命令与普通文本分别进入命令/Chat，未知事件也回 `{"opcode":12}` 防止重推。
 - 事件内容：C2C 私聊普通文本直接进入 Chat；群/频道只有 @Bot 事件进入（平台限制，无“全部消息”）；入站图片在 `d.attachments` 中取首个 `image/*`（`content_type`/`filename`/`size`/`url`），
   仅图片无文字也可进入 Chat；QQ 不支持出站媒体/按钮/引用。
-- 去重：事件 ID `qq:<message_id|target:timestamp>` 写入 `bot_events`，并记录 event_kind/outcome/detail/target/user/updated_at 供诊断；保留 `BOT_EVENT_RETENTION_DAYS`（7）天。
+- 去重：事件 ID `qq:<message_id|target:timestamp>` 写入 `chatbot_events`，并记录 event_kind/outcome/detail/target/user/updated_at 供诊断；保留 `CHATBOT_EVENT_RETENTION_DAYS`（7）天。
 - 命令：`/help`（自助、动态）、`/memory`（自助，查看/`off|on`）、`/status`、`/backup`、`/world`、`/mc`、`/files <关键词>`、`/role`（仅私聊）、`/reset`、`/forget confirm`（后三者全用户自助）。
   回复文本清洗内部路径/URL，命令回复 ≤1500 字符；`/files` 最多 10 条、只含名称与大小。`/help`：仅输出命令列表（管理员 11 条、非管理员 6 条），不含标题、说明、权限声明或用法注释；未知命令对管理员回全量帮助、对非管理员被拒（无回复）；斜杠命令不调用 AI。
-- Chat：非斜杠普通消息在目标 `allow_chat=1` 且 `BOT_AI_ENABLED=true` 时进入 AI；C2C 私聊直接进入，群/频道仅 @Bot 事件；
-  复用会话若被 OpenCode 清理（404），自动删除 `bot_ai_sessions` 旧映射并重建一次，避免持续 `bot_ai_http_error`；
+- Chat：非斜杠普通消息在目标 `allow_chat=1` 且 `CHATBOT_AI_ENABLED=true` 时进入 AI；C2C 私聊直接进入，群/频道仅 @Bot 事件；
+  复用会话若被 OpenCode 清理（404），自动删除 `chatbot_ai_sessions` 旧映射并重建一次，避免持续 `chatbot_ai_http_error`；
   群聊用户消息在提示词中格式为 `<用户名>：<消息>`；提示词声明群聊环境，未 @ 的全量消息默认沉默、不要求每轮调用发送工具；群聊使用独立共享记忆 scope（`group:<targetExternalId>`），只注入 `<用户名>：<记忆>` 条目，成员用户级记忆不进入群聊；
   提示词固定为「角色卡（个人卡/群共享卡或默认 lofii）+ 精简安全边界 + 记忆 + 用户」；不再注入空记忆占位段；AI 仅 Chat（`allow_chat` 目标/C2C 私聊）；
-  `bot_ai_sessions.mode` 只写 `chat`（列保留）；AI 文本经 sanitize → QQ 纯文本格式化 → 按 2000 字符分段（最多 4 段）发送；
+  `chatbot_ai_sessions.mode` 只写 `chat`（列保留）；AI 文本经 sanitize → QQ 纯文本格式化 → 按 2000 字符分段（最多 4 段）发送；
   第二段起失败时返回错误并记录 `partial_text_sent`，不自动重试。Chat 不执行命令/写操作；未开启 `allow_chat`、AI 未启用或群/频道非 @Bot 的事件返回 `200` 但不调用 AI（写诊断事件 `ignored`）。
-- 图片：`BOT_AI_VISION_ENABLED=true`（默认）时，QQ 入站图片（`d.attachments`）经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、
-  内存下载（不落盘）后以 OpenCode prompt files 交给 AI；`BOT_AI_VISION_ENABLED=false`、下载失败或 mime/大小非法时降级为文字回答。审计 `bot.ai.image` 只记录 mime/大小/跳过原因。
-- 限流：Webhook scope 按统一 `requestMeta` 信任模型取客户端 IP（仅 loopback 对端采信 Cloudflare 头）120 次/分钟；BotService 对**未验签**请求按每 Bot 每分钟 120 次、对**已验签**事件按每 Bot 每分钟 300 次分别计数（验签通过后才扣减），拒绝/限流审计按窗口聚合。命令按 `botId:userId` 每 `BOT_COMMAND_RATE_PER_MINUTE`（120）次/分钟；
-  Chat 另按每分钟 `BOT_CHAT_RATE_PER_MINUTE`（30）次、每小时 `BOT_AI_RATE_PER_HOUR`（120）次。记忆摘要不额外占用每小时 AI 配额（每轮对话只计 1 次）。
-- 公开 Webhook 失败码补充：限流 `429 rate_limited`（无效流量走未验签桶；已验签桶超限同样 429 但不应影响合法重试）；工具隔离不可用不通过 Webhook 返回 503，而是 Chat 侧固定提示 + 诊断事件，AI 内部错误码 `bot_ai_tool_isolation_unavailable` 只用于 API/日志状态。
-- Bot 关闭（`BOT_ENABLED=false`/无密钥）、Bot 不存在或 `enabled=false` 时统一 `404`，不泄露 Bot 是否存在。
+- 图片：`CHATBOT_AI_VISION_ENABLED=true`（默认）时，QQ 入站图片（`d.attachments`）经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单、image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES`、
+  内存下载（不落盘）后以 OpenCode prompt files 交给 AI；`CHATBOT_AI_VISION_ENABLED=false`、下载失败或 mime/大小非法时降级为文字回答。审计 `chatbot.ai.image` 只记录 mime/大小/跳过原因。
+- 限流：Webhook scope 按统一 `requestMeta` 信任模型取客户端 IP（仅 loopback 对端采信 Cloudflare 头）120 次/分钟；ChatbotService 对**未验签**请求按每 Bot 每分钟 120 次、对**已验签**事件按每 Bot 每分钟 300 次分别计数（验签通过后才扣减），拒绝/限流审计按窗口聚合。命令按 `botId:userId` 每 `CHATBOT_COMMAND_RATE_PER_MINUTE`（120）次/分钟；
+  Chat 另按每分钟 `CHATBOT_CHAT_RATE_PER_MINUTE`（30）次、每小时 `CHATBOT_AI_RATE_PER_HOUR`（120）次。记忆摘要不额外占用每小时 AI 配额（每轮对话只计 1 次）。
+- 公开 Webhook 失败码补充：限流 `429 rate_limited`（无效流量走未验签桶；已验签桶超限同样 429 但不应影响合法重试）；工具隔离不可用不通过 Webhook 返回 503，而是 Chat 侧固定提示 + 诊断事件，AI 内部错误码 `chatbot_ai_tool_isolation_unavailable` 只用于 API/日志状态。
+- Bot 关闭（`CHATBOT_ENABLED=false`/无密钥）、Bot 不存在或 `enabled=false` 时统一 `404`，不泄露 Bot 是否存在。
 
 ### 错误码汇总
 
-`bot_disabled`（503）、`bot_key_missing`（503）、`bot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`bot_key_invalid`（500，仅启动/配置阶段）、`invalid_bot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`bot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `bot_ai_image_unsupported`/`bot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
+`chatbot_disabled`（503）、`chatbot_key_missing`（503）、`chatbot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`chatbot_key_invalid`（500，仅启动/配置阶段）、`invalid_chatbot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`chatbot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `chatbot_ai_image_unsupported`/`chatbot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
 
-## 15. Lofii Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
+## 15. mcbot Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 Lofii、服务端不下发 Lofii Token/URL**。上游契约为 lofii-bot **v0.6.1**（最低兼容 v0.6.0，`contractVersion=1`；v0.6.1 的 `splitOutgoing` 会逐行把行首 `/` 中和为全角 `／` 作为防御纵深，应用侧不依赖该行为）；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。上游契约为 mcbot **v0.6.1**（最低兼容 v0.6.0，`contractVersion=1`；v0.6.1 的 `splitOutgoing` 会逐行把行首 `/` 中和为全角 `／` 作为防御纵深，应用侧不依赖该行为）；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 
-- 启用：`LOFII_ENABLED=true` 且配置 `LOFII_READ_TOKEN`（启动校验：`LOFII_URL` 必须为 `http(s)://loopback[:port]` 根地址，拒绝 userinfo/路径/查询/片段）；控制：`LOFII_CONTROL_TOKEN` 非空。
-- 关闭：`LOFII_ENABLED=false` 时除 `GET /api/lofii/status`（返回 `enabled:false` 空壳）外均返回 `503 lofii_disabled`。
+- 启用：`MCBOT_ENABLED=true` 且配置 `MCBOT_READ_TOKEN`（启动校验：`MCBOT_URL` 必须为 `http(s)://loopback[:port]` 根地址，拒绝 userinfo/路径/查询/片段）；控制：`MCBOT_CONTROL_TOKEN` 非空。
+- 关闭：`MCBOT_ENABLED=false` 时除 `GET /api/mcbot/status`（返回 `enabled:false` 空壳）外均返回 `503 lofii_disabled`。
 - 只读：控制 Token 为空时 `/tasks*`、`/move` **与 `/say`** 返回 `503 lofii_control_disabled`（`/say` 是游戏内写操作，v0.8.1 起必须受控制 Token 门控）；`/status`、`/history` 仍可用。
-- 轮询：服务端每 `LOFII_POLL_MS`（默认 5000，2000–60000）拉一次 `/status` + `/events/recent?limit=200`（覆盖一次突发，避免只看 100 条漏告警）；单飞（不并发/不堆积）；失败只更新 `reachable/stale/error` 并保留上次成功数据。
+- 轮询：服务端每 `MCBOT_POLL_MS`（默认 5000，2000–60000）拉一次 `/status` + `/events/recent?limit=200`（覆盖一次突发，避免只看 100 条漏告警）；单飞（不并发/不堆积）；失败只更新 `reachable/stale/error` 并保留上次成功数据。
 - 限流：控制类（tasks/stop/resume/move 共用）**20 次/分钟/IP**，`/say` **10 次/分钟/IP**；超限 `429 rate_limited` 并带 `Retry-After`。
 - 审计：`lofii.task.start`（target=任务名）、`lofii.task.stop`、`lofii.task.resume`（target=taskId 或 `task`）、`lofii.move`（target=action）、`lofii.say`（只记 `chars`）、失败 `lofii.control_failed`（只记稳定错误码）；不记录聊天正文、Token、URL。
 - 错误映射：上游 400/409 保留状态码，`error.code=lofii_<上游稳定码>`（如 `lofii_task_rejected`/`lofii_resume_pending`）；上游 401/403 → `502 lofii_auth_failed`；上游 429 → `429 lofii_rate_limited`；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `503 lofii_<code>`；其它上游错误/非 JSON/超限 → `502 lofii_upstream_error`；禁用/不可达/控制未启用 → `503 lofii_disabled`/`lofii_unavailable`/`lofii_control_disabled`/`lofii_not_found`。`message` 为固定中文兜底，不含上游原文/地址/Token。
 
-### GET /api/lofii/status
+### GET /api/mcbot/status
 
 需要会话。返回聚合快照（禁用时为空壳）：
 
@@ -769,15 +769,15 @@ Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 }
 ```
 
-- `status`：上游 `/status` 快照（上游契约为 lofii-bot v0.6.1，最低兼容 v0.6.0），不含 Token/记忆正文；**不承诺固定字段**，前端对缺失嵌套段（`task`/`admin`/`ai`/`memory`/`minecraft`/`player`/`server`）安全读取并显示“—”，不会整页崩溃。
+- `status`：上游 `/status` 快照（上游契约为 mcbot v0.6.1，最低兼容 v0.6.0），不含 Token/记忆正文；**不承诺固定字段**，前端对缺失嵌套段（`task`/`admin`/`ai`/`memory`/`minecraft`/`player`/`server`）安全读取并显示“—”，不会整页崩溃。
 - `stale`：连续 3 个轮询周期无成功或距上次成功超过 3 个周期；`reachable=false` 时保留最后一次成功快照。
 - `eventsSupported`：上游是否提供 `/events/recent`（旧版 404 时 false）；字段缺失/`undefined` 时前端**不把 undefined 当作支持**，回退为按 `contractVersion`（仅 number 有效）或已有事件数组判断；`contractVersion` 仅接受 number（否则显示“—”，不显示 `vundefined`）。
 - `events`：内存环最近事件，**newest-first，最多 100 条且序列化总字节 ≤512 KiB**；服务端重启清空；不写入 DB/日志。
 - `error`：稳定错误码（如 `lofii_unavailable`/`lofii_auth_failed`/`lofii_cursor_failed`/`lofii_upstream_error`），不是上游原文。**`reachable=true` 时 `error` 仍可能非空**（如 `/status` 成功但 `/events/recent` 失败或游标写库失败），前端必须展示可见警告，不得把“可达”等同于“事件/告警正常”。
-- `lastPollAt` 为最近一次轮询**尝试**时间；当前快照**未下发** `lastSuccessAt`（残余：stale 提示仍用 `lastPollAt`，持续故障时可能显示误导性“上次成功轮询”时间，见 `docs/AUDIT.md` 补审计节 ARCH6-03）。
-- 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件；`LOFII_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
+- `lastPollAt` 为最近一次轮询**尝试**时间；当前快照**未下发** `lastSuccessAt`（残余：stale 提示仍用 `lastPollAt`，持续故障时可能显示误导性“上次成功轮询”时间，见 `docs/app/AUDIT.md` 补审计节 ARCH6-03）。
+- 游标/告警重试：`recordExternal` 写告警失败时游标停在上一条**已完整处理**的事件，下一轮重新处理失败事件；`MCBOT_ALERTS_ENABLED=false` 时仍推进游标但不写告警。
 
-### GET /api/lofii/history
+### GET /api/mcbot/history
 
 需要会话。查询参数：`kind=samples|alerts`（默认 `samples`，其它值 `400 invalid_request`）、`from`/`to`（ISO 时间，非法 `400 invalid_request`）、`limit`（默认 100，范围 1–200）。响应透传上游 `/history`：
 
@@ -787,13 +787,13 @@ Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
   "from": "2026-10-26T09:00:00.000Z",
   "to": "2026-10-27T09:00:00.000Z",
   "count": 1,
-  "alerts": [ { "id": 1, "ts": "2026-10-27T08:00:00.000Z", "type": "low_health", "severity": "warning", "message": "Lofii 血量偏低", "details": {} } ]
+  "alerts": [ { "id": 1, "ts": "2026-10-27T08:00:00.000Z", "type": "low_health", "severity": "warning", "message": "mcbot 血量偏低", "details": {} } ]
 }
 ```
 
 `samples` 时返回 `samples` 数组（每 60s 一条，上游保留 30 天）；字段以上游契约为准，不含聊天正文/Token/密码。只读，不写审计。**响应形状校验**：服务端要求 `kind` 与请求一致、对应数组存在，且只透传对象行；不匹配/缺数组返回 `502 lofii_upstream_error`（不把畸形数据交给前端渲染）。
 
-### POST /api/lofii/tasks
+### POST /api/mcbot/tasks
 
 需要会话 + CSRF。body：
 
@@ -803,11 +803,11 @@ Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 `name` 必须是 `fishing|farming|woodcutting|mining|forest|sleep|patrol` 之一（否则 `400 invalid_request`）。成功 `200 { "ok": true, ...上游响应 }`；上游已 active 时入队（`queued:true`、`position:1..3`）；有 pending → `409 lofii_resume_pending`；队列满 → `409 lofii_queue_full`；任务功能关闭 → `503 lofii_task_disabled`。
 
-### POST /api/lofii/tasks/stop
+### POST /api/mcbot/tasks/stop
 
 需要会话 + CSRF，body 可为空。成功 `200 { "ok": true, ... }`（中断当前任务并清空队列；只有 pending 时取消 pending 与队列）。无任务 → `409 lofii_no_active_task`。
 
-### POST /api/lofii/tasks/resume
+### POST /api/mcbot/tasks/resume
 
 需要会话 + CSRF。body 可选：
 
@@ -817,7 +817,7 @@ Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 `taskId` 省略时恢复唯一 pending；提供时必须是 **trim 后 1–64 字符、无内部空白、无 C0 控制字符/DEL**（否则 `400 invalid_request`）。成功 `200 { "ok": true, ... }`；无 pending → `409 lofii_no_pending_task`；过期/不匹配 → `409 lofii_resume_failed`。上游 pending 10 分钟未确认会自动中断。
 
-### POST /api/lofii/move
+### POST /api/mcbot/move
 
 需要会话 + CSRF。body：
 
@@ -825,9 +825,9 @@ Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 { "action": "come", "target": "Steve" }
 ```
 
-`action` 必须是 `home|come|follow|stop`；`target` 可选（trim 后 ≤32 字符，`home`/`stop` 忽略）。成功 `200 { "ok": true, ... }`；任务进行中 → `409 lofii_task_active`；目标不在线 → `409 lofii_target_not_online`；Lofii 未连接 Minecraft → `409 lofii_not_connected`；上游 202 只表示接受，结果通过事件流反映。
+`action` 必须是 `home|come|follow|stop`；`target` 可选（trim 后 ≤32 字符，`home`/`stop` 忽略）。成功 `200 { "ok": true, ... }`；任务进行中 → `409 lofii_task_active`；目标不在线 → `409 lofii_target_not_online`；mcbot 未连接 Minecraft → `409 lofii_not_connected`；上游 202 只表示接受，结果通过事件流反映。
 
-### POST /api/lofii/say
+### POST /api/mcbot/say
 
 需要会话 + CSRF + **控制 Token**（v0.8.1 起 `/say` 是游戏内写操作，只读模式重必须返回 `503 lofii_control_disabled`）。body：
 
@@ -835,11 +835,11 @@ Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 { "message": "来自 AntifieldComplexx 的问候" }
 ```
 
-成功 `200 { "ok": true, "lines": 1 }`。约束：trim 后非空、≤**720** 字符、**任意位置不能包含 ASCII `/`**（`400 message_must_not_start_with_slash`；防止“填充字符 + /命令”在上游按 240 字符切行后的第二行命中 mineflayer 命令通道）、不能包含 C0 控制字符/DEL（`400 invalid_request`）；Lofii 未连接 → `409 lofii_not_connected`；上游限流 → `429 lofii_rate_limited`。上游 lofii-bot v0.6.1 还会逐行把行首 `/` 中和为全角 `／`（防御纵深，应用侧不依赖）。**只聊天、不执行命令；内容不落库、不写日志，审计只记字符数**。
+成功 `200 { "ok": true, "lines": 1 }`。约束：trim 后非空、≤**720** 字符、**任意位置不能包含 ASCII `/`**（`400 message_must_not_start_with_slash`；防止“填充字符 + /命令”在上游按 240 字符切行后的第二行命中 mineflayer 命令通道）、不能包含 C0 控制字符/DEL（`400 invalid_request`）；mcbot 未连接 → `409 lofii_not_connected`；上游限流 → `429 lofii_rate_limited`。上游 mcbot v0.6.1 还会逐行把行首 `/` 中和为全角 `／`（防御纵深，应用侧不依赖）。**只聊天、不执行命令；内容不落库、不写日志，审计只记字符数**。
 
 ### 事件与告警
 
 - `/events/recent` 事件 envelope `{id,type,ts,data}`；`type` 已知 `presence|task|chat|movement|alert`，`data` 形状随类型变化且视为不可信输入，前端只读取白名单字段并纯文本渲染；查表一律 own-property，避免 `__proto__`/`constructor` 命中原型链。
 - 轮询每轮向上游取最近 **200** 条（覆盖一次突发；上游 ring 500），合并进内存缓存时按 id 去重、newest-first、最多 100 条且总字节 ≤512 KiB。
-- `alert` 事件映射为本应用告警事件（`status='event'`），映射与字段见 §10；告警游标保存在 `meta.lofii.event_cursor={bootId,lastEventId,lastTs}`，首次/重启/`bootId` 变化只建基线不重放；`LOFII_ALERTS_ENABLED=false` 仍推进游标但不写告警；告警写入失败时游标停在上一条已处理事件并在下一轮重试（不静默丢告警）。
-- 聊天事件只进服务端内存事件缓存（≤100 条/≤512 KiB），不提供历史查询、不持久化、不写日志/审计正文；应用重启或 Lofii 重启即丢失。
+- `alert` 事件映射为本应用告警事件（`status='event'`），映射与字段见 §10；告警游标保存在 `meta.lofii.event_cursor={bootId,lastEventId,lastTs}`，首次/重启/`bootId` 变化只建基线不重放；`MCBOT_ALERTS_ENABLED=false` 仍推进游标但不写告警；告警写入失败时游标停在上一条已处理事件并在下一轮重试（不静默丢告警）。
+- 聊天事件只进服务端内存事件缓存（≤100 条/≤512 KiB），不提供历史查询、不持久化、不写日志/审计正文；应用重启或 mcbot 重启即丢失。

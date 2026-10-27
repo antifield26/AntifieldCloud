@@ -1,4 +1,4 @@
-# AntifieldComplexx 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0 / v0.8.0 Lofii 对接 / v0.8.0 Minor 补审计→v0.8.1）
+# AntifieldComplexx 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0 / v0.8.0 mcbot 对接 / v0.8.0 Minor 补审计→v0.8.1）
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
@@ -8,42 +8,42 @@
 - 方法：只读静态审查 + 进程内 PoC + 只读线上检查 + 回归测试；审计阶段未修改生产。
 - 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12，Bot WIP P1=2、P2=4 均已修复；第五轮（v0.5.11→v0.6.0）P0=0、P1=1、P2=14 均已在本版修复，P3=54 记录；**v0.8.0 Minor 补审计（三轨）P0=0、P1=1、P2=5（去重后 3 类）、P3=32，P1/P2 与主要 P3 已在 v0.8.1 修复，残余见补审计节**。
 
-## v0.8.0 Lofii 对接（本地实现与生产部署/只读验收完成；**后续 Minor 补审计见下节，v0.8.1 修复**；2026-10-27）
+## v0.8.0 mcbot 对接（本地实现与生产部署/只读验收完成；**后续 Minor 补审计见下节，v0.8.1 修复**；2026-10-27）
 
 ### 1. 范围与方法
 
-- 范围：`server/src/lofii/client.ts`/`service.ts`、`server/src/http/routes/lofii.ts`、`alerts/service.ts recordExternal`、`config.ts` 的 `LOFII_*`、`app.ts`/`main.ts` 生命周期、`web/src/components/lofii/*`、`web/src/pages/Minecraft.tsx`、`web/src/lib/lofii.ts`、`AlertsCard` 事件状态、`scripts/sync-lofii-tokens.sh`、`bootstrap-env.sh`、`deploy/env.example`、`smoke.ps1` Lofii 检查与对应文档。
-- 方法：只读代码审查 + 单元/路由/服务测试（进程内夹具，不访问真实 lofii-bot/网络）+ 本地门禁（typecheck/eslint/测试/覆盖率/build/check-version）；本审计为部署前自检，不含生产渗透；生产部署与只读/API 验收证据见 `docs/ACCEPTANCE.md` v0.8.0 节。
+- 范围：`server/src/lofii/client.ts`/`service.ts`、`server/src/http/routes/lofii.ts`、`alerts/service.ts recordExternal`、`config.ts` 的 `MCBOT_*`、`app.ts`/`main.ts` 生命周期、`web/src/components/lofii/*`、`web/src/pages/Minecraft.tsx`、`web/src/lib/lofii.ts`、`AlertsCard` 事件状态、`scripts/sync-mcbot-tokens.sh`、`bootstrap-env.sh`、`deploy/env.example`、`smoke.ps1` mcbot 检查与对应文档。
+- 方法：只读代码审查 + 单元/路由/服务测试（进程内夹具，不访问真实 mcbot/网络）+ 本地门禁（typecheck/eslint/测试/覆盖率/build/check-version）；本审计为部署前自检，不含生产渗透；生产部署与只读/API 验收证据见 `docs/app/ACCEPTANCE.md` v0.8.0 节。
 - 计数：本轮为 v0.8.0 发布前自检，**P0=0 / P1=0 / P2=0**；未发现需要阻断发布的安全问题；以下为明确残余与验收边界，不是缺陷清单。**注**：发布后 Minor 补审计（下节）发现 P1=1（`/say` 分块命令注入）与 P2 若干，已在 v0.8.1 修复；本节结论仅代表发布前自检范围。
 
 ### 2. 关键安全/正确性结论
 
-- **Token 边界**：读/控制 Token 分离；控制 Token 为空时 `LofiiClient.control` 直接抛 `lofii_control_disabled` 且不发请求；`/say` 使用读 Token（**v0.8.1 已改为必须控制 Token，见补审计节 SEC6-01**）；`LOFII_URL` 启用时强制 loopback + http(s)，客户端 `redirect:'error'`，超时与 2 MiB 响应上限（**v0.8.1 改为流式上限**），错误文本移除 URL/Token（**v0.8.1 改为大小写不敏感**）。
-- **HTTP 面**：全部 `/api/lofii/*` 需登录；写操作 CSRF + 每 IP 限流（控制 20/min、say 10/min）；服务端参数白名单（7 任务/4 移动/`/` 前缀/720 字符/taskId ≤64；**v0.8.1 改为任意 `/` 拒绝、C0 拒绝、taskId 空白/控制字符拒绝**）；`/say` 审计只记字符数，不记正文；聊天/事件仅内存缓存（≤100 条且 ≤512 KiB），不落库/不写日志。
-- **告警语义**：`recordExternal` 固定 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.lofii.event_cursor` + `bootId` 基线避免重放；`LOFII_ALERTS_ENABLED=false` 仍推进游标不写事件；details 清洗后再落库/转发。
+- **Token 边界**：读/控制 Token 分离；控制 Token 为空时 `mcbotClient.control` 直接抛 `lofii_control_disabled` 且不发请求；`/say` 使用读 Token（**v0.8.1 已改为必须控制 Token，见补审计节 SEC6-01**）；`MCBOT_URL` 启用时强制 loopback + http(s)，客户端 `redirect:'error'`，超时与 2 MiB 响应上限（**v0.8.1 改为流式上限**），错误文本移除 URL/Token（**v0.8.1 改为大小写不敏感**）。
+- **HTTP 面**：全部 `/api/mcbot/*` 需登录；写操作 CSRF + 每 IP 限流（控制 20/min、say 10/min）；服务端参数白名单（7 任务/4 移动/`/` 前缀/720 字符/taskId ≤64；**v0.8.1 改为任意 `/` 拒绝、C0 拒绝、taskId 空白/控制字符拒绝**）；`/say` 审计只记字符数，不记正文；聊天/事件仅内存缓存（≤100 条且 ≤512 KiB），不落库/不写日志。
+- **告警语义**：`recordExternal` 固定 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.lofii.event_cursor` + `bootId` 基线避免重放；`MCBOT_ALERTS_ENABLED=false` 仍推进游标不写事件；details 清洗后再落库/转发。
 - **降级**：禁用/不可达/旧版无 `/events/recent`/控制未启用/首次轮询未完成均有明确快照状态与页面文案；轮询失败保留旧快照，stale 3 个周期判定；单飞避免并发堆积。
 - **schema/兼容**：无迁移（保持 v17），仅新增 `meta.lofii.event_cursor`；`/api/version` 增 `lofiiEnabled/lofiiControlEnabled`；旧前端/旧服务端按关闭/未配置降级。
 
 ### 3. 本地验证证据
 
 - `npm run check` 通过；`npm test` **566**（565 pass、1 skip；91 文件）、`npm run test:web` **250**（47 文件）；服务端覆盖率 **93.06/78.67/88.70**、前端 **55.48/49.91/48.45**（门禁通过）；`npm run build` 通过（`index-DHjowEA5.js` 761.09 kB）。
-- 定向：`node --test server/test/lofii-client.test.ts server/test/lofii-service.test.ts server/test/lofii-routes.test.ts` 覆盖 Token 分离/重定向拒绝/超限/错误映射/游标/告警映射/限流/CSRF/参数校验；`web/src/pages/Minecraft.test.tsx`、`LofiiPanel.test.tsx`、`client.lofii.test.ts` 覆盖标签、降级、二次确认、纯文本渲染。
-- 证据边界：lofii-bot 为进程内假平台/夹具，未访问真实服务；生产 `/api/lofii/status`、smoke、控制分支已由 Lead 于 2026-10-27 实测回填（见 `docs/ACCEPTANCE.md`）；**生产 `/minecraft` UI 截图与完整公网 Access smoke 已完成**（见 v0.8.0 验收节），真实 Lofii 告警触发仍未做（`alert_events` 暂无 `lofii_*`）。
+- 定向：`node --test server/test/lofii-client.test.ts server/test/lofii-service.test.ts server/test/lofii-routes.test.ts` 覆盖 Token 分离/重定向拒绝/超限/错误映射/游标/告警映射/限流/CSRF/参数校验；`web/src/pages/Minecraft.test.tsx`、`mcbotPanel.test.tsx`、`client.lofii.test.ts` 覆盖标签、降级、二次确认、纯文本渲染。
+- 证据边界：mcbot 为进程内假平台/夹具，未访问真实服务；生产 `/api/mcbot/status`、smoke、控制分支已由 Lead 于 2026-10-27 实测回填（见 `docs/app/ACCEPTANCE.md`）；**生产 `/minecraft` UI 截图与完整公网 Access smoke 已完成**（见 v0.8.0 验收节），真实 mcbot 告警触发仍未做（`alert_events` 暂无 `lofii_*`）。
 
 ### 4. v0.8.0 明确残余/已知限制
 
-1. **Lofii 告警仅事件语义**：上游 `alert` 只以 `status='event'` 记录，不进入 firing/resolved 状态机、无恢复/冷却/去重；上游告警状态需在 Lofii 侧查看。
-2. **聊天/事件不持久化**：事件与聊天只存在服务端内存（≤100 条），应用/Lofii 重启即失；不提供历史/导出/搜索；`/say` 不落库/不写日志（审计只记字符数）。
-3. **轮询延迟与单实例**：状态/事件最多滞后一个 `LOFII_POLL_MS`（默认 5s），控制结果最终一致；单进程内存缓存、单 Lofii 上游，不支持多实例/多副本。
-4. **控制面是真实写操作**：启用控制 Token 后可启停任务/移动/游戏内发言（仍受 Lofii 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
-5. **依赖独立服务**：需先部署 lofii-bot **v0.6.1**（最低 v0.6.0，仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
-6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，当时任务标记未重装），API 探针与 patrol start/stop 已验证）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 Lofii 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
+1. **mcbot 告警仅事件语义**：上游 `alert` 只以 `status='event'` 记录，不进入 firing/resolved 状态机、无恢复/冷却/去重；上游告警状态需在 mcbot 侧查看。
+2. **聊天/事件不持久化**：事件与聊天只存在服务端内存（≤100 条），应用/mcbot 重启即失；不提供历史/导出/搜索；`/say` 不落库/不写日志（审计只记字符数）。
+3. **轮询延迟与单实例**：状态/事件最多滞后一个 `MCBOT_POLL_MS`（默认 5s），控制结果最终一致；单进程内存缓存、单 mcbot 上游，不支持多实例/多副本。
+4. **控制面是真实写操作**：启用控制 Token 后可启停任务/移动/游戏内发言（仍受 mcbot 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
+5. **依赖独立服务**：需先部署 mcbot **v0.6.1**（最低 v0.6.0，仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
+6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，当时任务标记未重装），API 探针与 patrol start/stop 已验证）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，mcbot 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 mcbot 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
 
 ## v0.8.0 Minor 补审计（三轨：架构对抗 / 安全 / Debug；v0.8.1 修复记录，2026-10-27）
 
-- 背景：v0.8.0 发布后对 Lofii 对接做三轨补充审计（架构对抗、安全、Debug），三轨合计 38 项发现（含 1 项 P1、5 项 P2、32 项 P3；P2 去重后为 3 类）；本轮 v0.8.1 修复 P1/P2 与主要 P3 加固，其余明确列为残余。
+- 背景：v0.8.0 发布后对 mcbot 对接做三轨补充审计（架构对抗、安全、Debug），三轨合计 38 项发现（含 1 项 P1、5 项 P2、32 项 P3；P2 去重后为 3 类）；本轮 v0.8.1 修复 P1/P2 与主要 P3 加固，其余明确列为残余。
 - 三份原始报告保存在本机 `.local/audit/`（gitignored，不进入公开仓库）：`round6-arch.md`、`round6-sec.md`、`round6-debug.md`；本节为合并后的公开摘要与处置记录。
-- 审计方法：只读代码审查 + 进程内 PoC（假上游/夹具，不访问真实 lofii-bot/网络/Minecraft）+ 本地门禁；**未在生产执行命令注入、未触发真实 Lofii 告警、未重启服务**。
+- 审计方法：只读代码审查 + 进程内 PoC（假上游/夹具，不访问真实 mcbot/网络/Minecraft）+ 本地门禁；**未在生产执行命令注入、未触发真实 mcbot 告警、未重启服务**。
 
 ### 1. 三轨计数
 
@@ -53,21 +53,21 @@
 | 安全 | `round6-sec.md` | 0 | 1（SEC6-01） | 1（SEC6-02） | 8 | 10 |
 | Debug | `round6-debug.md` | 0 | 0 | 1（DBG6-01） | 9 | 10 |
 
-- **P1（SEC6-01）**：`/api/lofii/say` 仅校验整体首字符 `/`，而上游 lofii-bot v0.6.0 按 `AI_MAX_LINE_CHARS=240` 切行后不再逐行校验，可用“240 填充字符 + `/op <name>`”在第二行注入 Minecraft op-4 命令；且 `/say` 使用读 Token，**只读部署同样可触发**。已证明链路（路由 PoC + 上游纯函数切行 + 生产只读 op 等级证据），未在生产实际执行。
+- **P1（SEC6-01）**：`/api/mcbot/say` 仅校验整体首字符 `/`，而上游 mcbot v0.6.0 按 `AI_MAX_LINE_CHARS=240` 切行后不再逐行校验，可用“240 填充字符 + `/op <name>`”在第二行注入 Minecraft op-4 命令；且 `/say` 使用读 Token，**只读部署同样可触发**。已证明链路（路由 PoC + 上游纯函数切行 + 生产只读 op 等级证据），未在生产实际执行。
 - **P2（SEC6-02 / ARCH6-01 / DBG6-01）**：上游 `/status`/事件/历史数据形状与原型链查找未防护——告警可静默丢失、前端可因缺字段把整站交给 ErrorBoundary 白屏。
-- **P2（ARCH6-02/13）**：部分轮询失败/依赖死亡不可见，Lofii 进程未纳入 `service_down` 监控。
+- **P2（ARCH6-02/13）**：部分轮询失败/依赖死亡不可见，mcbot 进程未纳入 `service_down` 监控。
 - **P3** 集中在 Token 脱敏、内存/告警风暴、上游透传、脚本/env 硬化、URL 端口/路径、只读语义、taskId 校验、竞态、展示一致性等。
 
 ### 2. v0.8.1 已修复
 
 | 发现 | 级别 | 处置（v0.8.1） | 回归/证据 |
 |---|---|---|---|
-| SEC6-01（`/say` 分块命令注入） | **P1** | `/say` 改为**必须控制 Token**（只读 503 `lofii_control_disabled`）；拒绝**任意位置 ASCII `/`** 与 C0 控制字符/DEL（含 240 字符切分后的第二行）；上游 lofii-bot v0.6.1 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／` | 路由边界测试（只读 503、任意 `/`、C0、720）；上游新增 239/240/255/480 切分边界测试 |
-| SEC6-02 + ARCH6-01 + DBG6-01（原型链/形状/白屏） | **P2** | `mapLofiiAlert` 与前端标签查表改 own-property；`sanitizeDetails` 跳过 `__proto__`/`constructor`/`prototype`；`/history` 校验 `kind`/数组/行并只透传对象行；前端 `safeLofiiStatus` 归一化缺失嵌套段 | 服务端/前端回归：缺 `task`/`admin`/`ai`/`memory` 的 status 不抛错并显示“—”；历史缺 kind 不再永久骨架 |
+| SEC6-01（`/say` 分块命令注入） | **P1** | `/say` 改为**必须控制 Token**（只读 503 `lofii_control_disabled`）；拒绝**任意位置 ASCII `/`** 与 C0 控制字符/DEL（含 240 字符切分后的第二行）；上游 mcbot v0.6.1 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／` | 路由边界测试（只读 503、任意 `/`、C0、720）；上游新增 239/240/255/480 切分边界测试 |
+| SEC6-02 + ARCH6-01 + DBG6-01（原型链/形状/白屏） | **P2** | `mapmcbotAlert` 与前端标签查表改 own-property；`sanitizeDetails` 跳过 `__proto__`/`constructor`/`prototype`；`/history` 校验 `kind`/数组/行并只透传对象行；前端 `safemcbotStatus` 归一化缺失嵌套段 | 服务端/前端回归：缺 `task`/`admin`/`ai`/`memory` 的 status 不抛错并显示“—”；历史缺 kind 不再永久骨架 |
 | ARCH6-02 + DBG6-02（降级不可见） | P2/P3 | `reachable=true && error≠null` 时面板显示可见警告“事件流/告警游标异常”；事件/历史仍可用 | 组件测试断言警告可见 |
 | SEC6-03 + DBG6-06（Token 脱敏） | P3 | 错误文本与 `containsSecret` 改为大小写不敏感匹配 | client 回归用例（大写 Token 回显被 `[REDACTED]`） |
 | SEC6-04 + DBG6-05 + ARCH6-14（内存上限） | P3 | 响应体改为**流式**读取并 2 MiB 上限（`readCappedBody`，Content-Length 超限先拒绝）；事件缓存增加 512 KiB 总字节上限；每轮 recent 改 200 条 | client 流式超限测试；service 缓存字节上限测试 |
-| DBG6-03（面板请求竞态） | P3 | `LofiiPanel.load` 增加请求序号 + AbortController，旧响应不覆盖新响应 | 组件测试 |
+| DBG6-03（面板请求竞态） | P3 | `mcbotPanel.load` 增加请求序号 + AbortController，旧响应不覆盖新响应 | 组件测试 |
 | DBG6-04（eventsSupported 回退） | P3 | `lofiiEventsSupported` 对 `undefined` 回退为不支持；`contractVersion` 仅 number 才显示版本 | lib 单测 |
 | ARCH6-05 + DBG6-07（告警写入丢事件） | P3 | 告警写入失败时游标停在上一条已处理事件并返回，下一轮重试该事件 | service 回归（写失败不越游标） |
 | ARCH6-09（5xx 稳定码） | P3 | 上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`；补 `lofii_history_disabled` 文案 | client/route 测试 |
@@ -75,7 +75,7 @@
 | DBG6-08（taskId 校验） | P3 | `taskId` trim 后 1–64、无内部空白、无 C0/DEL，否则 400 | 路由测试 |
 | DBG6-09 + SEC6-09（`/say` 只读语义） | P3 | `/say` 纳入控制 Token 门控；UI 只读时禁用聊天输入；API/UI-SPEC/SECURITY/DEPLOY 文案同步 | 路由 + 组件 + 文档 |
 | DBG6-10a（错误码文案） | P3 | 前端补 `lofii_cursor_failed`/`lofii_not_found`/`lofii_history_disabled` 中文映射 | lib 单测 |
-| ARCH6-16① + ARCH6-17①（URL/同步脚本） | P3 | `LOFII_URL` 拒绝 userinfo/路径/查询/片段；`sync-lofii-tokens.sh` 改同目录临时文件 + `mv` 原子替换 | config 校验测试；脚本审阅/生产重跑 |
+| ARCH6-16① + ARCH6-17①（URL/同步脚本） | P3 | `MCBOT_URL` 拒绝 userinfo/路径/查询/片段；`sync-mcbot-tokens.sh` 改同目录临时文件 + `mv` 原子替换 | config 校验测试；脚本审阅/生产重跑 |
 | ARCH6-08（事件窗口 100<500） | P3 | 轮询 `limit=200`，降低突发漏告警窗口（未做缺口检测，仍列残余） | client/service 参数断言 |
 
 ### 3. v0.8.1 明确残余（未修，不得写成已解决）
@@ -84,28 +84,28 @@
 |---|---|---|
 | 告警事件**无幂等键** | ARCH6-06 | DB 恢复/多实例/游标回退可能重复写 `alert_events` 并重复 webhook/Bot 通知；计划随 schema v18 下一 minor 处理 |
 | 告警风暴**无语义并发上限** | SEC6-05 | 每条 alert 仍异步并发 webhook + Bot 排队；上游被控/异常时可能放大；未做去重/冷却 |
-| Lofii 进程未纳入 `service_down`/metrics | ARCH6-13 | lofii-bot 死亡时应用无主动告警，只能从面板发现 |
+| mcbot 进程未纳入 `service_down`/metrics | ARCH6-13 | mcbot 死亡时应用无主动告警，只能从面板发现 |
 | `/status`/`history` 的 `lastError` 原样透传 | SEC6-06 | 仅 admin 可见、React 转义；未做字段白名单重建 |
-| `LOFII_URL` 允许任意 loopback 端口 | SEC6-08 | 可指向本机其它服务；仅校验 loopback + 根路径，未限制端口范围 |
+| `MCBOT_URL` 允许任意 loopback 端口 | SEC6-08 | 可指向本机其它服务；仅校验 loopback + 根路径，未限制端口范围 |
 | `stop()` 不取消在途轮询 | ARCH6-07 | 关闭瞬间可能多写一次游标；未 abort/await in-flight |
 | `lastSuccessAt` 未下发，stale 文案仍用 `lastPollAt` | ARCH6-03 | 持续故障时提示“上次成功轮询 3 秒前”可能误导 |
-| `/api/lofii/status`/`history` 无 GET 限流、控制响应仍等待刷新 | ARCH6-11 | 认证用户可高频打上游；控制成功后仍 `await refresh()` |
+| `/api/mcbot/status`/`history` 无 GET 限流、控制响应仍等待刷新 | ARCH6-11 | 认证用户可高频打上游；控制成功后仍 `await refresh()` |
 | 全局 `ALERTS_ENABLED=false` 时面板“告警联动”仍显示已启用 | ARCH6-10b | 未合成全局开关展示 |
 | UI 提示可同时出两条、状态卡硬编码“每 5 秒” | ARCH6-12 | 未完全按 UI-SPEC 单条优先级/可配置间隔 |
 | 契约版本无守卫（未知版本仍按 v1 处理） | ARCH6-15 | 未限制 `contractVersion` 集合 |
 | 同步脚本备份累积、smoke 无应用侧断言、sed 缺键静默 | ARCH6-17②③④ | `.lofii-tokens.bak.*` 仍累积；smoke 不校验应用侧 `lofiiEnabled/reachable`；启用 sed 仍可能静默 |
-| webhook 与 Bot 通知串行、关闭不排空、通知文案英文码 | ARCH6-18 | 未并行/未排空；Lofii 事件通知未中文化 |
-| 真实 Lofii 告警未触发 | 三轨共同证据边界 | `alert_events` 暂无 `lofii_*`；映射/webhook/Bot 由单元/集成测试覆盖 |
+| webhook 与 Bot 通知串行、关闭不排空、通知文案英文码 | ARCH6-18 | 未并行/未排空；mcbot 事件通知未中文化 |
+| 真实 mcbot 告警未触发 | 三轨共同证据边界 | `alert_events` 暂无 `lofii_*`；映射/webhook/Bot 由单元/集成测试覆盖 |
 | Windows 每日任务安装标记 | 部署残余（已解决） | 2026-10-27 已重装并验证：appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 与仓库/已安装一致（`7febb768…636d`）、任务 Ready；smoke 任务标记检查 PASS |
-| **v0.8.1 已发布 Tag/Release** | 发布边界（已解决） | v0.8.1 已于 2026-10-27 部署生产并完成只读/API/安全回归验收（release `20261027T113055Z`/commit `5405a8d`，smoke 26/0/0/2 + 完整 Access **36/0/0/2**（含任务标记），`/say` 任意 `/` 与 C0 均 400）；**已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`（2026-10-27）**；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效），只读 `/say` 503 仅单测/集成覆盖 |
+| **v0.8.1 已发布 Tag/Release** | 发布边界（已解决） | v0.8.1 已于 2026-10-27 部署生产并完成只读/API/安全回归验收（release `20261027T113055Z`/commit `5405a8d`，smoke 26/0/0/2 + 完整 Access **36/0/0/2**（含任务标记），`/say` 任意 `/` 与 C0 均 400）；**已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复`（2026-10-27）**；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效），只读 `/say` 503 仅单测/集成覆盖 |
 
 ### 4. 验证与边界
 
 - 本地（v0.8.1）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（门禁通过）；`npm run build` 通过；`check-version` 严格 `0.8.1`。
-- 生产（v0.8.1，2026-10-27 部署并验收）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17，迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，无 `-SkipLocalTaskCheck`）；lofii-bot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match；已认证 `/api/version`/`/api/lofii/status` 200；`/say` 240 填充+`/op` 400、C0 400；审计无 `lofii.say`、`alert_events` `lofii_*` 仍 0、journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空；临时会话已删（0）；Windows 备份任务已重装并验证（appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 一致 `7febb768…636d`、任务 Ready）。
-- 上游 lofii-bot v0.6.1：`splitOutgoing` 逐行中和行首 `/`；新增 239/240/255/480 边界测试（另行提交，不属本仓库）。
-- 证据边界：审计本身未在生产实际发送 `/op`/聊天命令、未触发真实 Lofii 告警、未做真实 webhook/QQ 投递；三轨审计为只读审计 + 进程内 PoC；生产证据由 Lead 于 v0.8.1 部署后实测回填（见 `docs/ACCEPTANCE.md` v0.8.1 节）。只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）。
-- 发布边界：**v0.8.0 与 v0.8.1 均已发布 Tag+Release**——v0.8.0：annotated Tag `v0.8.0`→commit `c5ec851`，GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）；v0.8.1：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`（2026-10-27）。
+- 生产（v0.8.1，2026-10-27 部署并验收）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17，迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，无 `-SkipLocalTaskCheck`）；mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match；已认证 `/api/version`/`/api/mcbot/status` 200；`/say` 240 填充+`/op` 400、C0 400；审计无 `lofii.say`、`alert_events` `lofii_*` 仍 0、journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空；临时会话已删（0）；Windows 备份任务已重装并验证（appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 一致 `7febb768…636d`、任务 Ready）。
+- 上游 mcbot v0.6.1：`splitOutgoing` 逐行中和行首 `/`；新增 239/240/255/480 边界测试（另行提交，不属本仓库）。
+- 证据边界：审计本身未在生产实际发送 `/op`/聊天命令、未触发真实 mcbot 告警、未做真实 webhook/QQ 投递；三轨审计为只读审计 + 进程内 PoC；生产证据由 Lead 于 v0.8.1 部署后实测回填（见 `docs/app/ACCEPTANCE.md` v0.8.1 节）。只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）。
+- 发布边界：**v0.8.0 与 v0.8.1 均已发布 Tag+Release**——v0.8.0：annotated Tag `v0.8.0`→commit `c5ec851`，GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）；v0.8.1：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复`（2026-10-27）。
 
 ## 第一轮（v0.2.0，2026-10-19）
 
@@ -143,7 +143,7 @@
 - 恢复码弹窗误关即丢、next-url loopback 过宽、域名硬编码、Minecraft 刷新无 force、
   回收站/上传上限未下发、429 details 未解析、a11y 缺口：逐项修复。
 - 备份任务电池跳过、漏周日全量、半成品/SHA、非幂等重试、bootstrap 重置域名、路径文档矛盾：
-  修复并更新 `docs/BACKUP.md`/`docs/DEPLOY.md`。
+  修复并更新 `docs/app/BACKUP.md`/`docs/app/DEPLOY.md`。
 - 安全更新缺失、cloudflared 沙箱/版本、rpcbind、nftables 范围、CI 不覆盖运维资产：
   已安装安全更新/`unattended-upgrades`；其余见残留。
 - `http-proxy` Node 26 弃用警告、scrypt N=2^15、Cookie 父域共享、host-only 改造：
@@ -180,7 +180,7 @@
 - 目标：在 v0.2.0 首轮审计之后，对 v0.2.2 生产基线与 v0.3.0 增量做第二轮只读审计，覆盖服务端、前端、备份脚本、部署与 Pi/Cloudflare。
 - 方式：并行只读审计（server/web/ops 三个方向）+ Lead 集成复核 + 本地 PoC/回归测试 + 生产只读检查；审计阶段未修改生产。
 - 记录边界：部分审计子代理在交付最终报告前异常退出；本记录以实际任务范围、代码 diff、测试结果和生产证据为准，**不替代**独立第三方审计。后续如需第三方结论，应重新执行一次独立复审。
-- 证据提交：`9ed8d3d`（v0.3.0）、`4f26019`（v0.3.1）；验收见 `docs/ACCEPTANCE.md`；发布 v0.3.0/v0.3.1。
+- 证据提交：`9ed8d3d`（v0.3.0）、`4f26019`（v0.3.1）；验收见 `docs/app/ACCEPTANCE.md`；发布 v0.3.0/v0.3.1。
 
 ### 1. 审计范围
 
@@ -201,14 +201,14 @@
 | A2-06 | P1 可靠性 | 告警数据源 unknown/stale 反复触发；事件与状态非原子；无保留策略；密钥包失败无告警 | unknown 连续评估后降级/恢复；事件+状态事务化；90 天保留；新增 secrets 条件（共 9 条） | `server/src/alerts/service.ts`、`server/test/alert-v03-resilience.test.ts` |
 | A2-07 | P1 安全 | Web 导入归档是不可信 tar；恢复可能覆盖生产文件 | 文件名白名单、流式 SHA、拒绝路径穿越/链接/设备/超大条目；恢复仅到新目录、不覆盖、TOTP + `RESTORE`、30 分钟计划过期 | `server/src/backups/tar.ts`、`server/src/backups/service.ts`、`server/test/backups-*.test.ts` |
 | A2-08 | P1 功能/安全 | 音视频内联缺 CSP/Range 白名单；shim 无垫片边界不清 | 白名单容器、`media-src 'self'`、Range/HEAD/416、不转码；新增 `shim/attributes/passthrough`，Cloudflare 规则后实测 | `server/src/files/mime.ts`、`server/src/app.ts`、`server/src/opencode/proxy.ts`；生产 mp3 实测 |
-| A2-09 | P1 运维 | journald volatile、cloudflared 旧版且无沙箱、nft WiFi 源 `/16`、rpcbind 0.0.0.0、RTC 无电池 | persistent journald（log2ram 64M）、cloudflared 2026.10.1 + drop-in、nft 收窄 `/21`、rpcbind 禁用、fake-hwclock 启用；RCON bind 无上游配置，保留 nft drop | `docs/DEPLOY.md` §9.1；生产 systemd/nft/端口检查 |
+| A2-09 | P1 运维 | journald volatile、cloudflared 旧版且无沙箱、nft WiFi 源 `/16`、rpcbind 0.0.0.0、RTC 无电池 | persistent journald（log2ram 64M）、cloudflared 2026.10.1 + drop-in、nft 收窄 `/21`、rpcbind 禁用、fake-hwclock 启用；RCON bind 无上游配置，保留 nft drop | `docs/app/DEPLOY.md` §9.1；生产 systemd/nft/端口检查 |
 | A2-10 | P1 功能/安全 | 100 MiB 单请求无法承载 5 GiB 文件；分片需防越界/重复/配额穿透 | 新 `uploads/` 服务与 migration 4；8 MiB 块、服务端校验序号/大小/哈希、配额预留、24h 过期、3 并发、complete 拼接后走同一登记 | `server/src/uploads/service.ts`、`server/src/http/routes/uploads.ts`、`server/test/uploads-*.test.ts`；生产 12 MiB 实测 |
 
 ### 3. 回归测试与线上证据
 
 - v0.3.0：服务端 140/140、前端 48/48；v0.3.1：服务端 150/150、前端 52/52；`npm run build` 通过，CI main/tag 均 success。
 - `smoke.ps1` 16/16；生产 v0.3.1、schema v4；备份 pending/ack、媒体 inline/Range、12 MiB 分片 API 实测。
-- OpenCode 无垫片：Cloudflare 关闭 `ai` Rocket Loader 后，passthrough HTML 模块脚本未被改写；但无 JS 的 attributes/passthrough 仍无法触发上游原生新建会话，按约定保留最小隐藏 click 接管（无可见按钮），记录在 `docs/ACCEPTANCE.md` 与 v0.3.0 Release。
+- OpenCode 无垫片：Cloudflare 关闭 `ai` Rocket Loader 后，passthrough HTML 模块脚本未被改写；但无 JS 的 attributes/passthrough 仍无法触发上游原生新建会话，按约定保留最小隐藏 click 接管（无可见按钮），记录在 `docs/app/ACCEPTANCE.md` 与 v0.3.0 Release。
 - 密钥包、备份链、告警状态、分享 410、分片哈希/断点/过期均有对应自动化测试；真实敏感数据未进入测试。
 
 ### 4. 残留与延后
@@ -330,14 +330,14 @@
 ### 5. 结论
 
 - 第三轮范围内未发现未关闭的 P0；v0.4.0 修复了 2 个 P0（世界备份静默失败链、运维权限面记录/缓解）、多个 P1（备份 pending/增量、上传耐久性、env 重建、版本单源、回滚 DB、PS 编码）与大部分 P2。
-- 新增功能（指标/附件/版本/多文件分享/世界备份/演练）均有成功+失败路径测试与生产验收证据（见 `docs/ACCEPTANCE.md`）。
+- 新增功能（指标/附件/版本/多文件分享/世界备份/演练）均有成功+失败路径测试与生产验收证据（见 `docs/app/ACCEPTANCE.md`）。
 - 后续轮次优先：DR-1 增量水位、导入归档保留、告警重投、listTrash 性能、SSH/sudo 收敛、独立第三方复审。
 
 ## 第四轮（v0.4.2 基线 + v0.5.0 Bot WIP，2026-10-21）
 
 ### 0. 执行方式与记录边界
 
-- 范围：v0.4.2 发布基线（TS7 工具链、Android 趋势布局、文档/版本基线）+ v0.5.0 Bot 增量（迁移 7、`bot/`、Webhook/管理 API、命令/通知/发布、前端 `/bots`、部署/环境/版本脚本）。
+- 范围：v0.4.2 发布基线（TS7 工具链、Android 趋势布局、文档/版本基线）+ v0.5.0 Bot 增量（迁移 7、`bot/`、Webhook/管理 API、命令/通知/发布、前端 `/chatbots`、部署/环境/版本脚本）。
 - 方式：只读静态审查（服务端/前端/运维脚本）+ 进程内 PoC（加解密、Webhook 验签/去重、未授权目标、队列状态机）+ 本地回归测试；审计期间未修改生产、未部署。
 - 证据边界：Bot 适配器/队列以进程内假平台与夹具为主（无真实 Telegram/Discord/Slack 网络）；本地仅执行 `npm test` 与 `npm run test:web`，
   `npm run check`/`npm run build`/CI/部署/smoke 由主代理后续执行；本记录不替代独立第三方审计或真实平台联调。
@@ -373,25 +373,25 @@
 
 | ID | 问题/影响 | 处置 | 证据 |
 |---|---|---|---|
-| OPS4-03 | 自动回滚只切 release/还原 DB，未还原 `/etc/antifieldcloud/env` 的 `APP_VERSION`；旧 release 可能以新版本号通过 `/healthz`，造成回滚假成功 | **v0.5.0 修复**：`deploy.ps1` 回滚前从上一 release `package.json` 读取版本，写入 env；读不到直接拒绝自动回滚 | `scripts/deploy.ps1`（Invoke-Rollback）；`docs/DEPLOY.md` §3/§11 |
+| OPS4-03 | 自动回滚只切 release/还原 DB，未还原 `/etc/antifieldcloud/env` 的 `APP_VERSION`；旧 release 可能以新版本号通过 `/healthz`，造成回滚假成功 | **v0.5.0 修复**：`deploy.ps1` 回滚前从上一 release `package.json` 读取版本，写入 env；读不到直接拒绝自动回滚 | `scripts/deploy.ps1`（Invoke-Rollback）；`docs/app/DEPLOY.md` §3/§11 |
 | OPS4-04 | 部署未绑定 commit，脏工作树可把未完成的 v0.5.0 半成品当旧版本发布 | **v0.5.0 修复**：默认 `git status --porcelain` 非空即中止；`-AllowDirty` 显式放行并记录 | `scripts/deploy.ps1`；本机 `npm test` 245/245 |
-| T/S-01 | Bot/备份 tar/告警投递等测试为进程内 mock/夹具（T/S mock-only），无真实平台/网络负路径；风险为“测试全绿但平台侧失败” | 记录为**明确残余**；文档要求部署后平台联调并保留证据，不把 mock 结果当线上通过 | `docs/ACCEPTANCE.md` v0.5.0 未决；`docs/DEPLOY.md` §9.8 |
+| T/S-01 | Bot/备份 tar/告警投递等测试为进程内 mock/夹具（T/S mock-only），无真实平台/网络负路径；风险为“测试全绿但平台侧失败” | 记录为**明确残余**；文档要求部署后平台联调并保留证据，不把 mock 结果当线上通过 | `docs/app/ACCEPTANCE.md` v0.5.0 未决；`docs/app/DEPLOY.md` §9.8 |
 
 #### 3.2 P3（12 项，均为低风险一致性/文档/CI）
 
 | ID | 问题 | 处置 |
 |---|---|---|
 | OPS4-10 | `package-lock.json` 根版本未纳入版本一致性检查，SBOM/审计可能误读 | **v0.5.0 修复**：`check-version.mjs` 校验 `lock.version` 与 `packages[""].version` |
-| DOC4-01 | `docs/AUDIT.md` 标题/权威文档索引只列第一、二轮，第三轮未进索引 | 已更新标题/索引（本轮） |
-| DOC4-02 | `docs/API.md` `/healthz` 示例仍为 0.3.2，与当前版本漂移 | 已改为 0.5.0 并加版本一致性检查 |
-| DOC4-03 | `docs/PLAN.md` 验收摘要停留在 0.4.0/234/129，与 v0.4.2 不符 | 已整体重写为 v0.5.x |
+| DOC4-01 | `docs/app/AUDIT.md` 标题/权威文档索引只列第一、二轮，第三轮未进索引 | 已更新标题/索引（本轮） |
+| DOC4-02 | `docs/app/API.md` `/healthz` 示例仍为 0.3.2，与当前版本漂移 | 已改为 0.5.0 并加版本一致性检查 |
+| DOC4-03 | `docs/app/PLAN.md` 验收摘要停留在 0.4.0/234/129，与 v0.4.2 不符 | 已整体重写为 v0.5.x |
 | DOC4-04 | `README`/`AGENTS` 测试基线 234/129，未含 Bot 新增用例 | 已更新为 245/137 |
-| DOC4-05 | `docs/UI-SPEC.md` 标题 v3/2026-10-20，且缺 Bot 页面 | 已升 v4 并新增 §15 |
-| DOC4-06 | `docs/ROADMAP.md` 仍把 Cloudflare Access/SSH 加固列为候选，未反映 v0.5.0 部分落地 | 已更新为 v0.5.0 当前 + v0.5.1 规划 |
-| DOC4-07 | `docs/DEPLOY.md` §9.6 仍写“SSH/sudo 未改”，与仅公钥切换冲突 | 已更新并新增 §9.7 |
+| DOC4-05 | `docs/app/UI-SPEC.md` 标题 v3/2026-10-20，且缺 Bot 页面 | 已升 v4 并新增 §15 |
+| DOC4-06 | `docs/app/ROADMAP.md` 仍把 Cloudflare Access/SSH 加固列为候选，未反映 v0.5.0 部分落地 | 已更新为 v0.5.0 当前 + v0.5.1 规划 |
+| DOC4-07 | `docs/app/DEPLOY.md` §9.6 仍写“SSH/sudo 未改”，与仅公钥切换冲突 | 已更新并新增 §9.7 |
 | DOC4-08 | `README` 部署/冒烟示例 `-ExpectedVersion 0.4.2` | 已改为 0.5.0 |
-| DOC4-09 | `docs/BACKUP.md` 验证清单 0.4.2、`schema v6` 与演练命令 6 | 已改为 0.5.0/schema v7/`-ExpectedSchemaVersion 7` |
-| DOC4-10 | `docs/SECURITY.md` 残留仍写“无 Cloudflare Access/SSH 密码登录保留” | 已改为 Access 需后台配置 + 仅公钥/24h 回滚 + fail2ban sshd jail |
+| DOC4-09 | `docs/app/BACKUP.md` 验证清单 0.4.2、`schema v6` 与演练命令 6 | 已改为 0.5.0/schema v7/`-ExpectedSchemaVersion 7` |
+| DOC4-10 | `docs/app/SECURITY.md` 残留仍写“无 Cloudflare Access/SSH 密码登录保留” | 已改为 Access 需后台配置 + 仅公钥/24h 回滚 + fail2ban sshd jail |
 | DOC4-11 | `deploy/env.example` 头部与 `APP_VERSION` 停留在 0.4.0，且 `check-version` 未覆盖 | **v0.5.0 修复**：env.example 升 0.5.0 并纳入 check-version（env.example/DEPLOY 标题） |
 
 补充：`scripts/check-version.mjs` 顶部注释曾写“未接入 CI”，与 CI 实际接入不一致，已随 v0.5.0 修正并覆盖更多文件。
@@ -402,17 +402,17 @@
 
 | ID | 问题/影响 | v0.5.0 修复 | 测试/命令 |
 |---|---|---|---|
-| BOT-02 | 发布接口只要求会话 + CSRF，登录会话（或 XSS/CSRF 绕过）即可把云端文件外发到第三方平台；数据外发门禁缺失 | 发布必须带 `totpCode`，路由调用 `auth.confirmTotp`（复用再认证/TOTP 限流、失败审计 `reauth_bot_publish`）；缺码 `400 totp_required`、错误 `401 invalid_code`；发布/测试各 20 次/小时 | `server/test/bot-routes.test.ts`（无 TOTP 400、有效 TOTP 才建任务）、`bot-core.test.ts`；`node --test server/test/bot-routes.test.ts`；手工：不带/带 `totpCode` 调 `POST /api/bots/:id/publish` 对比 |
+| BOT-02 | 发布接口只要求会话 + CSRF，登录会话（或 XSS/CSRF 绕过）即可把云端文件外发到第三方平台；数据外发门禁缺失 | 发布必须带 `totpCode`，路由调用 `auth.confirmTotp`（复用再认证/TOTP 限流、失败审计 `reauth_chatbot_publish`）；缺码 `400 totp_required`、错误 `401 invalid_code`；发布/测试各 20 次/小时 | `server/test/bot-routes.test.ts`（无 TOTP 400、有效 TOTP 才建任务）、`bot-core.test.ts`；`node --test server/test/bot-routes.test.ts`；手工：不带/带 `totpCode` 调 `POST /api/chatbots/:id/publish` 对比 |
 | BOT-04 | 通知/命令回复直接拼接 provider 数据，可能输出内部路径、SSH/HTTP URL，帮助外部推断主机布局 | `sanitizeExternalText` 将 `C:\`/`/home|/var|/etc|…` 与 `ssh://`/`http(s)://` 替换为 `[path]`/`[url]`，去控制字符、≤1500 字符；模板只输出白名单字段 | `server/test/bot-core.test.ts`（通知/命令文本）；`node --test server/test/bot-core.test.ts` |
 
 #### 4.2 P2（4 项）
 
 | ID | 问题/影响 | v0.5.0 修复 | 测试/命令 |
 |---|---|---|---|
-| BOT-01 | 命令只校验目标 `allow_commands`，频道内任意成员（含被邀请的第三方）都能执行只读命令/探测状态 | 增加显式 user 白名单：发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；未授权不执行并审计 `bot.command.denied` | `server/test/bot-core.test.ts`（未授权目标/用户不执行）；`node --test server/test/bot-core.test.ts` |
-| BOT-03 | Webhook 无时间戳窗口/事件去重，合法回调可被重放；重复事件会重复执行命令 | Discord/Slack 校验 ±300 秒时间戳；`bot_events` 以 `(bot_id, platform_event_id)` 主键 `INSERT OR IGNORE`，重复返回 `{ok:true,duplicate:true}`；Bot/命令/IP 分层限流 | `server/test/bot-core.test.ts`（去重/验签）、`server/test/bot-webhook-route.test.ts`；`node --test server/test/bot-core.test.ts server/test/bot-webhook-route.test.ts` |
-| BOT-05 | Bot 关闭/未启用/不存在时入口语义不一致，可能暴露 Bot 是否存在或返回 5xx | `BOT_ENABLED=false`/无密钥/Bot 不存在/`enabled=false` 统一 404；管理写接口 503 `bot_disabled`/`bot_key_missing`；队列不启动 | `server/test/bot-webhook-route.test.ts`（未知 bot 404）；`node --test server/test/bot-webhook-route.test.ts` |
-| BOT-06 | Token/Secret 可能进入 API 响应、日志、错误对象（含平台 URL token） | 凭据 AES-256-GCM 落库；API 只返回 `BotSummary`（无密钥）；`PATCH` Token 空值保持、其它密钥省略保持；平台错误只保留状态/短错误码、禁止重定向、响应 ≤1 MiB；日志/审计不含 Token | `server/test/bot-core.test.ts`（加解密/篡改失败、Token 不回显）；`node --test server/test/bot-core.test.ts`；`git grep -n 'BOT_SECRET_KEY' server/src` 人工复核 |
+| BOT-01 | 命令只校验目标 `allow_commands`，频道内任意成员（含被邀请的第三方）都能执行只读命令/探测状态 | 增加显式 user 白名单：发送者必须是该 Bot 下 `kind='user'` 且 `allow_commands=1` 的目标；未授权不执行并审计 `chatbot.command.denied` | `server/test/bot-core.test.ts`（未授权目标/用户不执行）；`node --test server/test/bot-core.test.ts` |
+| BOT-03 | Webhook 无时间戳窗口/事件去重，合法回调可被重放；重复事件会重复执行命令 | Discord/Slack 校验 ±300 秒时间戳；`chatbot_events` 以 `(chatbot_id, platform_event_id)` 主键 `INSERT OR IGNORE`，重复返回 `{ok:true,duplicate:true}`；Bot/命令/IP 分层限流 | `server/test/bot-core.test.ts`（去重/验签）、`server/test/bot-webhook-route.test.ts`；`node --test server/test/bot-core.test.ts server/test/bot-webhook-route.test.ts` |
+| BOT-05 | Bot 关闭/未启用/不存在时入口语义不一致，可能暴露 Bot 是否存在或返回 5xx | `CHATBOT_ENABLED=false`/无密钥/Bot 不存在/`enabled=false` 统一 404；管理写接口 503 `chatbot_disabled`/`chatbot_key_missing`；队列不启动 | `server/test/bot-webhook-route.test.ts`（未知 bot 404）；`node --test server/test/bot-webhook-route.test.ts` |
+| BOT-06 | Token/Secret 可能进入 API 响应、日志、错误对象（含平台 URL token） | 凭据 AES-256-GCM 落库；API 只返回 `ChatbotSummary`（无密钥）；`PATCH` Token 空值保持、其它密钥省略保持；平台错误只保留状态/短错误码、禁止重定向、响应 ≤1 MiB；日志/审计不含 Token | `server/test/bot-core.test.ts`（加解密/篡改失败、Token 不回显）；`node --test server/test/bot-core.test.ts`；`git grep -n 'CHATBOT_SECRET_KEY' server/src` 人工复核 |
 
 说明：本轮只记录 Bot WIP 的 6 项；Bot 功能本身的多媒体/审批/长连接等为产品边界，不计为缺陷。
 
@@ -428,20 +428,20 @@
 
 1. **typescript-eslint TS7 alias（残余）**：`typescript` 仍为 `@typescript/typescript6@6.0.2` 别名，仅供 typescript-eslint 8.x；在其支持 TS7.1 API 前不能移除，升级时需重跑 typecheck/lint。
 2. **T/S mock-only（残余）**：Bot 适配器、备份 tar、告警投递等以进程内 mock/夹具验证，真实平台/真实网络的签名漂移、限流、5xx 未覆盖；上线前必须平台联调。
-3. **Cloudflare Access（用户后台）**：`app` 策略与 `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` bypass 需用户配置；应用无法自证，漏配会导致 Webhook/health/分享被 302。
+3. **Cloudflare Access（用户后台）**：`app` 策略与 `/api/chatbot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` bypass 需用户配置；应用无法自证，漏配会导致 Webhook/health/分享被 302。
 4. **SSH 24h 回滚窗口（残余）**：仅公钥已切换，旧配置备份保留 24h；窗口内回滚可恢复密码登录；窗口结束前不要删除唯一可用会话。
 5. **fail2ban（已启用，依赖 nftables）**：`sshd` jail 使用 nftables 后端、24h ban；`nft -f`/重启 nftables 会清空 set，
    必须随后 `systemctl restart fail2ban` 恢复已有封禁。日志后端为 log2ram/journald，需在维护窗口复核 `fail2ban-client status sshd`。
-6. **BOT_SECRET_KEY 轮换（设计边界）**：轮换等于所有 Bot Token 重录；`bootstrap-env.sh --force` 复用旧值，避免误轮换。
+6. **CHATBOT_SECRET_KEY 轮换（设计边界）**：轮换等于所有 Bot Token 重录；`bootstrap-env.sh --force` 复用旧值，避免误轮换。
 7. **Bot 产品边界**：单次 1 个媒体、命令只读、无平台主动拉取/长连接、无多管理员审批；Access 未覆盖 `ai`。
 8. **前几轮残余延续**：DR-1 增量时钟水位、DR-7 导入归档保留、DR-22 告警跨周期不重投、DR-23 锁心跳、RCON 监听 0.0.0.0、
-   `antifield` `NOPASSWD ALL` sudo、单 SD/LUKS、Cloudflare 明文、限流内存态、scrypt N=2^15 等仍按 `docs/SECURITY.md` §4 管理。
+   `antifield` `NOPASSWD ALL` sudo、单 SD/LUKS、Cloudflare 明文、限流内存态、scrypt N=2^15 等仍按 `docs/app/SECURITY.md` §4 管理。
 
 ### 7. 结论
 
 - 第四轮在 v0.4.2 基线未发现 P0/P1；3 个 P2 中 2 个（回滚版本、脏发布）已在 v0.5.0 代码修复，1 个（mock-only）明确为测试证据残余；12 个 P3 已随文档/CI 收口。
 - Bot WIP 的 2 个 P1、4 个 P2 全部在 v0.5.0 修复：发布 TOTP、双白名单、时间戳/去重、关闭态 404、AES-256-GCM/只写 Token、输出清洗；均有本地测试或命令证据。
-- v0.5.0 的部署/CI/smoke/真实平台联调证据尚未产生；`docs/ACCEPTANCE.md` 已留「待部署后补」占位。完成前不得声明验收通过。
+- v0.5.0 的部署/CI/smoke/真实平台联调证据尚未产生；`docs/app/ACCEPTANCE.md` 已留「待部署后补」占位。完成前不得声明验收通过。
 - 下一轮优先：真实平台联调与负路径、`typescript-eslint` TS7 迁移、fail2ban 封禁持久化/观测、sudo 收口、Access 策略自动核验、独立第三方复审。
 
 ## 第五轮（v0.5.11 基线 → v0.6.0，2026-10-23）
@@ -470,7 +470,7 @@
 
 | ID | 级别 | 问题/影响 | 处置与证据 |
 |---|---|---|---|
-| A5-BOT-01 | P1 | QQ `op=13` 回调校验可把任意事件 JSON 当 `plain_token` 换取 Ed25519 签名，进而伪造任意 `op=0` 事件（伪造命令/身份） | 严格 `plain_token ^[A-Za-z0-9_-]{1,128}$`、`event_ts ^\d{1,12}$`，否则 400；webhook botId 日志脱敏；PoC 修复后 `challenge.kind=rejected`、伪造事件不再解析；提交 `81be6e5`/`72fe7c0`；新增回归 + op=13 成功审计 `bot.webhook.challenge` |
+| A5-BOT-01 | P1 | QQ `op=13` 回调校验可把任意事件 JSON 当 `plain_token` 换取 Ed25519 签名，进而伪造任意 `op=0` 事件（伪造命令/身份） | 严格 `plain_token ^[A-Za-z0-9_-]{1,128}$`、`event_ts ^\d{1,12}$`，否则 400；webhook botId 日志脱敏；PoC 修复后 `challenge.kind=rejected`、伪造事件不再解析；提交 `81be6e5`/`72fe7c0`；新增回归 + op=13 成功审计 `chatbot.webhook.challenge` |
 | A5-SEC-01 | P2 | app/ai 共用 `Domain=.父域` 会话 Cookie；任一子域/兄弟域攻击面可影响会话，ai 借用 app 凭据 | app 改 host-only Cookie；ai 改用 app 签发 60s 一次性 ticket（`GET /api/auth/ai-ticket` → `/__af/sso/<ticket>`）设置自己的 host-only 会话；登录/退出清理旧父域 Cookie；测试覆盖一次性/过期/错误 origin/开放重定向/无 Domain |
 | A5-SEC-02 | P2 | 全局 `application/octet-stream` 8 MiB 解析器在鉴权/Origin 前缓冲大 body，公开 unlock 也可触发 | 全局回落 1 MiB；8 MiB+64 KiB raw body 只在 uploads 独立 scope；新增非分片/分片回归；PoC 2 MiB→413 |
 | A5-DATA-01 | P2 | opencode DB 快照因临时父目录 0700 root 对 opencode 不可遍历而静默缺失；PC `secretsOk=true` 掩盖 | 独立 0711 快照父目录 + opencode 可写预检；快照失败硬失败（不生成半成品），传播 `secretsOk=false`；生产证据确认旧包仅 4011 B |
@@ -479,7 +479,7 @@
 | A5-DATA-04 | P2 | legacy 抽取 `ops=0` 也置 `legacy_migrated_at`，fallback 停止注入，旧摘要可能被后续清理 | 仅 `upserts>0` 才标记迁移；ops=0 保留 fallback 继续迁移；新增 ops=0/下一批 upsert 测试 |
 | A5-BOT-02 | P2 | wait 不可用轮询回退返回上一轮旧 assistant 回答，多轮答非所问/记忆写入旧回答 | 发送 prompt 前建立 assistant 消息基线（id/time.created），wait/轮询只接受基线外新回答；重启首次复用先读存量消息；多轮/回退/重启用例 |
 | A5-BOT-03 | P2 | 记忆敏感过滤覆盖不足且 key/legacy 未过滤；密码/token/URL/内部路径可落库并进入提示词 | 扩展自然语言密钥/token 前缀/URL/IP/内部路径/UNC/提示结构标记过滤，key/value/legacy 均过滤；读取侧排除旧敏感条目；6 PoC 样本 + 正常偏好不误杀 |
-| A5-BOT-04 | P2 | AI 工具隔离降级仅在日志，无状态/告警；v2.1.3 仅验证 permissions 接受，未验证工具实际被拒 | `toolIsolation()` + `GET /api/bots/status.aiToolIsolation` + 审计 `bot.ai.permissions_fallback`；`/bots` 概览 warning；SECURITY/BOT 记录“接受≠已证明拦截”残余 |
+| A5-BOT-04 | P2 | AI 工具隔离降级仅在日志，无状态/告警；v2.1.3 仅验证 permissions 接受，未验证工具实际被拒 | `toolIsolation()` + `GET /api/chatbots/status.aiToolIsolation` + 审计 `chatbot.ai.permissions_fallback`；`/chatbots` 概览 warning；SECURITY/BOT 记录“接受≠已证明拦截”残余 |
 | A5-BOT-05 | P2 | 发布路由 `slice(2000)` 静默截断，用户以为全文已发 | 路由不截断；service 超长返回 `400 publish_text_too_long`；2000 可入队/2001 拒绝测试 |
 | A5-WEB-01/OPS-01 | P2 | 前端把世界备份 `kept`（归档名数组）当数字展示；世界/PC 状态字段缺失 | `kept: string[]` + `keptCount`，文案注明“上次运行保留、PC ack 后远端删除”；类型/渲染/测试更新 |
 | A5-WEB-02/OPS-02 | P2 | 演练状态按不存在的 `reportPath/dbIntegrity` 展示；smoke 不校验 drill schema | 改用 `report/latestDb/schemaVersion/worldChecked`，旧字段仅兼容回退；smoke 对 schema 不一致 WARN 并提示重跑 |
@@ -491,7 +491,7 @@
 - 安全 12 项：app 写请求可省略 Origin、上传间隔/时间侧信道、公开分享 token 统计 oracle、bare `Origin: null`、备份 TOTP 失败审计、SSO 未绑定 IP/UA、`__Host-` 前缀未采用、旧 Cookie 过渡、AI proxy 响应头透传、分享密码强度/迁移、日志 query 残留、CI 权限/供应链加固。
 - 数据/灾备 9 项：大归档 entries 浏览 507、恢复计划早期快照尺寸检查、导入归档保留策略、告警跨周期不重投、锁心跳、增量时钟水位、状态文件大小上限之外的字段校验、legacy 镜像清理、备份状态历史回填。
 - Bot/AI 14 项：op=13 失败审计字段、消息基线失败边界、旧敏感行仍在 DB、permissions 降级进程级一条审计、多 Bot 状态归属、QQ 平台限流/签名漂移、图片 prompt 文件长期兼容、shim 原生按钮复验、长回复 msg_seq、CF-IP 信任边界、reserved marker、死信 TTL、事件诊断保留、`/ask` 残留文案。
-- 前端/契约 14 项：映射/错误文案细节、BotMetrics 成功率语义、发布文本长度展示、Settings 告警配置、Shares 分页、文件内容/预览契约、空态/重试、PWA 缓存、窄屏表格、无障碍焦点、API 类型可空性、旧字段兼容、UI 文案、前端测试盲区。
+- 前端/契约 14 项：映射/错误文案细节、ChatbotMetrics 成功率语义、发布文本长度展示、Settings 告警配置、Shares 分页、文件内容/预览契约、空态/重试、PWA 缓存、窄屏表格、无障碍焦点、API 类型可空性、旧字段兼容、UI 文案、前端测试盲区。
 - 运维 5 项：smoke world 归档存在性/schema 匹配、drill 结果解析、CI 缓存/权限、备份脚本 Bash 可移植性、生产日志保留。
 - 明细与逐项证据见 `.local/audit/round5-{security,data,bot,web,ops}.md`；P3 不阻塞 v0.6.0，但若后续变更触及同模块应优先回看。
 
@@ -510,7 +510,7 @@
 3. **记忆过滤是启发式**：新格式密钥可能漏过；旧版本已落库敏感行仍存在 DB，读取侧已不注入/不迁移，可用 `/forget`/管理删除/后续 CLI 清理。
 4. **密钥包硬失败语义**：opencode 快照瞬时失败会跳过当天密钥包（旧包保留、次日重试）；如希望保留部分包需改备份拉取状态模型（P3）。
 5. **恢复性能**：measureContents 多一次只读解压，大归档恢复耗时增加约一次解压时间；换预算可信。
-6. **既有残余**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/LUKS、Cloudflare 明文、mock-only 平台路径等按 `docs/SECURITY.md` §4 管理。
+6. **既有残余**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/LUKS、Cloudflare 明文、mock-only 平台路径等按 `docs/app/SECURITY.md` §4 管理。
 7. **验收状态**：本地门禁完成；生产已部署最终 release `20261023T053539Z`/commit `6349617`（healthz v0.6.0/schema14、smoke 16/16 与 24/24、drill schema14、备份/密钥包拉取、用户验收通过）；Tag/GitHub Release 见发布记录。
 
 ### 7. 结论
@@ -532,7 +532,7 @@
 
 ### 范围与结论
 
-- 复核对象：v0.6.0 §6 残余风险、v0.6.1 补丁残余、v0.6.3 全量群消息平台配置问题，以及 `docs/ROADMAP.md` 未完成的 P3/历史欠项。
+- 复核对象：v0.6.0 §6 残余风险、v0.6.1 补丁残余、v0.6.3 全量群消息平台配置问题，以及 `docs/app/ROADMAP.md` 未完成的 P3/历史欠项。
 - 结论：未发现新的未关闭 P0/P1；v0.6.4 不新增 schema 迁移（保持 v16）。本轮关闭 5 项可安全收敛的问题，其余按下表明确保留并记录理由。
 - 测试边界不变：QQ 适配器、OpenCode、Cloudflare 等平台路径仍以进程内夹具/mock 为主，真实平台负路径需部署后联调；不把 mock 全绿等同于线上通过。
 
@@ -541,8 +541,8 @@
 | 项目 | 来源 | 处置 |
 | --- | --- | --- |
 | 全量群消息已开启但非 @ 消息无响应 | v0.6.3 验收发现 | 根因在 QQ 平台侧：需同时开启“接收所有消息”、订阅 `GROUP_MESSAGE_CREATE`、群主设置“获取群内全部消息”；v0.6.3 已补 UI/文档提示，v0.6.4 复核确认生产可用，非代码缺陷 |
-| `NO_REPLY` 文本哨兵脆弱 | v0.6.3 设计 | 升级为 `botmsg_send_message` 工具：模型不调用工具即不发送；私聊/@ 必须至少调用一次，漏调用时服务端兜底发送最终文本并审计 `bot.ai.send_fallback`；未启用工具的部署保留旧 `NO_REPLY` 兼容路径 |
-| 全量群聊逐条调用模型成本高 | v0.6.4 需求 | 新增 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`，仅对非 @ 全量消息延长合并；@/名字命中仍走默认窗口 |
+| `NO_REPLY` 文本哨兵脆弱 | v0.6.3 设计 | 升级为 `botmsg_send_message` 工具：模型不调用工具即不发送；私聊/@ 必须至少调用一次，漏调用时服务端兜底发送最终文本并审计 `chatbot.ai.send_fallback`；未启用工具的部署保留旧 `NO_REPLY` 兼容路径 |
+| 全量群聊逐条调用模型成本高 | v0.6.4 需求 | 新增 `CHATBOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`/`CHATBOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`，仅对非 @ 全量消息延长合并；@/名字命中仍走默认窗口 |
 | 新会话标题不可管理 | v0.6.4 需求 | 新建 Chat/Memory 会话命名为「目标名称 Chat/Memory」；已有会话不重命名；C2C 未登记用户回退入站用户名/短 ID |
 | SSO ticket 未绑定客户端 | v0.6.1 残余 | 绑定 User-Agent SHA-256 摘要（可选；签发/消费不一致即失败并一次性销毁）；IP 不绑定，原因是移动网络切换与 Cloudflare 边缘出口 IP 可能变化，绑定会导致正常 SSO 失败；仍保留一次性/60s/aiOrigin/no-store |
 | 记忆敏感过滤启发式 | v0.6.1 残余 | 新增 Google `AIza`、GitLab `glpat-`、npm token、Stripe `sk_live_`、AWS secret key、Azure `AccountKey`、带凭据的数据库 URL 模式；仍为启发式，读取侧继续过滤旧条目 |
@@ -552,9 +552,9 @@
 
 1. **`__Host-` Cookie 前缀**：需要同时迁移 Cookie 名、前端读取、SSO 代理与回滚路径；且本地 loopback HTTP 开发环境没有 Secure 上下文，直接加前缀会影响开发登录。当前 host-only + 清理旧父域 Cookie 已覆盖主要跨子域风险，下一版本单独评估。
 2. **SSO ticket IP 绑定**：见上，UA 已绑定；IP 在移动网络/Cloudflare 边缘场景不稳定，强行绑定会破坏正常登录，记录为已评估不采用。
-3. **SSH/sudo、RCON 监听、单 SD/LUKS、Cloudflare 明文、mock-only 平台负路径**：按 `docs/SECURITY.md` §4 既有残余管理，用户已选择仅文档披露/接受。
+3. **SSH/sudo、RCON 监听、单 SD/LUKS、Cloudflare 明文、mock-only 平台负路径**：按 `docs/app/SECURITY.md` §4 既有残余管理，用户已选择仅文档披露/接受。
 4. **DR-1 增量水位、DR-7 导入归档保留、DR-22 告警跨周期重投、DR-23 锁心跳、DR-17 listTrash 性能等 P3**：本次未触及对应模块，不扩大 v0.6.4 范围；若后续改动备份/告警模块优先回看。
-5. **工具调用模型行为非强保证**：私聊/@ 的兜底保证“有回复”，但不保证模型一定调用工具；生产验收应观察 `bot.ai.send`/`bot.ai.send_fallback` 审计与真实 QQ 消息。
+5. **工具调用模型行为非强保证**：私聊/@ 的兜底保证“有回复”，但不保证模型一定调用工具；生产验收应观察 `chatbot.ai.send`/`chatbot.ai.send_fallback` 审计与真实 QQ 消息。
 
 ## 第六轮（v0.6.6 基线 → v0.7.0，2026-10-24）
 
@@ -569,7 +569,7 @@
 
 - 范围：服务端 77 文件 / 22,172 行、前端 136 文件 / 31,197 行、脚本/部署/CI/文档全量；五个并行审计流（安全、数据/灾备、Bot/AI、前端/契约、运维/供应链）+ Lead 架构/运行时流与综合。
 - 每流产出：finding 台账（ID/级别/证据 file:line/复现/影响/修复选项/置信度）、不变量目录、横切主题、未验证项；Lead 合并去重后形成 Gate-1 决策（D-01…D-19）。
-- 生产只读事实（审计时）：DB 1.4 MiB（WAL 4.1 MiB）、files 2、notes 0、sessions 3、audit 632、metrics 3619、bot_events 204、backups 59 行；服务全 active、无 failed unit、无 24h warning；`age 1.2.1` 与公钥可读；OpenCode v2.1.3、5 个会话、MCP 每服务 1 进程（日志有多次 spawn）。探测确认 `ai.<domain>` 未受 Cloudflare Access 保护（根路径 401 而非 Access 302），`app.<domain>` 302、`/healthz` 200。
+- 生产只读事实（审计时）：DB 1.4 MiB（WAL 4.1 MiB）、files 2、notes 0、sessions 3、audit 632、metrics 3619、chatbot_events 204、backups 59 行；服务全 active、无 failed unit、无 24h warning；`age 1.2.1` 与公钥可读；OpenCode v2.1.3、5 个会话、MCP 每服务 1 进程（日志有多次 spawn）。探测确认 `ai.<domain>` 未受 Cloudflare Access 保护（根路径 401 而非 Access 302），`app.<domain>` 302、`/healthz` 200。
 
 ### 2. 计数与结论
 
@@ -592,15 +592,15 @@
 | ID | 问题/影响 | 处置与证据 |
 |---|---|---|
 | A7-WEB-01 | 备份/恢复长任务共用 20s 客户端超时：UI 误报失败、服务端继续、重试 409/410、恢复结果无入口 | 长任务端点显式超时（prepare 3300s、verify/entries/restore-plan/execute 600s），超时文案说明“服务端可能仍在执行”；恢复计划持久化 + 轮询结果；新增前端测试 |
-| A7-OPS-01 | OpenCode 2.1.4 升级/回滚程序与验证门禁不完整（未固定版本、无 MCP/compaction/permissions/密钥包/Bot 回归判据） | `docs/DEPLOY.md` §3.2 固定 `opencode upgrade 2.1.4`；补二进制/data/env/unit/MCP 配置备份、14 项矩阵与回滚；`smoke.ps1` 增加 OpenCode/MCP 只读检查；真实升级在发布门禁执行 |
+| A7-OPS-01 | OpenCode 2.1.4 升级/回滚程序与验证门禁不完整（未固定版本、无 MCP/compaction/permissions/密钥包/Bot 回归判据） | `docs/app/DEPLOY.md` §3.2 固定 `opencode upgrade 2.1.4`；补二进制/data/env/unit/MCP 配置备份、14 项矩阵与回滚；`smoke.ps1` 增加 OpenCode/MCP 只读检查；真实升级在发布门禁执行 |
 | A7-SEC-10 | AI 主机 `/__af/sso/*` 鉴权前无限流且每失败写 audit_log；生产确认 `ai` 主机未受 Access 保护 → 无认证写放大/磁盘耗尽 | proxy 层按 IP 限流（SSO 60/min、匿名 120/min），`auth.sso_ai`/`opencode_origin_rejected` 审计按 action+IP 60s 去重（容量上限 4096）；建议用户后续在 Cloudflare 后台给 `ai` 加 Access/WAF |
 
 ### 4. P2 处置（26）
 
 全部 P2 在本版处置；无 schema 迁移。
 
-- **架构**：ARCH-04 关停前有限等待 Bot 在途回复/工具缓冲/投递排空（最多 15s，超时 warn）；**ARCH-05（D-17）** 审计统一事务外 best-effort，失败计数/最近错误经 `/api/version.audit` 暴露；**ARCH-01 记录不拆**——按 D-16 做行为保持的模块抽取（`bot/inbound.ts`、`bot/diagnostics.ts`、队列/串行逻辑、`BotService` facade），3195 行巨型模块的进一步拆分排后续版本。
-- **安全**：SEC-11/D-12 工具隔离 fail-closed（10 分钟重试窗口；启用发送工具且隔离不可用时新 Chat `503 bot_ai_tool_isolation_unavailable` + 固定提示 + 审计/状态；上游恢复自动恢复）；信任头（SEC-05/07/08/12/13）统一 `requestMeta`/代理 loopback Host 判定/Webhook 未验签桶分离；SEC-02/03/04/06/09/14/15 按报告修或明确残余（见本文件 §9）。
+- **架构**：ARCH-04 关停前有限等待 Bot 在途回复/工具缓冲/投递排空（最多 15s，超时 warn）；**ARCH-05（D-17）** 审计统一事务外 best-effort，失败计数/最近错误经 `/api/version.audit` 暴露；**ARCH-01 记录不拆**——按 D-16 做行为保持的模块抽取（`bot/inbound.ts`、`bot/diagnostics.ts`、队列/串行逻辑、`ChatbotService` facade），3195 行巨型模块的进一步拆分排后续版本。
+- **安全**：SEC-11/D-12 工具隔离 fail-closed（10 分钟重试窗口；启用发送工具且隔离不可用时新 Chat `503 chatbot_ai_tool_isolation_unavailable` + 固定提示 + 审计/状态；上游恢复自动恢复）；信任头（SEC-05/07/08/12/13）统一 `requestMeta`/代理 loopback Host 判定/Webhook 未验签桶分离；SEC-02/03/04/06/09/14/15 按报告修或明确残余（见本文件 §9）。
 - **数据**：DATA-01 拉取分项容错（缺/非法 sidecar 跳过不 ack，其余继续）；DATA-02 并发同索引分片幂等返回、不删共享块；DATA-03 启动/维护清理陈旧 `restore.lock`；DATA-04 分享下载原子计数；DATA-07/08/09/10/11/12/14 分别修分享列表计数、目录深度、唯一名并发、物理孤儿回收、verify 失败清状态、purge 分享吊销兜底、列表 N+1。
 - **Bot**：BOT-01 孤儿清理限定旧默认标题；BOT-02 混批任一 @ 即非静默；BOT-03/D-13 群记忆 key 改稳定 `member_openid` + 一次性迁移（无法映射标 `legacy:`）+ `/forget` 清本人群条目；BOT-04 回合异常补发已缓冲工具消息并审计 `partialTurn`；BOT-05 `/search` 复用会话串行锁。
 - **前端**：WEB-02 prepare warnings/skippedMissing 类型化与展示；WEB-03 断点命中 completed 消费 `fileId`；WEB-04 恢复计划持久化 + 轮询；WEB-05 补测试并逐步提高阈值（本版门禁 Lines 91 / Functions 85 / Branches 76）。
@@ -617,7 +617,7 @@
   4. 备份加密的 SIGKILL/断电/ENOSPC 残余窗口（`*.plain.tmp` 最长 24h；孤儿密文只报告不自动删）；预部署 DB 快照继续明文 0600、保留 2 份（自动回滚需要）。
   5. 异地副本依赖用户配置 rclone 与 PC 在线，单一远端、非多副本；私钥/远端凭据丢失不可恢复。
   6. `__Host-` Cookie 前缀、SSO ticket IP 绑定、scrypt N 提升、`http-proxy` 替换、Cloudflare 明文、单 SD/LUKS、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、mock-only 平台负路径等既有项按 SECURITY §4 管理。
-  7. `BotService` 进一步拆分（ARCH-01 剩余部分）、迁移校验和、内存态统一上限、`Intl` 开销等 P3 记录项未在本版改造。
+  7. `ChatbotService` 进一步拆分（ARCH-01 剩余部分）、迁移校验和、内存态统一上限、`Intl` 开销等 P3 记录项未在本版改造。
 - 明细与逐项理由见本地分报告 `v070-*.md` §P3 与 `v070-findings.md`。
 
 ### 6. 特性设计评审：备份整包加密 + 异地副本
@@ -634,7 +634,7 @@
 
 - 兼容（有条件，非阻断）：应用是纯 HTTP 客户端（非 SDK），依赖 5 个端点与 assistant content 形状；2.1.3 已验证 `[{type:'text',text}]`、permissions 200、wait 204；2.1.4 为补丁版，MCP lifecycle 修复是收益（2.1.3 生产日志多次 spawn）。
 - 硬门禁：升级后先验 assistant 消息/part 形状与 `type=assistant` 过滤、permissions 仍接受且 deny-all 负路径无 tool、wait 可用/回退、`GET /api/session` 是否含 archived 及 DELETE 语义、MCP 每服务恰 1 进程/无重复 spawn/`tools/list` 稳定/`botmsg` 与 `searxng` 名称与 permissions 匹配、后台 compaction 摘要不被当本轮回复；Bot 真实回归在应用部署后做。
-- 先决：升级前必须备份 v2.1.3 二进制 + data + env + unit + MCP 配置（现有 `/var/backups/opencode` 只有旧二进制）；失败回滚（必要时恢复 data tar）。升级步骤与 14 项矩阵见 `docs/DEPLOY.md` §3.2。
+- 先决：升级前必须备份 v2.1.3 二进制 + data + env + unit + MCP 配置（现有 `/var/backups/opencode` 只有旧二进制）；失败回滚（必要时恢复 data tar）。升级步骤与 14 项矩阵见 `docs/app/DEPLOY.md` §3.2。
 
 ### 8. 修复批次与验证证据
 
@@ -651,7 +651,7 @@
 4. **备份加密残余**：明文临时文件窗口、2× 空间峰值、孤儿密文人工核对、私钥丢失不可恢复、Pi 不持私钥意味着 Web 不能恢复加密归档；预部署快照仍明文。
 5. **异地副本残余**：默认关闭；单远端、依赖 PC 与 rclone；状态文件可被 PC 端伪造（管理员信任边界内），告警只反映状态文件；未配置时不告警。
 6. **群记忆迁移**：无法映射归属的旧键保留 `legacy:` 且不参与按成员删除；同名用户历史覆盖无法自动还原。
-7. **既有残余**：单管理员、sudo/RCON/单 SD/Cloudflare 明文、mock-only 平台负路径、限流内存态、`http-proxy` 弃用等按 `docs/SECURITY.md` §4 管理。
+7. **既有残余**：单管理员、sudo/RCON/单 SD/Cloudflare 明文、mock-only 平台负路径、限流内存态、`http-proxy` 弃用等按 `docs/app/SECURITY.md` §4 管理。
 
 ### 10. 结论
 
@@ -661,8 +661,8 @@
 
 ### 11. v0.7.2 残余收口记录
 
-- **已收口**：审计失败计数持久化（schema v17）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留（DR-7）、告警 24h 重通知（DR-22）、备份锁心跳（DR-23）、DR-1 `clockSkew` 状态、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径夹具补强。
-- **仍保留**：单进程/HA、内存限流、同步维护、SQLite `synchronous=NORMAL`、单 SD/LUKS、NOPASSWD sudo、RCON 监听、Cloudflare 明文、真实平台负路径（mock-only 之外的线上联调）、备份加密临时明文窗口/私钥丢失、异地副本单远端、群记忆 `legacy:` 不可恢复等，按 `docs/ARCHITECTURE.md` §11 与 `docs/SECURITY.md` §4 管理。
+- **已收口**：审计失败计数持久化（schema v17）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留（DR-7）、告警 24h 重通知（DR-22）、备份锁心跳（DR-23）、DR-1 `clockSkew` 状态、ChatbotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径夹具补强。
+- **仍保留**：单进程/HA、内存限流、同步维护、SQLite `synchronous=NORMAL`、单 SD/LUKS、NOPASSWD sudo、RCON 监听、Cloudflare 明文、真实平台负路径（mock-only 之外的线上联调）、备份加密临时明文窗口/私钥丢失、异地副本单远端、群记忆 `legacy:` 不可恢复等，按 `docs/app/ARCHITECTURE.md` §11 与 `docs/app/SECURITY.md` §4 管理。
 - **V10–V13**：用户真实 QQ 正向验收通过；真实平台限流/签名漂移/故障负路径仍待部署后联调，不再表述为“未验收”。
 
 ## 第七轮（v0.7.3 规划期对抗性分析，2026-10-27）
@@ -670,7 +670,7 @@
 - **范围**：Bot 提示词文档化（角色卡只在会话创建时发送、记忆按需 `read`）与 OpenCode read 权限扩大。
 - **结论**：功能本地实现与门禁完成，默认关闭；生产 OpenCode 读范围矩阵已于 2026-10-27 **7/7 通过**并显式启用（真实 QQ 私聊首轮/后续、群聊首轮通过）。P0=0/P1=0；A1/A2 阻断已由生产矩阵与自动化测试关闭，A13 保留为观察项；另记录部署期发现的 drill 链校验缺陷 F1（已修复）。
 - **阻断项 A1（read 范围语义）**：OpenCode 接受 `permissions` 不等于已按路径拦截；若 `read` 规则未生效，模型可能读取 `/etc/antifieldcloud/env`、OpenCode 凭据/DB 并外发。缓解：`deny *` 首位 + 仅放行当前作用域 `external_directory` + 精确 `read role.md/memory.md`；默认关闭；生产矩阵作用域内/外/注入/shell/相对路径全部验证，失败保持关闭。**生产结果（2026-10-27）**：矩阵 7/7 PASS，作用域外/env/DB/其他作用域/shell/注入均拒绝，阻断关闭；深度复验确认负路径是 OpenCode `read` 工具返回 `status=error`，而非模型自行拒答（作用域内 `status=completed`）。
-- **阻断项 A2（权限降级）**：旧逻辑在 permissions 被拒时可无 permissions 重建（默认全工具）；文档模式开启后必须以 503 `bot_ai_tool_isolation_unavailable` fail-closed，记忆抽取会话也要求 permissions 生效。已由单测/集成覆盖。**生产未人为制造 permissions 拒绝**（避免影响线上），保持为自动化测试保证项。
+- **阻断项 A2（权限降级）**：旧逻辑在 permissions 被拒时可无 permissions 重建（默认全工具）；文档模式开启后必须以 503 `chatbot_ai_tool_isolation_unavailable` fail-closed，记忆抽取会话也要求 permissions 生效。已由单测/集成覆盖。**生产未人为制造 permissions 拒绝**（避免影响线上），保持为自动化测试保证项。
 - **产品风险 A13（模型不读文档）**：后续轮不再携带角色/记忆正文，若模型不调用 `read`，人设/记忆可能弱化；通过真实 QQ 首轮/后续、记忆召回、`/forget` 验收观察，可随时用 flag 回退内联提示词。**生产观察**：私聊后续轮模型实际调用 `read` 读取 `role.md`/`memory.md`，未见人设弱化；记忆召回与 `/forget` 未在生产做破坏性验证。
 - **运维缺陷 F1（drill 增量链误报）**：`drill-verify.mjs` 的 `details` 未返回 manifest `since`，`drill.ps1` 对所有含 inc 的链误报 `chain_since_missing`；生产首次演练 `20261027T061021Z` 暴露。已补字段与单测，重跑 `20261027T061319Z` 通过（full+5 inc、schema17）。
 - **明确残余**：首轮角色卡仍存在于 OpenCode 会话历史（后续请求不再发送正文）；OpenCode 进程是信任边界（可读全部上下文作用域）；群共享记忆在群成员间可见为既有语义；上下文目录为派生数据、不进入备份，恢复后重建。

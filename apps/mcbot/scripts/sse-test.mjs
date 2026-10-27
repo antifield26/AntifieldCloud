@@ -1,8 +1,8 @@
-const base = (process.env.LOFII_HTTP_URL ?? 'http://127.0.0.1:3010').replace(/\/+$/, '')
-const token = process.env.LOFII_HTTP_TOKEN ?? ''
+const base = (process.env.MCBOT_HTTP_URL ?? 'http://127.0.0.1:3010').replace(/\/+$/, '')
+const token = process.env.MCBOT_HTTP_TOKEN ?? ''
 const durationMs = Number(process.env.SSE_MS ?? 15000)
 if (!token) {
-  console.error('LOFII_HTTP_TOKEN is required')
+  console.error('MCBOT_HTTP_TOKEN is required')
   process.exit(1)
 }
 

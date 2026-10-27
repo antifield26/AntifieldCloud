@@ -1,6 +1,6 @@
 [Unit]
 Description=AntifieldComplexx Minecraft world consistent backup
-Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
+Documentation=file:///opt/antifieldcloud/current/docs/app/DEPLOY.md
 # 只做时序排序，不拉起 Minecraft；服务器未运行时脚本会因 RCON 不可达而失败并在状态 JSON 中可见。
 After=minecraft.service network-online.target
 Wants=network-online.target

@@ -13,7 +13,7 @@ import { currentSiteLocation, deriveSiblingOrigin, safeOrigin } from '../lib/ori
 const META_RETRY_DELAYS_MS = [3000, 10_000, 30_000] as const
 
 const DEFAULT_TRASH_RETENTION_DAYS = 30
-// 与 docs/API.md 的单请求上限一致：Cloudflare 代理下最大 100 MiB
+// 与 docs/app/API.md 的单请求上限一致：Cloudflare 代理下最大 100 MiB
 const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 const DEFAULT_NOTE_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024
 const DEFAULT_NOTE_MAX_ATTACHMENTS = 100

@@ -1,6 +1,6 @@
-# AntifieldCloud 对接契约（Lofii Bot v0.6.1）
+# AntifieldCloud 对接契约（mcbot v1.0.0）
 
-> 本文只描述 `lofii-bot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
+> 本文只描述 `mcbot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
 ## 1. 基础信息
 
@@ -10,7 +10,7 @@
 | 读 Token | `HTTP_TOKEN`，用于 `/status`、`/task`、`/events`、`/events/recent`、`/say` |
 | 控制 Token | `HTTP_CONTROL_TOKEN`，仅用于 `/task/*` 与 `POST /move` |
 | 契约版本 | `CONTRACT_VERSION=1`，由 `/healthz` 与 `/events/recent` 的 `contractVersion` 返回 |
-| Token 位置 | Pi：`/etc/lofii-bot/env`（root:lofiibot 0640） |
+| Token 位置 | Pi：`/etc/mcbot/env`（root:lofiibot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
 | 请求体上限 | 8 KiB |
 | `/say` 限流 | 10 次/分钟（进程内） |
@@ -20,8 +20,8 @@
 读/控制 Token 必须分离。用读 Token 调控制接口返回 401；用控制 Token 调读接口返回 401。控制 Token 为空时，控制接口返回 503 `control_disabled`，读接口不受影响。
 
 ```bash
-READ="$(sudo grep '^HTTP_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
-CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
+READ="$(sudo grep '^HTTP_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
+CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
 ```
 
 ## 2. GET /healthz

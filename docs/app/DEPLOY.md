@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.8.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.0）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -13,11 +13,11 @@
 - 本仓库从 Windows PC 通过 SSH 部署；PC 需有 `C:\Users\<user>\.ssh\id_ed25519`。
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
-- 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`bot_group_roles` 保存群聊共享角色卡；`bot_memory_items`/`bot_memory_state` 保存结构化记忆；`bot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
-- 当前生产：**v0.8.1**（release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite` sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，**无 `-SkipLocalTaskCheck`**，期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；2 SKIP=备份整包加密/异地副本默认关闭）；Lofii 已启用：lofii-bot **v0.6.1** release `20261027T111640Z`/commit `a0a28da`、`LOFII_ENABLED=true`、Token `--check` read/control 均 match、`meta.lofii.event_cursor` 已更新；生产已认证 API `/api/version`/`/api/lofii/status` 200，`/say` 任意 `/` 与 C0 均 400，审计无 `lofii.say`；v0.8.1 未重新做生产 UI 截图，沿用 v0.8.0 视觉确认）。**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release [AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1)（2026-10-27）**；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务已重装并验证（`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致 `7febb768…636d`、任务 Ready）。**上一生产为 v0.8.0**（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2、UI 视觉确认已完成；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**；保留为回滚点）；再上一生产为 v0.7.3（Tag + GitHub Release 已发布）。schema 保持 v17（无迁移），OpenCode v2.1.4 不变；备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
-- **v0.8.1 部署记录（2026-10-27，已执行）**：`npm run check` 通过、`npm test` 572、`test:web` 256、build 通过；先升级 lofii-bot 到 v0.6.1 并同步 Token（`--check` match），再部署应用 0.8.1；按 §3.8 第 7 步验证 `/say` 任意 `/` 400、C0 400 与 smoke（`-ExpectedVersion 0.8.1 -ExpectedLofiiVersion 0.6.1`）。**只读 `/say` 503 仅由单元/集成测试覆盖**（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新截图 UI。
-- Lofii 默认关闭（v0.8.0 引入，v0.8.1 加固；**生产已启用**）：`LOFII_ENABLED=false` 且无 Token 时应用正常运行，`/api/lofii/*` 返回 503、页面不显示 Lofii 入口；生产当前 `LOFII_ENABLED=true`（读/控制 Token 均配置、仅 loopback），启用/回滚顺序见 §3.8，Token 同步见 §3.8，smoke 见 §6。
-- Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
+- 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
+- 当前生产：**v0.8.1**（release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite` sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，**无 `-SkipLocalTaskCheck`**，期望 0.8.1/schema17/OpenCode 2.1.4/mcbot 0.6.1；2 SKIP=备份整包加密/异地副本默认关闭）；mcbot 已启用：mcbot **v0.6.1** release `20261027T111640Z`/commit `a0a28da`、`MCBOT_ENABLED=true`、Token `--check` read/control 均 match、`meta.lofii.event_cursor` 已更新；生产已认证 API `/api/version`/`/api/mcbot/status` 200，`/say` 任意 `/` 与 C0 均 400，审计无 `lofii.say`；v0.8.1 未重新做生产 UI 截图，沿用 v0.8.0 视觉确认）。**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release [AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1)（2026-10-27）**；真实 mcbot 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务已重装并验证（`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致 `7febb768…636d`、任务 Ready）。**上一生产为 v0.8.0**（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2、UI 视觉确认已完成；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**；保留为回滚点）；再上一生产为 v0.7.3（Tag + GitHub Release 已发布）。schema 保持 v17（无迁移），OpenCode v2.1.4 不变；备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
+- **v0.8.1 部署记录（2026-10-27，已执行）**：`npm run check` 通过、`npm test` 572、`test:web` 256、build 通过；先升级 mcbot 到 v0.6.1 并同步 Token（`--check` match），再部署应用 0.8.1；按 §3.8 第 7 步验证 `/say` 任意 `/` 400、C0 400 与 smoke（`-ExpectedVersion 0.8.1 -ExpectedMcbotVersion 0.6.1`）。**只读 `/say` 503 仅由单元/集成测试覆盖**（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新截图 UI。
+- mcbot 默认关闭（v0.8.0 引入，v0.8.1 加固；**生产已启用**）：`MCBOT_ENABLED=false` 且无 Token 时应用正常运行，`/api/mcbot/*` 返回 503、页面不显示 mcbot 入口；生产当前 `MCBOT_ENABLED=true`（读/控制 Token 均配置、仅 loopback），启用/回滚顺序见 §3.8，Token 同步见 §3.8，smoke 见 §6。
+- Bot 默认关闭：`CHATBOT_ENABLED=false` 且无 `CHATBOT_SECRET_KEY` 时应用正常运行，只是 `/api/chatbot/webhook/*` 返回 404、`/api/chatbots*` 写接口 503；
   启用顺序见 §3.0，Cloudflare Access bypass 见 §5.2。
 
 ## 1. 首次系统初始化（重装时执行）
@@ -105,44 +105,44 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `NOTE_ATTACHMENT_MAX_BYTES=26214400`、`NOTE_MAX_ATTACHMENTS=100`、`NOTE_VERSIONS_KEEP=20`：笔记附件与版本限制。
   - `SHARE_MAX_ITEMS=50`：单个分享最多文件数。
   - `METRICS_ENABLED=true`、`METRICS_SAMPLE_SECONDS=60`、`METRICS_RETENTION_DAYS=30`：指标采样与保留。
-  - `BOT_ENABLED=false`：总开关；**默认关闭**，完成 QQ 平台联调后再显式改为 true 并重启。
-  - `BOT_SECRET_KEY`：32 字节 base64（`openssl rand -base64 32` 等价），AES-256-GCM 加密 QQ AppSecret；必须与 DB 一起备份，
+  - `CHATBOT_ENABLED=false`：总开关；**默认关闭**，完成 QQ 平台联调后再显式改为 true 并重启。
+  - `CHATBOT_SECRET_KEY`：32 字节 base64（`openssl rand -base64 32` 等价），AES-256-GCM 加密 QQ AppSecret；必须与 DB 一起备份，
     丢失后已存 AppSecret 只能重新录入。`bootstrap-env.sh --force` 复用旧值，**不要手工替换**。
-  - `BOT_WEBHOOK_MAX_BODY_BYTES=262144`：Webhook 原始 body 上限（16 KiB–1 MiB）。
-  - `BOT_DELIVERY_INTERVAL_SECONDS=30`（5–300）、`BOT_DELIVERY_MAX_ATTEMPTS=5`（1–20）：队列扫描与最大尝试次数。
-  - `BOT_EVENT_RETENTION_DAYS=7`（1–90）：事件去重记录保留；已发送投递/发布固定 30 天清理。
-  - `BOT_COMMAND_RATE_PER_MINUTE=120`（1–600，）：每 Bot × 用户命令限流。
-  - `BOT_PUBLISH_MAX_SCHEDULED_DAYS=30`（1–365）、`BOT_MAX_BOTS=10`（1–50）。
-  - `BOT_AI_ENABLED=false`：普通消息 Chat 的 AI 总开关；关闭时 Chat 不调用 AI。
-  - `BOT_AI_PROVIDER=`、`BOT_AI_MODEL=`：可选 OpenCode provider/model，二者同时设置才指定模型；为空用 OpenCode 默认模型。
-  - `BOT_AI_TIMEOUT_SECONDS=60`（10–180）：单次 AI 请求/等待超时。
-  - `BOT_AI_MAX_PROMPT_CHARS=2000`（100–8000）：提示词截断。
-  - `BOT_AI_RATE_PER_HOUR=120`（1–600，）：每 Bot×用户每小时 AI 调用上限（仅 Chat）。
-  - `BOT_AI_SESSION_RETENTION_DAYS=7`（1–90）：`bot_ai_sessions` 映射保留；长期记忆保留独立（见下），会话清理不删除远端会话。
-  - `BOT_CHAT_RATE_PER_MINUTE=30`（1–120，）：普通消息 Chat 每 Bot×用户每分钟上限；仍受 `BOT_AI_RATE_PER_HOUR` 总量约束。
-  - `BOT_AI_MEMORY_MAX_CHARS=4096`（512–16384）：每 Bot×用户长期记忆摘要上限。
-  - `BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650）：fact/project/relationship 条目 TTL 天数，独立于 7 天会话保留。
-  - `BOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）：累计多少轮对话触发一次记忆抽取。
-  - `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600）：用户空闲多少秒触发记忆抽取；0 关闭空闲触发。
-  - `BOT_MEMORY_MAX_ITEMS=200`（20–1000）：每 Bot×用户条目容量上限；超限先淘汰低重要度非核心条目（profile/preference 受保护）。
-  - `BOT_MEMORY_PROMPT_MAX_CHARS=3000`（500–8000）：召回注入字符预算。
-  - `BOT_MEMORY_PROMPT_MAX_ITEMS=12`（1–50）：召回注入条数预算。
-  - `BOT_MEMORY_TTL_EPISODE_DAYS=90`（1–365）：episode 条目 TTL。
-  - `BOT_MEMORY_TTL_TASK_DAYS=30`（1–180）：task 条目 TTL。
-  - fact/project/relationship 的 TTL 沿用 `BOT_AI_MEMORY_RETENTION_DAYS=365`；legacy fallback 上限沿用 `BOT_AI_MEMORY_MAX_CHARS`。.TrimEnd
-  - `BOT_AI_TASK_PROMPT`：原 `/ask` 任务提示覆盖；生产 env 需删除该行。
-  - `BOT_AI_CHAT_PROMPT`：原 Chat 提示覆盖；生产 env 需删除该行。
-  - `BOT_AI_MAX_REPLY_CHARS=4000`（1000–12000）：AI 单次回答字符上限；QQ 适配器再按 2000 字符分段发送。
-  - `BOT_AI_VISION_ENABLED=true`：QQ 入站图片理解总开关。开启需 OpenCode 支持 prompt files 与模型支持 image 输入（生产已完成只读验证：data URL + `opencode-go/deepseek-v4.1-flash`）；
-    关闭后图片降级为纯文字回答。当前不纳管：`BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES`、`BOT_PUBLISH_MAX_MEDIA_FILES`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES`（`bootstrap-env.sh` 不再纳管）。
-  - `BOT_AI_IMAGE_MAX_BYTES=10485760`（1–20 MiB）：单张入站图片上限；图片只放行 image mime、QQ CDN 固定域名后缀、不落盘，失败降级为纯文字。
-  - `LOFII_ENABLED=false`：Lofii Minecraft Bot 对接总开关（v0.8.0 引入，v0.8.1 加固，**默认关闭**）；启用时必须配置 `LOFII_READ_TOKEN`，且 `LOFII_URL` 为 loopback + http(s) 根地址（拒绝 userinfo/路径/查询/片段），否则拒绝启动。
-  - `LOFII_URL=http://127.0.0.1:3010`：上游仅 loopback（去尾斜杠）；lofii-bot 是独立服务，不对外、不进入 Cloudflare/nftables。
-  - `LOFII_READ_TOKEN=`、`LOFII_CONTROL_TOKEN=`：由 root 执行 `scripts/sync-lofii-tokens.sh` 从 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步（64 位 hex）；**不要手工复制 lofii 的 RCON/OpenCode 密码**。控制 Token 为空 = 只读（控制接口与 `/say` 均 503 `lofii_control_disabled`）。
-  - `LOFII_TIMEOUT_MS=2500`（500–10000）：单次上游请求超时（毫秒）。
-  - `LOFII_POLL_MS=5000`（2000–60000）：`/status` + `/events/recent` 轮询间隔（毫秒）。
-  - `LOFII_ALERTS_ENABLED=true`：是否把上游 `alert` 写成应用告警事件（`status='event'`）；关闭时仍推进游标但不写告警。
-  - Lofii Token 同步/轮换（root）：先 `cp -a /etc/antifieldcloud/env /etc/antifieldcloud/env.bak.$(date -u +%Y%m%dT%H%M%SZ)`，再 `sudo bash scripts/sync-lofii-tokens.sh`；`sudo bash scripts/sync-lofii-tokens.sh --check` 只比较不写盘。脚本写前自行备份、原子 install、保持 0640，不回显 Token；Token 变化后 `systemctl restart antifieldcloud` 生效。轮换 lofii-bot 侧 Token 后必须重新同步。
+  - `CHATBOT_WEBHOOK_MAX_BODY_BYTES=262144`：Webhook 原始 body 上限（16 KiB–1 MiB）。
+  - `CHATBOT_DELIVERY_INTERVAL_SECONDS=30`（5–300）、`CHATBOT_DELIVERY_MAX_ATTEMPTS=5`（1–20）：队列扫描与最大尝试次数。
+  - `CHATBOT_EVENT_RETENTION_DAYS=7`（1–90）：事件去重记录保留；已发送投递/发布固定 30 天清理。
+  - `CHATBOT_COMMAND_RATE_PER_MINUTE=120`（1–600，）：每 Bot × 用户命令限流。
+  - `CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS=30`（1–365）、`CHATBOT_MAX_BOTS=10`（1–50）。
+  - `CHATBOT_AI_ENABLED=false`：普通消息 Chat 的 AI 总开关；关闭时 Chat 不调用 AI。
+  - `CHATBOT_AI_PROVIDER=`、`CHATBOT_AI_MODEL=`：可选 OpenCode provider/model，二者同时设置才指定模型；为空用 OpenCode 默认模型。
+  - `CHATBOT_AI_TIMEOUT_SECONDS=60`（10–180）：单次 AI 请求/等待超时。
+  - `CHATBOT_AI_MAX_PROMPT_CHARS=2000`（100–8000）：提示词截断。
+  - `CHATBOT_AI_RATE_PER_HOUR=120`（1–600，）：每 Bot×用户每小时 AI 调用上限（仅 Chat）。
+  - `CHATBOT_AI_SESSION_RETENTION_DAYS=7`（1–90）：`chatbot_ai_sessions` 映射保留；长期记忆保留独立（见下），会话清理不删除远端会话。
+  - `CHATBOT_CHAT_RATE_PER_MINUTE=30`（1–120，）：普通消息 Chat 每 Bot×用户每分钟上限；仍受 `CHATBOT_AI_RATE_PER_HOUR` 总量约束。
+  - `CHATBOT_AI_MEMORY_MAX_CHARS=4096`（512–16384）：每 Bot×用户长期记忆摘要上限。
+  - `CHATBOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650）：fact/project/relationship 条目 TTL 天数，独立于 7 天会话保留。
+  - `CHATBOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）：累计多少轮对话触发一次记忆抽取。
+  - `CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600）：用户空闲多少秒触发记忆抽取；0 关闭空闲触发。
+  - `CHATBOT_MEMORY_MAX_ITEMS=200`（20–1000）：每 Bot×用户条目容量上限；超限先淘汰低重要度非核心条目（profile/preference 受保护）。
+  - `CHATBOT_MEMORY_PROMPT_MAX_CHARS=3000`（500–8000）：召回注入字符预算。
+  - `CHATBOT_MEMORY_PROMPT_MAX_ITEMS=12`（1–50）：召回注入条数预算。
+  - `CHATBOT_MEMORY_TTL_EPISODE_DAYS=90`（1–365）：episode 条目 TTL。
+  - `CHATBOT_MEMORY_TTL_TASK_DAYS=30`（1–180）：task 条目 TTL。
+  - fact/project/relationship 的 TTL 沿用 `CHATBOT_AI_MEMORY_RETENTION_DAYS=365`；legacy fallback 上限沿用 `CHATBOT_AI_MEMORY_MAX_CHARS`。.TrimEnd
+  - `CHATBOT_AI_TASK_PROMPT`：原 `/ask` 任务提示覆盖；生产 env 需删除该行。
+  - `CHATBOT_AI_CHAT_PROMPT`：原 Chat 提示覆盖；生产 env 需删除该行。
+  - `CHATBOT_AI_MAX_REPLY_CHARS=4000`（1000–12000）：AI 单次回答字符上限；QQ 适配器再按 2000 字符分段发送。
+  - `CHATBOT_AI_VISION_ENABLED=true`：QQ 入站图片理解总开关。开启需 OpenCode 支持 prompt files 与模型支持 image 输入（生产已完成只读验证：data URL + `opencode-go/deepseek-v4.1-flash`）；
+    关闭后图片降级为纯文字回答。当前不纳管：`CHATBOT_DISCORD_GATEWAY_ENABLED`、`CHATBOT_PUBLISH_MAX_MEDIA_BYTES`、`CHATBOT_PUBLISH_MAX_MEDIA_FILES`、`CHATBOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES`（`bootstrap-env.sh` 不再纳管）。
+  - `CHATBOT_AI_IMAGE_MAX_BYTES=10485760`（1–20 MiB）：单张入站图片上限；图片只放行 image mime、QQ CDN 固定域名后缀、不落盘，失败降级为纯文字。
+  - `MCBOT_ENABLED=false`：mcbot Minecraft Bot 对接总开关（v0.8.0 引入，v0.8.1 加固，**默认关闭**）；启用时必须配置 `MCBOT_READ_TOKEN`，且 `MCBOT_URL` 为 loopback + http(s) 根地址（拒绝 userinfo/路径/查询/片段），否则拒绝启动。
+  - `MCBOT_URL=http://127.0.0.1:3010`：上游仅 loopback（去尾斜杠）；mcbot 是独立服务，不对外、不进入 Cloudflare/nftables。
+  - `MCBOT_READ_TOKEN=`、`MCBOT_CONTROL_TOKEN=`：由 root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步（64 位 hex）；**不要手工复制 lofii 的 RCON/OpenCode 密码**。控制 Token 为空 = 只读（控制接口与 `/say` 均 503 `lofii_control_disabled`）。
+  - `MCBOT_TIMEOUT_MS=2500`（500–10000）：单次上游请求超时（毫秒）。
+  - `MCBOT_POLL_MS=5000`（2000–60000）：`/status` + `/events/recent` 轮询间隔（毫秒）。
+  - `MCBOT_ALERTS_ENABLED=true`：是否把上游 `alert` 写成应用告警事件（`status='event'`）；关闭时仍推进游标但不写告警。
+  - mcbot Token 同步/轮换（root）：先 `cp -a /etc/antifieldcloud/env /etc/antifieldcloud/env.bak.$(date -u +%Y%m%dT%H%M%SZ)`，再 `sudo bash scripts/sync-mcbot-tokens.sh`；`sudo bash scripts/sync-mcbot-tokens.sh --check` 只比较不写盘。脚本写前自行备份、原子 install、保持 0640，不回显 Token；Token 变化后 `systemctl restart antifieldcloud` 生效。轮换 mcbot 侧 Token 后必须重新同步。
 
 ## 3. 从 PC 部署（带迁移前 DB 快照与自动回滚）
 
@@ -179,16 +179,16 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
    升级与回滚矩阵结果记为发布门禁证据。
 4. **部署**：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本执行预检/构建/上传 tar SHA-256 校验/`npm ci --omit=dev`/迁移前 DB 快照/
    `APP_VERSION=0.8.1` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
-   **4.1 Lofii（可选，默认关闭）**：如需启用，先确认 lofii-bot v0.6.1（最低 v0.6.0）已运行且仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），按 §3.8 同步 Token、设 `LOFII_ENABLED=true` 并重启，再验证 `/api/lofii/status`。**v0.8.1 已于 2026-10-27 按“先升级 lofii-bot 到 v0.6.1 并同步 Token，再部署应用 0.8.1”执行**（旧版 v0.6.0 仍兼容，但缺逐行 `/` 中和的纵深防御）。
+   **4.1 mcbot（可选，默认关闭）**：如需启用，先确认 mcbot v0.6.1（最低 v0.6.0）已运行且仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），按 §3.8 同步 Token、设 `MCBOT_ENABLED=true` 并重启，再验证 `/api/mcbot/status`。**v0.8.1 已于 2026-10-27 按“先升级 mcbot 到 v0.6.1 并同步 Token，再部署应用 0.8.1”执行**（旧版 v0.6.0 仍兼容，但缺逐行 `/` 中和的纵深防御）。
 5. **验证**：预期 `/healthz` = `{"ok":true,"version":"0.8.1","schemaVersion":17,...}`；smoke 使用
-   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1`
-   （未启用 Lofii 时追加 `-SkipLofii`；带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/Lofii 服务与版本/本地任务安装标记；
+   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.1`
+   （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/mcbot 服务与版本/本地任务安装标记；
    缺状态文件返回 `SKIP:` 不计入 PASS。
 6. **加密/异地（默认关闭，按需）**：按 §9.10 启用备份整包加密（先私钥解密演练）、§9.11 启用异地副本；默认不启用时状态卡显示“未启用/未配置”。
-7. **部署后备份与证据**：完成 `snapshot-*.tar.gz`（或 `.age` + `.meta.json`）+ 密钥包，PC 拉取/ack；回填 `docs/ACCEPTANCE.md` 待填清单、
+7. **部署后备份与证据**：完成 `snapshot-*.tar.gz`（或 `.age` + `.meta.json`）+ 密钥包，PC 拉取/ack；回填 `docs/app/ACCEPTANCE.md` 待填清单、
    CHANGELOG/README/AGENTS/DEPLOY 证据；用户验收后再 Tag/GitHub Release。
 8. **回滚**：切回上一 release + 还原同版本 `APP_VERSION`；若 DB 需回退，使用本次部署前快照。
-   OpenCode 回滚见 §3.2；备份加密回滚=关闭开关恢复明文（已生成 `.age` 保留）；异地回滚=禁用 offsite 任务；Lofii 回滚=设 `LOFII_ENABLED=false` 并重启（见 §3.8）。
+   OpenCode 回滚见 §3.2；备份加密回滚=关闭开关恢复明文（已生成 `.age` 保留）；异地回滚=禁用 offsite 任务；mcbot 回滚=设 `MCBOT_ENABLED=false` 并重启（见 §3.8）。
 
 ## 3.2 OpenCode v2.1.4 升级与兼容性复核（本机执行，发布门禁）
 
@@ -224,17 +224,17 @@ sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 必须�
 | V4 | assistant 消息/part 形状 | 生产模型 prompt “Reply OK”，`GET .../message?order=desc&limit=20&type=assistant` | `content` 含 `{type:'text',text}`（或记录实际形状）；`finish=stop`；形状变化立即评估宽松解析 |
 | V5 | wait 端点 | `POST /api/experimental/session/{id}/wait` | 2xx（记录状态码/耗时）；400/404 时轮询回退仍能取到新回复 |
 | V6 | 会话列表/归档 | `GET /api/session`；若支持归档则归档测试会话后再 list；`DELETE` 语义 | 记录是否默认含 archived、字段名；DELETE 行为；用于孤儿清理决策 |
-| V7 | 图片 prompt files | prompt `{files:[{uri:data:image/png...}]}` | 2xx 且模型识别图片；失败时 `bot_ai_image_unsupported` 降级符合预期 |
+| V7 | 图片 prompt files | prompt `{files:[{uri:data:image/png...}]}` | 2xx 且模型识别图片；失败时 `chatbot_ai_image_unsupported` 降级符合预期 |
 | V8 | MCP 进程/生命周期 | `pgrep -af` 两个 MCP、`journalctl -u opencode | grep -i mcp`、重启 opencode | 每服务恰 1 进程；无重复 spawn churn；重启后正常 |
 | V9 | MCP 工具可用性 | `tools/list` 或 Bot 会话调用工具 | `searxng_web_search`/`botmsg_send_message` 名称与 permissions 前缀匹配；send 回环 `{ok:true,index}` |
-| V10 | 端到端 QQ Chat（真实用户，最小 3 条） | 私聊文本/图片、`/search`、`/memory` | 有回复；`bot.ai.chat`/`bot.memory.extract` 审计正常；无 `bot_ai_*` 错误事件 |
-| V11 | 记忆抽取 | 触发 3 轮或空闲 120s | `bot.memory.extract` 有 rounds/ops；一次性会话被 DELETE；无残留孤儿（结合 V6） |
-| V12 | 发送工具 | 私聊连续 3–5 轮 | 模型调用 `botmsg_send_message` 时收到 1–5 条；观察是否出现“工具已调用但 `bot_ai_empty_response`” |
-| V13 | 搜索 MCP | `/search 关键词` 与普通问句 | 回答附“参考来源”；`bot.search` 审计只有结果数/错误码；无完整 URL |
+| V10 | 端到端 QQ Chat（真实用户，最小 3 条） | 私聊文本/图片、`/search`、`/memory` | 有回复；`chatbot.ai.chat`/`chatbot.memory.extract` 审计正常；无 `chatbot_ai_*` 错误事件 |
+| V11 | 记忆抽取 | 触发 3 轮或空闲 120s | `chatbot.memory.extract` 有 rounds/ops；一次性会话被 DELETE；无残留孤儿（结合 V6） |
+| V12 | 发送工具 | 私聊连续 3–5 轮 | 模型调用 `botmsg_send_message` 时收到 1–5 条；观察是否出现“工具已调用但 `chatbot_ai_empty_response`” |
+| V13 | 搜索 MCP | `/search 关键词` 与普通问句 | 回答附“参考来源”；`chatbot.search` 审计只有结果数/错误码；无完整 URL |
 | V14 | 资源/回滚窗口 | 磁盘、内存、24h journal、OpenCode DB 体积 | DB 体积增长正常；无 MCP 重复进程；可随时按回滚条件切回 v2.1.3 |
 
 **回滚条件（任一即回滚 OpenCode，不改应用代码/DB）**：① 创建会话/prompt 4xx 或 wait 不可用且轮询也取不到文本；
-② 连续 3 次 Chat 出现 `bot_ai_empty_response`/`bot_ai_http_error`；③ `GET /api/bots/status` 显示 `aiToolIsolation.supported=false` 且确认为 permissions 拒绝；
+② 连续 3 次 Chat 出现 `chatbot_ai_empty_response`/`chatbot_ai_http_error`；③ `GET /api/chatbots/status` 显示 `aiToolIsolation.supported=false` 且确认为 permissions 拒绝；
 ④ MCP 工具缺失/命名变化导致 `botmsg` 不可用且回退不满足业务；⑤ `session.list`/`DELETE` 语义变化导致误删或 404 重建失效。
 
 **回滚动作**：`sudo systemctl stop opencode` → 用备份的 `.opencode/bin/opencode` 覆盖 / 必要时恢复 data tar 与 `opencode-config` →
@@ -265,7 +265,7 @@ sudo install -m 0755 /usr/local/lib/nodejs/node-v26.12.1-linux-arm64/bin/node /u
 # 3) 重启并验证；npm 仍为 nvm 的 12.2.0，不改其 symlink
 sudo systemctl restart antifieldcloud
 curl -fsS http://127.0.0.1:3000/healthz
-# 带 Access token 的完整 smoke：-ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1（最低兼容 0.6.0；未启用 Lofii 用 -SkipLofii）
+# 带 Access token 的完整 smoke：-ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.1（最低兼容 0.6.0；未启用 mcbot 用 -SkipMcbot）
 ```
 
 验证记录（2026-10-23）：`opencode --version=v2.1.3`；Basic `GET/POST/DELETE /api/session` 200/200/204；带 deny-all `permissions` 创建会话 200；生产模型 `opencode-go/deepseek-v4.1-flash` prompt 200、wait 204、assistant content `[{type:"text",text:"OK"}]`、finish=stop；应用 `/healthz` 200、公开 ai 未登录 401；本地 `opencode-shim`/`opencode-proxy` 19 用例通过。
@@ -283,11 +283,11 @@ sudo bash scripts/install-searxng.sh
 curl -fsS --max-time 20 \
   'http://127.0.0.1:8888/search?q=AntifieldComplexx&format=json&engines=bing' | head -c 500
 # 3) 应用 env（/etc/antifieldcloud/env）追加/修改；然后重启应用
-BOT_SEARCH_ENABLED=true
-BOT_SEARCH_URL=http://127.0.0.1:8888
-BOT_SEARCH_MODE=mcp
-BOT_SEARCH_ENGINES=bing
-# 其余 BOT_SEARCH_* 使用 deploy/env.example 默认值；bootstrap-env.sh 已纳管。
+CHATBOT_SEARCH_ENABLED=true
+CHATBOT_SEARCH_URL=http://127.0.0.1:8888
+CHATBOT_SEARCH_MODE=mcp
+CHATBOT_SEARCH_ENGINES=bing
+# 其余 CHATBOT_SEARCH_* 使用 deploy/env.example 默认值；bootstrap-env.sh 已纳管。
 # 4) 安装 SearXNG MCP 工具并更新 OpenCode 配置（重启 opencode，不影响 Minecraft）
 sudo bash scripts/install-searxng-mcp.sh
 # 5) 重启应用使 Bot 会话 permissions/提示词生效
@@ -295,10 +295,10 @@ sudo systemctl restart antifieldcloud
 ```
 
 - 安装内容：`/opt/searxng`（git，当前 commit 记录在安装输出）、`/opt/searxng-venv`、`/etc/searxng/settings.yml`（0600/0640 root:searxng，随机 secret）、`/etc/systemd/system/searxng.service`、用户 `searxng`；模板见 `deploy/searxng/settings.yml.example` 与 `deploy/systemd/searxng.service`。
-- 网络边界：SearXNG 仅监听 loopback；`BOT_SEARCH_URL` 只接受 http/https、拒绝凭据；应用不抓取搜索结果网页，不保存查询正文；生产只启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
+- 网络边界：SearXNG 仅监听 loopback；`CHATBOT_SEARCH_URL` 只接受 http/https、拒绝凭据；应用不抓取搜索结果网页，不保存查询正文；生产只启用 Bing（`CHATBOT_SEARCH_ENGINES=bing`）。
 - 验证：SearXNG `systemctl is-active searxng` = active；JSON 返回 `results` 数组；应用重启后 `/healthz` normal；QQ 发 `/search 关键词` 或“最近有什么新闻？”应有 AI 回答 + `参考来源`。
-- 回滚：`sudo systemctl disable --now searxng`（或设 `BOT_SEARCH_ENABLED=false` 后重启应用）；不需要恢复 schema/DB；卸载可选删除 `/opt/searxng`、`/opt/searxng-venv`、`/etc/searxng`。
-- 故障：`journalctl -u searxng -n 80 --no-pager`；若 `Permission denied /etc/searxng/settings.yml` 检查目录为 `root:searxng 0750`、文件 `0640`；若引擎全 timeout，确认 `BOT_SEARCH_ENGINES=bing` 且 `cn.bing.com` 可达；不要开启被墙引擎。
+- 回滚：`sudo systemctl disable --now searxng`（或设 `CHATBOT_SEARCH_ENABLED=false` 后重启应用）；不需要恢复 schema/DB；卸载可选删除 `/opt/searxng`、`/opt/searxng-venv`、`/etc/searxng`。
+- 故障：`journalctl -u searxng -n 80 --no-pager`；若 `Permission denied /etc/searxng/settings.yml` 检查目录为 `root:searxng 0750`、文件 `0640`；若引擎全 timeout，确认 `CHATBOT_SEARCH_ENGINES=bing` 且 `cn.bing.com` 可达；不要开启被墙引擎。
 
 ### 3.6 Bot 消息发送 MCP
 
@@ -306,21 +306,21 @@ sudo systemctl restart antifieldcloud
 # 1) 安装 MCP 服务并更新 OpenCode 配置（重启 opencode，不影响 Minecraft）
 sudo bash scripts/install-bot-tool-mcp.sh
 # 2) 应用 env（/etc/antifieldcloud/env）追加/修改，然后重启应用
-BOT_AI_SEND_TOOL_ENABLED=true
-BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000
-BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000
+CHATBOT_AI_SEND_TOOL_ENABLED=true
+CHATBOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000
+CHATBOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000
 sudo systemctl restart antifieldcloud
 ```
 
-- 安装内容：`/opt/botmsg-mcp/bot-tool-mcp.mjs`（root:root 0755）；OpenCode `mcp.servers.botmsg`（local、`codemode=false`、`BOT_TOOL_URL=http://127.0.0.1:3000/api/bot/ai/tool/send`）；安装脚本幂等并重启 `opencode.service`。
-- 应用侧 `BOT_AI_SEND_TOOL_ENABLED=true` 后新建/已有 Chat 会话会获得 `botmsg_*` 工具权限；工具回调路由只接受本轮 HMAC token，无需额外共享密钥，`BOT_SECRET_KEY` 必须存在。
-- 验证：`curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:3000/api/bot/ai/tool/send -H 'content-type: application/json' -d '{"turn_id":"x","turn_token":"x","text":"x"}'` 应为 `404`（无活跃回合）；OpenCode 会话工具列表应出现 `botmsg_send_message`；真实私聊消息应产生多条 QQ 消息并审计 `bot.ai.send`。
-- 回滚：`BOT_AI_SEND_TOOL_ENABLED=false` 并重启应用即可恢复旧的最终文本/`NO_REPLY` 行为；如需移除 OpenCode 工具，删除 `mcp.servers.botmsg` 后重启 opencode；不需要恢复 schema/DB。
-- 故障：`journalctl -u opencode -n 80 --no-pager` 查看 MCP 启动错误；`journalctl -u antifieldcloud -n 80 --no-pager | grep -E 'bot.ai|botmsg|BOT_AI_SEND'`；确认 app 监听 `127.0.0.1:3000` 且 `/api/bot/ai/tool/send` 未被 Cloudflare Access 拦截（本机 MCP 不应经公网）。
+- 安装内容：`/opt/botmsg-mcp/bot-tool-mcp.mjs`（root:root 0755）；OpenCode `mcp.servers.botmsg`（local、`codemode=false`、`CHATBOT_TOOL_URL=http://127.0.0.1:3000/api/chatbot/ai/tool/send`）；安装脚本幂等并重启 `opencode.service`。
+- 应用侧 `CHATBOT_AI_SEND_TOOL_ENABLED=true` 后新建/已有 Chat 会话会获得 `botmsg_*` 工具权限；工具回调路由只接受本轮 HMAC token，无需额外共享密钥，`CHATBOT_SECRET_KEY` 必须存在。
+- 验证：`curl -sS -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:3000/api/chatbot/ai/tool/send -H 'content-type: application/json' -d '{"turn_id":"x","turn_token":"x","text":"x"}'` 应为 `404`（无活跃回合）；OpenCode 会话工具列表应出现 `botmsg_send_message`；真实私聊消息应产生多条 QQ 消息并审计 `chatbot.ai.send`。
+- 回滚：`CHATBOT_AI_SEND_TOOL_ENABLED=false` 并重启应用即可恢复旧的最终文本/`NO_REPLY` 行为；如需移除 OpenCode 工具，删除 `mcp.servers.botmsg` 后重启 opencode；不需要恢复 schema/DB。
+- 故障：`journalctl -u opencode -n 80 --no-pager` 查看 MCP 启动错误；`journalctl -u antifieldcloud -n 80 --no-pager | grep -E 'chatbot.ai|botmsg|CHATBOT_AI_SEND'`；确认 app 监听 `127.0.0.1:3000` 且 `/api/chatbot/ai/tool/send` 未被 Cloudflare Access 拦截（本机 MCP 不应经公网）。
 
 ### 3.7 Bot 上下文文档与 read 范围验证（v0.7.3，发布门禁）
 
-> 本功能默认关闭；只有本矩阵通过后才允许把 `BOT_AI_CONTEXT_READ_ENABLED` 设为 `true`。
+> 本功能默认关闭；只有本矩阵通过后才允许把 `CHATBOT_AI_CONTEXT_READ_ENABLED` 设为 `true`。
 > 失败时的正确处置是保持 `false` 并记录阻断，而不是放宽权限规则。
 
 1. **目录与属组**（root）：
@@ -332,8 +332,8 @@ sudo systemctl restart antifieldcloud
    确认 `id opencode` 的组名与 unit 一致；应用 unit 已包含
    `ReadWritePaths=/var/lib/antifieldcloud-context`（见 `deploy/antifieldcloud.service`）。
 
-2. **以 flag=false 部署代码**，更新 env（`BOT_CONTEXT_DIR=/var/lib/antifieldcloud-context`、
-   `BOT_AI_CONTEXT_READ_ENABLED=false`）并重启；确认 `/healthz` 与 smoke 正常、旧内联提示词仍工作。
+2. **以 flag=false 部署代码**，更新 env（`CHATBOT_CONTEXT_DIR=/var/lib/antifieldcloud-context`、
+   `CHATBOT_AI_CONTEXT_READ_ENABLED=false`）并重启；确认 `/healthz` 与 smoke 正常、旧内联提示词仍工作。
 
 3. **构造最小验证作用域**（root 创建、antifieldcloud 可写、opencode 可读）：
    ```bash
@@ -365,47 +365,47 @@ sudo systemctl restart antifieldcloud
 8. **清理**：`DELETE /api/session/<SESSION_ID>`，删除 `$SCOPE` 与 `/tmp/af-outside-sentinel.txt`，
    确认 `_verify` 下无残留；不要在生产作用域放测试文件。
 
-9. **启用**：矩阵通过后设置 `BOT_AI_CONTEXT_READ_ENABLED=true`，重启应用（`resetSessionsForToolMode` 会清旧会话映射）；
-   观察 `journalctl -u antifieldcloud -n 100 --no-pager | grep -E 'bot.ai|上下文'`，确认无 `permissions_fallback`。
+9. **启用**：矩阵通过后设置 `CHATBOT_AI_CONTEXT_READ_ENABLED=true`，重启应用（`resetSessionsForToolMode` 会清旧会话映射）；
+   观察 `journalctl -u antifieldcloud -n 100 --no-pager | grep -E 'chatbot.ai|上下文'`，确认无 `permissions_fallback`。
    真实 QQ 验收：`/reset` 后首条消息角色卡生效、第二条不重复角色正文、记忆事实可被召回、`/forget confirm` 后不再召回；
    群聊由两个成员验证共享会话与群角色；负向要求读取主机文件时拒绝且回复不含内部路径。
 
-10. **回滚**：`BOT_AI_CONTEXT_READ_ENABLED=false` + 重启即可恢复内联提示词；上下文目录可保留（派生数据）或删除；
+10. **回滚**：`CHATBOT_AI_CONTEXT_READ_ENABLED=false` + 重启即可恢复内联提示词；上下文目录可保留（派生数据）或删除；
     不需要恢复 schema/DB/OpenCode 配置。
 
 > **生产验证记录（2026-10-27，release `20261027T060134Z`）**：目录/属组/读写校验通过；矩阵 7/7 PASS
 > （作用域内正向；作用域外哨兵、应用 env、应用 DB、其他作用域、shell canary、prompt injection 全部拒绝；
 > OpenCode 接受 `external_directory` + 精确 `read` permissions；深度复验确认负路径 `read` 工具返回 `status=error`，
-> 作用域内为 `status=completed`）；启用后 `bot_ai_tool_mode=mcp:send:read:aad221f1`，
+> 作用域内为 `status=completed`）；启用后 `chatbot_ai_tool_mode=mcp:send:read:aad221f1`，
 > 旧会话 6→0 重置。真实 QQ 私聊：首轮 851 字符含 `[角色卡：lofii]`+文档段，后续 763 字符不含角色卡正文但保留文档路径，
 > 模型实际 `read` 了 `role.md`/`memory.md`；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档段。
 > 未在生产执行破坏性 `/forget` 与群聊第二成员/多轮负路径，二者由自动化测试覆盖，保留为后续可选复验。
 
-### 3.8 Lofii Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
+### 3.8 mcbot Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-> 前置：lofii-bot **v0.6.1（最低 v0.6.0）** 作为独立服务部署，仅监听 `127.0.0.1:3010`，`/healthz` 返回对应 `version`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 lofii-bot 配置/密钥，也不读取其 RCON/OpenCode 密码。**v0.8.0（2026-10-27）与 v0.8.1（2026-10-27）生产部署均已按本节执行**；生产 lofii-bot 当前为 **v0.6.1**（release `/opt/lofii-bot/releases/20261027T111640Z`/commit `a0a28da`），应用 v0.8.1 已部署。
+> 前置：mcbot **v0.6.1（最低 v0.6.0）** 作为独立服务部署，仅监听 `127.0.0.1:3010`，`/healthz` 返回对应 `version`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 mcbot 配置/密钥，也不读取其 RCON/OpenCode 密码。**v0.8.0（2026-10-27）与 v0.8.1（2026-10-27）生产部署均已按本节执行**；生产 mcbot 当前为 **v0.6.1**（release `/opt/mcbot/releases/20261027T111640Z`/commit `a0a28da`），应用 v0.8.1 已部署。
 
 1. **前置只读检查**（root；不需要 Token）：
    ```bash
-   systemctl is-active lofii-bot                 # active
+   systemctl is-active mcbot                 # active
    curl -fsS http://127.0.0.1:3010/healthz       # {"status":"ok","version":"0.6.1","contractVersion":1,...}
    curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3010/status   # 无 Token 应为 401（确认仅 loopback 可达）
    ```
-   旧版 lofii-bot 无 `/events/recent` 时应用仍可用 `/status`，但事件流显示“需升级 v0.6.0”；v0.8.1 应用兼容 v0.6.0，但推荐升级到 v0.6.1 以获得逐行 `/` 中和的纵深防御。
+   旧版 mcbot 无 `/events/recent` 时应用仍可用 `/status`，但事件流显示“需升级 v0.6.0”；v0.8.1 应用兼容 v0.6.0，但推荐升级到 v0.6.1 以获得逐行 `/` 中和的纵深防御。
 
-2. **同步 Token**（root；只读取 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，校验 64 位 hex）：
+2. **同步 Token**（root；只读取 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，校验 64 位 hex）：
    ```bash
    sudo cp -a /etc/antifieldcloud/env /etc/antifieldcloud/env.lofii.bak.$(date -u +%Y%m%dT%H%M%SZ)
-   sudo bash scripts/sync-lofii-tokens.sh --check   # 首次通常 mismatch/缺失
-   sudo bash scripts/sync-lofii-tokens.sh
-   sudo bash scripts/sync-lofii-tokens.sh --check   # read=match control=match
+   sudo bash scripts/sync-mcbot-tokens.sh --check   # 首次通常 mismatch/缺失
+   sudo bash scripts/sync-mcbot-tokens.sh
+   sudo bash scripts/sync-mcbot-tokens.sh --check   # read=match control=match
    ```
-   脚本写前自行备份 env、同目录临时文件 + `mv` 原子替换、保持原属主与 0640，不回显 Token；**不修改** `LOFII_ENABLED`。控制 Token 为空时同步后仍为只读模式（`/say` 也随之 503）。
+   脚本写前自行备份 env、同目录临时文件 + `mv` 原子替换、保持原属主与 0640，不回显 Token；**不修改** `MCBOT_ENABLED`。控制 Token 为空时同步后仍为只读模式（`/say` 也随之 503）。
 
-3. **启用**（先确认 `LOFII_ENABLED=false` 部署已正常）：
+3. **启用**（先确认 `MCBOT_ENABLED=false` 部署已正常）：
    ```bash
    # /etc/antifieldcloud/env（0640 root:antifieldcloud）；改开关后重启
-   sudo sed -i 's/^LOFII_ENABLED=.*/LOFII_ENABLED=true/' /etc/antifieldcloud/env
+   sudo sed -i 's/^MCBOT_ENABLED=.*/MCBOT_ENABLED=true/' /etc/antifieldcloud/env
    sudo bash scripts/bootstrap-env.sh --dry-run     # 确认解析结果（不写盘、不显示 Token）
    sudo systemctl restart antifieldcloud
    ```
@@ -416,46 +416,46 @@ sudo systemctl restart antifieldcloud
    curl -fsS http://127.0.0.1:3000/healthz
    journalctl -u antifieldcloud -n 100 --no-pager | grep -i lofii   # 只应出现启动/恢复/不可用等脱敏日志，不含 Token/聊天正文
    ```
-   登录后 `GET /api/lofii/status` 期望 `enabled=true/reachable=true/eventsSupported=true/controlEnabled` 与 Token 配置一致；`/minecraft?tab=lofii` 可打开面板；首次成功轮询后 `meta.lofii.event_cursor` 建立基线（`sqlite3 /var/lib/antifieldcloud/db.sqlite "SELECT value FROM meta WHERE key='lofii.event_cursor';"`），不重放旧告警。
+   登录后 `GET /api/mcbot/status` 期望 `enabled=true/reachable=true/eventsSupported=true/controlEnabled` 与 Token 配置一致；`/minecraft?tab=lofii` 可打开面板；首次成功轮询后 `meta.lofii.event_cursor` 建立基线（`sqlite3 /var/lib/antifieldcloud/db.sqlite "SELECT value FROM meta WHERE key='lofii.event_cursor';"`），不重放旧告警。
 
-5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1`（校验 `systemctl is-active lofii-bot`、`/healthz.version`、`contractVersion=1`；兼容 v0.6.0 时可把期望版本改为 0.6.0）；未启用 Lofii 时用 `-SkipLofii`，不得把跳过项计为 PASS。
+5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.1`（校验 `systemctl is-active mcbot`、`/healthz.version`、`contractVersion=1`；兼容 v0.6.0 时可把期望版本改为 0.6.0）；未启用 mcbot 时用 `-SkipMcbot`，不得把跳过项计为 PASS。
 
 6. **启用模式/回滚**：
-   - **只读模式**：清空 `LOFII_CONTROL_TOKEN`（`LOFII_READ_TOKEN` 保留）并重启；`lofiiControlEnabled=false`，面板禁用任务/移动/聊天，`/status`、`/history` 可读，`/say` 返回 `503 lofii_control_disabled`（v0.8.1 起聊天属于写操作）。
-   - **完全禁用**：`LOFII_ENABLED=false` 并重启；`/api/lofii/*` 除 `/status` 空壳外返回 503，页面不显示 Lofii 标签；`meta.lofii.event_cursor` 可保留（再次启用时续接）或删除以重建基线；无 schema/DB 变更。
-   - **应用版本回滚**：切回上一 release + 还原 `APP_VERSION`（旧版忽略 `LOFII_*` env 与 `meta.lofii.event_cursor`）；不需要恢复 DB 快照。
-   - **Token 轮换**：在 lofii-bot 侧轮换后重新执行 `sync-lofii-tokens.sh`（先 `--check`），再重启应用；轮换期间 Lofii 请求会 401/503，属预期。
+   - **只读模式**：清空 `MCBOT_CONTROL_TOKEN`（`MCBOT_READ_TOKEN` 保留）并重启；`lofiiControlEnabled=false`，面板禁用任务/移动/聊天，`/status`、`/history` 可读，`/say` 返回 `503 lofii_control_disabled`（v0.8.1 起聊天属于写操作）。
+   - **完全禁用**：`MCBOT_ENABLED=false` 并重启；`/api/mcbot/*` 除 `/status` 空壳外返回 503，页面不显示 mcbot 标签；`meta.lofii.event_cursor` 可保留（再次启用时续接）或删除以重建基线；无 schema/DB 变更。
+   - **应用版本回滚**：切回上一 release + 还原 `APP_VERSION`（旧版忽略 `MCBOT_*` env 与 `meta.lofii.event_cursor`）；不需要恢复 DB 快照。
+   - **Token 轮换**：在 mcbot 侧轮换后重新执行 `sync-mcbot-tokens.sh`（先 `--check`），再重启应用；轮换期间 mcbot 请求会 401/503，属预期。
 
 7. **v0.8.1 安全补丁验证（2026-10-27 已执行）**：
    ```bash
    curl -fsS http://127.0.0.1:3000/healthz   # version=0.8.1 / schemaVersion=17
    # 登录会话 + CSRF 后（或面板人工验证）：
-   #  - 只读模式（清空控制 Token）: POST /api/lofii/say → 503 lofii_control_disabled
-   #  - 任意位置 '/': POST /api/lofii/say {"message":"hello /op x"} → 400 message_must_not_start_with_slash
+   #  - 只读模式（清空控制 Token）: POST /api/mcbot/say → 503 lofii_control_disabled
+   #  - 任意位置 '/': POST /api/mcbot/say {"message":"hello /op x"} → 400 message_must_not_start_with_slash
    #  - C0 控制字符: → 400 invalid_request
    #  - 正常聊天: 200 并出现成功 Toast；审计只有 lofii.say chars
    ```
-   同时确认 `/api/lofii/status` 的 `eventsSupported`/`contractVersion` 正常、事件流无 `vundefined`、`/history` 形状异常时显示错误而非永久骨架；smoke 期望版本 0.8.1/0.6.1（或 0.6.0）。
+   同时确认 `/api/mcbot/status` 的 `eventsSupported`/`contractVersion` 正常、事件流无 `vundefined`、`/history` 形状异常时显示错误而非永久骨架；smoke 期望版本 0.8.1/0.6.1（或 0.6.0）。
    **生产实测（2026-10-27）**：`/healthz` v0.8.1/schema17；`/say` 240 填充 + `/op` → 400 `message_must_not_start_with_slash`；`/say` C0 → 400 `invalid_request`；审计无 `lofii.say`；只读 `/say` 503 仅由单元/集成测试覆盖（生产控制 Token 已配置，未改配置实测）。
 
 8. **故障排查**：
 
    | 现象 | 处理 |
    |---|---|
-   | `/api/lofii/status` 返回 `lofii_disabled` | `LOFII_ENABLED=false`；按步骤 3 启用并重启 |
-   | `lofii_unavailable` / `reachable=false` | lofii-bot 未运行/端口不对/网络被本机策略阻断；`systemctl status lofii-bot`、核对 `LOFII_URL` 与 §1 的 loopback 约束 |
-   | `lofii_auth_failed` | 读/控制 Token 与 lofii-bot 不一致；重跑 `sync-lofii-tokens.sh --check` 后同步并重启 |
-   | `lofii_control_disabled` | 未配置 `LOFII_CONTROL_TOKEN`（只读模式）；按需同步控制 Token。v0.8.1 起 `/say` 同样返回该码（聊天属于写操作） |
-   | `eventsSupported=false` | lofii-bot < v0.6.0 或无 `/events/recent`；升级 lofii-bot 后重启应用 |
+   | `/api/mcbot/status` 返回 `lofii_disabled` | `MCBOT_ENABLED=false`；按步骤 3 启用并重启 |
+   | `lofii_unavailable` / `reachable=false` | mcbot 未运行/端口不对/网络被本机策略阻断；`systemctl status mcbot`、核对 `MCBOT_URL` 与 §1 的 loopback 约束 |
+   | `lofii_auth_failed` | 读/控制 Token 与 mcbot 不一致；重跑 `sync-mcbot-tokens.sh --check` 后同步并重启 |
+   | `lofii_control_disabled` | 未配置 `MCBOT_CONTROL_TOKEN`（只读模式）；按需同步控制 Token。v0.8.1 起 `/say` 同样返回该码（聊天属于写操作） |
+   | `eventsSupported=false` | mcbot < v0.6.0 或无 `/events/recent`；升级 mcbot 后重启应用 |
    | `/say` 返回 `message_must_not_start_with_slash` | v0.8.1 起任意位置 ASCII `/` 均拒绝（含上游切行后的命令）；去掉 `/` 或改全角 `／` |
    | `/say` 返回 `invalid_request` 且消息含控制字符 | 移除 C0/DEL 控制字符后重试 |
-   | `stale=true` | 连续 3 个轮询周期无成功；检查 lofii-bot 与日志；恢复后自动清除 |
-   | 面板“控制未启用”但 Token 已配置 | 确认 `LOFII_ENABLED=true`、Token 非空且已重启；`/api/version.lofiiControlEnabled` 应为 true |
-   | 告警历史出现 `status='event'` | 预期：Lofii alert 只记录、不参与活跃/恢复；`LOFII_ALERTS_ENABLED=false` 可停止写入 |
+   | `stale=true` | 连续 3 个轮询周期无成功；检查 mcbot 与日志；恢复后自动清除 |
+   | 面板“控制未启用”但 Token 已配置 | 确认 `MCBOT_ENABLED=true`、Token 非空且已重启；`/api/version.lofiiControlEnabled` 应为 true |
+   | 告警历史出现 `status='event'` | 预期：mcbot alert 只记录、不参与活跃/恢复；`MCBOT_ALERTS_ENABLED=false` 可停止写入 |
 
-> **验收边界**：别名/端口/Token 只使用占位值。**v0.8.0 生产验证记录（2026-10-27 CST，历史）**：部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，2 SKIP=加密/异地默认关闭），含 Lofii Bot active/version 0.6.0/contractVersion=1；lofii-bot v0.6.0（release `/opt/lofii-bot/releases/20261027T092737Z`）`/healthz` `version=0.6.0`/`contractVersion=1`；读 Token `/events/recent` 200，无 Token/控制 Token 访问读接口 401，`limit=201` 400；`sync-lofii-tokens.sh --check` 同步前 mismatch/mismatch、同步后 match/match（不回显 Token、自动备份 env）；`LOFII_ENABLED=true`（读/控制 Token 均配置）重启后 `/healthz` v0.8.0；`meta.lofii.event_cursor` = `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`；生产 API 探针 `/api/lofii/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2、无 CSRF POST 403；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文。**边界**：未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；**Windows 每日备份任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（用户手动步骤/残余，非失败）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
+> **验收边界**：别名/端口/Token 只使用占位值。**v0.8.0 生产验证记录（2026-10-27 CST，历史）**：部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，2 SKIP=加密/异地默认关闭），含 mcbot Bot active/version 0.6.0/contractVersion=1；mcbot v0.6.0（release `/opt/mcbot/releases/20261027T092737Z`）`/healthz` `version=0.6.0`/`contractVersion=1`；读 Token `/events/recent` 200，无 Token/控制 Token 访问读接口 401，`limit=201` 400；`sync-mcbot-tokens.sh --check` 同步前 mismatch/mismatch、同步后 match/match（不回显 Token、自动备份 env）；`MCBOT_ENABLED=true`（读/控制 Token 均配置）重启后 `/healthz` v0.8.0；`meta.lofii.event_cursor` = `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`；生产 API 探针 `/api/mcbot/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2、无 CSRF POST 403；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文。**边界**：未触发真实 mcbot 告警（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，mcbot 面板正常渲染；临时会话已清理，用户仍可自行复核）；**Windows 每日备份任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（用户手动步骤/残余，非失败）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
 
-> **v0.8.1 生产验证记录（2026-10-27 CST）**：应用 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17（uptime/DB ok）；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`）。部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（**含本地备份任务标记检查，无 `-SkipLocalTaskCheck`**；期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；此前两次失败为 Cloudflare 隧道瞬断，恢复后全绿）。lofii-bot 升级到 **v0.6.1**（release `/opt/lofii-bot/releases/20261027T111640Z`/commit `a0a28da`），`sync-lofii-tokens.sh --check` **read=match control=match**；`LOFII_ENABLED=true`，`meta.lofii.event_cursor` 已更新。**Windows 备份任务重装**：`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致（`7febb768…636d`）、任务 Ready。已认证 API（临时验收会话已删，计数 0）：`/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）、`/api/lofii/status` 200（enabled/reachable/control/eventsSupported=true，version=0.6.1/contract=1）；`/say` 240 填充 + `/op` → 400 `message_must_not_start_with_slash`；`/say` C0 → 400 `invalid_request`。审计仅 `lofii.task.start/stop`，无 `lofii.say`；`alert_events` `lofii_*` 仍 0；journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空。**边界**：只读 `/say` 503 仅由单元/集成测试覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）；未触发真实 Lofii 告警；**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`（2026-10-27）**。
+> **v0.8.1 生产验证记录（2026-10-27 CST）**：应用 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17（uptime/DB ok）；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`）。部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（**含本地备份任务标记检查，无 `-SkipLocalTaskCheck`**；期望 0.8.1/schema17/OpenCode 2.1.4/mcbot 0.6.1；此前两次失败为 Cloudflare 隧道瞬断，恢复后全绿）。mcbot 升级到 **v0.6.1**（release `/opt/mcbot/releases/20261027T111640Z`/commit `a0a28da`），`sync-mcbot-tokens.sh --check` **read=match control=match**；`MCBOT_ENABLED=true`，`meta.lofii.event_cursor` 已更新。**Windows 备份任务重装**：`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致（`7febb768…636d`）、任务 Ready。已认证 API（临时验收会话已删，计数 0）：`/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）、`/api/mcbot/status` 200（enabled/reachable/control/eventsSupported=true，version=0.6.1/contract=1）；`/say` 240 填充 + `/op` → 400 `message_must_not_start_with_slash`；`/say` C0 → 400 `invalid_request`。审计仅 `lofii.task.start/stop`，无 `lofii.say`；`alert_events` `lofii_*` 仍 0；journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空。**边界**：只读 `/say` 503 仅由单元/集成测试覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）；未触发真实 mcbot 告警；**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复`（2026-10-27）**。
 
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 
@@ -537,9 +537,9 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 
 生产当前配置（API 创建；含 AI 主机）：
 - 主应用 `AntifieldComplexx`：`app.<domain>`，One-time PIN IdP，策略 `Owner allow`（指定邮箱）+ `Smoke service token`（`non_identity`，指定 service token）。
-- 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`。
+- 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。
 - service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库；`CF_ACCESS_APP_AI_ID` 也已写入该文件。
-- 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/bots/status` 为 401；`ai` 未认证 302、service token 401；smoke 33/33（含任务标记）。
+- 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/chatbots/status` 为 401；`ai` 未认证 302、service token 401；smoke 33/33（含任务标记）。
 
 手工重建/迁移时按以下步骤：
 
@@ -549,14 +549,14 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
    - Policy：`Allow`，Include 选择本人邮箱（One-time PIN）或已配置的身份提供商；不要添加 `Everyone`/`Bypass` 到整站。
 2. **先创建 4 个独立的 path 应用**（路径应用的优先级高于整站主应用）：
    - 每个应用 Domain 填 `app.<domain>/healthz`（或对应路径），Policy 选 **Bypass + Everyone**；
-   - 路径分别为：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`。
-   - `/api/bot/webhook` 覆盖 QQ 官方 Bot 回调；`/s` 与 `/api/public/shares` 覆盖公开分享；`/healthz` 供 smoke/健康检查。
+   - 路径分别为：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`。
+   - `/api/chatbot/webhook` 覆盖 QQ 官方 Bot 回调；`/s` 与 `/api/public/shares` 覆盖公开分享；`/healthz` 供 smoke/健康检查。
    - 如 PWA 冷启动/离线壳在 Access 登录前就需要加载，可再按需 bypass `/assets`、`/manifest.webmanifest`、`/sw.js`、`/offline.html`、`/icons`；
      不要把 `/api` 整体 bypass。
 3. 验证（未登录浏览器/命令行）：
    ```bash
-   # Webhook：应为应用的 404（BOT_ENABLED=false）或 401（验签失败），不能是 Cloudflare Access 302
-   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://app.<domain>/api/bot/webhook/x
+   # Webhook：应为应用的 404（CHATBOT_ENABLED=false）或 401（验签失败），不能是 Cloudflare Access 302
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://app.<domain>/api/chatbot/webhook/x
    # 健康检查：200 JSON
    curl -sS https://app.<domain>/healthz
    # 公开分享：未知 token 应为应用 404，而不是 Access 登录页
@@ -572,7 +572,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 6. **service token（供 smoke/CI）**：Zero Trust → Access → Service Auth → Create Service Token，绑定到主应用 `Service Auth` 策略；
    把 Client ID/Secret 通过命令行传给 smoke：
    ```powershell
-   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1 `
+   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.1 `
      -AccessClientId "<id>" -AccessClientSecret "<secret>"
    ```
    两者必须同时提供，否则脚本直接报错；凭据只用于请求头，不打印/不写仓库。建议专用、最小范围、定期轮换；
@@ -591,10 +591,10 @@ curl -H 'Host: app.example.com' -fsS http://127.0.0.1:3000/healthz
 
 ```powershell
 .\scripts\smoke.ps1 -PiHost 192.0.2.10 -AppUrl https://app.<domain> -AiUrl https://ai.<domain> `
-  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1
+  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.1
 ```
 
-未启用 Lofii 时追加 `-SkipLofii`（跳过 `systemctl is-active lofii-bot` 与 `/healthz.contractVersion=1` 检查），不得把跳过项计为 PASS。
+未启用 mcbot 时追加 `-SkipMcbot`（跳过 `systemctl is-active mcbot` 与 `/healthz.contractVersion=1` 检查），不得把跳过项计为 PASS。
 
 配置 Cloudflare Access 后，可在同一命令追加 `-AccessClientId/-AccessClientSecret`：脚本会给公网请求附加
 `CF-Access-Client-Id`/`CF-Access-Client-Secret` 头，并额外检查“带 token 到达应用但未登录 → 401”；两者必须同时提供，凭据不打印。
@@ -605,15 +605,15 @@ curl -H 'Host: app.example.com' -fsS http://127.0.0.1:3000/healthz
 本地世界/应用归档 `.sha256` 旁文件；所有 SSH 检查带重试与硬超时。`-SkipPublic`/`-SkipLocalBackup`/`-SkipScriptHash`
 用于部署后只读子集。
 只读检查（缺依赖返回 `SKIP:` 不计 PASS，可选依赖用 SoftCheck 只 WARN）：OpenCode 版本精确断言（`-ExpectedOpenCodeVersion`）、
-Lofii 服务 `active` 与 `/healthz.version`/`contractVersion=1`（`-ExpectedLofiiVersion`，`-SkipLofii` 跳过）、
+mcbot 服务 `active` 与 `/healthz.version`/`contractVersion=1`（`-ExpectedMcbotVersion`，`-SkipMcbot` 跳过）、
 `/api/mcp` 的 `botmsg`/`searxng` connected 状态与 MCP 进程数阈值（`-MaxMcpProcesses`）、fail2ban active/jail/bantime、systemd unit 与仓库 SHA 对比、
 env 键漂移（相对 bootstrap MANAGED_KEYS）、nftables 可选 SSH 来源断言（`-ExpectedSshSources`）、备份加密配置（开关/公钥 owner/mode/格式/age/`*.plain.tmp` 残留）、
 异地副本状态（ok/超期/`plaintextSkipped>0`）、本地备份旁文件与归档 SHA 实测（含 `.age` 必须带 `.meta.json`）、Windows 备份任务安装标记（版本 + 脚本 SHA）。
-`-SkipOpenCode/-SkipMcp/-SkipFail2ban/-SkipUnitDrift/-SkipEnvDrift/-SkipEncryption/-SkipOffsite/-SkipLocalTaskCheck/-SkipLofii` 可按环境跳过。
+`-SkipOpenCode/-SkipMcp/-SkipFail2ban/-SkipUnitDrift/-SkipEnvDrift/-SkipEncryption/-SkipOffsite/-SkipLocalTaskCheck/-SkipMcbot` 可按环境跳过。
 
-> **v0.8.0 生产 smoke（2026-10-27，历史）**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭）；**完整公网 Access smoke 35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（命令 `smoke.ps1 ... -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；域名/主机/备份目录按实际替换，凭据不打印），含 Lofii Bot active/version 0.6.0/contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。**`-SkipLocalTaskCheck` 原因**：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到当前版本；记为**用户手动步骤/残余，非失败**（未声称任务已刷新）。
+> **v0.8.0 生产 smoke（2026-10-27，历史）**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭）；**完整公网 Access smoke 35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（命令 `smoke.ps1 ... -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；域名/主机/备份目录按实际替换，凭据不打印），含 mcbot Bot active/version 0.6.0/contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。**`-SkipLocalTaskCheck` 原因**：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到当前版本；记为**用户手动步骤/残余，非失败**（未声称任务已刷新）。
 >
-> **v0.8.1 生产 smoke（2026-10-27，已部署并验收）**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**；完整公网 Access smoke **36 PASS / 0 FAIL / 0 WARN / 2 SKIP**（**含本地任务标记检查，无 `-SkipLocalTaskCheck`**；期望 `0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1`；此前两次失败为 Cloudflare 隧道瞬断，恢复后重跑全绿）。生产 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，lofii-bot v0.6.1（release `20261027T111640Z`/commit `a0a28da`）；**v0.8.1 已发布 Tag+Release**（2026-10-27）；v0.8.1 未重新做 UI 截图。
+> **v0.8.1 生产 smoke（2026-10-27，已部署并验收）**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**；完整公网 Access smoke **36 PASS / 0 FAIL / 0 WARN / 2 SKIP**（**含本地任务标记检查，无 `-SkipLocalTaskCheck`**；期望 `0.8.1/schema17/OpenCode 2.1.4/mcbot 0.6.1`；此前两次失败为 Cloudflare 隧道瞬断，恢复后重跑全绿）。生产 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，mcbot v0.6.1（release `20261027T111640Z`/commit `a0a28da`）；**v0.8.1 已发布 Tag+Release**（2026-10-27）；v0.8.1 未重新做 UI 截图。
 
 Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 ACL 并做 Pi 可达性预检）：
 
@@ -730,7 +730,7 @@ ls -lh /var/lib/antifieldcloud/world-backups/
 - 归档保留最新 4 份（含本次），旧 legacy 文件不动；状态文件 0644，`error/message` 为 ASCII 错误码 + 英文说明，
   便于 PowerShell/前端解析。
 - 回滚/停用：`sudo systemctl disable --now antifieldcloud-world.timer`；需要时删除 `/etc/systemd/system/antifieldcloud-world.{service,timer}` 后
-  `daemon-reload`。不要删除既有归档；确需清理按 `docs/BACKUP.md` §6.4。
+  `daemon-reload`。不要删除既有归档；确需清理按 `docs/app/BACKUP.md` §6.4。
 - 旧世界 cron 已在验收后停用；不要同时保留 cron 与 timer，避免重复打包（见 §14）。
 - 定时策略（用户 2026-10-21 确认）：仅项目世界备份 timer 统一到周日 12:00；`antifieldcloud-health.timer` 保持每 60s；
   apt-daily/logrotate/fstrim 等系统维护 timer 保持发行版默认，不纳入统一调整。
@@ -770,7 +770,7 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
   输出 `%BackupRoot%\drills\<UTC>\report.json|report.md`（保留 180 天，`-KeepDays` 可调）。
 - 可选回写 `/var/lib/antifieldcloud/drill-status.json`（0644），Dashboard 与 `drill_stale` 告警读取；未运行状态 unknown。
 - 回滚：不安装计划任务即无需回滚；删除旧报告目录即可释放空间；不要删除归档本身。
-- 演练记录仍按 `docs/BACKUP.md` §7 表格补充（报告路径 + 结果 + 世界是否解包）。
+- 演练记录仍按 `docs/app/BACKUP.md` §7 表格补充（报告路径 + 结果 + 世界是否解包）。
 
 ### 9.6 主机加固现状（环境事实）
 
@@ -782,7 +782,7 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
 - **RCON**：Paper 无 bind 配置，25575 仍监听所有接口；仅由 nftables 丢弃非 loopback 入站。
 - **SSH 已改仅公钥**；**`fail2ban` 已安装并启用 `sshd` jail**
   （nftables 后端，24h ban，dbfile 持久化）；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步恢复封禁 set；
-  `antifield` 用户的 `NOPASSWD ALL` sudo 仍属既有残留，风险见 `docs/SECURITY.md` §4。
+  `antifield` 用户的 `NOPASSWD ALL` sudo 仍属既有残留，风险见 `docs/app/SECURITY.md` §4。
 
 ### 9.7 SSH 仅公钥（00- drop-in）与回滚窗口
 
@@ -858,63 +858,63 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
 
 ### 9.8 QQ 官方 Bot 平台接入（用户后台 + 应用配置）
 
-1. **QQ 开放平台**：q.qq.com 创建机器人 → 取得 **AppID** 与 **AppSecret**；`/bots` 新建 QQ 官方 Bot，AppID 填公开配置（`config.appId`），
+1. **QQ 开放平台**：q.qq.com 创建机器人 → 取得 **AppID** 与 **AppSecret**；`/chatbots` 新建 QQ 官方 Bot，AppID 填公开配置（`config.appId`），
    AppSecret 只提交保存为密文（不回显）。**仅支持 QQ 官方 Bot**，不再提供 Telegram/Discord/Slack 入口或 Gateway 配置。
-2. **回调地址**：QQ 开放平台“开发设置 → 回调地址”填 `https://app.example.com/api/bot/webhook/<botId>`；平台发送 `op=13` 校验，
+2. **回调地址**：QQ 开放平台“开发设置 → 回调地址”填 `https://app.example.com/api/chatbot/webhook/<botId>`；平台发送 `op=13` 校验，
    服务端用 AppSecret 派生 Ed25519 私钥返回 `{plain_token, signature}`；随后校验 `op=0` 事件签名（`X-Signature-Ed25519` + 时间戳 ±300 秒）。
 3. **事件订阅**：至少订阅 `C2C_MESSAGE_CREATE`（私聊）、`GROUP_AT_MESSAGE_CREATE`（群@）、`AT_MESSAGE_CREATE`（频道）；如需全量群消息，在 QQ 后台开启“接收所有消息”并订阅 `GROUP_MESSAGE_CREATE`，目标设 `groupReplyMode=all`（实验性）；群主还需在 QQ 群设置 → 机器人 → 可获取的群聊消息范围选择“获取群内全部消息”，否则平台不会推送非 @ 消息。
-4. **应用侧**：`/bots` 中 Bot 默认 `enabled=false`；先保存 AppID/AppSecret 与目标（可设静默时段），再开启 `BOT_ENABLED=true` 并重启，最后逐个 `PATCH enabled=true`。
+4. **应用侧**：`/chatbots` 中 Bot 默认 `enabled=false`；先保存 AppID/AppSecret 与目标（可设静默时段），再开启 `CHATBOT_ENABLED=true` 并重启，最后逐个 `PATCH enabled=true`。
    目标填写：C2C 用 `user_openid`、群聊用 `group_openid`、频道用 `channel_id`；C2C 命令用户另建 `kind=user` 且允许命令的目标（群聊/频道自 不执行斜杠命令）；Chat 目标勾选 `allow_chat`；群目标可选群消息模式。
    用“测试连接”发一条测试消息（20 次/小时）；配置页“检查连接”确认 QQ `access_token` 自检通过。
 5. **Chat/触发**：C2C 私聊普通文本直接进入 Chat；QQ 群/频道先 @Bot，再从“最近入站目标”登记并勾选 `allow_chat`。非管理员只能 Chat，不能执行斜杠命令。
-6. **图片（默认开启）**：`BOT_AI_VISION_ENABLED=true`（默认）、`BOT_AI_ENABLED=true` 且模型支持 image 输入时，QQ `d.attachments` 中 image/* 附件经
-   `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀白名单、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载后交给 OpenCode；不落盘、失败降级。
-   如需关闭设 `BOT_AI_VISION_ENABLED=false` 并重启；图片会经 OpenCode 发给模型 provider（见 `docs/SECURITY.md`）。
-7. **AI（可选）**：Bot 稳定后设 `BOT_AI_ENABLED=true`（可同时设 `BOT_AI_PROVIDER`/`BOT_AI_MODEL`）并重启；无 `/ask`，由用户在私聊/群 @Bot 发普通消息 Chat，
-   确认有文本回复且审计 `bot.ai.chat`（不含 `mode`）；再验证结构化记忆（多轮后 `bot_memory_items` 条目、`bot.memory.extract` 计数、`/memory` 展示与 off/on、`/forget confirm` 清空 items/state/legacy/会话）、角色卡与 `/reset`；真实模型/工具行为按 `docs/SECURITY.md` §4 记录。
-8. **发布**：`/bots` → 投递与发布 → 填纯文本（≤2000，超长服务端分段）+ TOTP 验证码 + `PUBLISH` 二次确认；QQ 无媒体/附件。
+6. **图片（默认开启）**：`CHATBOT_AI_VISION_ENABLED=true`（默认）、`CHATBOT_AI_ENABLED=true` 且模型支持 image 输入时，QQ `d.attachments` 中 image/* 附件经
+   `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 后缀白名单、image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES` 下载后交给 OpenCode；不落盘、失败降级。
+   如需关闭设 `CHATBOT_AI_VISION_ENABLED=false` 并重启；图片会经 OpenCode 发给模型 provider（见 `docs/app/SECURITY.md`）。
+7. **AI（可选）**：Bot 稳定后设 `CHATBOT_AI_ENABLED=true`（可同时设 `CHATBOT_AI_PROVIDER`/`CHATBOT_AI_MODEL`）并重启；无 `/ask`，由用户在私聊/群 @Bot 发普通消息 Chat，
+   确认有文本回复且审计 `chatbot.ai.chat`（不含 `mode`）；再验证结构化记忆（多轮后 `chatbot_memory_items` 条目、`chatbot.memory.extract` 计数、`/memory` 展示与 off/on、`/forget confirm` 清空 items/state/legacy/会话）、角色卡与 `/reset`；真实模型/工具行为按 `docs/app/SECURITY.md` §4 记录。
+8. **发布**：`/chatbots` → 投递与发布 → 填纯文本（≤2000，超长服务端分段）+ TOTP 验证码 + `PUBLISH` 二次确认；QQ 无媒体/附件。
 9. **验收证据**：QQ 至少一条 C2C/群@/频道文本命令、一条 Chat、一条测试通知、一条文本发布（含长文本分段）+ 一次定时/取消 + 一次失败重试；
    一次图片识别成功与一次降级；Chat 至少一条真实模型回复；`/help` 非管理员/管理员差异与 `/ask` 被拒/管理员回帮助不调用 AI；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
-   记录 `bot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`；
-   未配置 AI/图片时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
-   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。当前生产 **v0.8.1/schema17**（v0.7.3 历史证据见 `docs/ACCEPTANCE.md`）；v0.8.1 smoke 与 Lofii 验证见 §6/§3.8，v0.7.3 文档模式验收记录见 §3.7。
-生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
+   记录 `chatbot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `CHATBOT_ENABLED=false`/`CHATBOT_AI_ENABLED=false`；
+   未配置 AI/图片时在 `docs/app/ACCEPTANCE.md` 标“待配置/待验证”。
+   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。当前生产 **v0.8.1/schema17**（v0.7.3 历史证据见 `docs/app/ACCEPTANCE.md`）；v0.8.1 smoke 与 mcbot 验证见 §6/§3.8，v0.7.3 文档模式验收记录见 §3.7。
+生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
 
 ### 9.9 Bot 队列/发布故障排查
 
 | 现象 | 处理 |
 |---|---|
-| Webhook 302 到 cloudflareaccess.com | Access 未对 `/api/bot/webhook/*` bypass（§5.2） |
-| Webhook 404 | `BOT_ENABLED=false`/无 `BOT_SECRET_KEY`/Bot `enabled=false`/botId 错；看 `/api/bots/status` 与审计 `bot.webhook.rejected` |
+| Webhook 302 到 cloudflareaccess.com | Access 未对 `/api/chatbot/webhook/*` bypass（§5.2） |
+| Webhook 404 | `CHATBOT_ENABLED=false`/无 `CHATBOT_SECRET_KEY`/Bot `enabled=false`/botId 错；看 `/api/chatbots/status` 与审计 `chatbot.webhook.rejected` |
 | Webhook 401 | QQ Ed25519 签名/时间戳（±300s）或 AppSecret 不匹配；核对 QQ 开放平台回调与 Secret；`op=13` 校验需返回签名体 |
-| 命令无回复 | 群聊/频道命令一律忽略（`bot.command.disabled`）；C2C 需目标勾选 `allow_commands`、用户登记为 `kind=user` 且允许命令、命令未限流、平台 API 正常；看 `bot.command.denied`、`bot_deliveries.last_error` |
-| `/ask` 无效 | `/ask` 不是有效命令：非管理员按未知命令被拒（`bot.command.denied`、无回复），管理员回全量帮助且不调用 AI；AI 请用普通消息 Chat |
-| Chat AI 超时/502/504 | OpenCode 不可达、Basic 密码不一致、模型未配置或超时；`curl -u` 探测 4096，检查 `OPENCODE_PASSWORD` 与 `BOT_AI_TIMEOUT_SECONDS`；不要打印密码 |
+| 命令无回复 | 群聊/频道命令一律忽略（`chatbot.command.disabled`）；C2C 需目标勾选 `allow_commands`、用户登记为 `kind=user` 且允许命令、命令未限流、平台 API 正常；看 `chatbot.command.denied`、`chatbot_deliveries.last_error` |
+| `/ask` 无效 | `/ask` 不是有效命令：非管理员按未知命令被拒（`chatbot.command.denied`、无回复），管理员回全量帮助且不调用 AI；AI 请用普通消息 Chat |
+| Chat AI 超时/502/504 | OpenCode 不可达、Basic 密码不一致、模型未配置或超时；`curl -u` 探测 4096，检查 `OPENCODE_PASSWORD` 与 `CHATBOT_AI_TIMEOUT_SECONDS`；不要打印密码 |
 | 发布 400/401 | 缺 `totpCode` 或 `confirmText:'PUBLISH'`、TOTP 过期/重放、目标是 user、文本超 2000 字符、定时超 30 天；无媒体字段 |
 | 发布 `partial_text_sent` | 长文本部分段落已外发后失败；任务标记 `failed` 且不自动重试，避免重复外发。核对平台消息后人工重建任务 |
-| Chat 无回复 | 目标未勾选 `allow_chat`、`BOT_AI_ENABLED=false`、QQ 群/频道未 @Bot、全量模式下仅@/名字未命中或模型输出 `NO_REPLY`、限流（30/min 或 120/h）；看 `bot.chat.denied`/`bot.chat`/`bot.ai.chat` 审计与 `mention_filtered`/`no_reply` 事件 |
+| Chat 无回复 | 目标未勾选 `allow_chat`、`CHATBOT_AI_ENABLED=false`、QQ 群/频道未 @Bot、全量模式下仅@/名字未命中或模型输出 `NO_REPLY`、限流（30/min 或 120/h）；看 `chatbot.chat.denied`/`chatbot.chat`/`chatbot.ai.chat` 审计与 `mention_filtered`/`no_reply` 事件 |
 | 群/频道不消费未 @ 的消息 | 属 QQ 平台限制：群/频道只有 @Bot 事件进入 Bot，不支持“全部消息”；C2C 私聊直接进入 |
-| 图片提示暂不支持/未处理 | `BOT_AI_VISION_ENABLED=false`、附件 mime/大小/域名不合规或下载失败；看审计 `bot.ai.image`（只含 mime/大小/跳过原因）与日志（不含图片内容） |
-| 检查连接失败 | 按 QQ AppID/AppSecret、Pi 直连出站网络核对；`bot_health_unsupported` 表示适配器未实现自检；结果只含脱敏项 |
-| 诊断无事件/筛选报错 | `BOT_ENABLED=false`、Bot 未启用、时间窗口内无入站；`outcome` 只接受 received/ok/denied/rate_limited/ignored/error，非法值 400；事件不含正文 |
+| 图片提示暂不支持/未处理 | `CHATBOT_AI_VISION_ENABLED=false`、附件 mime/大小/域名不合规或下载失败；看审计 `chatbot.ai.image`（只含 mime/大小/跳过原因）与日志（不含图片内容） |
+| 检查连接失败 | 按 QQ AppID/AppSecret、Pi 直连出站网络核对；`chatbot_health_unsupported` 表示适配器未实现自检；结果只含脱敏项 |
+| 诊断无事件/筛选报错 | `CHATBOT_ENABLED=false`、Bot 未启用、时间窗口内无入站；`outcome` 只接受 received/ok/denied/rate_limited/ignored/error，非法值 400；事件不含正文 |
 | `/reset` 或 `/forget` 无效果 | `/reset` 只清当前目标 Chat/任务会话（保留记忆）；`/forget` 必须带完整参数 `confirm`，清除该 Bot×用户长期记忆与全部会话（不删角色卡） |
-| 记忆未生成/未召回 | 看 `bot.memory.extract` 审计计数与 `bot_memory_items`/`bot_memory_state` 行数；确认用户未 `/memory off`、OpenCode 可达、批处理阈值 `BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`、召回预算 `BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`；不要打印 key/value 正文 |
-| legacy 清理未执行/残留 | 验收后需执行 `node scripts/cleanup-legacy-memory.mjs`（dry-run 核对）再 `--confirm`；只清理 `legacy_migrated_at` 已置位用户的 `bot_ai_memories`+镜像；看审计 `bot.memory.legacy_cleanup` |
+| 记忆未生成/未召回 | 看 `chatbot.memory.extract` 审计计数与 `chatbot_memory_items`/`chatbot_memory_state` 行数；确认用户未 `/memory off`、OpenCode 可达、批处理阈值 `CHATBOT_AI_MEMORY_BATCH_MESSAGES`/`CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS`、召回预算 `CHATBOT_MEMORY_PROMPT_MAX_CHARS`/`CHATBOT_MEMORY_PROMPT_MAX_ITEMS`；不要打印 key/value 正文 |
+| legacy 清理未执行/残留 | 验收后需执行 `node scripts/cleanup-legacy-memory.mjs`（dry-run 核对）再 `--confirm`；只清理 `legacy_migrated_at` 已置位用户的 `chatbot_ai_memories`+镜像；看审计 `chatbot.memory.legacy_cleanup` |
 | 回滚后启动报 schema 过高 | 必须先用迁移前快照 `db-predeploy-*.sqlite` 恢复 DB，再切回旧 release；不要只切 release |
 | 树莓派重启后 Cloudflare 1033 / 公网 530 | 先 `curl -k -sS https://api.cloudflare.com/client/v4/` 看是否返回校园网认证页；若是 Portal 认证失效，在 Pi 出口完成认证（可临时 `ssh -D` 让 PC 浏览器经 Pi 出口登录），确认 TCP/UDP 7844 可达后 `systemctl reset-failed cloudflared && systemctl restart cloudflared`；本环境 2026-10-24 即此原因 |
 | Cloudflare 边缘/tunnel 中断 | 查看 Cloudflare 状态与 cloudflared 日志；本例 2026-10-23 01:08–01:13 CST 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复（环境事件，非应用问题） |
 | 连通性快照仍含设备/代理 | 快照仅 `checkedAt/checking/internet/platforms`；若仍有 `deviceOnline/proxy` 说明运行的是旧 bundle，检查 release/bundle 版本并重启 |
 
 | 通知被延后 | 目标配置了静默时段且在窗口内；属预期，`next_attempt_at` 为窗口结束；如非预期检查 `quietStartMinute/quietEndMinute` |
-| 指标卡为空/0 | 窗口内无投递或 Bot 关闭；直接查 `GET /api/bots/:id/metrics?hours=24`、`bot_deliveries`/`bot_publish_jobs`；成功率只统计已尝试投递 |
+| 指标卡为空/0 | 窗口内无投递或 Bot 关闭；直接查 `GET /api/chatbots/:id/metrics?hours=24`、`chatbot_deliveries`/`chatbot_publish_jobs`；成功率只统计已尝试投递 |
 | 投递 `dead` | 平台 AppSecret 失效/权限不足/被限流或出站网络失败；修复后 `POST /deliveries/:id/retry`；必要时重录 AppSecret |
-| 队列不跑 | `BOT_ENABLED`/密钥、`BOT_DELIVERY_INTERVAL_SECONDS`、Bot 未启用；重启后看 `startBots` 日志 |
-| `BOT_SECRET_KEY` 无效 | 必须是 base64 32 字节；`bootstrap-env.sh` 会拒绝写入并退出，恢复旧 key 或接受 QQ AppSecret 重录 |
+| 队列不跑 | `CHATBOT_ENABLED`/密钥、`CHATBOT_DELIVERY_INTERVAL_SECONDS`、Bot 未启用；重启后看 `startBots` 日志 |
+| `CHATBOT_SECRET_KEY` 无效 | 必须是 base64 32 字节；`bootstrap-env.sh` 会拒绝写入并退出，恢复旧 key 或接受 QQ AppSecret 重录 |
 | smoke 公网 302 到 Access | 未配置 bypass 时属预期；配置后仍 302 检查 service token 是否同时传 `-AccessClientId/-AccessClientSecret` 且未过期 |
 | 迁移后非 QQ Bot 消失 | 13 删除 `platform <> 'qq'` 的 Bot 及级联数据，属预期；只能从迁移前 DB 快照恢复，不能通过应用恢复 |
 | nftables restart 后封禁未恢复 | 确认 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` 已安装、`daemon-reload`、dbfile 存在；`journalctl -u nftables` 看 `systemd-run` 是否执行；手工 reload 不触发，需 `systemctl restart fail2ban` |
 | 加密 prepare 失败（`age 不可用`/`公钥`） | `BACKUP_ARCHIVE_ENCRYPTION=true` 时失败关闭属预期：检查 `age --version`、`BACKUP_AGE_RECIPIENT_FILE` 存在/root 属主/0644/组其他不可写/单行 `age1…`；修好前不要改回明文绕过 |
-| Web 对归档返回 `409 archive_encrypted` | 加密归档在 Web 不可校验/恢复：到 PC 用离线 age 私钥解密/校验（`docs/BACKUP.md` §5.1/§8.1）；不要尝试在 Pi 解密 |
+| Web 对归档返回 `409 archive_encrypted` | 加密归档在 Web 不可校验/恢复：到 PC 用离线 age 私钥解密/校验（`docs/app/BACKUP.md` §5.1/§8.1）；不要尝试在 Pi 解密 |
 | 加密归档缺 `.meta.json` | PC 拉取会跳过且不 ack：检查 Pi `backups/` 下 `<name>.meta.json` 是否存在/可读；补齐前不要 ack/删除密文 |
 | 异地副本状态缺失/超期 | 默认关闭；未配置时 `offsite` 为 null 且不告警。配置后检查 PC `AntifieldCloud-Backup-Offsite` 任务 `LastTaskResult`、`backup-offsite.log`、rclone remote/凭据、`ALERT_OFFSITE_MAX_AGE_HOURS` 与 `backup-offsite-status.json` 的 `lastRunAt/error/plaintextSkipped` |
 | 加密/异地状态卡显示未启用 | 正常：`BACKUP_ARCHIVE_ENCRYPTION=false`/状态文件缺失即未启用；启用步骤见 §9.10/§9.11 |
@@ -947,7 +947,7 @@ sudo systemctl restart antifieldcloud
 - **浏览器/Dashboard 验证**：Settings → 备份与恢复应显示“加密已启用、公钥已配置”；列表新归档带“加密归档（Web 不可校验/恢复）”；
   `GET /api/version` 的 `backupArchiveEncryption=true`、`backupAgeRecipientConfigured=true`。
 - **回滚**：`BACKUP_ARCHIVE_ENCRYPTION=false` 并重启 → 下一次 prepare 恢复明文；已生成 `.age` 保留在 Pi/PC，由 PC 用私钥解密/演练；
-  回滚不需要改 schema/DB。私钥丢失则已加密归档不可恢复（明确残余，见 `docs/SECURITY.md` §4）。
+  回滚不需要改 schema/DB。私钥丢失则已加密归档不可恢复（明确残余，见 `docs/app/SECURITY.md` §4）。
 - **注意**：加密开启后空间预算按 2× 明文；`*.plain.tmp` 残留由启动/下次 prepare 清理（>24h）；不要手工删除 pending 密文/ sidecar。
 
 ### 9.11 异地副本启用/回滚（默认关闭）
@@ -1021,26 +1021,26 @@ sudo systemctl start antifieldcloud
 curl -fsS http://127.0.0.1:3000/healthz
 ```
 
-- 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，**保留最新 2 个**：`MAX_PREDEPLOY_SNAPSHOTS=2`，供自动回滚；明文快照属威胁模型明确豁免项，见 `docs/SECURITY.md` §4）。
+- 每次部署在切换前生成 `/var/lib/antifieldcloud/backups/db-predeploy-*.sqlite`（0600，**保留最新 2 个**：`MAX_PREDEPLOY_SNAPSHOTS=2`，供自动回滚；明文快照属威胁模型明确豁免项，见 `docs/app/SECURITY.md` §4）。
 - **schema 只向上（当前 v17）**（迁移 5 结构、迁移 6 孤儿 shares 修复、迁移 7 Bot 表、迁移 8 重建 Bot 表/静默列/AI 会话、
-  迁移 9 `allow_chat`/`bot_ai_memories`/`bot_inbound_targets`、迁移 10 `bot_ai_sessions.mode`、迁移 11 `bot_chat_roles`、
-  迁移 12 `chat_trigger`/`bot_events` 诊断列、迁移 13 删除非 QQ Bot 及级联数据、迁移 14 结构化记忆两表、迁移 15 `qq_number` 兼容列、
-  迁移 16 群聊角色卡 `bot_group_roles`；当前 schema v17）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
+  迁移 9 `allow_chat`/`chatbot_ai_memories`/`chatbot_inbound_targets`、迁移 10 `chatbot_ai_sessions.mode`、迁移 11 `chatbot_chat_roles`、
+  迁移 12 `chat_trigger`/`chatbot_events` 诊断列、迁移 13 删除非 QQ Bot 及级联数据、迁移 14 结构化记忆两表、迁移 15 `qq_number` 兼容列、
+  迁移 16 群聊角色卡 `chatbot_group_roles`；当前 schema v17）：迁移前会清理不可达孤儿 shares 并做 `PRAGMA foreign_key_check`，
   其它外键不一致会拒绝启动；旧代码遇到更高 schema 会拒绝启动。迁移单向、无 down；回滚旧 release 前必须恢复对应迁移前快照
   （`stop → 复制快照为 db.sqlite → 删除 -wal/-shm → 还原 APP_VERSION → 切 release → start`）。
   回滚旧 release 前必须恢复对应迁移前快照并同步还原 `APP_VERSION`；生产数据变更以快照为准。
-- Bot 数据回滚：`bots`/`bot_targets`/`bot_deliveries`/`bot_publish_jobs`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_inbound_targets`/`bot_chat_roles` 随 DB 快照恢复；
-  `BOT_SECRET_KEY` 不在 DB 中，必须保持与快照生成时一致的 env（否则 QQ AppSecret 不可解密）。`DATA_DIR/bot-memory` 镜像文件不由快照恢复，
+- Bot 数据回滚：`chatbots`/`chatbot_targets`/`chatbot_deliveries`/`chatbot_publish_jobs`/`chatbot_events`/`chatbot_ai_sessions`/`chatbot_ai_memories`/`chatbot_inbound_targets`/`chatbot_chat_roles` 随 DB 快照恢复；
+  `CHATBOT_SECRET_KEY` 不在 DB 中，必须保持与快照生成时一致的 env（否则 QQ AppSecret 不可解密）。`DATA_DIR/bot-memory` 镜像文件不由快照恢复，
   如需与 DB 摘要一致，可保留现有镜像或按保留期/人工清理；不通过 API 暴露。
-  回滚窗口内保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`，确认稳定后再重新启用（`BOT_AI_VISION_ENABLED` 可保持默认 true）。
-- v0.7.3 文档模式回滚：`BOT_AI_CONTEXT_READ_ENABLED=false` 并重启即可；上下文目录为派生数据，可直接删除；
+  回滚窗口内保持 `CHATBOT_ENABLED=false`/`CHATBOT_AI_ENABLED=false`，确认稳定后再重新启用（`CHATBOT_AI_VISION_ENABLED` 可保持默认 true）。
+- v0.7.3 文档模式回滚：`CHATBOT_AI_CONTEXT_READ_ENABLED=false` 并重启即可；上下文目录为派生数据，可直接删除；
   无需恢复 schema/DB/OpenCode 配置；回滚到 v0.7.2 时新 env 键被忽略，unit 多出的 `ReadWritePaths` 无害（目录可保留）。
-- v0.8.0 Lofii 回滚：设 `LOFII_ENABLED=false`（可选清空 `LOFII_READ_TOKEN`/`LOFII_CONTROL_TOKEN`）并重启；`/api/lofii/*` 返回 503、页面不再显示 Lofii 标签，回到 v0.7.3 行为；`meta.lofii.event_cursor` 可保留或删除（删除后重建基线、不重放旧告警）；无 schema/DB 变更。回滚到旧 release 时新增 `LOFII_*` env 与 `meta.lofii.event_cursor` 会被忽略，无需恢复 DB 快照。只读模式只需清空控制 Token 并重启（v0.8.1 起 `/say` 也随之 503）。
-- v0.8.1 安全补丁回滚：切回 **v0.8.0** release `/opt/antifieldcloud/releases/20261027T094412Z`（commit `9ae5809`）+ 还原 `APP_VERSION=0.8.0` 并重启；schema 不变、env 无需改动；lofii-bot v0.6.1 对 v0.8.0 兼容（v0.8.0 不依赖逐行中和，上游中和不影响正常聊天）；回退后 `/say` 恢复 v0.8.0 旧语义（只读仍可用、仅首字符 `/` 拒绝），需在文档与验收记录中同步下调安全结论。若只回滚 Lofii 功能，设 `LOFII_ENABLED=false` 重启即可（无 DB 回滚）。
+- v0.8.0 mcbot 回滚：设 `MCBOT_ENABLED=false`（可选清空 `MCBOT_READ_TOKEN`/`MCBOT_CONTROL_TOKEN`）并重启；`/api/mcbot/*` 返回 503、页面不再显示 mcbot 标签，回到 v0.7.3 行为；`meta.lofii.event_cursor` 可保留或删除（删除后重建基线、不重放旧告警）；无 schema/DB 变更。回滚到旧 release 时新增 `MCBOT_*` env 与 `meta.lofii.event_cursor` 会被忽略，无需恢复 DB 快照。只读模式只需清空控制 Token 并重启（v0.8.1 起 `/say` 也随之 503）。
+- v0.8.1 安全补丁回滚：切回 **v0.8.0** release `/opt/antifieldcloud/releases/20261027T094412Z`（commit `9ae5809`）+ 还原 `APP_VERSION=0.8.0` 并重启；schema 不变、env 无需改动；mcbot v0.6.1 对 v0.8.0 兼容（v0.8.0 不依赖逐行中和，上游中和不影响正常聊天）；回退后 `/say` 恢复 v0.8.0 旧语义（只读仍可用、仅首字符 `/` 拒绝），需在文档与验收记录中同步下调安全结论。若只回滚 mcbot 功能，设 `MCBOT_ENABLED=false` 重启即可（无 DB 回滚）。
 - fail2ban drop-in 回滚：删除 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` → `sudo systemctl daemon-reload`；
   不影响应用数据；回滚后 nftables restart 需手工 `systemctl restart fail2ban`。
-- 部署后 smoke 失败的门禁：`deploy.ps1` 默认失败；若已用 `-AllowSmokeFailure` 保留部署，必须在 `docs/ACCEPTANCE.md` 记录未通过项。
-- 数据恢复与全量/增量链解析、世界/密钥包恢复见 `docs/BACKUP.md` §8。
+- 部署后 smoke 失败的门禁：`deploy.ps1` 默认失败；若已用 `-AllowSmokeFailure` 保留部署，必须在 `docs/app/ACCEPTANCE.md` 记录未通过项。
+- 数据恢复与全量/增量链解析、世界/密钥包恢复见 `docs/app/BACKUP.md` §8。
 - cloudflared 回滚：`sudo cp /var/backups/antifieldcloud/cloudflared-config.yml.<ts> /etc/cloudflared/config.yml && sudo systemctl restart cloudflared`。
 
 ## 12. CI 检查
@@ -1053,8 +1053,8 @@ Windows PowerShell job 覆盖**全部** `scripts/*.ps1` 的 PS 5.1 解析 + UTF-
 部署/备份脚本改动必须让 CI 全绿。
 
 版本一致性：`node scripts/check-version.mjs` 比对 `package.json` 与 README/CHANGELOG/ACCEPTANCE/AGENTS、`deploy/env.example` 的
-`APP_VERSION`、`docs/DEPLOY.md` 标题与 `package-lock.json` 根版本；并交叉校验 `deploy/tool-versions.json` ↔ `server/src/db.ts`
-`SUPPORTED_SCHEMA_VERSION`、`docs/DEPLOY.md §3.2 OpenCode`、`docs/DEPLOY.md 当前 schema`、AGENTS/README/SECURITY/BOT/ACCEPTANCE 的
+`APP_VERSION`、`docs/app/DEPLOY.md` 标题与 `package-lock.json` 根版本；并交叉校验 `deploy/tool-versions.json` ↔ `server/src/db.ts`
+`SUPPORTED_SCHEMA_VERSION`、`docs/app/DEPLOY.md §3.2 OpenCode`、`docs/app/DEPLOY.md 当前 schema`、AGENTS/README/SECURITY/BOT/ACCEPTANCE 的
 OpenCode 当前事实（已接入 CI check job）。发布前必须通过；过渡期调试可用 `CHECK_VERSION_ALLOW_STALE_TOOLS=1`，CI/发布不得使用。
 
 其它门禁：`check-prod-deps.mjs`（裸导入边界）、PS 5.1 解析 + UTF-8 BOM（全部 `scripts/*.ps1`，含 `backup-offsite.ps1`）、
@@ -1075,7 +1075,7 @@ OpenCode 当前事实（已接入 CI check job）。发布前必须通过；过�
 | 内存 cgroup 缺失 | 按第 8 节移除 `cgroup_disable=memory` 后重启；`smoke.ps1` 会检查 |
 | 备份 pending 堆积 | 先修直连/计划任务；pending 不会因空间清理被删；查 `backup.log` 与 `--pending` |
 | 备份面板红色 | 计划任务失败/超过 48h：查任务 LastTaskResult、`%LOCALAPPDATA%\AntifieldCloud\backup.log` |
-| 密钥包未生成 | 按 `docs/BACKUP.md` §5 安装 age 并写入公钥；不影响普通归档 |
+| 密钥包未生成 | 按 `docs/app/BACKUP.md` §5 安装 age 并写入公钥；不影响普通归档 |
 | 磁盘占用 | `df -h /`、`du -sh /var/lib/antifieldcloud/*`；配额 10 GiB；release/备份保留策略见文档 |
 | 公网页面空白 / 入口脚本未执行 | app 入口脚本已加 `data-cfasync="false"`；ai 代理按 `OPENCODE_HTML_MODE` 处理；若仍异常，在 Cloudflare Speed → Optimization/Configuration Rules 关闭 `ai` 的 Rocket Loader |
 | 备份密钥包状态红/unknown | 看 `backup-pull.json` 的 `secretsOk/secretsLastError`；检查 age 公钥权限与 `backup-secrets.sh`；文件归档成功不等于密钥包成功 |
@@ -1090,32 +1090,32 @@ OpenCode 当前事实（已接入 CI check job）。发布前必须通过；过�
 | 世界拉取失败/不 ack | 看 PC `%LOCALAPPDATA%\AntifieldCloud\world-pull.log` 与 Pi `world-pull-status.json`；失败保留远端归档，重跑即可 |
 | 世界/演练状态 unknown | 任务未安装或从未运行；面板按 unknown 展示、告警可能触发；按 §9.4/§9.5 安装并跑一次 |
 | 应用了新 nftables 后 SSH 断开 | 来源网段不在 `192.0.2.0/24`/`198.51.100.0/24`（模板占位，需替换为实际网段）；用物理键鼠或已建立连接恢复 `.bak` 并 `systemctl restart nftables` |
-| 旧世界 cron 与新 timer 重复备份 | `crontab -u antifield -l` 确认无 `minecraft-backups` 行；旧归档按 §14/`docs/BACKUP.md` §6.4 手动清理 |
+| 旧世界 cron 与新 timer 重复备份 | `crontab -u antifield -l` 确认无 `minecraft-backups` 行；旧归档按 §14/`docs/app/BACKUP.md` §6.4 手动清理 |
 | 部署脚本报“工作树不干净” | 先提交；确需脏发布用 `-AllowDirty` 并在验收记录标注 commit/改动 |
 | 部署后 smoke 失败但服务正常 | 默认门禁失败；看 FAIL 项修复后重跑 `smoke.ps1`；临时放行用 `-AllowSmokeFailure` 并记录未通过项 |
 | `/healthz` 版本仍是旧版 | 检查 `/etc/antifieldcloud/env` 的 `APP_VERSION` 与 `package.json`；回滚后尤其要确认已还原上一 release 版本 |
-| Bot Webhook 404 | `BOT_ENABLED=false`、缺 `BOT_SECRET_KEY`、Bot `enabled=false` 或 botId 错；先看 `/api/bots/status` 与 §9.9 |
-| Bot Webhook 302 | Cloudflare Access 未 bypass `/api/bot/webhook/*`（§5.2） |
+| Bot Webhook 404 | `CHATBOT_ENABLED=false`、缺 `CHATBOT_SECRET_KEY`、Bot `enabled=false` 或 botId 错；先看 `/api/chatbots/status` 与 §9.9 |
+| Bot Webhook 302 | Cloudflare Access 未 bypass `/api/chatbot/webhook/*`（§5.2） |
 | Bot Webhook 401 | 平台签名/时间戳/Public Key/Signing Secret 不匹配；QQ 检查 AppSecret、Ed25519 头与时间戳是否在 ±300 秒 |
-| QQ 回调地址校验失败 | AppSecret 错、AppID 与 Secret 不配对、请求未带 `op=13` 的 `plain_token/event_ts`；看 `bot.webhook.rejected` 与 journald（不打印 AppSecret） |
+| QQ 回调地址校验失败 | AppSecret 错、AppID 与 Secret 不配对、请求未带 `op=13` 的 `plain_token/event_ts`；看 `chatbot.webhook.rejected` 与 journald（不打印 AppSecret） |
 | QQ 发布会话 | QQ 仅文本、单条 ≤2000 字符（超长服务端分段）；无媒体/附件字段 |
-| `/ask` 无效 | `/ask` 为未知命令：非管理员被拒（无回复），管理员回全量帮助、不调用 AI；Chat 问题看 `bot.chat.denied`、`BOT_AI_RATE_PER_HOUR` 与 `journalctl -u opencode` |
+| `/ask` 无效 | `/ask` 为未知命令：非管理员被拒（无回复），管理员回全量帮助、不调用 AI；Chat 问题看 `chatbot.chat.denied`、`CHATBOT_AI_RATE_PER_HOUR` 与 `journalctl -u opencode` |
 | 通知被静默延后 | 目标设置了 `quietStartMinute/quietEndMinute` 且当前在窗口内；通知的 `next_attempt_at` 为窗口结束，属预期 |
 | 发布提示 publish_confirm_required | 请求体缺少 `confirmText:'PUBLISH'`；TOTP 不能替代该二次确认 |
 | smoke Access token 无效 | 同时提供 `-AccessClientId/-AccessClientSecret`、确认 token 未过期且策略绑定 `app`；不要使用全局/宽范围 token |
 | nftables restart 后封禁丢失 | drop-in 未安装/未 `daemon-reload`/dbfile 不可写；手工 reload 不触发，需 `systemctl restart fail2ban`（§9.7） |
-| Bot 管理页提示缺少密钥 | `BOT_SECRET_KEY` 未写入或不是 base64 32 字节；用 `bootstrap-env.sh --force` 生成/复用后重启（不要手工替换旧 key） |
+| Bot 管理页提示缺少密钥 | `CHATBOT_SECRET_KEY` 未写入或不是 base64 32 字节；用 `bootstrap-env.sh --force` 生成/复用后重启（不要手工替换旧 key） |
 | Bot 发布 400/401 | 缺 `totpCode`、TOTP 过期/重放、目标是 user、文本超 2000 字符、定时超 30 天；见 API §14 |
-| Bot Chat 无回复 | `BOT_AI_ENABLED=false`、目标未 `allow_chat`、群/频道未 @Bot、30/min 或 120/h 限流；看 `bot.chat.denied` 与审计 |
+| Bot Chat 无回复 | `CHATBOT_AI_ENABLED=false`、目标未 `allow_chat`、群/频道未 @Bot、30/min 或 120/h 限流；看 `chatbot.chat.denied` 与审计 |
 | Bot 长回复截断/重复 | QQ 单条上限 2000，最多 4 段并带续段前缀；partial 失败不自动重试，需核对平台消息后人工处理，避免重复外发 |
-| Bot 图片不生效 | `BOT_AI_VISION_ENABLED=true` 默认开启；需 `BOT_AI_ENABLED=true` 且模型支持 image、附件域名/mime/大小合规；看 `bot.ai.image` 审计（不含内容） |
-| Bot Chat 全部 503 `bot_ai_tool_isolation_unavailable` | OpenCode 拒绝 `permissions`（看 journald “AI 工具隔离不可用”/`bot.ai.permissions_fallback`）；检查 OpenCode 版本/字段兼容，不要改用默认权限；10 分钟窗口后自动重试 |
-| Bot 文档模式读不到角色/记忆 | 确认 `BOT_AI_CONTEXT_READ_ENABLED=true`、`BOT_CONTEXT_DIR` 存在且 `opencode` 组可读（目录 2750、文件 0640）、unit 含 `ReadWritePaths`；看 `bot.ai.context_failed` 审计与 journald，不输出文档路径/正文 |
-| Bot 文档模式 Chat 返回 `bot_ai_context_unavailable` | 上下文文档写入失败（权限/磁盘/符号链接/目录不在 DATA_DIR 外）；按 §3.7 检查目录属主/权限与 `BOT_CONTEXT_DIR` 配置 |
+| Bot 图片不生效 | `CHATBOT_AI_VISION_ENABLED=true` 默认开启；需 `CHATBOT_AI_ENABLED=true` 且模型支持 image、附件域名/mime/大小合规；看 `chatbot.ai.image` 审计（不含内容） |
+| Bot Chat 全部 503 `chatbot_ai_tool_isolation_unavailable` | OpenCode 拒绝 `permissions`（看 journald “AI 工具隔离不可用”/`chatbot.ai.permissions_fallback`）；检查 OpenCode 版本/字段兼容，不要改用默认权限；10 分钟窗口后自动重试 |
+| Bot 文档模式读不到角色/记忆 | 确认 `CHATBOT_AI_CONTEXT_READ_ENABLED=true`、`CHATBOT_CONTEXT_DIR` 存在且 `opencode` 组可读（目录 2750、文件 0640）、unit 含 `ReadWritePaths`；看 `chatbot.ai.context_failed` 审计与 journald，不输出文档路径/正文 |
+| Bot 文档模式 Chat 返回 `chatbot_ai_context_unavailable` | 上下文文档写入失败（权限/磁盘/符号链接/目录不在 DATA_DIR 外）；按 §3.7 检查目录属主/权限与 `CHATBOT_CONTEXT_DIR` 配置 |
 | Bot 文档目录残留/隐私清理 | `/forget confirm`、Bot/目标删除会自动清理；维护任务回收无活动会话且超 24h 的目录；目录为派生数据、不进入备份，可手工确认后删除 |
 | Bot `/forget` 提示用法 | 必须发送 `/forget confirm`（完整参数）；只清长期记忆与该 Bot×用户全部会话，不删除角色卡 |
-| 平台连接自检失败 | 检查 QQ AppID/AppSecret、Pi 直连出站网络；`/bots`“检查连接”只显示脱敏原因 |
-| Bot 投递 dead/不重试 | 平台 Token 失效/权限不足/被限流；修 Token 后 `POST /api/bots/:id/deliveries/:id/retry`；`bot_deliveries.last_error` 有短错误码 |
+| 平台连接自检失败 | 检查 QQ AppID/AppSecret、Pi 直连出站网络；`/chatbots`“检查连接”只显示脱敏原因 |
+| Bot 投递 dead/不重试 | 平台 Token 失效/权限不足/被限流；修 Token 后 `POST /api/chatbots/:id/deliveries/:id/retry`；`chatbot_deliveries.last_error` 有短错误码 |
 | SSH 仅公钥后无法登录 | 24h 回滚窗口内删除 `/etc/ssh/sshd_config.d/00-antifield-hardening.conf` → `sshd -t` → `systemctl reload ssh`；用已建立会话/物理键鼠操作（§9.7） |
 | fail2ban 未封禁/启动失败 | `fail2ban-client -t` 校验配置；`journalctl -u fail2ban -n 50`；确认 nftables 后端与 `sshd` jail 已启用、`bantime=86400`；日志后端（log2ram/journald）可读 |
 | nftables 重载后封禁列表清空 | fail2ban 的封禁 set 随 nftables 重建丢失：`systemctl restart fail2ban` 后 `fail2ban-client status sshd` 复核；把该步骤写进 nftables 变更清单 |
@@ -1123,7 +1123,7 @@ OpenCode 当前事实（已接入 CI check job）。发布前必须通过；过�
 ## 14. 磁盘清理与保留策略
 
 > 清理只允许 **孤儿归档 / 保留期到期 / 旧 release / 过期备份** 四类；任何操作先只读确认 + 二次确认，**不删除用户文件**。
-> `DATA_DIR/bot-memory` 不属于上述四类，仅在确认无对应 Bot 记忆或 `bot_ai_memories` 时按保留期/人工清理，不得借“清理”删除活跃记忆。
+> `DATA_DIR/bot-memory` 不属于上述四类，仅在确认无对应 Bot 记忆或 `chatbot_ai_memories` 时按保留期/人工清理，不得借“清理”删除活跃记忆。
 > 不执行 `rm -rf /var/lib/antifieldcloud`、`/home/antifield/minecraft-server`、`/var/lib/opencode` 或 `data/` 下用户内容。
 
 ### 14.1 只读盘点（先做）
@@ -1155,15 +1155,15 @@ ls -lh /var/lib/antifieldcloud/world-backups/ /var/lib/antifieldcloud/backups/se
 - 除 §14.2 明确允许的孤儿/过期项外，`/var/lib/antifieldcloud` 的 DB、`files/`、`backups/`（pending/acked/imports/secrets）、`world-backups/`、`*-status.json` 一律不清理。
 - `/var/lib/opencode`、`/etc/opencode`、`/etc/antifieldcloud/env`、`/etc/cloudflared/*`、`/home/antifield/minecraft-server/world`。
 - 当前与 previous release、`/var/swap`、`preflight/age-key`、离线 age 私钥。
-- `minecraft-backups` 归档已清理；如再次出现，仅在确认 PC 副本可解包后按 `docs/BACKUP.md` §6.4 处理。
+- `minecraft-backups` 归档已清理；如再次出现，仅在确认 PC 副本可解包后按 `docs/app/BACKUP.md` §6.4 处理。
 - 用户文件（`files/` 与笔记附件）永不因“磁盘清理”删除；需要释放空间时用应用的回收站/配额流程。
 
 ### 14.4 二次确认与记录
 
-1. 对每个待删文件先 `ls -l` + `sha256sum`（归档）并记录到运维日志/`docs/ACCEPTANCE.md`；
+1. 对每个待删文件先 `ls -l` + `sha256sum`（归档）并记录到运维日志/`docs/app/ACCEPTANCE.md`；
 2. 删除前再次 `df -hT /` 记录释放前余量；
 3. 删除后运行 `smoke.ps1` 与 `backup.mjs --pending`，确认无新增 pending/失败；
 4. 任何“孤儿”判断以 DB/CLI 输出为准，不凭文件名猜测；不确定时保留并上报。
 5. `world-backups` 由脚本保留最新 4 份；PC `world\` 同样保留 4 份；不要手动删 `world-<UTC>.tar.gz` 或 `.sha256`。
 6. `metrics_samples` 30 天、`audit_log`/`alert_events` 90 天由应用自动清理；`db-predeploy-*.sqlite` 保留最新 **2** 个；不要手工删表。
-7. 备份加密/异地相关目录（`backups/` 下的 `.age`/`.meta.json`/`.sha256`/`*.plain.tmp`、PC 远端副本）不在清理清单；按 `docs/BACKUP.md` §5.1/§5.2 与本节“加密临时/孤儿”行处理。
+7. 备份加密/异地相关目录（`backups/` 下的 `.age`/`.meta.json`/`.sha256`/`*.plain.tmp`、PC 远端副本）不在清理清单；按 `docs/app/BACKUP.md` §5.1/§5.2 与本节“加密临时/孤儿”行处理。

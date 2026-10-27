@@ -11,7 +11,7 @@
 
 # 构建前端 → 打包 → 上传到 Pi 的 releases/<UTC> → 安装生产依赖 → 迁移前 DB 快照 → 切换 current
 # → 重启并按 package.json 版本做健康检查；失败自动回滚（含还原迁移前 DB 快照）。
-# 前置：Pi 已完成服务账号/目录/systemd 初始化（见 docs/DEPLOY.md），并已运行 bootstrap-env.sh。
+# 前置：Pi 已完成服务账号/目录/systemd 初始化（见 docs/app/DEPLOY.md），并已运行 bootstrap-env.sh。
 # 约束：
 # - 所有 ssh/scp 都有硬超时（Start-Process + taskkill /T /F），不会无限挂起；
 # - 上传后校验远端 tar SHA-256；安装前校验远端 package.json 版本与本地一致；

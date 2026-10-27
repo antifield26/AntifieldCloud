@@ -557,7 +557,7 @@ export function RestoreWizard({ open, archive, onClose, onCompleted }: RestoreWi
           <div className="notice notice-warning" role="alert">
             <ShieldAlert size={16} aria-hidden="true" />
             {encryptedArchive
-              ? '该归档已加密（.tar.gz.age）：Web 不持有私钥，不能校验或恢复；请在 PC 上用 age 私钥解密后按 docs/BACKUP.md 处理。'
+              ? '该归档已加密（.tar.gz.age）：Web 不持有私钥，不能校验或恢复；请在 PC 上用 age 私钥解密后按 docs/app/BACKUP.md 处理。'
               : !webVerifiable
                 ? '服务端标记该归档不可在 Web 校验，请按服务端提示处理。'
                 : '服务端标记该归档不可在 Web 恢复，请按服务端提示处理。'}

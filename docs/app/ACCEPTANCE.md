@@ -1,10 +1,10 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v0.8.1（**v0.8.0 Minor 安全补丁；已发布：annotated Tag `v0.8.1` + GitHub Release（2026-10-27）；生产部署与只读/API/安全回归验收完成**；`/say` 控制 Token 必需 + 任意 `/`/C0 拒绝、上游数据原型链/形状修复、流式 2 MiB、事件缓存 512 KiB、轮询 200、游标失败重试、前端容错/可见警告/防竞态；schema 保持 **v17**、OpenCode **v2.1.4**；上游 lofii-bot **v0.6.1**（最低 v0.6.0，契约 v1）；生产 release `20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17，smoke 26/0/0/2 + 完整 Access 36/0/0/2（含任务标记检查））；v0.8.0（**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release [AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0)（publishedAt `2026-10-27T12:02:45Z`）；生产部署与只读/API 验收完成（release `20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17，部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，当时任务标记未重装），现为回滚点；Lofii Minecraft Bot 只读/控制/告警对接 + `/minecraft` 合并标签页；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染，临时会话已清理；用户仍可自行复核）；真实 Lofii 告警联动未触发，由单元/集成测试覆盖）；v0.7.3（**已发布：Tag `v0.7.3` + GitHub Release [AntifieldComplexx v0.7.3](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.7.3)；已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**；Bot 提示词文档化 + 按需 read、默认关闭、schema 保持 v17、OpenCode v2.1.4）；v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口：审计失败持久化 schema v17、Bot 镜像清理、导入归档 90 天、告警 24h 重通知、备份锁心跳、DR-1 状态、BotService 拆分）；v0.7.1（已发布：Tag `v0.7.1` + GitHub Release [AntifieldComplexx v0.7.1](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.7.1)；群聊共享会话；schema v16 无迁移）；v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）；schema v16）；v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v1.0.0（开发线 `release/v1.0.0`；生产仍为 v0.8.1，生产迁移与发布待 Phase 7 授权）。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
-> **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `BOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`）；Discord DM、Discord #general @Bot、QQ C2C 的普通消息 Chat 已由用户实发确认收到 AI 回复，`bot_ai_sessions`/`bot_ai_memories` 已写入；其他目标仍默认关闭。
+> **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `CHATBOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`）；Discord DM、Discord #general @Bot、QQ C2C 的普通消息 Chat 已由用户实发确认收到 AI 回复，`chatbot_ai_sessions`/`chatbot_ai_memories` 已写入；其他目标仍默认关闭。
 >
 > **v0.5.3 已部署**：2026-10-22 部署到生产 Pi（release `20261022T065126Z`，commit `df06383`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。出站连通性探测已记录代理端口/外网/平台可达，断开 PC 隧道后检测为不可用、恢复后 Gateway 立即重连；OpenCode 已升级 v2.1.2。QQ 群事件已到达并定位为群目标未登记，登记 `68611590B477339A04302BB23B426244` 后用户确认 @Bot 已收到 AI 回复。
 >
@@ -14,41 +14,41 @@
 >
 > **v0.5.6 已部署**：2026-10-22 部署到生产 Pi（release `20261022T114546Z`，commit `38dfe70`，schema v11，无新迁移）；带 Cloudflare Access service token 的完整 smoke **24/24**。私聊/群聊默认 lofii、个人角色覆盖/`off` 回落、简洁 `/role` 文案均已由用户实发确认。
 >
-> **v0.5.7 已部署（含修复发布）**：2026-10-22 首次部署 release `20261022T131121Z`（commit `8dcd10f`，schema v12）后，生产只读验证发现错误提示映射缺陷（适配器包装消息如 `平台请求失败（0:qq_access_token_failed）` 的 `lastErrorHint` 为 null）；修复 commit `2f429be`（`fix(bot): 错误提示识别适配器包装消息中的平台错误码`），重新部署 release `20261022T131813Z`（commit `2f429be`，version 0.5.7/schema v12），current 指向该 release，另保留 `20261022T131121Z`、`20261022T114546Z`。第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`（sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke **16/16**、带 Access token 的完整 smoke **24/24**；重启后 Discord Gateway `已连接`（21:18:48）。生产只读复验通过：服务层 events/roles/memories/metrics/deliveries、`lastErrorHint` 对 `network`/`qq_access_token_failed` 均正确、`/` 与 `/bots` 页面及新 bundle 均 200。**真实平台消息级联调待用户实发验收；Discord 尚缺 `role`/`reset`/`forget` 斜杠命令注册（实测缺口）。**自 v0.5.8 起 Telegram/Discord/Slack 平台与相关能力移除，本节作为历史记录保留。
+> **v0.5.7 已部署（含修复发布）**：2026-10-22 首次部署 release `20261022T131121Z`（commit `8dcd10f`，schema v12）后，生产只读验证发现错误提示映射缺陷（适配器包装消息如 `平台请求失败（0:qq_access_token_failed）` 的 `lastErrorHint` 为 null）；修复 commit `2f429be`（`fix(bot): 错误提示识别适配器包装消息中的平台错误码`），重新部署 release `20261022T131813Z`（commit `2f429be`，version 0.5.7/schema v12），current 指向该 release，另保留 `20261022T131121Z`、`20261022T114546Z`。第二次迁移前快照 `db-predeploy-20261022T131844841Z.sqlite`（sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`）；`/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署内只读 smoke **16/16**、带 Access token 的完整 smoke **24/24**；重启后 Discord Gateway `已连接`（21:18:48）。生产只读复验通过：服务层 events/roles/memories/metrics/deliveries、`lastErrorHint` 对 `network`/`qq_access_token_failed` 均正确、`/` 与 `/chatbots` 页面及新 bundle 均 200。**真实平台消息级联调待用户实发验收；Discord 尚缺 `role`/`reset`/`forget` 斜杠命令注册（实测缺口）。**自 v0.5.8 起 Telegram/Discord/Slack 平台与相关能力移除，本节作为历史记录保留。
 >
-> **v0.5.8 已部署**：2026-10-22 部署到生产 Pi（release `20261022T134852Z`，commit `96294e4`，version 0.5.8/schema v13）；current 指向该 release，保留上一 release `20261022T131813Z`（v0.5.7）。迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）`db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）；`/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。迁移 13 后 `bots` 仅 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留（目标 2/投递 4/事件 44/会话 4/记忆 3/角色 1/入站 4）。前端 `/` 与 `/bots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ 连接自检 `access_token 已获取`。**真实 QQ 消息级验收已由用户实发并于 2026-10-22 22:10 CST 确认通过**（21:59–22:08 CST 共 13 条真实入站事件全部符合预期；命令/自助命令/权限拒绝/文本 Chat 与图片端到端均有生产证据，详见下方“用户实发验收”）；用户原话“验收通过”。
+> **v0.5.8 已部署**：2026-10-22 部署到生产 Pi（release `20261022T134852Z`，commit `96294e4`，version 0.5.8/schema v13）；current 指向该 release，保留上一 release `20261022T131813Z`（v0.5.7）。迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）`db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）；`/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。迁移 13 后 `chatbots` 仅 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1），原 Discord Bot `853f85e6…` 在目标/队列/事件/会话/记忆/角色/入站表均 0 行；QQ 数据保留（目标 2/投递 4/事件 44/会话 4/记忆 3/角色 1/入站 4）。前端 `/` 与 `/chatbots` 均 200（bundle `index-C-fPrxEf.js` 644795 bytes）；QQ 连接自检 `access_token 已获取`。**真实 QQ 消息级验收已由用户实发并于 2026-10-22 22:10 CST 确认通过**（21:59–22:08 CST 共 13 条真实入站事件全部符合预期；命令/自助命令/权限拒绝/文本 Chat 与图片端到端均有生产证据，详见下方“用户实发验收”）；用户原话“验收通过”。
 
 > **v0.5.9 已部署**：2026-10-22 部署到生产 Pi（release `20261022T143451Z`，commit `97996dc`，version 0.5.9/schema v13，无迁移）；current 指向该 release，上一 release `20261022T134852Z`（v0.5.8）保留。
 > 迁移前 DB 快照（无迁移，仅部署保护）`db-predeploy-20261022T143520649Z.sqlite`（sha256 `14ca82ed9cfc54556faeadc4914fb1c797fc177aa5d1f2b27d3b2db72e42968b`）；`/healthz` = `{"ok":true,"version":"0.5.9","schemaVersion":13}`；
 > 部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**（首次因 Cloudflare Access 请求 20s 超时 1 项失败，重试后全通过，无代码/服务异常）。
-> 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除两个提示词变量、权限 640、APP_VERSION=0.5.9）；前端 `/` 与 `/bots` 200（bundle `index-CFrhFtH2.js` 644849 bytes）。
-> **用户实发验收（通过，2026-10-22 22:39–22:41 CST）**：22:39:52 CST 非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`，`bot_events` 记录 `command/ok/command_help`、`audit_log` 记录 `command=help`，事件 200 ack 且命令正常回复（无异常投递）；22:41 CST 用户原话“验收通过”。管理员 `/help` 全量、`/ask` 只回帮助不调用 AI、放宽后限速体验、Chat/图片回归为用户口头确认通过（服务端无单独事件证据），详见下方 v0.5.9 段。
+> 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除两个提示词变量、权限 640、APP_VERSION=0.5.9）；前端 `/` 与 `/chatbots` 200（bundle `index-CFrhFtH2.js` 644849 bytes）。
+> **用户实发验收（通过，2026-10-22 22:39–22:41 CST）**：22:39:52 CST 非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`，`chatbot_events` 记录 `command/ok/command_help`、`audit_log` 记录 `command=help`，事件 200 ack 且命令正常回复（无异常投递）；22:41 CST 用户原话“验收通过”。管理员 `/help` 全量、`/ask` 只回帮助不调用 AI、放宽后限速体验、Chat/图片回归为用户口头确认通过（服务端无单独事件证据），详见下方 v0.5.9 段。
 
 > **v0.5.10 已部署**：2026-10-22 部署到生产 Pi（release `20261022T152053Z`，commit `4619c91`，version 0.5.10/schema v13，无迁移）；current 指向该 release，上一 release `20261022T143451Z`（v0.5.9）保留。
 > 迁移前 DB 快照（仅部署保护）`db-predeploy-20261022T152150860Z.sqlite`（sha256 `3e48eb3359c00408903adde5ac642dd9f2b190e106e2d502112c3ff3ce7078e6`）；`/healthz` = `{"ok":true,"version":"0.5.10","schemaVersion":13}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。
-> 生产 env 实测：`BOT_AI_MEMORY_RETENTION_DAYS=365`/`BOT_AI_MEMORY_BATCH_MESSAGES=3`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`BOT_PROXY_URL` 均无；
+> 生产 env 实测：`CHATBOT_AI_MEMORY_RETENTION_DAYS=365`/`CHATBOT_AI_MEMORY_BATCH_MESSAGES=3`/`CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`CHATBOT_PROXY_URL` 均无；
 > 直连 QQ `checkBot` ok（access_token 已获取），启动日志“Bot 连通性检查完成” detail 仅 `internet:true, platforms:["qq"]`（无 proxyPort）；PC 隧道任务/进程已移除、PC/Pi 均无 18090 监听；前端 bundle `index-Bx6EBCIp.js`（644262 bytes）含“Pi 直连”，不含“代理端口/设备在线”。
 > 部署后增量备份 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已拉取；密钥包 `secrets-20261022T152333Z.tar.age` secrets=ok。
-> **用户实发验收（通过，2026-10-22 23:26–23:29 CST / UTC 15:26–15:29）**：用户 `5B7B32E7…` 实发 8 条事件全部 outcome=ok——4 条 Chat（含 1 条仅图片 `image/jpeg, size=145172`，`bot.ai.image` 记录 mime/size、`bot.ai.chat` 带 image 标志）、3 条 `/forget`（2 次 confirm：`bot.memory.forget removed:1`；1 次用法提示）、1 条 `/reset`（`bot.reset` 审计）。
-> **合并摘要生效**：4 条 Chat 仅产生 1 次 `bot.ai.memory`，detail `rounds:3`（15:28:37Z）；**远端会话删除生效**：部署前快照会话 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要）在 `/forget confirm` 后经 OpenCode API 查询均为 404，该用户本地会话/记忆已清空，其他用户（`E259399F…`、`6B7DAC9B…`）会话/记忆保持 200 未受影响，无“删除远端 AI 会话失败”日志。
-> 图片回归通过（真实 145172 B JPEG 端到端）；`/bots` 出站网络卡片按用户确认验收通过（服务端无单独 UI 证据）；23:29 CST 用户明确“完成验收”。详见下方 v0.5.10 段。
+> **用户实发验收（通过，2026-10-22 23:26–23:29 CST / UTC 15:26–15:29）**：用户 `5B7B32E7…` 实发 8 条事件全部 outcome=ok——4 条 Chat（含 1 条仅图片 `image/jpeg, size=145172`，`chatbot.ai.image` 记录 mime/size、`chatbot.ai.chat` 带 image 标志）、3 条 `/forget`（2 次 confirm：`chatbot.memory.forget removed:1`；1 次用法提示）、1 条 `/reset`（`chatbot.reset` 审计）。
+> **合并摘要生效**：4 条 Chat 仅产生 1 次 `chatbot.ai.memory`，detail `rounds:3`（15:28:37Z）；**远端会话删除生效**：部署前快照会话 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要）在 `/forget confirm` 后经 OpenCode API 查询均为 404，该用户本地会话/记忆已清空，其他用户（`E259399F…`、`6B7DAC9B…`）会话/记忆保持 200 未受影响，无“删除远端 AI 会话失败”日志。
+> 图片回归通过（真实 145172 B JPEG 端到端）；`/chatbots` 出站网络卡片按用户确认验收通过（服务端无单独 UI 证据）；23:29 CST 用户明确“完成验收”。详见下方 v0.5.10 段。
 
 > **v0.5.11 已部署并验收通过**：2026-10-23 最终部署 release `20261023T022831Z`（commit `931b10d`，v0.5.11/schema **v14**）；同版本早前 release `20261023T021339Z`（fix forget 回复）与 `20261023T014328Z`（首次 v0.5.11 部署）保留；已推送 main `c16a39b`、annotated Tag `v0.5.11`、GitHub Release [AntifieldComplexx v0.5.11](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.5.11)（Latest，2026-10-23 10:46 CST）。
-> 最终部署 smoke 16/16、完整 Access smoke **24/24**；`/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；运行配置 `365/3/120/3000/12/90/30`；生产 env 5 个 `BOT_MEMORY_*`，权限 `640 root:antifieldcloud`；迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）。
-> 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
-> 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
+> 最终部署 smoke 16/16、完整 Access smoke **24/24**；`/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；运行配置 `365/3/120/3000/12/90/30`；生产 env 5 个 `CHATBOT_MEMORY_*`，权限 `640 root:antifieldcloud`；迁移前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）。
+> 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `chatbot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
+> 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `chatbot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
 
 ## v0.8.1（**已发布：Tag `v0.8.1` + GitHub Release（2026-10-27）**；生产部署与只读/API/安全回归验收完成；v0.8.0 Minor 安全补丁；schema 保持 v17；OpenCode v2.1.4）
 
-- **状态**：**生产部署与验收完成（2026-10-27 CST），生产应用为 v0.8.1；已发布 annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1 ）**。上游 lofii-bot 为 **v0.6.1**（最低 v0.6.0，契约 v1）；schema 保持 **v17（无迁移）**；OpenCode **v2.1.4**；Node.js v26.12.1。
-- **范围**：修复 v0.8.0 Minor 补审计发现——`/say` 分块命令注入（SEC6-01 P1：控制 Token 必需、任意 ASCII `/` 与 C0 拒绝、上游 v0.6.1 逐行中和）、上游数据原型链/形状（SEC6-02 P2）、流式 2 MiB 响应上限、Token 脱敏大小写不敏感、事件缓存 ≤512 KiB、轮询 200 条、游标失败重试、`taskId` 校验、`LOFII_URL` 根地址限制、`sync-lofii-tokens.sh` 原子替换、前端状态归一化/部分失败可见警告/防竞态/历史形状与错误码文案。
+- **状态**：**生产部署与验收完成（2026-10-27 CST），生产应用为 v0.8.1；已发布 annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1 ）**。上游 mcbot 为 **v0.6.1**（最低 v0.6.0，契约 v1）；schema 保持 **v17（无迁移）**；OpenCode **v2.1.4**；Node.js v26.12.1。
+- **范围**：修复 v0.8.0 Minor 补审计发现——`/say` 分块命令注入（SEC6-01 P1：控制 Token 必需、任意 ASCII `/` 与 C0 拒绝、上游 v0.6.1 逐行中和）、上游数据原型链/形状（SEC6-02 P2）、流式 2 MiB 响应上限、Token 脱敏大小写不敏感、事件缓存 ≤512 KiB、轮询 200 条、游标失败重试、`taskId` 校验、`MCBOT_URL` 根地址限制、`sync-mcbot-tokens.sh` 原子替换、前端状态归一化/部分失败可见警告/防竞态/历史形状与错误码文案。
 - **本地验证（2026-10-27 实测）**：
   - `npm run check` 通过；`npm test` **572**（571 pass、1 skip；server=87 + scripts=4 共 91 文件）；`npm run test:web` **256**（48 文件）。
   - 服务端覆盖率 **Lines 93.04% / Branches 78.77% / Functions 88.67%**、前端 **Lines 55.83% / Branches 51.29% / Functions 48.66%**（门禁通过）。
   - `npm run build` 通过；`node scripts/check-version.mjs --quiet` 严格 `0.8.1` 通过（`deploy/env.example APP_VERSION=0.8.1`）。
   - `/say` 回归覆盖：只读模式 503 `lofii_control_disabled`、任意位置 `/` 400、C0 控制字符 400、720 字符边界、240 字符切分后的第二行命令行；taskId 空白/控制字符 400；`/history` 形状异常 502；事件缓存字节上限与游标失败重试。
-  - 上游 lofii-bot v0.6.1：`splitOutgoing` 逐行中和行首 `/`，新增 239/240/255/480 边界测试（另行提交，不属本仓库）。
+  - 上游 mcbot v0.6.1：`splitOutgoing` 逐行中和行首 `/`，新增 239/240/255/480 边界测试（另行提交，不属本仓库）。
 
 ### 生产部署与验收（2026-10-27 CST，实测）
 
@@ -56,23 +56,23 @@
 |---|---|
 | 应用部署 | release `/opt/antifieldcloud/releases/20261027T113055Z`，commit `5405a8d`；`/healthz` = v0.8.1/schema17（uptime/DB ok）；迁移前 DB 快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`）；上一生产 v0.8.0（release `20261027T094412Z`/commit `9ae5809`）保留为回滚点 |
 | 部署内只读 smoke | **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=备份整包加密/异地副本默认关闭） |
-| 完整公网 Access smoke | **36 PASS / 0 FAIL / 0 WARN / 2 SKIP**（**含本地备份任务标记检查，无 `-SkipLocalTaskCheck`**；期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；2 SKIP 同上）。此前两次失败（34/31）为 Cloudflare 隧道瞬断（curl 超时），恢复后重跑 36/0/0/2 全绿 |
+| 完整公网 Access smoke | **36 PASS / 0 FAIL / 0 WARN / 2 SKIP**（**含本地备份任务标记检查，无 `-SkipLocalTaskCheck`**；期望 0.8.1/schema17/OpenCode 2.1.4/mcbot 0.6.1；2 SKIP 同上）。此前两次失败（34/31）为 Cloudflare 隧道瞬断（curl 超时），恢复后重跑 36/0/0/2 全绿 |
 | Windows 备份任务重装 | `backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致（`7febb768…636d`）、任务 Ready；smoke 任务标记检查 PASS |
-| lofii-bot | **v0.6.1** release `/opt/lofii-bot/releases/20261027T111640Z`/commit `a0a28da`，仅 loopback；`sync-lofii-tokens.sh --check` **read=match control=match**；`LOFII_ENABLED=true`，`meta.lofii.event_cursor` 已更新 |
-| 已认证 API | `/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）；`/api/lofii/status` 200（enabled/reachable/controlEnabled/eventsSupported=true，version=0.6.1/contractVersion=1） |
+| mcbot | **v0.6.1** release `/opt/mcbot/releases/20261027T111640Z`/commit `a0a28da`，仅 loopback；`sync-mcbot-tokens.sh --check` **read=match control=match**；`MCBOT_ENABLED=true`，`meta.lofii.event_cursor` 已更新 |
+| 已认证 API | `/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）；`/api/mcbot/status` 200（enabled/reachable/controlEnabled/eventsSupported=true，version=0.6.1/contractVersion=1） |
 | `/say` 安全回归 | 240 字符填充 + `/op …` → **400 `message_must_not_start_with_slash`**；C0 控制字符 → **400 `invalid_request`**；审计无 `lofii.say`（仅 `lofii.task.start/stop`，拒绝请求不写审计） |
 | 只读 `/say` 503 | 由单元/集成测试覆盖；**生产控制 Token 已配置，未通过改配置实测**（不声称生产实测） |
 | 临时会话清理 | 验收临时会话已删除（计数 0） |
 | 日志/Token/环境证据 | journal 无 error、0 条 64hex；env 0640；`systemctl --failed` 为空；`alert_events` 中 `lofii_*` 仍为 0 |
 
-- **明确边界（不得写成已完成）**：真实 Lofii 告警联动未触发（`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；**v0.8.1 未重新做生产 UI 截图/视觉复验**（v0.8.0 的 Edge headless 视觉确认仍有效，用户仍可自行复核）；只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）；**v0.8.0 已发布 Tag+Release（Tag `v0.8.0`→commit `c5ec851`，publishedAt 2026-10-27T12:02:45Z）；v0.8.1 已发布 Tag+Release（Tag `v0.8.1`，GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`，2026-10-27）**。
-- **明确残余**：见 `docs/AUDIT.md` “v0.8.0 Minor 补审计” §3（告警幂等键 schema v18、告警风暴并发上限、Lofii 进程未纳监控、lastError 透传、loopback 端口范围、stop 不取消在途轮询、lastSuccessAt 未下发、GET 无限流、契约版本无守卫等）。
+- **明确边界（不得写成已完成）**：真实 mcbot 告警联动未触发（`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；**v0.8.1 未重新做生产 UI 截图/视觉复验**（v0.8.0 的 Edge headless 视觉确认仍有效，用户仍可自行复核）；只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）；**v0.8.0 已发布 Tag+Release（Tag `v0.8.0`→commit `c5ec851`，publishedAt 2026-10-27T12:02:45Z）；v0.8.1 已发布 Tag+Release（Tag `v0.8.1`，GitHub Release `AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复`，2026-10-27）**。
+- **明确残余**：见 `docs/app/AUDIT.md` “v0.8.0 Minor 补审计” §3（告警幂等键 schema v18、告警风暴并发上限、mcbot 进程未纳监控、lastError 透传、loopback 端口范围、stop 不取消在途轮询、lastSuccessAt 未下发、GET 无限流、契约版本无守卫等）。
 
-## v0.8.0（**已发布：Tag `v0.8.0` + GitHub Release（2026-10-27）**；生产部署与只读/API 验收已完成，现为回滚点；Lofii 对接 + `/minecraft` 合并标签；schema 保持 v17；OpenCode v2.1.4）
+## v0.8.0（**已发布：Tag `v0.8.0` + GitHub Release（2026-10-27）**；生产部署与只读/API 验收已完成，现为回滚点；mcbot 对接 + `/minecraft` 合并标签；schema 保持 v17；OpenCode v2.1.4）
 
-- **状态**：**生产部署与只读/API 验收完成（2026-10-27 CST）**；生产应用 **v0.8.0**（release `/opt/antifieldcloud/releases/20261027T094412Z`，commit `9ae5809`，`/healthz` v0.8.0/schema17），Lofii 已启用（`LOFII_ENABLED=true`，读/控制 Token 均配置）。**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0 ，publishedAt `2026-10-27T12:02:45Z`）**；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 Lofii 告警联动未触发（告警映射/webhook/Bot 通知由单元/集成测试覆盖）。**后续 v0.8.1 已部署并验收（2026-10-27），见上方 v0.8.1 节；本版保留为回滚点**。
-- **范围**：服务端轮询独立 Lofii Bot（仅 loopback `127.0.0.1:3010`，lofii-bot v0.6.0 契约 v1）的 `/status` 与 `/events/recent`，缓存快照与最近 100 条事件；`GET /api/lofii/status|history`、`POST /api/lofii/tasks|tasks/stop|tasks/resume|move|say`；读/控制 Token 分离、控制 Token 为空即只读；上游 `alert` 映射为 `status='event'` 告警事件 + `meta.lofii.event_cursor` 游标；`/minecraft` 合并为「服务器 / Lofii」双标签（键盘可操作、`?tab=lofii`/`#lofii` 深链）；告警历史新增 `event` 状态与 `lofii_*` 事件标签。
-- **数据/配置**：schema 保持 **v17（无迁移）**；新增 `LOFII_ENABLED`（默认 false）、`LOFII_URL`（默认 `http://127.0.0.1:3010`）、`LOFII_READ_TOKEN`/`LOFII_CONTROL_TOKEN`（`scripts/sync-lofii-tokens.sh` 同步）、`LOFII_TIMEOUT_MS=2500`、`LOFII_POLL_MS=5000`、`LOFII_ALERTS_ENABLED=true`；`bootstrap-env.sh`/`deploy/env.example`/`smoke.ps1` 已同步。OpenCode 仍为 **v2.1.4**，Node.js v26.12.1。
+- **状态**：**生产部署与只读/API 验收完成（2026-10-27 CST）**；生产应用 **v0.8.0**（release `/opt/antifieldcloud/releases/20261027T094412Z`，commit `9ae5809`，`/healthz` v0.8.0/schema17），mcbot 已启用（`MCBOT_ENABLED=true`，读/控制 Token 均配置）。**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0 ，publishedAt `2026-10-27T12:02:45Z`）**；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，mcbot 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 mcbot 告警联动未触发（告警映射/webhook/Bot 通知由单元/集成测试覆盖）。**后续 v0.8.1 已部署并验收（2026-10-27），见上方 v0.8.1 节；本版保留为回滚点**。
+- **范围**：服务端轮询独立 mcbot Bot（仅 loopback `127.0.0.1:3010`，mcbot v0.6.0 契约 v1）的 `/status` 与 `/events/recent`，缓存快照与最近 100 条事件；`GET /api/mcbot/status|history`、`POST /api/mcbot/tasks|tasks/stop|tasks/resume|move|say`；读/控制 Token 分离、控制 Token 为空即只读；上游 `alert` 映射为 `status='event'` 告警事件 + `meta.lofii.event_cursor` 游标；`/minecraft` 合并为「服务器 / mcbot」双标签（键盘可操作、`?tab=lofii`/`#lofii` 深链）；告警历史新增 `event` 状态与 `lofii_*` 事件标签。
+- **数据/配置**：schema 保持 **v17（无迁移）**；新增 `MCBOT_ENABLED`（默认 false）、`MCBOT_URL`（默认 `http://127.0.0.1:3010`）、`MCBOT_READ_TOKEN`/`MCBOT_CONTROL_TOKEN`（`scripts/sync-mcbot-tokens.sh` 同步）、`MCBOT_TIMEOUT_MS=2500`、`MCBOT_POLL_MS=5000`、`MCBOT_ALERTS_ENABLED=true`；`bootstrap-env.sh`/`deploy/env.example`/`smoke.ps1` 已同步。OpenCode 仍为 **v2.1.4**，Node.js v26.12.1。
 - **本地验证（2026-10-27 实测）**：
   - `npm run check` 通过（`npm run typecheck` + `npm run lint` + `npm test` + `npm run test:web`）。
   - `npm test` **566**（565 pass、1 skip；server=87 + scripts=4 共 91 个测试文件）。
@@ -82,37 +82,37 @@
   - `npm run test:web:coverage` 通过：前端 **Lines 55.48% / Branches 49.91% / Functions 48.45%**（门禁 50/42/45）。
   - `npm run build` 通过：`web/dist/assets/index-DHjowEA5.js` 761.09 kB（gzip 227.12 kB）、`index-OhupI5MS.css` 92.52 kB。
   - `node scripts/check-version.mjs --quiet`：README/CHANGELOG/ACCEPTANCE/DEPLOY/AGENTS 与 package.json `0.8.0` 一致；`deploy/env.example` `APP_VERSION=0.8.0`；schema/OpenCode 当前事实 `v17`/`v2.1.4`。
-  - 新增/扩展测试：`server/test/lofii-client.test.ts`、`lofii-service.test.ts`、`lofii-routes.test.ts`、`web/src/components/lofii/LofiiPanel.test.tsx`、`web/src/pages/Minecraft.test.tsx`、`web/src/api/client.lofii.test.ts`；`alerts.test.ts`（`recordExternal`）、`config-validation.test.ts`（`LOFII_*`）、`AlertsCard.test.tsx`（`event` 状态）同步扩展。
+  - 新增/扩展测试：`server/test/lofii-client.test.ts`、`lofii-service.test.ts`、`lofii-routes.test.ts`、`web/src/components/lofii/mcbotPanel.test.tsx`、`web/src/pages/Minecraft.test.tsx`、`web/src/api/client.lofii.test.ts`；`alerts.test.ts`（`recordExternal`）、`config-validation.test.ts`（`MCBOT_*`）、`AlertsCard.test.tsx`（`event` 状态）同步扩展。
 - **生产部署与验收（2026-10-27 CST，实测）**：
   1. **应用部署**：release `/opt/antifieldcloud/releases/20261027T094412Z`，commit `9ae5809`；`/healthz` = `{"ok":true,"version":"0.8.0","schemaVersion":17,"db":"ok","pendingBackups":0}`；迁移前 DB 快照 `db-predeploy-20261027T094446781Z.sqlite`（sha256 `7606f2e33ac9582a22b65b9f17871761602993476954d9e688be391b047ef65f`）；env 备份 `env.bak.lofii.20261027T094610Z`、`env.lofii-tokens.bak.20261027T094617Z`。
-  2. **部署内只读 smoke**：**26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP 为备份整包加密/异地副本默认关闭；含 Lofii Bot `active` 检查）。
-  3. **完整公网 Access smoke**（`scripts/smoke.ps1 -PiHost <直连 IP> -AppUrl https://app.<domain> -AiUrl https://ai.<domain> -BackupRoot <本地备份目录> -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；真实域名/主机/目录按 `.local` 替换，凭据不打印）：**35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭），覆盖 Lofii Bot active + version 0.6.0 + contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。**`-SkipLocalTaskCheck` 原因**：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0；记为**用户手动步骤/残余，不是失败**（未声称任务已刷新）。
-  4. **lofii-bot v0.6.0**：release `/opt/lofii-bot/releases/20261027T092737Z`；`/healthz` `version=0.6.0`/`contractVersion=1`；读 Token `/events/recent` 200；无 Token/控制 Token 访问读接口 401（Token 分离生效）；`limit=201` 400（参数边界）。
-  5. **Token 同步**：`scripts/sync-lofii-tokens.sh --check` 同步前 `mismatch/mismatch`，同步后 `match/match`；脚本不回显 Token、自动备份 env。
-  6. **Lofii 启用与轮询**：`LOFII_ENABLED=true`（读/控制 Token 均配置）并重启，`/healthz` 仍 v0.8.0；`meta.lofii.event_cursor` 已建立 `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`，证明 `/status` + `/events/recent` 轮询成功（应用重启后游标写入）。
-  7. **生产 API 探针**（临时验收会话，已删除；`sessions` 中 `user_agent='v080-acceptance'` 计数 0）：`GET /api/lofii/status` 200，`enabled/reachable/eventsSupported/controlEnabled` 均 true，`version=0.6.0`/`contractVersion=1`/`events=1`；`GET /api/version` 200，`lofiiEnabled/lofiiControlEnabled` 均 true；`GET /api/lofii/history?kind=samples&limit=2` 200 `count=2`；无 CSRF 的 `POST /api/lofii/*` 返回 `403 csrf_failed`。
-  8. **控制面**：`POST /api/lofii/tasks`（`patrol`）200、`POST /api/lofii/tasks/stop` 200；结束后 Lofii task `idle`、`queue=0`、`pendingResume=0`；审计 `lofii.task.start target=patrol`、`lofii.task.stop target=task`，不记录聊天正文。
-  9. **生产 UI 视觉确认（已完成）**：使用 Edge 157 headless（CDP）经本地 SSH 隧道（`127.0.0.1:33000` → Pi `127.0.0.1:3000`）打开生产 `http://127.0.0.1:3000/minecraft?tab=lofii`；临时验收会话 `user_agent='v080-ui-acceptance'`（10 分钟）设置 host-only `af_session`/`af_csrf`；页面标题 `Minecraft · AntifieldComplexx · 个人工作台`，Lofii 标签页正常渲染（状态卡/任务/移动/聊天/事件流/历史/告警），截图 756×900 viewport；临时会话已删除（计数 0），SSH 隧道与 Edge 已关闭。截图仅存本机 `.local/`（gitignored，不进入公开文档）；用户仍可在自己的浏览器复核（非阻塞）。
-  10. **边界与未做**：未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知），`alert_events` 中暂无 `lofii_*`，告警映射/webhook/Bot 通知由单元/集成测试覆盖；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败）；**已发布**：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release（publishedAt `2026-10-27T12:02:45Z`）。
-- **明确残余**：见 `docs/AUDIT.md` v0.8.0 节与 `docs/SECURITY.md` §4（Lofii 告警仅事件语义、聊天/事件不持久化、轮询延迟/单实例、真实告警联动待触发）。Windows 备份任务标记已在 v0.8.1 重装验证（appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 一致、任务 Ready）；v0.8.0 与 v0.8.1 均已 Tag+Release。
+  2. **部署内只读 smoke**：**26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP 为备份整包加密/异地副本默认关闭；含 mcbot Bot `active` 检查）。
+  3. **完整公网 Access smoke**（`scripts/smoke.ps1 -PiHost <直连 IP> -AppUrl https://app.<domain> -AiUrl https://ai.<domain> -BackupRoot <本地备份目录> -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedMcbotVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；真实域名/主机/目录按 `.local` 替换，凭据不打印）：**35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭），覆盖 mcbot Bot active + version 0.6.0 + contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。**`-SkipLocalTaskCheck` 原因**：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0；记为**用户手动步骤/残余，不是失败**（未声称任务已刷新）。
+  4. **mcbot v0.6.0**：release `/opt/mcbot/releases/20261027T092737Z`；`/healthz` `version=0.6.0`/`contractVersion=1`；读 Token `/events/recent` 200；无 Token/控制 Token 访问读接口 401（Token 分离生效）；`limit=201` 400（参数边界）。
+  5. **Token 同步**：`scripts/sync-mcbot-tokens.sh --check` 同步前 `mismatch/mismatch`，同步后 `match/match`；脚本不回显 Token、自动备份 env。
+  6. **mcbot 启用与轮询**：`MCBOT_ENABLED=true`（读/控制 Token 均配置）并重启，`/healthz` 仍 v0.8.0；`meta.lofii.event_cursor` 已建立 `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`，证明 `/status` + `/events/recent` 轮询成功（应用重启后游标写入）。
+  7. **生产 API 探针**（临时验收会话，已删除；`sessions` 中 `user_agent='v080-acceptance'` 计数 0）：`GET /api/mcbot/status` 200，`enabled/reachable/eventsSupported/controlEnabled` 均 true，`version=0.6.0`/`contractVersion=1`/`events=1`；`GET /api/version` 200，`lofiiEnabled/lofiiControlEnabled` 均 true；`GET /api/mcbot/history?kind=samples&limit=2` 200 `count=2`；无 CSRF 的 `POST /api/mcbot/*` 返回 `403 csrf_failed`。
+  8. **控制面**：`POST /api/mcbot/tasks`（`patrol`）200、`POST /api/mcbot/tasks/stop` 200；结束后 mcbot task `idle`、`queue=0`、`pendingResume=0`；审计 `lofii.task.start target=patrol`、`lofii.task.stop target=task`，不记录聊天正文。
+  9. **生产 UI 视觉确认（已完成）**：使用 Edge 157 headless（CDP）经本地 SSH 隧道（`127.0.0.1:33000` → Pi `127.0.0.1:3000`）打开生产 `http://127.0.0.1:3000/minecraft?tab=lofii`；临时验收会话 `user_agent='v080-ui-acceptance'`（10 分钟）设置 host-only `af_session`/`af_csrf`；页面标题 `Minecraft · AntifieldComplexx · 个人工作台`，mcbot 标签页正常渲染（状态卡/任务/移动/聊天/事件流/历史/告警），截图 756×900 viewport；临时会话已删除（计数 0），SSH 隧道与 Edge 已关闭。截图仅存本机 `.local/`（gitignored，不进入公开文档）；用户仍可在自己的浏览器复核（非阻塞）。
+  10. **边界与未做**：未触发真实 mcbot 告警（避免向生产 Bot/外部通道发测试通知），`alert_events` 中暂无 `lofii_*`，告警映射/webhook/Bot 通知由单元/集成测试覆盖；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败）；**已发布**：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release（publishedAt `2026-10-27T12:02:45Z`）。
+- **明确残余**：见 `docs/app/AUDIT.md` v0.8.0 节与 `docs/app/SECURITY.md` §4（mcbot 告警仅事件语义、聊天/事件不持久化、轮询延迟/单实例、真实告警联动待触发）。Windows 备份任务标记已在 v0.8.1 重装验证（appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 一致、任务 Ready）；v0.8.0 与 v0.8.1 均已 Tag+Release。
 
 ## v0.7.3（已发布：Tag `v0.7.3` + GitHub Release [AntifieldComplexx v0.7.3](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.7.3)；已部署生产并完成读范围/QQ 正向验收；Bot 提示词文档化 + 按需 read；schema 保持 v17）
 
-- **范围**：角色卡只在会话创建时发送；后续轮不发送角色卡/记忆正文；`BotContextStore` 文档化（scope 哈希、原子写、清理/sweep）；OpenCode 仅放行当前作用域 `role.md`/`memory.md` 的 `read`；`BOT_AI_CONTEXT_READ_ENABLED`（默认 false）/`BOT_CONTEXT_DIR`；权限拒绝 fail-closed；角色/目标/Bot/forget 生命周期清理。
+- **范围**：角色卡只在会话创建时发送；后续轮不发送角色卡/记忆正文；`ChatbotContextStore` 文档化（scope 哈希、原子写、清理/sweep）；OpenCode 仅放行当前作用域 `role.md`/`memory.md` 的 `read`；`CHATBOT_AI_CONTEXT_READ_ENABLED`（默认 false）/`CHATBOT_CONTEXT_DIR`；权限拒绝 fail-closed；角色/目标/Bot/forget 生命周期清理。
 - **本地验证（2026-10-27）**：`npm test` **521**（1 skip）、`npm run test:web` **222**（44 文件）、服务端覆盖率 **Lines 92.93% / Branches 78.37% / Functions 88.55%**、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格 `0.7.3`）通过。
 - **生产部署（2026-10-27 14:01 CST / 06:01Z）**：release `/opt/antifieldcloud/releases/20261027T060134Z`，commit **aedc3c7**；`/healthz` = `{"ok":true,"version":"0.7.3","schemaVersion":17,"db":"ok","pendingBackups":0}`；迁移前 DB 快照 `db-predeploy-20261027T060230013Z.sqlite`（sha256 `300a3957921504fd9ec487c07c5c8e3c4604ef1e374ae24dfbfb5a6dafe593ad`）；env 备份 `env.bak.20261027T060355Z`/`env.bak.20261027T060612Z`；unit 备份 `antifieldcloud.service.20261027T060355Z`；上下文目录 `/var/lib/antifieldcloud-context`（2750 `antifieldcloud:opencode`）。
 - **部署 smoke**：首次 24 通过/1 失败/2 跳过，唯一失败为 unit 尚未安装（预期）；更新 unit + env 并重启后完整 Access smoke **33 通过 / 0 失败 / 0 警告 / 2 跳过**（当时跳过 Windows 任务标记）；用户重装任务后最终完整 smoke **34 通过 / 0 失败 / 0 警告 / 2 跳过**（含任务标记与本地备份旁文件校验）。
 - **OpenCode 读范围矩阵（生产，7/7 PASS）**：作用域内 `read inside.md` 正向；作用域外哨兵、`/etc/antifieldcloud/env`、`/var/lib/antifieldcloud/db.sqlite`、其他作用域 `role.md`、shell canary、prompt injection 读取 `/etc/passwd` 全部拒绝；`perms` 创建返回 200，`external_directory` + 精确 `read` 规则被接受。深度复验检查工具段：作用域内 `read status=completed` 并返回哨兵；作用域外/env/DB/其他作用域/`/etc/passwd` 的 `read` 均为 `status=error`（文本 DENIED），shell 无工具调用且 canary 未创建。脚本结束删除临时会话与目录。
-- **启用**：`bot_ai_tool_mode` 由 `mcp:send` 变为 `mcp:send:read:aad221f1`；`bot.ai.tool_mode_reset` 审计记录 `sessions:6`，随后 `bot_ai_sessions` 为 0；`BOT_AI_CONTEXT_READ_ENABLED=true`。
-- **真实 QQ 验收（用户实发，2026-10-27）**：私聊 `/reset` 后两条消息，`bot.ai.chat` 三条审计均 `context:"docs"`（`docBytes` 310/310，群聊 928；`memoryItems:0`，`memoryEnabled:true`）；上下文目录生成私聊 `role.md` 249 B/`memory.md` 61 B 与群聊 `role.md` 861 B/`memory.md` 67 B（0640、属组 opencode）。私聊首轮 prompt 851 字符含 `[角色卡：lofii]`+文档段，后续 prompt 763 字符不再含角色卡正文但保留 `role.md`/`memory.md` 路径；模型实际调用 `read` 读取两份文档；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档段。`docs/BOT.md` 与 `docs/DEPLOY.md` §3.7 记录细节。
+- **启用**：`chatbot_ai_tool_mode` 由 `mcp:send` 变为 `mcp:send:read:aad221f1`；`chatbot.ai.tool_mode_reset` 审计记录 `sessions:6`，随后 `chatbot_ai_sessions` 为 0；`CHATBOT_AI_CONTEXT_READ_ENABLED=true`。
+- **真实 QQ 验收（用户实发，2026-10-27）**：私聊 `/reset` 后两条消息，`chatbot.ai.chat` 三条审计均 `context:"docs"`（`docBytes` 310/310，群聊 928；`memoryItems:0`，`memoryEnabled:true`）；上下文目录生成私聊 `role.md` 249 B/`memory.md` 61 B 与群聊 `role.md` 861 B/`memory.md` 67 B（0640、属组 opencode）。私聊首轮 prompt 851 字符含 `[角色卡：lofii]`+文档段，后续 prompt 763 字符不再含角色卡正文但保留 `role.md`/`memory.md` 路径；模型实际调用 `read` 读取两份文档；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档段。`docs/app/CHATBOT.md` 与 `docs/app/DEPLOY.md` §3.7 记录细节。
 - **恢复演练**：首次 `20261027T061021Z` 因 `drill-verify.mjs` 未把 manifest `since` 放入 `details` 而误报 `chain_since_missing`（既有 drill 链校验缺陷）；修复并补单测后，`20261027T061319Z` **通过**：full + 5 inc 链连续、SHA、解包、DB integrity/FK/schema17、世界归档 SHA/level.dat；`/var/lib/antifieldcloud/drill-status.json` 已写回 `ok:true`、`incCount:5`、`schemaVersion:17`。
 - **发布**：Tag `v0.7.3` + GitHub Release [AntifieldComplexx v0.7.3](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.7.3) 已创建；Windows 每日备份任务已由用户以管理员 PowerShell 重装，标记 0.7.3 且脚本 SHA 一致。
 - **可选复验**：生产未执行破坏性 `/forget confirm`、多成员群聊第二轮回读与人为 permissions 拒绝演练（由自动化测试覆盖）。
-- **默认行为**：`BOT_AI_CONTEXT_READ_ENABLED=false` 时与 v0.7.2 内联提示词一致；上下文目录为派生数据，不进入备份。回滚只需设 `false` 重启。
+- **默认行为**：`CHATBOT_AI_CONTEXT_READ_ENABLED=false` 时与 v0.7.2 内联提示词一致；上下文目录为派生数据，不进入备份。回滚只需设 `false` 重启。
 
 ## v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口；schema v17；OpenCode v2.1.4）
 
-- **范围**：审计失败持久化、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew`、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径测试；Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务、rclone 安装。
+- **范围**：审计失败持久化、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew`、ChatbotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径测试；Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务、rclone 安装。
 - **本地验证（2026-10-25）**：`npm test` **497**、`npm run test:web` **222**（44 文件）、服务端覆盖率 **Lines 92.85% / Branches 78.35% / Functions 88.11%**；`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格 `0.7.2`）通过。
 - **生产部署（2026-10-25 21:29 CST）**：release `/opt/antifieldcloud/releases/20261025T132950Z`，commit **eb74382**；`/healthz` = `{"ok":true,"version":"0.7.2","schemaVersion":17,"db":"ok","pendingBackups":0}`；迁移前快照 `db-predeploy-20261025T133023319Z.sqlite`（sha256 `127c1a3e4d9e2a64c3ebc133a2e1a8766333a293984bb3ced3153a1ccfd153de`）；部署内 smoke **24/0/1/2**、完整 Access smoke **33/0/0/2**（Windows 每日备份任务标记已刷新到 0.7.2）。生产 env 已补 `BACKUP_IMPORT_RETENTION_DAYS=90`/`ALERT_REPEAT_HOURS=24`（env 备份 `env.bak.20261025T133500Z`）。
 - **恢复演练**：新建 full `snapshot-20261025T133725908Z-full.tar.gz`（711204 bytes，sha256 `1cd0e0e6…a2c`），PC 拉取/ack；`drill.ps1 -ExpectedSchemaVersion 17` 报告 `20261025T133743Z` **通过**（链连续性、SHA、解包、DB integrity/FK/schema、世界归档）。
@@ -121,45 +121,45 @@
 
 ## v0.7.1（已发布：Tag `v0.7.1` + GitHub Release；群聊共享会话；schema 保持 v16；OpenCode v2.1.4）
 
-- **问题**：真实群聊中，`bot_ai_sessions` 仍按 `(bot_id,target_external_id,user_id,mode)` 为每个成员分别建会话；模型只能看到单个用户的历史，前版加入的用户名 head 无法发挥多用户上下文作用。
+- **问题**：真实群聊中，`chatbot_ai_sessions` 仍按 `(chatbot_id,target_external_id,user_id,mode)` 为每个成员分别建会话；模型只能看到单个用户的历史，前版加入的用户名 head 无法发挥多用户上下文作用。
 - **修复**：群聊（`target.kind = group`）统一使用合成会话键 `__group__`，同一群只复用一个 OpenCode Chat 会话；群内 Chat 批次/命令按群目标串行，避免多成员并发写同一会话；私聊保持每用户独立会话。真实用户仍用于限流、记忆 scope、审计和发送工具 turn token；用户消息继续带用户名 head。
-- **兼容/清理**：首次使用群共享会话时删除旧版按用户拆分的 `bot_ai_sessions` 群映射，并尽力异步删除远端旧会话；旧摘要迁移参与者查询排除共享合成键。schema 保持 **v16（无迁移）**。
+- **兼容/清理**：首次使用群共享会话时删除旧版按用户拆分的 `chatbot_ai_sessions` 群映射，并尽力异步删除远端旧会话；旧摘要迁移参与者查询排除共享合成键。schema 保持 **v16（无迁移）**。
 - **本地验证（2026-10-25 实测）**：`npm test` **491**（新增 `bot-v071.test.ts` 3 例、`bot-ai.test.ts` 1 例；Bot 定向 **193**）；`npm run test:web` **222**；服务端覆盖率 **Lines 92.75% / Branches 78.23% / Functions 87.82%**；前端覆盖率不变（52.31/47.32/45.02）；`npm run check`、`npm run build`（`index-C0QZV4hZ.js` 726.72 kB）、`node scripts/check-version.mjs`（严格 `version ok 0.7.1`）通过。
 - **生产部署（2026-10-25 11:18 CST）**：release `/opt/antifieldcloud/releases/20261025T031856Z`，commit **d8bdfc5**；`/healthz` = `{"ok":true,"version":"0.7.1","schemaVersion":16,"db":"ok","pendingBackups":0}`；迁移前快照 `db-predeploy-20261025T031929034Z.sqlite`（sha256 `c61e1e329ee6d0b141723ecae39648a7a1997f810f8e6dffff3eedc2c28047cc`）；部署内只读 smoke **23/23**、完整 Access smoke **33/0/0/2**。
-- **运维清理与任务刷新（2026-10-25 12:49/20:03 CST）**：备份 `/etc/antifieldcloud/env` 到 `env.bak.20261025T124600Z`（sha256 `a139e46f…b68`）后执行 `bootstrap-env.sh --force --prune-unknown`，删除 2 个废弃键 `BOT_PUBLISH_MAX_MEDIA_BYTES`、`BOT_DISCORD_GATEWAY_ENABLED`；`BOT_SECRET_KEY`/`OPENCODE_PASSWORD`/Bot AI 配置等敏感/运行值逐项哈希一致；权限仍 `0640 root:antifieldcloud`；重启后 `/healthz` 正常。Windows 备份任务已以管理员重跑，安装标记 `appVersion=0.7.1`、`scriptSha256` 与仓库/已安装脚本一致；手动 `Start-ScheduledTask` 运行 **LastTaskResult=0**，拉取新归档 `snapshot-20261025T120349435Z-inc.tar.gz`（290407 bytes，secrets=ok），NextRunTime 2026-10-26 12:00。备份加密 `BACKUP_ARCHIVE_ENCRYPTION=false`、异地副本未配置，保持关闭。
+- **运维清理与任务刷新（2026-10-25 12:49/20:03 CST）**：备份 `/etc/antifieldcloud/env` 到 `env.bak.20261025T124600Z`（sha256 `a139e46f…b68`）后执行 `bootstrap-env.sh --force --prune-unknown`，删除 2 个废弃键 `CHATBOT_PUBLISH_MAX_MEDIA_BYTES`、`CHATBOT_DISCORD_GATEWAY_ENABLED`；`CHATBOT_SECRET_KEY`/`OPENCODE_PASSWORD`/Bot AI 配置等敏感/运行值逐项哈希一致；权限仍 `0640 root:antifieldcloud`；重启后 `/healthz` 正常。Windows 备份任务已以管理员重跑，安装标记 `appVersion=0.7.1`、`scriptSha256` 与仓库/已安装脚本一致；手动 `Start-ScheduledTask` 运行 **LastTaskResult=0**，拉取新归档 `snapshot-20261025T120349435Z-inc.tar.gz`（290407 bytes，secrets=ok），NextRunTime 2026-10-26 12:00。备份加密 `BACKUP_ARCHIVE_ENCRYPTION=false`、异地副本未配置，保持关闭。
 - **部署代码验证**：在 Pi 上导入当前 release 的 `OpenCodeBotAi`，以临时 SQLite + 假 OpenCode 模拟同群两个成员：只创建 **1** 个会话、只保留 `user_id=__group__` 一条映射，旧版两条分用户映射被清理并各发一次远端 DELETE；两次对话均复用同一 `session_id`。生产启动后群聊旧分用户映射已清零（群目标会话记录 0 条）。
 - **真实群聊验收（2026-10-25 12:01 CST）**：在生产 Bot Test 群由两个不同成员先后 @Bot 发言；数据库该群只有 **1** 条 `__group__` 会话映射（另一群同样唯一），共享 OpenCode 会话中记录 **3 条用户 prompt**（两个不同成员的 `<用户名>：` head）与 **4 条 assistant 消息**，证明多用户消息进入同一会话、模型可基于共享历史回复。用户确认验收通过；Tag `v0.7.1` + GitHub Release 已发布。
 
 ## v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；审计修复 + 备份整包加密 + 异地副本默认关闭；schema 保持 v16；OpenCode v2.1.4）
 
 - **交付范围**：
-  - 第六轮深度审计去重后 **P0=0、P1=3、P2=26、P3=73** 全部处置：P1（WEB-01 长任务超时、OPS-01 OpenCode 2.1.4 门禁、SEC-10 AI 主机 SSO 写放大）、P2 26 条全部修复；P3 可修小项随版修，架构性/已接受项写入 `docs/AUDIT.md` 第六轮 §5/§9、`docs/ARCHITECTURE.md` §11、`docs/SECURITY.md` §4 的明确残余。
+  - 第六轮深度审计去重后 **P0=0、P1=3、P2=26、P3=73** 全部处置：P1（WEB-01 长任务超时、OPS-01 OpenCode 2.1.4 门禁、SEC-10 AI 主机 SSO 写放大）、P2 26 条全部修复；P3 可修小项随版修，架构性/已接受项写入 `docs/app/AUDIT.md` 第六轮 §5/§9、`docs/app/ARCHITECTURE.md` §11、`docs/app/SECURITY.md` §4 的明确残余。
   - **备份整包加密（默认关闭）**：独立 age 密钥、归档即密文、明文哈希/大小外置 sidecar（`schema:2`）、失败关闭、2× 空间预算、崩溃一致性顺序、>24h `*.plain.tmp` 清理；Pi 不持私钥，Web 对 `.age` 一律 `409 archive_encrypted`。
   - **异地副本（默认关闭，PC 端）**：`backup-offsite.mjs/.ps1` 只上传 `.age`、链感知保留、上传后校验、状态回写 Pi、`offsite_overdue` 告警（缺失/disabled 不误报）；`install-backup-task.ps1 -InstallOffsiteTask` 安装任务。
-  - **Bot/安全**：工具隔离 fail-closed（`503 bot_ai_tool_isolation_unavailable`，10 分钟重试窗口）、群共享记忆归属 `member_openid` + 一次性迁移、`/forget` 清本人群条目、孤儿清理保守化、混批/@、工具缓冲补发、`/search` 串行、Webhook 限流桶分离；审计策略 D-17（事务外 best-effort + `/api/version.audit` 诊断）。
+  - **Bot/安全**：工具隔离 fail-closed（`503 chatbot_ai_tool_isolation_unavailable`，10 分钟重试窗口）、群共享记忆归属 `member_openid` + 一次性迁移、`/forget` 清本人群条目、孤儿清理保守化、混批/@、工具缓冲补发、`/search` 串行、Webhook 限流桶分离；审计策略 D-17（事务外 best-effort + `/api/version.audit` 诊断）。
   - **运维/文档**：OPS-07 占位符化、OPS-09 `deploy/host/` 模板 + 密钥包可选打包、OPS-10 `deploy/tool-versions.json` + check-version 交叉校验、smoke 新检查、部署回滚与 release 元数据；文档统一 0.7.0 / schema v16 / OpenCode 2.1.4。
-- **数据/配置/兼容**：schema 保持 **v16（无迁移）**；新增 `BACKUP_ARCHIVE_ENCRYPTION`、`BACKUP_AGE_RECIPIENT_FILE`、`BACKUP_OFFSITE_STATUS_FILE`、`ALERT_OFFSITE_MAX_AGE_HOURS`（`bootstrap-env.sh` 已纳管）；OpenCode 目标 **v2.1.4**（升级/回滚/14 项矩阵见 `docs/DEPLOY.md` §3.2）。
+- **数据/配置/兼容**：schema 保持 **v16（无迁移）**；新增 `BACKUP_ARCHIVE_ENCRYPTION`、`BACKUP_AGE_RECIPIENT_FILE`、`BACKUP_OFFSITE_STATUS_FILE`、`ALERT_OFFSITE_MAX_AGE_HOURS`（`bootstrap-env.sh` 已纳管）；OpenCode 目标 **v2.1.4**（升级/回滚/14 项矩阵见 `docs/app/DEPLOY.md` §3.2）。
 - **本地门禁（2026-10-25 实测）**：`npm run check` 通过；`npm test` **487**（server+scripts，含 29 个 scripts 用例；Bot 定向 **189**）；`npm run test:web` **222**（44 文件）；服务端覆盖率 **Lines 92.67% / Branches 78.14% / Functions 87.95%**（`npm run test:coverage` exit 0）；前端覆盖率 **Lines 52.31% / Branches 47.32% / Functions 45.02% / Statements 50.12%**（`npm run test:web:coverage` exit 0）；`npm run build` 通过（`index-C0QZV4hZ.js` 726.72 kB，gzip 216.29 kB）；`node scripts/check-version.mjs` 严格模式 `version ok 0.7.0`；`node scripts/check-prod-deps.mjs` 通过；PS 5.1 解析 7/7、BOM 齐全（ops 验证）。**D-20 追加**：Bot 连续外发 1000ms 间隔（分段/发送工具/兜底/队列统一，按 AppID 串行，测试注入 0）已由 `bot-send-interval.test.ts` 覆盖并通过。**DSML 回显修复**：`bot-dsml.test.ts` 覆盖原始工具调用文本提取、无 text 参数固定兜底、发送工具关闭路径共 5 例。
 - **OpenCode v2.1.4（2026-10-25 08:21 CST 生产只读升级）**：升级前已完成 v2.1.3 二进制/data/env/unit/MCP 备份（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e68f25e69045a7ec5f518fccbad57e8f25d7853e66ba9677ddfaf28b19`；data/env/unit/config 同时间戳）；`opencode --version` **v2.1.4**、service active；矩阵 **V1–V9、V14 PASS**（版本/服务、Basic list 5 会话、deny-all 与 allow 工具会话、deny-all 工具负路径未写文件、wait 204、assistant `reasoning+text`/`finish=stop`、图片 prompt 识别 Red、MCP 每服务 1 进程、`/api/mcp` 200、磁盘 38G 余量/内存 4.5G、OpenCode DB 存在）；**V10–V13 待真实 QQ/记忆/发送工具/搜索联调**。
 - **生产部署（2026-10-25 08:53/09:06/09:45/10:16 CST，四次部署）**：最终 release `/opt/antifieldcloud/releases/20261025T021609Z`，commit **4f40ccd**（含 MCP 配置属主修复、D-20 连续外发 1000ms、DSML 原始工具调用回显修复）；`/healthz` = `{"ok":true,"version":"0.7.0","schemaVersion":16,"db":"ok","pendingBackups":0}`；迁移前 DB 快照 `db-predeploy-20261025T021642566Z.sqlite`（sha256 `fa0696bf4d8e8db512bc1cb47b78cd08d351787365d2ff1a9ae9cfa3aefabf05`）；上一 release `20261025T014533Z`（v0.7.0 D-20 版）保留可回滚。
 - **部署后 smoke**：最终部署内只读 smoke **23/23 PASS、0 FAIL、1 WARN（env 2 个废弃键）、2 SKIP（加密/异地默认关闭）**；完整 Access smoke 在上一 release（`ac4b2f9`）为 **31 PASS/0 FAIL/1 WARN/2 SKIP**；DSML 部署后两次复核曾遇不同端点公网 `curl` 超时（应用/Pi 检查全通过，判定为网络抖动），网络恢复后重跑为 **31 PASS/0 FAIL/1 WARN/2 SKIP**。唯一确定待用户处理项为 Windows 备份计划任务安装标记（需管理员 PowerShell 重跑 `install-backup-task.ps1`，当前任务仍存在/可运行）。MCP 配置属主问题已由 commit `5c31162` 修复并在生产恢复（`opencode.json` 必须 `opencode:opencode 0640`）。**D-20 生产验证**：在 Pi 上直接导入 release 的 `QqAdapter`，以假 fetch 连发两条消息，实测间隔 **1001ms**（`DEFAULT_SEND_INTERVAL_MS=1000`），未访问真实 QQ。
-- **部署后已知问题修复（已部署）**：真实 QQ 会话发现模型会把 DSML 工具调用协议当普通 assistant 文本返回（`<｜…｜ calls>` / `parameter name="text"`），发送工具未命中时兜底路径原样发给了用户。新增 `server/src/bot/dsml.ts`：识别并提取 `parameter name="text"` 正文发送，无法提取时固定兜底；发送工具消息/长期记忆统一清洗，不回显 `turn_id`/`turn_token`/工具名；审计 `bot.ai.tool_call_text`；回归测试 `bot-dsml.test.ts` 5 例。已随 release `20261025T021609Z` 部署；生产验证：用真实会话中的 DSML 原始文本调用已部署模块，`detected=true`、提取正文 83 字符、清洗后无 DSML/工具名/凭据（`strippedLength=0`）。
+- **部署后已知问题修复（已部署）**：真实 QQ 会话发现模型会把 DSML 工具调用协议当普通 assistant 文本返回（`<｜…｜ calls>` / `parameter name="text"`），发送工具未命中时兜底路径原样发给了用户。新增 `server/src/bot/dsml.ts`：识别并提取 `parameter name="text"` 正文发送，无法提取时固定兜底；发送工具消息/长期记忆统一清洗，不回显 `turn_id`/`turn_token`/工具名；审计 `chatbot.ai.tool_call_text`；回归测试 `bot-dsml.test.ts` 5 例。已随 release `20261025T021609Z` 部署；生产验证：用真实会话中的 DSML 原始文本调用已部署模块，`detected=true`、提取正文 83 字符、清洗后无 DSML/工具名/凭据（`strippedLength=0`）。
 - **用户验收（2026-10-25 10:39 CST）**：用户确认“验收通过，可打 Tag 并 Release”；真实 QQ 场景（连续消息 1000ms 间隔、DSML 工具调用文本不回显）已验收。当日发布 annotated Tag `v0.7.0` + GitHub Release。
-- **仍待用户/后续**：Windows 任务重装（管理员）；可选清理 2 个废弃 env 键（`BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES`，先备份）；加密/异地副本按 `docs/DEPLOY.md` §9.10/§9.11 由用户密钥/rclone 启用；真实 QQ 负路径/限流等持续联调；Tag/GitHub Release 已完成。
-- **回滚**：schema 无迁移，回滚只需切回 v0.6.6 release + 还原同版本 env；备份加密回滚=关闭 `BACKUP_ARCHIVE_ENCRYPTION` 恢复明文（已生成 `.age` 保留，仅 PC 可解密）；异地副本回滚=禁用/卸载 offsite 任务；OpenCode 回滚=恢复 v2.1.3 二进制/data/env/unit/MCP 配置（见 `docs/DEPLOY.md` §3.2）。
-- **明确残余**：见 `docs/AUDIT.md` 第六轮 §9 与 `docs/SECURITY.md` §4（AI 主机边缘保护、工具隔离可用性取舍、审计 best-effort、加密临时明文窗口/私钥丢失、异地单远端依赖、群记忆 legacy 条目、既有单管理员/sudo/RCON/SD 等）。
+- **仍待用户/后续**：Windows 任务重装（管理员）；可选清理 2 个废弃 env 键（`CHATBOT_DISCORD_GATEWAY_ENABLED`、`CHATBOT_PUBLISH_MAX_MEDIA_BYTES`，先备份）；加密/异地副本按 `docs/app/DEPLOY.md` §9.10/§9.11 由用户密钥/rclone 启用；真实 QQ 负路径/限流等持续联调；Tag/GitHub Release 已完成。
+- **回滚**：schema 无迁移，回滚只需切回 v0.6.6 release + 还原同版本 env；备份加密回滚=关闭 `BACKUP_ARCHIVE_ENCRYPTION` 恢复明文（已生成 `.age` 保留，仅 PC 可解密）；异地副本回滚=禁用/卸载 offsite 任务；OpenCode 回滚=恢复 v2.1.3 二进制/data/env/unit/MCP 配置（见 `docs/app/DEPLOY.md` §3.2）。
+- **明确残余**：见 `docs/app/AUDIT.md` 第六轮 §9 与 `docs/app/SECURITY.md` §4（AI 主机边缘保护、工具隔离可用性取舍、审计 best-effort、加密临时明文窗口/私钥丢失、异地单远端依赖、群记忆 legacy 条目、既有单管理员/sudo/RCON/SD 等）。
 
 ## v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema 保持 v16）
 
-- **范围**：缩短 Bot 系统提示词与发送工具说明、移除空记忆段；群聊用户消息增加 `<用户名>：` head；群聊提示词声明所处群聊环境，未 @ 消息引导默认沉默、不要求每轮调用发送工具；群聊使用独立共享记忆（`<用户名>：<记忆>`），已登记用户的用户级记忆不进入群聊会话；群聊抽取按发言用户归属；`/bots`「角色与记忆」按用户记忆/群聊记忆左右两栏展示，并将现有群聊参与者的用户级记忆复制/迁移到群共享记忆。
-- **数据/配置**：schema 保持 v16（无迁移）；群聊共享记忆复用 `bot_memory_items` 的 `group:<targetExternalId>` scope，不新增 env/DB 字段；一次性迁移由 meta 标记保证幂等。
+- **范围**：缩短 Bot 系统提示词与发送工具说明、移除空记忆段；群聊用户消息增加 `<用户名>：` head；群聊提示词声明所处群聊环境，未 @ 消息引导默认沉默、不要求每轮调用发送工具；群聊使用独立共享记忆（`<用户名>：<记忆>`），已登记用户的用户级记忆不进入群聊会话；群聊抽取按发言用户归属；`/chatbots`「角色与记忆」按用户记忆/群聊记忆左右两栏展示，并将现有群聊参与者的用户级记忆复制/迁移到群共享记忆。
+- **数据/配置**：schema 保持 v16（无迁移）；群聊共享记忆复用 `chatbot_memory_items` 的 `group:<targetExternalId>` scope，不新增 env/DB 字段；一次性迁移由 meta 标记保证幂等。
 - **本地门禁**：`npm run check` 通过；`npm test` **414**（新增群聊用户名/共享记忆隔离/默认沉默/记忆迁移回归）、`npm run test:web` **181**。
 - **发布**：annotated Tag `v0.6.6` + GitHub Release [AntifieldComplexx v0.6.6](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.6)（Latest，2026-10-24 18:20 CST）；Tag 指向发布提交，生产代码 commit `1f6980e`。
-- **部署（2026-10-24 18:05 CST）**：生产 release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema 16，含用户/群聊记忆两栏与迁移）；迁移前快照 `db-predeploy-20261024T100552756Z.sqlite`（sha256 `2cd3e5be3646d90031755d6d76378475369fce43d4ab367345d69873e6d2b0b9`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；启动迁移 `bot_group_memory_migrated_v1=2026-10-24T10:05:54.350Z`（群共享条目 4 条；用户级条目 4 条保留，覆盖有私聊/已登记用户）；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，sha256 `21cabc05142103a30ba058fdef8a5ab24d09ac3176d811dffff6e15aa79309cd`，secrets=ok，PC ack）。
+- **部署（2026-10-24 18:05 CST）**：生产 release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema 16，含用户/群聊记忆两栏与迁移）；迁移前快照 `db-predeploy-20261024T100552756Z.sqlite`（sha256 `2cd3e5be3646d90031755d6d76378475369fce43d4ab367345d69873e6d2b0b9`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；启动迁移 `chatbot_group_memory_migrated_v1=2026-10-24T10:05:54.350Z`（群共享条目 4 条；用户级条目 4 条保留，覆盖有私聊/已登记用户）；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，sha256 `21cabc05142103a30ba058fdef8a5ab24d09ac3176d811dffff6e15aa79309cd`，secrets=ok，PC ack）。
 
 ## v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`；Bot `/role show` 角色卡详情 + 失效 AI 会话重建；schema 保持 v16）
 
-- **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；使用默认角色卡 `lofii` 时只返回名称，不展示内置详情。修复群聊未登记用户复用已失效 OpenCode 会话时 `bot_ai_http_error` 的问题：自动清理旧映射、重建会话并重试一次。
+- **范围**：`/role show` 在用户设置过私聊角色卡时展示完整角色设定文本；使用默认角色卡 `lofii` 时只返回名称，不展示内置详情。修复群聊未登记用户复用已失效 OpenCode 会话时 `chatbot_ai_http_error` 的问题：自动清理旧映射、重建会话并重试一次。
 - **数据/配置**：schema 保持 v16（无迁移）；不新增 env/DB 字段。
 - **本地门禁**：`npm run check` 通过；`npm test` **410**（新增 `/role show` 与失效会话重建回归）、`npm run test:web` **180**。
 - **部署（2026-10-24 16:55 CST）**：生产 release `20261024T085435Z`/commit `c48ea8a`（v0.6.5/schema 16，含失效 AI 会话重建修复）；迁移前快照 `db-predeploy-20261024T085507536Z.sqlite`（sha256 `e0062e5a8b6320cee4a81c98f28852c64a84994d4867909e539bd28aa29a9c14`）；`/healthz` v0.6.5/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；部署后备份 `snapshot-20261024T085621039Z-inc.tar.gz`（241426 bytes，sha256 `2d52c76f96fc7fe3895ca8fb11795d59925c2f9340cf646ce5d682de95adbbc6`，secrets=ok，PC ack）。
@@ -168,29 +168,29 @@
 ## v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过；已知问题复核 + 消息发送工具 + 全量群聊合并 + 会话命名；schema 保持 v16）
 
 - **范围**：复核并处理已知问题/遗留事项；全量群聊非 @ 消息延长 burst 合并窗口；`NO_REPLY` 升级为 `botmsg_send_message` 工具（模型可连续发送 1–5 条，私聊/@ 每轮至少调用一次，全量群聊不调用即静默）；新建 Chat/Memory 会话按目标名称命名；SSO ticket 绑定 UA；记忆敏感过滤补充云/数据库凭据模式。
-- **数据/配置**：schema 保持 v16（无迁移）；新增 `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`/`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`/`BOT_AI_SEND_TOOL_ENABLED`；新增 `scripts/bot-tool-mcp.mjs` 与 `scripts/install-bot-tool-mcp.sh`；`deploy.ps1` 期望 schema 仍为 16。
+- **数据/配置**：schema 保持 v16（无迁移）；新增 `CHATBOT_CHAT_BURST_GROUP_ALL_WINDOW_MS`/`CHATBOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS`/`CHATBOT_AI_SEND_TOOL_ENABLED`；新增 `scripts/bot-tool-mcp.mjs` 与 `scripts/install-bot-tool-mcp.sh`；`deploy.ps1` 期望 schema 仍为 16。
 - **本地门禁（2026-10-24）**：`npm run check`/`check-version` 通过；`npm test` **408**（含消息工具/turn token/长合并窗口/会话标题/UA 绑定/MCP 协议回归）、`npm run test:web` **180**（32 文件）；服务端覆盖率 Lines **92.34%** / Branches **77.48%** / Functions **87.23%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-BHmn1DCi.js` 691.34 kB）。
 - **部署（2026-10-24 14:52 CST）**：生产最终 release `20261024T065245Z`/commit `63792a7`（v0.6.4/schema 16，含 `/help` 命令列表修复；首次 release `20261024T033900Z`/`6d26cbd`，第二次 `20261024T041205Z`/`944566f`）；迁移前快照 `db-predeploy-20261024T065317276Z.sqlite`（sha256 `005704f9ba01bda4332de73d4446eda5e035dd19e9cad7401462f1121c6aa53d`）；`/healthz` v0.6.4/schema16；部署内只读 smoke 16/16；完整 Access smoke **24/24（0 警告）**；最终部署后备份 `snapshot-20261024T065433557Z-inc.tar.gz`（218203 bytes，sha256 `83e9693375898717a3590f68656dbe0b7a198d4076bb9c28e098ed754b3e26db`，secrets=ok，PC ack）。
-- **工具模式重建验证**：最终部署后 `meta.bot_ai_tool_mode = mcp:send`、`bot_ai_sessions = 0`，旧 v0.6.3 会话映射已清空，下一条消息将按新权限创建带 `botmsg_*`/`searxng_*` 的会话。
+- **工具模式重建验证**：最终部署后 `meta.chatbot_ai_tool_mode = mcp:send`、`chatbot_ai_sessions = 0`，旧 v0.6.3 会话映射已清空，下一条消息将按新权限创建带 `botmsg_*`/`searxng_*` 的会话。
 - **`/help` 文案修复**：管理员与普通用户均只返回命令列表（管理员 `/help /status /backup /world /mc /files /role /reset /forget /memory /search`，非管理员仅公开 6 条），不含标题、权限说明、功能描述或用法/参数注释；`server/test/bot-v054.test.ts` 改为逐行精确断言。
 - **环境事件与恢复（2026-10-24）**：12:15 CST 校园网 Portal 认证失效，Cloudflare tunnel 出站 7844（TCP/UDP）被拦截，cloudflared precheck 失败并返回 530/浏览器 1033；13:46 CST 经 Pi 出口完成校园网认证后，cloudflared precheck 的 DNS/TCP/UDP/API 全部 PASS，服务 active（NRestarts=0），公网 `/healthz` 200，完整 Access smoke **24/24（0 警告）**。根因是校园网 Portal 认证而非应用/隧道配置；树莓派重启后需重新完成 Portal 认证，否则 1033 会持续。
-- **生产配置/MCP**：env 已设 `BOT_AI_SEND_TOOL_ENABLED=true`、全量群聊合并 8000/20000；`/opt/botmsg-mcp` 已安装，OpenCode `/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（使用假 turn 凭据时按预期返回失败），未发送真实 QQ 消息。
+- **生产配置/MCP**：env 已设 `CHATBOT_AI_SEND_TOOL_ENABLED=true`、全量群聊合并 8000/20000；`/opt/botmsg-mcp` 已安装，OpenCode `/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（使用假 turn 凭据时按预期返回失败），未发送真实 QQ 消息。
 - **验收状态**：多用户内测用户确认验收通过（2026-10-24）；生产 release `20261024T065245Z`/commit `63792a7`（schema 16）保持健康，未发现阻塞问题。
 - **发布（2026-10-24）**：已推送 main、annotated Tag `v0.6.4`、GitHub Release [AntifieldComplexx v0.6.4](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.4)。
 
 ## v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息模型决策；schema v16）
 
 - **范围**：每个群聊目标一张管理员可编辑的共享角色卡；群目标独立设置 `groupReplyMode`（默认仅 @/名字提及；实验性全量消息由模型 `NO_REPLY` 决定是否发送）；适配器支持 `GROUP_MESSAGE_CREATE`；群聊/频道不再接受任何斜杠命令。
-- **数据**：schema v16（迁移 16 新增 `bot_group_roles`，`target_id` 主键 FK 到 `bot_targets`，删除目标级联；群消息模式复用 `bot_targets.chat_trigger`）。
+- **数据**：schema v16（迁移 16 新增 `chatbot_group_roles`，`target_id` 主键 FK 到 `chatbot_targets`，删除目标级联；群消息模式复用 `chatbot_targets.chat_trigger`）。
 - **本地门禁**：`npm run check`/`check-version` 通过；`npm test` **399**（含 schema v16 迁移、群角色卡/模式/全量事件/命令禁用回归）、`npm run test:web` **180**；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-BHmn1DCi.js` 691.34 kB）。
 - **部署/验收**：生产最终部署 release `20261023T142411Z`/commit `7ac1d27`（v0.6.3/schema 16；含全量消息平台配置提示）；迁移前快照 `db-predeploy-20261023T142445335Z.sqlite`（sha256 `256e34ac857412c6594bf8f1f8ce0c72d3b568cf9fb9948732a9436708833098`）；`/healthz` version 0.6.3/schema 16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过并写远端状态；部署后备份 `snapshot-20261023T142611502Z-inc.tar.gz`（195705 bytes，sha256 `89cbf7c614e323af430836aa891dc51969366b58c2cc8afe138f3fa7fd29c449`，PC 已 ack）+ 密钥包 `secrets-20261023T142614Z.tar.age`（secrets=ok）；生产 schema16/1 Bot/4 目标/群角色卡 1 行（Bot Test「大肥鱼」）。操作员按用户要求在重置群会话前生成 `db-adminreset-20261023T150530906Z.sqlite` 快照，清理 1 条群会话（保留后续受控测试）。
-- **用户验收（2026-10-23 23:08–23:09 CST，通过）**：群角色卡「大肥鱼」在群聊实际生效（`bot_events`/`bot.ai.chat` 审计 `role:true`）；QQ 平台完成“接收所有消息”、`GROUP_MESSAGE_CREATE` 订阅与群主“获取群内全部消息”设置后，非 @ 群消息于 `15:08:21Z` 入站并正常 Chat（`bot_events` chat/ok、`bot.ai.chat`、新会话 `ses_e96b…`）；群聊斜杠命令静默、C2C 命令不受影响；用户明确回复“验收通过”。
+- **用户验收（2026-10-23 23:08–23:09 CST，通过）**：群角色卡「大肥鱼」在群聊实际生效（`chatbot_events`/`chatbot.ai.chat` 审计 `role:true`）；QQ 平台完成“接收所有消息”、`GROUP_MESSAGE_CREATE` 订阅与群主“获取群内全部消息”设置后，非 @ 群消息于 `15:08:21Z` 入站并正常 Chat（`chatbot_events` chat/ok、`chatbot.ai.chat`、新会话 `ses_e96b…`）；群聊斜杠命令静默、C2C 命令不受影响；用户明确回复“验收通过”。
 - **发布**：annotated Tag `v0.6.3` + GitHub Release [AntifieldComplexx v0.6.3](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.3)（Latest）；最终 tag 提交包含本验收记录与发布说明。
 
 ## v0.6.2（已发布：Tag/Release v0.6.2；目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列；schema v15 兼容列）
 
 - **范围**：Web “Bot/投递与发布”主网格由双列改单列；已配置目标支持内联编辑名称；目标行“测试”按钮向指定目标发送测试消息，用于确认 openid 对应的 QQ 用户/群；“最近入站目标”按已配置目标 externalId 查重，已登记记录自动隐藏（登记仅填表单）。手填 QQ 号/群号功能已按用户意见回滚。
-- **数据**：schema v15 保留迁移 15 的 `bot_targets.qq_number TEXT` 可空列（兼容列，API/发送不读写）；旧版本 v0.6.1 不支持 v15，回滚必须恢复迁移前快照。
+- **数据**：schema v15 保留迁移 15 的 `chatbot_targets.qq_number TEXT` 可空列（兼容列，API/发送不读写）；旧版本 v0.6.1 不支持 v15，回滚必须恢复迁移前快照。
 - **本地门禁**：`npm run check` 通过；`npm test` **393**（含 schema v15 迁移回归）、`npm run test:web` **179**；服务端覆盖率 Lines **92.15%** / Branches **77.31%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-BdeajuIF.js` 682.91 kB）；check-version 通过。
 - **部署/验收**：最终生产 release `20261023T123055Z`/commit `77e42c7`（v0.6.2/schema 15）；`/healthz` version 0.6.2/schema 15；部署 smoke 16/16、完整 Access smoke 24/24（0 警告）；首次 schema 15 部署迁移前快照 `db-predeploy-20261023T103430161Z.sqlite`（sha256 `518b5ba815556df2db90265236b578e5a2ad75065d5c6c5b14e88a81540143f1`），最终部署前快照 `db-predeploy-20261023T123126822Z.sqlite`（sha256 `5ff94b43a5595379ad379c13fdcdb61ef446f1250e92a21ae8cca565afe76fa4`）；恢复演练 `20261023T103520Z` schema15 通过；部署后备份 `snapshot-20261023T123205815Z-inc.tar.gz`（190596 bytes，secrets=ok）+ 密钥包 `secrets-20261023T123207Z.tar.age`；用户验收通过（QQ 号手填方案回滚，目标辨识改为测试消息 + 名称编辑；入站记录按 externalId 查重隐藏；单列布局确认）。
 
@@ -198,14 +198,14 @@
 
 - **发布状态**：用户确认 `/help` 文案与整体验收后发布；annotated Tag `v0.6.1` + GitHub Release [AntifieldComplexx v0.6.1](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.1)；生产最终 release `20261023T094819Z`/commit `ceb2e8f`。此前误打的 Tag/Release 已撤销，本次为正式发布。
 - **连续消息（已验收）**：同一 Bot×目标×用户 burst 合并 + 同会话串行；默认窗口 3000ms/最长 10000ms/上限 10 条；Webhook 立即 ack、只调用一次 AI/回复一次；`/reset`/`/forget` 清缓冲；不同会话并行；用户复测通过。
-- **联网搜索（已验收）**：SearXNG 自建 loopback + OpenCode MCP `searxng_web_search`（`codemode=false`）；Bot 会话 permissions 仅放行 `searxng_*`，负路径验证 shell 不可用；命中关键词/追问时服务端预取，未命中由 MCP 语义决定；`/search` 强制预取；追问复用上一轮查询；结果标题/摘要/域名注入并附来源；不抓网页、不记录查询正文；失败降级、每小时限流、不可信外部资料边界；生产仅启用 Bing（`BOT_SEARCH_ENGINES=bing`）。
+- **联网搜索（已验收）**：SearXNG 自建 loopback + OpenCode MCP `searxng_web_search`（`codemode=false`）；Bot 会话 permissions 仅放行 `searxng_*`，负路径验证 shell 不可用；命中关键词/追问时服务端预取，未命中由 MCP 语义决定；`/search` 强制预取；追问复用上一轮查询；结果标题/摘要/域名注入并附来源；不抓网页、不记录查询正文；失败降级、每小时限流、不可信外部资料边界；生产仅启用 Bing（`CHATBOT_SEARCH_ENGINES=bing`）。
 - **会话清理**：工具模式变化一次性重置旧会话映射；启动/`/reset`/`/forget` 清理无映射的 OpenCode Bot 会话；本次启动清理 11 个旧会话，验收后 `/reset` 映射为空。
 - **`/help` 简化（已发布）**：管理员/普通用户均只输出可用命令与功能/用法，不再包含标题、Chat 说明或权限声明；新增结构回归测试。
 - **备份状态 hotfix**：`acked` + `available=false` 不再误报“应用归档文件缺失”；`/api/auth/me` 补清旧父域 Cookie；生产 25 个 acked 归档复核通过。
 - **本地门禁（2026-10-23，最终功能代码）**：`npm run check` 通过；`npm test` **393**（含 burst/搜索/MCP/会话清理/help 回归）、`npm run test:web` **177**（32 文件）；服务端覆盖率 Lines **92.15%** / Branches **77.30%** / Functions **86.86%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；build 通过（bundle `index-a2xJNvfJ.js` 680.71 kB）；`scripts/install-searxng.sh`/`install-searxng-mcp.sh`/`bootstrap-env.sh` bash 语法通过；`node scripts/check-version.mjs` 通过。
 - **部署证据（2026-10-23）**：最终 release `20261023T094819Z`/commit `ceb2e8f`（version 0.6.1/schema 14）；`/healthz` = `{"ok":true,"version":"0.6.1","schemaVersion":14}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24（0 失败/0 警告）**；迁移前 DB 快照 `db-predeploy-20261023T094851198Z.sqlite`（sha256 `ed757721c4fb2e63e4d9f4f20ff2410a34f684d291adec9778daa4a679cf75dc`）。
 - **备份证据**：部署后应用增量备份 `snapshot-20261023T094939126Z-inc.tar.gz`（181678 bytes，sha256 `6c6916e71c11ef5888137631568dd432e006e5cae12b99d6eb7ac5163c94655b`，PC 已拉取/ack）；密钥包 `secrets-20261023T094940Z.tar.age`（1434119 bytes，`secretsOk=true`）。
-- **用户实发验收（通过，2026-10-23 17:30–17:56 CST）**：`bot_events` 记录 Chat/`/role`/`/reset` outcome=ok；09:30:50Z 与 09:30:58Z 两条 Chat、09:31:04Z `bot.search` results=5（自动搜索生效）、09:31:48Z `/reset`；用户确认 `/help` 简化文案并选择发布。
+- **用户实发验收（通过，2026-10-23 17:30–17:56 CST）**：`chatbot_events` 记录 Chat/`/role`/`/reset` outcome=ok；09:30:50Z 与 09:30:58Z 两条 Chat、09:31:04Z `chatbot.search` results=5（自动搜索生效）、09:31:48Z `/reset`；用户确认 `/help` 简化文案并选择发布。
 - **CI**：GitHub Actions 全绿（check/coverage/powershell/shellcheck/audit/secret-scan/nftables/prod-dependencies）。
 - **残余/注意**：OpenCode 会话按 Bot×目标×用户 维度隔离，C2C 与群聊各自一个会话；工具模式变化会重置一次会话映射（上下文重建一次）；MCP 工具调用依赖模型选择，已用预取兜底常见问句。
 
@@ -218,37 +218,37 @@
 - **部署证据**：最终 release `20261023T053539Z`/commit `6349617`（前两次同版本部署 `20261023T052315Z`、`20261023T045613Z` 保留）；`/healthz` = `{"ok":true,"version":"0.6.0","schemaVersion":14}`；部署内 smoke **16/16**（0 警告）、带 Access token 完整 smoke **24/24**（0 警告）；最终迁移前 DB 快照 `db-predeploy-20261023T053611142Z.sqlite`（sha256 `8a96fe8eccea0875a52362f23f37d9f9213b609a36caf2c7f15a5830e376e445`）；生产仅保留 3 个 v0.6.0 release；如需 v0.5.11 从 Tag 重新部署，旧版会重新设置父域 Cookie。已推送 main、annotated Tag `v0.6.0`、GitHub Release [AntifieldComplexx v0.6.0](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.0)（Latest，2026-10-23 13:51 CST）。
 - **灾备证据**：drill `20261023T050104Z` 通过（schema 14、`latestDb=db-20261023T045938554Z.sqlite`、世界归档已校验）；部署后应用备份 `snapshot-20261023T053645712Z-inc.tar.gz`（163398 bytes，sha256 `da0a75c121116623251a33f6740a8c13406f4d17b00cb80045f6d957f0d7faf8`，PC 已拉取/ack）+ 密钥包 `secrets-20261023T053647Z.tar.age`（1477127 bytes，含 opencode DB；`secretsOk=true`，A5-DATA-01 生产复验通过）。
 - **用户验收**：2026-10-23 用户确认 **验收通过**；默认 `lofii` 采用用户指定对话风格文案「对话风格：简短、自然、轻松，短句为主；可使用轻量语气词，不连续卖萌、不刷屏；遇到认真、难过或风险话题时收起玩闹；不假装真人、不虚构共同经历、不索要隐私。」；`/role set` 个人卡仍可覆盖。
-- **残余**：host-only 旧父域 Cookie 过渡期（≤7 天，建议清理站点 Cookie）；BOT-04 工具拦截真实负路径、记忆过滤启发式、`__Host-` 前缀、SSO ticket 未绑定 IP/UA 等见 `docs/AUDIT.md` 第五轮 §6。
+- **残余**：host-only 旧父域 Cookie 过渡期（≤7 天，建议清理站点 Cookie）；BOT-04 工具拦截真实负路径、记忆过滤启发式、`__Host-` 前缀、SSO ticket 未绑定 IP/UA 等见 `docs/app/AUDIT.md` 第五轮 §6。
 
 ## v0.5.11（历史，已部署并验收通过；用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）
 
 - 日期：2026-10-23（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261023T022831Z`，commit `931b10d`，schema 14）+ Windows 本地工作区
-- **状态**：已部署 v0.5.11/schema v14（迁移 14，不可逆），部署验证（env 实测、healthz、smoke 16/16 与完整 24/24、备份）通过；**用户实发验收于 2026-10-23 10:39 CST 确认通过**（结构化抽取/`/memory`/`/forget confirm`/`/memory off|on` 有服务端证据，`/bots` 记忆面板为用户确认）。
+- **状态**：已部署 v0.5.11/schema v14（迁移 14，不可逆），部署验证（env 实测、healthz、smoke 16/16 与完整 24/24、备份）通过；**用户实发验收于 2026-10-23 10:39 CST 确认通过**（结构化抽取/`/memory`/`/forget confirm`/`/memory off|on` 有服务端证据，`/chatbots` 记忆面板为用户确认）。
 - **交付范围**：
-  - **结构化条目**：`bot_memory_items` 7 类（`profile`/`preference`/`fact`/`project`/`task`/`relationship`/`episode`）；字段 key/value/confidence/importance/source/created_at/updated_at/last_used_at/expires_at；唯一键 `(bot_id,user_id,kind,mem_key)`；
-    `bot_memory_state` 保存每用户启停与 legacy 迁移标记；schema **v14**（迁移 14），旧 `bot_ai_memories` 保留为 legacy 来源。
+  - **结构化条目**：`chatbot_memory_items` 7 类（`profile`/`preference`/`fact`/`project`/`task`/`relationship`/`episode`）；字段 key/value/confidence/importance/source/created_at/updated_at/last_used_at/expires_at；唯一键 `(chatbot_id,user_id,kind,mem_key)`；
+    `chatbot_memory_state` 保存每用户启停与 legacy 迁移标记；schema **v14**（迁移 14），旧 `chatbot_ai_memories` 保留为 legacy 来源。
   - **抽取**：沿用累计 3 条或空闲 120s 批处理与同用户串行队列；每次新建一次性 OpenCode 会话并在 `finally` 删除；模型严格 JSON operations（upsert/delete，服务端最多 20 条）；
-    服务端校验/敏感过滤（密钥、URL、内部路径等跳过）/容量清理（默认 200 条，先淘汰低重要度非核心条目）；审计 `bot.memory.extract` 只记计数。
-  - **TTL**：`profile`/`preference` 不过期；`fact`/`project`/`relationship` **365 天**（`BOT_AI_MEMORY_RETENTION_DAYS`）；`episode` **90 天**（`BOT_MEMORY_TTL_EPISODE_DAYS`）；`task` **30 天**（`BOT_MEMORY_TTL_TASK_DAYS`）；更新续期。
+    服务端校验/敏感过滤（密钥、URL、内部路径等跳过）/容量清理（默认 200 条，先淘汰低重要度非核心条目）；审计 `chatbot.memory.extract` 只记计数。
+  - **TTL**：`profile`/`preference` 不过期；`fact`/`project`/`relationship` **365 天**（`CHATBOT_AI_MEMORY_RETENTION_DAYS`）；`episode` **90 天**（`CHATBOT_MEMORY_TTL_EPISODE_DAYS`）；`task` **30 天**（`CHATBOT_MEMORY_TTL_TASK_DAYS`）；更新续期。
   - **分层召回**：核心 `profile`/`preference`/`task` 优先，其余按关键词 + 重要度/时效；预算 **3000 字/12 条**；未迁移旧摘要 fallback 注入；`/memory off` 时无注入。
   - **`/memory` 自助**：显示总条数/各类型计数/启停/最近更新时间（不含 key/value）；`/memory off|on` 暂停/恢复抽取与注入；`/forget confirm` 清空 items/state/legacy/会话（含远端）。
-  - **管理 API**：用户级 itemCount/kinds/memoryEnabled/updatedAt、条目元数据、单条删除、整用户删除；绝不返回 key/value；审计 `bot.memory.delete_item`/`bot.memory.delete_user`。
-  - **Legacy 清理**：旧摘要一次性 LLM 转换后标记；`node scripts/cleanup-legacy-memory.mjs`（默认 dry-run；`--confirm` 删除已迁移用户旧摘要行+镜像，写审计 `bot.memory.legacy_cleanup`）。
+  - **管理 API**：用户级 itemCount/kinds/memoryEnabled/updatedAt、条目元数据、单条删除、整用户删除；绝不返回 key/value；审计 `chatbot.memory.delete_item`/`chatbot.memory.delete_user`。
+  - **Legacy 清理**：旧摘要一次性 LLM 转换后标记；`node scripts/cleanup-legacy-memory.mjs`（默认 dry-run；`--confirm` 删除已迁移用户旧摘要行+镜像，写审计 `chatbot.memory.legacy_cleanup`）。
   - **版本/数据**：version 0.5.11；schema **v14**（迁移 14，不可逆；v0.5.10 不支持 v14）；`deploy.ps1` 期望 schema 14，切换前自动迁移前 DB 快照。
 - **本地验证**（Lead 实测 2026-10-23）：`npm test` **360**（v0.5.10 的 341 + 新增 19）、`npm run test:web` **162**（30 文件，+5）、`npm run typecheck` 通过；覆盖率 Lines **92.05%** / Branches **77.43%** / Functions **86.39%**、`npm run build` 通过；`node scripts/check-version.mjs` 通过。
 - **部署验证**：
   - release `20261023T022831Z`/commit `931b10d` 已切换并重启；`/healthz` = `{"ok":true,"version":"0.5.11","schemaVersion":14}`；部署内只读 smoke **16/16**、带 Access token 完整 smoke **24/24**。
   - 迁移前 DB 快照（最终部署）：`/var/lib/antifieldcloud/backups/db-predeploy-20261023T022902018Z.sqlite`（sha256 `937a0bc84dc317e1e815bc480f03b8e065935bed7a1e09bf5edac6da76a98d3c`）。
-  - 生产 env 实测：5 个 `BOT_MEMORY_*` 就位、权限 `640 root:antifieldcloud`；运行配置 `365/3/120/3000/12/90/30`。
+  - 生产 env 实测：5 个 `CHATBOT_MEMORY_*` 就位、权限 `640 root:antifieldcloud`；运行配置 `365/3/120/3000/12/90/30`。
   - 部署后备份：`snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`），secrets=ok，PC 已拉取/ack。
-  - Legacy 清理（验收后）：10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户自身 legacy 已随 `/forget` 删除；剩余 2 条属其他未迁移用户，未触碰），审计 `bot.memory.legacy_cleanup`。
+  - Legacy 清理（验收后）：10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户自身 legacy 已随 `/forget` 删除；剩余 2 条属其他未迁移用户，未触碰），审计 `chatbot.memory.legacy_cleanup`。
 - **用户实发验收（通过，2026-10-23 10:39 CST）**：
-  1. **最终 release 抽取**：10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1，服务端证据）。
+  1. **最终 release 抽取**：10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `chatbot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1，服务端证据）。
   2. **`/memory`**：10:38:40 成功返回计数/类型/启停/最近更新（不含 key/value）。
   3. **`/forget confirm`**：10:39:15 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户（含远端清理）。
-  4. **off/on 与早前 A/B**：同版本早前 release 阶段 `/memory off`（10:06:47）→ off 期间 Chat（10:07:14，无新 extract）→ `/memory on`（10:09:54）→ `/forget confirm`（10:10:12，items=1 legacy=1）均成功；`/bots` 记忆面板（条目/类型/权重，不显示 key/value）由用户确认可用。
-  5. **诚实记录**：首次短消息测试抽取返回 `ops=0`（10:18:47、10:21:17），判定为提示词过保守；修正提示词（commit `931b10d`）并再次部署后重试得到 `ops=2`。`/bots` 面板为用户确认（服务端无单独 UI 证据）。
+  4. **off/on 与早前 A/B**：同版本早前 release 阶段 `/memory off`（10:06:47）→ off 期间 Chat（10:07:14，无新 extract）→ `/memory on`（10:09:54）→ `/forget confirm`（10:10:12，items=1 legacy=1）均成功；`/chatbots` 记忆面板（条目/类型/权重，不显示 key/value）由用户确认可用。
+  5. **诚实记录**：首次短消息测试抽取返回 `ops=0`（10:18:47、10:21:17），判定为提示词过保守；修正提示词（commit `931b10d`）并再次部署后重试得到 `ops=2`。`/chatbots` 面板为用户确认（服务端无单独 UI 证据）。
 - **遗留与限制**：
   - 迁移 14 不可逆；v0.5.10 不支持 schema v14，回滚必须恢复最终迁移前快照 + 切回 v0.5.10 release。
   - 剩余 2 条 legacy 属其他未迁移用户（未触碰）；后续用户迁移后可再跑清理 CLI。
@@ -260,15 +260,15 @@
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T152053Z`，commit `4619c91`，schema 13）+ Windows 本地工作区
 - **状态**：已部署 v0.5.10/schema v13（无迁移），部署验证（env 实测、直连连通性、隧道清理、健康检查、两次 smoke、前端产物）通过。
-  **用户实发验收于 2026-10-22 23:29 CST 确认通过**：合并摘要 rounds=3（4 条 Chat 仅 1 次摘要）、远端会话删除 404 两例且其他用户不受影响、真实图片 145172 B 端到端、`/forget confirm`/`/reset` 均有服务端证据；`/bots` 出站网络卡片为用户确认（服务端无单独 UI 证据）。
+  **用户实发验收于 2026-10-22 23:29 CST 确认通过**：合并摘要 rounds=3（4 条 Chat 仅 1 次摘要）、远端会话删除 404 两例且其他用户不受影响、真实图片 145172 B 端到端、`/forget confirm`/`/reset` 均有服务端证据；`/chatbots` 出站网络卡片为用户确认（服务端无单独 UI 证据）。
 - **交付范围**：
   - **记忆摘要一次性**：每次摘要新建远端 OpenCode 会话并在 `finally` 删除；不再保存 `summary_session_id`（列保留兼容，旧值仅历史遗留）。
   - **记忆更新串行化**：按 Bot×用户队列串行更新，避免并发覆盖；摘要失败只记日志并保留旧摘要。
-  - **合并策略/审计**：累计 `BOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）条或用户空闲 `BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600，0 关闭空闲触发）触发一次摘要；审计 `bot.ai.memory` 增加 `rounds`。
-  - **保留期分离**：AI 会话映射保留 7 天（`BOT_AI_SESSION_RETENTION_DAYS`）；长期记忆保留 `BOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650），互不影响。
+  - **合并策略/审计**：累计 `CHATBOT_AI_MEMORY_BATCH_MESSAGES=3`（1–20）条或用户空闲 `CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`（0 或 10–3600，0 关闭空闲触发）触发一次摘要；审计 `chatbot.ai.memory` 增加 `rounds`。
+  - **保留期分离**：AI 会话映射保留 7 天（`CHATBOT_AI_SESSION_RETENTION_DAYS`）；长期记忆保留 `CHATBOT_AI_MEMORY_RETENTION_DAYS=365`（30–3650），互不影响。
   - **远端会话清理增强**：`/reset`、`/forget confirm`、角色卡变更（含管理员删除角色）清理本地映射时尽力删除远端 OpenCode 会话与旧摘要会话。
-  - **移除代理隧道依赖**：删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；删除 `BOT_PROXY_URL`；
-    生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`；连通性只探测外网 + QQ 平台（Pi 直连），`BotConnectivitySnapshot` 去掉 `deviceOnline`/`proxy`。
+  - **移除代理隧道依赖**：删除 `scripts/discord-tunnel.ps1`/`discord-tunnel.vbs`/`install-tunnel-task.ps1` 与 PC 计划任务 `AntifieldCloudDiscordTunnel`；删除 `CHATBOT_PROXY_URL`；
+    生产 env 删除 `HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`；连通性只探测外网 + QQ 平台（Pi 直连），`ChatbotConnectivitySnapshot` 去掉 `deviceOnline`/`proxy`。
   - **版本/数据**：version 0.5.10；schema 保持 v13（无迁移）；`scripts/deploy.ps1` 无需改（期望 schema 13 不变）。
 - **本地验证**（Lead 实测 2026-10-22）：`npm test` **341**（v0.5.9 的 333 + 新增 8 个 v0.5.10 用例：摘要一次性/删除、合并/空闲/并发串行、`/forget` 与 `/reset` 远端删除、记忆/会话保留期分离）、
   `npm run test:web` **157**（30 文件）、`npm run typecheck` 通过；`npm run test:coverage` exit 0（Lines **91.98%** / Branches **76.92%** / Functions **85.99%**）、`npm run build` 通过。
@@ -276,21 +276,21 @@
   - release `20261022T152053Z`（commit `4619c91`，version 0.5.10/schema v13）已切换并重启；current 指向该 release，上一 release `20261022T143451Z`（v0.5.9）保留；schema 无迁移。
   - 迁移前 DB 快照（仅部署保护）：`db-predeploy-20261022T152150860Z.sqlite`（sha256 `3e48eb3359c00408903adde5ac642dd9f2b190e106e2d502112c3ff3ce7078e6`）。
   - `/healthz` = `{"ok":true,"version":"0.5.10","schemaVersion":13}`；部署内只读 smoke **16/16**；带 Cloudflare Access service token 完整 smoke **24/24**。
-  - **生产 env 实测**：`BOT_AI_MEMORY_RETENTION_DAYS=365`、`BOT_AI_MEMORY_BATCH_MESSAGES=3`、`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`BOT_PROXY_URL` 均无；
+  - **生产 env 实测**：`CHATBOT_AI_MEMORY_RETENTION_DAYS=365`、`CHATBOT_AI_MEMORY_BATCH_MESSAGES=3`、`CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS=120`；`HTTPS_PROXY`/`HTTP_PROXY`/`NODE_USE_ENV_PROXY`/`NO_PROXY`/`CHATBOT_PROXY_URL` 均无；
     运行时 `botAiMemoryRetentionDays=365`、`botAiMemoryBatchMessages=3`、`botAiMemoryIdleFlushSeconds=120`、`botAiSessionRetentionDays=7`，config 中无 proxy 字段。
   - **直连与连通性**：无代理环境下 QQ `checkBot` ok（access_token 已获取）；启动日志“Bot 连通性检查完成” detail 仅 `internet:true, platforms:["qq"]`（无 proxyPort）。
   - **PC 隧道清理**：计划任务 `AntifieldCloudDiscordTunnel` 已移除、无隧道进程、PC/Pi 均无 `18090` 监听；仓库隧道脚本已删除。
-  - **前端产物**：带 Access token 访问 `/` 与 `/bots` 均 **200**；新 bundle `/assets/index-Bx6EBCIp.js`（644262 bytes），含“Pi 直连”，**不含**“代理端口”“设备在线”。
+  - **前端产物**：带 Access token 访问 `/` 与 `/chatbots` 均 **200**；新 bundle `/assets/index-Bx6EBCIp.js`（644262 bytes），含“Pi 直连”，**不含**“代理端口”“设备在线”。
   - **部署后备份**：增量 `snapshot-20261022T152331855Z-inc.tar.gz`（132980 bytes，sha256 `c53e4ab2c428ed7412363ebb9977e7458e8e7692edc0248213ce62f2be66d42c`）已由 PC `backup-pull` 拉取并 ack；密钥包 `secrets-20261022T152333Z.tar.age` 拉取成功，`secrets=ok`。
 - **用户实发验收（通过，2026-10-22 23:26–23:29 CST / UTC 15:26–15:29）**：
-  1. **事件与自助命令**：用户 `5B7B32E7…` 实发 8 条事件全部 outcome=ok：4 条 Chat、3 条 `/forget`（2 次 confirm：`bot.memory.forget removed:1`；1 次用法提示）、1 条 `/reset`（`bot.reset` 审计）。
-  2. **合并摘要（有服务端证据）**：4 条 Chat 仅产生 1 次 `bot.ai.memory`，detail `rounds:3`（15:28:37Z），明显少于 Chat 次数，证明“3 条或空闲 120s 触发一次”。
+  1. **事件与自助命令**：用户 `5B7B32E7…` 实发 8 条事件全部 outcome=ok：4 条 Chat、3 条 `/forget`（2 次 confirm：`chatbot.memory.forget removed:1`；1 次用法提示）、1 条 `/reset`（`chatbot.reset` 审计）。
+  2. **合并摘要（有服务端证据）**：4 条 Chat 仅产生 1 次 `chatbot.ai.memory`，detail `rounds:3`（15:28:37Z），明显少于 Chat 次数，证明“3 条或空闲 120s 触发一次”。
   3. **远端会话删除（有服务端证据）**：部署前快照的两个会话 `ses_e9c15b42effez0wu1ngmcSY0Bd`（chat）与 `ses_e9c15a6fbffe2CLM753O0NNqoc`（旧摘要会话），在 `/forget confirm` 后经 OpenCode API 查询均为 **404**；
-     该用户本地 `bot_ai_sessions`/`bot_ai_memories` 已清空；其他用户（`E259399F…`、`6B7DAC9B…`）的会话/记忆保持 200/未受影响；无“删除远端 AI 会话失败”日志。
-  4. **图片回归（有服务端证据）**：真实图片消息 `image/jpeg, size=145172` 端到端成功，`bot.ai.image` 记录 mime/size、`bot.ai.chat` 带 image 标志。
-  5. **出站网络卡片**：`/bots` 卡片只显示外网/QQ 平台、无代理端口/设备在线，检测可用——用户确认验收通过（服务端无单独 UI 证据，如实记录）。
+     该用户本地 `chatbot_ai_sessions`/`chatbot_ai_memories` 已清空；其他用户（`E259399F…`、`6B7DAC9B…`）的会话/记忆保持 200/未受影响；无“删除远端 AI 会话失败”日志。
+  4. **图片回归（有服务端证据）**：真实图片消息 `image/jpeg, size=145172` 端到端成功，`chatbot.ai.image` 记录 mime/size、`chatbot.ai.chat` 带 image 标志。
+  5. **出站网络卡片**：`/chatbots` 卡片只显示外网/QQ 平台、无代理端口/设备在线，检测可用——用户确认验收通过（服务端无单独 UI 证据，如实记录）。
   6. 用户于 **23:29 CST** 明确“完成验收”。
-- **回滚**：schema 无迁移；切回 release `20261022T143451Z`（v0.5.9）并还原 env 备份（含代理变量与旧 `BOT_PROXY_URL`）+ 恢复旧隧道脚本/计划任务后重启；无 schema 回滚需求。
+- **回滚**：schema 无迁移；切回 release `20261022T143451Z`（v0.5.9）并还原 env 备份（含代理变量与旧 `CHATBOT_PROXY_URL`）+ 恢复旧隧道脚本/计划任务后重启；无 schema 回滚需求。
 ## v0.5.9（历史，已部署并验收通过；用户实发 2026-10-22 22:39–22:41 CST；v0.5.10 起移除代理隧道依赖）
 
 - 日期：2026-10-22（Asia/Shanghai）
@@ -298,12 +298,12 @@
 - **状态**：已部署 v0.5.9/schema v13（无迁移），部署验证（env 迁移、健康检查、两次 smoke、运行时配置、前端产物）通过。
   **用户实发验收于 2026-10-22 22:41 CST 确认通过**：非管理员 `/help` 有服务端事件证据（22:39:52 `command/ok/command_help`），其余项目为用户口头确认通过（服务端无单独事件证据，详见“用户实发验收”）。
 - **交付范围**：
-  - **移除 `/ask`**：`BOT_COMMANDS` 删除 `ask`，现为 `/help /status /backup /world /mc /files /role /reset /forget`；`/ask` 作为未知命令——非管理员被拒（`bot.command.denied`、无回复），
+  - **移除 `/ask`**：`CHATBOT_COMMANDS` 删除 `ask`，现为 `/help /status /backup /world /mc /files /role /reset /forget`；`/ask` 作为未知命令——非管理员被拒（`chatbot.command.denied`、无回复），
     管理员回全量帮助、不调用 AI；斜杠命令不再触发 AI。
-  - **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或默认 lofii）+ 固定只读安全边界 + 长期记忆 + 用户消息」；`BotAiMode`/task 提示词移除；
-    `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 从 `config.ts`/`bootstrap-env.sh`/`env.example` 删除；`bot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；
-    `/reset` 与角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不再记录 `mode`。
-  - **限速宽松档**：`BOT_CHAT_RATE_PER_MINUTE=30`（1–120）、`BOT_AI_RATE_PER_HOUR=120`（1–600）、`BOT_COMMAND_RATE_PER_MINUTE=120`（1–600）；
+  - **AI 仅普通消息 Chat**：提示词固定为「角色卡（个人卡或默认 lofii）+ 固定只读安全边界 + 长期记忆 + 用户消息」；`ChatbotAiMode`/task 提示词移除；
+    `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT` 从 `config.ts`/`bootstrap-env.sh`/`env.example` 删除；`chatbot_ai_sessions.mode` 列保留但只写 `chat`（旧 task 行为历史遗留）；
+    `/reset` 与角色卡变更清理该范围全部会话映射；审计 `chatbot.ai.chat` 不再记录 `mode`。
+  - **限速宽松档**：`CHATBOT_CHAT_RATE_PER_MINUTE=30`（1–120）、`CHATBOT_AI_RATE_PER_HOUR=120`（1–600）、`CHATBOT_COMMAND_RATE_PER_MINUTE=120`（1–600）；
     限流仍按 Bot×用户维度，超限回复中文提示并写 `rate_limited` 诊断事件。
   - **`/help` 自助且动态**：`/help` 与 `/role`（私聊）、`/reset`、`/forget confirm` 一样对全部用户开放；非管理员仅公开命令 + Chat 说明（`publicHelpText()`），
     管理员全量（`helpText()`，无 `/ask`）；未知命令对管理员回全量帮助、对非管理员被拒。
@@ -314,21 +314,21 @@
 - **部署验证**：
   - release `20261022T143451Z`（commit `97996dc`，version 0.5.9/schema v13）已切换并重启；current 指向该 release，上一 release `20261022T134852Z`（v0.5.8）保留；schema 无迁移。
   - 迁移前 DB 快照（无迁移，仅部署保护）：`db-predeploy-20261022T143520649Z.sqlite`（sha256 `14ca82ed9cfc54556faeadc4914fb1c797fc177aa5d1f2b27d3b2db72e42968b`）。
-  - **生产 env 迁移已完成**：`BOT_COMMAND_RATE_PER_MINUTE=120`、`BOT_AI_RATE_PER_HOUR=120`、`BOT_CHAT_RATE_PER_MINUTE=30`（原旧值/缺失 20、10）；
-    `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 已删除（计数 0）；env 权限保持 `640 root:antifieldcloud`；`APP_VERSION=0.5.9`；
+  - **生产 env 迁移已完成**：`CHATBOT_COMMAND_RATE_PER_MINUTE=120`、`CHATBOT_AI_RATE_PER_HOUR=120`、`CHATBOT_CHAT_RATE_PER_MINUTE=30`（原旧值/缺失 20、10）；
+    `CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT` 已删除（计数 0）；env 权限保持 `640 root:antifieldcloud`；`APP_VERSION=0.5.9`；
     原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`（供回滚）。
   - `/healthz` = `{"ok":true,"version":"0.5.9","schemaVersion":13}`；部署内只读 smoke **16/16**；带 Cloudflare Access service token 完整 smoke **24/24**
     （首次因 Access 请求 **20s 超时**导致 1 项失败，重试后全通过；无代码/服务异常）。
   - **运行时配置实测**：`appVersion=0.5.9`、`botChatRatePerMinute=30`、`botAiRatePerHour=120`、`botCommandRatePerMinute=120`、`botAiVisionEnabled=true`、`botAiEnabled=true`。
-  - **前端产物**：带 Access token 访问 `/` 与 `/bots` 均 **200**；新 bundle `/assets/index-CFrhFtH2.js`（644849 bytes）；bundle 含“每分钟 30 次”新限速文案与“AI 对话由普通消息 Chat 承担”，**不含 `/ask`**。
+  - **前端产物**：带 Access token 访问 `/` 与 `/chatbots` 均 **200**；新 bundle `/assets/index-CFrhFtH2.js`（644849 bytes）；bundle 含“每分钟 30 次”新限速文案与“AI 对话由普通消息 Chat 承担”，**不含 `/ask`**。
   - 部署后增量备份：`snapshot-20261022T143749907Z-inc.tar.gz`（131088 bytes，sha256 `702a0d42221939a0d9e6b5bd2509dfa18ccf4e62622991d98e02de53b055c5a4`）已由 PC `backup-pull` 拉取并 ack（PC 侧 daily 目录）；密钥包 `secrets-20261022T143751Z.tar.age` 拉取成功，`secrets=ok`。
   - 回滚：schema 无回滚需求；切回 release `20261022T134852Z`（v0.5.8）+ 还原 env 备份（20/10/6 与两个提示词键占位）+ 重启。
 - **用户实发验收（通过，2026-10-22 22:39–22:41 CST）**：
-  1. **非管理员 `/help`（有服务端证据）**：22:39:52 CST（UTC 14:39:52）非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`；`bot_events` 记录 `event_kind=command, outcome=ok, detail=command_help`，`audit_log` 记录 `bot.command`（`command=help`）；
+  1. **非管理员 `/help`（有服务端证据）**：22:39:52 CST（UTC 14:39:52）非管理员 QQ 用户 `6B7DAC9B…` 实发 `/help`；`chatbot_events` 记录 `event_kind=command, outcome=ok, detail=command_help`，`audit_log` 记录 `chatbot.command`（`command=help`）；
      事件 200 ack 且命令正常回复，无异常投递。自 v0.5.9 部署（22:35 CST）以来生产仅有这 1 条真实入站事件。
   2. **管理员 `/help` 全量、`/ask` 只回帮助且不调用 AI、放宽后限速体验（30/min、120/hour、命令 120/min）、普通 Chat/图片回归**：用户口头确认通过；服务端无单独事件证据，本段如实记录为“用户确认”，不写成自动验证。
   3. 用户于 **22:41 CST** 原话确认“验收通过”。
-- **回滚**：schema 未变（v13），切回 release `20261022T134852Z`（v0.5.8）并还原 env 备份（`BOT_COMMAND_RATE_PER_MINUTE=20`、`BOT_AI_RATE_PER_HOUR=10`、`BOT_CHAT_RATE_PER_MINUTE=6`；两个提示词键占位）后重启；无 schema 回滚需求。
+- **回滚**：schema 未变（v13），切回 release `20261022T134852Z`（v0.5.8）并还原 env 备份（`CHATBOT_COMMAND_RATE_PER_MINUTE=20`、`CHATBOT_AI_RATE_PER_HOUR=10`、`CHATBOT_CHAT_RATE_PER_MINUTE=6`；两个提示词键占位）后重启；无 schema 回滚需求。
 ## v0.5.8（历史，已部署并验收通过；用户实发 2026-10-22 21:59–22:08 CST；v0.5.9 起移除 /ask 与 task 模式）
 
 - 日期：2026-10-22（Asia/Shanghai）
@@ -336,16 +336,16 @@
 - **状态**：已部署 v0.5.8/schema v13，部署验证（迁移 13、健康检查、两次 smoke、运行时配置、QQ 连通性、前端产物、webhook 负路径）通过；**用户实发验收已于 2026-10-22 22:10 CST 确认通过**（21:59–22:08 CST 真实 QQ 消息，13 条入站事件全部符合预期，图片端到端通过），详见下方“用户实发验收”。
 - **交付范围**：
   - **平台收敛**：Bot 仅支持 QQ 官方 Bot；删除 Telegram/Discord/Slack 适配器、`discord-gateway.ts`、只读按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）、
-    Telegram HTML/引用/线程；公开 Webhook 只接受 QQ。删除 env：`BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`。
-  - **schema v13（迁移 13）**：`DELETE FROM bots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；迁移 5–12 保留；
+    Telegram HTML/引用/线程；公开 Webhook 只接受 QQ。删除 env：`CHATBOT_DISCORD_GATEWAY_ENABLED`、`CHATBOT_PUBLISH_MAX_MEDIA_BYTES/FILES/TOTAL_BYTES`。
+  - **schema v13（迁移 13）**：`DELETE FROM chatbots WHERE platform <> 'qq'`，级联删除非 QQ Bot 的目标/队列/事件/会话/记忆/角色卡；迁移 5–12 保留；
     迁移前已备份生产 Discord Bot 数据（DB 快照覆盖）。迁移不可逆，回滚只能还原迁移前快照。
   - **QQ 单平台能力保留**：QQ 官方 Bot 接入（AppID/AppSecret/op=13 回调与 op=0 Ed25519 验签）、命令（`/help /status /backup /world /mc /files /ask /role /reset /forget`）、
     C2C/群@/频道 Chat、长期记忆、私聊角色卡、事件诊断、平台连接自检（`access_token`）、角色/记忆元数据管理、文本发布（TOTP + `PUBLISH`，≤2000 分段）。
-  - **QQ 入站图片理解默认开启**：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 中 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单、
-    image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、内存不落盘下载后，以 OpenCode prompt files 交给模型 provider（图片会外发给模型服务，SECURITY 已写明）；
+  - **QQ 入站图片理解默认开启**：`CHATBOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 中 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`） 域名后缀白名单、
+    image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES`、内存不落盘下载后，以 OpenCode prompt files 交给模型 provider（图片会外发给模型服务，SECURITY 已写明）；
     失败/关闭降级为纯文字回答；QQ 群/频道仅 @Bot 事件，图片消息同样受平台限制。
-  - **API/UI 收敛**：`BotPlatform` 仅 `qq`；`BotSummary` 无 `gateway`、`BotTarget` 无 `chatTrigger`、`BotPublishJob` 无 `mediaFileIds`；
-    删除 `chat_trigger_unsupported` 与媒体相关错误码；Web `/bots` 去掉 Gateway/媒体选择/触发方式，保留 6 分区（概览/配置/目标/投递与发布/角色与记忆/诊断）。
+  - **API/UI 收敛**：`ChatbotPlatform` 仅 `qq`；`ChatbotSummary` 无 `gateway`、`ChatbotTarget` 无 `chatTrigger`、`ChatbotPublishJob` 无 `mediaFileIds`；
+    删除 `chat_trigger_unsupported` 与媒体相关错误码；Web `/chatbots` 去掉 Gateway/媒体选择/触发方式，保留 6 分区（概览/配置/目标/投递与发布/角色与记忆/诊断）。
   - **文档**：BOT.md 重写为 QQ 单平台（含 attachments 字段/域名白名单/腾讯平台限制）；API/UI-SPEC/SECURITY/ARCHITECTURE/DEPLOY/README/AGENTS/CHANGELOG/ROADMAP/PLAN 全量同步；
     v0.5.0–v0.5.7 历史验收记录保留并标注“v0.5.8 起移除”。
 - **本地验证**（Lead 全量实测 2026-10-22）：`npm test` **337**（服务端 321 + 运维脚本 16）、`npm run test:web` **157**（30 文件）、`node scripts/check-version.mjs` 通过；`npm run check` 通过（typecheck/lint/server/web 全绿）；`npm run test:coverage` 通过（Lines 91.78% / Branches 77.06% / Functions 86.12%）；`npm run build` 通过。
@@ -353,24 +353,24 @@
   - release `20261022T134852Z`（commit `96294e4`，version 0.5.8/schema v13）已切换并重启；current 指向该 release，上一 release `20261022T131813Z`（v0.5.7）保留。
   - 迁移前 DB 快照（含删除前 Discord Bot 数据，供回滚）：`/var/lib/antifieldcloud/backups/db-predeploy-20261022T134921798Z.sqlite`（sha256 `fed84a0a4024ece85c4de50eabe41b20bf6a2d2821350d295d36faa1e98ec1ce`）。
   - `/healthz` = `{"ok":true,"version":"0.5.8","schemaVersion":13}`；部署脚本内部只读 smoke **16/16**；带 Cloudflare Access service token 的完整 smoke **24/24**。
-  - **迁移 13 校验**：`bots` 仅剩 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1）；原 Discord Bot `853f85e6…` 在 `bot_targets`/`bot_deliveries`/`bot_events`/`bot_ai_sessions`/`bot_ai_memories`/`bot_chat_roles`/`bot_inbound_targets` 均为 0 行；QQ 数据保留（targets 2 / deliveries 4 / events 44 / sessions 4 / memories 3 / roles 1 / inbound 4）；`chat_trigger` 列按设计保留但不读写。
-  - **运行时配置**：`botAiVisionEnabled=true`（默认开启）、`botAiImageMaxBytes=10485760`、`botAiMaxReplyChars=4000`；`BOT_ENABLED`/`BOT_AI_ENABLED` 均为 true。
+  - **迁移 13 校验**：`chatbots` 仅剩 1 行 QQ Bot（`2456ea90-7fed-42ec-81d0-9c478d2a9d47`/QQ 运维 Bot/enabled=1）；原 Discord Bot `853f85e6…` 在 `chatbot_targets`/`chatbot_deliveries`/`chatbot_events`/`chatbot_ai_sessions`/`chatbot_ai_memories`/`chatbot_chat_roles`/`chatbot_inbound_targets` 均为 0 行；QQ 数据保留（targets 2 / deliveries 4 / events 44 / sessions 4 / memories 3 / roles 1 / inbound 4）；`chat_trigger` 列按设计保留但不读写。
+  - **运行时配置**：`botAiVisionEnabled=true`（默认开启）、`botAiImageMaxBytes=10485760`、`botAiMaxReplyChars=4000`；`CHATBOT_ENABLED`/`CHATBOT_AI_ENABLED` 均为 true。
   - **连通性/Gateway**：出站连通性探测仅 `platforms:["qq"]`；新进程无 Discord Gateway；旧进程在切换时 `Discord Gateway 已停止`。
-  - **前端产物**：带 Access token 访问 `https://app.<domain>/` 与 `/bots`（Accept: text/html）均 **200**；新 bundle `/assets/index-C-fPrxEf.js`（644795 bytes）与 `/assets/index-BJSYA4Y6.css`；bundle 含「AppID/检查连接/角色与记忆/诊断」，**不含**「Discord Gateway/Telegram/Slack」。
+  - **前端产物**：带 Access token 访问 `https://app.<domain>/` 与 `/chatbots`（Accept: text/html）均 **200**；新 bundle `/assets/index-C-fPrxEf.js`（644795 bytes）与 `/assets/index-BJSYA4Y6.css`；bundle 含「AppID/检查连接/角色与记忆/诊断」，**不含**「Discord Gateway/Telegram/Slack」。
   - **QQ Webhook 真实网络负路径**：`op=0` 无签名 → **401 `invalid_signature`**；`op=99` → **200 `{"ok":true}`**（仅确认不处理）；未知 bot → **404**。
   - **QQ 连接自检（真实网络）**：`access_token 已获取`，ok（经 PC 代理隧道）。
-  - **QQ Webhook 端到端合成自检（非真实平台消息，2026-10-22 21:56）**：用生产 QQ AppSecret 派生密钥对合成事件签名后 POST 本机 webhook——① op=13 回调校验返回 **200** 且签名格式正确；② 合成 `/help` C2C 事件返回 **200 `{"opcode":12}`**，事件记录为 `command/denied`（假 openid 未登记命令白名单，符合预期）；③ 合成“仅图片无正文”C2C 事件返回 **200**，审计 `bot.chat` 记录 `chars:0, image:"image/png", open:qq_c2c`，日志出现“Bot 入站图片处理失败，降级为纯文本”（探测 URL 不存在，验证降级路径），因假 `msg_id` 回复发送失败属预期。自检后已清理探测事件/入站记录（仅保留审计），**该自检不能替代用户真实 QQ 消息验收**。
+  - **QQ Webhook 端到端合成自检（非真实平台消息，2026-10-22 21:56）**：用生产 QQ AppSecret 派生密钥对合成事件签名后 POST 本机 webhook——① op=13 回调校验返回 **200** 且签名格式正确；② 合成 `/help` C2C 事件返回 **200 `{"opcode":12}`**，事件记录为 `command/denied`（假 openid 未登记命令白名单，符合预期）；③ 合成“仅图片无正文”C2C 事件返回 **200**，审计 `chatbot.chat` 记录 `chars:0, image:"image/png", open:qq_c2c`，日志出现“Bot 入站图片处理失败，降级为纯文本”（探测 URL 不存在，验证降级路径），因假 `msg_id` 回复发送失败属预期。自检后已清理探测事件/入站记录（仅保留审计），**该自检不能替代用户真实 QQ 消息验收**。
   - **OpenCode 视觉链路复验（2026-10-22 21:56）**：在生产 OpenCode 上用临时会话发送 data URL 图片，模型正确返回颜色（“粉色”），随后删除会话；说明“图片→模型”路径可用；QQ 真实入站图片已于 2026-10-22 21:59–22:08 CST 实发验收通过。
-  - **QQ attachments 契约核对**：对照 QQ 官方文档（[单聊消息事件](https://bot.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html) / 群@事件），`attachments[]` 字段为 `url/filename/width/height/size/content_type`（`image/jpeg|image/png|image/gif` 等），与适配器实现一致；图床域名后缀白名单覆盖 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（实际图床如 `multimedia.nt.qq.com.cn`）。实现只取首个 `image/*`、仅图片无正文也进入 Chat、内存下载不落盘、失败降级为纯文字。
+  - **QQ attachments 契约核对**：对照 QQ 官方文档（[单聊消息事件](https://chatbot.qq.com/wiki/develop/api-v2/autogen/event/c2c_message_create.html) / 群@事件），`attachments[]` 字段为 `url/filename/width/height/size/content_type`（`image/jpeg|image/png|image/gif` 等），与适配器实现一致；图床域名后缀白名单覆盖 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（实际图床如 `multimedia.nt.qq.com.cn`）。实现只取首个 `image/*`、仅图片无正文也进入 Chat、内存下载不落盘、失败降级为纯文字。
   - 部署后增量备份：`snapshot-20261022T135052128Z-inc.tar.gz`（126419 bytes，sha256 `262afd2d4cbd39c2ae12ab5ae152517f0ff470e59cfc9b641aed5982b56fb78a`）已由 PC `backup-pull` 拉取并 ack（PC 侧 `daily/2026-10-22` 目录）；密钥包 `secrets-20261022T135053Z.tar.age` 拉取成功，`secrets=ok`。
 - **用户实发验收（通过，2026-10-22 21:59–22:08 CST）**：生产 13 条真实 QQ 入站事件全部符合预期（来源 C2C 管理员 `5B7B32E7…` 与 `6B7DAC9B…`）；用户于 22:10 CST 确认“验收通过”。证据逐条如下：
-  1. **文本命令**：`/help` → ok（14:08:04Z）；`/forget`（confirm）→ `command_forget` ok + 审计 `bot.memory.forget removed:1`（14:00:04Z）；`/reset` → ok + 审计 `bot.reset`（13:59:47Z、14:07:43Z）；`/role`（show/set/off/on/delete）→ ok + 审计 `bot.role` delete（14:07:34Z）。
-  2. **权限边界**：`6B7DAC9B…` 于 14:06:26Z 一条命令被拒（`bot.command.denied`），随后 `/role` 正常开放（自助命令绕过白名单），符合目标 `allow_commands` + 用户双白名单与自助命令例外设计。
-  3. **文本 Chat**：14:01:01Z、14:03:25Z 两条普通消息 → `bot.ai.chat`（`mode=chat`）并写入 `bot.ai.memory`；`bot_ai_sessions` 更新 14:03:53Z、`bot_ai_memories` 更新 14:03:59Z，会话/记忆链路正常。
-  4. **QQ 图片理解端到端**：14:03:36Z 真实图片消息（仅图片、`chars:0`）→ `bot.chat` 记录 `chars:0, image:"image/jpeg"`；`bot.ai.image` 记录 `mime=image/jpeg, size=148563`；`bot.ai.chat` 记录 `image` 标志；事件 outcome=`ok`；随后 `bot.ai.memory` 更新（14:03:59Z）——证明 attachments 解析 → 域名/大小/mime 校验 → 内存下载 → OpenCode 视觉 → 回复 → 记忆整条链路成功。
-  5. 实测期间无 `bot_deliveries` 失败、无 `bot_publish_jobs` 记录。
-  6. **诊断/角色与记忆/检查连接面板与文本发布**：用户确认整体验收通过；服务端未单独留存 UI 面板交互与发布任务证据（`bot_publish_jobs` 无记录），此处按“用户确认验收通过”如实记录，不写成自动验证通过。
-- **回滚**：schema 13 迁移不可逆（非 QQ Bot 数据已删除），回滚必须恢复迁移前快照 `db-predeploy-20261022T134921798Z.sqlite` 并同步还原 `APP_VERSION`、切回 `20261022T131813Z`；回滚窗口内保持 `BOT_ENABLED`/`BOT_AI_ENABLED=false`。
+  1. **文本命令**：`/help` → ok（14:08:04Z）；`/forget`（confirm）→ `command_forget` ok + 审计 `chatbot.memory.forget removed:1`（14:00:04Z）；`/reset` → ok + 审计 `chatbot.reset`（13:59:47Z、14:07:43Z）；`/role`（show/set/off/on/delete）→ ok + 审计 `chatbot.role` delete（14:07:34Z）。
+  2. **权限边界**：`6B7DAC9B…` 于 14:06:26Z 一条命令被拒（`chatbot.command.denied`），随后 `/role` 正常开放（自助命令绕过白名单），符合目标 `allow_commands` + 用户双白名单与自助命令例外设计。
+  3. **文本 Chat**：14:01:01Z、14:03:25Z 两条普通消息 → `chatbot.ai.chat`（`mode=chat`）并写入 `chatbot.ai.memory`；`chatbot_ai_sessions` 更新 14:03:53Z、`chatbot_ai_memories` 更新 14:03:59Z，会话/记忆链路正常。
+  4. **QQ 图片理解端到端**：14:03:36Z 真实图片消息（仅图片、`chars:0`）→ `chatbot.chat` 记录 `chars:0, image:"image/jpeg"`；`chatbot.ai.image` 记录 `mime=image/jpeg, size=148563`；`chatbot.ai.chat` 记录 `image` 标志；事件 outcome=`ok`；随后 `chatbot.ai.memory` 更新（14:03:59Z）——证明 attachments 解析 → 域名/大小/mime 校验 → 内存下载 → OpenCode 视觉 → 回复 → 记忆整条链路成功。
+  5. 实测期间无 `chatbot_deliveries` 失败、无 `chatbot_publish_jobs` 记录。
+  6. **诊断/角色与记忆/检查连接面板与文本发布**：用户确认整体验收通过；服务端未单独留存 UI 面板交互与发布任务证据（`chatbot_publish_jobs` 无记录），此处按“用户确认验收通过”如实记录，不写成自动验证通过。
+- **回滚**：schema 13 迁移不可逆（非 QQ Bot 数据已删除），回滚必须恢复迁移前快照 `db-predeploy-20261022T134921798Z.sqlite` 并同步还原 `APP_VERSION`、切回 `20261022T131813Z`；回滚窗口内保持 `CHATBOT_ENABLED`/`CHATBOT_AI_ENABLED=false`。
 
 ## v0.5.7（历史，已部署；真实平台消息级联调待用户实发；自 v0.5.8 起移除多平台能力）
 
@@ -379,23 +379,23 @@
 - **状态**：已部署 v0.5.7/schema v12（当前 release `20261022T131813Z`，含错误提示映射修复 `2f429be`）；部署验证、迁移、健康检查、smoke、Discord Gateway 与生产只读服务层/前端产物验证已通过。
   **真实平台消息级联调（`/reset`、`/forget confirm`、分段/Markdown、群聊引用、all 触发、图片、诊断/角色/记忆面板实际交互）尚未由用户实发验收**，完成前不得声明该部分通过。
 - **交付范围**：
-  - schema v12（迁移 12）：`bot_targets.chat_trigger`、`bot_events` 诊断列与索引。
+  - schema v12（迁移 12）：`chatbot_targets.chat_trigger`、`chatbot_events` 诊断列与索引。
   - 群聊触发策略（目标级 mention/all；QQ 群/频道仅 @；message 触发未授权时静默）；引用回复/线程（Telegram `reply_to_message_id`、Slack `thread_ts`、Discord `message_reference`）；长回复按平台上限分段（最多 4 段、续段前缀、超限截断、Telegram HTML 安全分段、partial 不自动重试）；Markdown 平台化（Telegram HTML / Discord markdown / Slack mrkdwn / QQ 纯文本）。
-  - 图片理解（默认关闭）：Telegram photo/document、Discord/Slack 图片附件、固定域名下载、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；QQ 不支持。生产已完成只读验证：OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash` 支持 image。
+  - 图片理解（默认关闭）：Telegram photo/document、Discord/Slack 图片附件、固定域名下载、image mime 白名单、≤`CHATBOT_AI_IMAGE_MAX_BYTES`、不落盘、失败降级；QQ 不支持。生产已完成只读验证：OpenCode prompt files data URL + `opencode-go/deepseek-v4.1-flash` 支持 image。
   - 自助命令 `/reset`、`/forget confirm`（所有用户）；`/help` 更新。
-  - `POST /api/bots/:id/check` 连接自检；`GET /api/bots/:id/events` 诊断事件（无正文）；deliveries/publish/metrics 的 `lastErrorHint`。
-  - 角色/记忆管理 API（仅元数据、可启停/删除）；目标 `chatTrigger`；Web `/bots` 6 标签与新面板。
-  - 新 env：`BOT_AI_MAX_REPLY_CHARS=4000`、`BOT_AI_VISION_ENABLED=false`、`BOT_AI_IMAGE_MAX_BYTES=10485760`。
+  - `POST /api/chatbots/:id/check` 连接自检；`GET /api/chatbots/:id/events` 诊断事件（无正文）；deliveries/publish/metrics 的 `lastErrorHint`。
+  - 角色/记忆管理 API（仅元数据、可启停/删除）；目标 `chatTrigger`；Web `/chatbots` 6 标签与新面板。
+  - 新 env：`CHATBOT_AI_MAX_REPLY_CHARS=4000`、`CHATBOT_AI_VISION_ENABLED=false`、`CHATBOT_AI_IMAGE_MAX_BYTES=10485760`。
 - **本地验证**：`npm test` 387（服务端 + 运维脚本）、`npm run test:web` 157（30 文件）、`node scripts/check-version.mjs` 通过；`npm run check`、`test:coverage`、`test:web:coverage`、`npm run build` 均通过（Lead 最终验证）。
 - **部署验证**：
   - **修复发布**：首次部署 release `20261022T131121Z`（commit `8dcd10f`）后，生产只读验证发现 **`lastErrorHint` 对适配器包装消息识别失败**（如 `平台请求失败（0:qq_access_token_failed）` 返回 null）；修复 commit `2f429be`（`fix(bot): 错误提示识别适配器包装消息中的平台错误码`），重新部署 release `20261022T131813Z`（commit `2f429be`，version 0.5.7/schema v12）；current 指向该 release，保留 `20261022T131121Z`、`20261022T114546Z`。
   - 第二次迁移前 DB 快照：`/var/lib/antifieldcloud/backups/db-predeploy-20261022T131844841Z.sqlite`（sha256 `ad534db8ca5b806cf09b0abbd5ba7459a92fcfedad8d4d05afe9930e2df28794`）；首轮快照 `db-predeploy-20261022T131150335Z.sqlite` 保留；schema v11→v12 迁移（首轮）与修复重部署均成功。
   - `/healthz` = `{"ok":true,"version":"0.5.7","schemaVersion":12}`；部署脚本内部只读 smoke **16/16**；带 Cloudflare Access service token 的完整 smoke 再次 **24/24**；重启后 `Discord Gateway 已连接`（2026-10-22 21:18:48，bot `853f85e6-f757-4060-8692-19ec06dea4aa`）。
-  - schema 校验：`bot_targets.chat_trigger` 存在，5 个既有目标全部为默认 `mention`；`bot_events` 的 event_kind/outcome/detail/target_external_id/user_id/updated_at 6 列存在（修复重部署无新迁移）。
-  - **错误提示映射修复生产复验**：Discord dead 投递 `平台请求失败（0:network）` → “出站网络不可用：检查 Pi 出站代理/隧道与 BOT_PROXY_URL”；QQ dead 投递 `平台请求失败（0:qq_access_token_failed）` → “QQ access_token 获取失败：检查出站网络/代理与 AppSecret”；`metrics.lastErrorHint` 同步返回对应中文提示。
+  - schema 校验：`chatbot_targets.chat_trigger` 存在，5 个既有目标全部为默认 `mention`；`chatbot_events` 的 event_kind/outcome/detail/target_external_id/user_id/updated_at 6 列存在（修复重部署无新迁移）。
+  - **错误提示映射修复生产复验**：Discord dead 投递 `平台请求失败（0:network）` → “出站网络不可用：检查 Pi 出站代理/隧道与 CHATBOT_PROXY_URL”；QQ dead 投递 `平台请求失败（0:qq_access_token_failed）` → “QQ access_token 获取失败：检查出站网络/代理与 AppSecret”；`metrics.lastErrorHint` 同步返回对应中文提示。
   - **生产服务层只读验证**：对真实 DB 只读调用 `listEvents`/`listRoles`/`listMemories`/`metrics`/`listDeliveries` 均通过；角色/记忆列表只返回元数据（未含 prompt/summary 正文）；events 查询正常（部署后暂无新入站事件）。
-  - **前端产物核验**：带 Access token 访问 `https://app.<domain>/` 与 `/bots`（`Accept: text/html`）均 **200**；HTML 引用的新 bundle `/assets/index-CH38JtCp.js`、`/assets/index-BJSYA4Y6.css` 均 **200**（刷新后加载新版本）；部署 bundle 内已确认包含「角色与记忆」「诊断」「全部消息」「检查连接」「lastErrorHint」「重置当前对话」「清除长期记忆」等 v0.5.7 文案。
-  - **Webhook 真实网络负路径验证**：无签名 `POST /api/bot/webhook/<botId>`（Discord/QQ 各一次）均返回 **401 `invalid_signature`**；未知 `botId` 返回 **404**；Cloudflare Access 对 webhook 路径 bypass 生效（不带 Access token 也能到达应用鉴权层）。QQ 非 `op=0/13` 回调返回 **200 `{ok:true}`**(仅确认不处理)；审计写入 `bot.webhook.rejected`，**拒绝事件不写入 `bot_events`**（不可信输入不落诊断表，符合设计）。
+  - **前端产物核验**：带 Access token 访问 `https://app.<domain>/` 与 `/chatbots`（`Accept: text/html`）均 **200**；HTML 引用的新 bundle `/assets/index-CH38JtCp.js`、`/assets/index-BJSYA4Y6.css` 均 **200**（刷新后加载新版本）；部署 bundle 内已确认包含「角色与记忆」「诊断」「全部消息」「检查连接」「lastErrorHint」「重置当前对话」「清除长期记忆」等 v0.5.7 文案。
+  - **Webhook 真实网络负路径验证**：无签名 `POST /api/chatbot/webhook/<botId>`（Discord/QQ 各一次）均返回 **401 `invalid_signature`**；未知 `botId` 返回 **404**；Cloudflare Access 对 webhook 路径 bypass 生效（不带 Access token 也能到达应用鉴权层）。QQ 非 `op=0/13` 回调返回 **200 `{ok:true}`**(仅确认不处理)；审计写入 `chatbot.webhook.rejected`，**拒绝事件不写入 `chatbot_events`**（不可信输入不落诊断表，符合设计）。
   - **Discord 命令注册实测（只读）**：global + guild `950388705846255688` 现有 `/status`、`/backup`、`/world`、`/mc`、`/files`、`/help`、`/ask`；**缺 `/role`、`/reset`、`/forget`**（属用户在 Developer Portal 的平台后台步骤；Telegram/QQ 无需注册，Slack 尚未配置）。
   - 第二次部署后增量备份：`snapshot-20261022T132013585Z-inc.tar.gz`（125874 bytes，sha256 `fb01cc1724b32c4f3db6608934cf0cd9a622f67bf1c4b17ff171170093cbe423`）已由 PC 侧 `backup-pull` 拉取并 ack（保存于 PC 侧 `daily/2026-10-22` 目录）；密钥包 `secrets-20261022T132014Z.tar.age` 拉取成功，`secrets=ok`。
   - 真实网络平台连接自检（首轮部署记录）：Discord `@lofii.bot`（`1562353648732868709`）ok、QQ access_token 获取 ok（经 PC 代理隧道）；页面“检查连接”展示脱敏结果。
@@ -403,10 +403,10 @@
   1. 自助命令与平台注册：实际发送 `/reset` 与 `/forget confirm`（确认会话/记忆清理与审计；`/forget` 无参数时只返回用法）。**Discord 当前缺 `/role`、`/reset`、`/forget` 斜杠命令注册**（实测 global + guild `950388705846255688` 仅有 `status/backup/world/mc/files/help/ask`），需在 Developer Portal 补注册后才能实发；Telegram/QQ 无需注册，Slack 尚未配置。
   2. 回复形态：长回复分段（续段前缀/截断）、Markdown 展示、群/频道引用或线程（Telegram/Discord/Slack）。
   3. 触发方式：默认 `mention` 生效；“全部消息”按平台前置逐个验证（Telegram 关 privacy mode、Discord Message Content Intent、Slack 订阅 `message.channels`）；QQ 群/频道仅 @。
-  4. 连接自检与诊断：`POST /api/bots/:id/check` 结果、`GET /api/bots/:id/events` 事件/筛选、`lastErrorHint`；`/bots` 角色与记忆面板启停/删除实际交互（仅元数据）。
-  5. 图片理解：确认关闭时降级提示；在用户同意下临时开启验证一张图片（不落盘、失败降级），随后恢复 `BOT_AI_VISION_ENABLED=false`；QQ 不支持。
+  4. 连接自检与诊断：`POST /api/chatbots/:id/check` 结果、`GET /api/chatbots/:id/events` 事件/筛选、`lastErrorHint`；`/chatbots` 角色与记忆面板启停/删除实际交互（仅元数据）。
+  5. 图片理解：确认关闭时降级提示；在用户同意下临时开启验证一张图片（不落盘、失败降级），随后恢复 `CHATBOT_AI_VISION_ENABLED=false`；QQ 不支持。
   6. 失败/partial 场景（长回复中途失败、附件部分外发）不自动重试；迁移前快照与回滚路径可用（本次快照已确认存在）。
-- **回滚**：迁移 12 只加列/索引；回滚必须恢复迁移前 DB 快照（当前 release 对应 `db-predeploy-20261022T131844841Z.sqlite`；回退首轮 v0.5.7 用 `db-predeploy-20261022T131150335Z.sqlite`；回退 v0.5.6 用 `db-predeploy-20261022T114615308Z.sqlite`）并同步还原 `APP_VERSION`，窗口内保持 `BOT_ENABLED`/`BOT_AI_ENABLED`/`BOT_DISCORD_GATEWAY_ENABLED`/`BOT_AI_VISION_ENABLED=false`。
+- **回滚**：迁移 12 只加列/索引；回滚必须恢复迁移前 DB 快照（当前 release 对应 `db-predeploy-20261022T131844841Z.sqlite`；回退首轮 v0.5.7 用 `db-predeploy-20261022T131150335Z.sqlite`；回退 v0.5.6 用 `db-predeploy-20261022T114615308Z.sqlite`）并同步还原 `APP_VERSION`，窗口内保持 `CHATBOT_ENABLED`/`CHATBOT_AI_ENABLED`/`CHATBOT_DISCORD_GATEWAY_ENABLED`/`CHATBOT_AI_VISION_ENABLED=false`。
 
 ## v0.5.6（历史，已部署）
 
@@ -416,7 +416,7 @@
 - **个人角色**：`/role` 仍对全部平台私聊用户开放；个人卡启用时覆盖默认；`/role off` 收起个人卡并回落到 lofii；`/role delete` 同样回到默认。
 - **群聊**：普通对话固定 lofii；群内 `/role` 只回复友好提示，不读取/修改个人角色。
 - **文案**：`/role` 用法、设置/停用/删除回复与错误提示只写当前角色与分支命令，不注入默认角色个性，也不出现技术术语；Chat 异常回复改为中性说法。
-- **兼容**：schema 保持 v11；`BOT_AI_CHAT_PROMPT` 不再影响 Chat；`/ask`、任务提示、个人卡与记忆不变。
+- **兼容**：schema 保持 v11；`CHATBOT_AI_CHAT_PROMPT` 不再影响 Chat；`/ask`、任务提示、个人卡与记忆不变。
 - **本地验证**：`npm test` 324、`test:web` 141、`check-version`、coverage。
 - **部署验证**：`/healthz` `{"ok":true,"version":"0.5.6","schemaVersion":11}`；完整 smoke **24/24**；迁移前快照 `db-predeploy-20261022T114615308Z.sqlite`（sha256 `5ce4e642…`）。
 - **真实对话**：用户确认私聊/群聊默认 lofii 正常、个人卡 `off` 回落正常；群内 `/role` 返回提示；二次复核确认 `/role` 文案仅含当前角色与命令用法。
@@ -429,22 +429,22 @@
 - **角色卡**：`/role` 对全部平台私聊用户开放，`set/show/off/on/delete`；每 Bot×用户一张“名字+设定”卡；名字≤32、设定≤1000；保留提示词标记被拒绝。
 - **Chat 集成**：仅私聊 Chat 使用启用卡；替换默认 Chat 风格；安全边界与共享记忆仍追加；`/ask` 与群/频道不使用；角色变更重置 chat 会话映射。
 - **权限**：仅 `/role` 绕过命令白名单；其他命令仍要求目标 `allow_commands` + 用户白名单；Telegram/Discord/Slack 私聊 Chat 仍按目标 `allow_chat`，QQ C2C 沿用 v0.5.4。
-- **schema v11**：新增 `bot_chat_roles`；Discord DM `isDirect` 修正；Discord/Slack 命令文本上限 2048。
+- **schema v11**：新增 `chatbot_chat_roles`；Discord DM `isDirect` 修正；Discord/Slack 命令文本上限 2048。
 - **本地验证**：`npm test` 324、`test:web` 141、`check-version`、coverage；迁移 v6→v11、v9→v11、v10→v11 测试通过。
 - **部署验证**：`/healthz` `{"ok":true,"version":"0.5.5","schemaVersion":11}`；完整 smoke **24/24**；迁移前快照 `db-predeploy-20261022T104901134Z.sqlite`（sha256 `33a09f1f…`）。
-- **真实对话**：用户确认 `/role set`、`/role show`、Chat 角色生效、`/role off` 后恢复默认均正常；审计 `bot.role` 只记录动作与长度，`bot.ai.chat` 含 `role:true`；`bot_ai_sessions` 角色变更后出现新 chat 会话。
+- **真实对话**：用户确认 `/role set`、`/role show`、Chat 角色生效、`/role off` 后恢复默认均正常；审计 `chatbot.role` 只记录动作与长度，`chatbot.ai.chat` 含 `role:true`；`chatbot_ai_sessions` 角色变更后出现新 chat 会话。
 - **备份**：部署后 inc `snapshot-20261022T105908606Z-inc.tar.gz`（109566 bytes，sha256 `f27d1665…`）已由 Windows 计划任务拉取并 ack，`secrets=ok`。
 
 ## v0.5.4（历史，已部署）
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T085120Z`，schema 10）+ Windows 本地工作区
-- **双模式提示词**：`/ask` 任务导向、普通 Chat 对话导向；Chat 不再声明 AntifieldComplexx/助手身份、不主动谈业务；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖；固定安全边界始终追加；旧 `BOT_AI_SYSTEM_PROMPT` 废弃。
-- **独立会话**：schema v10 的 `bot_ai_sessions.mode`；旧会话迁为 chat，`/ask` 新建 task；shared memory 不变。
+- **双模式提示词**：`/ask` 任务导向、普通 Chat 对话导向；Chat 不再声明 AntifieldComplexx/助手身份、不主动谈业务；`CHATBOT_AI_TASK_PROMPT`/`CHATBOT_AI_CHAT_PROMPT` 可覆盖；固定安全边界始终追加；旧 `CHATBOT_AI_SYSTEM_PROMPT` 废弃。
+- **独立会话**：schema v10 的 `chatbot_ai_sessions.mode`；旧会话迁为 chat，`/ask` 新建 task；shared memory 不变。
 - **QQ C2C**：QQ 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性）；QQ 群/频道与其他平台私聊仍需目标 `allow_chat`；命令仍只认白名单。
 - **本地验证**：`npm test` 312（含 QQ C2C 开放/非 QQ 不扩散/群拒绝测试）、`npm run test:web` 141、`npm run check`、`check-version`、coverage；迁移 v6→v10 与 v9→v10 测试通过。
 - **部署验证**：`/healthz` `{"ok":true,"version":"0.5.4","schemaVersion":10}`；完整 smoke **24/24**；v9→v10 迁移前快照 `db-predeploy-20261022T082056427Z.sqlite`（sha256 `840abf79…`）；补丁部署前快照 `db-predeploy-20261022T085149190Z.sqlite`（sha256 `dd24862d…`）。
-- **真实对话**：管理员 `/ask` 审计 `mode=task`、普通 Chat `mode=chat`；非管理员 QQ C2C 审计 `bot.chat` 含 `open=qq_c2c`，`bot.ai.chat` `mode=chat`；`bot_ai_sessions` 出现独立 task/chat 行，`bot_ai_memories` 共享写入。
+- **真实对话**：管理员 `/ask` 审计 `mode=task`、普通 Chat `mode=chat`；非管理员 QQ C2C 审计 `chatbot.chat` 含 `open=qq_c2c`，`chatbot.ai.chat` `mode=chat`；`chatbot_ai_sessions` 出现独立 task/chat 行，`chatbot_ai_memories` 共享写入。
 - **临时故障**：首次验收时 PC 反向代理隧道进程退出导致 QQ 回复 `qq_access_token_failed`（非提示词逻辑）；重启计划任务后 `Bot 出站网络已恢复`，Discord Gateway 重连，`/ask`/Chat 恢复正常。隧道已改为 wscript/VBS 静默启动（无前台 shell、单实例互斥），并重装计划任务验证代理 302/Gateway 重连。
 - **备份**：部署后 inc `snapshot-20261022T085536550Z-inc.tar.gz`（98506 bytes，sha256 `6c503057…`）已由 Windows 计划任务拉取并 ack，`secrets=ok`。
 
@@ -452,9 +452,9 @@
 
 - 日期：2026-10-22（Asia/Shanghai）
 - 目标环境：Raspberry Pi 5 / Debian 13 / aarch64（release `20261022T065126Z`，schema 9）+ Windows 本地工作区
-- **出站连通性**：新增 `server/src/bot/connectivity.ts`；代理端口 TCP 探测 + 外网/平台只读 GET；`GET /api/bots/connectivity` 与 `POST /api/bots/connectivity/check`；`/bots` 概览新增“出站网络”卡片（设备在线/代理端口/外网/平台延迟）。
+- **出站连通性**：新增 `server/src/bot/connectivity.ts`；代理端口 TCP 探测 + 外网/平台只读 GET；`GET /api/chatbots/connectivity` 与 `POST /api/chatbots/connectivity/check`；`/chatbots` 概览新增“出站网络”卡片（设备在线/代理端口/外网/平台延迟）。
 - **自动恢复**：网络从不可用恢复时，Discord Gateway `wake()` 跳过退避立即重连，并触发队列扫描；PC 隧道由 `scripts/install-tunnel-task.ps1` 注册登录启动、异常重启计划任务。
-- **QQ 群**：事件到达后审计 `bot.chat.denied`（target `68611590B477339A04302BB23B426244`），确认根因是群目标未登记；登记 `kind=group`、`allow_chat=1`/`allow_commands=1` 后用户确认 @Bot AI 回复，审计 `bot.chat`/`bot.ai.chat`/`bot.ai.memory` 写入该群。QQ 空 @ 正文仍会 `bot.event.ignored`（detail `qq:event:empty_content`），需带正文。
+- **QQ 群**：事件到达后审计 `chatbot.chat.denied`（target `68611590B477339A04302BB23B426244`），确认根因是群目标未登记；登记 `kind=group`、`allow_chat=1`/`allow_commands=1` 后用户确认 @Bot AI 回复，审计 `chatbot.chat`/`chatbot.ai.chat`/`chatbot.ai.memory` 写入该群。QQ 空 @ 正文仍会 `chatbot.event.ignored`（detail `qq:event:empty_content`），需带正文。
 - **OpenCode v2.1.2**：生产 v2.1.1 → v2.1.2 已完成（备份/重启/`GET`+`POST /api/session` 200、测试 session 已删除）。
 - **部署验证**：`/healthz` `{"ok":true,"version":"0.5.3","schemaVersion":9}`；完整 smoke **24/24**；迁移前快照 `db-predeploy-20261022T065156149Z.sqlite`（sha256 `17524d02…`）。
 - **连通性实测**：正常检查日志 `proxyPort=true, internet=true, platforms=[discord,qq]`；停止 PC 隧道后出现 `Bot 出站网络不可用 (proxyPort=false)`；恢复隧道后出现 `Bot 出站网络已恢复`、`Discord Gateway 网络恢复，立即重连`、`Gateway 会话已恢复`。
@@ -471,13 +471,13 @@
 
 ### 1. 交付
 
-- **Bot Chat**：`server/src/bot/service.ts`、Telegram/Slack/QQ 适配器与 Discord Gateway 支持普通消息 Chat；目标 `allow_chat`（默认 0）；群/频道仅 @Bot 或回复 Bot，私聊全部；非管理员只能 Chat，斜杠命令仍走 `allow_commands` + user 白名单；Chat 每 Bot×用户 6 次/分钟（`BOT_CHAT_RATE_PER_MINUTE`），与 `/ask` 共用 10 次/小时（`BOT_AI_RATE_PER_HOUR`）。
-- **长期记忆**：`server/src/bot/memory.ts` + `bot_ai_memories`；DB 摘要权威 + `DATA_DIR/bot-memory/memory-<uuid>.md` 镜像（0700/0600、原子写）；每轮摘要；失败保留旧摘要；不通过 API/UI 暴露；系统提示内置，`BOT_AI_SYSTEM_PROMPT` 覆盖；摘要不额外占 AI 配额。
+- **Bot Chat**：`server/src/bot/service.ts`、Telegram/Slack/QQ 适配器与 Discord Gateway 支持普通消息 Chat；目标 `allow_chat`（默认 0）；群/频道仅 @Bot 或回复 Bot，私聊全部；非管理员只能 Chat，斜杠命令仍走 `allow_commands` + user 白名单；Chat 每 Bot×用户 6 次/分钟（`CHATBOT_CHAT_RATE_PER_MINUTE`），与 `/ask` 共用 10 次/小时（`CHATBOT_AI_RATE_PER_HOUR`）。
+- **长期记忆**：`server/src/bot/memory.ts` + `chatbot_ai_memories`；DB 摘要权威 + `DATA_DIR/bot-memory/memory-<uuid>.md` 镜像（0700/0600、原子写）；每轮摘要；失败保留旧摘要；不通过 API/UI 暴露；系统提示内置，`CHATBOT_AI_SYSTEM_PROMPT` 覆盖；摘要不额外占 AI 配额。
 - **多附件**：最多 5 个、单 10 MiB、总 50 MiB；Telegram 全图片 media group/混合逐文件、Discord 单次 multipart、Slack 逐文件；QQ 仅文本；partial 不自动重试。
 - **只读按钮**：Telegram inline keyboard / Discord components 的 `/status`、`/help` 刷新/帮助；需目标 `allow_commands` + user 白名单；无写操作；Slack/QQ 不做。
-- **Discord Gateway**：`server/src/bot/discord-gateway.ts`；Node 内置 WebSocket；`intents=37377`（含 `MESSAGE_CONTENT`）；HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避与致命关闭码；需 Developer Portal 开启 intent；`BOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭；`BotSummary.gateway` 状态。
-- **数据/API/UI**：schema v9（迁移 9：`bot_targets.allow_chat`、`bot_ai_memories`、`bot_inbound_targets`）；`GET /api/bots/:id/inbound-targets`；`BotSummary.gateway`；`BotTarget.allowChat`；发布媒体多选（≤5）；`/bots` 目标/最近入站/多附件/Gateway 提示。
-- **env/文档**：6 个新 `BOT_*` 键进入 `bootstrap-env.sh`；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BOT 同步到 0.5.2。
+- **Discord Gateway**：`server/src/bot/discord-gateway.ts`；Node 内置 WebSocket；`intents=37377`（含 `MESSAGE_CONTENT`）；HELLO/IDENTIFY/RESUME、心跳、RECONNECT/INVALID_SESSION、指数退避与致命关闭码；需 Developer Portal 开启 intent；`CHATBOT_DISCORD_GATEWAY_ENABLED=false` 默认关闭；`ChatbotSummary.gateway` 状态。
+- **数据/API/UI**：schema v9（迁移 9：`chatbot_targets.allow_chat`、`chatbot_ai_memories`、`chatbot_inbound_targets`）；`GET /api/chatbots/:id/inbound-targets`；`ChatbotSummary.gateway`；`ChatbotTarget.allowChat`；发布媒体多选（≤5）；`/chatbots` 目标/最近入站/多附件/Gateway 提示。
+- **env/文档**：6 个新 `CHATBOT_*` 键进入 `bootstrap-env.sh`；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BOT 同步到 0.5.2。
 
 ### 2. 本地验证
 
@@ -491,7 +491,7 @@
 | schema | 生产 **v8→v9 迁移通过**：`/healthz.schemaVersion=9`；迁移前快照 `db-predeploy-20261021T114936153Z.sqlite`（sha256 `5dc7855f…`） |
 | 应用部署 / `/healthz` | **通过**：`{"ok":true,"version":"0.5.2","schemaVersion":9}`；release `20261021T114908Z`，commit `abeabc7` |
 | `smoke.ps1 -ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9` | **24 通过 / 0 失败 / 0 警告**（公网 Access token/CSP/PWA/分享/告警/备份/世界/演练/脚本 SHA） |
-| Discord Gateway 真实长连接 | **已连接**：生产 `BOT_DISCORD_GATEWAY_ENABLED=true`，日志 `Discord Gateway 已连接`；MESSAGE_CONTENT 负路径与断线重连待补充观察 |
+| Discord Gateway 真实长连接 | **已连接**：生产 `CHATBOT_DISCORD_GATEWAY_ENABLED=true`，日志 `Discord Gateway 已连接`；MESSAGE_CONTENT 负路径与断线重连待补充观察 |
 | 各平台 Chat 真实外发 | **已确认**：Discord DM、Discord #general @Bot、QQ C2C 普通消息均收到 AI 回复；DM 频道目标已登记、`allow_chat=1`；多附件发布与按钮仍待验收 |
 | `node scripts/check-version.mjs` | **通过**：`packageVersion=0.5.2`；README/CHANGELOG/ACCEPTANCE/env.example/DEPLOY/AGENTS 与 lock 根版本一致（2026-10-21） |
 
@@ -499,9 +499,9 @@
 
 ```text
 应用: v0.5.2（生产 release 20261021T114908Z；发布 commit abeabc7）
-schema: v9（迁移 9：allow_chat/bot_ai_memories/bot_inbound_targets；迁移前快照 db-predeploy-20261021T114936153Z.sqlite）
-env: 生产 env 保留原有 BOT_ENABLED/BOT_AI_ENABLED；新增 BOT_DISCORD_GATEWAY_ENABLED=true；其余 5 个 v0.5.2 键使用默认值（媒体 5/50MiB、Chat 6/min、记忆 4096）
-数据: 8 张 bot* 表存在；bots 2 个（Discord/QQ）启用；QQ C2C 与 Discord #general 的 allow_chat=1，其余目标 0
+schema: v9（迁移 9：allow_chat/chatbot_ai_memories/chatbot_inbound_targets；迁移前快照 db-predeploy-20261021T114936153Z.sqlite）
+env: 生产 env 保留原有 CHATBOT_ENABLED/CHATBOT_AI_ENABLED；新增 CHATBOT_DISCORD_GATEWAY_ENABLED=true；其余 5 个 v0.5.2 键使用默认值（媒体 5/50MiB、Chat 6/min、记忆 4096）
+数据: 8 张 bot* 表存在；chatbots 2 个（Discord/QQ）启用；QQ C2C 与 Discord #general 的 allow_chat=1，其余目标 0
 平台: Discord Message Content Intent 已开启；Telegram/QQ 群/频道目标与各平台多附件联调待执行
 smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access service token）
 备份: 部署后 inc 已拉取/ack（snapshot-20261021T115245394Z-inc.tar.gz，69139 bytes；开启 Gateway/Chat 后再拉取 snapshot-20261021T123559613Z-inc.tar.gz，72641 bytes）；密钥包 secrets-20261021T123600Z.tar.age（secrets=ok）
@@ -509,7 +509,7 @@ smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access serv
 
 ### 4. 未决
 
-- **Chat**：已确认 Discord DM、Discord #general @Bot、QQ C2C 普通消息收到 AI 回复；审计 `bot.chat`/`bot.ai.chat`、`bot_ai_sessions` 与 `bot_ai_memories` 均写入。其他目标保持 `allow_chat=0`。
+- **Chat**：已确认 Discord DM、Discord #general @Bot、QQ C2C 普通消息收到 AI 回复；审计 `chatbot.chat`/`chatbot.ai.chat`、`chatbot_ai_sessions` 与 `chatbot_ai_memories` 均写入。其他目标保持 `allow_chat=0`。
 - **按钮/多附件**：`/status` 按钮刷新、多附件真实发布、Telegram/Slack/QQ 群/频道 Chat 与记忆多轮行为仍待补充验收。
 - **DM 目标**：生产为 Discord DM 登记了独立频道目标（`allow_chat=1`）；代码侧 DM user-target 回退修复已提交但未部署，留待下一版本统一发版。
 - **记忆清理**：删除 Bot 后 DB 记忆行级联删除，`DATA_DIR/bot-memory` 镜像文件无自动清理路径，列为已知残留。
@@ -519,7 +519,7 @@ smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access serv
 - **Node.js v26.11.1 → v26.12.1**：官方 linux-arm64 包，SHA-256 `42aa04922591ee5d4dbc7740d452621acf28508239daa512f5ee8c47ee224fdb` 校验通过；
   安装到 `/usr/local/lib/nodejs/node-v26.12.1-linux-arm64`，`/usr/local/bin/node` 已替换；旧二进制保留 `/usr/local/bin/node.v26.11.1`。
 - 服务重启后 `/healthz` 返回 `0.5.2`/schema `9`；完整 smoke **24/24**；Discord Gateway 在 PC 代理隧道恢复后重新 `connected`。
-- npm/npx 仍指向 nvm v26.11.1 的 npm 12.2.0（仅构建/部署工具）；应用运行时为 v26.12.1。更新步骤/回滚见 `docs/DEPLOY.md` §3.3。
+- npm/npx 仍指向 nvm v26.11.1 的 npm 12.2.0（仅构建/部署工具）；应用运行时为 v26.12.1。更新步骤/回滚见 `docs/app/DEPLOY.md` §3.3。
 - 注意：Gateway 依赖 Pi 出站代理；本次更新期间发现 PC 隧道未运行导致短暂重连，恢复隧道后已连接，非 Node 回归。
 
 ## v0.5.1（历史）
@@ -532,11 +532,11 @@ smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access serv
 ### 1. 交付
 
 - **QQ 官方 Bot**：`server/src/bot/adapters/qq.ts`；op=13 Ed25519 回调地址校验、op=0 事件验签与 `{opcode:12}` 确认；C2C/群@/频道文本命令与通知；仅文本（≤2000 字符）、不支持媒体；AppSecret 只存 AES-256-GCM 密文。
-- **OpenCode AI `/ask`**：`server/src/bot/ai.ts`；`BOT_AI_*` 默认关闭；仅命令白名单用户；每小时限流；`bot_ai_sessions` 会话复用；新建会话 deny-all 工具权限（OpenCode 明确 400 才降级并标注“未隔离”）。
-- **Bot 运维**：`GET /api/bots/:id/metrics?hours=24` 指标卡；目标静默时段（0–1439，成对设置，通知延后）；发布 `confirmText:'PUBLISH'` 二次确认（TOTP 仍必填）。
-- **数据**：schema v8（迁移 8 重建 Bot 表扩展 `qq`、增加 `quiet_start_minute`/`quiet_end_minute`、新增 `bot_ai_sessions`；迁移 6/7 保留）。
+- **OpenCode AI `/ask`**：`server/src/bot/ai.ts`；`CHATBOT_AI_*` 默认关闭；仅命令白名单用户；每小时限流；`chatbot_ai_sessions` 会话复用；新建会话 deny-all 工具权限（OpenCode 明确 400 才降级并标注“未隔离”）。
+- **Bot 运维**：`GET /api/chatbots/:id/metrics?hours=24` 指标卡；目标静默时段（0–1439，成对设置，通知延后）；发布 `confirmText:'PUBLISH'` 二次确认（TOTP 仍必填）。
+- **数据**：schema v8（迁移 8 重建 Bot 表扩展 `qq`、增加 `quiet_start_minute`/`quiet_end_minute`、新增 `chatbot_ai_sessions`；迁移 6/7 保留）。
 - **安全**：fail2ban dbfile 持久化（`/var/lib/fail2ban/fail2ban.sqlite3`）；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban 恢复 set；`smoke.ps1` 新增 `-AccessClientId/-AccessClientSecret` 头与 401 检查。
-- **env**：`BOT_AI_ENABLED`、`BOT_AI_PROVIDER`、`BOT_AI_MODEL`、`BOT_AI_TIMEOUT_SECONDS`、`BOT_AI_MAX_PROMPT_CHARS`、`BOT_AI_RATE_PER_HOUR`、`BOT_AI_SESSION_RETENTION_DAYS`；`bootstrap-env.sh` 已纳管。
+- **env**：`CHATBOT_AI_ENABLED`、`CHATBOT_AI_PROVIDER`、`CHATBOT_AI_MODEL`、`CHATBOT_AI_TIMEOUT_SECONDS`、`CHATBOT_AI_MAX_PROMPT_CHARS`、`CHATBOT_AI_RATE_PER_HOUR`、`CHATBOT_AI_SESSION_RETENTION_DAYS`；`bootstrap-env.sh` 已纳管。
 - **文档**：README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BOT 与 `deploy/env.example` 同步到 0.5.1；`check-version` 覆盖版本项。
 
 ### 2. 验证
@@ -553,17 +553,17 @@ smoke: 24/24（-ExpectedVersion 0.5.2 -ExpectedSchemaVersion 9，带 Access serv
 | `smoke.ps1 -ExpectedVersion 0.5.1 -ExpectedSchemaVersion 8` | **23 通过 / 0 失败 / 0 警告**（公网+CSP/PWA/分享/告警/备份/世界/演练/脚本 SHA） |
 | QQ 真实回调 | **通过**：回调地址 op=13 校验通过；C2C `C2C_MESSAGE_CREATE` 事件到达，登记 openid 后 `/help` 收到回复；仅文本，媒体未支持 |
 | AI 真实模型 | **通过**：OpenCode provider/model `opencode-go/deepseek-v4.1-flash`，真实回复 `MODEL_OK`；Discord `/ask` 正常响应；默认关闭已显式开启 |
-| Bot 指标/静默/二次确认 | 生产 API/BotService 实测指标：Discord 24h deliveries sent=2、successRate=100、events=1；发布 confirmText 服务端/前端测试覆盖；静默时段单测覆盖 |
-| Cloudflare Access | **通过**：主应用 `app.<domain>`（One-time PIN + Owner allow + Service Auth）；4 个 Bypass：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`；未登录 `/` 302 到 `*.cloudflareaccess.com`，service token 访问应用返回 401；完整 smoke **24/24**（含 Access token 检查） |
+| Bot 指标/静默/二次确认 | 生产 API/ChatbotService 实测指标：Discord 24h deliveries sent=2、successRate=100、events=1；发布 confirmText 服务端/前端测试覆盖；静默时段单测覆盖 |
+| Cloudflare Access | **通过**：主应用 `app.<domain>`（One-time PIN + Owner allow + Service Auth）；4 个 Bypass：`/healthz`、`/api/chatbot/webhook`、`/s`、`/api/public/shares`；未登录 `/` 302 到 `*.cloudflareaccess.com`，service token 访问应用返回 401；完整 smoke **24/24**（含 Access token 检查） |
 | fail2ban 封禁持久化 | **生产实测通过**：nftables restart 后 15s 内 fail2ban 恢复封禁 set；drop-in 已安装；手工 `systemctl reload nftables` 仍需手动 `systemctl restart fail2ban` |
-| Bot 关闭态 | 本地测试覆盖：`BOT_ENABLED=false` Webhook 404、写接口 503、队列不启动；生产保持启用 |
+| Bot 关闭态 | 本地测试覆盖：`CHATBOT_ENABLED=false` Webhook 404、写接口 503、队列不启动；生产保持启用 |
 
 ### 3. 部署
 
 ```text
 应用: v0.5.1（生产 release 20261021T091001Z；发布 commit 5122ad5）
 schema: v8（迁移 8：QQ/静默/AI 会话；迁移前快照 db-predeploy-20261021T091026904Z.sqlite）
-env: BOT_AI_ENABLED=true、BOT_AI_PROVIDER=opencode-go、BOT_AI_MODEL=deepseek-v4.1-flash；BOT_SECRET_KEY 未轮换
+env: CHATBOT_AI_ENABLED=true、CHATBOT_AI_PROVIDER=opencode-go、CHATBOT_AI_MODEL=deepseek-v4.1-flash；CHATBOT_SECRET_KEY 未轮换
 QQ: Bot 2456ea90-7fed-42ec-81d0-9c478d2a9d47；回调地址已配置；C2C 目标 openid 已登记并收到 /help 回复
 AI: OpenCode 真实模型 deepseek-v4.1-flash；Discord /ask 正常响应
 Cloudflare Access: 已启用主应用（Owner OTP + service token）；4 个 bypass 路径已创建；service token 保存在 PC `.local/cf-access.env`（gitignored），smoke 已带 token 通过
@@ -587,13 +587,13 @@ fail2ban: dbfile + nftables drop-in 已安装；nftables restart 后封禁 set �
 
 ### 1. 交付
 
-- **Bot 平台**：`server/src/bot/`（`crypto.ts` AES-256-GCM、`service.ts` 配置/验签/命令/通知/发布队列、三平台适配器、模板）与 `server/src/http/routes/bots.ts`、`bot-webhook.ts`；Web `/bots` 四分区页面。
+- **Bot 平台**：`server/src/bot/`（`crypto.ts` AES-256-GCM、`service.ts` 配置/验签/命令/通知/发布队列、三平台适配器、模板）与 `server/src/http/routes/chatbots.ts`、`bot-webhook.ts`；Web `/chatbots` 四分区页面。
 - **命令**：`/help` `/status` `/backup` `/world` `/mc` `/files <关键词>`；目标 `allow_commands` + 显式 user 白名单双校验；输出清洗路径/URL、文件元数据 ≤10 条。
 - **通知/发布**：告警事件按目标 `allow_notifications` 入队（`dedupe_key` 去重）；发布 TXT + 最多 1 个云端普通文件媒体（≤10 MiB）、频道/群组、TOTP 再认证、定时 ≤30 天、取消、指数退避重试/死信重投。
-- **数据**：schema v7（迁移 7 新增 `bots/bot_targets/bot_deliveries/bot_publish_jobs/bot_events`；迁移 6 孤儿 shares 修复保留）；Bot 凭据只存密文；`bot_events` 7 天、已发送投递/发布 30 天清理。
-- **安全**：Token 只写不读；签名 + 时间戳（±300 秒）+ 事件去重；IP 120/min、Bot 300/min、命令 20/min、发布/测试 20/h；未授权命令不执行并审计；`BOT_ENABLED=false` 时 Webhook 404、写接口 503。
-- **运维**：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY`（`--force` 不轮换）；`deploy.ps1` 干净工作树门禁、回滚还原 `APP_VERSION`、smoke 失败门禁；`check-version` 覆盖 env.example/DEPLOY 标题/lock；SSH 仅公钥 `00-` drop-in + 24h 回滚 + `fail2ban` sshd jail；Cloudflare Access 策略与 bypass 文档；`backup-world.mjs` 信号时优先 `save-on`。
-- **审计/文档**：`docs/AUDIT.md` 第四轮（v0.4.2 基线 P0=0/P1=0/P2=3/P3=12；Bot WIP P1=2/P2=4，已修复项带测试/命令）；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BACKUP/ACCEPTANCE/AUDIT 与 `docs/BOT.md`、`deploy/env.example` 全量同步到 0.5.0。
+- **数据**：schema v7（迁移 7 新增 `chatbots/chatbot_targets/chatbot_deliveries/chatbot_publish_jobs/chatbot_events`；迁移 6 孤儿 shares 修复保留）；Bot 凭据只存密文；`chatbot_events` 7 天、已发送投递/发布 30 天清理。
+- **安全**：Token 只写不读；签名 + 时间戳（±300 秒）+ 事件去重；IP 120/min、Bot 300/min、命令 20/min、发布/测试 20/h；未授权命令不执行并审计；`CHATBOT_ENABLED=false` 时 Webhook 404、写接口 503。
+- **运维**：`bootstrap-env.sh` 生成/复用 `CHATBOT_SECRET_KEY`（`--force` 不轮换）；`deploy.ps1` 干净工作树门禁、回滚还原 `APP_VERSION`、smoke 失败门禁；`check-version` 覆盖 env.example/DEPLOY 标题/lock；SSH 仅公钥 `00-` drop-in + 24h 回滚 + `fail2ban` sshd jail；Cloudflare Access 策略与 bypass 文档；`backup-world.mjs` 信号时优先 `save-on`。
+- **审计/文档**：`docs/app/AUDIT.md` 第四轮（v0.4.2 基线 P0=0/P1=0/P2=3/P3=12；Bot WIP P1=2/P2=4，已修复项带测试/命令）；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/BACKUP/ACCEPTANCE/AUDIT 与 `docs/app/CHATBOT.md`、`deploy/env.example` 全量同步到 0.5.0。
 - **前端审计 P1**：修复 Files 移动端多选重复复选框、NoteEditor 未保存关闭确认、API 默认超时、设置页 hash 深链、笔记正文 UTF-8 字节校验、Bot 发布媒体选择器；新增 `Table.test.tsx` 回归。
 - **测试**：新增 `server/test/bot-core.test.ts`（6）、`bot-routes.test.ts`（1）、`bot-webhook-route.test.ts`（1）、`bot-migration.test.ts`（1）与 `web/src/pages/Bots.test.tsx`（8）、`web/src/components/Table.test.tsx`（2）。
 
@@ -611,8 +611,8 @@ fail2ban: dbfile + nftables drop-in 已安装；nftables restart 后封禁 set �
 | schema | **v7**（`/healthz.schemaVersion=7`；迁移 6 保留 + 迁移 7 五张 Bot 表；`bot-migration` 测试通过） |
 | 应用部署 / `/healthz` | release `20261021T060807Z`；`version=0.5.0`、`schemaVersion=7`；迁移前快照 `db-predeploy-20261021T060832328Z.sqlite`（sha256 `36ab1dd4…`） |
 | `smoke.ps1 -ExpectedVersion 0.5.0 -ExpectedSchemaVersion 7` | **23 通过 / 0 失败 / 0 警告**（部署后只读 smoke 16/16；完整 smoke 含公网/CSP/PWA/备份/世界/演练） |
-| Bot 关闭态 | 部署后未设 key 时 Webhook POST 返回 404、`/api/bots/status` 未登录 401；生成 32 字节 `BOT_SECRET_KEY` 后显式 `BOT_ENABLED=true` |
-| Bot 三平台联调 | **Discord 真实联调通过（2026-10-21）**：Bot `853f85e6…` 加入测试服务器，Interactions Endpoint 验证通过，6 个斜杠命令注册，`/status` 收到回复；`#general` 收到测试通知（DB 证据：`bot.command=1`、`test sent=1`）。Telegram/Slack 仍为 mock 契约；QQ 官方 Bot 留 v0.5.1 |
+| Bot 关闭态 | 部署后未设 key 时 Webhook POST 返回 404、`/api/chatbots/status` 未登录 401；生成 32 字节 `CHATBOT_SECRET_KEY` 后显式 `CHATBOT_ENABLED=true` |
+| Bot 三平台联调 | **Discord 真实联调通过（2026-10-21）**：Bot `853f85e6…` 加入测试服务器，Interactions Endpoint 验证通过，6 个斜杠命令注册，`/status` 收到回复；`#general` 收到测试通知（DB 证据：`chatbot.command=1`、`test sent=1`）。Telegram/Slack 仍为 mock 契约；QQ 官方 Bot 留 v0.5.1 |
 | 备份/世界拉取/演练 | 新全量归档 `snapshot-20261021T061911104Z-full.tar.gz`（v7，PC 校验并 ack）；密钥包 `secrets-20261021T061917Z.tar.age`（含 env/BOT key，secrets=ok）；`drill.ps1 -ExpectedSchemaVersion 7` **通过**（报告 `20261021T061932Z`）；世界备份/拉取 smoke 通过 |
 | SSH 仅公钥 / Access bypass | `sshd -T` 为 `passwordauthentication no`/`permitrootlogin no`；公钥新会话与密码拒绝均实测；fail2ban sshd jail active。Cloudflare Access 策略/bypass **待用户后台配置** |
 
@@ -621,7 +621,7 @@ fail2ban: dbfile + nftables drop-in 已安装；nftables restart 后封禁 set �
 ```text
 应用: v0.5.0（release /opt/antifieldcloud/releases/20261021T060807Z；迁移前快照 db-predeploy-20261021T060832328Z.sqlite）
 schema: v7（迁移 6 保留 + 迁移 7 新增 5 张 bot* 表）
-BOT_SECRET_KEY: bootstrap-env.sh --force 生成（32 字节 base64，不回显）；密钥包 secrets-20261021T061917Z.tar.age 已包含 env
+CHATBOT_SECRET_KEY: bootstrap-env.sh --force 生成（32 字节 base64，不回显）；密钥包 secrets-20261021T061917Z.tar.age 已包含 env
 Bot 出站: Pi 直连 Discord/Telegram 被阻断；经 PC 127.0.0.1:10090 的 SSH 反向隧道（Pi 127.0.0.1:18090）+ `NODE_USE_ENV_PROXY=1` 验证 Discord 出站 200，PC 用户级启动项负责重连
 Cloudflare Access: 待用户后台配置 app 策略 + webhook/health/分享 bypass
 SSH: 仅公钥（00-antifield-hardening.conf，2026-10-21 13:49 CST 切换；24h 回滚窗口至 10-22 13:49）；fail2ban sshd jail 已启用
@@ -637,7 +637,7 @@ release: https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.5.0
 - Cloudflare Access 策略/bypass 需用户在后台配置，应用侧无法自证；未配置时 Webhook/health/公开分享会被边缘拦截。
 - SSH 24h 回滚窗口内保留旧 drop-in 备份；`fail2ban` sshd jail 已启用（nftables 后端），但 nftables 重载后需重启 fail2ban 恢复封禁；`antifield` 的 `NOPASSWD ALL` sudo 未改（残余）。
 - `typescript-eslint` 仍不支持 TS7 API，`@typescript/typescript6` 双 alias 保留到其支持 TS7.1。
-- Bot 单次发布最多 1 个媒体文件、命令严格只读、无平台主动拉取/长连接；`BOT_SECRET_KEY` 轮换需重录全部 Token。
+- Bot 单次发布最多 1 个媒体文件、命令严格只读、无平台主动拉取/长连接；`CHATBOT_SECRET_KEY` 轮换需重录全部 Token。
 
 ## v0.4.2（历史）
 
@@ -742,7 +742,7 @@ release: https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.4.1
 
 - OpenCode UI 原生“新建会话”按钮/WS 实时事件需用户浏览器最终复测（垫片与 API 路径已验证，但无登录凭据做端到端浏览器验收）。
 - OpenCode 2.1.1 发布说明未取到（GitHub API 该版本 notes 不可用），兼容性以实际接口/HTML 验证为准。
-- 后续升级建议按 `docs/DEPLOY.md` 的备份/验证/回滚流程执行，并复测本表兼容项。
+- 后续升级建议按 `docs/app/DEPLOY.md` 的备份/验证/回滚流程执行，并复测本表兼容项。
 
 ## v0.4.0（历史）
 
@@ -753,7 +753,7 @@ release: https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.4.1
 
 ### 1. 交付
 
-- 审计：`docs/AUDIT.md` 第三轮（4 路并行只读审计 + Lead 复核）；六维评分卡；P0/P1 修复与残余风险清单。
+- 审计：`docs/app/AUDIT.md` 第三轮（4 路并行只读审计 + Lead 复核）；六维评分卡；P0/P1 修复与残余风险清单。
 - 数据：migration 5（`files.origin`、含 origin 唯一索引、`note_attachments`、`note_versions`、`share_items` 回填、`metrics_samples`）+ migration 6（孤儿 shares 数据修复，不改表结构）；v4→v6 迁移测试。
 - 可观测性：60s 采样/30 天保留、`GET /api/metrics`（1h/6h/24h/7d/30d、≤240 点）；Dashboard 四张 SVG 趋势卡；Activity 搜索/时间范围；AlertsCard 筛选分页；备份健康卡（应用归档/密钥包/pending/acked/孤儿/世界备份/PC 拉取/演练）。
 - 笔记：附件（1–5/请求、25 MiB、每笔记 100、计入配额、origin=note 隐藏）；版本历史（变更快照、保留 20、预览/恢复）。
@@ -859,7 +859,7 @@ release: https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.3.2
 - 前端：>100 MiB 自动分片，2 块并发；`localStorage` 只保存 uploadId/已收块号；刷新/断线补缺块；取消保留断点；进度/重试沿用上传面板。
 - 系统：journald `Storage=persistent`（适配 log2ram 64 MiB）、cloudflared 升级 2026.10.1 + systemd 加固、nftables WiFi 源从 `/16` 收窄到实际 `/21`、rpcbind 禁用、unattended-upgrades dry-run 验证。
 - 文档：API/UI/ARCH/SECURITY/DEPLOY/PLAN/ROADMAP/README/AGENTS/CHANGELOG 同步。
-- 第二轮审计补档：`docs/AUDIT.md`（A2-01～A2-10，含执行边界与残留）。
+- 第二轮审计补档：`docs/app/AUDIT.md`（A2-01～A2-10，含执行边界与残留）。
 
 ### 2. 验证
 
@@ -1119,7 +1119,7 @@ release: https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.2.1
 - **恢复演练已通过**：解包全量 `snapshot-20261019T130931524Z-full.tar.gz`（SHA 旁文件一致）+ 增量
   `snapshot-20261019T131311313Z-inc.tar.gz`；`PRAGMA integrity_check=ok`、schema=2、users=1；
   密钥包在同一 Pi 上用私钥解密并核对文件列表后删除 Pi 私钥。演练记录见本地 `.local/DR-DRILL.md`。
-- 正式从 PC 恢复时的步骤见 `docs/BACKUP.md` §6；全量+增量命令已修正为按 manifest 选最新 DB。
+- 正式从 PC 恢复时的步骤见 `docs/app/BACKUP.md` §6；全量+增量命令已修正为按 manifest 选最新 DB。
 
 ### 6. 功能验收（服务端/公开端点）
 

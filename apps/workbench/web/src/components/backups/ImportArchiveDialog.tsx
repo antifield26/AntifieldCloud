@@ -121,7 +121,7 @@ export function ImportArchiveDialog({ open, onClose, onImported }: ImportArchive
         <div className="notice notice-warning">
           归档将保存到服务端 imports 目录并自动校验 SHA-256 与 tar 内容，失败不影响已有备份；导入操作记录审计。
           <br />
-          加密归档 <span className="mono">*.tar.gz.age</span> 不提供 Web 导入：Web 不持有私钥，无法校验/恢复；请在 PC 端解密后按 docs/BACKUP.md 处理。
+          加密归档 <span className="mono">*.tar.gz.age</span> 不提供 Web 导入：Web 不持有私钥，无法校验/恢复；请在 PC 端解密后按 docs/app/BACKUP.md 处理。
         </div>
         <FormField
           label="归档文件"

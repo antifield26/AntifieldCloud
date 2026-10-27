@@ -1,8 +1,8 @@
-const base = (process.env.LOFII_HTTP_URL ?? 'http://127.0.0.1:3010').replace(/\/+$/, '')
-const readToken = process.env.LOFII_HTTP_TOKEN ?? ''
-const controlToken = process.env.LOFII_CONTROL_TOKEN ?? ''
+const base = (process.env.MCBOT_HTTP_URL ?? 'http://127.0.0.1:3010').replace(/\/+$/, '')
+const readToken = process.env.MCBOT_HTTP_TOKEN ?? ''
+const controlToken = process.env.MCBOT_CONTROL_TOKEN ?? ''
 if (!readToken || !controlToken) {
-  console.error('LOFII_HTTP_TOKEN and LOFII_CONTROL_TOKEN are required')
+  console.error('MCBOT_HTTP_TOKEN and MCBOT_CONTROL_TOKEN are required')
   process.exit(1)
 }
 

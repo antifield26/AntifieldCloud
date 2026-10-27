@@ -19,7 +19,7 @@ function userAgent(request: FastifyRequest): string | null {
   return typeof value === 'string' ? value.slice(0, 300) : null
 }
 
-/** 再认证请求体：当前密码 + TOTP 验证码（协议见 docs/API.md）。 */
+/** 再认证请求体：当前密码 + TOTP 验证码（协议见 docs/app/API.md）。 */
 function reauthFields(body: Record<string, unknown>, passwordField: string): { password: string; totpCode: string } {
   const password = requireString(body[passwordField], passwordField, 256)
   const totpCode = requireString(body.totpCode, 'totpCode', 16)

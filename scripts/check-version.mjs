@@ -2,8 +2,8 @@
 /**
  * 版本一致性检查脚本（已接入 CI check job）。
  *
- * 比对 package.json 的 version 与 README / CHANGELOG / docs/ACCEPTANCE.md / AGENTS.md（缺失只警告），
- * 以及 lock 根版本、deploy/env.example 的 APP_VERSION、docs/DEPLOY.md 标题；输出单行 JSON，
+ * 比对 package.json 的 version 与 README / CHANGELOG / docs/app/ACCEPTANCE.md / AGENTS.md（缺失只警告），
+ * 以及 lock 根版本、deploy/env.example 的 APP_VERSION、docs/app/DEPLOY.md 标题；输出单行 JSON，
  * 任一必需项不一致时退出码 1。
  *
  * 用法：`node scripts/check-version.mjs [--json] [--quiet] [--help]`
@@ -41,7 +41,15 @@ function readToolVersions(root) {
   if (typeof parsed?.opencodeVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(parsed.opencodeVersion)) {
     return { ok: false, error: { code: 'tool_versions_invalid', message: `${TOOL_VERSIONS_FILE}.opencodeVersion 必须是 x.y.z` } }
   }
-  return { ok: true, schemaVersion: parsed.schemaVersion, opencodeVersion: parsed.opencodeVersion }
+  if (typeof parsed?.mcbotVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(parsed.mcbotVersion)) {
+    return { ok: false, error: { code: 'tool_versions_invalid', message: `${TOOL_VERSIONS_FILE}.mcbotVersion 必须是 x.y.z` } }
+  }
+  return {
+    ok: true,
+    schemaVersion: parsed.schemaVersion,
+    opencodeVersion: parsed.opencodeVersion,
+    mcbotVersion: parsed.mcbotVersion,
+  }
 }
 
 /** 从 apps/workbench/server/src/db.ts 动态导入 SUPPORTED_SCHEMA_VERSION（只读，不打开 DB）。 */
@@ -161,9 +169,9 @@ export async function checkVersions(root = process.cwd()) {
   const checks = [
     checkFile(resolve(resolvedRoot, 'README.md'), /状态[：:]\s*v?(\d+\.\d+\.\d+)/, packageVersion),
     checkFile(resolve(resolvedRoot, 'CHANGELOG.md'), /^##\s*\[?v?(\d+\.\d+\.\d+)\]?/m, packageVersion),
-    checkFile(resolve(resolvedRoot, 'docs/ACCEPTANCE.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion),
+    checkFile(resolve(resolvedRoot, 'docs/app/ACCEPTANCE.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion),
     checkFile(resolve(resolvedRoot, 'deploy/env.example'), /APP_VERSION=(\d+\.\d+\.\d+)/, packageVersion),
-    checkFile(resolve(resolvedRoot, 'docs/DEPLOY.md'), /^# 部署手册[^\n]*v(\d+\.\d+\.\d+)/m, packageVersion),
+    checkFile(resolve(resolvedRoot, 'docs/app/DEPLOY.md'), /^# 部署手册[^\n]*v(\d+\.\d+\.\d+)/m, packageVersion),
     // AGENTS.md 不是严格必需项：缺失/未声明只记警告。
     checkFile(resolve(resolvedRoot, 'AGENTS.md'), /当前版本\s*v?(\d+\.\d+\.\d+)/, packageVersion, false),
   ]
@@ -192,7 +200,22 @@ export async function checkVersions(root = process.cwd()) {
     }
   }
 
-  // ---- 工具版本（schema / OpenCode）交叉校验 ----
+  // mcbot 与 workbench 共用 v1.0.0 统一版本轴；tool-versions 也必须与之一致。
+  const mcbotPackageText = readText(resolve(resolvedRoot, 'apps/mcbot/package.json'))
+  if (mcbotPackageText === null) {
+    errors.push({ code: 'mcbot_package_missing', message: 'cannot read apps/mcbot/package.json' })
+  } else {
+    try {
+      const mcbotVersion = JSON.parse(mcbotPackageText).version ?? null
+      if (mcbotVersion !== packageVersion) {
+        errors.push({ code: 'mcbot_version_mismatch', message: `apps/mcbot/package.json: expected ${packageVersion}, found ${mcbotVersion}` })
+      }
+    } catch {
+      errors.push({ code: 'mcbot_package_invalid', message: 'apps/mcbot/package.json is not valid JSON' })
+    }
+  }
+
+  // ---- 工具版本（schema / OpenCode / mcbot）交叉校验 ----
   // 这些是“当前事实”门禁：PC 脚本（deploy.ps1/drill.ps1）从 deploy/tool-versions.json 取默认期望值，
   // 文档/CI 中的当前版本必须与 db.ts 的真实迁移数量、以及工具清单一致。
   const toolChecks = []
@@ -209,18 +232,25 @@ export async function checkVersions(root = process.cwd()) {
         message: `${TOOL_VERSIONS_FILE}.schemaVersion=${toolVersions.schemaVersion} 与 server/src/db.ts SUPPORTED_SCHEMA_VERSION=${dbSchema.version} 不一致`,
       })
     }
+    if (toolVersions.mcbotVersion !== packageVersion) {
+      errors.push({
+        code: 'mcbot_tool_version_mismatch',
+        message: `${TOOL_VERSIONS_FILE}.mcbotVersion=${toolVersions.mcbotVersion} 与统一版本=${packageVersion} 不一致`,
+      })
+    }
 
     const allowStaleTools = process.env.CHECK_VERSION_ALLOW_STALE_TOOLS === '1'
     if (!allowStaleTools) {
       // 文档“当前事实”版本检查：只校验当前版本的头部/当前事实句，历史记录由人工判断。
       const docChecks = [
-        ['docs/DEPLOY.md', /^##\s*3\.2\s+OpenCode v(\d+\.\d+\.\d+)/m, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/DEPLOY.md', /当前 schema \*\*v(\d+)\*\*/, String(toolVersions.schemaVersion), 'schema'],
+        ['docs/app/DEPLOY.md', /^##\s*3\.2\s+OpenCode v(\d+\.\d+\.\d+)/m, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/app/DEPLOY.md', /当前 schema \*\*v(\d+)\*\*/, String(toolVersions.schemaVersion), 'schema'],
         ['AGENTS.md', /OpenCode\s*(?:服务端\s*)?(?:\*\*)?v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
         ['README.md', /OpenCode\s*\*\*v(\d+\.\d+\.\d+)\*\*/, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/SECURITY.md', /当前生产\s*\*\*v(\d+\.\d+\.\d+)\*\*/, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/BOT.md', /兼容性基于 OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
-        ['docs/ACCEPTANCE.md', /OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/app/SECURITY.md', /当前生产\s*\*\*v(\d+\.\d+\.\d+)\*\*/, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/app/CHATBOT.md', /兼容性基于 OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/app/ACCEPTANCE.md', /OpenCode v(\d+\.\d+\.\d+)/, toolVersions.opencodeVersion, 'opencode'],
+        ['docs/mcbot/README.md', /当前版本[：:]\s*\*{0,2}v(\d+\.\d+\.\d+)/, packageVersion, 'app'],
       ]
       for (const [file, pattern, expected, kind] of docChecks) {
         const text = readText(resolve(resolvedRoot, file))
@@ -229,7 +259,7 @@ export async function checkVersions(root = process.cwd()) {
         if (!result.ok) {
           errors.push({
             code: result.code ?? `${kind}_doc_version_mismatch`,
-            message: `${file}: 当前事实期望 ${kind === 'schema' ? 'v' : 'OpenCode v'}${expected}，实际 ${result.version ? `v${result.version}` : result.error}`,
+            message: `${file}: 当前事实期望 ${kind === 'schema' ? 'v' : kind === 'app' ? 'v' : 'OpenCode v'}${expected}，实际 ${result.version ? `v${result.version}` : result.error}`,
           })
         }
       }
