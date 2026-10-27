@@ -28,6 +28,8 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/antifieldcloud
+# v0.7.3：Bot 上下文文档目录（独立目录，需 OpenCode 组可读；启用 BOT_AI_CONTEXT_READ_ENABLED 前创建）。
+ReadWritePaths=/var/lib/antifieldcloud-context
 ProtectKernelTunables=true
 ProtectKernelLogs=true
 ProtectControlGroups=true

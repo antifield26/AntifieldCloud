@@ -4,11 +4,13 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../src/config.ts'
 import { OpenCodeBotAi } from '../src/bot/ai.ts'
 import { GROUP_CHAT_SESSION_USER_ID } from '../src/bot/session.ts'
 import { AppError } from '../src/util/errors.ts'
+import { contextScopeDir, toPosixPath } from '../src/bot/context.ts'
 import { cleanupDir, tempDataDir, testConfig, testDb } from './helpers.ts'
 
 const BOT_ID = 'bot-ai-test'
@@ -925,6 +927,160 @@ test('v0.6.0 进程重启后复用会话：先建立历史基线再取本轮新�
       (call) => call.method === 'GET' && call.url.pathname.endsWith('/message'),
     )
     assert.ok(baselineIndex >= 0 && baselineIndex < firstPromptIndex, '应在发送 prompt 前读取历史建立基线')
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.7.3：read 模式只放行当前作用域 role.md/memory.md（deny-all 在首位）', async () => {
+  const fixture = setup(basicHandler(), { botAiContextReadEnabled: true })
+  try {
+    await fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' })
+    const create = fixture.calls.find((call) => call.method === 'POST' && call.url.pathname === '/api/session')
+    assert.ok(create, '应创建 OpenCode 会话')
+    const scope = toPosixPath(contextScopeDir(join(fixture.dir, 'bot-context'), BOT_ID, TARGET, USER))
+    assert.deepEqual((create.body as Record<string, unknown>).permissions, [
+      { action: '*', resource: '*', effect: 'deny' },
+      { action: 'external_directory', resource: `${scope}/*`, effect: 'allow' },
+      { action: 'read', resource: `${scope}/role.md`, effect: 'allow' },
+      { action: 'read', resource: `${scope}/memory.md`, effect: 'allow' },
+    ])
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.7.3：新会话发送 initialPrompt，已有会话只发送 followUp', async () => {
+  const fixture = setup(
+    basicHandler({ messages: (index) => [assistant([{ type: 'text', text: `回答${index}` }])] }),
+    { botAiContextReadEnabled: true },
+  )
+  try {
+    const first = await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: TARGET,
+      userId: USER,
+      prompt: '后续提示',
+      initialPrompt: '首轮提示（含角色卡）',
+    })
+    assert.equal(first, '回答1')
+    const prompts = fixture.calls.filter(
+      (call) => call.method === 'POST' && call.url.pathname === `/api/session/${SESSION_ID}/prompt`,
+    )
+    assert.equal((prompts[0]!.body as Record<string, unknown>).text, '首轮提示（含角色卡）')
+
+    const second = await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: TARGET,
+      userId: USER,
+      prompt: '第二次后续提示',
+      initialPrompt: '不应发送的首轮提示',
+    })
+    assert.equal(second, '回答2')
+    const promptsAfter = fixture.calls.filter(
+      (call) => call.method === 'POST' && call.url.pathname === `/api/session/${SESSION_ID}/prompt`,
+    )
+    assert.equal(promptsAfter.length, 2)
+    assert.equal((promptsAfter[1]!.body as Record<string, unknown>).text, '第二次后续提示')
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.7.3：会话 404 重建时重新发送 initialPrompt', async () => {
+  const secondSession = 'ses_test_2'
+  const fixture = setup(
+    (call) => {
+      const path = call.url.pathname
+      if (call.method === 'POST' && path === '/api/session') {
+        return jsonResponse({ data: { id: secondSession } })
+      }
+      if (call.method === 'POST' && path === `/api/session/${SESSION_ID}/prompt`) {
+        return jsonResponse({ _tag: 'SessionNotFoundError', message: 'not found' }, 404)
+      }
+      if (call.method === 'GET' && path === `/api/session/${SESSION_ID}/message`) {
+        return jsonResponse({ data: [] })
+      }
+      if (call.method === 'POST' && path === `/api/session/${secondSession}/prompt`) {
+        return jsonResponse({ data: { id: 'inbox_test' } })
+      }
+      if (call.method === 'POST' && path === `/api/experimental/session/${secondSession}/wait`) {
+        return new Response(null, { status: 204 })
+      }
+      if (call.method === 'GET' && path === `/api/session/${secondSession}/message`) {
+        return jsonResponse({ data: [assistant([{ type: 'text', text: '重建后回答' }])] })
+      }
+      return jsonResponse({ message: 'unexpected' }, 404)
+    },
+    { botAiContextReadEnabled: true },
+  )
+  try {
+    // 预置一个失效映射：ensureSession 先复用（created=false），prompt 404 后才重建。
+    const now = new Date().toISOString()
+    fixture.db
+      .prepare(
+        `INSERT INTO bot_ai_sessions (bot_id, target_external_id, user_id, mode, session_id, model, created_at, updated_at)
+         VALUES (?, ?, ?, 'chat', ?, NULL, ?, ?)`,
+      )
+      .run(BOT_ID, TARGET, USER, SESSION_ID, now, now)
+    const reply = await fixture.ai.chat({
+      botId: BOT_ID,
+      targetExternalId: TARGET,
+      userId: USER,
+      prompt: '后续提示',
+      initialPrompt: '重建首轮提示',
+    })
+    assert.equal(reply, '重建后回答')
+    const prompts = fixture.calls.filter(
+      (call) => call.method === 'POST' && call.url.pathname === `/api/session/${secondSession}/prompt`,
+    )
+    assert.equal(prompts.length, 1)
+    assert.equal((prompts[0]!.body as Record<string, unknown>).text, '重建首轮提示')
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.7.3：read 模式下 permissions 被拒即 fail-closed，不回退无权限会话', async () => {
+  const fixture = setup(basicHandler({ rejectPermissionsFirst: true }), { botAiContextReadEnabled: true })
+  try {
+    await assert.rejects(
+      fixture.ai.chat({ botId: BOT_ID, targetExternalId: TARGET, userId: USER, prompt: '你好' }),
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.code === 'bot_ai_tool_isolation_unavailable' &&
+        error.statusCode === 503,
+    )
+    const creates = fixture.calls.filter((call) => call.method === 'POST' && call.url.pathname === '/api/session')
+    assert.equal(creates.length, 1, '拒绝后不得以无 permissions 方式重建')
+    assert.ok('permissions' in (creates[0]!.body as Record<string, unknown>))
+    assert.equal(fixture.ai.toolIsolation().supported, false)
+  } finally {
+    dispose(fixture)
+  }
+})
+
+test('v0.7.3：记忆抽取会话始终 deny-all，即使 read 模式开启', async () => {
+  const fixture = setup(
+    basicHandler({ messages: [assistant([{ type: 'text', text: '{"operations":[]}' }])] }),
+    { botAiContextReadEnabled: true },
+  )
+  try {
+    const operations = await fixture.ai.extractMemories({
+      botId: BOT_ID,
+      userId: USER,
+      existing: [],
+      legacySummary: '',
+      userText: '我喜欢红茶',
+      assistantText: '记住了',
+      maxOps: 5,
+    })
+    assert.deepEqual(operations, [])
+    const create = fixture.calls.find((call) => call.method === 'POST' && call.url.pathname === '/api/session')
+    assert.ok(create, '应创建抽取会话')
+    assert.deepEqual((create.body as Record<string, unknown>).permissions, [
+      { action: '*', resource: '*', effect: 'deny' },
+    ])
   } finally {
     dispose(fixture)
   }

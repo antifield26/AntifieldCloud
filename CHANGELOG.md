@@ -1,5 +1,26 @@
 # Changelog
 
+## [v0.7.3] - 2026-10-27（本地实现与门禁完成，待生产部署；schema 保持 v17）
+
+### Added
+
+- **Bot 上下文文档 + 按需 read（默认关闭）**：新增 `BOT_AI_CONTEXT_READ_ENABLED`（默认 false）与 `BOT_CONTEXT_DIR`；开启后角色卡/记忆写为只读 `role.md`/`memory.md`，角色卡只在会话创建时进入 prompt，后续轮只给角色名/记忆条数/文档路径，模型通过 OpenCode `read` 按需读取。
+- **`BotContextStore`**：按 `(Bot, 目标, 会话用户)` 哈希分片（不含 openid/群号）；原子写（临时文件 + fsync + rename）、0640 文件/0750 目录、拒绝符号链接；`removeScope/removeTarget/removeBot/removeUserScopes/removeGroupScopes` 与 24h 孤儿 sweep。
+- **权限模式**：会话 `permissions` 在 deny-all 后仅放行当前作用域 `external_directory` + 精确 `read role.md/memory.md`；搜索/发送工具权限不变；`bot_ai_tool_mode` 追加 read/目录标签，变化时重建会话。
+- **生命周期清理**：`/reset`、`/forget confirm`、Bot/目标删除、角色/群角色变更、目标类型变更会清理对应会话与上下文文档；维护任务回收超期孤儿目录与临时文件。
+- **审计**：`bot.ai.chat` detail 增加 `context/bytes/memoryItems`；新增 `bot.ai.context_failed`；不记录文档正文/路径。
+
+### Security
+
+- 启用文档模式或发送工具时，OpenCode 拒绝 `permissions` 即 503 `bot_ai_tool_isolation_unavailable`，不再以默认权限重建；记忆抽取会话始终 deny-all 且要求 permissions 生效；文档内容仅作背景资料，不作为指令。
+- 文档目录位于 DATA_DIR 外，systemd `ReadWritePaths` 显式放行；生产要求显式 `BOT_CONTEXT_DIR` 且不能在 DATA_DIR 内；目录文件不进入备份。
+- 生产发布门禁新增 OpenCode 读范围矩阵：作用域内正向读取、作用域外/环境文件/数据库/shell/相对路径/其他作用域全部拒绝；失败则保持关闭。
+
+### Tests
+
+- 新增 `bot-context.test.ts`、`bot-v073.test.ts`；扩展 `bot-prompts.test.ts`、`bot-ai.test.ts`、`config-validation.test.ts`、QQ 测试夹具（`initialPrompt`）。
+- 本地门禁：`npm test` **520**（1 skip，server+scripts）、`npm run test:web` **222**（44 文件）、服务端覆盖率 **92.93/78.33/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version` 严格 `0.7.3` 通过（以最终门禁记录为准）。
+
 ## [v0.7.2] - 2026-10-25（已发布：Tag `v0.7.2` + GitHub Release）
 
 ### Added

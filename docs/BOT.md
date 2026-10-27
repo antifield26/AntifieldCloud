@@ -7,11 +7,13 @@ AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（
 QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`），图片经 OpenCode 交给模型 provider 处理。
 企业微信/钉钉/飞书与多管理员审批未实现。
 
-> 当前生产：v0.7.2/schema v17，OpenCode v2.1.4；Bot 默认关闭（`BOT_ENABLED=false`），Webhook 关闭时返回 404。
+> 当前生产：v0.7.2/schema v17（v0.7.3 本地实现与门禁完成，待部署；schema 保持 v17），OpenCode v2.1.4；Bot 默认关闭（`BOT_ENABLED=false`），Webhook 关闭时返回 404。
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
 > 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；
 > 诊断只存事件元数据、不存消息正文；入站图片只从 QQ 固定域名后缀下载、mime 白名单与大小上限处理且不落盘。
+> v0.7.3 文档模式（`BOT_AI_CONTEXT_READ_ENABLED=true`）下，角色卡只在会话创建时进入 prompt；后续轮只给角色名/记忆条数/只读文档路径，
+> 模型仅能 `read` 当前作用域 `role.md`/`memory.md`，不得读取其它文件；文档目录 0640/0750、不跟随符号链接、不进入备份。
 
 ## 1. 架构
 
@@ -85,9 +87,11 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 `/reset`（重置当前目标全部对话，保留长期记忆）、`/forget confirm`（清除结构化条目/状态/legacy 旧摘要与该 Bot×用户的全部会话，含远端）。五条不需要目标 `allow_commands` 或 user 白名单；
 - **群聊角色卡**：每个群聊目标一张共享卡（管理员在 Web 编辑）；群聊 Chat 使用该卡，不再使用成员私聊个人卡；群聊不接受 `/role`。`groupReplyMode=mention` 仅处理 @Bot/文本包含 Bot 名称的全量消息；`all` 为实验性，由模型是否调用 `send_message` 决定发送，未调用即静默。
 - **AI 会话复用**：按 Bot×目标×用户复用 OpenCode 会话；若远端会话已被清理（404），自动删除 `bot_ai_sessions` 旧映射并重建一次，避免群聊未登记用户持续收到 `bot_ai_http_error`。
-- **工具隔离与 fail-closed**：Chat 新建 OpenCode 会话使用 deny-all `permissions`（启用搜索/发送工具时仅 allow `searxng_*`/`botmsg_*`）；若 OpenCode 明确 400 拒绝该字段，
-  进入 10 分钟重试窗口，并且**启用发送工具时拒绝新 Chat**（固定提示、诊断事件、不调用 AI；`503 bot_ai_tool_isolation_unavailable`），不以默认权限继续；
+- **工具隔离与 fail-closed**：Chat 新建 OpenCode 会话使用 deny-all `permissions`（启用搜索/发送工具时仅 allow `searxng_*`/`botmsg_*`；文档模式再放行当前作用域 `external_directory` 与精确 `read role.md/memory.md`）；若 OpenCode 明确 400 拒绝该字段，
+  进入 10 分钟重试窗口，并且**启用发送工具或文档模式时拒绝新 Chat**（固定提示、诊断事件、不调用 AI；`503 bot_ai_tool_isolation_unavailable`），不以默认权限继续；
   窗口到点放行一次重试，上游恢复后自动恢复隔离。启动/批次执行前双重检查，避免降级瞬间的排队批次继续运行。
+- **文档模式会话**：`bot_ai_tool_mode` 在 read 开启时追加 `:read:<目录标签>`；目录/工具开关变化会清空会话映射并重建。记忆抽取会话始终 deny-all 且要求 permissions 生效，
+  不放 `read`；私聊/群聊作用域独立，群会话不能读取私聊文档。
 
 ## 4. 队列、回复管线与失败处理
 
@@ -155,6 +159,8 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 | `BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS` | `8000` | 全量群聊非 @ 消息合并窗口（0–30000；） |
 | `BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS` | `20000` | 全量群聊合并从首条起最长等待（1000–60000；） |
 | `BOT_AI_SEND_TOOL_ENABLED` | `false` | 是否允许模型调用 `botmsg_send_message`；需先安装 botmsg MCP |
+| `BOT_AI_CONTEXT_READ_ENABLED` | `false` | v0.7.3 文档模式：角色卡只在会话创建时发送、记忆文档按需 `read`；需先完成 OpenCode 读范围验证 |
+| `BOT_CONTEXT_DIR` | `/var/lib/antifieldcloud-context` | 上下文文档目录；生产必须显式设置、OpenCode 组可读、不得位于 DATA_DIR 内；不进入备份 |
 | `BOT_SEARCH_ENABLED` | `false` | SearXNG 联网搜索总开关；开启时必须配置 `BOT_SEARCH_URL` |
 | `BOT_SEARCH_URL` | 空 | SearXNG 基址；生产建议 `http://127.0.0.1:8888`，仅 http/https、不得含凭据 |
 | `BOT_SEARCH_AUTO` | `true` | 自动判断问句/时效内容并搜索；显式 `/search` 不受影响 |
@@ -170,12 +176,14 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/bot/webhook/:botId
 `BOT_SECRET_KEY` 丢失或轮换会导致已存 QQ AppSecret 无法解密，必须重新录入。不要把它写入仓库/前端/日志。
 `bootstrap-env.sh` 已纳管上述 `BOT_*` 键，包括 `BOT_AI_MEMORY_RETENTION_DAYS`/`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`；
  `BOT_MEMORY_MAX_ITEMS`/`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`/`BOT_MEMORY_TTL_EPISODE_DAYS`/`BOT_MEMORY_TTL_TASK_DAYS`）；
-`BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；`BOT_CHAT_BURST_GROUP_ALL_*` 与 `BOT_AI_SEND_TOOL_ENABLED`。`BOT_AI_VISION_ENABLED` 默认 `true`。
+`BOT_CHAT_BURST_*` 与 `BOT_SEARCH_*`；`BOT_CHAT_BURST_GROUP_ALL_*` 与 `BOT_AI_SEND_TOOL_ENABLED`；v0.7.3 的 `BOT_AI_CONTEXT_READ_ENABLED`/`BOT_CONTEXT_DIR`。`BOT_AI_VISION_ENABLED` 默认 `true`。
 
 ## 5.1 Chat 提示词、会话与记忆抽取
 
-- 提示词固定由四部分组成：**角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 记忆 + 用户消息**；群聊共享卡覆盖群内成员私聊卡；启用发送工具时追加精简的 `[消息发送工具]`（本轮 `turn_id`/`turn_token`，私聊/@ 必须至少调用一次，全量群聊不调用即静默）；未启用工具时全量群聊保留 `NO_REPLY` 兼容段。安全边界、群聊策略、搜索/发送工具说明均精简，空记忆不再注入占位段；群聊用户消息格式为 `<用户名>：<消息>`，用于区分不同成员；提示词声明当前处于群聊环境，未 @ 的全量消息明确“没有点名你、不要每轮都回复或调用发送工具”，普通闲聊保持沉默。不再提供任务/对话提示词覆盖。默认 `lofii` 只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设；
-  不存在 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`；`BOT_AI_SYSTEM_PROMPT` 不被读取。
+- **内联模式（`BOT_AI_CONTEXT_READ_ENABLED=false`，默认回滚路径）**：提示词固定由四部分组成：**角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 记忆 + 用户消息**；群聊共享卡覆盖群内成员私聊卡；启用发送工具时追加精简的 `[消息发送工具]`（本轮 `turn_id`/`turn_token`，私聊/@ 必须至少调用一次，全量群聊不调用即静默）；未启用工具时全量群聊保留 `NO_REPLY` 兼容段。
+- **文档模式（`BOT_AI_CONTEXT_READ_ENABLED=true`）**：首轮（新会话创建）发送完整角色卡正文 + 固定安全边界 + `[上下文文档]`（角色名、`role.md`/`memory.md` 路径、记忆条数）+ 用户消息；后续轮**不再发送角色卡/记忆正文**，只保留角色名、记忆条数、文档路径与安全边界；记忆正文只存在于 `memory.md`，模型按需 `read`。角色文档每轮重写用于崩溃恢复，但正文只在首轮进入 prompt；角色变更重置会话。
+- 两种模式共同点：群聊用户消息格式为 `<用户名>：<消息>`；群聊声明当前环境，未 @ 的全量消息明确“没有点名你、不要每轮都回复或调用发送工具”，普通闲聊保持沉默；搜索/发送工具段精简；默认 `lofii` 只保留名字与对话风格（短句、自然、轻松；可使用轻量语气词，不连续卖萌、不刷屏；不假装真人/不虚构经历/不索要隐私），用户可通过 `/role set` 建个人卡获得更具体人设。
+- 不存在 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`；`BOT_AI_SYSTEM_PROMPT` 不被读取。角色卡/记忆文档不是指令，角色卡只能改变风格与语气，不能移除固定安全边界。
 - AI 仅在普通消息 Chat 中调用（`allow_chat` 目标 / QQ C2C 私聊）；斜杠命令不调用 AI（非管理员被拒、管理员回全量帮助）。
 - 会话：`bot_ai_sessions` 按 `(bot_id, target_external_id, user_id, mode)` 复用 OpenCode 会话；`mode` 只写 `chat`（列保留）；
   `/reset` 与角色卡变更会清理该范围全部会话映射；共享结构化长期记忆（`bot_memory_items`/`bot_memory_state`，旧摘要仅 legacy/fallback）。
@@ -333,19 +341,20 @@ sudo journalctl -u antifieldcloud -n 50 --no-pager | grep -i bot
   管理端清空群记忆会取消在途抽取；管理员 `DELETE /api/bots/:id/group-memories/:scope` 清空该群共享记忆（审计 `bot.memory.delete_user`）。
 - **当前 schema v17**：`bot_memory_items`/`bot_memory_state` 为结构化记忆表；`scripts/deploy.ps1` 切换前自动做迁移前 DB 快照；回滚必须恢复迁移前快照。
 - **写入**：抽取批处理按 Bot×用户串行；一次性 OpenCode 会话（`finally` 删除）；服务端严格校验 ops、敏感过滤（密钥/URL/内部路径/UNC/提示结构标记，key/value/legacy 均过滤）、容量清理（默认 200，先淘汰低重要度非核心条目）；更新续期；ops=0 不置 legacy 迁移标记。
-- **读取/召回**：核心层优先 + 关键词相关层，预算 3000 字/12 条；命中更新 `last_used_at`；`/memory off` 无注入；未迁移旧摘要 fallback 注入（受 `BOT_AI_MEMORY_MAX_CHARS` legacy 上限约束）。
+- **读取/召回**：核心层优先 + 关键词相关层，预算 3000 字/12 条；命中更新 `last_used_at`；`/memory off` 无注入；未迁移旧摘要 fallback 注入（受 `BOT_AI_MEMORY_MAX_CHARS` legacy 上限约束）。文档模式把同一召回文本写入 `memory.md`（每轮 AI 调用前刷新），prompt 只保留条数；模型按需 `read`。
 - **TTL**：profile/preference 不过期；fact/project/relationship 365 天（`BOT_AI_MEMORY_RETENTION_DAYS`）；episode 90 天（`BOT_MEMORY_TTL_EPISODE_DAYS`）；task 30 天（`BOT_MEMORY_TTL_TASK_DAYS`）；过期条目清理并从召回/列表排除。
 - **删除**：用户 `/forget confirm` 清空该 Bot×用户 items/state/legacy 摘要与全部会话，并尽力删除远端会话；管理员 `DELETE .../memories/:userId` 只删条目/状态/legacy，不删会话；`DELETE .../items/:itemId` 删单条并审计；两种管理删除均不返回 key/value。
 - **审计**：`bot.memory.extract`（仅计数：upserts/deletes/skipped/pruned/migrated）、`bot.memory.toggle`、`bot.memory.forget`、`bot.memory.delete_item`、`bot.memory.delete_user`、`bot.memory.legacy_cleanup`；不记录正文。
 - **Legacy 清理 CLI**：`node scripts/cleanup-legacy-memory.mjs` 默认 dry-run；`--confirm` 删除已迁移用户的 `bot_ai_memories` 行 + `DATA_DIR/bot-memory` 镜像并写审计；验收通过后执行一次，不输出正文。
-- **备份**：DB 快照包含结构化条目/状态与角色卡正文；legacy 镜像目录不是恢复必需项。
+- **备份**：DB 快照包含结构化条目/状态与角色卡正文；legacy 镜像目录不是恢复必需项。v0.7.3 上下文文档目录为派生数据，不进入备份；
+  恢复后首轮自动重建；`/forget confirm` 删除用户作用域与全部群作用域文档，Bot/目标删除与维护任务（无活动会话且超 24h）也会清理。
 
 
 ## 8. 测试与验收边界
 
 - 适配器/验签/队列/命令白名单/发布 TOTP+`PUBLISH`/AI/Chat/记忆/文本分段/图片下载/连接自检/诊断/角色与记忆管理均有进程内测试（不访问真实平台/模型）。
 - QQ 适配器以 mock/fixture 覆盖（op=13/op=0、C2C/群@/频道、attachments 图片、access_token 自检、长文本分段）；AI 使用假 OpenCode HTTP 服务。
-- 当前本地门禁（2026-10-25）：Bot 定向 `node --test server/test/bot-*.test.ts` **195 pass**；全量 `npm test` **497**；覆盖群聊共享会话键/串行、真实 `OpenCodeBotAi` 同群单会话、私聊独立会话、Bot 记忆镜像孤儿清理、BotService 拆分（targets/roles-admin/memory-admin）、AI 429 负路径、工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、群记忆清空空竞态、lastError 派生、Webhook 限流分桶与审计聚合、burst.clear、名称词边界、孤儿清理保守化、关闭排空；**连续外发 1000ms 间隔**（分段/发送工具多条/兜底/队列统一，按 Bot/AppID 串行）由 `bot-send-interval.test.ts` 覆盖。
+- 当前本地门禁（2026-10-27）：全量 `npm test` **520**（1 skip）、`test:web` **222**；覆盖群聊共享会话键/串行、真实 `OpenCodeBotAi` 同群单会话、私聊独立会话、Bot 记忆镜像孤儿清理、BotService 拆分、AI 429 负路径、工具隔离 fail-closed 与重试窗口、群记忆 `member_openid` 与一次性迁移、`/forget` 群条目、混批/@、回合异常补发、`/search` 串行、lastError 派生、Webhook 限流分桶与审计聚合、**上下文文档 scope/原子写/sweep、首轮/后续提示词差异、read 权限精确规则、permissions 拒绝 fail-closed、群/私聊作用域隔离、角色/目标/Bot/forget 清理**；**连续外发 1000ms 间隔**由 `bot-send-interval.test.ts` 覆盖。
 - 真实平台前置条件：QQ 开放平台已创建机器人并配置回调地址，`op=13` 校验通过；已订阅 C2C/群@/频道事件；Bot 已加入目标群/频道；图片需 `BOT_AI_VISION_ENABLED=true`、`BOT_AI_ENABLED=true`、模型支持 image 输入。
 - 真实 QQ 正向验收已通过；真实平台限流/签名漂移/故障负路径仍需部署后联调，不把 mock 全绿等同于线上通过。
 - 手工验收：创建/启用 QQ Bot → 添加目标并勾选 `allow_chat` → C2C/群 @Bot 多轮 Chat 触发抽取（≥3 条或空闲 120s）→ 检查 `bot_memory_items` 条目与 `bot.memory.extract` 计数 → `/memory` 查看计数/类型/启停（无正文）→ `/memory off` 后 Chat 无注入、`on` 恢复 → `/forget confirm` 清空 items/state/legacy/会话并核对远端会话 → 管理页记忆列表/条目元数据/删除 → 图片识别回归 → 验收通过后 `cleanup-legacy-memory.mjs` dry-run/`--confirm`。

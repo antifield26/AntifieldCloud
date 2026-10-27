@@ -5,6 +5,8 @@
  * - 只访问 config.opencodeUrl，使用 Basic Auth；密码不进入日志、错误消息或返回值。
  * - 新建会话时用 deny-all 的 OpenCode Permission.Ruleset 关闭工具，避免 Bot 用户借 AI 执行主机操作；
  *   仅当服务端明确以 400 拒绝 permissions 字段时降级为默认权限，并记录“未隔离”警告，绝不假装已隔离。
+ * - v0.7.3 文档模式：仅额外放行当前会话作用域的 role.md/memory.md（read + external_directory），
+ *   其余工具仍 deny；启用文档模式或发送工具时权限拒绝即 fail-closed（503），不再以默认权限重建。
  * - 只返回 assistant 的 text 内容段，忽略 reasoning/tool；单次回复上限由 BOT_AI_MAX_REPLY_CHARS 控制，平台层再按各自上限分段。
  *
  * 兼容性假设（依据 OpenCode 服务端 v2.1.3 的 OpenAPI 快照与生产只读验证；v2.1.2 → v2.1.3 于 2026-10-23 升级）：
@@ -20,6 +22,11 @@ import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
 import type { BotAi, BotAiImage, BotMemoryItemPrompt, BotMemoryOperation, BotToolIsolationStatus } from './types.ts'
 import { AppError } from '../util/errors.ts'
+import {
+  contextReadPatterns,
+  contextScopeDir,
+  type BotContextReadPatterns,
+} from './context.ts'
 
 /** 图片 data URL 仅接受这些 mime；其余由上层降级为纯文本。 */
 const IMAGE_MIME_ALLOWLIST = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
@@ -47,9 +54,23 @@ function isPermissionRejection(body: unknown): boolean {
     message,
   )
 }
-/** Bot 会话只放行明确授权的 MCP 工具；内置 shell/edit/read 等仍全部拒绝。 */
-function botPermissions(searchToolEnabled: boolean, sendToolEnabled: boolean): Record<string, unknown>[] {
+/**
+ * Bot 会话只放行明确授权的工具：MCP 工具按前缀，文档模式只放行当前作用域的两份文档。
+ * deny-all 必须在最前，具体 allow 在后（OpenCode 规则为“最后匹配生效”）。
+ */
+function botPermissions(
+  searchToolEnabled: boolean,
+  sendToolEnabled: boolean,
+  readDocs: BotContextReadPatterns | null,
+): Record<string, unknown>[] {
   const permissions: Record<string, unknown>[] = [...DENY_ALL_PERMISSIONS]
+  if (readDocs) {
+    // external_directory 只解决“外部路径访问前置门”；真正限制读取范围的是下面的精确 read 规则。
+    permissions.push({ action: 'external_directory', resource: readDocs.externalDirectory, effect: 'allow' })
+    for (const file of readDocs.files) {
+      permissions.push({ action: 'read', resource: file, effect: 'allow' })
+    }
+  }
   if (searchToolEnabled) permissions.push({ action: 'searxng_*', resource: '*', effect: 'allow' })
   if (sendToolEnabled) permissions.push({ action: 'botmsg_*', resource: '*', effect: 'allow' })
   return permissions
@@ -163,6 +184,10 @@ export class OpenCodeBotAi implements BotAi {
   /** 已去掉尾部斜杠，所有请求路径统一拼成 `${baseUrl}${path}`。 */
   private readonly baseUrl: string
   private readonly basicAuth: string
+  /** v0.7.3 上下文文档根目录（仅用于计算会话 read 作用域）。 */
+  private readonly contextDir: string
+  /** 是否启用“文档 + read 工具”模式。 */
+  private readonly contextReadEnabled: boolean
   private readonly timeoutMs: number
   /** AI 文本回答上限（BOT_AI_MAX_REPLY_CHARS）；平台层再按各自上限分段。 */
   private readonly maxReplyChars: number
@@ -195,6 +220,8 @@ export class OpenCodeBotAi implements BotAi {
     this.log = options.log
     this.searchToolEnabled = config.botSearchEnabled && config.botSearchMode === 'mcp'
     this.sendToolEnabled = config.botAiSendToolEnabled
+    this.contextReadEnabled = config.botAiContextReadEnabled
+    this.contextDir = config.botContextDir
     this.baseUrl = config.opencodeUrl.replace(/\/+$/, '')
     this.basicAuth = `Basic ${Buffer.from(
       `${config.opencodeUsername}:${config.opencodePassword}`,
@@ -225,6 +252,7 @@ export class OpenCodeBotAi implements BotAi {
     sessionUserId?: string
     sharedSession?: boolean
     prompt: string
+    initialPrompt?: string
     sessionTitle?: string
     image?: BotAiImage
   }): Promise<string> {
@@ -234,14 +262,10 @@ export class OpenCodeBotAi implements BotAi {
       userId: input.sessionUserId ?? input.userId,
       sharedSession: input.sharedSession === true,
     }
-    // fail-closed（SEC-11）：启用发送工具时不允许在未隔离的默认权限会话里继续对话。
+    // fail-closed（SEC-11）：启用发送工具或文档/read 模式时，不允许在未隔离的默认权限会话里继续对话。
     // 若已到重试窗口，允许 ensureSession 重新尝试带 permissions 的新会话；仍失败则抛 503。
-    if (this.sendToolEnabled && !this.permissionsSupported && Date.now() < this.permissionsRetryAt) {
-      throw new AppError(
-        503,
-        'bot_ai_tool_isolation_unavailable',
-        'AI 工具隔离不可用，暂时停止对话（等待上游恢复或重启应用）',
-      )
+    if ((this.contextReadEnabled || this.sendToolEnabled) && !this.permissionsSupported && Date.now() < this.permissionsRetryAt) {
+      throw this.isolationError()
     }
     const session = await this.ensureSession(target, input.sessionTitle)
     try {
@@ -262,13 +286,15 @@ export class OpenCodeBotAi implements BotAi {
   /** 在已确定的会话内完成一轮 prompt → 等待 → 取新增 assistant 文本。 */
   private async chatInSession(
     target: ChatTarget,
-    input: { prompt: string; image?: BotAiImage },
+    input: { prompt: string; initialPrompt?: string; image?: BotAiImage },
     session: { sessionId: string; created: boolean },
   ): Promise<string> {
     const { sessionId, created } = session
     // 发送 prompt 前固定"历史 assistant 消息"基线：轮询回退只接受基线之外的新回答。
     const baseline = await this.prepareAssistantBaseline(sessionId, created)
-    await this.sendPrompt(sessionId, input.prompt, input.image)
+    // 文档模式：角色卡正文只在本次调用创建的新会话首轮发送；复用会话只发不含正文的 followUp。
+    const prompt = created && input.initialPrompt ? input.initialPrompt : input.prompt
+    await this.sendPrompt(sessionId, prompt, input.image)
 
     const waited = await this.waitForIdle(sessionId)
     let text: string | null
@@ -323,7 +349,12 @@ export class OpenCodeBotAi implements BotAi {
     groupUserName?: string
     maxOps: number
   }): Promise<BotMemoryOperation[]> {
-    const sessionId = await this.createSession(normalizeSessionTitle(input.sessionTitle, 'AntifieldCloud Memory'))
+    // 抽取会话是一次性内部任务：永远 deny-all，且 permissions 不可用时直接失败，不以默认权限继续。
+    const sessionId = await this.createSession(
+      normalizeSessionTitle(input.sessionTitle, 'AntifieldCloud Memory'),
+      DENY_ALL_PERMISSIONS,
+      { requirePermissions: true },
+    )
     const maxOps = Math.max(1, Math.min(20, Math.floor(input.maxOps)))
     const existing = input.existing
       .slice(0, 120)
@@ -433,6 +464,23 @@ export class OpenCodeBotAi implements BotAi {
     return removed
   }
 
+  /** 工具隔离不可用的统一 503（消息不泄露上游细节）。 */
+  private isolationError(): AppError {
+    return new AppError(
+      503,
+      'bot_ai_tool_isolation_unavailable',
+      'AI 工具隔离不可用，暂时停止对话（等待上游恢复或重启应用）',
+    )
+  }
+
+  /** 文档模式下当前会话作用域的 read 权限资源；关闭时返回 null。 */
+  private chatReadPatterns(target: ChatTarget): BotContextReadPatterns | null {
+    if (!this.contextReadEnabled) return null
+    return contextReadPatterns(
+      contextScopeDir(this.contextDir, target.botId, target.targetExternalId, target.userId),
+    )
+  }
+
   /** 按 (botId,targetExternalId,userId) 复用 Chat 会话；数据库 mode 固定写 chat。 */
   private async ensureSession(target: ChatTarget, title?: string): Promise<{ sessionId: string; created: boolean }> {
     // v0.7.1：旧版群聊按用户各建一个会话；首次使用共享会话时清理这些映射，远端旧会话尽力异步删除。
@@ -444,7 +492,11 @@ export class OpenCodeBotAi implements BotAi {
       .get(target.botId, target.targetExternalId, target.userId) as AiSessionRow | undefined
     if (existing?.session_id) return { sessionId: existing.session_id, created: false }
 
-    const sessionId = await this.createSession(normalizeSessionTitle(title, 'AntifieldCloud Chat'))
+    const sessionId = await this.createSession(
+      normalizeSessionTitle(title, 'AntifieldCloud Chat'),
+      botPermissions(this.searchToolEnabled, this.sendToolEnabled, this.chatReadPatterns(target)),
+      { requirePermissions: this.contextReadEnabled || this.sendToolEnabled },
+    )
     const now = new Date().toISOString()
     // 并发首次对话可能同时创建远端会话；以最后一次写入为准，避免主键冲突导致整次对话失败。
     this.db
@@ -485,12 +537,21 @@ export class OpenCodeBotAi implements BotAi {
     }
   }
 
-  private async createSession(title = 'AntifieldCloud Bot'): Promise<string> {
+  private async createSession(
+    title: string,
+    permissions: Record<string, unknown>[],
+    options: { requirePermissions: boolean },
+  ): Promise<string> {
     // 降级期间到重试窗口后，重新尝试带 permissions；成功则恢复隔离，失败则继续降级并延长窗口。
     const wasSupported = this.permissionsSupported
     const retryDue = !this.permissionsSupported && Date.now() >= this.permissionsRetryAt
     const includePermissions = this.permissionsSupported || retryDue
-    let result = await this.request('POST', '/api/session', this.sessionBody(includePermissions, title))
+    if (!includePermissions && options.requirePermissions) throw this.isolationError()
+    let result = await this.request(
+      'POST',
+      '/api/session',
+      this.sessionBody(includePermissions ? permissions : null, title),
+    )
     if (result.status === 400 && includePermissions && isPermissionRejection(result.body)) {
       this.permissionsSupported = false
       this.permissionsFallbackCount += 1
@@ -503,15 +564,9 @@ export class OpenCodeBotAi implements BotAi {
         firstFallback: wasSupported,
         retryInMs: PERMISSIONS_RETRY_WINDOW_MS,
       })
-      // 启用发送工具时 fail-closed：不再以默认权限创建会话（SEC-11）。
-      if (this.sendToolEnabled) {
-        throw new AppError(
-          503,
-          'bot_ai_tool_isolation_unavailable',
-          'AI 工具隔离不可用，暂时停止对话（等待上游恢复或重启应用）',
-        )
-      }
-      result = await this.request('POST', '/api/session', this.sessionBody(false, title))
+      // 文档/read 或发送工具依赖隔离：fail-closed，不再以默认权限创建会话（SEC-11/D-12）。
+      if (options.requirePermissions) throw this.isolationError()
+      result = await this.request('POST', '/api/session', this.sessionBody(null, title))
     } else if (includePermissions && !wasSupported && this.isOk(result.status)) {
       // 从降级恢复：记录恢复时间，便于状态/审计观察。
       this.permissionsSupported = true
@@ -526,13 +581,14 @@ export class OpenCodeBotAi implements BotAi {
     return id
   }
 
-  private sessionBody(includePermissions: boolean, title = 'AntifieldCloud Bot'): Record<string, unknown> {
+  private sessionBody(
+    permissions: Record<string, unknown>[] | null,
+    title: string,
+  ): Record<string, unknown> {
     return {
       title,
       ...(this.modelRef ? { model: this.modelRef } : {}),
-      ...(includePermissions
-        ? { permissions: botPermissions(this.searchToolEnabled, this.sendToolEnabled) }
-        : {}),
+      ...(permissions === null ? {} : { permissions }),
     }
   }
 

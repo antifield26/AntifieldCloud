@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.7.2，schema **v17**，OpenCode **v2.1.4**。生产 release `20261025T132950Z`/commit `eb74382`；`/healthz` 返回 `v0.7.2 / schema17 / db ok`。部署内 smoke 24/0/1/2，完整 Access smoke 33/0/0/2；恢复演练 `20261025T133743Z` 通过。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
-> 测试基线：`npm test` **497**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.85/78.35/88.11**、前端 **52.31/47.32/45.02**；`npm run check`、`check-version`（严格 `0.7.2`）、`build`（`index-C0QZV4hZ.js` 726.72 kB）均通过；Node.js **v26.12.1**。
+> 状态：v0.7.3（本地实现与门禁完成，待生产部署），schema **v17**（无迁移），OpenCode **v2.1.4**。当前生产 v0.7.2（release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；部署内 smoke 24/0/1/2、完整 Access smoke 33/0/0/2；drill `20261025T133743Z` 通过）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
+> 测试基线：`npm test` **520**（1 skip）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.33/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`check-version`（严格 `0.7.3`）、`build`（`index-fid8njfw.js` 726.86 kB）均通过；Node.js **v26.12.1**。
 > 部署与运维见 [docs/DEPLOY.md](docs/DEPLOY.md)，备份/恢复见 [docs/BACKUP.md](docs/BACKUP.md)，契约见 [docs/API.md](docs/API.md)，路线与验收记录见 [docs/ROADMAP.md](docs/ROADMAP.md) 与 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
 
 ## 技术栈
@@ -11,9 +11,9 @@
 - 服务端：Node.js >= 26（生产 v26.12.1；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用；当前结论为**暂不升级、保留双 alias**
-- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（schema v17；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
+- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（schema v17；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭，OpenCode 读范围验证后启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **497**）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 Lines/Functions/Branches 91/85/76；前端 50/45/42）
+- 测试：`node --test`（服务端 + 运维脚本 **520**，1 skip）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 Lines/Functions/Branches 91/85/76；前端 50/45/42）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -63,7 +63,7 @@
 - **图片理解（默认开启）**：`BOT_AI_VISION_ENABLED=true` 时 QQ `d.attachments` 的 image/* 附件经 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）域名后缀白名单下载（image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES`、不落盘）交给 AI；失败/关闭/非法图片时降级为纯文字回答；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。需模型支持 image 输入（`opencode-go/deepseek-v4.1-flash` 已完成生产只读验证）。
 - **结构化长期记忆**：`bot_memory_items` 7 类（资料/偏好/事实/项目/任务/关系/事件），key/value/confidence/importance/source/时间/`expires_at`，唯一 `(bot,user,kind,key)`；`bot_memory_state` 保存启停与 legacy 迁移标记；`bot_ai_memories` 仅作 legacy 来源/fallback。`/bots`「角色与记忆」将长期记忆分为**用户记忆/群聊记忆**左右两栏；群聊记忆按群目标聚合，群共享记忆按群目标归属。
   抽取沿用累计 **3** 条或空闲 **120s**（`BOT_AI_MEMORY_BATCH_MESSAGES`/`BOT_AI_MEMORY_IDLE_FLUSH_SECONDS`）+ 同用户串行，一次性 OpenCode 会话（用后删除）；模型 JSON ops 经服务端校验/敏感过滤（密钥/URL/内部路径跳过）/容量清理（默认 **200** 条）；TTL：资料/偏好不过期，事实/项目/关系 **365 天**、事件 **90 天**、任务 **30 天**（更新续期）；召回核心层优先 + 关键词相关层，预算 **3000 字/12 条**（`BOT_MEMORY_PROMPT_MAX_CHARS`/`BOT_MEMORY_PROMPT_MAX_ITEMS`），`/memory off` 时无注入；审计 `bot.memory.extract` 只记计数。
-- **AI 仅普通消息 Chat**：提示词固定为「角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息」，全量群消息追加 `NO_REPLY` 决策段；不存在 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`bot_ai_sessions.mode` 只写 `chat`；`/reset` 与私聊角色卡变更清理该范围全部会话映射；审计 `bot.ai.chat` 不记录 mode。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
+- **AI 仅普通消息 Chat**：默认（`BOT_AI_CONTEXT_READ_ENABLED=false`）提示词为「角色卡（私聊个人卡、群聊共享卡或默认 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户消息」；开启文档模式后首轮发送角色卡正文，后续轮只给角色名/记忆条数/只读文档路径，模型通过 OpenCode `read` 按需读取，记忆正文不再每轮进入 prompt；安全边界始终追加；全量群消息追加 `NO_REPLY` 决策段；不存在 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`；AI 仅在 `allow_chat=1` 的目标/C2C 私聊中调用；`bot_ai_sessions.mode` 只写 `chat`；`/reset`、私聊/群聊角色变更清理对应会话映射；审计 `bot.ai.chat` 不记录正文/路径。QQ C2C 私聊对任意用户开放 Chat（平台侧限制 Bot 可添加性），群/频道仍按目标登记。
 - **默认角色、私聊角色卡与群聊角色卡**：内置默认角色 `lofii` 只保留名字与简短对话风格；群聊使用管理员在“角色与记忆”配置的共享角色卡（每个群目标一张，覆盖成员私聊卡，停用/删除回退 lofii）；C2C `/role` 对 QQ 私聊用户开放，每 Bot×用户一张“名字+角色设定”卡，`set/show/off/on/delete` 管理；`/role show` 对用户自定义卡返回完整详细文本，默认角色卡只返回名称、不展示内置详情；个人卡只覆盖私聊；群聊不执行 `/role`，也不接受任何斜杠命令。私聊角色卡变更会清理该范围会话映射。
 - **群聊共享会话**：同一群聊目标的所有成员复用唯一 OpenCode Chat 会话，模型可见群内不同成员的历史消息；群内 Chat 按目标串行，私聊仍每用户独立会话；真实用户仍分别用于限流、记忆归属、审计与发送工具令牌。
 - **群聊用户名与共享记忆**：群聊用户消息在提示词中带 `<用户名>：` head；群聊使用独立共享记忆 scope，条目按 `<用户名>：<记忆>` 保存/注入；成员用户级记忆不进入群聊会话；Web「角色与记忆」按用户记忆/群聊记忆左右两栏展示元数据并支持清空群共享记忆。群条目归属键使用稳定 `member_openid`（显示名只存 value），无法映射的旧键标 `legacy:` 保留；`/forget confirm` 同时清除本人在各群贡献的条目并取消在途抽取。
@@ -119,7 +119,7 @@ npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldclou
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.2 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.3 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
 
 ## 目录
 
@@ -166,6 +166,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - **异地副本默认关闭**：需用户在 PC 配置 rclone remote/凭据（脚本不创建），只上传 `.age`；状态由 PC 写回 Pi，缺失视为未配置、不告警；远端保留策略按链感知（最新 full + 其后 inc + 最近 N 天），不做跨远端多副本。当前 rclone 已安装，用户确认保持关闭、不配置 remote。
 - **明确残余**：服务端单进程/同步维护任务；平台适配与模型路径仍需 mock + 部署后真实验收；物理孤儿文件只回收 id 形状且超期者；`/api/version` 诊断不含历史；预部署快照与旧归档保留策略见 `docs/BACKUP.md` §11。
 - Bot 已知限制：仅 QQ 官方 Bot（单平台）；QQ 仅文本、不支持出站媒体/附件/按钮/引用；群/频道只有 @Bot 事件（或显式开启全量消息后由模型决定是否回复）；C2C 私聊开放 Chat；命令严格只读；企业微信/钉钉/飞书与多管理员审批未支持。
+- **v0.7.3 文档模式默认关闭**：需先完成 OpenCode 读范围矩阵（作用域内/外负路径）再启用；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；read 范围依赖 OpenCode `permissions` 语义，失败即保持关闭；上下文目录为派生数据、不进入备份。
 - 图片理解默认开启：`BOT_AI_VISION_ENABLED=true`；QQ `d.attachments` 图片仅从 `.qpic.cn`/`.qq.com`/`.qq.com.cn`/`.gtimg.cn`（QQ 实际图床如 `multimedia.nt.qq.com.cn`）后缀、image mime 白名单、≤`BOT_AI_IMAGE_MAX_BYTES` 下载，不落盘；图片会经 OpenCode 交给模型 provider（见 `docs/SECURITY.md`）。
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。

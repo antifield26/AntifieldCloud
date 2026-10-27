@@ -21,7 +21,15 @@ export const DEFAULT_CHAT_ROLE = {
 } as const
 
 /** 角色设定中禁止出现的提示词结构标记，避免用户正文伪造系统区段。 */
-export const RESERVED_ROLE_MARKERS = ['[系统提示]', '[安全边界]', '[长期记忆', '[用户消息]', '[模式：'] as const
+export const RESERVED_ROLE_MARKERS = [
+  '[系统提示]',
+  '[安全边界]',
+  '[长期记忆',
+  '[上下文文档]',
+  '[角色卡：',
+  '[用户消息]',
+  '[模式：',
+] as const
 
 export interface BotChatRole {
   botId: string

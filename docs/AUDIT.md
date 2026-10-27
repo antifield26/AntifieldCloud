@@ -565,3 +565,13 @@
 - **已收口**：审计失败计数持久化（schema v17）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留（DR-7）、告警 24h 重通知（DR-22）、备份锁心跳（DR-23）、DR-1 `clockSkew` 状态、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径夹具补强。
 - **仍保留**：单进程/HA、内存限流、同步维护、SQLite `synchronous=NORMAL`、单 SD/LUKS、NOPASSWD sudo、RCON 监听、Cloudflare 明文、真实平台负路径（mock-only 之外的线上联调）、备份加密临时明文窗口/私钥丢失、异地副本单远端、群记忆 `legacy:` 不可恢复等，按 `docs/ARCHITECTURE.md` §11 与 `docs/SECURITY.md` §4 管理。
 - **V10–V13**：用户真实 QQ 正向验收通过；真实平台限流/签名漂移/故障负路径仍待部署后联调，不再表述为“未验收”。
+
+## 第七轮（v0.7.3 规划期对抗性分析，2026-10-27）
+
+- **范围**：Bot 提示词文档化（角色卡只在会话创建时发送、记忆按需 `read`）与 OpenCode read 权限扩大。
+- **结论**：功能本地实现与门禁完成，默认关闭；生产启用前必须完成真实 OpenCode 读范围矩阵。P0=0/P1=0（本地门禁），2 个发布阻断未决项与 1 个产品风险记录如下。
+- **阻断项 A1（read 范围语义）**：OpenCode 接受 `permissions` 不等于已按路径拦截；若 `read` 规则未生效，模型可能读取 `/etc/antifieldcloud/env`、OpenCode 凭据/DB 并外发。缓解：`deny *` 首位 + 仅放行当前作用域 `external_directory` + 精确 `read role.md/memory.md`；默认关闭；生产矩阵作用域内/外/注入/shell/相对路径全部验证，失败保持关闭。
+- **阻断项 A2（权限降级）**：旧逻辑在 permissions 被拒时可无 permissions 重建（默认全工具）；文档模式开启后必须以 503 `bot_ai_tool_isolation_unavailable` fail-closed，记忆抽取会话也要求 permissions 生效。已由单测/集成覆盖。
+- **产品风险 A13（模型不读文档）**：后续轮不再携带角色/记忆正文，若模型不调用 `read`，人设/记忆可能弱化；通过真实 QQ 首轮/后续、记忆召回、`/forget` 验收观察，可随时用 flag 回退内联提示词。
+- **明确残余**：首轮角色卡仍存在于 OpenCode 会话历史（后续请求不再发送正文）；OpenCode 进程是信任边界（可读全部上下文作用域）；群共享记忆在群成员间可见为既有语义；上下文目录为派生数据、不进入备份，恢复后重建。
+- **未决**：生产部署、读范围矩阵、smoke/drill 与真实 QQ 验收待执行；矩阵失败则 v0.7.3 功能保持关闭并记录阻断，不把 mock 全绿当线上通过。

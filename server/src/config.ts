@@ -2,9 +2,9 @@
  * 配置加载：读取 ENV_FILE / 本机 .env / process.env，做数值校验与默认值填充。
  * 生产环境由 systemd 的 EnvironmentFile 提供；CLI 通过本模块读取同一份文件。
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { isIP } from 'node:net'
-import { resolve } from 'node:path'
+import { isAbsolute, resolve, sep } from 'node:path'
 
 export interface Config {
   nodeEnv: 'development' | 'production' | 'test'
@@ -163,6 +163,13 @@ export interface Config {
   botChatBurstGroupAllMaxWaitMs: number
   /** v0.6.4：是否允许模型调用 send_message 工具发送消息（需安装 botmsg MCP）。 */
   botAiSendToolEnabled: boolean
+  /**
+   * v0.7.3：Chat 上下文文档 + read 工具开关。
+   * 开启后角色卡/记忆落盘为只读文档，模型按需 read；默认关闭，OpenCode 读范围验证通过后启用。
+   */
+  botAiContextReadEnabled: boolean
+  /** v0.7.3：上下文文档根目录；生产必须显式配置为 OpenCode 组可读的独立目录。 */
+  botContextDir: string
   /** v0.6.1：SearXNG 联网搜索总开关；开启时必须配置 BOT_SEARCH_URL。 */
   botSearchEnabled: boolean
   /** SearXNG 基址（生产建议 loopback 私有实例），仅 http/https。 */
@@ -270,6 +277,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const nodeEnv = nodeEnvRaw as 'production' | 'test' | 'development'
   const dataDir = resolve(str(merged, 'DATA_DIR', resolve(process.cwd(), 'data')))
   const webDistDir = resolve(str(merged, 'WEB_DIST_DIR', resolve(process.cwd(), 'web', 'dist')))
+  // 默认放在 DATA_DIR 下仅用于本地开发；生产由部署创建独立目录并显式配置（OpenCode 需可读）。
+  const rawBotContextDir = (merged.BOT_CONTEXT_DIR ?? '').trim()
+  const botContextDir = resolve(rawBotContextDir || resolve(dataDir, 'bot-context'))
   const appOrigin = str(merged, 'APP_ORIGIN', 'https://app.example.com')
   const aiOrigin = str(merged, 'AI_ORIGIN', 'https://ai.example.com')
   const config: Config = {
@@ -389,6 +399,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botChatBurstGroupAllWindowMs: int(merged, 'BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS', 8000, 0, 30000),
     botChatBurstGroupAllMaxWaitMs: int(merged, 'BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS', 20000, 1000, 60000),
     botAiSendToolEnabled: bool(merged, 'BOT_AI_SEND_TOOL_ENABLED', false),
+    botAiContextReadEnabled: bool(merged, 'BOT_AI_CONTEXT_READ_ENABLED', false),
+    botContextDir,
     botSearchEnabled: bool(merged, 'BOT_SEARCH_ENABLED', false),
     botSearchUrl: str(merged, 'BOT_SEARCH_URL', ''),
     botSearchAuto: bool(merged, 'BOT_SEARCH_AUTO', true),
@@ -416,6 +428,27 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (config.botSearchEnabled) {
     if (!config.botSearchUrl) throw new Error('BOT_SEARCH_ENABLED=true 时必须配置 BOT_SEARCH_URL')
     validateHttpUrl(config.botSearchUrl, 'BOT_SEARCH_URL')
+  }
+  if (config.botAiContextReadEnabled) {
+    const rawContextDir = (merged.BOT_CONTEXT_DIR ?? '').trim()
+    if (rawContextDir && !isAbsolute(rawContextDir)) {
+      throw new Error('BOT_CONTEXT_DIR 必须是绝对路径')
+    }
+    if (/[*?]/.test(rawContextDir || config.botContextDir)) {
+      throw new Error('BOT_CONTEXT_DIR 不能包含 * 或 ?（会被 OpenCode 当作权限通配符）')
+    }
+    if (config.botContextDir === resolve('/')) {
+      throw new Error('BOT_CONTEXT_DIR 不能是文件系统根目录')
+    }
+    if (config.nodeEnv === 'production') {
+      if (!rawContextDir) {
+        throw new Error('BOT_AI_CONTEXT_READ_ENABLED=true 时生产必须显式设置 BOT_CONTEXT_DIR')
+      }
+      // OpenCode 以独立用户运行；DATA_DIR 为 0750，放在其内部会导致 OpenCode 无法穿越。
+      if (config.botContextDir === config.dataDir || config.botContextDir.startsWith(config.dataDir + sep)) {
+        throw new Error('BOT_CONTEXT_DIR 不能位于 DATA_DIR 内（OpenCode 无法穿越 0750 父目录）')
+      }
+    }
   }
   if (config.botChatBurstWindowMs > config.botChatBurstMaxWaitMs) {
     throw new Error('BOT_CHAT_BURST_WINDOW_MS 不能大于 BOT_CHAT_BURST_MAX_WAIT_MS')
@@ -523,8 +556,23 @@ export function resolveLegacyCookieDomain(env: Record<string, string>, appOrigin
   }
 }
 
-/** 应用启动时确保数据目录存在且可写。 */
+/** 应用启动时确保数据目录存在且可写；上下文目录只在启用文档模式时校验。 */
 export function ensureRuntimeDirs(config: Config): void {
   const dirs = [config.dataDir, resolve(config.dataDir, 'files'), resolve(config.dataDir, 'tmp'), resolve(config.dataDir, 'backups')]
   for (const dir of dirs) mkdirSync(dir, { recursive: true })
+  if (!config.botAiContextReadEnabled) return
+  if (existsSync(config.botContextDir)) {
+    try {
+      accessSync(config.botContextDir, constants.W_OK | constants.X_OK)
+    } catch {
+      throw new Error(`BOT_CONTEXT_DIR 不可写/不可进入：${config.botContextDir}（检查属主与权限）`)
+    }
+    return
+  }
+  if (config.nodeEnv === 'production') {
+    throw new Error(
+      `BOT_CONTEXT_DIR 不存在：${config.botContextDir}（部署时创建：install -d -o antifieldcloud -g opencode -m 2750 <dir>）`,
+    )
+  }
+  mkdirSync(config.botContextDir, { recursive: true, mode: 0o750 })
 }

@@ -89,6 +89,8 @@ export interface BotTargetAdminDeps {
   audit: BotServiceDeps['audit']
   groupRoles: BotGroupRoleStore
   dropGroupTargetMemory: (botId: string, targetExternalId: string) => void
+  /** 目标删除/类型变更：清理该目标全部会话映射、远端会话与上下文文档。 */
+  resetTargetSessions: (botId: string, targetExternalId: string) => void
 }
 
 export class BotTargetAdmin {
@@ -204,6 +206,10 @@ export class BotTargetAdmin {
         targetId,
       )
     if (kind !== 'group') this.deps.groupRoles.remove(botId, targetId)
+    if (kind !== row.kind) {
+      // 类型变化会改变会话/记忆语义：清理该目标全部会话与上下文文档，避免旧作用域继续可读。
+      this.deps.resetTargetSessions(botId, row.external_id)
+    }
     // 目标从群聊改为其它类型后，原群共享记忆 scope 会变成不可管理的孤儿，直接清理。
     if (row.kind === 'group' && kind !== 'group') this.deps.dropGroupTargetMemory(botId, row.external_id)
     this.deps.audit('bot.target.update', `${botId}:${targetId}`)
@@ -214,6 +220,7 @@ export class BotTargetAdmin {
     this.deps.requireEnabled()
     this.deps.botRow(botId)
     const row = this.deps.targetRowForBot(botId, targetId)
+    this.deps.resetTargetSessions(botId, row.external_id)
     this.deps.db.prepare('DELETE FROM bot_targets WHERE id = ?').run(targetId)
     if (row.kind === 'group') this.deps.dropGroupTargetMemory(botId, row.external_id)
     this.deps.audit('bot.target.delete', `${botId}:${targetId}`)

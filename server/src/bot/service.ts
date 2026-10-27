@@ -69,6 +69,7 @@ import { BotTargetAdmin, type CreateTargetInput, type UpdateTargetInput } from '
 import { BotMemoryAdmin } from './memory-admin.ts'
 import { BotRoleAdmin } from './roles-admin.ts'
 import { GROUP_CHAT_SESSION_USER_ID } from './session.ts'
+import { BotContextStore, contextModeTag, contextScopeKey } from './context.ts'
 import { BotConnectivityMonitor, type ConnectivitySnapshot } from './connectivity.ts'
 import { QqAdapter, DEFAULT_SEND_INTERVAL_MS } from './adapters/qq.ts'
 import { BOT_TEXT_LIMITS } from './text.ts'
@@ -178,6 +179,8 @@ export class BotService {
   /** Webhook 拒绝/限流审计的窗口聚合计数（避免每次 401/429 各写一条审计）。 */
   private readonly webhookAuditWindows = new Map<string, { minute: number; count: number }>()
   private readonly memory: BotMemoryStore
+  /** v0.7.3：角色卡/记忆文档存储（read 工具按需读取；默认关闭）。 */
+  private readonly context: BotContextStore
   private readonly memoryAdmin: BotMemoryAdmin
   private readonly roles: BotChatRoleStore
   private readonly groupRoles: BotGroupRoleStore
@@ -245,6 +248,7 @@ export class BotService {
     })
     this.roles = new BotChatRoleStore(deps.db)
     this.groupRoles = new BotGroupRoleStore(deps.db)
+    this.context = new BotContextStore({ dir: deps.config.botContextDir, log: deps.log })
     this.roleAdmin = new BotRoleAdmin({
       db: this.db,
       requireEnabled: () => this.requireEnabled(),
@@ -253,7 +257,8 @@ export class BotService {
       roles: this.roles,
       groupRoles: this.groupRoles,
       inboundUserNames: (botId) => this.inboundUserNames(botId),
-      deleteRemoteSessions: (botId, filter) => this.deleteRemoteSessions(botId, filter),
+      resetUserSessions: (botId, userId) => this.resetUserSessions(botId, userId),
+      resetGroupSessions: (botId, targetExternalId) => this.resetGroupSessions(botId, targetExternalId),
       audit: this.deps.audit,
     })
     this.memoryAdmin = new BotMemoryAdmin({
@@ -273,6 +278,7 @@ export class BotService {
       audit: this.deps.audit,
       groupRoles: this.groupRoles,
       dropGroupTargetMemory: (botId, externalId) => this.dropGroupTargetMemory(botId, externalId),
+      resetTargetSessions: (botId, externalId) => this.resetTargetSessions(botId, externalId),
     })
     this.resetSessionsForToolMode()
     this.connectivity = new BotConnectivityMonitor({
@@ -326,6 +332,7 @@ export class BotService {
         search: this.deps.search,
         now: this.deps.now,
         memory: this.memory,
+        context: this.context,
       },
       roles: this.roles,
       groupRoles: this.groupRoles,
@@ -397,7 +404,7 @@ export class BotService {
    * `retryAt` 缺失（旧 AI 实现/无窗口信息）时不前置阻断，交给 ai.chat 的 503 兜底。
    */
   private aiIsolationBlocked(): boolean {
-    if (!this.config.botAiSendToolEnabled) return false
+    if (!this.config.botAiSendToolEnabled && !this.config.botAiContextReadEnabled) return false
     const status = this.aiToolIsolationStatus()
     if (!status || status.supported !== false) return false
     if (!status.retryAt) return false
@@ -551,8 +558,9 @@ export class BotService {
     this.botRow(id)
     const mirrorIds = this.memory.listBotMemoryIds(id)
     this.db.prepare('DELETE FROM bots WHERE id = ?').run(id)
-    // DB 行已删；镜像清理 best-effort，失败不改变删除结果。
+    // DB 行已删；镜像/上下文文档清理 best-effort，失败不改变删除结果。
     this.memory.removeMirrorFiles(mirrorIds)
+    this.context.removeBot(id)
     this.deps.audit('bot.delete', id)
   }
 
@@ -868,7 +876,11 @@ export class BotService {
   private resetSessionsForToolMode(): void {
     if (!this.config.botEnabled || !this.config.botAiEnabled) return
     const searchMode = this.config.botSearchEnabled ? this.config.botSearchMode : 'off'
-    const mode = `${searchMode}:${this.config.botAiSendToolEnabled ? 'send' : 'nosend'}`
+    // read 关闭时保持旧 mode 字符串（兼容既有测试/升级路径）；开启后目录变化也触发重建。
+    const baseMode = `${searchMode}:${this.config.botAiSendToolEnabled ? 'send' : 'nosend'}`
+    const mode = this.config.botAiContextReadEnabled
+      ? `${baseMode}:read:${contextModeTag(this.config.botContextDir)}`
+      : baseMode
     const previous = getMeta(this.db, 'bot_ai_tool_mode')
     if (previous === mode) {
       void this.cleanupRemoteSessions([])
@@ -973,6 +985,8 @@ export class BotService {
   }
 
   start(): void {
+    // 上下文文档是派生数据；即使 Bot 当前关闭也在启动时回收一次超期孤儿，避免个人记忆长期残留。
+    this.cleanupContext()
     if (!this.enabled || this.timer) return
     try {
       this.migrateGroupChatMemories()
@@ -1226,6 +1240,9 @@ export class BotService {
     const removed = this.memory.deleteUser(bot.id, result.userId)
     const groupRemoved = this.memory.deleteMemberGroupItems(bot.id, result.userId)
     this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(bot.id, result.userId)
+    // 删除磁盘上的记忆文档：用户作用域精确删除；群作用域整目录删除（下一轮按当前 DB 重建）。
+    const removedUserScopes = this.context.removeUserScopes(bot.id, result.userId)
+    const removedGroupScopes = this.context.removeGroupScopes(bot.id)
     this.deps.audit('bot.memory.forget', bot.id, {
       bot: bot.id,
       user: result.userId.slice(0, 64),
@@ -1233,6 +1250,8 @@ export class BotService {
       legacy: removed.deletedLegacy ? 1 : 0,
       groupItems: groupRemoved.items,
       groupScopes: groupRemoved.groups,
+      userScopes: removedUserScopes,
+      contextGroupScopes: removedGroupScopes,
     })
     return removed.deletedItems > 0 || removed.deletedLegacy || groupRemoved.items > 0
       ? `已清除长期记忆与全部对话上下文（记忆条目 ${removed.deletedItems} 条${groupRemoved.items > 0 ? `，群聊共享记忆 ${groupRemoved.items} 条` : ''}${removed.deletedLegacy ? '，旧摘要已删除' : ''}）。`
@@ -1376,6 +1395,55 @@ export class BotService {
     this.db
       .prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ?')
       .run(botId, targetExternalId, userId)
+    this.context.removeScope(botId, targetExternalId, userId)
+  }
+
+  /** 管理端角色变更：清理该用户全部会话映射与上下文文档（私聊可能涉及多个目标）。 */
+  private resetUserSessions(botId: string, userId: string): void {
+    this.deleteRemoteSessions(botId, { userId })
+    this.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(botId, userId)
+    this.context.removeUserScopes(botId, userId)
+  }
+
+  /** 群聊角色/目标变更：清理该群共享会话与群作用域文档。 */
+  private resetGroupSessions(botId: string, targetExternalId: string): void {
+    const userId = GROUP_CHAT_SESSION_USER_ID
+    this.deleteRemoteSessions(botId, { targetExternalId, userId })
+    this.db
+      .prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ? AND user_id = ?')
+      .run(botId, targetExternalId, userId)
+    this.context.removeScope(botId, targetExternalId, userId)
+  }
+
+  /** 目标删除/类型变更：清理该目标下全部会话映射与上下文文档。 */
+  private resetTargetSessions(botId: string, targetExternalId: string): void {
+    this.deleteRemoteSessions(botId, { targetExternalId })
+    this.db
+      .prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND target_external_id = ?')
+      .run(botId, targetExternalId)
+    this.context.removeTarget(botId, targetExternalId)
+  }
+
+  /** 当前仍存在的会话作用域集合；用于上下文目录维护清理。 */
+  private activeContextScopes(): Set<string> {
+    const rows = this.db
+      .prepare('SELECT bot_id, target_external_id, user_id FROM bot_ai_sessions')
+      .all() as unknown as { bot_id: string; target_external_id: string; user_id: string }[]
+    return new Set(rows.map((row) => contextScopeKey(row.bot_id, row.target_external_id, row.user_id)))
+  }
+
+  /** 维护清理：只回收无活动会话映射且超期的上下文目录，避免个人数据长期残留。 */
+  private cleanupContext(): number {
+    try {
+      const removed = this.context.sweep(this.activeContextScopes())
+      if (removed > 0) this.deps.log('info', '已清理 Bot 上下文文档孤儿', { removed })
+      return removed
+    } catch (error) {
+      this.deps.log('warn', 'Bot 上下文文档清理失败', {
+        error: error instanceof Error ? error.message : 'unknown',
+      })
+      return 0
+    }
   }
 
   /**
@@ -1400,18 +1468,15 @@ export class BotService {
     const rows = this.db
       .prepare(`SELECT session_id FROM bot_ai_sessions WHERE ${clauses.join(' AND ')}`)
       .all(...params) as unknown as { session_id: string }[]
-    const summaryClauses = ['bot_id = ?', 'summary_session_id IS NOT NULL']
-    const summaryParams: string[] = [botId]
-    if (filter.userId) {
-      summaryClauses.push('user_id = ?')
-      summaryParams.push(filter.userId)
-    }
-    const memories = this.db
-      .prepare(`SELECT summary_session_id FROM bot_ai_memories WHERE ${summaryClauses.join(' AND ')}`)
-      .all(...summaryParams) as unknown as { summary_session_id: string }[]
     const ids = new Set<string>()
     for (const row of rows) if (row.session_id) ids.add(row.session_id)
-    for (const row of memories) if (row.summary_session_id) ids.add(row.summary_session_id)
+    // legacy 摘要没有 target 维度：只在按用户过滤时删除，避免按目标清理时误删其他用户的旧摘要会话。
+    if (filter.userId) {
+      const memories = this.db
+        .prepare('SELECT summary_session_id FROM bot_ai_memories WHERE bot_id = ? AND user_id = ? AND summary_session_id IS NOT NULL')
+        .all(botId, filter.userId) as unknown as { summary_session_id: string }[]
+      for (const row of memories) if (row.summary_session_id) ids.add(row.summary_session_id)
+    }
     for (const sessionId of ids) {
       const task = this.deps.ai.deleteSession(sessionId).catch(() => undefined)
       this.pending.add(task)
@@ -1692,6 +1757,7 @@ export class BotService {
       this.db.prepare('DELETE FROM bot_inbound_targets WHERE last_seen_at < ?').run(cutoff)
       this.memory.cleanup()
       this.memory.cleanupOrphanMirrors()
+      this.cleanupContext()
       this.queue.cleanupExpired()
       this.deps.ai?.cleanup?.()
     } catch {

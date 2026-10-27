@@ -1,7 +1,10 @@
 /** ARCH-08/SEC-09：配置解析失败即退出，不再静默回退。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { loadConfig } from '../src/config.ts'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { ensureRuntimeDirs, loadConfig } from '../src/config.ts'
 import { cleanupDir, tempDataDir } from './helpers.ts'
 
 function baseEnv(dir: string): Record<string, string> {
@@ -68,6 +71,79 @@ test('APP_VERSION 未设置时使用开发默认值，不再回退到历史版�
   try {
     const config = loadConfig(baseEnv(dir))
     assert.equal(config.appVersion, '0.0.0-dev')
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('BOT_AI_CONTEXT_READ_ENABLED：生产必须显式设置 BOT_CONTEXT_DIR', () => {
+  const dir = tempDataDir()
+  try {
+    assert.throws(
+      () =>
+        loadConfig({
+          ...baseEnv(dir),
+          NODE_ENV: 'production',
+          BOT_AI_CONTEXT_READ_ENABLED: 'true',
+        }),
+      /必须显式设置 BOT_CONTEXT_DIR/,
+    )
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('BOT_AI_CONTEXT_READ_ENABLED：生产拒绝 DATA_DIR 内路径与通配符', () => {
+  const dir = tempDataDir()
+  try {
+    assert.throws(
+      () =>
+        loadConfig({
+          ...baseEnv(dir),
+          NODE_ENV: 'production',
+          BOT_AI_CONTEXT_READ_ENABLED: 'true',
+          BOT_CONTEXT_DIR: join(dir, 'bot-context'),
+        }),
+      /不能位于 DATA_DIR 内/,
+    )
+    assert.throws(
+      () =>
+        loadConfig({
+          ...baseEnv(dir),
+          BOT_AI_CONTEXT_READ_ENABLED: 'true',
+          BOT_CONTEXT_DIR: `${dir}/*`,
+        }),
+      /不能包含 \* 或 \?/,
+    )
+    assert.throws(
+      () =>
+        loadConfig({
+          ...baseEnv(dir),
+          BOT_AI_CONTEXT_READ_ENABLED: 'true',
+          BOT_CONTEXT_DIR: 'relative/context',
+        }),
+      /必须是绝对路径/,
+    )
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('BOT_AI_CONTEXT_READ_ENABLED：非生产默认目录可加载；生产缺失目录启动失败', () => {
+  const dir = tempDataDir()
+  try {
+    const dev = loadConfig({ ...baseEnv(dir), BOT_AI_CONTEXT_READ_ENABLED: 'true' })
+    assert.equal(dev.botAiContextReadEnabled, true)
+    assert.equal(dev.botContextDir, join(dir, 'bot-context'))
+
+    const missing = join(tmpdir(), `antifieldcloud-missing-${randomUUID()}`)
+    const prod = loadConfig({
+      ...baseEnv(dir),
+      NODE_ENV: 'production',
+      BOT_AI_CONTEXT_READ_ENABLED: 'true',
+      BOT_CONTEXT_DIR: missing,
+    })
+    assert.throws(() => ensureRuntimeDirs(prod), /BOT_CONTEXT_DIR 不存在/)
   } finally {
     cleanupDir(dir)
   }

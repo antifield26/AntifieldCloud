@@ -429,6 +429,19 @@ if (-not $SkipEnvDrift) {
   }
 }
 
+# v0.7.3 Bot 上下文文档目录：默认关闭时只提示；启用时校验目录/属主/opencode 可读。
+SoftCheck "Bot 上下文文档目录（BOT_AI_CONTEXT_READ_ENABLED）" {
+  $enabled = (Get-PiEnvValue "BOT_AI_CONTEXT_READ_ENABLED").ToLowerInvariant()
+  if (@("1", "true", "yes", "on") -notcontains $enabled) { return "SKIP: 文档模式默认关闭" }
+  $dir = (Get-PiEnvValue "BOT_CONTEXT_DIR").Trim()
+  if ([string]::IsNullOrWhiteSpace($dir)) { throw "BOT_AI_CONTEXT_READ_ENABLED=true 但 BOT_CONTEXT_DIR 为空" }
+  $safeDir = $dir.Replace("'", "'\''")
+  $out = (Invoke-PiSsh "stat -c '%a %U %G' '$safeDir' 2>/dev/null; sudo -u opencode test -r '$safeDir' && echo readable || echo unreadable; sudo -u antifieldcloud test -w '$safeDir' && echo writable || echo unwritable" | Out-String)
+  if ($out -notmatch "readable") { throw "OpenCode 用户不可读上下文目录（检查目录属主/组权限）：$dir" }
+  if ($out -notmatch "writable") { throw "应用用户不可写上下文目录：$dir" }
+  "目录可读写：$dir（$($out.Trim() -replace "`r?`n", '; ')）"
+}
+
 Check "内存 cgroup 控制器可用" {
   $out = Invoke-PiSsh "cat /sys/fs/cgroup/cgroup.controllers"
   $text = ($out | Out-String).Trim()

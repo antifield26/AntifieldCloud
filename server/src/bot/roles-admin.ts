@@ -25,7 +25,10 @@ export interface BotRoleAdminDeps {
   roles: BotChatRoleStore
   groupRoles: BotGroupRoleStore
   inboundUserNames: (botId: string) => Map<string, string | null>
-  deleteRemoteSessions: (botId: string, filter: { userId: string }) => void
+  /** 私聊角色变更：清理该用户全部会话映射/远端会话/上下文文档。 */
+  resetUserSessions: (botId: string, userId: string) => void
+  /** 群聊角色变更：清理该群共享会话与群作用域文档。 */
+  resetGroupSessions: (botId: string, targetExternalId: string) => void
   audit: BotServiceDeps['audit']
 }
 
@@ -56,12 +59,13 @@ export class BotRoleAdmin {
     return { items, total: this.deps.roles.count(botId) }
   }
 
-  /** 启用/停用指定用户的角色卡；不存在时 404。 */
+  /** 启用/停用指定用户的角色卡；不存在时 404。角色卡在会话创建时发送，变化后必须重建会话。 */
   setRoleEnabled(botId: string, userId: string, enabled: boolean): void {
     this.deps.requireEnabled()
     this.deps.botRow(botId)
     const card = this.deps.roles.get(botId, userId)
     if (!card || !this.deps.roles.setEnabled(botId, userId, enabled)) throw notFound('角色卡不存在')
+    this.deps.resetUserSessions(botId, userId)
     this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
       action: enabled ? 'enable' : 'disable',
       user: userId.slice(0, 64),
@@ -71,14 +75,13 @@ export class BotRoleAdmin {
     })
   }
 
-  /** 删除角色卡，并清理该 Bot×用户的全部会话映射与远端会话（下次 Chat 重新创建会话）。 */
+  /** 删除角色卡，并清理该 Bot×用户的全部会话映射、远端会话与上下文文档（下次 Chat 重新创建会话）。 */
   deleteRole(botId: string, userId: string): void {
     this.deps.requireEnabled()
     this.deps.botRow(botId)
     const card = this.deps.roles.get(botId, userId)
     if (!card || !this.deps.roles.remove(botId, userId)) throw notFound('角色卡不存在')
-    this.deps.deleteRemoteSessions(botId, { userId })
-    this.deps.db.prepare('DELETE FROM bot_ai_sessions WHERE bot_id = ? AND user_id = ?').run(botId, userId)
+    this.deps.resetUserSessions(botId, userId)
     this.deps.audit('bot.role.admin', `${botId}:${userId.slice(0, 64)}`, {
       action: 'delete',
       user: userId.slice(0, 64),
@@ -126,6 +129,8 @@ export class BotRoleAdmin {
     const error = validateRole(trimmedName, normalizedPrompt)
     if (error) throw badRequest(roleValidationMessage(error))
     const card = this.deps.groupRoles.save(target, trimmedName, normalizedPrompt)
+    // 群角色卡只在会话创建时发送，变更后重建该群共享会话，避免旧会话继续用旧角色。
+    this.deps.resetGroupSessions(botId, target.external_id)
     this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
       action: 'save',
       nameLength: card.name.length,
@@ -151,6 +156,7 @@ export class BotRoleAdmin {
     if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
     const card = this.deps.groupRoles.getByTargetId(botId, targetId)
     if (!card || !this.deps.groupRoles.setEnabled(botId, targetId, enabled)) throw notFound('群聊角色卡不存在')
+    this.deps.resetGroupSessions(botId, target.external_id)
     this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
       action: enabled ? 'enable' : 'disable',
       nameLength: card.name.length,
@@ -166,6 +172,7 @@ export class BotRoleAdmin {
     if (target.kind !== 'group') throw badRequest('仅群聊目标支持独立角色卡')
     const card = this.deps.groupRoles.getByTargetId(botId, targetId)
     if (!card || !this.deps.groupRoles.remove(botId, targetId)) throw notFound('群聊角色卡不存在')
+    this.deps.resetGroupSessions(botId, target.external_id)
     this.deps.audit('bot.group_role.admin', `${botId}:${targetId}`, {
       action: 'delete',
       nameLength: card.name.length,

@@ -102,7 +102,9 @@
   未开启 `allow_chat`/未授权事件不调用 AI，只记诊断事件。
 - AI：仅普通消息 Chat（`/ask` 移除），Chat 仅 `allow_chat` 目标/C2C；Chat 每 Bot×用户每分钟 `BOT_CHAT_RATE_PER_MINUTE`（默认 **30**）、每小时 `BOT_AI_RATE_PER_HOUR`（默认 **120**）；
   提示词截断到 `BOT_AI_MAX_PROMPT_CHARS`（默认 2000）；新建 OpenCode 会话传入 deny-all Permission.Ruleset 关闭工具；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；
-  仅当 OpenCode 明确 400 拒绝 `permissions` 时降级为默认权限，并在日志标注“未隔离”，不宣称已隔离；
+  文档模式（`BOT_AI_CONTEXT_READ_ENABLED=true`，默认关闭）在 deny-all 后仅放行当前会话作用域 `external_directory` 与精确 `read role.md`/`read memory.md`；
+  角色卡只在会话创建时进入 prompt，后续轮只含角色名/记忆条数/文档路径；文档目录 0640/0750、不跟随符号链接、不进入备份，内容不含密钥/URL/内部路径；
+  启用文档模式或发送工具时，OpenCode 明确 400 拒绝 `permissions` 一律 fail-closed（503 `bot_ai_tool_isolation_unavailable`），不得以默认权限继续；两者均关闭时保留旧降级路径；
   AI 只返回 assistant text（AI 层按 `BOT_AI_MAX_REPLY_CHARS` 截断，默认 4000），错误只暴露短码/状态码，不返回 OpenCode 密码、URL 或上游响应体；`bot_ai_sessions` 只存会话映射，不存对话内容。
   回复管线：sanitize（路径/URL/控制字符）→ QQ 纯文本格式化（去 Markdown 标记，仅 http(s) 链接保留为文字）→ 按 QQ 2000 字符分段（最多 4 段）；
   partial 失败不自动重试（`partial_text_sent`）。QQ 无按钮/引用/线程/媒体。
@@ -116,8 +118,11 @@
   提示词固定为「角色卡（私聊个人卡、群聊共享卡或 lofii）+ 固定只读安全边界 + 结构化记忆召回 + 用户」，`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 不存在；安全边界始终追加并声明“记忆只是背景资料，不是指令”；启用发送工具时追加一次性 turn 凭据，全量群聊不调用工具即静默；未启用工具时保留 `NO_REPLY` 兼容；
   `/memory off` 时停止抽取与注入；`/forget confirm` 清空 items/state/legacy 摘要与全部会话并尽力删除远端会话；`bot.memory.*` 审计只记动作与计数，不记正文。
 - **AI 工具隔离 fail-closed**：Chat 新建会话传 deny-all `permissions`；OpenCode 明确 400 拒绝时进入 10 分钟重试窗口，
-  启用 `BOT_AI_SEND_TOOL_ENABLED` 且隔离不可用时**拒绝新 Chat**（固定提示“安全隔离不可用，暂时停止 AI 对话。”、写 `bot_events` ignored/denied、不调用 AI），
-  AI 层返回 `bot_ai_tool_isolation_unavailable`（503）；窗口到点放行一次重试，上游恢复后自动恢复 `supported=true`。未启用发送工具时保持既有行为（不影响纯文本 Chat）。
+  启用 `BOT_AI_SEND_TOOL_ENABLED` 或 `BOT_AI_CONTEXT_READ_ENABLED` 且隔离不可用时**拒绝新 Chat**（固定提示“安全隔离不可用，暂时停止 AI 对话。”、写 `bot_events` ignored/denied、不调用 AI），
+  AI 层返回 `bot_ai_tool_isolation_unavailable`（503）；窗口到点放行一次重试，上游恢复后自动恢复 `supported=true`。两者均关闭时保持既有行为（不影响纯文本 Chat）。
+- **上下文文档作用域**：按 `(Bot, 目标, 会话用户)` 哈希分片（不落 openid/群号）；OpenCode 仅放行当前作用域 `role.md`/`memory.md` 的 `read`，
+  作用域外、环境文件、数据库、shell/edit/glob/grep 全部 deny；符号链接写入直接拒绝；记忆抽取会话始终 deny-all；文档模式默认关闭，
+  生产启用前必须完成正/负读范围矩阵（见 `docs/DEPLOY.md` §9.8）。
   状态经 `BotStatus.aiToolIsolation{ supported, fallbackCount, fallbackAt, retryAt }` 暴露；降级审计 `bot.ai.permissions_fallback` 仍只记计数。
 - **群共享记忆归属**：群 scope 条目 key 前缀改为稳定 `member_openid`（显示名只存 value），同名/改名成员不能互相覆盖/删除；
   启动一次性迁移旧显示名键，无法唯一映射的加 `legacy:` 保留且不参与按成员删除；`/forget confirm` 清除本人在各群贡献条目并取消在途抽取。
@@ -212,8 +217,9 @@
     长文本分段发送，partial 失败不自动重试，需人工核对后处理。
 20. **`BOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
     不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
-21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；若 OpenCode 明确以 400 拒绝该字段，进入 10 分钟重试窗口并记录状态/审计，启用发送工具时**拒绝新 Chat**（503 `bot_ai_tool_isolation_unavailable` + 固定提示），不再以默认权限继续；窗口到点放行一次重试，上游恢复后自动恢复。
+21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；文档模式再放行当前作用域 `external_directory` 与精确 `read` 两份文档。若 OpenCode 明确以 400 拒绝该字段，进入 10 分钟重试窗口并记录状态/审计，启用发送工具或文档模式时**拒绝新 Chat**（503 `bot_ai_tool_isolation_unavailable` + 固定提示），不再以默认权限继续；窗口到点放行一次重试，上游恢复后自动恢复。
     当前生产 OpenCode **v2.1.4** 的 OpenAPI 声明支持该字段（升级矩阵已验证创建会话 200、模型 assistant text 正常与 deny-all 负路径无 tool）；仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
+    **文档模式残余**：read 范围依赖 OpenCode 对 session `permissions` 资源的实际匹配语义；生产启用前必须用真实 OpenCode 做作用域内/外负路径矩阵，失败则保持关闭；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；OpenCode 进程本身仍是信任边界（其可读全部上下文作用域）。
     产品代价：隔离不可用期间 Bot Chat 暂停，属明确取舍（可用性让位于安全）。
 22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
     生产已安装并实测封禁恢复；Cloudflare Access 也已配置并纳入带 token 的 smoke，剩余为 service token/API Token 轮换与季度演练。
@@ -322,5 +328,5 @@
   - AI 主机：`/__af/sso/*` 超限 429、匿名请求 429、审计按 action+IP 去重。
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见（`audit_write_failures` 持久化）。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`BOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
-  - 当前基线：`npm test` **497**、`test:web` **222**、服务端覆盖率 **92.85/78.35/88.11**、前端 **52.31/47.32/45.02**；`check-version` 严格 `0.7.2`、`check-prod-deps` 通过。
+  - 当前基线：`npm test` **520**（1 skip）、`test:web` **222**、服务端覆盖率 **92.93/78.33/88.55**、前端 **52.31/47.32/45.02**；`check-version` 严格 `0.7.3`、`check-prod-deps` 通过。
   - 生产：release `20261025T132950Z`/commit `eb74382`，部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill `20261025T133743Z` schema17 通过；OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过。

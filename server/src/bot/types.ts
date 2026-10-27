@@ -268,6 +268,11 @@ export interface BotAi {
     /** 是否为多用户共享会话（群聊）；用于清理旧版按用户拆分的群会话映射。 */
     sharedSession?: boolean
     prompt: string
+    /**
+     * v0.7.3：新会话首轮专用提示（含角色卡正文）。仅在本次调用创建了新会话时使用；
+     * 复用已有会话时使用 prompt（不含角色卡/记忆正文）。缺省时始终使用 prompt。
+     */
+    initialPrompt?: string
     /** 新会话标题；为空时使用内置默认标题。 */
     sessionTitle?: string
     /** 可选图片；未启用/不支持时由调用方降级为纯文本。 */

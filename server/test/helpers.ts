@@ -130,6 +130,8 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     botChatBurstGroupAllWindowMs: 0,
     botChatBurstGroupAllMaxWaitMs: 5000,
     botAiSendToolEnabled: false,
+    botAiContextReadEnabled: false,
+    botContextDir: join(dataDir, 'bot-context'),
     botSearchEnabled: false,
     botSearchUrl: '',
     botSearchAuto: true,

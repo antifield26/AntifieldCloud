@@ -136,6 +136,10 @@ export function signQqEvent(
 
 export interface AiCall {
   prompt: string
+  /** v0.7.3：新会话首轮提示（含角色卡正文）；为空表示内联模式或复用会话。 */
+  initialPrompt?: string
+  /** 本次实际发送的提示（initialPrompt 优先）；便于断言首轮/后续差异。 */
+  usedPrompt: string
   image?: BotAiImage
   /** v0.6.4：新会话标题，便于断言目标名称 + Chat。 */
   sessionTitle?: string
@@ -244,6 +248,7 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
           ai: {
             chat: async (input: {
               prompt: string
+              initialPrompt?: string
               image?: BotAiImage
               sessionTitle?: string
               userId?: string
@@ -252,6 +257,8 @@ export function createQqServiceFixture(options: QqServiceOptions = {}): QqServic
             }) => {
               const call: AiCall = {
                 prompt: input.prompt,
+                ...(input.initialPrompt ? { initialPrompt: input.initialPrompt } : {}),
+                usedPrompt: input.initialPrompt ?? input.prompt,
                 ...(input.image ? { image: input.image } : {}),
                 ...(input.sessionTitle ? { sessionTitle: input.sessionTitle } : {}),
                 ...(input.userId ? { userId: input.userId } : {}),

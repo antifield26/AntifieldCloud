@@ -1,5 +1,11 @@
 # 路线图
 
+## v0.7.3（本地实现与门禁完成，待生产部署；Bot 提示词文档化 + 按需 read；schema 保持 v17；OpenCode v2.1.4）
+
+- **范围**：角色卡只在会话创建时发送；后续轮不再发送角色卡/记忆正文，只给角色名/条数/只读文档路径；新增 `BotContextStore`（scope 哈希目录、原子写、清理/sweep）；OpenCode 会话仅放行当前作用域 `role.md`/`memory.md` 的 `read`；`BOT_AI_CONTEXT_READ_ENABLED`（默认 false）/`BOT_CONTEXT_DIR`；权限拒绝 fail-closed；群角色变更重置共享会话；`/reset`、`/forget`、Bot/目标删除清理文档。
+- **安全/部署**：生产目录 `/var/lib/antifieldcloud-context`（`antifieldcloud:opencode` 2750）；systemd `ReadWritePaths`；读范围矩阵（正向/越权/注入/群私聊隔离）作为发布门禁；上下文目录不入备份。
+- **状态**：本地实现与门禁完成（`npm test` 520/1 skip、`test:web` 222、服务端覆盖率 92.93/78.33/88.55）；生产部署、读范围验证、smoke/drill 与真实 QQ 验收待执行；默认关闭，验证通过后启用。
+
 ## v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口；schema v17；OpenCode v2.1.4）
 
 - **范围**：审计失败持久化（schema v17）、Bot 记忆镜像孤儿清理、Web 导入归档 90 天保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew`、BotService 拆分（targets/roles-admin/memory-admin）、平台/模型负路径测试；Cloudflare `ai` Access、SSH 回滚窗口清理、Windows 世界拉取任务、rclone 安装。
@@ -276,6 +282,7 @@
 - 限流为内存态，重启清零；`http-proxy` 在 Node 26 有弃用警告；scrypt 仍为 N=2^15；`typescript-eslint` 尚不支持 TS7 API，保留双 alias。
 - 分享下载次数为会话级近似限制；无目录打包/公开笔记分享；多文件分享逐项下载。
 - 世界备份依赖 Minecraft 运行与 RCON 可达；Windows 世界拉取/演练任务需用户手动安装；无异地世界副本。
-- 备份无整包加密与异地副本；普通归档含 TOTP/会话明文与 Bot 密文，PC ACL 与离线介质是最后防线。
+- 备份整包加密与异地副本已实现但默认关闭；普通归档含 TOTP/会话明文与 Bot 密文，PC ACL 与离线介质是最后防线。
+- v0.7.3 文档模式默认关闭：需 OpenCode v2.1.4 读范围矩阵通过后启用；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；群共享记忆在群内可见为既有语义。
 - Bot：命令严格只读、无平台主动拉取（Discord Gateway 除外）；适配器/AI 测试为进程内 mock，上线前需平台沙箱/真实模型联调。
 - 旧世界 cron 已停用、旧 `minecraft-backups` 归档不自动删除，需按 `docs/DEPLOY.md` 手动清理。

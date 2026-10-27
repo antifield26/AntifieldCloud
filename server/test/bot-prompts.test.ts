@@ -4,7 +4,12 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { SAFETY_BOUNDARY, buildBotPrompt } from '../src/bot/prompts.ts'
+import {
+  CONTEXT_READ_SAFETY_BOUNDARY,
+  SAFETY_BOUNDARY,
+  buildBotPrompt,
+  buildBotPrompts,
+} from '../src/bot/prompts.ts'
 import { DEFAULT_CHAT_ROLE } from '../src/bot/roles.ts'
 
 test('提示词：默认使用内置 lofii 角色、固定安全边界；无记忆时不注入空记忆段', () => {
@@ -57,4 +62,58 @@ test('提示词：个人角色卡覆盖 lofii，并保留安全边界与记忆',
   assert.ok(prompt.includes(SAFETY_BOUNDARY))
   assert.ok(prompt.includes('用户喜欢深色模式'))
   assert.match(prompt, /\[用户消息\]\n你好$/)
+})
+
+const DOCS = {
+  rolePath: '/var/lib/antifieldcloud-context/a/b/c/role.md',
+  memoryPath: '/var/lib/antifieldcloud-context/a/b/c/memory.md',
+  memoryItems: 3,
+  memoryEnabled: true,
+}
+
+test('v0.7.3 文档提示词：首轮含角色卡正文，后续轮只含角色名/条数/路径，不含记忆正文', () => {
+  const { initial, followUp } = buildBotPrompts({
+    roleCard: { name: '猫娘', prompt: '说话简短，偶尔用喵。' },
+    docs: DOCS,
+    userText: '你好',
+  })
+  assert.ok(initial.includes('[角色卡：猫娘]'))
+  assert.ok(initial.includes('说话简短，偶尔用喵。'))
+  assert.ok(initial.includes(CONTEXT_READ_SAFETY_BOUNDARY))
+  assert.ok(initial.includes(DOCS.rolePath))
+  assert.ok(initial.includes(DOCS.memoryPath))
+  assert.ok(initial.includes('（3 条）'))
+  assert.match(initial, /\[用户消息\]\n你好$/)
+
+  assert.equal(followUp.includes('[角色卡：猫娘]'), false)
+  assert.equal(followUp.includes('说话简短，偶尔用喵。'), false)
+  assert.ok(followUp.includes('角色：猫娘'))
+  assert.ok(followUp.includes(DOCS.rolePath))
+  assert.ok(followUp.includes(DOCS.memoryPath))
+  assert.ok(followUp.includes('（3 条）'))
+  assert.ok(followUp.includes(CONTEXT_READ_SAFETY_BOUNDARY))
+  assert.match(followUp, /\[用户消息\]\n你好$/)
+  // 记忆正文绝不出现在 prompt 中（只存在于 memory.md）。
+  assert.equal(initial.includes('喜欢红茶'), false)
+  assert.equal(followUp.includes('喜欢红茶'), false)
+})
+
+test('v0.7.3 文档提示词：默认 lofii、记忆关闭占位、群聊/搜索/发送工具区段保留', () => {
+  const { initial, followUp } = buildBotPrompts({
+    docs: { ...DOCS, memoryItems: 0, memoryEnabled: false },
+    groupMode: 'all',
+    searchContext: '[联网搜索资料]\n- 标题：示例',
+    webSearchTool: true,
+    sendTool: { turnId: 't1', turnToken: 'token1', toolName: 'botmsg_send_message', required: false },
+    userText: '普通群聊',
+  })
+  for (const prompt of [initial, followUp]) {
+    assert.equal(prompt.includes('普通闲聊保持沉默'), true)
+    assert.equal(prompt.includes('联网搜索'), true)
+    assert.equal(prompt.includes('botmsg_send_message'), true)
+    assert.equal(prompt.includes('（已关闭）'), true)
+  }
+  assert.ok(initial.includes('[角色卡：lofii]'))
+  assert.equal(followUp.includes('[角色卡：lofii]'), false)
+  assert.ok(followUp.includes('角色：lofii'))
 })

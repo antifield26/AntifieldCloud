@@ -366,6 +366,8 @@ sudo mv /var/lib/antifieldcloud /var/lib/antifieldcloud.before-restore
 sudo install -d -o antifieldcloud -g antifield -m 0750 /var/lib/antifieldcloud
 sudo install -d -o antifieldcloud -g antifieldcloud -m 0700 /var/lib/antifieldcloud/files /var/lib/antifieldcloud/tmp
 sudo install -d -o antifieldcloud -g antifield -m 2770 /var/lib/antifieldcloud/backups
+# v0.7.3：上下文文档目录（派生数据，不进入备份；缺失时应用启用文档模式会启动失败）
+sudo install -d -o antifieldcloud -g opencode -m 2750 /var/lib/antifieldcloud-context
 sudo cp "$LATEST_DB" /var/lib/antifieldcloud/db.sqlite
 if [ -d "$RESTORE/files" ]; then
   sudo cp -a "$RESTORE/files/." /var/lib/antifieldcloud/files/
@@ -475,6 +477,8 @@ Web 只做**文件级恢复**，不替换运行中的 DB 与 `files/`：
   可选整包 age 加密与 PC 端异地副本（默认关闭）。
 - **未覆盖**：Minecraft 插件/Paper 配置（由密钥包/应用归档部分覆盖）、对象存储；普通归档仍含 TOTP/会话明文与 Bot 凭据密文，
   PC ACL/离线介质是最后防线；age 私钥或 `BOT_SECRET_KEY` 丢失分别导致密钥包/Bot Token 不可恢复。
+- **v0.7.3 Bot 上下文文档不进入备份**：`/var/lib/antifieldcloud-context` 为派生数据（角色卡/记忆权威在 DB 与角色卡表），
+  不在 `DATA_DIR` 下、不被应用归档 tar 包含；恢复后首轮 Chat 自动重建。该目录含个人记忆文本，权限 0640/0750，不随备份扩散。
 - **导入归档保留**：`BACKUP_IMPORT_RETENTION_DAYS`（默认 90，0=永久）控制 Web 导入归档保留；维护任务清理超期
   `origin='import'` 归档（跳过活动恢复计划引用），并清理无 DB 记录的超期导入文件。
 - 浏览器导入上限 100 MiB；更大归档用 scp 到 inbox，备份归档导入独立于文件分片上传。

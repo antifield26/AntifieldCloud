@@ -14,11 +14,12 @@ import { AppError } from '../util/errors.ts'
 import { newId } from '../util/ids.ts'
 import { SlidingWindowLimiter } from '../auth/limiter.ts'
 import { BurstMerger, type BurstTiming } from './burst.ts'
-import { buildBotPrompt, type BotSendToolPrompt, type GroupChatMode } from './prompts.ts'
+import { buildBotPrompt, buildBotPrompts, type BotSendToolPrompt, type GroupChatMode } from './prompts.ts'
 import { formatAiReply } from './format.ts'
 import { extractRawToolCallText, stripRawToolCallText } from './dsml.ts'
 import { GROUP_CHAT_SESSION_USER_ID } from './session.ts'
-import type { BotChatRole, BotChatRoleStore } from './roles.ts'
+import { DEFAULT_CHAT_ROLE, type BotChatRole, type BotChatRoleStore } from './roles.ts'
+import type { BotContextStore } from './context.ts'
 import type { BotGroupRoleStore } from './group-roles.ts'
 import { groupMemoryScope, type BotMemoryStore } from './memory.ts'
 import {
@@ -157,6 +158,7 @@ export interface BotChatDeps {
   key: Buffer | null
   deps: Pick<BotServiceDeps, 'db' | 'log' | 'audit' | 'ai' | 'search' | 'now'> & {
     memory: BotMemoryStore
+    context: BotContextStore
   }
   roles: BotChatRoleStore
   groupRoles: BotGroupRoleStore
@@ -168,6 +170,7 @@ export class BotChatPipeline {
   private readonly config: Config
   private readonly key: Buffer | null
   private readonly deps: BotChatDeps['deps']
+  private readonly context: BotContextStore
   private readonly roles: BotChatRoleStore
   private readonly groupRoles: BotGroupRoleStore
   private readonly host: BotChatHost
@@ -184,6 +187,7 @@ export class BotChatPipeline {
     this.config = input.config
     this.key = input.key
     this.deps = input.deps
+    this.context = input.deps.context
     this.roles = input.roles
     this.groupRoles = input.groupRoles
     this.host = input.host
@@ -765,7 +769,7 @@ export class BotChatPipeline {
     }
   }
 
-  /** Chat 的统一模型调用：角色卡 + 共享长期记忆 + 用户消息（可选图片）。 */
+  /** Chat 的统一模型调用：内联模式（角色+记忆）或文档模式（角色首轮 + read 文档）。 */
   private async chatWithAi(
     bot: BotRow,
     userId: string,
@@ -785,20 +789,70 @@ export class BotChatPipeline {
     if (!this.deps.ai) throw new AppError(503, 'ai_disabled', 'AI 未启用')
     // 群聊使用独立的群共享记忆 scope，已登记用户的用户级记忆不会进入群聊提示词。
     const memoryContext = this.deps.memory.buildPromptContext(bot.id, memoryScope, text, groupMemory)
-    const prompt = buildBotPrompt({
-      roleCard,
-      memory: memoryContext.text || undefined,
-      groupMemory,
-      groupMode,
-      searchContext,
-      webSearchTool: this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext,
-      ...(sendTool ? { sendTool } : { replyDecision }),
-      userText: text.slice(0, this.config.botAiMaxPromptChars),
-    })
+    const webSearchTool = this.config.botSearchEnabled && this.config.botSearchMode === 'mcp' && !searchContext
+    const userText = text.slice(0, this.config.botAiMaxPromptChars)
+    let prompt: string
+    let initialPrompt: string | undefined
+    let contextAudit: Record<string, unknown> = { context: 'inline' }
+
+    if (this.config.botAiContextReadEnabled) {
+      const effectiveRole = roleCard ?? DEFAULT_CHAT_ROLE
+      const memoryEnabled = this.deps.memory.getState(bot.id, memoryScope).memoryEnabled
+      const sessionUserId = groupMemory ? GROUP_CHAT_SESSION_USER_ID : userId
+      try {
+        const docs = this.deps.context.prepare({
+          botId: bot.id,
+          targetExternalId,
+          sessionUserId,
+          role: { name: effectiveRole.name, prompt: effectiveRole.prompt },
+          memoryText: memoryContext.text,
+          memoryItems: memoryContext.usedItemIds.length,
+          memoryEnabled,
+          groupMemory,
+        })
+        const prompts = buildBotPrompts({
+          roleCard: effectiveRole,
+          docs: {
+            rolePath: docs.rolePath,
+            memoryPath: docs.memoryPath,
+            memoryItems: docs.memoryItems,
+            memoryEnabled,
+          },
+          groupMode,
+          searchContext,
+          webSearchTool,
+          ...(sendTool ? { sendTool } : { replyDecision }),
+          userText,
+        })
+        prompt = prompts.followUp
+        initialPrompt = prompts.initial
+        contextAudit = { context: 'docs', docBytes: docs.bytes, memoryItems: docs.memoryItems, memoryEnabled }
+      } catch (error) {
+        this.deps.audit('bot.ai.context_failed', `${bot.platform}:${targetExternalId}`, {
+          bot: bot.id,
+          user: userId.slice(0, 64),
+          error: error instanceof Error ? error.message.slice(0, 120) : 'unknown',
+        })
+        throw new AppError(503, 'bot_ai_context_unavailable', 'AI 上下文暂不可用，请稍后再试')
+      }
+    } else {
+      prompt = buildBotPrompt({
+        roleCard,
+        memory: memoryContext.text || undefined,
+        groupMemory,
+        groupMode,
+        searchContext,
+        webSearchTool,
+        ...(sendTool ? { sendTool } : { replyDecision }),
+        userText,
+      })
+    }
+
     this.deps.audit('bot.ai.chat', `${bot.platform}:${targetExternalId}`, {
       bot: bot.id,
       user: userId.slice(0, 64),
       chars: text.length,
+      ...contextAudit,
       ...(roleCard ? { role: true } : {}),
       ...(image ? { image: image.mime.slice(0, 50) } : {}),
       ...(memoryContext.usedItemIds.length > 0 ? { memoryItems: memoryContext.usedItemIds.length } : {}),
@@ -813,6 +867,7 @@ export class BotChatPipeline {
         userId,
         ...(groupMemory ? { sessionUserId: GROUP_CHAT_SESSION_USER_ID, sharedSession: true } : {}),
         prompt,
+        ...(initialPrompt ? { initialPrompt } : {}),
         ...(sessionTitle ? { sessionTitle } : {}),
         ...(image ? { image } : {}),
       })
