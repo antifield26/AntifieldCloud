@@ -715,7 +715,10 @@ export class TaskManager implements TaskController {
     const hasLeftover = Boolean(bot?.entity && bot.inventory.items().some(item => !isKeptItem(bot, item)))
     if (config.autoDeposit && resourceTask && bot?.entity && (produced > 0 || hasLeftover)) {
       try {
-        await depositProduce(this.context(active))
+        // A deliberate stop has already aborted the task signal; the final
+        // deposit is still useful and must not be skipped because of that.
+        const depositController = new AbortController()
+        await depositProduce({ ...this.context(active), signal: depositController.signal })
       } catch (error) {
         depositError = error instanceof Error ? error.message : String(error)
         this.logger.warn('task: final deposit failed', { error: depositError })
