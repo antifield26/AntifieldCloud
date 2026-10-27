@@ -1,6 +1,6 @@
 import type { Bot } from 'mineflayer'
 import type { Chest } from 'mineflayer'
-import { TaskError, requireBot, type TaskContext } from './types.ts'
+import { sleep, TaskError, TaskStopError, requireBot, type TaskContext } from './types.ts'
 import { findChest } from './navigation.ts'
 import { isFood, isKeptItem } from './inventory.ts'
 
@@ -11,17 +11,34 @@ export interface SupplyRequest {
 
 async function openChest (ctx: TaskContext): Promise<{ bot: Bot, chest: Chest }> {
   const bot = requireBot(ctx)
-  if (bot.currentWindow) {
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (ctx.signal.aborted) throw lastError ?? new TaskError('task stopped')
+    if (bot.currentWindow) {
+      try {
+        await bot.closeWindow(bot.currentWindow)
+      } catch {
+        // ignore
+      }
+    }
     try {
-      await bot.closeWindow(bot.currentWindow)
-    } catch {
-      // ignore
+      await ctx.movement.waitForChunks()
+      const block = findChest(bot, ctx.config)
+      await ctx.movement.goNearPoint(block.position.x, block.position.y, block.position.z, 2, 12000, true)
+      await ctx.movement.waitForChunks()
+      const chest = await bot.openContainer(block) as Chest
+      return { bot, chest }
+    } catch (error) {
+      if (error instanceof TaskStopError) throw error
+      lastError = error instanceof Error ? error : new Error(String(error))
+      ctx.logger.warn('task: open chest failed, retrying', {
+        attempt: attempt + 1,
+        error: lastError.message
+      })
+      await sleep(500, ctx.signal)
     }
   }
-  const block = findChest(bot, ctx.config)
-  await ctx.movement.goNearPoint(block.position.x, block.position.y, block.position.z, 2, 12000, true)
-  const chest = await bot.openContainer(block) as Chest
-  return { bot, chest }
+  throw lastError ?? new TaskError('找不到存箱，请确认箱子还在原地')
 }
 
 function chestFreeSlots (chest: Chest): number {

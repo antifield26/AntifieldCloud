@@ -57,6 +57,7 @@ export async function runMining (ctx: TaskContext): Promise<void> {
   let targets = scanExposedOres(bot, config)
 
   while (!isExpired(ctx)) {
+    if (ctx.signal.aborted) throw new TaskStopError()
     if (Date.now() - startedAt > config.mining.maxMinutes * 60_000) {
       ctx.logger.info('mining: time limit reached', { ores: ctx.progress.oresMined })
       return

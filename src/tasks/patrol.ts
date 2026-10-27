@@ -23,8 +23,8 @@ export async function runPatrol (ctx: TaskContext): Promise<void> {
   const corners = patrolCorners(ctx.config)
   for (const corner of corners) {
     if (ctx.signal.aborted) throw new TaskStopError()
-    if (Date.now() - startedAt > ctx.config.patrol.maxMinutes * 60_000) return
     await ctx.defend()
+    if (Date.now() - startedAt > ctx.config.patrol.maxMinutes * 60_000) return
     const spot = safeSpotNear(bot, ctx.config, corner, 8)
     if (!spot) {
       ctx.logger.warn('patrol: no safe spot near corner', {

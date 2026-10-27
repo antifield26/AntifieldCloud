@@ -174,6 +174,7 @@ export async function runForest (ctx: TaskContext): Promise<void> {
   let trees = scanNaturalTrees(bot, config)
 
   while (!isExpired(ctx)) {
+    if (ctx.signal.aborted) throw new TaskStopError()
     if (ctx.progress.naturalLogsChopped >= config.forest.maxLogs) return
     await ctx.defend()
     if (trees.length === 0) {

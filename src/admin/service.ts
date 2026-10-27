@@ -52,6 +52,10 @@ export function parseList (text: string): { count: number | null, max: number | 
     if (chinese) {
       count = Number(chinese[1])
       max = Number(chinese[2])
+      const lines = clean.split(/\r?\n/).slice(1)
+      const tokens = lines.join(' ').match(/[A-Za-z0-9_]{1,16}/g) ?? []
+      const ignored = new Set(['Admins', 'Admins：', 'default', 'default：'])
+      tail = [...new Set(tokens.filter(name => !ignored.has(name)))].join(' ')
     }
   }
   const players = tail
