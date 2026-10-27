@@ -365,7 +365,8 @@ sudo systemctl restart antifieldcloud
 
 > **生产验证记录（2026-10-27，release `20261027T060134Z`）**：目录/属组/读写校验通过；矩阵 6/6 PASS
 > （作用域内正向；作用域外哨兵、应用 env、其他作用域、shell canary、prompt injection 全部拒绝；
-> OpenCode 接受 `external_directory` + 精确 `read` permissions）；启用后 `bot_ai_tool_mode=mcp:send:read:aad221f1`，
+> OpenCode 接受 `external_directory` + 精确 `read` permissions；深度复验确认负路径 `read` 工具返回 `status=error`，
+> 作用域内为 `status=completed`）；启用后 `bot_ai_tool_mode=mcp:send:read:aad221f1`，
 > 旧会话 6→0 重置。真实 QQ 私聊：首轮 851 字符含 `[角色卡：lofii]`+文档段，后续 763 字符不含角色卡正文但保留文档路径，
 > 模型实际 `read` 了 `role.md`/`memory.md`；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档段。
 > 未在生产执行破坏性 `/forget` 与群聊第二成员/多轮负路径，二者由自动化测试覆盖，保留为后续可选复验。

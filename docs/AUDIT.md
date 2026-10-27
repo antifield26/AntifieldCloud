@@ -570,7 +570,7 @@
 
 - **范围**：Bot 提示词文档化（角色卡只在会话创建时发送、记忆按需 `read`）与 OpenCode read 权限扩大。
 - **结论**：功能本地实现与门禁完成，默认关闭；生产 OpenCode 读范围矩阵已于 2026-10-27 **6/6 通过**并显式启用（真实 QQ 私聊首轮/后续、群聊首轮通过）。P0=0/P1=0；A1/A2 阻断已由生产矩阵与自动化测试关闭，A13 保留为观察项；另记录部署期发现的 drill 链校验缺陷 F1（已修复）。
-- **阻断项 A1（read 范围语义）**：OpenCode 接受 `permissions` 不等于已按路径拦截；若 `read` 规则未生效，模型可能读取 `/etc/antifieldcloud/env`、OpenCode 凭据/DB 并外发。缓解：`deny *` 首位 + 仅放行当前作用域 `external_directory` + 精确 `read role.md/memory.md`；默认关闭；生产矩阵作用域内/外/注入/shell/相对路径全部验证，失败保持关闭。**生产结果（2026-10-27）**：矩阵 6/6 PASS，作用域外/env/DB/其他作用域/shell/注入均拒绝，阻断关闭。
+- **阻断项 A1（read 范围语义）**：OpenCode 接受 `permissions` 不等于已按路径拦截；若 `read` 规则未生效，模型可能读取 `/etc/antifieldcloud/env`、OpenCode 凭据/DB 并外发。缓解：`deny *` 首位 + 仅放行当前作用域 `external_directory` + 精确 `read role.md/memory.md`；默认关闭；生产矩阵作用域内/外/注入/shell/相对路径全部验证，失败保持关闭。**生产结果（2026-10-27）**：矩阵 6/6 PASS，作用域外/env/DB/其他作用域/shell/注入均拒绝，阻断关闭；深度复验确认负路径是 OpenCode `read` 工具返回 `status=error`，而非模型自行拒答（作用域内 `status=completed`）。
 - **阻断项 A2（权限降级）**：旧逻辑在 permissions 被拒时可无 permissions 重建（默认全工具）；文档模式开启后必须以 503 `bot_ai_tool_isolation_unavailable` fail-closed，记忆抽取会话也要求 permissions 生效。已由单测/集成覆盖。**生产未人为制造 permissions 拒绝**（避免影响线上），保持为自动化测试保证项。
 - **产品风险 A13（模型不读文档）**：后续轮不再携带角色/记忆正文，若模型不调用 `read`，人设/记忆可能弱化；通过真实 QQ 首轮/后续、记忆召回、`/forget` 验收观察，可随时用 flag 回退内联提示词。**生产观察**：私聊后续轮模型实际调用 `read` 读取 `role.md`/`memory.md`，未见人设弱化；记忆召回与 `/forget` 未在生产做破坏性验证。
 - **运维缺陷 F1（drill 增量链误报）**：`drill-verify.mjs` 的 `details` 未返回 manifest `since`，`drill.ps1` 对所有含 inc 的链误报 `chain_since_missing`；生产首次演练 `20261027T061021Z` 暴露。已补字段与单测，重跑 `20261027T061319Z` 通过（full+5 inc、schema17）。
