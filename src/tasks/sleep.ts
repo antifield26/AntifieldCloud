@@ -42,6 +42,11 @@ export function findBedNear (bot: Bot, config: Config): Block | null {
 export async function runSleep (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
   ctx.updateProgress({ sleepVotes: 0, nightSkipped: 0 })
+  ctx.logger.info('sleep: time check', {
+    timeOfDay: bot.time?.timeOfDay ?? null,
+    thunderState: bot.thunderState ?? null,
+    isRaining: bot.isRaining ?? null
+  })
   if (!isNightOrStorm(bot)) {
     ctx.logger.info('sleep: not night or storm')
     return

@@ -145,7 +145,7 @@ test('v0.5 sleep finds a nearby bed and patrol uses the four safe-zone corners',
   const bed = findBedNear(fakeBlockBot(blocks), config)
   assert.equal(bed?.name, 'red_bed')
   assert.deepEqual(patrolCorners(config).map(point => [point.x, point.z]), [
-    [0, 0], [20, 0], [20, 20], [0, 20]
+    [4, 4], [16, 4], [16, 16], [4, 16]
   ])
 })
 

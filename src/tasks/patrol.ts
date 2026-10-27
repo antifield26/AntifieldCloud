@@ -5,11 +5,15 @@ import { requireBot, TaskStopError, type TaskContext } from './types.ts'
 import { safeSpotNear } from './navigation.ts'
 
 export function patrolCorners (config: Config): Vec3[] {
+  // Inset by 4 blocks so the resulting safe-spot feet/head coordinates are
+  // still strictly inside the configured rectangle (a spot at maxX+0.5 would
+  // otherwise be rejected by insideSafeZone).
+  const inset = 4
   return [
-    new Vec3(config.safeZone.minX, 64, config.safeZone.minZ),
-    new Vec3(config.safeZone.maxX, 64, config.safeZone.minZ),
-    new Vec3(config.safeZone.maxX, 64, config.safeZone.maxZ),
-    new Vec3(config.safeZone.minX, 64, config.safeZone.maxZ)
+    new Vec3(config.safeZone.minX + inset, 64, config.safeZone.minZ + inset),
+    new Vec3(config.safeZone.maxX - inset, 64, config.safeZone.minZ + inset),
+    new Vec3(config.safeZone.maxX - inset, 64, config.safeZone.maxZ - inset),
+    new Vec3(config.safeZone.minX + inset, 64, config.safeZone.maxZ - inset)
   ]
 }
 
