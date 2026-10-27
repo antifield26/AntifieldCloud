@@ -188,6 +188,24 @@ test('manifest：schema/mode/fileCount/fields 异常可诊断', () => {
   assert.equal(verifyManifest(null).errors[0].code, 'manifest_invalid')
 })
 
+test('manifest：details 暴露 since，供 drill.ps1 校验增量链连续性', () => {
+  const inc = {
+    schema: 1,
+    createdAt: '2026-10-20T04:00:00.000Z',
+    mode: 'inc',
+    since: '2026-10-19T04:00:00.000Z',
+    database: 'backups/db-20261020T040000Z.sqlite',
+    files: [],
+    fileCount: 0,
+    totalBytes: 0,
+  }
+  const result = verifyManifest(inc, { expectedMode: 'inc', expectedFileCount: 0 })
+  assert.equal(result.ok, true, JSON.stringify(result.errors))
+  assert.equal(result.details.since, inc.since)
+  const full = { ...inc, mode: 'full', since: null }
+  assert.equal(verifyManifest(full).details.since, null)
+})
+
 test('坏 DB：损坏文件返回错误码而不是抛异常', () => {
   const root = tempRoot()
   try {

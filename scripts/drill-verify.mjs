@@ -172,6 +172,8 @@ export function verifyManifest(manifest, options = {}) {
     totalBytes: null,
     database: null,
     createdAt: null,
+    // drill.ps1 的链连续性校验依赖该字段；必须随 details 返回给调用方。
+    since: null,
   }
   const push = (code, message) => errors.push({ code, message: sanitizeAscii(message) })
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
@@ -184,6 +186,7 @@ export function verifyManifest(manifest, options = {}) {
   details.totalBytes = manifest.totalBytes ?? null
   details.database = manifest.database ?? null
   details.createdAt = manifest.createdAt ?? null
+  details.since = manifest.since ?? null
   if (manifest.schema !== 1 && manifest.schema !== 2) push('manifest_schema_invalid', `manifest.schema must be 1 or 2, got ${JSON.stringify(manifest.schema)}`)
   if (manifest.mode !== 'full' && manifest.mode !== 'inc') {
     push('manifest_mode_invalid', `manifest.mode must be full|inc, got ${JSON.stringify(manifest.mode)}`)
