@@ -82,15 +82,17 @@ export class SdNotify {
       const sender = socket as unknown as {
         send: (message: Buffer, path: string, callback: (error: Error | null) => void) => void
       }
+      // 必须在 send 回调里关闭 socket；立即关闭可能丢弃尚未发出的 datagram（READY/WATCHDOG）。
       sender.send(Buffer.from(message), this.socketPath, error => {
         if (error) this.logger?.debug('sd_notify send failed', { error: error.message })
+        try { socket?.close() } catch { /* ignore */ }
+        socket = null
       })
       return true
     } catch (error) {
       this.logger?.debug('sd_notify failed', { error: error instanceof Error ? error.message : String(error) })
-      return false
-    } finally {
       try { socket?.close() } catch { /* ignore */ }
+      return false
     }
   }
 }

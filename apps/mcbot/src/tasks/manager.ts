@@ -166,6 +166,7 @@ export class TaskManager implements TaskController {
   private taskEndedHandler: (() => void) | null = null
   private pendingTimer: NodeJS.Timeout | null = null
   private persistTimer: NodeJS.Timeout | null = null
+  private restocking = false
 
   constructor (deps: TaskManagerDeps) {
     this.deps = deps
@@ -975,7 +976,7 @@ export class TaskManager implements TaskController {
   /** 空闲时按需去主箱补食物/工具；失败只告警，不打断在线状态。 */
   async autoRestock (): Promise<void> {
     const { config } = this.deps
-    if (!config.autoRestock || this.stopped || this.active || this.pending || this.queue.length > 0) return
+    if (!config.autoRestock || this.restocking || this.stopped || this.active || this.pending || this.queue.length > 0) return
     const bot = this.deps.getBot()
     if (!bot?.entity || !bot.inventory) return
     const freshTool = (name: string): boolean => bot.inventory.items().some(item =>
@@ -986,6 +987,7 @@ export class TaskManager implements TaskController {
     if (!freshTool('iron_pickaxe')) requests.push({ name: 'iron_pickaxe', count: 1 })
     if (!freshTool('iron_axe')) requests.push({ name: 'iron_axe', count: 1 })
     if (requests.length === 0) return
+    this.restocking = true
     const fake = this.createActive('fishing', randomUUID(), Date.now())
     try {
       await withdrawSupplies(this.context(fake, false), requests)
@@ -996,6 +998,8 @@ export class TaskManager implements TaskController {
       const message = error instanceof Error ? error.message : String(error)
       this.logger.warn('auto restock failed', { error: message })
       this.deps.alerts?.raise('auto_restock_failed', `自动补货失败：${message}`, { error: message }, 'warning')
+    } finally {
+      this.restocking = false
     }
   }
 

@@ -31,6 +31,13 @@
 - **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
+## v1.0.0 新增能力
+
+- **运行稳定性**：systemd `Type=notify` 看门狗（`WATCHDOG_ENABLED`/`WATCHDOG_HEARTBEAT_MS`）、RSS 内存治理告警（`RSS_LIMIT_MB`）、断线重连恢复不消耗任务重试次数。
+- **任务**：基地守卫 `guard`、玩家护送 `escort`、航点探索 `explore`；深层裸露矿（`MINE_DEEP_ENABLED`，安全区内 y<60、有空气面、无液体邻接）；分类存箱（`CHEST_ORES/FOOD/SAPLINGS/MISC`，缺失回退主箱）。
+- **库存/补货**：背包剩余格/食物告警；`AUTO_RESTOCK=true` 时空闲自动从分类箱补食物与铁镐/铁斧（默认关闭）。
+- **AI**：只读受控工具 `status/inventory/task_status`（`AI_TOOLS_ENABLED`，默认关闭；未知工具启动失败），AI 仍不能执行任意动作。
+- **运维**：`migrate-v1.0.0.ps1` 覆盖 mcbot 服务/路径/env 迁移；故障注入/soak 单测覆盖 SLP 抖动、连续断线、EventBus ring。
 ## 不做什么
 
 - 不修改 AntifieldCloud 仓库、数据库或服务；本仓库只提供接口契约。

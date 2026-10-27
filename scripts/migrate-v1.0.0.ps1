@@ -4,7 +4,7 @@
   [ValidateSet("Plan", "Apply", "Verify", "Rollback")]
   [string]$Mode = "Plan",
   [switch]$SkipMcbot,
-  [string]$ExpectedMcbotVersion = "0.6.1",
+  [string]$ExpectedMcbotVersion = "1.0.0",
   [string]$BackupRoot = "/var/backups/antifieldcomplexx",
   [string]$BackupDir = "",
   [int]$TimeoutSec = 600
@@ -26,6 +26,15 @@
 
 $ErrorActionPreference = "Stop"
 try { $PSNativeCommandUseErrorActionPreference = $false } catch { }
+
+# 输入校验：所有值都会拼进远端 sudo bash 脚本，禁止空白/引号/命令替换字符。
+if ($PiHost -notmatch '^[A-Za-z0-9.:-]+$') { throw "PiHost contains invalid characters: $PiHost" }
+if ($PiUser -notmatch '^[A-Za-z0-9._-]+$') { throw "PiUser contains invalid characters: $PiUser" }
+if ($ExpectedMcbotVersion -notmatch '^\d+\.\d+\.\d+$') { throw "ExpectedMcbotVersion must be x.y.z: $ExpectedMcbotVersion" }
+foreach ($remotePath in @($BackupRoot, $BackupDir)) {
+  if ([string]::IsNullOrWhiteSpace($remotePath)) { continue }
+  if ($remotePath -notmatch '^/[A-Za-z0-9._/-]+$') { throw "backup path must be an absolute safe path: $remotePath" }
+}
 $target = "$PiUser@$PiHost"
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddTHHmmssZ")
 $backup = if ([string]::IsNullOrWhiteSpace($BackupDir)) { "$BackupRoot/v1.0.0-$stamp" } else { $BackupDir }

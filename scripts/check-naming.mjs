@@ -19,13 +19,15 @@ const EXEMPT = [
   /^apps\/workbench\/server\/src\/db\.ts$/,
   /^apps\/workbench\/server\/test\/chatbot-migration\.test\.ts$/,
   /^scripts\/migrate-v1\.0\.0\.ps1$/, // 生产迁移脚本必须引用旧名称做键/服务/路径迁移
+  /^CHANGELOG\.md$/, // v1.0.0 变更日志必须描述旧→新迁移
+  /^scripts\/check-naming\.mjs$/, // 门禁自身包含旧标识符规则/说明
   /^package-lock\.json$/,
 ]
 
 const RULES = [
   [/(?<![A-Za-z_])BOT_[A-Z]/, '旧 env 前缀 BOT_ → CHATBOT_'],
   [/(?<![A-Za-z])LOFII_/, '旧 env 前缀 LOFII_ → MCBOT_'],
-  [/\/api\/bot(?:\/|\b)/, '旧 API /api/bot → /api/chatbot'],
+  [/\/api\/bot(?:s)?(?:\/|\b)/, '旧 API /api/bot(s) → /api/chatbots'],
   [/\/api\/lofii\//, '旧 API /api/lofii → /api/mcbot'],
   [/lofii-bot/, '旧服务名 lofii-bot → mcbot'],
   [/sync-lofii-tokens\.sh/, '旧脚本 sync-lofii-tokens.sh → sync-mcbot-tokens.sh'],

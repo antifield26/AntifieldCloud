@@ -160,11 +160,12 @@ export async function depositProduce (ctx: TaskContext): Promise<number> {
       }
     }
   }
-  if (deposited === 0 && lastError) throw new TaskError(lastError)
   if (deposited > 0) {
     ctx.updateProgress({ deposited: ctx.progress.deposited + deposited })
     ctx.logger.info('task: deposited items', { count: deposited })
   }
+  // 任分类箱失败都要上抛（即使其他分类已存入），由任务层记录失败并触发 chest_full 告警。
+  if (lastError) throw new TaskError(lastError)
   return deposited
 }
 
