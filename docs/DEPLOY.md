@@ -80,7 +80,7 @@ curl -fsS http://127.0.0.1:3010/healthz
 /etc/lofii-bot/env                # root:lofiibot 0640（含读/控制 Token、OpenCode 密码）
 /var/lib/lofii-bot/               # lofiibot:lofiibot 0700
 /var/lib/lofii-bot/memory/        # 0600，按玩家 UUID
-/var/lib/lofii-bot/task-state.json # 0600，任务跨重启 pending
+/var/lib/lofii-bot/task-state.json # 0600，v2 active+queue+pending
 /var/lib/lofii-bot/audit.jsonl     # 0600，审计元数据，5 MB 轮转
 /etc/systemd/system/lofii-bot.service
 ```
@@ -105,6 +105,8 @@ sudo systemctl restart lofii-bot
 - 控制 Token 未配置或为空时，`/task/*` 与 `/move` 返回 503 `control_disabled`，读接口仍可用。
 - `OPENCODE_PASSWORD` 由 `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读取；重跑默认保留旧值。
 - v0.3 新增变量：`HTTP_CONTROL_ENABLED`、`HTTP_ONLY_HIGH_RISK`、`SSE_MAX_CLIENTS`、`SSE_HEARTBEAT_MS`、`SSE_BUFFER_EVENTS`、`CONTROL_RATE_LIMIT`、`TASK_PENDING_TTL_MS`、`TASK_STATE_FILE`、`AUDIT_FILE`、`AUDIT_MAX_BYTES`、`AUDIT_RETENTION_DAYS`。
+- v0.4 新增变量：`QUEUE_MAX`、`TREE_FARM_MIN_X/MAX_X/MIN_Z/MAX_Z`、`TREE_FARM_GROUND_Y=63`、`TREE_FARM_LOG_MIN_Y=64`、`TREE_FARM_MAX_Y`、`TREE_LOG_TYPE`、`TREE_SAPLING_TYPE`、`TREE_MAX_LOGS`、`TREE_DEPOSIT_EVERY_MS`、`DEFENSE_ENABLED/RADIUS/HEALTH_THRESHOLD/FOOD_THRESHOLD/MAX_HOSTILES/TARGETS`、`CHUNK_WAIT_MS`、`MEMORY_SUMMARY_ENABLED/TURNS/MAX_CHARS`。
+- 树场实际布局：地面块 y=63，原木从 y=64 起；`TREE_FARM_GROUND_Y=63`、`TREE_FARM_LOG_MIN_Y=64`。
 - 不要把 `/etc/lofii-bot/env` 放进仓库或日志。
 
 ## 6. 日常运维
@@ -133,6 +135,10 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 
 - 动态模式：无玩家时状态 `idle`、`/say` 返回 409，这是正常的；玩家上线后 15 秒内自动加入。
 - 任务模式：任务 active 时即使 Antifield 下线也保持在线，`/status.presence.lastDecision = connected: task active`；任务结束且无玩家时恢复 60 秒 grace 后下线。
+- 任务队列：active 之外最多 3 个；`/task/stop` 停止 active 并清空队列；active 正常结束自动下一个，失败/恢复超时清空队列。
+- 砍树：固定 oak 树场 `180–193 / 455–464`，地面 y=63、原木 y=64；只砍 oak_log、逐棵补种 oak_sapling，原木存箱。
+- 被动防御：任务中 12 格内 zombie/husk/drowned/skeleton/stray/spider/cave_spider 才接战；HP≤12、food≤6 或 >2 只怪撤退回家并让当前任务失败；不攻击 creeper/enderman/witch/玩家。
+- 记忆摘要：每 40 turns（20 来回）后台生成 ≤1000 字聊天摘要；失败回退，不影响聊天。
 - 任务恢复：死亡/Paper 重启后回到任务点，最多 3 次；工具/种子丢失会停止并提示，需从箱子补货。
 - systemd 重启：任务会写盘并在启动后进入 `pending_resume`；10 分钟内 `POST /task/resume` 继续，否则标记 `interrupted`。pending 期间 Lofii 按动态在线策略（通常离线）。
 - SSE：最多 8 个客户端；断线用 `Last-Event-ID` 重连；进程重启后 ring 清空，面板重新拉 `/status`/`/task`。
@@ -151,7 +157,11 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 | AI 不回复 | `curl -u opencode:<pw> http://127.0.0.1:4096/api/info`；`/status.ai.lastError`；OpenCode 服务状态 |
 | `/say` 409 | Bot 不在线（动态模式空服）；让玩家上线或临时 `FORCE_ONLINE=true` |
 | 移动失败 | 目标实体未加载/跨维度/无路；`Lofii 状态` 看位置；需要时先 `/tp` |
-| 任务不启动 | 箱子是否有鱼竿/锄/种子/食物；`/status.task.lastError`；`Lofii 状态` 看位置 |
+| 任务不启动 | 箱子/背包是否有鱼竿/锄/种子/铁斧/树苗/食物；`/status.task.lastError`；`Lofii 状态` 看位置 |
+| 砍树不砍/不补种 | `/status.task.progress.treesChopped/logsChopped/saplingsPlanted`；树场实际地面 y=63/原木 y=64；树苗/铁斧是否够 |
+| 防御不接战 | `/status` 的 health/food；`DEFENSE_ENABLED`；目标怪种；任务 active；没有剑时只会撤退 |
+| 队列不继续 | `/task.task.queue`；active 是否失败/stop；失败会清队列 |
+| 记忆摘要不生成 | `MEMORY_SUMMARY_ENABLED`；AI 是否可用；`/status.memory`；日志 `memory summary` |
 | 任务停在任务点外 | 恢复次数是否到 3；死亡是否掉工具；箱内备用工具/种子是否足够 |
 | 种田不收割 | 作物是否成熟（`age=7`）；任务是否在 30 分钟上限/收工；`/status.task.progress` |
 | 钓鱼不捡鱼 | 掉落物是否落在深水/安全区外；日志 `fishing: item pickup skipped`；必要时调整钓点/加小平台（需确认） |

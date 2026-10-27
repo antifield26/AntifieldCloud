@@ -27,10 +27,19 @@
 - 验收：mock SSE/控制 + 服务重启 pending/resume + 20–30 分钟 soak；详见 `docs/ACCEPTANCE.md`。
 - 边界：默认保留游戏内 Antifield/AI 直接触发，HTTP-only 非强制；严格模式 `HTTP_ONLY_HIGH_RISK=true`。
 
-## v0.4 自动化扩展
+## v0.4.0（已完成：队列 / 砍树 / 被动防御 / 记忆摘要）
+
+- 任务队列：单 active + 最多 3 个排队；正常完成自动下一个；stop/失败/恢复超时清空；跨重启持久化。
+- 砍树：固定 oak 树场 `180–193/455–464`，地面块 y=63/原木 y=64；只砍 oak_log、逐棵补种 oak_sapling、原木存箱。
+- 任务中被动防御：12 格内 zombie/husk/drowned/skeleton/stray/spider/cave_spider 才接战；HP≤12、food≤6、>2 怪撤退；排除 creeper/enderman/witch/玩家。
+- 可靠性：主世界安全区内 chunk 等待/路径重试；`come/follow` 实体未加载回退，跨维度拒绝。
+- 记忆摘要：每 40 turns（20 来回）后台 ≤1000 字聊天摘要，注入 prompt；v1 memory 自动迁移。
+- 验收：65 单元测试、砍树累计 ≥32 原木/≥8 补种、队列跨重启、farm soak；详见 `docs/ACCEPTANCE.md`。
+- 边界：不做 RCON/管理只读、`/metrics`、告警、多 Bot、语音、Discord/QQ。
+
+## v0.5 运维与自动化扩展（待定）
 
 - 管理助手只读（RCON TPS/白名单/备份状态）、指标历史与告警。
-- 采集/砍树、战斗/保护、睡觉跳夜（Vote2Sleep）、巡逻。
-- 更稳的跨维度/实体未加载移动；多次 pending 任务链。
-- 多角色人设、记忆摘要、皮肤、语音。
-- 聊天与 Discord/QQ 互通（复用 AntifieldCloud Bot 能力，用户主导）。
+- 定点挖矿、天然林/更多树种、睡觉跳夜（Vote2Sleep）、巡逻。
+- 更稳的跨维度移动；多次 pending 任务链/长期任务。
+- 多角色人设、语音、聊天与 Discord/QQ 互通（复用 AntifieldCloud Bot 能力，用户主导）。

@@ -17,9 +17,42 @@ import { TaskManager } from '../../src/tasks/manager.ts'
 import { TaskStore } from '../../src/tasks/store.ts'
 import { scanOakTrees } from '../../src/tasks/woodcutting.ts'
 import type { TaskController } from '../../src/tasks/types.ts'
-import { makeConfig, makeState } from '../helpers.ts'
+import { makeConfig, makeState, baseEnv } from '../helpers.ts'
+import { loadConfig } from '../../src/config.ts'
 
 const logger = createLogger('error')
+
+test('v0.3 task state migrates to v0.4 queue schema with zeroed new progress', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'lofii-v1-migrate-'))
+  const file = path.join(dir, 'task-state.json')
+  await writeFile(file, JSON.stringify({
+    version: 1,
+    taskId: 'old-1',
+    name: 'fishing',
+    startedAt: 1000,
+    deadline: 2000,
+    progress: { fishCaught: 2, wheatHarvested: 0, planted: 0, deposited: 1 },
+    failures: 0,
+    savedAt: 1500
+  }), 'utf8')
+  try {
+    const store = new TaskStore(file, logger)
+    const state = await store.load()
+    assert.equal(state?.version, 2)
+    assert.equal(state?.active?.progress.fishCaught, 2)
+    assert.equal(state?.active?.progress.logsChopped, 0)
+    assert.deepEqual(state?.queue, [])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('config rejects a tree farm outside the safe zone', () => {
+  assert.throws(() => loadConfig(baseEnv({
+    TREE_FARM_MIN_X: '500',
+    TREE_FARM_MAX_X: '510'
+  }), '0.4.0'), /TREE_FARM/)
+})
 
 test('woodcutting scan finds oak trunks only inside the farm', () => {
   const config = makeConfig({

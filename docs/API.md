@@ -1,4 +1,4 @@
-# AntifieldCloud 对接契约（Lofii Bot v0.3.0）
+# AntifieldCloud 对接契约（Lofii Bot v0.4.0）
 
 > 本文只描述 `lofii-bot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -89,15 +89,19 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
     "state": "running",
     "startedAt": "2026-10-26T13:22:43.689Z",
     "elapsedSec": 170,
-    "progress": { "fishCaught": 5, "wheatHarvested": 0, "planted": 0, "deposited": 0 },
+    "progress": {
+      "fishCaught": 5, "wheatHarvested": 0, "planted": 0, "deposited": 0,
+      "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0
+    },
     "failures": 0,
     "lastError": null,
-    "pendingResume": null
+    "pendingResume": null,
+    "queue": []
   }
 }
 ```
 
-`task.state`：`idle` / `starting` / `running` / `depositing` / `recovering` / `stopping` / `pending_resume`。
+`task.state`：`idle` / `starting` / `running` / `depositing` / `recovering` / `stopping` / `defending` / `pending_resume`。
 
 有待恢复任务时：
 
@@ -109,7 +113,10 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
   "state": "pending_resume",
   "startedAt": "2026-10-26T13:22:43.689Z",
   "elapsedSec": 137,
-  "progress": { "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0 },
+  "progress": {
+    "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0,
+    "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0
+  },
   "failures": 0,
   "lastError": null,
   "pendingResume": {
@@ -117,9 +124,12 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
     "name": "fishing",
     "startedAt": "2026-10-26T13:22:43.689Z",
     "elapsedSec": 137,
-    "progress": { "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0 },
+    "progress": { "fishCaught": 4, "wheatHarvested": 0, "planted": 0, "deposited": 0, "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0 },
     "expiresAt": "2026-10-26T13:35:00.619Z"
-  }
+  },
+  "queue": [
+    { "taskId": "...", "name": "farming", "requestedBy": "panel", "requestedAt": "2026-10-26T13:25:00.000Z" }
+  ]
 }
 ```
 
@@ -131,7 +141,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
 
 ## 4. GET /task
 
-需要读 Token。返回当前任务（与 `/status.task` 一致，含 `pendingResume`）。
+需要读 Token。返回当前任务（与 `/status.task` 一致，含 `pendingResume` 与 `queue`）。
 
 ```json
 { "task": { "...": "..." } }
@@ -194,7 +204,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "action": "started|progress|depositing|recovering|stopping|stopped|completed|failed|resume_required|resumed|interrupted",
+  "action": "started|progress|depositing|recovering|stopping|stopped|completed|failed|resume_required|resumed|interrupted|queued|queue_started|queue_cleared|defending",
   "task": { "...TaskSnapshot..." }
 }
 ```
@@ -243,13 +253,14 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 需要控制 Token + `Content-Type: application/json`。
 
 ```json
-{ "name": "fishing" }
+{ "name": "fishing|farming|woodcutting" }
 ```
 
-- `fishing` / `farming`；其他 400。
-- 202：`{"ok":true,"requestId":"...","task":{...}}`。
-- 任务 active：409 `task_active`。
-- 有 pending：409 `resume_pending`。
+- 空闲：202 `{"ok":true,"queued":false,"position":null,"task":{...}}`，任务立即 active。
+- 已有 active：入队，202 `{"ok":true,"queued":true,"position":1..3,"task":{...}}`。
+- 队列最多 3 个（`QUEUE_MAX`，不含 active）；同任务允许重复。
+- 有 pending：409 `resume_pending`（必须先 resume 或 stop/清空）。
+- 队列满：409 `queue_full`。
 - 任务开关关闭：503 `task_disabled`。
 - 不需要 Bot 已在线：任务会先进入 active，由动态存在逻辑自动连接 Lofii。
 
@@ -259,9 +270,17 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 { "reason": "panel" }
 ```
 
-- active：202，任务进入 `stopping`。
-- 只有 pending：202，取消 pending（审计 `task.discard_pending`）。
+- active：202，任务进入 `stopping`，并**清空队列**。
+- 只有 pending：202，取消 pending 与队列（审计 `task.discard_pending`）。
 - 都没有：409 `no_active_task`。
+
+### 6.2.1 队列语义
+
+- active 正常完成 → 自动启动队首，SSE `task.queue_started`。
+- active 失败、防御撤退、恢复超时、`/task/stop` → 清空队列。
+- `GET /task.queue` 与 `/status.task.queue` 可见当前队列。
+- 队列与 active 一起写入 `task-state.json` v2；服务重启后 pending + queue 保留，resume 后继续。
+- v0.3 的 v1 task-state 文件自动迁移，新进度字段补 0。
 
 ### 6.3 POST /task/resume
 
@@ -291,6 +310,12 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 - Bot 未连接：409 `not_connected`。
 - 202 只表示已接受；结果通过 SSE `movement` 事件返回。
 
+### 6.4.1 砍树 / 被动防御 / 记忆摘要
+
+- `woodcutting` 只处理固定 oak 树场 `x180–193, z455–464`；实际地面块 y=63、原木从 y=64 起；只砍 `oak_log`、逐棵补种 `oak_sapling`，原木存箱。
+- 任务中被动防御：12 格内 zombie/husk/drowned/skeleton/stray/spider/cave_spider 才接战；排除 creeper/enderman/witch/玩家；HP≤12、food≤6 或 >2 只怪时撤退回家并让当前任务失败（清队列）。
+- 记忆摘要不新增 HTTP 接口；每 40 turns（20 来回）后台生成 ≤1000 字聊天摘要，注入后续 prompt。
+
 ### 6.5 错误码汇总
 
 | 条件 | HTTP | error |
@@ -301,9 +326,11 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 | 请求体非 JSON | 415 | `unsupported_media_type` |
 | 请求体过大 | 413 | `payload_too_large` |
 | 非法 JSON/字段 | 400 | `invalid_request` |
-| 任务 active / pending 冲突 | 409 | `task_active` / `resume_pending` |
+| 有 pending 时启动 | 409 | `resume_pending` |
+| 队列满 | 409 | `queue_full` |
 | 无任务 | 409 | `no_active_task` / `no_pending_task` |
 | 移动目标离线 | 409 | `target_not_online` |
+| 任务 active 时移动 | 409 | `task_active` |
 | Bot 未连接 | 409 | `not_connected` |
 | 限流 | 429 | `rate_limited` |
 

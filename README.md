@@ -2,13 +2,15 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：v0.3.0（SSE / HTTP 控制 / 审计 / 任务跨重启恢复）。详细计划与验收记录见 `docs/`。
+> 当前版本：v0.4.0（任务队列 / 砍树 / 被动防御 / 记忆摘要）。详细计划与验收记录见 `docs/`。
 
 ## 能做什么
 
 - **AI 陪伴聊天**：只有被 `Lofii` / `@Lofii` 点名时回复；中文、温柔助手人设；复用 Pi 本机 OpenCode 的 `opencode-go/deepseek-v4.1-flash`。
 - **按玩家动态上线**：SLP 每 15 秒探测；有玩家在线时上线；最后一名玩家离开 60 秒后下线，让服务器在空服时正常 pause。
-- **自动化任务**：`Lofii 去钓鱼` / `去种田` / `收工` / `回家` / `存东西`；钓鱼自动抛竿/收竿/捡鱼/存箱；种田自动播种/收割/补种/存箱。
+- **自动化任务**：`Lofii 去钓鱼` / `去种田` / `去砍树` / `收工` / `回家` / `存东西`；钓鱼自动抛竿/收竿/捡鱼/存箱；种田自动播种/收割/补种/存箱；砍树只处理固定 oak 树场并逐棵补种。
+- **任务队列**：单 active + 最多 3 个排队；active 结束自动下一个；失败/收工清空队列；队列跨重启持久化。
+- **任务中被动防御**：钓鱼/种田/砍树时，12 格内出现僵尸/骷髅/蜘蛛才接战；HP≤12、食物≤6 或 >2 只怪时撤退回家；不攻击 creeper/enderman/witch/玩家。
 - **任务期间保持在线**：Antifield 下线后任务继续；任务结束且无玩家时恢复动态下线。
 - **任务恢复**：死亡/Paper 重启后自动回任务点，最多 3 次；工具/种子丢失时停止并提示。
 - **跨 systemd 重启恢复**：任务状态写盘；服务重启后变为 `pending_resume`，面板 10 分钟内确认才继续；不自动执行。
@@ -18,14 +20,15 @@
 - **移动与家**：`回家`、远距离 `过来`、`跟随` 超过 64 格或跨维度时安全传送；只允许代码生成的 `/tp`。
 - **主动行为**：Antifield 加入问候；夜晚/雷雨/死亡固定短文；可关闭。
 - **AI 意图兜底**：固定短语优先；Antifield 的任务类模糊语句才调用 AI 分类，AI 不能直接执行任意动作。
-- **按玩家记忆**：最近 20 轮、保留 30 天，落盘到 `/var/lib/lofii-bot/memory`，重启后仍能记住。
+- **按玩家记忆**：最近 20 轮、保留 30 天；每 20 个来回后台生成 ≤1000 字聊天摘要，落盘到 `/var/lib/lofii-bot/memory`，重启后仍能记住。
 - **本机 HTTP 接口**：只读状态/任务/SSE + `/say`，独立控制 Token 的任务/移动接口；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
 ## 不做什么
 
 - 不修改 AntifieldCloud 仓库、数据库或服务；本仓库只提供接口契约。
-- 不做挖矿、砍树、战斗、建筑、睡觉跳夜、踢人/封禁/备份触发。
+- 不做挖矿、天然林砍伐、PvP、建筑、睡觉跳夜、踢人/封禁/备份触发。
+- 不做独立 combat/巡逻任务；战斗只在任务中被动防御。
 - 不默认 24/7 保活；空服时服务器会 pause。需要常驻时把 `FORCE_ONLINE=true`。
 - 不把 HTTP 接口暴露到内网/公网；不改 nftables、FRP、Cloudflare。
 
@@ -54,11 +57,13 @@
                          ├─ 未授权指令 ─► 固定拒绝
                          └─ 聊天 ─► AI queue ─► OpenCode ─► 清洗/拆行 ─► reply queue
 
-任务管理器 ─► 导航/安全区/传送 ─► 钓鱼/种田 ─► 库存/存箱 ─► 状态快照
-      │
-      ├─ 任务 active 时 presence 保持在线
+任务管理器 ─► 队列（≤3）─► 导航/安全区/传送 ─► 钓鱼/种田/砍树 ─► 库存/存箱 ─► 状态快照
+      │                              └─ 被动防御（12 格内 zombie/skeleton/spider）
+      ├─ 任务 active/queue 时 presence 保持在线
       └─ 死亡/Paper 重启 ─► 回家/回任务点 ─► 最多 3 次恢复
 
+记忆 ─► 每 40 turns（20 来回）后台摘要 ─► memory v2 ─► prompt 注入
+```
 HTTP /status ─► state 快照（含 task）
 HTTP /task ─► 当前任务 / pending
 GET /events ─► SSE（hello/presence/task/chat/movement，ring 500）
@@ -72,7 +77,8 @@ systemd restart ─► task-state.json ─► pending_resume ─► 面板确认
 - 所有外发聊天统一经过 `sanitizeOutgoing`：**首字符 `/` 会被替换为全角 `／`**，防止 AI 或 HTTP 输入变成 OP 命令。
 - AI 没有任何工具/命令执行能力；指令只由确定性解析器执行，且仅 `Antifield`（`COMMAND_ALLOWLIST`）有效。
 - 内部 `/tp` 只由移动/任务代码用固定坐标或在线玩家名生成，AI/HTTP 无法触发；传送目标必须在安全区内。
-- 自动化只修改农田范围 `x177–183, z432–439` 的作物/耕地；越界即停止；箱子只存/取物品。
+- 自动化只修改农田 `x177–183, z432–439` 的作物/耕地和固定 oak 树场 `x180–193, z455–464` 的橡木/树苗；越界即停止。
+- 被动防御只攻击任务点 12 格内、安全区内的 zombie/husk/drowned/skeleton/stray/spider/cave_spider；排除 creeper/enderman/witch/玩家；HP/food 低或怪太多撤退。
 - `/say` 拒绝以 `/` 开头的消息；HTTP 仅回环、Bearer Token、8 KiB 请求体上限、10 次/分钟限流。
 - 读 Token（`HTTP_TOKEN`）与控制 Token（`HTTP_CONTROL_TOKEN`）分离；控制 Token 只用于任务/移动，不写日志/URL。
 - 任务状态 `/var/lib/lofii-bot/task-state.json` 与审计 `/var/lib/lofii-bot/audit.jsonl` 均 `0600`；审计不含聊天正文/Token/密码。
@@ -149,9 +155,15 @@ sudo systemctl restart lofii-bot
 | `HTTP_ONLY_HIGH_RISK` | `false` | true 时关闭游戏内/AI 高风险触发 |
 | `SSE_MAX_CLIENTS` / `SSE_BUFFER_EVENTS` | `8` / `500` | SSE 客户端上限/回放 ring |
 | `TASK_PENDING_TTL_MS` | `600000` | 重启任务确认窗口（10 分钟） |
+| `QUEUE_MAX` | `3` | active 之外排队上限 |
+| `TREE_FARM_*` | 见 env | oak 树场范围/地面/原木 Y |
+| `TREE_MAX_LOGS` | `128` | 单次砍树上限 |
+| `DEFENSE_ENABLED` / `DEFENSE_RADIUS` | `true` / `12` | 被动防御开关/半径 |
+| `DEFENSE_HEALTH_THRESHOLD` / `DEFENSE_FOOD_THRESHOLD` | `12` / `6` | 撤退阈值 |
+| `MEMORY_SUMMARY_TURNS` / `MEMORY_SUMMARY_MAX_CHARS` | `40` / `1000` | 摘要窗口/长度 |
 | `AUDIT_FILE` / `AUDIT_MAX_BYTES` | `.../audit.jsonl` / `5242880` | 审计路径/轮转大小 |
 
-任务坐标默认值见 `deploy/env.example`（家 `175.5/64/410.5`、安全区 `175–239/410–474`、农田 `177–183/432–439`、箱子 `184/64/435`、钓点 `204.5/63/469.5`）。
+任务坐标默认值见 `deploy/env.example`（家 `175.5/64/410.5`、安全区 `175–239/410–474`、农田 `177–183/432–439`、箱子 `184/64/435`、钓点 `204.5/63/469.5`、oak 树场 `180–193/455–464`，实际地面块 y=63、原木从 y=64 起）。
 
 ## 测试
 
@@ -176,6 +188,12 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 - 动态在线意味着空服时服务器会 pause；如要 7×24 保活，设 `FORCE_ONLINE=true`（注意功耗/发热）。
 - `come` / `follow` 依赖 mineflayer-pathfinder 与当前 26.1 方块数据；跨维度/目标实体未加载时会走安全传送，找不到落点则明确失败。
 - 任务死亡恢复依赖箱子里的备用工具/种子/食物；死亡会掉落当前背包，建议箱内常备 2–3 套鱼竿/锄头与至少 128 个种子。
+- 任务队列在 active 之外最多 3 个；同任务可重复排队；`收工`/失败/恢复超时会清空队列。
+- 砍树只处理固定 oak 树场；树苗/铁斧需常备。树场实际地面块 y=63、原木 y=64；配置见 `TREE_FARM_*`。
+- 被动防御是任务内行为，不是独立 combat 任务；低血量/多怪时撤退并让当前任务失败（按失败语义清队列）。
+- 战斗装备需在背包/箱子备好；盾牌为 best-effort，协议不支持时仍用剑+甲。
+- 自然怪不足以稳定验收 5 杀；v0.4 现场只要求 ≥1 杀、0 死亡，5 杀由单测/机会性覆盖。
+- 记忆摘要额外调用一次 AI；失败保留旧摘要并退避，不阻塞聊天。
 - 任务状态跨 `systemctl restart lofii-bot` 保存为 `pending_resume`；10 分钟内不确认会标记 `interrupted` 并清空。Paper 重启仍走原有自动恢复。
 - HTTP 控制依赖独立 `HTTP_CONTROL_TOKEN`；`/task/start` 可以在 Lofii 离线时启动，后台按动态在线逻辑连接。`/move` 需要 Bot 已在线。
 - SSE 回放只在内存（500 条）；进程重启后客户端应重新拉 `/status`/`/task`。浏览器 EventSource 不能带 Bearer，面板应由后端消费。

@@ -110,6 +110,7 @@ export async function runFarming (ctx: TaskContext): Promise<void> {
     if (mature.length > 0) {
       for (const crop of mature) {
         if (ctx.signal.aborted || isExpired(ctx)) break
+        await ctx.defend()
         await harvestOne(ctx, bot, crop)
       }
       if (Date.now() - lastDepositAt > 5 * 60 * 1000) {
@@ -128,6 +129,7 @@ export async function runFarming (ctx: TaskContext): Promise<void> {
       for (const farmland of empty) {
         if (ctx.signal.aborted || isExpired(ctx)) break
         if (countItem(bot, 'wheat_seeds') === 0) break
+        await ctx.defend()
         await navigateToBlock(ctx, farmland)
         if (await plantSeeds(ctx, bot, farmland)) {
           planted += 1

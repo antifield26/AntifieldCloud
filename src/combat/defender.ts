@@ -94,6 +94,12 @@ export class Defender implements TaskDefender {
       await this.equipShield(bot)
       const target = threats[0]
       if (!target) return 'cleared'
+      this.logger.info('defense: engaging', {
+        target: target.name,
+        threats: threats.length,
+        health: bot.health,
+        food: bot.food
+      })
       if (!insideSafeZone(this.deps.config, target.position.x, target.position.z)) {
         await this.retreat(ctx, '怪在安全区外')
         return 'retreat'
