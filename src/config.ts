@@ -265,8 +265,8 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     maxX: readNumber(env, 'TREE_FARM_MAX_X', 193, -30000000, 30000000),
     minZ: readNumber(env, 'TREE_FARM_MIN_Z', 455, -30000000, 30000000),
     maxZ: readNumber(env, 'TREE_FARM_MAX_Z', 464, -30000000, 30000000),
-    groundY: readNumber(env, 'TREE_FARM_GROUND_Y', 64, -256, 512),
-    logMinY: readNumber(env, 'TREE_FARM_LOG_MIN_Y', 65, -256, 512),
+    groundY: readNumber(env, 'TREE_FARM_GROUND_Y', 63, -256, 512),
+    logMinY: readNumber(env, 'TREE_FARM_LOG_MIN_Y', 64, -256, 512),
     maxY: readNumber(env, 'TREE_FARM_MAX_Y', 96, -256, 512),
     logType: readString(env, 'TREE_LOG_TYPE', 'oak_log'),
     saplingType: readString(env, 'TREE_SAPLING_TYPE', 'oak_sapling')
