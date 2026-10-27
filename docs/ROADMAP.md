@@ -49,6 +49,12 @@
 - 验收：75 单元测试、挖矿 ≥16、天然林 ≥16、巡逻 4/4、20 分钟 soak、历史/告警；详见 `docs/ACCEPTANCE.md`。
 - 边界：不做跨维度、多 Bot/语音/Discord/QQ、Prometheus `/metrics`、webhook、AntifieldCloud 改动。
 
+## v0.6.1（已完成：聊天切行命令注入安全修复）
+
+- `splitOutgoing` 在按行宽切分后逐行检查：任何行首 ASCII `/` 替换为全角 `／`，确保 mineflayer 不会把切分后的第二行当作命令执行。
+- 回归覆盖 239/240/255/480 字符边界；AntifieldCloud 应用侧同时拒绝任意 ASCII `/` 并要求控制 Token。
+- 契约与接口不变（`CONTRACT_VERSION=1`）。
+
 ## v0.6.0（已完成：只读近期事件轮询 / 契约版本）
 
 - 事件只读轮询：`EventBus.recent(limit)` 返回内存 ring 最近事件（旧 → 新）；`GET /events/recent` 使用读 Token，`limit` 默认 50、范围 1–200，返回 `{contractVersion, bootId, lastEventId, events}`，不含 `hello`。

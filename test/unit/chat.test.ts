@@ -71,3 +71,11 @@ test('splitOutgoing keeps every line under the chat limit', () => {
   assert.ok(lines.length <= 3)
   for (const line of lines) assert.ok(Array.from(line).length <= 100)
 })
+
+test('splitOutgoing escapes slash at every split boundary', () => {
+  for (const padding of [239, 240, 255, 480]) {
+    const lines = splitOutgoing(`${'a'.repeat(padding)}/op Lofii`, 240, 3)
+    assert.ok(lines.length >= 2, `padding=${padding} 应产生多行`)
+    for (const line of lines) assert.ok(!line.startsWith('/'), `padding=${padding} 仍有命令行：${line}`)
+  }
+})

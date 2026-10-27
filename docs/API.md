@@ -1,4 +1,4 @@
-# AntifieldCloud 对接契约（Lofii Bot v0.6.0）
+# AntifieldCloud 对接契约（Lofii Bot v0.6.1）
 
 > 本文只描述 `lofii-bot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -31,7 +31,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
 ```json
 {
   "status": "ok",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "contractVersion": 1,
   "uptimeSec": 123,
   "state": "connected",
@@ -49,7 +49,7 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
 
 ```json
 {
-  "version": "0.6.0",
+  "version": "0.6.1",
   "uptimeSec": 123,
   "state": "connected",
   "minecraft": {
@@ -195,7 +195,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "version": "0.6.0",
+  "version": "0.6.1",
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "resync": false,

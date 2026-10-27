@@ -149,7 +149,11 @@ export function splitOutgoing (text: string, maxChars: number, maxLines: number)
     while (last.length > 0 && Array.from(`${last.join('')}…`).length > maxChars) last.pop()
     lines[lines.length - 1] = `${last.join('')}…`
   }
-  return lines.filter(line => line.trim() !== '')
+  // 切行后每一行都可能成为 mineflayer 的命令行；整段 sanitize 只处理首字符不够，
+  // 必须逐行把行首 ASCII / 替换为全角斜杠，保证任何分片都不会被当作命令。
+  return lines
+    .filter(line => line.trim() !== '')
+    .map(line => (line.startsWith('/') ? `／${line.slice(1)}` : line))
 }
 
 export interface ChatSenderOptions {

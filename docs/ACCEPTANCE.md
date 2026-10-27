@@ -377,4 +377,28 @@
 - `limit` 只接受十进制整数（重复参数取第一个值）；非法值统一 400，不影响 SSE `/events`。
 - 未新增依赖/schema/DB/环境变量；不改任务/AI/控制行为；无 Token 写入日志或响应。
 
+## 10. v0.6.1 安全修复（聊天切行命令注入）
+
+### 10.1 环境
+
+| 项目 | 值 |
+|---|---|
+| 验证日期 | 2026-10-27（Asia/Shanghai） |
+| Lofii 版本 | 0.6.1（`package.json`） |
+| 范围 | `splitOutgoing` 逐行中和 + 本地 `npm run check`；未在真实游戏内发送命令 |
+
+### 10.2 修复与证据
+
+| # | 检查 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 切分边界 | ✅ | `splitOutgoing('a'.repeat(240)+'/op Lofii', 240, 3)` 第二行输出全角 `／op Lofii`，不以 ASCII `/` 开头 |
+| 2 | 多边界回归 | ✅ | padding 239/240/255/480 均无任何行以 `/` 开头（`test/unit/chat.test.ts`） |
+| 3 | 整段行为 | ✅ | `sanitizeOutgoing` 原有整段首字中和保留；SSE/控制/任务/近期事件契约不变 |
+| 4 | 本地门禁 | ✅ | `npm run check` 78/78 测试通过（新增 1 个边界测试） |
+
+### 10.3 残余边界
+
+- AntifieldCloud 应用侧同时拒绝任意 ASCII `/`、控制字符，并要求控制 Token 才能调用 `/say`；上游逐行中和作为独立第二道防线。
+- 未对真实 Minecraft 执行 `/op` 等验证（审计/修复均避免生产命令注入）；以单元级切分函数和 mineflayer `isCommand` 语义为证据。
+
 
