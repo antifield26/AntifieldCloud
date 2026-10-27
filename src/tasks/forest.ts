@@ -141,6 +141,14 @@ async function plantSapling (ctx: TaskContext, bot: Bot, tree: NaturalTree): Pro
   if (current && current.name !== 'air') return false
   try {
     await bot.equip(sapling, 'hand')
+    await sleep(150, ctx.signal)
+    if (bot.heldItem?.name !== spec.sapling) {
+      const retry = bot.inventory.items().find(item => item.name === spec.sapling)
+      if (!retry) return false
+      await bot.equip(retry, 'hand')
+      await sleep(150, ctx.signal)
+      if (bot.heldItem?.name !== spec.sapling) return false
+    }
     await bot.placeBlock(below, new Vec3(0, 1, 0))
     return true
   } catch (error) {

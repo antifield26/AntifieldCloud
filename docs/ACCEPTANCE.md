@@ -1,4 +1,4 @@
-# 验收记录（Lofii Bot v0.2.0 / v0.3.0 / v0.4.0）
+# 验收记录（Lofii Bot v0.2.0 / v0.3.0 / v0.4.0 / v0.5.0）
 
 ## 1. 环境
 
@@ -259,5 +259,90 @@
 
 - 运行时代码/soak release：`20261027T024631Z`；最终 docs release：`20261027T033756Z`。
 - v0.4.0 验收通过：队列、砍树、被动防御、20 分钟 soak、动态下线、审计；65 个测试全绿。
+
+## 8. v0.5.0 验收（只读 RCON / 历史告警 / 表层矿 / 天然林 / 睡觉 / 巡逻）
+
+### 8.1 环境
+
+| 项目 | 值 |
+|---|---|
+| 验收日期 | 2026-10-27（Asia/Shanghai） |
+| Lofii 版本 | 0.5.0 |
+| Pi | Raspberry Pi 5 8GB / Debian 13；Node v26.12.1 |
+| Minecraft | Paper 26.1.2，协议 775 |
+| 安全区 | `x111–239, z410–474` |
+| 任务上限 | 60 分钟；队列 3；待恢复 10 分钟 |
+| 状态 | RCON 只读、SQLite 历史、SSE 告警开启 |
+
+### 8.2 结果汇总
+
+| # | 检查 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 本地测试 | ✅ 75/75 | `tsc --noEmit` + 75 个 `node:test` |
+| 2 | 0.5.0 部署/健康 | ✅ | `/healthz` 200，version 0.5.0 |
+| 3 | 只读 RCON | ✅ | `/admin/status` 返回 TPS/在线/白名单/时间；只允许 `tps/list/whitelist list/time` |
+| 4 | SQLite 历史 | ✅ | `/history?kind=samples` 47+ 条；60s 采样/30 天；文件 0600 |
+| 5 | SSE 告警 | ✅ | 现场 `low_health`、`task_failed`；5 分钟冷却；SQLite alerts 落库 |
+| 6 | 表层矿 | ✅ | 单次 23+ 矿（累计 35+）；煤/铜；target 16；deposited 9；0 死亡 |
+| 7 | 天然林 | ✅ | 18 棵树、31 原木、18 补种；deposit 21；target 16/8 |
+| 8 | 睡觉 | ✅ | `sleepVotes=1`、`nightSkipped=1`；服务器 23:46 → 07:49；Vote2Sleep |
+| 9 | 巡逻 | ✅ | 4/4 边界点；约 89 秒；0 死亡；不主动追怪 |
+| 10 | 队列跨重启 | ✅ | active mining + queue 2 → pending + queue 2 → resume → stop 清空 |
+| 11 | 60 分钟 | ✅ | `/status.task` 配置生效；mining 自身 30 分钟上限 |
+| 12 | 20 分钟 soak | ✅ | 见 8.6；mining/forest/fishing 合计约 28.6 分钟 |
+| 13 | 动态下线 | ✅（v0.4 回归） | 空服后 `idle`/`connected=false` |
+| 14 | 管理/指标边界 | ✅ | 无写 RCON、`/metrics`、webhook；AntifieldCloud 未改动 |
+
+### 8.3 挖矿证据
+
+- 安全区 `x111–239, z410–447`，y≥60；只挖煤/铁/铜裸露矿；保护盒 16；无石头隧道。
+- 首次验收 35 矿（煤 25、铜 10）；后续 23 矿（煤 14、铜 9），`deposited=9`；最终 soak 23 矿/5 铜、`deposited` 正常；达到 ≥16 目标。
+- 失败路径：点击箱子偶尔 `windowOpen` 超时；已加入安全传送/重试，最终存箱成功。
+- 不挖保护盒内方块；不挖水/岩浆邻接矿；玩家 8 格内跳过。
+
+### 8.4 天然林证据
+
+- 安全区扫描 oak/spruce/birch；保护盒 16；叶子/土壤/玩家距离过滤。
+- 首轮 18 棵树、31 原木、18 个补种；`deposit=21`；后续一轮 37 棵树、120 原木、8 补种；达到 ≥16 原木/≥4 补种目标。
+- 日志：`forest: tree chopped {"species":"oak"...}` / `{"species":"birch","logs":5,...}`。
+- 树场固定 oak 保护盒内不处理；未发现保护盒内建筑被砍。后续发现 `equip` 偶发仍持食物导致补种失败，已加 held-item 校验；最终补种代码已修复。
+
+### 8.5 睡觉/巡逻证据
+
+- 床：spawnpoint `175,64,410`（foot）+ `175,64,411`（head）；`BED_SEARCH_RADIUS=16` 以 home 为中心。
+- Vote2Sleep：min 1 / 40%；`sleepVotes=1`，`nightSkipped=1`；服务器时间 23:46 → 07:49。
+- 非夜晚/无床/投票失败路径正常结束（不失败）。
+- 巡逻四角内缩 4：`(115,414)/(235,414)/(235,470)/(115,470)`；4/4 到点，约 89 秒；0 死亡。
+
+### 8.6 最终 soak
+
+- 任务：mining → forest → forest → fishing 混合；RCON 只读/历史/告警/SSE 同时运行。
+- 活跃任务时长合计约 **28.6 分钟**：
+  - mining 102 秒（08:02:23–08:04:05）
+  - forest 549 秒（08:04:05–08:13:14）
+  - forest 128 秒（08:13:24–08:15:32，防御撤退）
+  - fishing 627 秒（08:23:55–08:34:23）
+  - fishing 312 秒（08:34:53–08:40:05）
+- 最终 fishing 段 26 鱼、deposited=30、0 失败/0 死亡；总计 0 重连。
+- 1 次森林防御撤退（`没有铁剑`）失败，按预期清空队列；之后补装并继续。
+- 16:19 左右任务失败后的 idle 补给窗口出现多次 zombie 死亡；不属于最终 active soak 段，记录为补给/清理问题。
+- 历史：95 条 samples；16 条 alerts（含 low_health/task_failed/defense_retreat）。
+- 内存：`MemoryCurrent=177.6 MB`、`MemoryPeak=200.7 MB`；采样 RSS 峰值约 221 MB。
+- 0 次断线重连；管理 RCON/历史/告警持续可用。
+
+### 8.7 边界与未测项
+
+- RCON 只有一个密码；“只读”是 Bot 端白名单，密码泄露仍可执行任意 RCON 命令。
+- 备份目录不存在，`backup.status=unknown`；未实现备份触发。
+- 世界天然林/裸露矿受地形影响；找不到时正常结束，不用 `/summon`/隧道/RCON 写命令凑数。
+- 天然林扫描可能误判玩家建筑，已用保护盒/树种/叶子/土壤/玩家距离降低风险，不能 100% 保证。
+- 未做跨维度、多 Bot/语音/Discord/QQ、Prometheus `/metrics`、webhook、AntifieldCloud 改动。
+- 记忆摘要仍只做单测；未制造额外 AI 聊天。
+- 生产 Token 未轮换。
+
+### 8.8 最终 release
+
+- 最终 release：[待部署后填写]。
+- v0.5.0 验收通过：只读管理、SQLite 历史、SSE 告警、安全区表层矿/天然林、Vote2Sleep、四角巡逻、60 分钟队列、约 28.6 分钟混合 soak；75 个测试全绿。
 
 
