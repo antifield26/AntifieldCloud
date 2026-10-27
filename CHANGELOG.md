@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**生产部署与只读/API/安全回归验收已完成（2026-10-27）；尚未 Tag/GitHub Release**；schema 保持 v17；OpenCode v2.1.4）
+## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**生产部署与只读/API/安全回归验收已完成（2026-10-27）；v0.8.1 仍待 Tag/Release**（v0.8.0 已发布）；schema 保持 v17；OpenCode v2.1.4）
 
 ### Security
 
@@ -30,10 +30,10 @@
 
 ### Pending
 
-- v0.8.0 与 v0.8.1 **均尚未 Tag/GitHub Release**。
+- **v0.8.0 已发布**：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release（publishedAt `2026-10-27T12:02:45Z`）；**v0.8.1 仍待 Tag/Release**（生产已部署 `20261027T113055Z`/commit `5405a8d`，等待 Windows 备份任务重装后由 Lead 执行）。
 - 明确残余（未修）：告警事件无幂等键（schema v18 下一 minor）、告警风暴并发 webhook/Bot 上限、Lofii 进程未纳入 `service_down` 监控/metrics、`/status`/`history` 的 `lastError` 原样透传（admin-only）、`LOFII_URL` 允许任意 loopback 端口、`stop()` 不取消在途轮询、`lastSuccessAt` 未下发（stale 文案仍用 `lastPollAt`）、真实 Lofii 告警未触发、**v0.8.1 未重新做生产 UI 截图/视觉复验**（v0.8.0 视觉确认仍有效）、Windows 每日任务安装标记待用户重装。详见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
 
-## [v0.8.0] - 2026-10-27（生产部署与只读/API 验收已完成（2026-10-27）；待 Tag/Release 收尾；schema 保持 v17）
+## [v0.8.0] - 2026-10-27（**已发布：Tag `v0.8.0` + GitHub Release（2026-10-27）**；Lofii Minecraft Bot 对接；生产部署与只读/API 验收已完成；schema 保持 v17；OpenCode v2.1.4）
 
 ### Added
 
@@ -66,11 +66,16 @@
 - 完整公网 Access smoke（2026-10-27，`smoke.ps1 ... -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；域名/主机/备份目录按实际替换）：**35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭），含 Lofii Bot active/version 0.6.0/contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。`-SkipLocalTaskCheck` 原因：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤/残余，**不是失败**；不声称任务已刷新）。
 - 运行验证：`meta.lofii.event_cursor` 已建立 `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`（轮询成功）；生产 API 探针 `/api/lofii/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2；无 CSRF 的 POST `403 csrf_failed`；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文；临时验收会话已删除（`user_agent='v080-acceptance'` 计数 0）。
 - 回滚：`LOFII_ENABLED=false`（可选清空 Token）+ 重启即回到 v0.7.3 行为，`meta.lofii.event_cursor` 可保留/删除，无 schema/DB 回滚；只读模式只需清空 `LOFII_CONTROL_TOKEN`。
-- 发布状态：**尚未 Tag/GitHub Release**（待收尾）；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，告警映射/webhook/Bot 由单元/集成测试覆盖，`alert_events` 暂无 `lofii_*`）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败；smoke 用 `-SkipLocalTaskCheck`）。
+- 发布状态：**已发布**——annotated Tag `v0.8.0` 指向 commit `c5ec851`；GitHub Release 标题 `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`，URL https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0 ，publishedAt `2026-10-27T12:02:45Z`；Release notes 已包含 Lofii 功能/安全边界/生产证据/已知边界。生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，告警映射/webhook/Bot 由单元/集成测试覆盖，`alert_events` 暂无 `lofii_*`）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败；smoke 用 `-SkipLocalTaskCheck`）。
+
+### Release
+
+- **v0.8.0 已发布**：annotated Tag `v0.8.0` → commit `c5ec851`；GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0 ），publishedAt `2026-10-27T12:02:45Z`。
+- **v0.8.1 尚未 Tag/Release**：生产已部署（release `20261027T113055Z`/commit `5405a8d`）并完成只读/API/安全回归验收；Tag/Release 等待 **Windows 每日备份任务重装** 后由 Lead 执行。
 
 ### Pending
 
-- **发布收尾**：尚未创建 Tag `v0.8.0`/GitHub Release（由 Lead 处理后完成）；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 Lofii 告警联动待触发/联调；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤/残余，非失败）；完整 Access smoke 已完成 35/0/0/2（`-SkipLocalTaskCheck`），无需复跑；drill 未记录（如需由 Lead 补跑后回填 `docs/ACCEPTANCE.md`）。
+- 真实 Lofii 告警联动待触发/联调；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0/0.8.1（用户手动步骤/残余，非失败）；完整 Access smoke 已完成 35/0/0/2（`-SkipLocalTaskCheck`），无需复跑；drill 未记录（如需由 Lead 补跑后回填 `docs/ACCEPTANCE.md`）。
 
 ## [v0.7.3] - 2026-10-27（已发布：Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围/QQ 正向验收；schema 保持 v17）
 
