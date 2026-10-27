@@ -11,7 +11,7 @@ import { HttpApi } from '../../src/http/server.ts'
 import type { TaskController } from '../../src/tasks/types.ts'
 import type { ChatSender } from '../../src/minecraft/chat.ts'
 import type { MovementManager } from '../../src/minecraft/movement.ts'
-import { AdminService, parseList, parseTps, parseWhitelist } from '../../src/admin/service.ts'
+import { AdminService, parseList, parseTime, parseTps, parseWhitelist } from '../../src/admin/service.ts'
 import { isReadOnlyCommand, RconClient, RconError } from '../../src/admin/rcon.ts'
 import { EventBus } from '../../src/events/bus.ts'
 import { AlertManager } from '../../src/alerts/manager.ts'
@@ -54,6 +54,7 @@ test('v0.5 admin tps/list/whitelist parsing', () => {
   assert.deepEqual(parseWhitelist('There are 2 whitelisted player(s): Antifield, lofii'), {
     count: 2, names: ['Antifield', 'lofii']
   })
+  assert.deepEqual(parseTime('21:02 (15035 ticks)'), { ticks: 15035, label: '21:02' })
   assert.deepEqual(parseList('§6当前有§c2§6位玩家在线，可容纳最大在线人数为§c6§6位玩家'), {
     count: 2, max: 6, players: []
   })
@@ -63,6 +64,7 @@ test('v0.5 RCON only accepts the three read-only commands', async () => {
   assert.equal(isReadOnlyCommand('tps'), true)
   assert.equal(isReadOnlyCommand('list'), true)
   assert.equal(isReadOnlyCommand('whitelist list'), true)
+  assert.equal(isReadOnlyCommand('time'), true)
   assert.equal(isReadOnlyCommand('op Antifield'), false)
   const client = new RconClient({ host: '127.0.0.1', port: 25575, password: 'secret', timeoutMs: 200 })
   await assert.rejects(() => client.command('stop'), RconError)
@@ -79,6 +81,7 @@ test('v0.5 admin service fills the state snapshot from a read-only source', asyn
       command: async command => {
         if (command === 'tps') return 'TPS from last 1m, 5m, 15m: 20.0, 19.8, 19.5'
         if (command === 'list') return 'There are 1 of a max of 6 players online: lofii'
+        if (command === 'time') return 'world time is 02:14 (20247 ticks)'
         return 'There are 2 whitelisted player(s): Antifield, lofii'
       }
     }

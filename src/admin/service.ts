@@ -65,6 +65,16 @@ export function parseList (text: string): { count: number | null, max: number | 
   return { count, max, players }
 }
 
+export function parseTime (text: string): { ticks: number | null, label: string | null } {
+  const clean = stripColors(text)
+  const ticksMatch = /(\d+)\s*ticks/i.exec(clean)
+  const labelMatch = /(\d{1,2}):(\d{2})/.exec(clean)
+  return {
+    ticks: ticksMatch ? Number(ticksMatch[1]) : null,
+    label: labelMatch ? `${labelMatch[1]}:${labelMatch[2]}` : null
+  }
+}
+
 export function parseWhitelist (text: string): { count: number | null, names: string[] } {
   const clean = stripColors(text)
   const english = /There are\s+(\d+)\s+whitelisted player\(s\):\s*(.*)/i.exec(clean)
@@ -109,6 +119,7 @@ export class AdminService {
       tps: emptyTps(),
       online: { count: null, max: null, players: [] },
       whitelist: { count: null, names: [] },
+      time: { ticks: null, label: null },
       backup: { status: 'unknown' }
     }
     deps.state.setAdmin(this.lastGood)
@@ -146,14 +157,16 @@ export class AdminService {
 
   private async doRefresh (): Promise<void> {
     try {
-      const [tpsText, listText, whitelistText] = await Promise.all([
+      const [tpsText, listText, whitelistText, timeText] = await Promise.all([
         this.client.command('tps'),
         this.client.command('list'),
-        this.client.command('whitelist list')
+        this.client.command('whitelist list'),
+        this.client.command('time')
       ])
       const tps = parseTps(tpsText)
       const online = parseList(listText)
       const whitelist = parseWhitelist(whitelistText)
+      const time = parseTime(timeText)
       this.lastGood = {
         enabled: true,
         rcon: true,
@@ -162,6 +175,7 @@ export class AdminService {
         tps,
         online,
         whitelist,
+        time,
         backup: { status: 'unknown' }
       }
       this.deps.state.setAdmin(this.lastGood)

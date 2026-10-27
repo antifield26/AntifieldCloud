@@ -96,6 +96,7 @@ export interface AdminSnapshot {
   tps: { one: number | null, five: number | null, fifteen: number | null }
   online: { count: number | null, max: number | null, players: string[] }
   whitelist: { count: number | null, names: string[] }
+  time: { ticks: number | null, label: string | null }
   backup: { status: 'unknown' }
 }
 
@@ -260,6 +261,7 @@ export class RuntimeState {
       tps: { one: null, five: null, fifteen: null },
       online: { count: null, max: null, players: [] },
       whitelist: { count: null, names: [] },
+      time: { ticks: null, label: null },
       backup: { status: 'unknown' }
     }
   }
@@ -319,7 +321,8 @@ export class RuntimeState {
       ...admin,
       tps: { ...admin.tps },
       online: { ...admin.online, players: [...admin.online.players] },
-      whitelist: { ...admin.whitelist, names: [...admin.whitelist.names] }
+      whitelist: { ...admin.whitelist, names: [...admin.whitelist.names] },
+      time: { ...admin.time }
     }
   }
 
@@ -375,7 +378,8 @@ export class RuntimeState {
         ...this.admin,
         tps: { ...this.admin.tps },
         online: { ...this.admin.online, players: [...this.admin.online.players] },
-        whitelist: { ...this.admin.whitelist, names: [...this.admin.whitelist.names] }
+        whitelist: { ...this.admin.whitelist, names: [...this.admin.whitelist.names] },
+        time: { ...this.admin.time }
       }
     }
   }
