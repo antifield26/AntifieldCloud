@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、Lofii Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.8.0（**生产部署与只读/API 验收已完成（2026-10-27）；待 Tag/Release 收尾**；生产 release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17，部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`；2 SKIP=加密/异地默认关闭）；lofii-bot v0.6.0 release `20261027T092737Z` 已部署且仅 loopback，`LOFII_ENABLED=true` 已启用），schema **v17**（无迁移），OpenCode **v2.1.4**。v0.8.0 新增 Lofii Minecraft Bot 对接（只读状态、任务/移动/游戏内聊天控制、事件流与告警历史）与 `/minecraft` 合并标签页，回滚即设 `LOFII_ENABLED=false`。生产 UI 视觉确认待用户浏览器复核；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装刷新（smoke 以 `-SkipLocalTaskCheck` 跳过，非失败）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
+> 状态：v0.8.0（**生产部署与只读/API 验收已完成（2026-10-27）；待 Tag/Release 收尾**；生产 release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17，部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`；2 SKIP=加密/异地默认关闭）；lofii-bot v0.6.0 release `20261027T092737Z` 已部署且仅 loopback，`LOFII_ENABLED=true` 已启用），schema **v17**（无迁移），OpenCode **v2.1.4**。v0.8.0 新增 Lofii Minecraft Bot 对接（只读状态、任务/移动/游戏内聊天控制、事件流与告警历史）与 `/minecraft` 合并标签页，回滚即设 `LOFII_ENABLED=false`。生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理）；用户仍可在自己的浏览器复核（非阻塞）。真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装刷新（smoke 以 `-SkipLocalTaskCheck` 跳过，非失败）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
 > 测试基线（v0.8.0 本地，2026-10-27）：`npm test` **566**（565 pass、1 skip）、`npm run test:web` **250**（47 文件）；服务端覆盖率 **Lines 93.06% / Branches 78.67% / Functions 88.70%**、前端 **Lines 55.48% / Branches 49.91% / Functions 48.45%**（`test:coverage`、`test:web:coverage` 门禁通过）；`npm run check`（typecheck + eslint + 服务端/前端测试）、`check-version`（严格 `0.8.0`）、`build`（`index-DHjowEA5.js` 761.09 kB）均通过；Node.js **v26.12.1**。生产部署与只读/API 验收已完成（2026-10-27），待 Tag/Release 收尾。
 > 部署与运维见 [docs/DEPLOY.md](docs/DEPLOY.md)，备份/恢复见 [docs/BACKUP.md](docs/BACKUP.md)，契约见 [docs/API.md](docs/API.md)，路线与验收记录见 [docs/ROADMAP.md](docs/ROADMAP.md) 与 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
 
@@ -190,7 +190,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1，`clockSkew` 状态可见，不自动修正）；Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **v0.8.0 发布收尾待办**：生产部署、只读/API 验收与完整 Access smoke（35/0/0/2，`-SkipLocalTaskCheck`）已完成（2026-10-27）；待 Tag/GitHub Release、用户浏览器 UI 视觉复核、真实 Lofii 告警联动；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败）。
+- **v0.8.0 发布收尾待办**：生产部署、只读/API 验收、完整 Access smoke（35/0/0/2，`-SkipLocalTaskCheck`）与生产 UI 视觉确认（Edge headless 经 SSH 隧道截图）已完成（2026-10-27）；待 Tag/GitHub Release、真实 Lofii 告警联动；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败）。
 - **Lofii 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 Lofii 侧查看（本应用只记录与转发）。
 - **Lofii 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条），应用或 Lofii 重启即丢失；历史接口只返回 Lofii 自己的 samples/alerts，不保存聊天正文。
 - **Lofii 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；Lofii 不可达/数据过期时只展示缓存并降级。

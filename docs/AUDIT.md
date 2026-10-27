@@ -37,7 +37,7 @@
 3. **轮询延迟与单实例**：状态/事件最多滞后一个 `LOFII_POLL_MS`（默认 5s），控制结果最终一致；单进程内存缓存、单 Lofii 上游，不支持多实例/多副本。
 4. **控制面是真实写操作**：启用控制 Token 后可启停任务/移动/游戏内发言（仍受 Lofii 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
 5. **依赖独立服务**：需先部署 lofii-bot v0.6.0+（仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
-6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`），API 探针与 patrol start/stop 已验证）；但真实 Lofii 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）、生产 `/minecraft` UI 视觉确认待用户浏览器复核、**Windows 每日备份任务安装标记仍为旧版本**（需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新，非失败）、**尚未 Tag/GitHub Release**。
+6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`），API 探针与 patrol start/stop 已验证）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；但真实 Lofii 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）、**Windows 每日备份任务安装标记仍为旧版本**（需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新，非失败）、**尚未 Tag/GitHub Release**。
 
 ## 第一轮（v0.2.0，2026-10-19）
 

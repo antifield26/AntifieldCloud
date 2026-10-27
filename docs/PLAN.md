@@ -5,7 +5,7 @@
 ## 当前版本
 
 - **版本**：v0.8.0；schema **v17**（无迁移）；OpenCode **v2.1.4**；Node.js **v26.12.1**。
-- **状态**：**生产部署与只读/API 验收完成（2026-10-27 CST）**；生产应用 **v0.8.0**（release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17，部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`））；Lofii 已启用（lofii-bot v0.6.0 release `/opt/lofii-bot/releases/20261027T092737Z`，`LOFII_ENABLED=true`，读/控制 Token 匹配，`meta.lofii.event_cursor` 已建立）。**尚未 Tag/GitHub Release，待收尾**；生产 UI 视觉确认待用户浏览器复核；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装刷新（非失败）。
+- **状态**：**生产部署与只读/API 验收完成（2026-10-27 CST）**；生产应用 **v0.8.0**（release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17，部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`））；Lofii 已启用（lofii-bot v0.6.0 release `/opt/lofii-bot/releases/20261027T092737Z`，`LOFII_ENABLED=true`，读/控制 Token 匹配，`meta.lofii.event_cursor` 已建立）。**尚未 Tag/GitHub Release，待收尾**；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装刷新（非失败）。
 - **发布**：v0.8.0 **尚未创建 Tag/GitHub Release**；部署与只读/API 验收完成后待 Lead 做发布收尾。
 - **测试基线（2026-10-27 实测）**：`npm run check` 通过；`npm test` **566**（565 pass、1 skip，server=87 + scripts=4 共 91 文件）、`npm run test:web` **250**（47 文件）；服务端覆盖率 **Lines 93.06% / Branches 78.67% / Functions 88.70%**、前端 **Lines 55.48% / Branches 49.91% / Functions 48.45%**（`test:coverage` 与 `test:web:coverage` 门禁通过）；`npm run build` 通过（`index-DHjowEA5.js` 761.09 kB）；`node scripts/check-version.mjs` 严格模式 `0.8.0` 通过。
 
@@ -63,7 +63,7 @@
 3. **告警联动**（完成）：`alerts/service.ts` 的 `recordExternal` 写入 `status='event'`，异步 webhook/Bot 通知，不写 `alert_state`。
 4. **Web**（完成）：`/minecraft` 双标签 + `LofiiPanel`（状态/任务/移动/聊天/事件/历史）、`AlertsCard` `event` 状态与 `lofii_*` 事件标签、`MetaContext` 消费 `lofiiEnabled/lofiiControlEnabled`。
 5. **运维/安全**（完成）：`bootstrap-env.sh`、`deploy/env.example`、`sync-lofii-tokens.sh`、`smoke.ps1` Lofii 检查、systemd 独立服务前置说明。
-6. **文档与验收**（完成）：本文件、README/AGENTS/CHANGELOG/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT；生产部署与只读/API 验收完成，待 Tag/Release 收尾与用户 UI 视觉复核。
+6. **文档与验收**（完成）：本文件、README/AGENTS/CHANGELOG/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT；生产部署、只读/API 验收与 UI 视觉确认完成，待 Tag/Release 收尾。
 
 ## 验收
 
@@ -75,7 +75,7 @@
   3. lofii-bot v0.6.0（release `20261027T092737Z`）`/healthz` 0.6.0/contractVersion=1；读 Token `/events/recent` 200、无 Token/控制 Token 401、`limit=201` 400；Token 同步从 mismatch/mismatch 到 match/match。
   4. `LOFII_ENABLED=true` 重启后 `/healthz` v0.8.0；`meta.lofii.event_cursor` = `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`。
   5. 生产 API 探针：`/api/lofii/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true）、`/api/version` 200（lofii 两字段 true）、`/history?kind=samples&limit=2` 200 count=2；无 CSRF POST 403 `csrf_failed`；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文；临时验收会话已删除（`user_agent='v080-acceptance'` 计数 0）。
-- **生产边界（未做/待收尾，不得写成已完成）**：未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`；映射/webhook/Bot 由单元/集成测试覆盖）；生产 `/minecraft` UI 视觉确认待用户浏览器复核（未做生产截图验收）；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤/残余，非失败）；**尚未 Tag/GitHub Release**。
+- **生产边界（待收尾，不得写成已完成）**：未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`；映射/webhook/Bot 由单元/集成测试覆盖）；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核；截图仅存本机 gitignored，不进入公开仓库）；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤/残余，非失败）；**尚未 Tag/GitHub Release**。
 
 ## 非目标（本版不做）
 
