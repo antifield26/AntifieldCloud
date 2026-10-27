@@ -488,6 +488,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // 关闭状态下允许保留空 Token/默认地址，便于随时开关。
   if (config.lofiiEnabled) {
     validateLoopbackUrl(config.lofiiUrl, 'LOFII_URL')
+    // 基地址只允许根路径：userinfo/query/hash/子路径都可能让 Token 发往意外端点。
+    const lofiiUrl = new URL(config.lofiiUrl)
+    if (lofiiUrl.username || lofiiUrl.password) {
+      throw new Error('LOFII_URL 不允许包含用户名/密码')
+    }
+    if ((lofiiUrl.pathname !== '' && lofiiUrl.pathname !== '/') || lofiiUrl.search || lofiiUrl.hash) {
+      throw new Error('LOFII_URL 只允许 scheme://host[:port]，不允许路径/查询/片段')
+    }
     if (!config.lofiiReadToken) {
       throw new Error('LOFII_ENABLED=true 时必须配置 LOFII_READ_TOKEN')
     }

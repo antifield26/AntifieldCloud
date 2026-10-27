@@ -8,6 +8,7 @@ import type {
   LofiiEventType,
   LofiiHistoryAlert,
   LofiiMoveAction,
+  LofiiQueuedTask,
   LofiiSnapshot,
   LofiiStatus,
   LofiiTask,
@@ -72,6 +73,13 @@ export const LOFII_EVENT_TYPE_LABELS: Record<string, string> = {
   alert: '告警',
 }
 
+/** 只读属性查表：避免 `__proto__`/`constructor` 等键命中原型链。 */
+function ownLabel(map: object, key: string): string | null {
+  if (!Object.prototype.hasOwnProperty.call(map, key)) return null
+  const value = (map as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : null
+}
+
 /** 事件流筛选：全部 / 聊天 / 任务 / 状态 / 移动 / 告警。 */
 export const LOFII_EVENT_FILTERS: readonly { id: string; label: string }[] = [
   { id: 'all', label: '全部' },
@@ -133,16 +141,19 @@ const LOFII_ERROR_LABELS: Record<string, string> = {
   lofii_no_active_task: 'Lofii 没有进行中的任务',
   lofii_no_pending_task: 'Lofii 没有待恢复任务',
   lofii_task_disabled: 'Lofii 任务功能已关闭',
+  lofii_history_disabled: 'Lofii 历史功能已关闭',
   lofii_task_active: 'Lofii 任务进行中',
   lofii_target_not_online: '目标玩家不在线',
   lofii_not_connected: 'Lofii 未连接 Minecraft',
   lofii_invalid_request: 'Lofii 请求参数不合法',
+  lofii_cursor_failed: 'Lofii 告警游标写入失败',
+  lofii_not_found: 'Lofii 接口不可用',
 }
 
 /** 把状态快照里的稳定错误码转成中文文案（未知码原样展示）。 */
 export function lofiiErrorLabel(code: string | null | undefined): string {
   if (!code) return '未知错误'
-  return LOFII_ERROR_LABELS[code] ?? code
+  return ownLabel(LOFII_ERROR_LABELS, code) ?? code
 }
 
 export const LOFII_SEVERITY_LABELS: Record<string, string> = {
@@ -193,32 +204,32 @@ const TASK_PROGRESS_LABELS: Record<LofiiTaskName, readonly { key: keyof LofiiTas
 
 export function lofiiTaskNameLabel(name: string | null | undefined): string {
   if (!name) return '—'
-  return LOFII_TASK_NAME_LABELS[name as LofiiTaskName] ?? name
+  return ownLabel(LOFII_TASK_NAME_LABELS, name) ?? name
 }
 
 export function lofiiTaskStateLabel(state: string | null | undefined): string {
   if (!state) return '—'
-  return LOFII_TASK_STATE_LABELS[state as LofiiTaskState] ?? state
+  return ownLabel(LOFII_TASK_STATE_LABELS, state) ?? state
 }
 
 export function lofiiBotStateLabel(state: string | null | undefined): string {
   if (!state) return '—'
-  return LOFII_BOT_STATE_LABELS[state as LofiiBotState] ?? state
+  return ownLabel(LOFII_BOT_STATE_LABELS, state) ?? state
 }
 
 export function lofiiEventTypeLabel(type: LofiiEventType | string): string {
-  return LOFII_EVENT_TYPE_LABELS[type] ?? (type || '其他')
+  return ownLabel(LOFII_EVENT_TYPE_LABELS, type) ?? (type || '其他')
 }
 
 export function lofiiAlertTypeLabel(type: string | null | undefined): string {
   if (!type) return '—'
   const normalized = type.startsWith('lofii_') ? type.slice('lofii_'.length) : type
-  return LOFII_ALERT_TYPE_LABELS[normalized] ?? type
+  return ownLabel(LOFII_ALERT_TYPE_LABELS, normalized) ?? type
 }
 
 export function lofiiSeverityLabel(severity: string | null | undefined): string {
   if (!severity) return '—'
-  return LOFII_SEVERITY_LABELS[severity.toLowerCase()] ?? severity
+  return ownLabel(LOFII_SEVERITY_LABELS, severity.toLowerCase()) ?? severity
 }
 
 /* ---------- 事件 data 安全读取 ---------- */
@@ -254,7 +265,7 @@ function asLines(value: unknown): string | null {
 
 function actionLabel(value: string | null): string {
   if (!value) return '状态更新'
-  return TASK_ACTION_LABELS[value] ?? value
+  return ownLabel(TASK_ACTION_LABELS, value) ?? value
 }
 
 /** 事件渲染视图：聊天正文与结构化摘要互斥，均为纯文本。 */
@@ -304,9 +315,9 @@ function describeStructuredEvent(type: string, data: Record<string, unknown> | n
     const action = asText(data?.action)
     const target = asText(data?.target)
     const status = asText(data?.status)
-    const parts = [`移动：${action ? (LOFII_MOVE_ACTION_LABELS[action as LofiiMoveAction] ?? action) : '未知动作'}`]
+    const parts = [`移动：${action ? (ownLabel(LOFII_MOVE_ACTION_LABELS, action) ?? action) : '未知动作'}`]
     if (target) parts.push(`目标 ${target}`)
-    if (status) parts.push(MOVEMENT_STATUS_LABELS[status] ?? status)
+    if (status) parts.push(ownLabel(MOVEMENT_STATUS_LABELS, status) ?? status)
     const error = asText(data?.error)
     if (error) parts.push(`错误：${error}`)
     return parts.join(' · ')
@@ -335,6 +346,192 @@ export function describeLofiiEvent(event: LofiiEvent): LofiiEventView {
   return { typeLabel, chatText: null, summary: describeStructuredEvent(event.type, data) }
 }
 
+/* ---------- 状态快照容错 ---------- */
+
+/** 空任务进度：快照缺段时用于稳定渲染，不伪造实际进度。 */
+const EMPTY_TASK_PROGRESS: LofiiTaskProgress = {
+  fishCaught: 0,
+  wheatHarvested: 0,
+  planted: 0,
+  deposited: 0,
+  treesChopped: 0,
+  logsChopped: 0,
+  saplingsPlanted: 0,
+  mobsKilled: 0,
+  oresMined: 0,
+  coalMined: 0,
+  ironMined: 0,
+  copperMined: 0,
+  forestTreesChopped: 0,
+  naturalLogsChopped: 0,
+  naturalSaplingsPlanted: 0,
+  sleepVotes: 0,
+  nightSkipped: 0,
+  patrolWaypoints: 0,
+  patrolDistance: 0,
+}
+
+/**
+ * 把上游 `/status` 快照规范化为可渲染结构：文档承诺“前端容忍缺失字段”，
+ * 因此嵌套段缺失/类型漂移时填入安全默认值，避免整页 TypeError。
+ */
+export function safeLofiiStatus(value: unknown): LofiiStatus | null {
+  const raw = asRecord(value)
+  if (!raw) return null
+  const minecraft = asRecord(raw.minecraft) ?? {}
+  const player = asRecord(raw.player) ?? {}
+  const server = asRecord(raw.server) ?? {}
+  const presence = asRecord(raw.presence) ?? {}
+  const ai = asRecord(raw.ai) ?? {}
+  const memory = asRecord(raw.memory) ?? {}
+  const task = asRecord(raw.task) ?? {}
+  const admin = asRecord(raw.admin) ?? {}
+  const position = asRecord(player.position)
+  const lastDisconnect = asRecord(minecraft.lastDisconnect)
+  const tps = asRecord(admin.tps) ?? {}
+  const online = asRecord(admin.online) ?? {}
+  const whitelist = asRecord(admin.whitelist) ?? {}
+  const time = asRecord(admin.time) ?? {}
+  const backup = asRecord(admin.backup) ?? {}
+  const progress = asRecord(task.progress)
+  const pendingResume = asRecord(task.pendingResume)
+
+  const readProgress = (source: Record<string, unknown> | null): LofiiTaskProgress => {
+    const result = { ...EMPTY_TASK_PROGRESS }
+    for (const key of Object.keys(result) as (keyof LofiiTaskProgress)[]) {
+      const count = asCount(source?.[key])
+      if (count !== null) result[key] = count
+    }
+    return result
+  }
+
+  return {
+    version: asText(raw.version) ?? '',
+    uptimeSec: asCount(raw.uptimeSec) ?? 0,
+    state: (asText(raw.state) ?? 'idle') as LofiiBotState,
+    minecraft: {
+      connected: minecraft.connected === true,
+      username: asText(minecraft.username) ?? '',
+      host: asText(minecraft.host) ?? '',
+      port: asCount(minecraft.port) ?? 0,
+      version: asText(minecraft.version) ?? '',
+      reconnects: asCount(minecraft.reconnects) ?? 0,
+      lastDisconnect: lastDisconnect
+        ? {
+            at: asText(lastDisconnect.at) ?? '',
+            reason: asText(lastDisconnect.reason) ?? '',
+          }
+        : null,
+    },
+    player: {
+      dimension: asText(player.dimension),
+      position:
+        position && asCount(position.x) !== null && asCount(position.y) !== null && asCount(position.z) !== null
+          ? { x: asCount(position.x)!, y: asCount(position.y)!, z: asCount(position.z)! }
+          : null,
+      health: asCount(player.health),
+      food: asCount(player.food),
+    },
+    server: {
+      reachable: server.reachable === true,
+      online: asCount(server.online) ?? 0,
+      max: asCount(server.max) ?? 0,
+      versionName: asText(server.versionName),
+      motd: asText(server.motd),
+      latencyMs: asCount(server.latencyMs),
+      lastPingAt: asText(server.lastPingAt),
+    },
+    presence: {
+      enabled: presence.enabled === true,
+      pollMs: asCount(presence.pollMs) ?? 0,
+      graceMs: asCount(presence.graceMs) ?? 0,
+      checkMs: asCount(presence.checkMs) ?? 0,
+      otherPlayers: asCount(presence.otherPlayers) ?? 0,
+      lastDecision: asText(presence.lastDecision) ?? '',
+    },
+    ai: {
+      enabled: ai.enabled === true,
+      provider: asText(ai.provider) ?? '',
+      model: asText(ai.model) ?? '',
+      inFlight: asCount(ai.inFlight) ?? 0,
+      queued: asCount(ai.queued) ?? 0,
+      failures: asCount(ai.failures) ?? 0,
+      lastLatencyMs: asCount(ai.lastLatencyMs),
+      lastError: asText(ai.lastError),
+    },
+    memory: {
+      players: asCount(memory.players) ?? 0,
+      turns: asCount(memory.turns) ?? 0,
+    },
+    task: {
+      enabled: task.enabled === true,
+      active: task.active === true,
+      name: asText(task.name) as LofiiTaskName | null,
+      state: (asText(task.state) ?? 'idle') as LofiiTaskState,
+      startedAt: asText(task.startedAt),
+      elapsedSec: asCount(task.elapsedSec) ?? 0,
+      progress: readProgress(progress),
+      failures: asCount(task.failures) ?? 0,
+      lastError: asText(task.lastError),
+      pendingResume:
+        pendingResume && asText(pendingResume.taskId)
+          ? {
+              taskId: asText(pendingResume.taskId)!,
+              name: (asText(pendingResume.name) ?? 'idle') as LofiiTaskName,
+              startedAt: asText(pendingResume.startedAt) ?? '',
+              elapsedSec: asCount(pendingResume.elapsedSec) ?? 0,
+              progress: readProgress(asRecord(pendingResume.progress)),
+              expiresAt: asText(pendingResume.expiresAt) ?? '',
+            }
+          : null,
+      queue: Array.isArray(task.queue)
+        ? task.queue
+            .map((item): LofiiQueuedTask | null => {
+              const queueItem = asRecord(item)
+              const taskId = asText(queueItem?.taskId)
+              if (!queueItem || !taskId) return null
+              return {
+                taskId,
+                name: (asText(queueItem.name) ?? 'idle') as LofiiTaskName,
+                requestedBy: asText(queueItem.requestedBy) ?? '',
+                requestedAt: asText(queueItem.requestedAt) ?? '',
+              }
+            })
+            .filter((item): item is LofiiQueuedTask => item !== null)
+        : [],
+    },
+    admin: {
+      enabled: admin.enabled === true,
+      rcon: admin.rcon === true,
+      updatedAt: asText(admin.updatedAt),
+      lastError: asText(admin.lastError),
+      tps: {
+        one: asCount(tps.one),
+        five: asCount(tps.five),
+        fifteen: asCount(tps.fifteen),
+      },
+      online: {
+        count: asCount(online.count),
+        max: asCount(online.max),
+        players: Array.isArray(online.players)
+          ? online.players.filter((name): name is string => typeof name === 'string')
+          : [],
+      },
+      whitelist: {
+        count: asCount(whitelist.count),
+        names: Array.isArray(whitelist.names)
+          ? whitelist.names.filter((name): name is string => typeof name === 'string')
+          : [],
+      },
+      time: {
+        ticks: asCount(time.ticks),
+        label: asText(time.label),
+      },
+      backup: { status: asText(backup.status) ?? 'unknown' },
+    },
+  }
+}
+
 /* ---------- 任务进度 ---------- */
 
 export interface LofiiProgressRow {
@@ -345,7 +542,10 @@ export interface LofiiProgressRow {
 /** 按任务类型提取非零进度计数；全部为 0 时返回空数组（UI 显示暂无进度）。 */
 export function lofiiTaskProgressRows(task: LofiiTask | null | undefined): LofiiProgressRow[] {
   if (!task || !task.progress) return []
-  const fields = task.name ? TASK_PROGRESS_LABELS[task.name] : null
+  const fields =
+    task.name && Object.prototype.hasOwnProperty.call(TASK_PROGRESS_LABELS, task.name)
+      ? TASK_PROGRESS_LABELS[task.name]
+      : null
   if (!fields) return []
   const rows: LofiiProgressRow[] = []
   for (const field of fields) {
@@ -394,7 +594,8 @@ export function lofiiOnlinePlayers(status: LofiiStatus | null | undefined): stri
 export function lofiiEventsSupported(snapshot: LofiiSnapshot | null | undefined): boolean {
   if (!snapshot) return false
   if (typeof snapshot.eventsSupported === 'boolean') return snapshot.eventsSupported
-  return snapshot.contractVersion !== null || snapshot.events.length > 0
+  // 旧服务端可能完全没有这些字段：undefined 不能当作“有契约版本”。
+  return typeof snapshot.contractVersion === 'number' || (Array.isArray(snapshot.events) && snapshot.events.length > 0)
 }
 
 /** 历史告警行的展示文案（纯文本，不含 details 任意字段）。 */

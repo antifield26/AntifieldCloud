@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v0.8.0）
+# 部署手册（Raspberry Pi 5 / Debian 13，v0.8.1）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -15,7 +15,8 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v17**：`audit_write_failures` 保存审计失败诊断；`bot_group_roles` 保存群聊共享角色卡；`bot_memory_items`/`bot_memory_state` 保存结构化记忆；`bot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
 - 当前生产：**v0.8.0**（release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`；2 SKIP=备份整包加密/异地副本默认关闭）；Lofii 已启用：lofii-bot v0.6.0 release `20261027T092737Z`、`LOFII_ENABLED=true`、`meta.lofii.event_cursor` 已建立；生产 API 探针 status/version/history、CSRF 403、patrol start/stop 与审计已验证；生产 UI 视觉确认已完成：Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染，临时会话已清理）。**尚未 Tag/GitHub Release，待收尾**；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（非失败）。上一生产为 v0.7.3（release `20261027T060134Z`/commit `aedc3c7`，Tag + GitHub Release 已发布）。schema 保持 v17（无迁移），OpenCode v2.1.4 不变；备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
-- Lofii 默认关闭（v0.8.0，**生产已启用**）：`LOFII_ENABLED=false` 且无 Token 时应用正常运行，`/api/lofii/*` 返回 503、页面不显示 Lofii 入口；生产当前 `LOFII_ENABLED=true`（读/控制 Token 均配置、仅 loopback），启用/回滚顺序见 §3.8，Token 同步见 §3.8，smoke 见 §6。
+- **本地 v0.8.1（安全补丁）已完成实现与门禁（2026-10-27），尚未部署生产、尚未 Tag/Release**：`npm run check` 通过、`npm test` 572、`test:web` 256、build 通过；修复 `/say` 分块命令注入等。**部署顺序：先把 lofii-bot 升级到 v0.6.1（最低 v0.6.0）并同步 Token，再部署 AntifieldCloud 0.8.1**；部署后按 §3.8 新增的 v0.8.1 验证项检查 `/say` 只读 503、任意 `/` 400、C0 400 与 smoke（`-ExpectedLofiiVersion 0.6.1`）。
+- Lofii 默认关闭（v0.8.0 引入，v0.8.1 加固；**生产已启用**）：`LOFII_ENABLED=false` 且无 Token 时应用正常运行，`/api/lofii/*` 返回 503、页面不显示 Lofii 入口；生产当前 `LOFII_ENABLED=true`（读/控制 Token 均配置、仅 loopback），启用/回滚顺序见 §3.8，Token 同步见 §3.8，smoke 见 §6。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.0，Cloudflare Access bypass 见 §5.2。
 
@@ -135,9 +136,9 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
   - `BOT_AI_VISION_ENABLED=true`：QQ 入站图片理解总开关。开启需 OpenCode 支持 prompt files 与模型支持 image 输入（生产已完成只读验证：data URL + `opencode-go/deepseek-v4.1-flash`）；
     关闭后图片降级为纯文字回答。当前不纳管：`BOT_DISCORD_GATEWAY_ENABLED`、`BOT_PUBLISH_MAX_MEDIA_BYTES`、`BOT_PUBLISH_MAX_MEDIA_FILES`、`BOT_PUBLISH_MAX_MEDIA_TOTAL_BYTES`（`bootstrap-env.sh` 不再纳管）。
   - `BOT_AI_IMAGE_MAX_BYTES=10485760`（1–20 MiB）：单张入站图片上限；图片只放行 image mime、QQ CDN 固定域名后缀、不落盘，失败降级为纯文字。
-  - `LOFII_ENABLED=false`：Lofii Minecraft Bot 对接总开关（v0.8.0，**默认关闭**）；启用时必须配置 `LOFII_READ_TOKEN`，且 `LOFII_URL` 为 loopback + http(s)，否则拒绝启动。
+  - `LOFII_ENABLED=false`：Lofii Minecraft Bot 对接总开关（v0.8.0 引入，v0.8.1 加固，**默认关闭**）；启用时必须配置 `LOFII_READ_TOKEN`，且 `LOFII_URL` 为 loopback + http(s) 根地址（拒绝 userinfo/路径/查询/片段），否则拒绝启动。
   - `LOFII_URL=http://127.0.0.1:3010`：上游仅 loopback（去尾斜杠）；lofii-bot 是独立服务，不对外、不进入 Cloudflare/nftables。
-  - `LOFII_READ_TOKEN=`、`LOFII_CONTROL_TOKEN=`：由 root 执行 `scripts/sync-lofii-tokens.sh` 从 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步（64 位 hex）；**不要手工复制 lofii 的 RCON/OpenCode 密码**。控制 Token 为空 = 只读（控制接口 503，`/say` 仍可用）。
+  - `LOFII_READ_TOKEN=`、`LOFII_CONTROL_TOKEN=`：由 root 执行 `scripts/sync-lofii-tokens.sh` 从 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步（64 位 hex）；**不要手工复制 lofii 的 RCON/OpenCode 密码**。控制 Token 为空 = 只读（控制接口与 `/say` 均 503 `lofii_control_disabled`）。
   - `LOFII_TIMEOUT_MS=2500`（500–10000）：单次上游请求超时（毫秒）。
   - `LOFII_POLL_MS=5000`（2000–60000）：`/status` + `/events/recent` 轮询间隔（毫秒）。
   - `LOFII_ALERTS_ENABLED=true`：是否把上游 `alert` 写成应用告警事件（`status='event'`）；关闭时仍推进游标但不写告警。
@@ -171,16 +172,16 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 ### 3.0 应用部署步骤（当前版本；schema v17）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-27 本地实测：`npm test` **566**（565 pass、1 skip）、`test:web` **250**（47 文件）、服务端覆盖率 **93.06/78.67/88.70**、前端 **55.48/49.91/48.45**、check-version 期望 `0.8.0`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-27 v0.8.1 本地实测：`npm test` **572**（571 pass、1 skip）、`test:web` **256**（48 文件）、服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**、check-version 期望 `0.8.1`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.1.4 升级（先于应用部署，按 §3.2）**：备份 v2.1.3 二进制/data/env/unit/MCP 配置 → `opencode upgrade 2.1.4` → 14 项矩阵验收 → 失败回滚；
    升级与回滚矩阵结果记为发布门禁证据。
 4. **部署**：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本执行预检/构建/上传 tar SHA-256 校验/`npm ci --omit=dev`/迁移前 DB 快照/
-   `APP_VERSION=0.8.0` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
-   **4.1 Lofii（可选，默认关闭）**：如需启用，先确认 lofii-bot v0.6.0 已运行且仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），按 §3.8 同步 Token、设 `LOFII_ENABLED=true` 并重启，再验证 `/api/lofii/status`。
-5. **验证**：预期 `/healthz` = `{"ok":true,"version":"0.8.0","schemaVersion":17,...}`；smoke 使用
-   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0`
+   `APP_VERSION=0.8.1` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
+   **4.1 Lofii（可选，默认关闭）**：如需启用，先确认 lofii-bot v0.6.1（最低 v0.6.0）已运行且仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），按 §3.8 同步 Token、设 `LOFII_ENABLED=true` 并重启，再验证 `/api/lofii/status`。**v0.8.1 部署顺序**：先升级 lofii-bot 到 v0.6.1 并同步 Token，再部署应用 0.8.1（旧版 v0.6.0 仍兼容，但缺逐行 `/` 中和的纵深防御）。
+5. **验证**：预期 `/healthz` = `{"ok":true,"version":"0.8.1","schemaVersion":17,...}`；smoke 使用
+   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1`
    （未启用 Lofii 时追加 `-SkipLofii`；带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/Lofii 服务与版本/本地任务安装标记；
    缺状态文件返回 `SKIP:` 不计入 PASS。
 6. **加密/异地（默认关闭，按需）**：按 §9.10 启用备份整包加密（先私钥解密演练）、§9.11 启用异地副本；默认不启用时状态卡显示“未启用/未配置”。
@@ -264,7 +265,7 @@ sudo install -m 0755 /usr/local/lib/nodejs/node-v26.12.1-linux-arm64/bin/node /u
 # 3) 重启并验证；npm 仍为 nvm 的 12.2.0，不改其 symlink
 sudo systemctl restart antifieldcloud
 curl -fsS http://127.0.0.1:3000/healthz
-# 带 Access token 的完整 smoke：-ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0（未启用 Lofii 用 -SkipLofii）
+# 带 Access token 的完整 smoke：-ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1（最低兼容 0.6.0；未启用 Lofii 用 -SkipLofii）
 ```
 
 验证记录（2026-10-23）：`opencode --version=v2.1.3`；Basic `GET/POST/DELETE /api/session` 200/200/204；带 deny-all `permissions` 创建会话 200；生产模型 `opencode-go/deepseek-v4.1-flash` prompt 200、wait 204、assistant content `[{type:"text",text:"OK"}]`、finish=stop；应用 `/healthz` 200、公开 ai 未登录 401；本地 `opencode-shim`/`opencode-proxy` 19 用例通过。
@@ -380,17 +381,17 @@ sudo systemctl restart antifieldcloud
 > 模型实际 `read` 了 `role.md`/`memory.md`；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档段。
 > 未在生产执行破坏性 `/forget` 与群聊第二成员/多轮负路径，二者由自动化测试覆盖，保留为后续可选复验。
 
-### 3.8 Lofii Bot 对接（v0.8.0，默认关闭）
+### 3.8 Lofii Bot 对接（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-> 前置：lofii-bot **v0.6.0** 已作为独立服务部署（生产 release `/opt/lofii-bot/releases/20261027T092737Z`），仅监听 `127.0.0.1:3010`，`/healthz` 返回 `version=0.6.0`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 lofii-bot 配置/密钥，也不读取其 RCON/OpenCode 密码。**v0.8.0 生产部署已于 2026-10-27 按本节执行**（见文末验证记录）。
+> 前置：lofii-bot **v0.6.1（最低 v0.6.0）** 作为独立服务部署，仅监听 `127.0.0.1:3010`，`/healthz` 返回对应 `version`、`contractVersion=1` 且提供 `/events/recent`；应用不修改 lofii-bot 配置/密钥，也不读取其 RCON/OpenCode 密码。**v0.8.0 生产部署已于 2026-10-27 按本节执行**（生产 lofii-bot 当前为 v0.6.0，升级到 v0.6.1 后再部署应用 v0.8.1）。
 
 1. **前置只读检查**（root；不需要 Token）：
    ```bash
    systemctl is-active lofii-bot                 # active
-   curl -fsS http://127.0.0.1:3010/healthz       # {"status":"ok","version":"0.6.0","contractVersion":1,...}
+   curl -fsS http://127.0.0.1:3010/healthz       # {"status":"ok","version":"0.6.1","contractVersion":1,...}
    curl -sS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3010/status   # 无 Token 应为 401（确认仅 loopback 可达）
    ```
-   旧版 lofii-bot 无 `/events/recent` 时应用仍可用 `/status`，但事件流显示“需升级 v0.6.0”。
+   旧版 lofii-bot 无 `/events/recent` 时应用仍可用 `/status`，但事件流显示“需升级 v0.6.0”；v0.8.1 应用兼容 v0.6.0，但推荐升级到 v0.6.1 以获得逐行 `/` 中和的纵深防御。
 
 2. **同步 Token**（root；只读取 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，校验 64 位 hex）：
    ```bash
@@ -399,7 +400,7 @@ sudo systemctl restart antifieldcloud
    sudo bash scripts/sync-lofii-tokens.sh
    sudo bash scripts/sync-lofii-tokens.sh --check   # read=match control=match
    ```
-   脚本写前自行备份 env、原子 install、保持原属主与 0640，不回显 Token；**不修改** `LOFII_ENABLED`。控制 Token 为空时同步后仍为只读模式。
+   脚本写前自行备份 env、同目录临时文件 + `mv` 原子替换、保持原属主与 0640，不回显 Token；**不修改** `LOFII_ENABLED`。控制 Token 为空时同步后仍为只读模式（`/say` 也随之 503）。
 
 3. **启用**（先确认 `LOFII_ENABLED=false` 部署已正常）：
    ```bash
@@ -417,23 +418,36 @@ sudo systemctl restart antifieldcloud
    ```
    登录后 `GET /api/lofii/status` 期望 `enabled=true/reachable=true/eventsSupported=true/controlEnabled` 与 Token 配置一致；`/minecraft?tab=lofii` 可打开面板；首次成功轮询后 `meta.lofii.event_cursor` 建立基线（`sqlite3 /var/lib/antifieldcloud/db.sqlite "SELECT value FROM meta WHERE key='lofii.event_cursor';"`），不重放旧告警。
 
-5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0`（校验 `systemctl is-active lofii-bot`、`/healthz.version`、`contractVersion=1`）；未启用 Lofii 时用 `-SkipLofii`，不得把跳过项计为 PASS。
+5. **smoke**：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1`（校验 `systemctl is-active lofii-bot`、`/healthz.version`、`contractVersion=1`；兼容 v0.6.0 时可把期望版本改为 0.6.0）；未启用 Lofii 时用 `-SkipLofii`，不得把跳过项计为 PASS。
 
 6. **启用模式/回滚**：
-   - **只读模式**：清空 `LOFII_CONTROL_TOKEN`（`LOFII_READ_TOKEN` 保留）并重启；`lofiiControlEnabled=false`，面板禁用任务/移动/聊天但 `/status`、`/history`、`/say`（读 Token）仍可用。
+   - **只读模式**：清空 `LOFII_CONTROL_TOKEN`（`LOFII_READ_TOKEN` 保留）并重启；`lofiiControlEnabled=false`，面板禁用任务/移动/聊天，`/status`、`/history` 可读，`/say` 返回 `503 lofii_control_disabled`（v0.8.1 起聊天属于写操作）。
    - **完全禁用**：`LOFII_ENABLED=false` 并重启；`/api/lofii/*` 除 `/status` 空壳外返回 503，页面不显示 Lofii 标签；`meta.lofii.event_cursor` 可保留（再次启用时续接）或删除以重建基线；无 schema/DB 变更。
    - **应用版本回滚**：切回上一 release + 还原 `APP_VERSION`（旧版忽略 `LOFII_*` env 与 `meta.lofii.event_cursor`）；不需要恢复 DB 快照。
    - **Token 轮换**：在 lofii-bot 侧轮换后重新执行 `sync-lofii-tokens.sh`（先 `--check`），再重启应用；轮换期间 Lofii 请求会 401/503，属预期。
 
-7. **故障排查**：
+7. **v0.8.1 安全补丁验证（部署后必须）**：
+   ```bash
+   curl -fsS http://127.0.0.1:3000/healthz   # version=0.8.1 / schemaVersion=17
+   # 登录会话 + CSRF 后（或面板人工验证）：
+   #  - 只读模式（清空控制 Token）: POST /api/lofii/say → 503 lofii_control_disabled
+   #  - 任意位置 '/': POST /api/lofii/say {"message":"hello /op x"} → 400 message_must_not_start_with_slash
+   #  - C0 控制字符: → 400 invalid_request
+   #  - 正常聊天: 200 并出现成功 Toast；审计只有 lofii.say chars
+   ```
+   同时确认 `/api/lofii/status` 的 `eventsSupported`/`contractVersion` 正常、事件流无 `vundefined`、`/history` 形状异常时显示错误而非永久骨架；smoke 期望版本改为 0.8.1/0.6.1（或 0.6.0）。
+
+8. **故障排查**：
 
    | 现象 | 处理 |
    |---|---|
    | `/api/lofii/status` 返回 `lofii_disabled` | `LOFII_ENABLED=false`；按步骤 3 启用并重启 |
    | `lofii_unavailable` / `reachable=false` | lofii-bot 未运行/端口不对/网络被本机策略阻断；`systemctl status lofii-bot`、核对 `LOFII_URL` 与 §1 的 loopback 约束 |
    | `lofii_auth_failed` | 读/控制 Token 与 lofii-bot 不一致；重跑 `sync-lofii-tokens.sh --check` 后同步并重启 |
-   | `lofii_control_disabled` | 未配置 `LOFII_CONTROL_TOKEN`（只读模式）；按需同步控制 Token |
+   | `lofii_control_disabled` | 未配置 `LOFII_CONTROL_TOKEN`（只读模式）；按需同步控制 Token。v0.8.1 起 `/say` 同样返回该码（聊天属于写操作） |
    | `eventsSupported=false` | lofii-bot < v0.6.0 或无 `/events/recent`；升级 lofii-bot 后重启应用 |
+   | `/say` 返回 `message_must_not_start_with_slash` | v0.8.1 起任意位置 ASCII `/` 均拒绝（含上游切行后的命令）；去掉 `/` 或改全角 `／` |
+   | `/say` 返回 `invalid_request` 且消息含控制字符 | 移除 C0/DEL 控制字符后重试 |
    | `stale=true` | 连续 3 个轮询周期无成功；检查 lofii-bot 与日志；恢复后自动清除 |
    | 面板“控制未启用”但 Token 已配置 | 确认 `LOFII_ENABLED=true`、Token 非空且已重启；`/api/version.lofiiControlEnabled` 应为 true |
    | 告警历史出现 `status='event'` | 预期：Lofii alert 只记录、不参与活跃/恢复；`LOFII_ALERTS_ENABLED=false` 可停止写入 |
@@ -555,7 +569,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 6. **service token（供 smoke/CI）**：Zero Trust → Access → Service Auth → Create Service Token，绑定到主应用 `Service Auth` 策略；
    把 Client ID/Secret 通过命令行传给 smoke：
    ```powershell
-   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 `
+   .\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1 `
      -AccessClientId "<id>" -AccessClientSecret "<secret>"
    ```
    两者必须同时提供，否则脚本直接报错；凭据只用于请求头，不打印/不写仓库。建议专用、最小范围、定期轮换；
@@ -574,7 +588,7 @@ curl -H 'Host: app.example.com' -fsS http://127.0.0.1:3000/healthz
 
 ```powershell
 .\scripts\smoke.ps1 -PiHost 192.0.2.10 -AppUrl https://app.<domain> -AiUrl https://ai.<domain> `
-  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0
+  -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedVersion 0.8.1 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.1
 ```
 
 未启用 Lofii 时追加 `-SkipLofii`（跳过 `systemctl is-active lofii-bot` 与 `/healthz.contractVersion=1` 检查），不得把跳过项计为 PASS。
@@ -594,7 +608,9 @@ env 键漂移（相对 bootstrap MANAGED_KEYS）、nftables 可选 SSH 来源断
 异地副本状态（ok/超期/`plaintextSkipped>0`）、本地备份旁文件与归档 SHA 实测（含 `.age` 必须带 `.meta.json`）、Windows 备份任务安装标记（版本 + 脚本 SHA）。
 `-SkipOpenCode/-SkipMcp/-SkipFail2ban/-SkipUnitDrift/-SkipEnvDrift/-SkipEncryption/-SkipOffsite/-SkipLocalTaskCheck/-SkipLofii` 可按环境跳过。
 
-> **v0.8.0 生产 smoke（2026-10-27）**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭）；**完整公网 Access smoke 35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（命令 `smoke.ps1 ... -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；域名/主机/备份目录按实际替换，凭据不打印），含 Lofii Bot active/version 0.6.0/contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。**`-SkipLocalTaskCheck` 原因**：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0；记为**用户手动步骤/残余，非失败**（未声称任务已刷新）。
+> **v0.8.0 生产 smoke（2026-10-27，历史）**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭）；**完整公网 Access smoke 35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（命令 `smoke.ps1 ... -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；域名/主机/备份目录按实际替换，凭据不打印），含 Lofii Bot active/version 0.6.0/contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。**`-SkipLocalTaskCheck` 原因**：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到当前版本（v0.8.1 部署后应为 0.8.1）；记为**用户手动步骤/残余，非失败**（未声称任务已刷新）。
+>
+> **v0.8.1（本地，2026-10-27）**：`npm run check` 通过、`npm test` 572、`test:web` 256、build 通过；生产仍为 v0.8.0，**v0.8.1 尚未部署/尚未 Tag/Release**；部署后按 §3.8 第 7 步验证 `/say` 新语义并回填本手册与 ACCEPTANCE。
 
 Windows 备份计划任务（**管理员 PowerShell**；安装脚本会收紧 ACL 并做 Pi 可达性预检）：
 
@@ -858,7 +874,7 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
    一次图片识别成功与一次降级；Chat 至少一条真实模型回复；`/help` 非管理员/管理员差异与 `/ask` 被拒/管理员回帮助不调用 AI；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
    记录 `bot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`；
    未配置 AI/图片时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
-   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。当前生产 v0.8.0/schema17（v0.7.3 历史证据见 `docs/ACCEPTANCE.md`）；v0.8.0 smoke 与 Lofii 验证见 §6/§3.8，v0.7.3 文档模式验收记录见 §3.7。
+   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。当前生产 v0.8.0/schema17；v0.8.1 本地完成、待部署（v0.7.3 历史证据见 `docs/ACCEPTANCE.md`）；v0.8.0 smoke 与 Lofii 验证见 §6/§3.8，v0.7.3 文档模式验收记录见 §3.7。
 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
 
 ### 9.9 Bot 队列/发布故障排查
@@ -1016,7 +1032,8 @@ curl -fsS http://127.0.0.1:3000/healthz
   回滚窗口内保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`，确认稳定后再重新启用（`BOT_AI_VISION_ENABLED` 可保持默认 true）。
 - v0.7.3 文档模式回滚：`BOT_AI_CONTEXT_READ_ENABLED=false` 并重启即可；上下文目录为派生数据，可直接删除；
   无需恢复 schema/DB/OpenCode 配置；回滚到 v0.7.2 时新 env 键被忽略，unit 多出的 `ReadWritePaths` 无害（目录可保留）。
-- v0.8.0 Lofii 回滚：设 `LOFII_ENABLED=false`（可选清空 `LOFII_READ_TOKEN`/`LOFII_CONTROL_TOKEN`）并重启；`/api/lofii/*` 返回 503、页面不再显示 Lofii 标签，回到 v0.7.3 行为；`meta.lofii.event_cursor` 可保留或删除（删除后重建基线、不重放旧告警）；无 schema/DB 变更。回滚到旧 release 时新增 `LOFII_*` env 与 `meta.lofii.event_cursor` 会被忽略，无需恢复 DB 快照。只读模式只需清空控制 Token 并重启。
+- v0.8.0 Lofii 回滚：设 `LOFII_ENABLED=false`（可选清空 `LOFII_READ_TOKEN`/`LOFII_CONTROL_TOKEN`）并重启；`/api/lofii/*` 返回 503、页面不再显示 Lofii 标签，回到 v0.7.3 行为；`meta.lofii.event_cursor` 可保留或删除（删除后重建基线、不重放旧告警）；无 schema/DB 变更。回滚到旧 release 时新增 `LOFII_*` env 与 `meta.lofii.event_cursor` 会被忽略，无需恢复 DB 快照。只读模式只需清空控制 Token 并重启（v0.8.1 起 `/say` 也随之 503）。
+- v0.8.1 安全补丁回滚：只回退应用 release 即可（schema 不变、env 无需改动）；若已升级 lofii-bot 到 v0.6.1，保持其运行对 v0.8.0 兼容（v0.8.0 不依赖逐行中和，但上游中和不影响正常聊天）；回退后 `/say` 恢复 v0.8.0 旧语义（只读仍可用、仅首字符 `/` 拒绝），需在文档与验收记录中同步下调安全结论。
 - fail2ban drop-in 回滚：删除 `/etc/systemd/system/nftables.service.d/10-fail2ban-restore.conf` → `sudo systemctl daemon-reload`；
   不影响应用数据；回滚后 nftables restart 需手工 `systemctl restart fail2ban`。
 - 部署后 smoke 失败的门禁：`deploy.ps1` 默认失败；若已用 `-AllowSmokeFailure` 保留部署，必须在 `docs/ACCEPTANCE.md` 记录未通过项。

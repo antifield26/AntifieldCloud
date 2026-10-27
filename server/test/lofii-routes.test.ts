@@ -285,6 +285,16 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
     })
     assert.equal(badTaskId.statusCode, 400)
 
+    for (const taskId of ['   ', 'a\u0000b', 'a b']) {
+      const invalidTaskId = await fx.app.inject({
+        method: 'POST',
+        url: '/api/lofii/tasks/resume',
+        headers: authHeaders(),
+        payload: { taskId },
+      })
+      assert.equal(invalidTaskId.statusCode, 400, `taskId 应拒绝空白/控制字符：${JSON.stringify(taskId)}`)
+    }
+
     const emptySay = await fx.app.inject({
       method: 'POST',
       url: '/api/lofii/say',
@@ -309,6 +319,24 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
     })
     assert.equal(slashSay.statusCode, 400)
     assert.equal(slashSay.json().error.code, 'message_must_not_start_with_slash')
+
+    // 关键回归：上游按 240 字符切行，第二行以 / 开头会变成命令；应用必须拒绝任意位置 /。
+    const splitInjection = await fx.app.inject({
+      method: 'POST',
+      url: '/api/lofii/say',
+      headers: authHeaders(),
+      payload: { message: `${'a'.repeat(240)}/op Lofii` },
+    })
+    assert.equal(splitInjection.statusCode, 400)
+    assert.equal(splitInjection.json().error.code, 'message_must_not_start_with_slash')
+
+    const controlCharSay = await fx.app.inject({
+      method: 'POST',
+      url: '/api/lofii/say',
+      headers: authHeaders(),
+      payload: { message: 'hello\u0000world' },
+    })
+    assert.equal(controlCharSay.statusCode, 400)
     assert.equal(fx.calls.filter((call) => call.url.pathname === '/say').length, 0, '非法消息不应发往上游')
 
     const badKind = await fx.app.inject({
@@ -464,7 +492,7 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
     await fx.close()
   }
 
-  // 只读模式（无控制 Token）：控制接口 503 lofii_control_disabled，/say 仍可用。
+  // 只读模式（无控制 Token）：任务/移动/聊天写操作均 503 lofii_control_disabled。
   const readonly = await makeLofiiApp({ config: { lofiiControlToken: '' } })
   try {
     const blocked = await readonly.app.inject({
@@ -479,9 +507,10 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
       method: 'POST',
       url: '/api/lofii/say',
       headers: authHeaders(),
-      payload: { message: '只读也能说话' },
+      payload: { message: '只读不能说话' },
     })
-    assert.equal(say.statusCode, 200)
+    assert.equal(say.statusCode, 503)
+    assert.equal(say.json().error.code, 'lofii_control_disabled')
   } finally {
     await readonly.close()
   }

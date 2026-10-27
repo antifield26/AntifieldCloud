@@ -29,6 +29,15 @@ export const LOFII_SAY_MAX_CHARS = 720
 const TASK_NAMES = new Set<string>(LOFII_TASK_NAMES)
 const MOVE_ACTIONS = new Set<string>(LOFII_MOVE_ACTIONS)
 
+/** 聊天/taskId 不允许 C0 控制字符与 DEL（避免命令/日志/上游参数注入面）。 */
+function hasControlChars(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
+
 /** 上游稳定错误码的中文兜底文案；不含上游 message，避免英文/内部细节外泄。 */
 const ERROR_MESSAGES: Record<string, string> = {
   lofii_disabled: 'Lofii 对接未启用',
@@ -46,6 +55,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   lofii_target_not_online: '目标玩家不在线',
   lofii_not_connected: 'Lofii 当前未连接 Minecraft',
   lofii_task_disabled: 'Lofii 任务功能已关闭',
+  lofii_history_disabled: 'Lofii 历史功能已关闭',
   lofii_invalid_request: 'Lofii 拒绝了请求参数',
 }
 
@@ -166,10 +176,20 @@ export function registerLofiiRoutes(
     const body = asRecord(request.body)
     let taskId: string | undefined
     if (body.taskId !== undefined && body.taskId !== null) {
-      if (typeof body.taskId !== 'string' || body.taskId.length === 0 || body.taskId.length > 64) {
+      if (typeof body.taskId !== 'string') {
         throw badRequest('taskId 不合法', 'invalid_request')
       }
-      taskId = body.taskId
+      const normalized = body.taskId.trim()
+      // 任务 id 不接受空白/控制字符：避免把日志/审计/上游参数注入面扩大。
+      if (
+        normalized.length === 0 ||
+        normalized.length > 64 ||
+        /\s/.test(normalized) ||
+        hasControlChars(normalized)
+      ) {
+        throw badRequest('taskId 不合法', 'invalid_request')
+      }
+      taskId = normalized
     }
     try {
       const result = await lofii.resumeTask(taskId)
@@ -210,6 +230,11 @@ export function registerLofiiRoutes(
 
   app.post('/api/lofii/say', { preHandler: [requireAuth, csrf] }, async (request) => {
     requireEnabled(lofii)
+    // /say 是写操作；即使上游用读 Token，应用侧也必须要求控制 Token，
+    // 避免只读模式成为绕过任务/移动权限的写通道。
+    if (!lofii.controlEnabled) {
+      throw new AppError(503, 'lofii_control_disabled', errorMessageFor('lofii_control_disabled', 'Lofii 控制接口未启用'))
+    }
     const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
     const retry = sayLimiter.hit(clientIp(request))
     if (retry > 0) throw rateLimited(retry)
@@ -220,8 +245,13 @@ export function registerLofiiRoutes(
     if (message.length > LOFII_SAY_MAX_CHARS) {
       throw badRequest(`消息最多 ${LOFII_SAY_MAX_CHARS} 字符`, 'invalid_request')
     }
-    if (message.startsWith('/')) {
-      throw badRequest('消息不能以 / 开头（不支持命令）', 'message_must_not_start_with_slash')
+    // 上游 Lofii 会按行宽切分聊天且只在整段开头转义 /；必须拒绝任意位置的 ASCII /，
+    // 否则“填充字符 + /命令”会在切分后的第二行命中 mineflayer 命令通道。
+    if (message.includes('/')) {
+      throw badRequest('聊天内容不能包含 /（不支持命令，含切分后的命令行）', 'message_must_not_start_with_slash')
+    }
+    if (hasControlChars(message)) {
+      throw badRequest('聊天内容不能包含控制字符', 'invalid_request')
     }
     try {
       const result = await lofii.say(message)

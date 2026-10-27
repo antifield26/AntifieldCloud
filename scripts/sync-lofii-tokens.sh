@@ -73,7 +73,8 @@ fi
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 cp -a "$APP_ENV" "$APP_ENV.lofii-tokens.bak.$STAMP"
 OWNER="$(stat -c '%u:%g' "$APP_ENV")"
-TMP="$(mktemp)"
+# 临时文件必须与 env 同目录以便 mv 原子替换；mktemp 创建 0600，Token 不经 argv。
+TMP="$(mktemp "$(dirname "$APP_ENV")/.lofii-env.XXXXXX")"
 trap 'rm -f "$TMP"' EXIT
 
 # 删除旧 LOFII Token 行（保留其他键/注释/顺序），再追加新值；Token 不进入 argv。
@@ -84,7 +85,10 @@ fi
 printf 'LOFII_READ_TOKEN=%s\n' "$READ_TOKEN" >> "$TMP"
 printf 'LOFII_CONTROL_TOKEN=%s\n' "$CONTROL_TOKEN" >> "$TMP"
 
-install -o "${OWNER%%:*}" -g "${OWNER##*:}" -m 0640 "$TMP" "$APP_ENV"
+chown "${OWNER%%:*}:${OWNER##*:}" "$TMP"
+chmod 0640 "$TMP"
+# 同目录 mv 是原子替换；失败时保留旧 env，不会留下半写文件。
+mv -f "$TMP" "$APP_ENV"
 echo "已同步 Lofii Token 到 $APP_ENV（read_len=${#READ_TOKEN} control_len=${#CONTROL_TOKEN}；未回显 Token）"
 echo "env 备份：$APP_ENV.lofii-tokens.bak.$STAMP"
 echo "如属性变化，重启 antifieldcloud 生效；不要提交任何 env 文件。"

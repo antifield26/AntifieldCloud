@@ -1,5 +1,35 @@
 # Changelog
 
+## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**本地实现与门禁完成，生产仍为 v0.8.0 待部署；尚未 Tag/GitHub Release**；schema 保持 v17；OpenCode v2.1.4）
+
+### Security
+
+- **修复 P1：`/api/lofii/say` 分块边界命令注入**（SEC6-01）。`/say` 现在**必须启用控制 Token**（只读模式 `503 lofii_control_disabled`），拒绝**任意位置 ASCII `/`** 与 C0 控制字符/DEL（防止“240 填充字符 + `/op …`”在上游按行宽切分后的第二行命中 mineflayer 命令通道）；审计仍只记字符数。上游 lofii-bot **v0.6.1**（最低 v0.6.0，契约 v1）的 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深，新增 239/240/255/480 边界测试）。
+- **修复 P2：上游数据原型链/形状防护**（SEC6-02/ARCH6-01/DBG6-01）。`mapLofiiAlert` 与前端标签查表改为 own-property；`sanitizeDetails` 跳过 `__proto__`/`constructor`/`prototype`；`/history` 校验 `kind`/数组/行并只透传对象行；前端 `safeLofiiStatus` 归一化缺失嵌套段，缺字段显示“—”而非整页 ErrorBoundary。
+- **加固 P3**：`LofiiClient` 响应改为**流式** 2 MiB 上限（`readCappedBody`）；Token 脱敏大小写不敏感；事件缓存增加 512 KiB 总字节上限；每轮 `recent` 改取 200 条；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`；`LOFII_URL` 拒绝 userinfo/路径/查询/片段；`/history` 形状异常返回 `502 lofii_upstream_error`。
+
+### Fixed
+
+- **服务端**：`/say` 控制 Token 门控 + 任意 `/`/C0 校验；`taskId` trim 后 1–64、无内部空白/控制字符；告警写入失败时游标停在上一条已处理事件并在下一轮重试（不静默丢告警）；`/history` 形状校验；`config.ts` 的 `LOFII_URL` 根地址限制；`scripts/sync-lofii-tokens.sh` 改为同目录临时文件 + `mv` 原子替换。
+- **Web**：只读模式禁用聊天输入并拒绝任意 `/`；`eventsSupported` 对 `undefined` 正确回退（不再出现 `vundefined`）；`/status` 可达但事件/游标失败时显示可见警告；`LofiiPanel.load` 请求序号 + AbortController 防旧响应覆盖；历史形状异常显示错误而非永久骨架；补 `lofii_cursor_failed`/`lofii_not_found`/`lofii_history_disabled` 中文文案。
+- **文档**：API/UI-SPEC/SECURITY/ARCHITECTURE/DEPLOY/PLAN/ROADMAP/ACCEPTANCE/AUDIT/README/AGENTS 同步 `/say` 新语义、lofii-bot v0.6.1、审计三轨与残余；修正旧“只读模式 `/say` 仍可用”表述。
+
+### Tests
+
+- `npm run check` 通过；`npm test` **572**（571 pass、1 skip；server=87 + scripts=4 共 91 文件）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **Lines 93.04% / Branches 78.77% / Functions 88.67%**、前端 **Lines 55.83% / Branches 51.29% / Functions 48.66%**（门禁通过）；`npm run build` 通过；`check-version` 严格 `0.8.1` 通过。
+- 新增/扩展：`server/test/lofii-client.test.ts`（流式上限、5xx 稳定码、大小写脱敏）、`lofii-service.test.ts`（缓存字节上限、游标失败重试、原型键清洗）、`lofii-routes.test.ts`（`/say` 只读 503、任意 `/`、C0、taskId）、`config-validation.test.ts`（`LOFII_URL` 根路径）、`web/src/lib/lofii-v08.test.ts`（safeLofiiStatus/own-property/eventsSupported 回退）、`LofiiPanel.test.tsx`（部分失败警告、竞态、`/say` 边界、历史形状）。
+
+### Deploy
+
+- **生产仍为 v0.8.0**（release `20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2（`-SkipLocalTaskCheck`）；生产 UI 视觉确认已完成）。**v0.8.1 尚未部署生产、尚未 Tag/Release**。
+- 部署顺序：先升级 lofii-bot 到 **v0.6.1** 并重新 `sync-lofii-tokens.sh`（`--check` match）→ 部署 AntifieldCloud 0.8.1 → `smoke.ps1 -ExpectedVersion 0.8.1 -ExpectedLofiiVersion 0.6.1` → 验证只读 `/say` 503、任意 `/` 400、C0 400 与 UI；回填 `docs/ACCEPTANCE.md`。
+- 回滚：只回退应用 release 即可（schema 不变、env 无需改动）；lofii-bot v0.6.1 对 v0.8.0 兼容；回退后 `/say` 恢复旧语义，需同步下调安全结论。
+
+### Pending
+
+- v0.8.0 与 v0.8.1 **均尚未 Tag/GitHub Release**；v0.8.1 待部署生产与 `/say`/UI 复验。
+- 明确残余（未修）：告警事件无幂等键（schema v18 下一 minor）、告警风暴并发 webhook/Bot 上限、Lofii 进程未纳入 `service_down` 监控/metrics、`/status`/`history` 的 `lastError` 原样透传（admin-only）、`LOFII_URL` 允许任意 loopback 端口、`stop()` 不取消在途轮询、`lastSuccessAt` 未下发（stale 文案仍用 `lastPollAt`）、真实 Lofii 告警未触发、Windows 每日任务安装标记待用户重装。详见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
+
 ## [v0.8.0] - 2026-10-27（生产部署与只读/API 验收已完成（2026-10-27）；待 Tag/Release 收尾；schema 保持 v17）
 
 ### Added

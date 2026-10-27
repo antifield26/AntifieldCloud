@@ -450,9 +450,9 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
   加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。
 
-## 17. Lofii 面板（`/minecraft?tab=lofii`，v0.8.0）
+## 17. Lofii 面板（`/minecraft?tab=lofii`，v0.8.0 引入，v0.8.1 安全/健壮性加固）
 
-Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofii/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/lofii/history`；写操作走 `POST /api/lofii/*`。仅当 `/api/version.lofiiEnabled=true` 时显示入口；`lofiiControlEnabled=false` 时只读。
+Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofii/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/lofii/history`；写操作走 `POST /api/lofii/*`。仅当 `/api/version.lofiiEnabled=true` 时显示入口；`lofiiControlEnabled=false` 时只读（**聊天输入同样禁用**）。状态快照先经 `safeLofiiStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
 
 ### 入口与布局
 
@@ -461,6 +461,7 @@ Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofi
   - 等待首次轮询：`notice-muted`“正在等待 Lofii 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。”
   - 不可达：`notice-warning`“无法连接 Lofii：<中文错误>。当前显示上次成功轮询的缓存数据，控制操作不可用。”
   - 数据过期：`notice-warning`“Lofii 数据已过期（上次成功轮询 …），请检查 Lofii 进程；新数据恢复前请勿依赖当前状态。”
+  - **部分失败**：`notice-warning`“Lofii 状态可达，但事件流/告警游标异常：<中文错误>；事件流可能停止更新，控制仍可尝试。”——`reachable=true` 且 `error≠null` 时必须可见（v0.8.1），不得把“可达”当成“事件正常”。
   - 控制未启用：`notice-muted`“Lofii 控制未启用：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。”（由 `lofiiControlEnabled` 驱动，不展示 env 名/Token）
 - 集成禁用（`lofiiEnabled=false`）：只显示 `notice-muted` 说明“Lofii 集成未启用（服务端 LOFII_ENABLED=false）。启用后需要配置 Lofii 地址与 Token 并重启应用；本页不展示任何 Token、内部地址或凭据。”+“重新检测”按钮；不渲染任何数据/控制区。
 
@@ -471,7 +472,7 @@ Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofi
 - 刷新失败时卡片内 `InlineError`“<错误>（显示上次成功获取的数据）”+ 重试；无快照时 `EmptyState`“暂无 Lofii 状态快照”。
 - 状态栅格（缺失字段显示“—”）：运行状态（中文徽章：空闲（动态下线）/连接中/已连接/重连等待/冷却中）、Minecraft 连接（已连接（用户名）/未连接）、服务器在线/上限（服务器不可达时提示）、TPS（1m/5m/15m，RCON 不可用时提示）、Lofii 血量/饥饿（维度作 hint）、AI 队列（排队/处理中，失败次数与最近延迟；AI 关闭时“—”）、记忆（玩家数/轮数）、Lofii 版本 + 契约版本、运行时长、白名单数量（上游 lastError 作 hint）、告警联动（已启用/未启用）、事件流条数（“内存环”）。
 - 附加警告：上次 Minecraft 断线（相对时间 + 原因 + 累计重连次数）、AI 最近错误（文本）。
-- 脚注：上次轮询相对时间；“契约版本 < 1”时提示契约版本过低。
+- 脚注：上次轮询相对时间；“契约版本 < 1”时提示契约版本过低；`contractVersion` 非 number（缺失/`undefined`）时显示“—”，不显示 `vundefined`。
 
 ### 任务卡
 
@@ -493,10 +494,11 @@ Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofi
 ### 游戏内聊天
 
 - 卡片标题“游戏内聊天”，描述“以 Lofii 的身份向游戏内发送聊天；只聊天，绝不执行命令。”
-- `textarea`（`rows=3`、`maxLength=720`、`aria-label`）；字数计数“n/720 · 发送前需要二次确认”；发送按钮在空内容或控制未启用时禁用。
-- 前端校验：空内容、以 `/` 开头（提示“聊天内容不能以 / 开头（不会执行任何命令）”）、超过 720 字符；错误用 `role="alert"` 展示。
+- `textarea`（`rows=3`、`maxLength=720`、`aria-label`）；字数计数“n/720 · 发送前需要二次确认”；发送按钮在空内容、控制未启用（含只读模式）时禁用。
+- 前端校验：空内容、**任意位置包含 ASCII `/`**（提示“聊天内容不能包含 /（不支持命令，含切分后的命令行）”）、C0 控制字符/DEL、超过 720 字符；错误用 `role="alert"` 展示。
+- **`/say` 是写操作，v0.8.1 起必须启用控制 Token**：只读部署时输入与发送均禁用，服务端返回 `503 lofii_control_disabled`；不得再出现“只读模式仍可聊天”的引导。
 - 发送确认 Modal 展示消息预览与字符数；成功 Toast + 清空输入。
-- 脚注：“内容不能以 / 开头；本页不会把聊天当作命令执行，也不展示任何 Token 或内部地址。”
+- 脚注：“内容不能包含 /；本页不会把聊天当作命令执行，也不展示任何 Token 或内部地址。”
 
 ### 事件流
 
@@ -511,12 +513,15 @@ Lofii 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/lofi
 - 告警表：时间、类型（中文映射，未知显示原文）、级别（critical/error/warning/info → 中文徽章与色调）、内容（纯文本）；空态“暂无告警记录”。
 - 采样表：时间、连接（在线/离线徽章）、状态（中文）、任务（名称·状态或“—”）、血量/饥饿、TPS、队列、内存/RSS（MB）；空态“暂无采样记录”。
 - 脚注：“最近 24 小时 · 最多 100 条；采样由 Lofii 每 60 秒写入一次，时间按 Asia/Shanghai 展示。”
+- 响应形状异常（`kind` 不匹配/缺数组/服务端 `502 lofii_upstream_error`）显示可见错误与重试，不进入永久骨架屏；只透传对象行。
 - 只读：不展开 `details`，不提供修改/删除/导出；`details` 中的任意字段不渲染。
 
 ### 确认、降级与隐私
 
 - 二次确认：开始任务、停止/放弃任务、恢复任务、发送游戏内聊天均使用统一 `ConfirmDialog`（危险操作默认焦点“取消”，加载中禁止重复提交）。
-- 降级矩阵：禁用 → 仅说明；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告；控制未启用 → 只读。
-- 隐私与安全：不展示 Lofii URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `lofiiControlEnabled=false` 时禁用。
+- 降级矩阵：禁用 → 仅说明；首次加载失败 → 卡片错误 + 重试；等待首次轮询 → 提示且控制禁用；不可达 → 缓存数据 + 警告 + 控制禁用；stale → 警告（当前仍用 `lastPollAt`；快照未下发 `lastSuccessAt`，见 AUDIT 残余 ARCH6-03）；**可达但事件/游标失败 → 可见部分失败警告，控制仍可用但提示告警可能停更**；控制未启用 → 只读（聊天也禁用）。
+- 隐私与安全：不展示 Lofii URL/Token/内部路径/记忆正文；事件与聊天纯文本渲染；历史只显示白名单字段；所有控制按钮在 `lofiiControlEnabled=false` 时禁用；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符。
+- 历史错误码/错误提示使用中文映射（含 `lofii_cursor_failed`/`lofii_not_found`/`lofii_history_disabled`），未知码原样显示；查表使用 own-property，不命中原型链。
 - 响应式/可访问性：390 px 下状态栅格与双列卡片纵向堆叠、不横向滚动；标签键盘可操作；图标按钮有 `aria-label`；表单 label 关联；错误 `role="alert"`；不引入第三方组件库，样式集中在 `web/src/styles/v08.css`。
 - **生产验收状态（v0.8.0，2026-10-27）**：生产部署与只读/API 验收完成；`/minecraft` 生产 UI 视觉确认已完成（Edge 157 headless 经本地 SSH 隧道打开 `/minecraft?tab=lofii`，临时验收会话已清理；状态卡/任务/移动/聊天/事件流/历史/告警均正常渲染，756×900 viewport；用户仍可在自己的浏览器复核，非阻塞）。
+- **v0.8.1 变更（本地实现完成，生产待部署）**：`/say` 控制 Token 必需、任意 `/` 与 C0 拒绝；状态快照归一化容错；部分失败可见警告；`eventsSupported`/`contractVersion` 缺失回退；轮询请求序号 + Abort 防竞态；历史形状异常可见错误；列表查表 own-property；Token 脱敏大小写不敏感；服务端响应流式 2 MiB 上限、事件缓存 512 KiB、轮询 200 条、游标失败重试。生产 UI 需在 v0.8.1 部署后复验。

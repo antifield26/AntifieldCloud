@@ -7,7 +7,7 @@
 - **现有服务**：Minecraft（Paper 26.1.2，在线模式关闭、白名单开启）、SakuraFRP、RDP/桌面、opencode。
 - **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码、`BOT_SECRET_KEY`、`LOFII_READ_TOKEN`/`LOFII_CONTROL_TOKEN`、APP_VERSION）、SQLite（TOTP secret、会话哈希、恢复码哈希、
   Bot 凭据密文）、备份归档（默认明文含 TOTP/会话；开启整包加密后为 age 密文）、密钥包 age 私钥、**备份整包加密独立 age 私钥**（离线 ≥2 份，Pi 只有公钥）。
-- **Lofii Token（v0.8.0）**：`LOFII_READ_TOKEN`（`/status`、`/history`、`/say`）与 `LOFII_CONTROL_TOKEN`（`/task/*`、`/move`）分离，来自独立服务 lofii-bot 的 `/etc/lofii-bot/env`（root:lofiibot 0640），由 root 执行 `scripts/sync-lofii-tokens.sh` 同步到应用 env；应用/文档/日志/前端都不持有或回显 Token；控制 Token 为空即只读。应用不读取/复制 lofii-bot 的 RCON/OpenCode 密钥。
+- **Lofii Token（v0.8.0 引入，v0.8.1 加固）**：`LOFII_READ_TOKEN`（`/status`、`/events/recent`、`/history`）与 `LOFII_CONTROL_TOKEN`（`/task/*`、`/move`、`/say`；v0.8.1 起游戏内聊天必须控制 Token）分离，来自独立服务 lofii-bot 的 `/etc/lofii-bot/env`（root:lofiibot 0640），由 root 执行 `scripts/sync-lofii-tokens.sh` 同步到应用 env（v0.8.1 改为同目录临时文件 + `mv` 原子替换）；应用/文档/日志/前端都不持有或回显 Token；控制 Token 为空即只读（含禁用 `/say`）。应用不读取/复制 lofii-bot 的 RCON/OpenCode 密钥。
 - **Bot 凭据**：QQ 官方 Bot AppSecret 由 `BOT_SECRET_KEY`（AES-256-GCM）加密后落库；
   `BOT_SECRET_KEY` 只存在于 env 与加密备份中，丢失后已存 AppSecret 不可解密（只能重新录入）。
 - **数据与状态**：`/var/lib/antifieldcloud`（DB/files/backups/world-backups/secrets/bot-memory）、只读状态文件
@@ -48,9 +48,9 @@
 | QQ 入站图片外发/隐私 | 图片被模型 provider 看到或落盘 | 默认开启但仅 QQ 固定域名后缀下载、image mime/大小限制、内存不落盘、失败降级；README/SECURITY 明示图片会交给模型 provider；可 env 关闭 |
 | Bot 平台回调洪泛 | CPU/DB/限流资源耗尽 | Webhook 未验签 120/min/Bot、已验签 300/min/Bot（验签后才扣、分桶）、IP 120/min；命令 120/min/用户；拒绝/限流审计按窗口聚合；事件保留 7 天并定期清理；队列重试上限/死信 |
 | AI 工具隔离降级 | 以默认工具权限运行 Chat，模型可越权调用工具 | 降级 fail-closed——启用发送工具且隔离不可用时拒绝新 Chat（503/固定提示/诊断事件），10 分钟重试窗口，上游恢复自动恢复；不以默认权限继续 |
-| Lofii Token 泄露/被引到外部主机 | 攻击者可读状态/控制 Lofii 或伪造告警 | 读/控制 Token 分离；上游仅 loopback + http(s) 启动校验；客户端 `redirect:'error'`；Token 只在服务端 env/内存，不下发浏览器/日志/API；错误文本移除 URL/Token；同步脚本仅 root、不回显 |
-| Lofii 控制面被滥用 | 未授权启停任务/移动/游戏内发言 | 全部接口需登录；写操作 CSRF + 每 IP 限流（控制 20/min、`/say` 10/min）；服务端任务/移动/长度白名单；UI 对开始/停止/恢复/发送二次确认；审计只记动作与元数据；未配置控制 Token 即只读 |
-| Lofii 聊天/事件隐私 | 聊天正文落库或进入日志/浏览器 | 事件/聊天仅服务端内存缓存（≤100 条），不落库、不写日志/审计正文；`/say` 审计只记字符数；事件 `data` 视为不可信 unknown，UI 只读白名单字段并纯文本渲染，不展示 Token/URL/内部路径 |
+| Lofii Token 泄露/被引到外部主机 | 攻击者可读状态/控制 Lofii 或伪造告警 | 读/控制 Token 分离；上游仅 loopback + http(s) 且 `LOFII_URL` 仅根地址（拒绝 userinfo/路径/查询/片段）；客户端 `redirect:'error'`；Token 只在服务端 env/内存，不下发浏览器/日志/API；错误文本大小写不敏感地移除 URL/Token；同步脚本仅 root、不回显、同目录 `mv` 原子替换 |
+| Lofii 控制面被滥用 | 未授权启停任务/移动/游戏内发言/命令注入 | 全部接口需登录；写操作（含 `/say`）CSRF + 控制 Token + 每 IP 限流（控制 20/min、`/say` 10/min）；服务端任务/移动/长度白名单；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符（防切行后的命令注入）；`taskId` 拒绝空白/控制字符；UI 对开始/停止/恢复/发送二次确认；审计只记动作与元数据；未配置控制 Token 即只读 |
+| Lofii 聊天/事件隐私 | 聊天正文落库或进入日志/浏览器 | 事件/聊天仅服务端内存缓存（≤100 条且序列化 ≤512 KiB），不落库、不写日志/审计正文；`/say` 审计只记字符数；事件 `data` 视为不可信 unknown，UI 只读白名单字段（own-property 查表）并纯文本渲染，不展示 Token/URL/内部路径 |
 | Lofii 告警污染/重放 | 重复历史事件或伪造活跃告警 | 上游 alert 映射为 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.lofii.event_cursor`+`bootId` 基线防止重放；details 深度/键数/数组/字符串清洗；`LOFII_ALERTS_ENABLED=false` 可只推进游标不写 |
 | 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建；CI `npm audit --omit=dev`、gitleaks、Dependabot |
 
@@ -135,15 +135,16 @@
   （首条 + 每 50 条），未认证流量不能通过洪泛饿死合法事件或写满审计表。
 - **审计策略**：非安全审计事务外 best-effort，失败不阻断已完成的业务；失败计数/最近错误/时间在 best-effort 写入 `audit_write_failures` 并经 `GET /api/version.audit` 暴露（含 `persisted`），跨重启可见；安全关键审计（登录/再认证/发布/工具隔离/Webhook 拒绝）保持逐条记录；公开下载计数仍在事务内。
 
-### Lofii（v0.8.0，默认关闭）
+### Lofii（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
-- **网络/上游**：lofii-bot 是独立服务，仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `LOFII_URL` 启用时必须 loopback + http(s)（启动校验，非 loopback 拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(LOFII_TIMEOUT_MS 默认 2500)`、响应体 ≤2 MiB，网络/超时/重定向统一 `lofii_unavailable` 且不暴露底层 message。
-- **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`、`/say`；控制 Token 仅用于 `/task/*`、`/move`；控制 Token 为空时控制方法直接 `lofii_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-lofii-tokens.sh` 同步（只读 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、原子 install、保持 0640，不回显 Token）。
-- **HTTP 面**：`/api/lofii/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（7 种）、移动动作（4 种）、`taskId`（≤64）、消息（trim 后 1–720、禁止 `/` 开头）；错误统一映射为固定中文文案，不含上游原文/URL/Token。
+- **网络/上游**：lofii-bot 是独立服务（推荐 v0.6.1，最低 v0.6.0，契约 v1），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `LOFII_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(LOFII_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `lofii_unavailable` 且不暴露底层 message。
+- **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`；控制 Token 仅用于 `/task/*`、`/move`、`/say`（v0.8.1 起 `/say` 是写操作，只读模式返回 `503 lofii_control_disabled`）；控制 Token 为空时控制方法直接 `lofii_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-lofii-tokens.sh` 同步（只读 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、同目录临时文件 + `mv` 原子替换、保持 0640，不回显 Token）。
+- **HTTP 面**：`/api/lofii/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（7 种）、移动动作（4 种）、`taskId`（trim 后 1–64、无内部空白/控制字符）、消息（trim 后 1–720、**任意位置禁止 ASCII `/`**、禁止 C0 控制字符/DEL，防上游按 240 字符切行后的命令注入）；`/history` 校验 `kind` 与数组形状，只透传对象行；上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留稳定码，其它错误统一映射为固定中文文案，不含上游原文/URL/Token。
 - **审计**：`lofii.task.start/stop/resume`、`lofii.move`、`lofii.control_failed` 记录动作、目标名/动作/taskId 与稳定错误码；`lofii.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。
-- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300），并附加 `source/lofiiEventId/lofiiType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.lofii.event_cursor` 防重放。
-- **浏览器边界**：前端不接触 Lofii Token/上游地址，不直连 SSE/Lofii；`/api/lofii/status` 只返回聚合快照与内存事件；事件与聊天纯文本渲染，历史表格只显示白名单字段；控制未启用时全部写操作禁用。
-- **默认关闭/回滚**：`LOFII_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产 v0.8.0 已启用（`LOFII_ENABLED=true`，读/控制 Token 均配置，仅 loopback），尚未 Tag/Release。
+- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300，跳过 `__proto__`/`constructor`/`prototype` 键），并附加 `source/lofiiEventId/lofiiType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.lofii.event_cursor` 防重放；**告警写入失败时游标停在上一条已处理事件，下一轮重试**（v0.8.1）。
+- **内存/降级**：每轮上游取最近 200 条；事件缓存 ≤100 条且序列化总字节 ≤512 KiB；`/status` 可达但 `/events/recent`/游标失败时前端展示可见警告（不静默停更）；前端对缺失嵌套段安全读取，不把整页交给 ErrorBoundary。**残余**：快照未下发 `lastSuccessAt`，stale 提示仍用 `lastPollAt`（可能显示“上次成功轮询 3 秒前”而实际已数小时）。
+- **浏览器边界**：前端不接触 Lofii Token/上游地址，不直连 SSE/Lofii；`/api/lofii/status` 只返回聚合快照与内存事件；事件与聊天纯文本渲染，历史表格只显示白名单字段；控制未启用时全部写操作（含聊天）禁用。
+- **默认关闭/回滚**：`LOFII_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产当前 **v0.8.0** 已启用（`LOFII_ENABLED=true`，读/控制 Token 均配置，仅 loopback）；**v0.8.1 本地实现与门禁已完成、生产待部署**；尚未 Tag/Release。
 
 ### HTTP
 
@@ -265,11 +266,12 @@
 39. **群共享记忆迁移残余**：无法唯一映射到 `member_openid` 的旧条目保留 `legacy:` 前缀、不参与按成员删除；历史同名用户互相覆盖的内容无法自动还原；迁移只执行一次（`meta.bot_group_memory_owner_migrated_v1`），迁移后旧格式不再生成。
 40. **配置校验增强的运维影响**：`NODE_ENV` 非法值、`OPENCODE_URL` 非 loopback、`APP_ORIGIN==AI_ORIGIN`、`BOT_SEARCH_MODE` 非法值会直接拒绝启动（失败即退出）。升级后若服务起不来，先检查 env 是否含遗留非法值，不要通过放宽校验绕过。
 41. **主机配置模板为占位**：`deploy/host/` 模板含 `<SSH_USER>` 等占位，安装时必须按实际替换并做 `sshd -t`/`nft -c`/服务重启验证；模板不包含用户自定义的额外加固项，重建后需与备份的密钥包对照。
-42. **Lofii 告警只有事件语义（v0.8.0）**：上游 `alert` 仅以 `status='event'` 记录，不参与 firing/resolved 状态机，无恢复通知/冷却/去重；告警只在轮询时发现，最多滞后一个 `LOFII_POLL_MS` 周期。需要“活跃/恢复”语义时应在 Lofii 侧管理。
-43. **Lofii 聊天/事件不持久化（v0.8.0）**：事件与聊天只存在服务端内存（≤100 条），应用/Lofii 重启即丢失；不提供历史/导出/搜索，也不进入备份；`/say` 内容不落库/不写日志（审计只记字符数）。
-44. **Lofii 控制面是真实写操作（v0.8.0）**：启用控制 Token 后本应用可让 Lofii 开始/停止任务、移动与游戏内发言，属于对 Minecraft 世界的真实操作（仍受 Lofii 自身安全区/权限限制）；控制 Token 应按需配置/轮换，误操作需人工在游戏内纠正。
-45. **Lofii 单实例/轮询延迟（v0.8.0）**：单进程内存缓存、单 Lofii 上游；状态/事件最多滞后一个轮询周期，控制结果最终一致；不支持多实例/多副本/多 Lofii 实例。
+42. **Lofii 告警只有事件语义（v0.8.0，v0.8.1 仍保持）**：上游 `alert` 仅以 `status='event'` 记录，不参与 firing/resolved 状态机，无恢复通知/冷却/去重；告警只在轮询时发现，最多滞后一个 `LOFII_POLL_MS` 周期。需要“活跃/恢复”语义时应在 Lofii 侧管理。
+43. **Lofii 聊天/事件不持久化（v0.8.0，v0.8.1 仍保持）**：事件与聊天只存在服务端内存（≤100 条且 ≤512 KiB），应用/Lofii 重启即丢失；不提供历史/导出/搜索，也不进入备份；`/say` 内容不落库/不写日志（审计只记字符数）。
+44. **Lofii 控制面是真实写操作（v0.8.0，v0.8.1 起聊天也需控制 Token）**：启用控制 Token 后本应用可让 Lofii 开始/停止任务、移动与游戏内发言，属于对 Minecraft 世界的真实操作（仍受 Lofii 自身安全区/权限限制）；控制 Token 应按需配置/轮换，误操作需人工在游戏内纠正。
+45. **Lofii 单实例/轮询延迟（v0.8.0，v0.8.1 仍保持）**：单进程内存缓存、单 Lofii 上游；状态/事件最多滞后一个轮询周期，控制结果最终一致；不支持多实例/多副本/多 Lofii 实例。
 46. **v0.8.0 生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`），Lofii token 匹配、`meta.lofii.event_cursor` 已建立，API 探针与 patrol start/stop 已验证）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；但真实 Lofii 告警联动未触发（映射/webhook/Bot 由单元/集成测试覆盖，`alert_events` 暂无 `lofii_*`）、**Windows 每日备份任务安装标记仍为旧版本**（需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新，非失败）、**尚未 Tag/GitHub Release**。
+47. **v0.8.1 明确残余（安全补丁未覆盖项）**：告警事件**无幂等键**（DB 恢复/多实例/游标回退可能重复告警与通知），计划随 schema v18 下一 minor 处理；告警风暴时 webhook/Bot 通知**无并发上限**；Lofii 进程未纳入 `service_down` 监控/metrics（进程死亡无主动告警）；`/api/lofii/status|history` 的 `lastError` 原样透传（仅 admin 可见）；`LOFII_URL` 允许任意 loopback 端口（无法限制必须是 lofii-bot）；`stop()` 不取消在途轮询（关闭瞬间可能多写一次游标）；Windows 每日任务安装标记待用户重装；**v0.8.1 尚未部署/尚未 Tag/Release**。
 
 ## 5. 运维安全清单
 
@@ -348,6 +350,6 @@
   - AI 主机：`/__af/sso/*` 超限 429、匿名请求 429、审计按 action+IP 去重。
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见（`audit_write_failures` 持久化）。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`BOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
-  - Lofii（v0.8.0）：`LOFII_URL` 非 loopback/非法协议拒绝启动；`LOFII_ENABLED=true` 缺读 Token 拒绝启动；控制 Token 为空时控制接口 503 且不发请求、`/say` 仍可用；上游 401/403→502、4xx 稳定码透传、429→429、5xx/非 JSON→502、网络/超时/重定向→503，错误文本不含 URL/Token；未认证 401、缺 CSRF 403；控制 20/min、`/say` 10/min 超限 429；`/say` 正文不写审计（只记 chars）；`/events/recent` 404 只降级 `eventsSupported=false`；告警 `status='event'` 不写 `alert_state`、游标基线不重放；事件缓存 ≤100 且仅内存。
-  - 当前基线（v0.8.0，2026-10-27）：`npm test` **566**（565 pass、1 skip）、`test:web` **250**（47 文件）；服务端覆盖率 **93.06/78.67/88.70**、前端 **55.48/49.91/48.45**（Lines/Branches/Functions）；`check-version` 严格 `0.8.0` 通过、`check-prod-deps` 通过。
-  - 生产（v0.8.0，2026-10-27 部署）：release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`；2 SKIP=加密/异地默认关闭）；lofii-bot v0.6.0（release `20261027T092737Z`）仅 loopback，Token 分离与 `sync-lofii-tokens.sh` match、`LOFII_ENABLED=true`、`meta.lofii.event_cursor` 已建立；生产 API 探针 `/api/lofii/status`/`/api/version`/history 200、无 CSRF POST 403、patrol start/stop 200 且审计无聊天正文。**尚未 Tag/Release**；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（非失败）。OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过；v0.7.3 文档模式生产已启用。
+  - Lofii（v0.8.0 引入，v0.8.1 加固）：`LOFII_URL` 非 loopback/非法协议/含 userinfo/路径/查询/片段拒绝启动；`LOFII_ENABLED=true` 缺读 Token 拒绝启动；控制 Token 为空时控制接口与 `/say` 均 503 且不发请求；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符（含上游按 240 字符切行后的第二行）；`taskId` 拒绝内部空白/控制字符；`/history` 校验 kind/数组并只透传对象行；上游 401/403→502、4xx 稳定码透传、429→429、5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`、其它 5xx/非 JSON→502、网络/超时/重定向→503，错误文本大小写不敏感脱敏且不含 URL/Token；响应体流式 2 MiB 上限；未认证 401、缺 CSRF 403；控制 20/min、`/say` 10/min 超限 429；`/say` 正文不写审计（只记 chars）；`/events/recent` 404 只降级 `eventsSupported=false`；告警 `status='event'` 不写 `alert_state`、游标基线不重放、写入失败停游标重试；事件缓存 ≤100 条且 ≤512 KiB、轮询 200 条且仅内存；`sync-lofii-tokens.sh` 同目录临时文件 + `mv` 原子替换。
+  - 当前基线（v0.8.1，2026-10-27 本地）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（Lines/Branches/Functions）；`npm run build` 通过；`check-version` 严格 `0.8.1`、`check-prod-deps` 通过。生产仍为 v0.8.0，**v0.8.1 待部署**。
+  - 生产（v0.8.0，2026-10-27 部署）：release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`；2 SKIP=加密/异地默认关闭）；lofii-bot v0.6.0（release `20261027T092737Z`）仅 loopback，Token 分离与 `sync-lofii-tokens.sh` match、`LOFII_ENABLED=true`、`meta.lofii.event_cursor` 已建立；生产 API 探针 `/api/lofii/status`/`/api/version`/history 200、无 CSRF POST 403、patrol start/stop 200 且审计无聊天正文。**尚未 Tag/Release**；生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（非失败）。OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过；v0.7.3 文档模式生产已启用。**v0.8.1 生产部署/UI 复验待执行**。

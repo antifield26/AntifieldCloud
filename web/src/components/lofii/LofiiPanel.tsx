@@ -3,7 +3,7 @@
 // 安全边界：不展示 Lofii Token/地址/内部路径，聊天与事件一律纯文本渲染；开始/停止/恢复/发送均需二次确认。
 // 降级：禁用显示说明；不可达/过期显示缓存数据与警告；控制未启用时禁用全部写操作。
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
 import {
   Clock,
@@ -17,7 +17,7 @@ import {
   Square,
   Users,
 } from 'lucide-react'
-import { api, isApiError, toErrorMessage } from '../../api/client'
+import { api, isAbortError, isApiError, toErrorMessage } from '../../api/client'
 import type {
   LofiiActionResult,
   LofiiMoveAction,
@@ -49,12 +49,22 @@ import {
   lofiiTaskNameLabel,
   lofiiTaskProgressRows,
   lofiiTaskStateLabel,
+  safeLofiiStatus,
 } from '../../lib/lofii'
 
 /** /api/lofii/status 轮询间隔。 */
 const STATUS_POLL_MS = 5000
 /** /say 内容上限（Lofii 契约）。 */
 const SAY_MAX_CHARS = 720
+
+/** 聊天内容不允许 C0 控制字符与 DEL。 */
+function hasControlChars(value: string): boolean {
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0
+    if (code <= 0x1f || code === 0x7f) return true
+  }
+  return false
+}
 
 type ConfirmState =
   | { type: 'start'; name: LofiiTaskName }
@@ -90,7 +100,7 @@ function LofiiStatusCard({
   refreshing: boolean
   onRefresh: () => void
 }) {
-  const status = snapshot.status
+  const status = safeLofiiStatus(snapshot.status)
   const connected = status?.minecraft.connected === true
   const tps = status?.admin.tps
   const tpsOne = tps?.one ?? null
@@ -167,7 +177,10 @@ function LofiiStatusCard({
           </Fact>
           <Fact label="Lofii 版本">
             {snapshot.version ?? status.version ?? '未知'}
-            <span className="lofii-fact-sub"> · 契约 {snapshot.contractVersion !== null ? `v${snapshot.contractVersion}` : '—'}</span>
+            <span className="lofii-fact-sub">
+              {' '}
+              · 契约 {typeof snapshot.contractVersion === 'number' ? `v${snapshot.contractVersion}` : '—'}
+            </span>
           </Fact>
           <Fact label="Lofii 运行时长">{formatDuration(status.uptimeSec)}</Fact>
           <Fact label="白名单数量" hint={status.admin.lastError ?? undefined}>
@@ -179,7 +192,7 @@ function LofiiStatusCard({
             </Badge>
           </Fact>
           <Fact label="事件流">
-            {snapshot.events.length} 条
+            {Array.isArray(snapshot.events) ? snapshot.events.length : 0} 条
             <span className="lofii-fact-sub"> · 内存环</span>
           </Fact>
         </div>
@@ -208,7 +221,9 @@ function LofiiStatusCard({
 
       <p className="card-footnote">
         上次轮询 <RelativeTime ts={snapshot.lastPollAt} fallback="—" />
-        {snapshot.contractVersion !== null && snapshot.contractVersion < 1 ? ' · Lofii 契约版本过低' : ''}
+        {typeof snapshot.contractVersion === 'number' && snapshot.contractVersion < 1
+          ? ' · Lofii 契约版本过低'
+          : ''}
       </p>
     </Card>
   )
@@ -489,13 +504,13 @@ function LofiiMoveCard({
 }
 
 function LofiiSayCard({
-  controlReady,
+  ready,
   text,
   error,
   onTextChange,
   onSubmit,
 }: {
-  controlReady: boolean
+  ready: boolean
   text: string
   error: string | null
   onTextChange: (value: string) => void
@@ -518,9 +533,9 @@ function LofiiSayCard({
           value={text}
           rows={3}
           maxLength={SAY_MAX_CHARS}
-          placeholder="输入要发送到游戏内的聊天内容（不能以 / 开头）"
+          placeholder="输入要发送到游戏内的聊天内容（不能包含 /）"
           aria-label="游戏内聊天内容"
-          disabled={!controlReady}
+          disabled={!ready}
           onChange={(event) => onTextChange(event.target.value)}
         />
         <div className="lofii-say-footer">
@@ -531,7 +546,7 @@ function LofiiSayCard({
             type="submit"
             variant="primary"
             icon={<Send size={16} aria-hidden="true" />}
-            disabled={!controlReady || text.trim().length === 0}
+            disabled={!ready || text.trim().length === 0}
           >
             发送
           </Button>
@@ -541,7 +556,7 @@ function LofiiSayCard({
             {error}
           </p>
         ) : null}
-        <p className="field-hint">内容不能以 / 开头；本页不会把聊天当作命令执行，也不展示任何 Token 或内部地址。</p>
+        <p className="field-hint">内容不能包含 /，也不会执行任何命令；本页不展示任何 Token 或内部地址。</p>
       </form>
     </Card>
   )
@@ -562,24 +577,35 @@ export function LofiiPanel() {
   const [moveBusy, setMoveBusy] = useState<LofiiMoveAction | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [actionBusy, setActionBusy] = useState(false)
+  const requestIdRef = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
+    // 轮询与手动刷新可能并发：旧请求先完成时不得覆盖新请求结果。
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const requestId = requestIdRef.current + 1
+    requestIdRef.current = requestId
     try {
-      const next = await api.lofii.status()
+      const next = await api.lofii.status(controller.signal)
+      if (requestId !== requestIdRef.current) return
       setSnapshot(next)
       setError(null)
       setErrorCode(null)
     } catch (loadError) {
+      if (isAbortError(loadError) || requestId !== requestIdRef.current) return
       // 刷新失败保留上次成功的数据，只更新错误提示。
       setError(toErrorMessage(loadError, '加载 Lofii 状态失败'))
       setErrorCode(isApiError(loadError) ? loadError.code : null)
     } finally {
-      setLoading(false)
+      if (requestId === requestIdRef.current) setLoading(false)
     }
   }, [])
 
   useEffect(() => {
     void load()
+    return () => abortRef.current?.abort()
   }, [load])
 
   usePolling(() => load(), STATUS_POLL_MS)
@@ -610,8 +636,10 @@ export function LofiiPanel() {
     }
   }
 
-  const status = snapshot?.status ?? null
+  const status = snapshot ? safeLofiiStatus(snapshot.status) : null
   const controlReady = snapshot?.enabled === true && snapshot.reachable && snapshot.controlEnabled
+  // /say 是写操作：只读模式（未配置控制 Token）必须禁用，避免成为绕过权限的写通道。
+  const sayReady = controlReady
   const disabled = snapshot ? !snapshot.enabled : errorCode === 'lofii_disabled'
   const pendingResume = status?.task.pendingResume ?? null
   /** 应用刚启动时首次轮询完成前 reachable=false/lastPollAt=null 属正常，不提示“不可达”。 */
@@ -728,8 +756,12 @@ export function LofiiPanel() {
       setSayError('请输入聊天内容')
       return
     }
-    if (message.startsWith('/')) {
-      setSayError('聊天内容不能以 / 开头（不会执行任何命令）')
+    if (message.includes('/')) {
+      setSayError('聊天内容不能包含 /（不会执行任何命令，含上游切分后的命令行）')
+      return
+    }
+    if (hasControlChars(message)) {
+      setSayError('聊天内容不能包含控制字符')
       return
     }
     if (message.length > SAY_MAX_CHARS) {
@@ -779,9 +811,16 @@ export function LofiiPanel() {
           </span>
         </div>
       ) : null}
+      {snapshot.reachable && snapshot.error ? (
+        <div className="notice notice-warning">
+          <span>
+            Lofii 状态可达，但事件流/告警游标异常：{lofiiErrorLabel(snapshot.error)}；事件流可能停止更新，控制仍可尝试。
+          </span>
+        </div>
+      ) : null}
       {!snapshot.controlEnabled ? (
         <div className="notice notice-muted">
-          Lofii 控制未启用（服务端未配置 LOFII_CONTROL_TOKEN）：仅展示状态、事件与历史，任务/移动/聊天操作已禁用。
+          Lofii 控制未启用（服务端未配置 LOFII_CONTROL_TOKEN）：任务/移动/聊天操作已禁用。
         </div>
       ) : null}
 
@@ -812,7 +851,7 @@ export function LofiiPanel() {
               onMove={(action, target) => void handleMove(action, target)}
             />
             <LofiiSayCard
-              controlReady={controlReady}
+              ready={sayReady}
               text={sayText}
               error={sayError}
               onTextChange={(value) => {

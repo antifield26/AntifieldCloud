@@ -47,6 +47,8 @@ vi.mock('../../api/client', () => ({
   },
   toErrorMessage: (error: unknown, fallback = '') =>
     error instanceof Error && error.message ? error.message : fallback,
+  isAbortError: (error: unknown) =>
+    Boolean(error && typeof error === 'object' && (error as { name?: unknown }).name === 'AbortError'),
 }))
 
 function progress(overrides: Partial<LofiiTaskProgress> = {}): LofiiTaskProgress {
@@ -269,6 +271,22 @@ describe('LofiiPanel 状态与降级', () => {
     expect(screen.queryByText(/无法连接 Lofii/)).toBeNull()
   })
 
+  it('上游 status 缺嵌套段时容忍缺失，不让整个面板崩溃', async () => {
+    mocks.status.mockResolvedValue(snapshot({ status: {} as LofiiStatus }))
+    renderPanel()
+    expect(await screen.findByText('Lofii 状态')).toBeTruthy()
+    expect(screen.getAllByText('事件流').length).toBeGreaterThan(0)
+  })
+
+  it('status 可达但事件轮询/游标失败时显示可见警告', async () => {
+    mocks.status.mockResolvedValue(
+      snapshot({ reachable: true, error: 'lofii_upstream_error', eventsSupported: true }),
+    )
+    renderPanel()
+    expect(await screen.findByText(/事件流\/告警游标异常/)).toBeTruthy()
+    expect(screen.getByText(/事件流可能停止更新/)).toBeTruthy()
+  })
+
   it('刷新失败时保留上次成功的数据并提示', async () => {
     mocks.status
       .mockResolvedValueOnce(snapshot())
@@ -285,7 +303,7 @@ describe('LofiiPanel 状态与降级', () => {
       snapshot({ controlEnabled: false, status: lofiiStatus({ task: activeTask() }) }),
     )
     renderPanel()
-    expect(await screen.findByText(/仅展示状态、事件与历史/)).toBeTruthy()
+    expect(await screen.findByText(/任务\/移动\/聊天操作已禁用/)).toBeTruthy()
     expect(screen.getByRole('button', { name: '开始任务' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '停止任务' })).toBeDisabled()
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
@@ -368,7 +386,17 @@ describe('LofiiPanel 游戏内聊天', () => {
     const input = await screen.findByLabelText('游戏内聊天内容')
     await userEvent.type(input, '/tp Antifield')
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
-    expect(await screen.findByText(/聊天内容不能以 \/ 开头/)).toBeTruthy()
+    expect(await screen.findByText(/聊天内容不能包含 \//)).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(mocks.say).not.toHaveBeenCalled()
+  })
+
+  it('拒绝切分边界后的 / 命令行（上游按 240 字符切行）', async () => {
+    renderPanel()
+    const input = await screen.findByLabelText('游戏内聊天内容')
+    await userEvent.type(input, `${'a'.repeat(240)}/op Lofii`)
+    await userEvent.click(screen.getByRole('button', { name: '发送' }))
+    expect(await screen.findByText(/聊天内容不能包含 \//)).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(mocks.say).not.toHaveBeenCalled()
   })

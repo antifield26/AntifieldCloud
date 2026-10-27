@@ -1,4 +1,4 @@
-# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0 / v0.8.0 Lofii 对接）
+# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0 / v0.8.0 Lofii 对接 / v0.8.0 Minor 补审计→v0.8.1）
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
@@ -6,20 +6,20 @@
 - 范围：v0.1.0 全部代码、部署脚本、备份、Pi/Cloudflare、前端与测试；第二轮覆盖 v0.2.2 基线与 v0.3.0/v0.3.1 增量；
   第三轮覆盖 v0.3.2 基线与 v0.4.0；第四轮覆盖 v0.4.2 基线与 v0.5.0 Bot 增量。
 - 方法：只读静态审查 + 进程内 PoC + 只读线上检查 + 回归测试；审计阶段未修改生产。
-- 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12，Bot WIP P1=2、P2=4 均已修复；第五轮（v0.5.11→v0.6.0）P0=0、P1=1、P2=14 均已在本版修复，P3=54 记录；残余见各节“延后/残留”。
+- 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12，Bot WIP P1=2、P2=4 均已修复；第五轮（v0.5.11→v0.6.0）P0=0、P1=1、P2=14 均已在本版修复，P3=54 记录；**v0.8.0 Minor 补审计（三轨）P0=0、P1=1、P2=5（去重后 3 类）、P3=32，P1/P2 与主要 P3 已在 v0.8.1 修复，残余见补审计节**。
 
-## v0.8.0 Lofii 对接（本地实现与生产部署/只读验收完成，待 Tag/Release 收尾；2026-10-27）
+## v0.8.0 Lofii 对接（本地实现与生产部署/只读验收完成；**后续 Minor 补审计见下节，v0.8.1 修复**；2026-10-27）
 
 ### 1. 范围与方法
 
 - 范围：`server/src/lofii/client.ts`/`service.ts`、`server/src/http/routes/lofii.ts`、`alerts/service.ts recordExternal`、`config.ts` 的 `LOFII_*`、`app.ts`/`main.ts` 生命周期、`web/src/components/lofii/*`、`web/src/pages/Minecraft.tsx`、`web/src/lib/lofii.ts`、`AlertsCard` 事件状态、`scripts/sync-lofii-tokens.sh`、`bootstrap-env.sh`、`deploy/env.example`、`smoke.ps1` Lofii 检查与对应文档。
 - 方法：只读代码审查 + 单元/路由/服务测试（进程内夹具，不访问真实 lofii-bot/网络）+ 本地门禁（typecheck/eslint/测试/覆盖率/build/check-version）；本审计为部署前自检，不含生产渗透；生产部署与只读/API 验收证据见 `docs/ACCEPTANCE.md` v0.8.0 节。
-- 计数：本轮为 v0.8.0 发布前自检，**P0=0 / P1=0 / P2=0**；未发现需要阻断发布的安全问题；以下为明确残余与验收边界，不是缺陷清单。
+- 计数：本轮为 v0.8.0 发布前自检，**P0=0 / P1=0 / P2=0**；未发现需要阻断发布的安全问题；以下为明确残余与验收边界，不是缺陷清单。**注**：发布后 Minor 补审计（下节）发现 P1=1（`/say` 分块命令注入）与 P2 若干，已在 v0.8.1 修复；本节结论仅代表发布前自检范围。
 
 ### 2. 关键安全/正确性结论
 
-- **Token 边界**：读/控制 Token 分离；控制 Token 为空时 `LofiiClient.control` 直接抛 `lofii_control_disabled` 且不发请求；`/say` 使用读 Token；`LOFII_URL` 启用时强制 loopback + http(s)，客户端 `redirect:'error'`，超时与 2 MiB 响应上限，错误文本移除 URL/Token（含上游把 Token 回显进 error 字段的处置）。
-- **HTTP 面**：全部 `/api/lofii/*` 需登录；写操作 CSRF + 每 IP 限流（控制 20/min、say 10/min）；服务端参数白名单（7 任务/4 移动/`/` 前缀/720 字符/taskId ≤64）；`/say` 审计只记字符数，不记正文；聊天/事件仅内存缓存（≤100 条），不落库/不写日志。
+- **Token 边界**：读/控制 Token 分离；控制 Token 为空时 `LofiiClient.control` 直接抛 `lofii_control_disabled` 且不发请求；`/say` 使用读 Token（**v0.8.1 已改为必须控制 Token，见补审计节 SEC6-01**）；`LOFII_URL` 启用时强制 loopback + http(s)，客户端 `redirect:'error'`，超时与 2 MiB 响应上限（**v0.8.1 改为流式上限**），错误文本移除 URL/Token（**v0.8.1 改为大小写不敏感**）。
+- **HTTP 面**：全部 `/api/lofii/*` 需登录；写操作 CSRF + 每 IP 限流（控制 20/min、say 10/min）；服务端参数白名单（7 任务/4 移动/`/` 前缀/720 字符/taskId ≤64；**v0.8.1 改为任意 `/` 拒绝、C0 拒绝、taskId 空白/控制字符拒绝**）；`/say` 审计只记字符数，不记正文；聊天/事件仅内存缓存（≤100 条且 ≤512 KiB），不落库/不写日志。
 - **告警语义**：`recordExternal` 固定 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.lofii.event_cursor` + `bootId` 基线避免重放；`LOFII_ALERTS_ENABLED=false` 仍推进游标不写事件；details 清洗后再落库/转发。
 - **降级**：禁用/不可达/旧版无 `/events/recent`/控制未启用/首次轮询未完成均有明确快照状态与页面文案；轮询失败保留旧快照，stale 3 个周期判定；单飞避免并发堆积。
 - **schema/兼容**：无迁移（保持 v17），仅新增 `meta.lofii.event_cursor`；`/api/version` 增 `lofiiEnabled/lofiiControlEnabled`；旧前端/旧服务端按关闭/未配置降级。
@@ -28,7 +28,7 @@
 
 - `npm run check` 通过；`npm test` **566**（565 pass、1 skip；91 文件）、`npm run test:web` **250**（47 文件）；服务端覆盖率 **93.06/78.67/88.70**、前端 **55.48/49.91/48.45**（门禁通过）；`npm run build` 通过（`index-DHjowEA5.js` 761.09 kB）。
 - 定向：`node --test server/test/lofii-client.test.ts server/test/lofii-service.test.ts server/test/lofii-routes.test.ts` 覆盖 Token 分离/重定向拒绝/超限/错误映射/游标/告警映射/限流/CSRF/参数校验；`web/src/pages/Minecraft.test.tsx`、`LofiiPanel.test.tsx`、`client.lofii.test.ts` 覆盖标签、降级、二次确认、纯文本渲染。
-- 证据边界：lofii-bot 为进程内假平台/夹具，未访问真实服务；生产 `/api/lofii/status`、smoke、控制分支已由 Lead 于 2026-10-27 实测回填（见 `docs/ACCEPTANCE.md`）；真实 Lofii 告警触发、生产 `/minecraft` UI 截图与完整公网 Access smoke 仍未做/未记录。
+- 证据边界：lofii-bot 为进程内假平台/夹具，未访问真实服务；生产 `/api/lofii/status`、smoke、控制分支已由 Lead 于 2026-10-27 实测回填（见 `docs/ACCEPTANCE.md`）；**生产 `/minecraft` UI 截图与完整公网 Access smoke 已完成**（见 v0.8.0 验收节），真实 Lofii 告警触发仍未做（`alert_events` 暂无 `lofii_*`）。
 
 ### 4. v0.8.0 明确残余/已知限制
 
@@ -36,8 +36,75 @@
 2. **聊天/事件不持久化**：事件与聊天只存在服务端内存（≤100 条），应用/Lofii 重启即失；不提供历史/导出/搜索；`/say` 不落库/不写日志（审计只记字符数）。
 3. **轮询延迟与单实例**：状态/事件最多滞后一个 `LOFII_POLL_MS`（默认 5s），控制结果最终一致；单进程内存缓存、单 Lofii 上游，不支持多实例/多副本。
 4. **控制面是真实写操作**：启用控制 Token 后可启停任务/移动/游戏内发言（仍受 Lofii 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
-5. **依赖独立服务**：需先部署 lofii-bot v0.6.0+（仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
+5. **依赖独立服务**：需先部署 lofii-bot **v0.6.1**（最低 v0.6.0，仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
 6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`），API 探针与 patrol start/stop 已验证）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；但真实 Lofii 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）、**Windows 每日备份任务安装标记仍为旧版本**（需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新，非失败）、**尚未 Tag/GitHub Release**。
+
+## v0.8.0 Minor 补审计（三轨：架构对抗 / 安全 / Debug；v0.8.1 修复记录，2026-10-27）
+
+- 背景：v0.8.0 发布后对 Lofii 对接做三轨补充审计（架构对抗、安全、Debug），三轨合计 38 项发现（含 1 项 P1、5 项 P2、32 项 P3；P2 去重后为 3 类）；本轮 v0.8.1 修复 P1/P2 与主要 P3 加固，其余明确列为残余。
+- 三份原始报告保存在本机 `.local/audit/`（gitignored，不进入公开仓库）：`round6-arch.md`、`round6-sec.md`、`round6-debug.md`；本节为合并后的公开摘要与处置记录。
+- 审计方法：只读代码审查 + 进程内 PoC（假上游/夹具，不访问真实 lofii-bot/网络/Minecraft）+ 本地门禁；**未在生产执行命令注入、未触发真实 Lofii 告警、未重启服务**。
+
+### 1. 三轨计数
+
+| 轨道 | 报告 | P0 | P1 | P2 | P3 | 合计 |
+|---|---|---|---|---|---|---|
+| 架构对抗 | `round6-arch.md` | 0 | 0 | 3（ARCH6-01/02/13） | 15 | 18 |
+| 安全 | `round6-sec.md` | 0 | 1（SEC6-01） | 1（SEC6-02） | 8 | 10 |
+| Debug | `round6-debug.md` | 0 | 0 | 1（DBG6-01） | 9 | 10 |
+
+- **P1（SEC6-01）**：`/api/lofii/say` 仅校验整体首字符 `/`，而上游 lofii-bot v0.6.0 按 `AI_MAX_LINE_CHARS=240` 切行后不再逐行校验，可用“240 填充字符 + `/op <name>`”在第二行注入 Minecraft op-4 命令；且 `/say` 使用读 Token，**只读部署同样可触发**。已证明链路（路由 PoC + 上游纯函数切行 + 生产只读 op 等级证据），未在生产实际执行。
+- **P2（SEC6-02 / ARCH6-01 / DBG6-01）**：上游 `/status`/事件/历史数据形状与原型链查找未防护——告警可静默丢失、前端可因缺字段把整站交给 ErrorBoundary 白屏。
+- **P2（ARCH6-02/13）**：部分轮询失败/依赖死亡不可见，Lofii 进程未纳入 `service_down` 监控。
+- **P3** 集中在 Token 脱敏、内存/告警风暴、上游透传、脚本/env 硬化、URL 端口/路径、只读语义、taskId 校验、竞态、展示一致性等。
+
+### 2. v0.8.1 已修复
+
+| 发现 | 级别 | 处置（v0.8.1） | 回归/证据 |
+|---|---|---|---|
+| SEC6-01（`/say` 分块命令注入） | **P1** | `/say` 改为**必须控制 Token**（只读 503 `lofii_control_disabled`）；拒绝**任意位置 ASCII `/`** 与 C0 控制字符/DEL（含 240 字符切分后的第二行）；上游 lofii-bot v0.6.1 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／` | 路由边界测试（只读 503、任意 `/`、C0、720）；上游新增 239/240/255/480 切分边界测试 |
+| SEC6-02 + ARCH6-01 + DBG6-01（原型链/形状/白屏） | **P2** | `mapLofiiAlert` 与前端标签查表改 own-property；`sanitizeDetails` 跳过 `__proto__`/`constructor`/`prototype`；`/history` 校验 `kind`/数组/行并只透传对象行；前端 `safeLofiiStatus` 归一化缺失嵌套段 | 服务端/前端回归：缺 `task`/`admin`/`ai`/`memory` 的 status 不抛错并显示“—”；历史缺 kind 不再永久骨架 |
+| ARCH6-02 + DBG6-02（降级不可见） | P2/P3 | `reachable=true && error≠null` 时面板显示可见警告“事件流/告警游标异常”；事件/历史仍可用 | 组件测试断言警告可见 |
+| SEC6-03 + DBG6-06（Token 脱敏） | P3 | 错误文本与 `containsSecret` 改为大小写不敏感匹配 | client 回归用例（大写 Token 回显被 `[REDACTED]`） |
+| SEC6-04 + DBG6-05 + ARCH6-14（内存上限） | P3 | 响应体改为**流式**读取并 2 MiB 上限（`readCappedBody`，Content-Length 超限先拒绝）；事件缓存增加 512 KiB 总字节上限；每轮 recent 改 200 条 | client 流式超限测试；service 缓存字节上限测试 |
+| DBG6-03（面板请求竞态） | P3 | `LofiiPanel.load` 增加请求序号 + AbortController，旧响应不覆盖新响应 | 组件测试 |
+| DBG6-04（eventsSupported 回退） | P3 | `lofiiEventsSupported` 对 `undefined` 回退为不支持；`contractVersion` 仅 number 才显示版本 | lib 单测 |
+| ARCH6-05 + DBG6-07（告警写入丢事件） | P3 | 告警写入失败时游标停在上一条已处理事件并返回，下一轮重试该事件 | service 回归（写失败不越游标） |
+| ARCH6-09（5xx 稳定码） | P3 | 上游 5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`；补 `lofii_history_disabled` 文案 | client/route 测试 |
+| ARCH6-04（历史永久骨架） | P3 | `/history` 形状异常返回 `502 lofii_upstream_error`；前端显示错误并支持重试 | 前端组件测试 |
+| DBG6-08（taskId 校验） | P3 | `taskId` trim 后 1–64、无内部空白、无 C0/DEL，否则 400 | 路由测试 |
+| DBG6-09 + SEC6-09（`/say` 只读语义） | P3 | `/say` 纳入控制 Token 门控；UI 只读时禁用聊天输入；API/UI-SPEC/SECURITY/DEPLOY 文案同步 | 路由 + 组件 + 文档 |
+| DBG6-10a（错误码文案） | P3 | 前端补 `lofii_cursor_failed`/`lofii_not_found`/`lofii_history_disabled` 中文映射 | lib 单测 |
+| ARCH6-16① + ARCH6-17①（URL/同步脚本） | P3 | `LOFII_URL` 拒绝 userinfo/路径/查询/片段；`sync-lofii-tokens.sh` 改同目录临时文件 + `mv` 原子替换 | config 校验测试；脚本审阅/生产重跑 |
+| ARCH6-08（事件窗口 100<500） | P3 | 轮询 `limit=200`，降低突发漏告警窗口（未做缺口检测，仍列残余） | client/service 参数断言 |
+
+### 3. v0.8.1 明确残余（未修，不得写成已解决）
+
+| 残余 | 来源 | 说明/计划 |
+|---|---|---|
+| 告警事件**无幂等键** | ARCH6-06 | DB 恢复/多实例/游标回退可能重复写 `alert_events` 并重复 webhook/Bot 通知；计划随 schema v18 下一 minor 处理 |
+| 告警风暴**无语义并发上限** | SEC6-05 | 每条 alert 仍异步并发 webhook + Bot 排队；上游被控/异常时可能放大；未做去重/冷却 |
+| Lofii 进程未纳入 `service_down`/metrics | ARCH6-13 | lofii-bot 死亡时应用无主动告警，只能从面板发现 |
+| `/status`/`history` 的 `lastError` 原样透传 | SEC6-06 | 仅 admin 可见、React 转义；未做字段白名单重建 |
+| `LOFII_URL` 允许任意 loopback 端口 | SEC6-08 | 可指向本机其它服务；仅校验 loopback + 根路径，未限制端口范围 |
+| `stop()` 不取消在途轮询 | ARCH6-07 | 关闭瞬间可能多写一次游标；未 abort/await in-flight |
+| `lastSuccessAt` 未下发，stale 文案仍用 `lastPollAt` | ARCH6-03 | 持续故障时提示“上次成功轮询 3 秒前”可能误导 |
+| `/api/lofii/status`/`history` 无 GET 限流、控制响应仍等待刷新 | ARCH6-11 | 认证用户可高频打上游；控制成功后仍 `await refresh()` |
+| 全局 `ALERTS_ENABLED=false` 时面板“告警联动”仍显示已启用 | ARCH6-10b | 未合成全局开关展示 |
+| UI 提示可同时出两条、状态卡硬编码“每 5 秒” | ARCH6-12 | 未完全按 UI-SPEC 单条优先级/可配置间隔 |
+| 契约版本无守卫（未知版本仍按 v1 处理） | ARCH6-15 | 未限制 `contractVersion` 集合 |
+| 同步脚本备份累积、smoke 无应用侧断言、sed 缺键静默 | ARCH6-17②③④ | `.lofii-tokens.bak.*` 仍累积；smoke 不校验应用侧 `lofiiEnabled/reachable`；启用 sed 仍可能静默 |
+| webhook 与 Bot 通知串行、关闭不排空、通知文案英文码 | ARCH6-18 | 未并行/未排空；Lofii 事件通知未中文化 |
+| 真实 Lofii 告警未触发 | 三轨共同证据边界 | `alert_events` 暂无 `lofii_*`；映射/webhook/Bot 由单元/集成测试覆盖 |
+| Windows 每日任务安装标记待用户重装 | 部署残余 | 需用户管理员 PowerShell 重装 `install-backup-task.ps1`（非失败） |
+| **v0.8.1 尚未部署/尚未 Tag/Release** | 发布边界 | 生产仍 v0.8.0；部署后需复验 `/say`、UI 与 smoke |
+
+### 4. 验证与边界
+
+- 本地（v0.8.1）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（门禁通过）；`npm run build` 通过；`check-version` 严格 `0.8.1`。
+- 上游 lofii-bot v0.6.1：`splitOutgoing` 逐行中和行首 `/`；新增 239/240/255/480 边界测试（另行提交，不属本仓库）。
+- 证据边界：未在生产实际发送 `/op`/聊天命令、未触发真实 Lofii 告警、未做真实 webhook/QQ 投递；三轨审计为只读审计 + 进程内 PoC；生产 v0.8.0 的部署/只读验收/UI 视觉/smoke 证据见 `docs/ACCEPTANCE.md`。
+- 发布边界：**v0.8.0 与 v0.8.1 均尚未 Tag/GitHub Release**；v0.8.1 生产待部署。
 
 ## 第一轮（v0.2.0，2026-10-19）
 

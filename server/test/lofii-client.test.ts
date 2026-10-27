@@ -257,6 +257,45 @@ test('网络错误/超时/重定向被拒统一 lofii_unavailable，message 不�
   await expectLofiiError(makeClient(redirectBlocked.impl).status(), 'lofii_unavailable')
 })
 
+test('上游把 Token 以大小写混合形式回显进 error：同样完全脱敏', async () => {
+  const hexToken = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+  const upper = hexToken.toUpperCase()
+  const { impl } = makeFetch(() => json({ error: upper, message: `bad ${upper}` }, 400))
+  const client = makeClient(impl, { readToken: hexToken })
+  const error = await expectLofiiError(client.status(), 'lofii_invalid_request')
+  assert.equal(error.upstreamCode, 'invalid_request')
+  assert.ok(!error.code.includes(upper.toLowerCase()), '错误码不得回显大小写变换后的 Token')
+  assert.ok(!error.message.includes(upper), '错误消息不得回显 Token')
+})
+
+test('Token 含 -/_ 等编码变体回显时也不进入错误码', async () => {
+  const token = 'abcd-ef01-2345-6789-abcd-ef01-2345-6789-abcdef'
+  const { impl } = makeFetch(() => json({ error: token, message: `bad ${token}` }, 400))
+  const client = makeClient(impl, { readToken: token })
+  const error = await expectLofiiError(client.status(), 'lofii_invalid_request')
+  assert.equal(error.upstreamCode, 'invalid_request')
+  assert.ok(!error.code.includes('abcd_ef01'), '错误码不得携带归一化后的 Token')
+})
+
+test('上游 5xx 明确业务码 task_disabled 保留为 lofii_task_disabled', async () => {
+  const { impl } = makeFetch(() => json({ error: 'task_disabled', message: 'tasks disabled' }, 503))
+  const error = await expectLofiiError(makeClient(impl).startTask('fishing'), 'lofii_task_disabled')
+  assert.equal(error.statusCode, 503)
+  assert.equal(error.upstreamCode, 'task_disabled')
+})
+
+test('history 形状不合法（kind 不匹配/数组缺失/行非对象）时报上游格式错误', async () => {
+  const wrongKind = makeFetch(() => json({ kind: 'alerts', count: 0, alerts: [] }))
+  await expectLofiiError(makeClient(wrongKind.impl).history('samples'), 'lofii_upstream_error')
+
+  const missingArray = makeFetch(() => json({ kind: 'samples', count: 0 }))
+  await expectLofiiError(makeClient(missingArray.impl).history('samples'), 'lofii_upstream_error')
+
+  const mixedRows = makeFetch(() => json({ kind: 'samples', count: 3, samples: [{ ts: 'x' }, null, 'bad', 3] }))
+  const body = await makeClient(mixedRows.impl).history('samples')
+  assert.deepEqual(body.samples, [{ ts: 'x' }])
+})
+
 test('响应读取失败映射 lofii_unavailable', async () => {
   const { impl } = makeFetch(
     () =>

@@ -205,6 +205,32 @@ test('LOFII_URL 去尾斜杠，启用时必须 loopback 且 http(s)', () => {
         }),
       /必须是 http\(s\) URL/,
     )
+    assert.throws(
+      () =>
+        loadConfig({
+          ...baseEnv(dir),
+          LOFII_ENABLED: 'true',
+          LOFII_READ_TOKEN: 'read-token',
+          LOFII_URL: 'http://user:pass@127.0.0.1:3010',
+        }),
+      /不允许包含用户名\/密码/,
+    )
+    for (const lofiiUrl of [
+      'http://127.0.0.1:3010/api',
+      'http://127.0.0.1:3010/?x=1',
+      'http://127.0.0.1:3010/#fragment',
+    ]) {
+      assert.throws(
+        () =>
+          loadConfig({
+            ...baseEnv(dir),
+            LOFII_ENABLED: 'true',
+            LOFII_READ_TOKEN: 'read-token',
+            LOFII_URL: lofiiUrl,
+          }),
+        /只允许 scheme:\/\/host\[:port\]/,
+      )
+    }
   } finally {
     cleanupDir(dir)
   }

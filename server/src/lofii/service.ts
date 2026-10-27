@@ -29,6 +29,10 @@ import {
 export const LOFII_EVENT_CURSOR_KEY = 'lofii.event_cursor'
 /** 事件内存缓存上限（API 最多返回 100 条）。 */
 export const LOFII_EVENT_CACHE_LIMIT = 100
+/** 事件缓存总的序列化字节上限；防止大量大 JSON 事件长期占用内存。 */
+export const LOFII_EVENT_CACHE_MAX_BYTES = 512 * 1024
+/** 每轮向上游最多取 200 条（ring 500），覆盖一次突发，避免只看 100 条漏告警。 */
+export const LOFII_EVENT_POLL_LIMIT = 200
 /** 连续多少次轮询间隔没有成功（3 个 poll 周期）判定 stale。 */
 export const LOFII_STALE_POLLS = 3
 
@@ -111,7 +115,10 @@ function sanitizeDetailValue(value: unknown, depth: number): unknown {
     let count = 0
     for (const [key, item] of Object.entries(value)) {
       if (count >= MAX_DETAILS_KEYS) break
-      out[key.slice(0, 40)] = sanitizeDetailValue(item, depth + 1)
+      const safeKey = key.slice(0, 40)
+      // 跳过原型相关键，避免清洗结果被改写原型；普通对象保持可预测的深比较行为。
+      if (safeKey === '__proto__' || safeKey === 'constructor' || safeKey === 'prototype') continue
+      out[safeKey] = sanitizeDetailValue(item, depth + 1)
       count += 1
     }
     return out
@@ -131,8 +138,14 @@ export function mapLofiiAlert(event: LofiiEvent): ExternalAlertInput | null {
   if (event.type !== 'alert') return null
   const data = isRecord(event.data) ? event.data : {}
   const lofiiType = typeof data.type === 'string' && data.type.trim() ? data.type.trim().slice(0, 64) : 'unknown'
-  const known = LOFII_ALERT_MAP[lofiiType]
-  const severity: AlertSeverity = known ? known.severity : data.severity === 'error' ? 'critical' : 'warning'
+  const known = Object.prototype.hasOwnProperty.call(LOFII_ALERT_MAP, lofiiType)
+    ? LOFII_ALERT_MAP[lofiiType]
+    : undefined
+  const severity: AlertSeverity = known
+    ? known.severity
+    : data.severity === 'error'
+      ? 'critical'
+      : 'warning'
   const title = known?.title ?? 'Lofii 告警'
   const upstreamMessage = typeof data.message === 'string' && data.message.trim() ? data.message.trim() : ''
   const message = (upstreamMessage || title).slice(0, 500)
@@ -295,7 +308,7 @@ export class LofiiService {
     const startedAt = this.now()
     const [statusResult, recentResult] = await Promise.allSettled([
       this.client.status(),
-      this.client.recentEvents(LOFII_EVENT_CACHE_LIMIT),
+      this.client.recentEvents(LOFII_EVENT_POLL_LIMIT),
     ])
     this.lastPollAt = startedAt.toISOString()
     let error: string | null = null
@@ -346,7 +359,7 @@ export class LofiiService {
     return { skipped: false, ok: this.reachable && error === null, error, alerts: alertCount }
   }
 
-  /** 合并事件到内存缓存：按 id 去重、newest-first、最多 100 条。 */
+  /** 合并事件到内存缓存：按 id 去重、newest-first、最多 100 条且总字节有界。 */
   private mergeEvents(incoming: LofiiEvent[]): void {
     if (incoming.length === 0) return
     const seen = new Set<string>()
@@ -357,7 +370,22 @@ export class LofiiService {
       merged.push(event)
     }
     merged.sort(compareEventsNewestFirst)
-    this.events = merged.slice(0, LOFII_EVENT_CACHE_LIMIT)
+    const bounded: LofiiEvent[] = []
+    let bytes = 0
+    for (const event of merged) {
+      if (bounded.length >= LOFII_EVENT_CACHE_LIMIT) break
+      let size: number
+      try {
+        size = Buffer.byteLength(JSON.stringify(event), 'utf8')
+      } catch {
+        // 不可序列化的事件不进入 UI 缓存；游标/告警处理仍使用原始事件。
+        continue
+      }
+      if (bytes + size > LOFII_EVENT_CACHE_MAX_BYTES) break
+      bounded.push(event)
+      bytes += size
+    }
+    this.events = bounded
   }
 
   // ---------- 告警游标 ----------
@@ -414,22 +442,39 @@ export class LofiiService {
     // 基线建立时 ring 为空（lastEventId=null）：之后出现的事件都是新的；ring 非空时按游标过滤。
     const after = cursor.lastEventId ? eventsAfterCursor(recent.events, cursor) : [...recent.events]
     let count = 0
+    // 记录最后一条已完整处理的事件；告警写入失败时游标停在该事件，下一轮重试失败事件，
+    // 避免“错误被吞掉但游标照常推进”导致告警永久丢失。
+    let processed: LofiiEvent | null = null
     for (const event of after) {
-      if (event.type !== 'alert') continue
-      if (!this.config.lofiiAlertsEnabled) continue
-      const input = mapLofiiAlert(event)
-      if (!input) continue
-      try {
-        if (this.alerts.recordExternal(input) !== null) count += 1
-      } catch (cause) {
-        this.log('warn', 'Lofii 告警写入失败', {
-          error: errorCodeOf(cause),
-          lofiiEventId: event.id,
-          lofiiType: input.details.lofiiType,
-        })
+      if (event.type === 'alert' && this.config.lofiiAlertsEnabled) {
+        const input = mapLofiiAlert(event)
+        if (input) {
+          try {
+            if (this.alerts.recordExternal(input) !== null) count += 1
+          } catch (cause) {
+            this.log('warn', 'Lofii 告警写入失败', {
+              error: errorCodeOf(cause),
+              lofiiEventId: event.id,
+              lofiiType: input.details.lofiiType,
+            })
+            if (processed) {
+              this.writeCursor({
+                bootId: recent.bootId,
+                lastEventId: processed.id,
+                lastTs: processed.ts,
+              })
+            }
+            return count
+          }
+        }
       }
+      processed = event
     }
-    this.writeCursor({ bootId: recent.bootId, lastEventId: lastId ?? cursor.lastEventId, lastTs: lastTs ?? cursor.lastTs })
+    this.writeCursor({
+      bootId: recent.bootId,
+      lastEventId: lastId ?? processed?.id ?? cursor.lastEventId,
+      lastTs: lastTs ?? processed?.ts ?? cursor.lastTs,
+    })
     return count
   }
 

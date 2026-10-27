@@ -47,7 +47,10 @@ export interface LofiiClientOptions {
   fetch?: typeof fetch
 }
 
-/** 稳定错误码；`lofii_<upstream>` 表示上游 4xx 明确错误。 */
+/** 上游 5xx 中可安全透传的稳定业务错误码（Lofii 用 503 表示任务/控制/历史关闭）。 */
+const STABLE_UPSTREAM_5XX_CODES = new Set(['task_disabled', 'control_disabled', 'history_disabled'])
+
+/** 稳定错误码；`lofii_<upstream>` 表示上游明确业务错误。 */
 export class LofiiError extends Error {
   readonly code: string
   readonly statusCode: number | null
@@ -75,6 +78,10 @@ function toEvent(value: unknown): LofiiEvent | null {
 }
 
 /** 上游错误码只保留安全字符，避免把任意文本拼进错误码。 */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function normalizeCode(raw: string): string {
   const code = raw
     .trim()
@@ -146,7 +153,14 @@ export class LofiiClient {
     if (query.limit !== undefined) params.set('limit', String(query.limit))
     const body = await this.request(`/history?${params.toString()}`, { method: 'GET', token: this.readToken })
     if (!isRecord(body)) throw new LofiiError('lofii_upstream_error', 'Lofii 历史响应格式不合法')
-    return body
+    if (body.kind !== kind) throw new LofiiError('lofii_upstream_error', 'Lofii 历史响应类型不匹配')
+    const rows = body[kind]
+    if (!Array.isArray(rows)) throw new LofiiError('lofii_upstream_error', 'Lofii 历史响应缺少数组')
+    // 只透传对象行，避免畸形数组让前端 Table 渲染时解引用 null/原始值崩溃。
+    return {
+      ...body,
+      [kind]: rows.filter((row): row is Record<string, unknown> => isRecord(row)),
+    }
   }
 
   async startTask(name: string): Promise<Record<string, unknown>> {
@@ -205,14 +219,12 @@ export class LofiiClient {
       throw new LofiiError('lofii_unavailable', 'Lofii 服务不可用')
     }
 
-    let raw: ArrayBuffer
+    let raw: Uint8Array
     try {
-      raw = await response.arrayBuffer()
-    } catch {
+      raw = await this.readCappedBody(response)
+    } catch (error) {
+      if (error instanceof LofiiError) throw error
       throw new LofiiError('lofii_unavailable', 'Lofii 响应读取失败')
-    }
-    if (raw.byteLength > LOFII_MAX_RESPONSE_BYTES) {
-      throw new LofiiError('lofii_upstream_error', 'Lofii 响应超过大小上限')
     }
     const text = new TextDecoder().decode(raw)
     let parsed: unknown = null
@@ -235,6 +247,58 @@ export class LofiiClient {
     return parsed
   }
 
+  /**
+   * 流式读取并限制响应体大小：不能先 arrayBuffer() 再检查，否则 chunked/无长度响应
+   * 会先把整个超大正文读入内存。Content-Length 超限时直接拒绝；未知长度边读边计数。
+   */
+  private async readCappedBody(response: Response): Promise<Uint8Array> {
+    const declared = Number(response.headers.get('content-length') ?? '')
+    if (Number.isFinite(declared) && declared > LOFII_MAX_RESPONSE_BYTES) {
+      throw new LofiiError('lofii_upstream_error', 'Lofii 响应超过大小上限')
+    }
+    const body = response.body
+    if (!body) {
+      const buffer = await response.arrayBuffer()
+      if (buffer.byteLength > LOFII_MAX_RESPONSE_BYTES) {
+        throw new LofiiError('lofii_upstream_error', 'Lofii 响应超过大小上限')
+      }
+      return new Uint8Array(buffer)
+    }
+    const reader = body.getReader()
+    const chunks: Uint8Array[] = []
+    let total = 0
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (!value || value.byteLength === 0) continue
+        total += value.byteLength
+        if (total > LOFII_MAX_RESPONSE_BYTES) {
+          try {
+            await reader.cancel()
+          } catch {
+            // 取消失败不影响拒绝结果。
+          }
+          throw new LofiiError('lofii_upstream_error', 'Lofii 响应超过大小上限')
+        }
+        chunks.push(value)
+      }
+    } finally {
+      try {
+        reader.releaseLock()
+      } catch {
+        // reader 已关闭/取消时 release 可能抛错，忽略。
+      }
+    }
+    const result = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      result.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return result
+  }
+
   private mapHttpError(status: number, parsed: unknown): LofiiError {
     const rawCode = extractErrorCode(parsed)
     // 防御上游把 Token 回显进 error 字段：错误码也不得携带凭据。
@@ -250,21 +314,35 @@ export class LofiiClient {
       const code = upstreamCode ?? 'invalid_request'
       return new LofiiError(`lofii_${code}`, this.sanitizeMessage(upstreamMessage ?? 'Lofii 请求被拒绝'), status, code)
     }
+    if (status >= 500 && upstreamCode && STABLE_UPSTREAM_5XX_CODES.has(upstreamCode)) {
+      return new LofiiError(
+        `lofii_${upstreamCode}`,
+        this.sanitizeMessage(upstreamMessage ?? 'Lofii 功能未启用'),
+        status,
+        upstreamCode,
+      )
+    }
     return new LofiiError('lofii_upstream_error', `Lofii 上游错误（HTTP ${status}）`, status)
   }
 
-  /** 上游 message 可能包含地址（如错误栈）；移除本机地址与两个 Token。 */
+  /** 上游 message 可能包含地址（如错误栈）；移除本机地址与两个 Token（大小写不敏感）。 */
   private sanitizeMessage(message: string): string {
     let text = message
     for (const secret of [this.baseUrl, this.readToken, this.controlToken]) {
-      if (secret) text = text.split(secret).join('[REDACTED]')
+      if (secret) text = text.replace(new RegExp(escapeRegExp(secret), 'gi'), '[REDACTED]')
     }
     return text.slice(0, 200)
   }
 
   private containsSecret(value: string): boolean {
+    const lowered = value.toLowerCase()
+    const normalized = normalizeCode(value)
     for (const secret of [this.readToken, this.controlToken]) {
-      if (secret && value.includes(secret)) return true
+      if (!secret) continue
+      if (lowered.includes(secret.toLowerCase())) return true
+      // normalizeCode 会把 '-'/'+' 等变成 '_'：同时比较变换后的 Token，避免编码变体回显。
+      const normalizedSecret = normalizeCode(secret)
+      if (normalizedSecret.length >= 8 && normalized.includes(normalizedSecret)) return true
     }
     return false
   }

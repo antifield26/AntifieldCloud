@@ -144,7 +144,15 @@ function handlerFor(state: {
     if (url.pathname === '/events/recent') {
       return (state.recent ?? (() => json({ error: 'not_found' }, 404)))()
     }
-    if (url.pathname === '/history') return (state.history ?? (() => json({ kind: 'samples', count: 0, samples: [] })))()
+    if (url.pathname === '/history') {
+      return (
+        state.history ??
+        (() =>
+          url.searchParams.get('kind') === 'alerts'
+            ? json({ kind: 'alerts', count: 0, alerts: [] })
+            : json({ kind: 'samples', count: 0, samples: [] }))
+      )()
+    }
     if (url.pathname.startsWith('/task') || url.pathname === '/move' || url.pathname === '/say') {
       return (state.control ?? (() => json({ ok: true, requestId: 'req-1', queued: false, position: null })))()
     }
@@ -547,7 +555,7 @@ test('控制代理：控制成功后立即刷新；只读模式只允许 /say；
     assert.equal(String((sayCall.init.headers as Record<string, string>).authorization), 'Bearer read-token')
 
     const history = await fx.service.history('alerts', { limit: 50 })
-    assert.equal(history.kind, 'samples')
+    assert.equal(history.kind, 'alerts')
     const historyCall = fx.calls.find((call) => new URL(call.url).pathname === '/history')
     assert.equal(new URL(historyCall!.url).searchParams.get('kind'), 'alerts')
     assert.equal(new URL(historyCall!.url).searchParams.get('limit'), '50')
@@ -653,6 +661,75 @@ test('日志不包含聊天正文/Token；事件缓存可含聊天但只在内�
     assert.ok(!serializedLogs.includes('secret chat message'), '日志不得包含聊天正文')
     assert.ok(!serializedLogs.includes('read-token'))
     assert.ok(!serializedLogs.includes('control-token'))
+  } finally {
+    fx.close()
+  }
+})
+
+test('告警写入失败：游标停在上一条已处理事件，下一轮重试且不永久丢告警', async () => {
+  const first = ev('b1-1', 'chat', 1, { direction: 'out', text: 'hello' })
+  const alert = ev('b1-2', 'alert', 2, { type: 'low_health', message: '血量低' })
+  let round = 0
+  let attempts = 0
+  const recorded: ExternalAlertInput[] = []
+  const fx = serviceFixture({
+    handler: handlerFor({
+      recent: () => {
+        round += 1
+        return json({
+          contractVersion: 1,
+          bootId: 'b1',
+          lastEventId: round === 1 ? 'b1-1' : 'b1-2',
+          events: round === 1 ? [first] : [first, alert],
+        })
+      },
+    }),
+    recordExternal: (input) => {
+      attempts += 1
+      if (attempts === 1) throw new Error('db busy')
+      recorded.push(input)
+      return attempts
+    },
+  })
+  try {
+    await fx.service.pollOnce() // 基线
+    const failed = await fx.service.pollOnce()
+    assert.equal(failed.alerts, 0)
+    assert.equal(attempts, 1)
+    assert.equal(cursor(fx.db)?.lastEventId, 'b1-1', '失败告警不得被游标跳过')
+    assert.equal(recorded.length, 0)
+
+    const retried = await fx.service.pollOnce()
+    assert.equal(retried.alerts, 1)
+    assert.equal(attempts, 2)
+    assert.equal(recorded.length, 1)
+    assert.equal(cursor(fx.db)?.lastEventId, 'b1-2')
+  } finally {
+    fx.close()
+  }
+})
+
+test('事件缓存有总字节上限：超大事件不会无界占用内存', async () => {
+  const large = 'x'.repeat(300 * 1024)
+  const fx = serviceFixture({
+    handler: handlerFor({
+      recent: () =>
+        json({
+          contractVersion: 1,
+          bootId: 'b1',
+          lastEventId: 'b1-2',
+          events: [
+            ev('b1-1', 'chat', 1, { direction: 'out', text: large }),
+            ev('b1-2', 'chat', 2, { direction: 'out', text: large }),
+          ],
+        }),
+    }),
+  })
+  try {
+    await fx.service.pollOnce()
+    const snapshot = fx.service.snapshot()
+    assert.equal(snapshot.events.length, 1, '超过字节预算的旧事件应被丢弃')
+    assert.equal(snapshot.events[0]?.id, 'b1-2')
   } finally {
     fx.close()
   }
