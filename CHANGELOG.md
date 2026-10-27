@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**生产部署与只读/API/安全回归验收已完成（2026-10-27）；v0.8.1 仍待 Tag/Release**（v0.8.0 已发布）；schema 保持 v17；OpenCode v2.1.4）
+## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**已发布：annotated Tag `v0.8.1` + GitHub Release（2026-10-27）；生产部署与只读/API/安全回归验收完成**；schema 保持 v17；OpenCode v2.1.4）
 
 ### Security
 
@@ -22,16 +22,21 @@
 ### Deploy
 
 - **生产部署（2026-10-27 CST）**：应用 release `/opt/antifieldcloud/releases/20261027T113055Z`，commit `5405a8d`；`/healthz` = v0.8.1/schema17（uptime/DB ok）；迁移前 DB 快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`）。上一生产 **v0.8.0**（release `20261027T094412Z`/commit `9ae5809`）保留为回滚点。
-- **smoke**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**；完整公网 Access smoke **35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（`-SkipLocalTaskCheck`；期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；2 SKIP=加密/异地默认关闭）。
+- **smoke**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**；完整公网 Access smoke **36 PASS / 0 FAIL / 0 WARN / 2 SKIP**（**含本地备份任务标记检查，无 `-SkipLocalTaskCheck`**；期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；2 SKIP=加密/异地默认关闭）。此前两次完整 smoke 失败（34/31）为 Cloudflare 隧道瞬断（curl 超时），恢复后重跑 36/0/0/2 全绿，不计为产品失败。
+- **Windows 备份任务重装（2026-10-27）**：`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致（`7febb768…636d`）、任务 Ready；smoke 任务标记检查 PASS。
 - **lofii-bot**：升级到 **v0.6.1**（release `/opt/lofii-bot/releases/20261027T111640Z`/commit `a0a28da`，仅 loopback）；`sync-lofii-tokens.sh --check` **read=match control=match**；`LOFII_ENABLED=true`，`meta.lofii.event_cursor` 已更新。
 - **已认证 API/安全回归**（临时验收会话已删，计数 0）：`/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）；`/api/lofii/status` 200（enabled/reachable/control/eventsSupported=true，version=0.6.1/contract=1）；`/say` 240 填充 + `/op` → **400 `message_must_not_start_with_slash`**；`/say` C0 控制字符 → **400 `invalid_request`**；只读 `/say` 503 由单元/集成测试覆盖（生产控制 Token 已配置，未改配置实测）。
 - **环境/日志证据**：`audit_log` 仅 `lofii.task.start/stop`，无 `lofii.say`（拒绝请求不写审计）；`alert_events` 中 `lofii_*` 仍为 0；journal 无 error、0 条 64hex；env 0640；`systemctl --failed` 为空。
 - 回滚：回退到 v0.8.0 release `20261027T094412Z`（schema 不变、env 无需改动）；lofii-bot v0.6.1 对 v0.8.0 兼容；回退后 `/say` 恢复旧语义，需同步下调安全结论。
 
+### Release
+
+- **v0.8.1 已发布**：annotated Tag `v0.8.1`（target 为发布文档 commit）；GitHub Release `AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.1 ），2026-10-27。
+- **v0.8.0 已发布**：annotated Tag `v0.8.0` → commit `c5ec851`；GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0 ），publishedAt `2026-10-27T12:02:45Z`。
+
 ### Pending
 
-- **v0.8.0 已发布**：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release（publishedAt `2026-10-27T12:02:45Z`）；**v0.8.1 仍待 Tag/Release**（生产已部署 `20261027T113055Z`/commit `5405a8d`，等待 Windows 备份任务重装后由 Lead 执行）。
-- 明确残余（未修）：告警事件无幂等键（schema v18 下一 minor）、告警风暴并发 webhook/Bot 上限、Lofii 进程未纳入 `service_down` 监控/metrics、`/status`/`history` 的 `lastError` 原样透传（admin-only）、`LOFII_URL` 允许任意 loopback 端口、`stop()` 不取消在途轮询、`lastSuccessAt` 未下发（stale 文案仍用 `lastPollAt`）、真实 Lofii 告警未触发、**v0.8.1 未重新做生产 UI 截图/视觉复验**（v0.8.0 视觉确认仍有效）、Windows 每日任务安装标记待用户重装。详见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
+- 真实 Lofii 告警联动待触发/联调；drill 未记录（如需由 Lead 补跑后回填 `docs/ACCEPTANCE.md`）。
 
 ## [v0.8.0] - 2026-10-27（**已发布：Tag `v0.8.0` + GitHub Release（2026-10-27）**；Lofii Minecraft Bot 对接；生产部署与只读/API 验收已完成；schema 保持 v17；OpenCode v2.1.4）
 
@@ -71,11 +76,11 @@
 ### Release
 
 - **v0.8.0 已发布**：annotated Tag `v0.8.0` → commit `c5ec851`；GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0 ），publishedAt `2026-10-27T12:02:45Z`。
-- **v0.8.1 尚未 Tag/Release**：生产已部署（release `20261027T113055Z`/commit `5405a8d`）并完成只读/API/安全回归验收；Tag/Release 等待 **Windows 每日备份任务重装** 后由 Lead 执行。
+- **v0.8.1 已发布**：annotated Tag `v0.8.1` + GitHub Release `AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.1 ），2026-10-27。
 
 ### Pending
 
-- 真实 Lofii 告警联动待触发/联调；**Windows 每日应用归档任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0/0.8.1（用户手动步骤/残余，非失败）；完整 Access smoke 已完成 35/0/0/2（`-SkipLocalTaskCheck`），无需复跑；drill 未记录（如需由 Lead 补跑后回填 `docs/ACCEPTANCE.md`）。
+- 真实 Lofii 告警联动待触发/联调；drill 未记录（如需由 Lead 补跑后回填 `docs/ACCEPTANCE.md`）。
 
 ## [v0.7.3] - 2026-10-27（已发布：Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围/QQ 正向验收；schema 保持 v17）
 

@@ -37,7 +37,7 @@
 3. **轮询延迟与单实例**：状态/事件最多滞后一个 `LOFII_POLL_MS`（默认 5s），控制结果最终一致；单进程内存缓存、单 Lofii 上游，不支持多实例/多副本。
 4. **控制面是真实写操作**：启用控制 Token 后可启停任务/移动/游戏内发言（仍受 Lofii 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
 5. **依赖独立服务**：需先部署 lofii-bot **v0.6.1**（最低 v0.6.0，仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
-6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`），API 探针与 patrol start/stop 已验证）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；但真实 Lofii 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）、**Windows 每日备份任务安装标记仍为旧版本**（需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新，非失败）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
+6. **生产验收边界（2026-10-27）**：生产部署与只读/API 验收已完成（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，当时任务标记未重装），API 探针与 patrol start/stop 已验证）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；真实 Lofii 告警联动未触发（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
 
 ## v0.8.0 Minor 补审计（三轨：架构对抗 / 安全 / Debug；v0.8.1 修复记录，2026-10-27）
 
@@ -96,16 +96,16 @@
 | 同步脚本备份累积、smoke 无应用侧断言、sed 缺键静默 | ARCH6-17②③④ | `.lofii-tokens.bak.*` 仍累积；smoke 不校验应用侧 `lofiiEnabled/reachable`；启用 sed 仍可能静默 |
 | webhook 与 Bot 通知串行、关闭不排空、通知文案英文码 | ARCH6-18 | 未并行/未排空；Lofii 事件通知未中文化 |
 | 真实 Lofii 告警未触发 | 三轨共同证据边界 | `alert_events` 暂无 `lofii_*`；映射/webhook/Bot 由单元/集成测试覆盖 |
-| Windows 每日任务安装标记待用户重装 | 部署残余 | 需用户管理员 PowerShell 重装 `install-backup-task.ps1`（非失败） |
-| **v0.8.1 仍待 Tag/Release** | 发布边界 | v0.8.1 已于 2026-10-27 部署生产并完成只读/API/安全回归验收（release `20261027T113055Z`/commit `5405a8d`，smoke 26/0/0/2 + 完整 Access 35/0/0/2，`/say` 任意 `/` 与 C0 均 400）；**v0.8.0 已发布**（Tag `v0.8.0`→commit `c5ec851`，GitHub Release publishedAt `2026-10-27T12:02:45Z`），v0.8.1 仅缺 Tag/Release（等待 Windows 备份任务重装）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效），只读 `/say` 503 仅单测/集成覆盖 |
+| Windows 每日任务安装标记 | 部署残余（已解决） | 2026-10-27 已重装并验证：appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 与仓库/已安装一致（`7febb768…636d`）、任务 Ready；smoke 任务标记检查 PASS |
+| **v0.8.1 已发布 Tag/Release** | 发布边界（已解决） | v0.8.1 已于 2026-10-27 部署生产并完成只读/API/安全回归验收（release `20261027T113055Z`/commit `5405a8d`，smoke 26/0/0/2 + 完整 Access **36/0/0/2**（含任务标记），`/say` 任意 `/` 与 C0 均 400）；**已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复`（2026-10-27）**；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效），只读 `/say` 503 仅单测/集成覆盖 |
 
 ### 4. 验证与边界
 
 - 本地（v0.8.1）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（门禁通过）；`npm run build` 通过；`check-version` 严格 `0.8.1`。
-- 生产（v0.8.1，2026-10-27 部署并验收）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17，迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`）；lofii-bot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match；已认证 `/api/version`/`/api/lofii/status` 200；`/say` 240 填充+`/op` 400、C0 400；审计无 `lofii.say`、`alert_events` `lofii_*` 仍 0、journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空；临时会话已删（0）。
+- 生产（v0.8.1，2026-10-27 部署并验收）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17，迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，无 `-SkipLocalTaskCheck`）；lofii-bot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match；已认证 `/api/version`/`/api/lofii/status` 200；`/say` 240 填充+`/op` 400、C0 400；审计无 `lofii.say`、`alert_events` `lofii_*` 仍 0、journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空；临时会话已删（0）；Windows 备份任务已重装并验证（appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 一致 `7febb768…636d`、任务 Ready）。
 - 上游 lofii-bot v0.6.1：`splitOutgoing` 逐行中和行首 `/`；新增 239/240/255/480 边界测试（另行提交，不属本仓库）。
 - 证据边界：审计本身未在生产实际发送 `/op`/聊天命令、未触发真实 Lofii 告警、未做真实 webhook/QQ 投递；三轨审计为只读审计 + 进程内 PoC；生产证据由 Lead 于 v0.8.1 部署后实测回填（见 `docs/ACCEPTANCE.md` v0.8.1 节）。只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）。
-- 发布边界：**v0.8.0 已发布 Tag+Release**（annotated Tag `v0.8.0`→commit `c5ec851`；GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`，publishedAt `2026-10-27T12:02:45Z`）；**v0.8.1 已部署生产并验收，仍待 Tag/Release**（等待 Windows 备份任务重装后由 Lead 执行）。
+- 发布边界：**v0.8.0 与 v0.8.1 均已发布 Tag+Release**——v0.8.0：annotated Tag `v0.8.0`→commit `c5ec851`，GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）；v0.8.1：annotated Tag `v0.8.1` + GitHub Release `AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复`（2026-10-27）。
 
 ## 第一轮（v0.2.0，2026-10-19）
 
