@@ -4,7 +4,7 @@
 
 - **范围**：角色卡只在会话创建时发送；后续轮不再发送角色卡/记忆正文，只给角色名/条数/只读文档路径；新增 `BotContextStore`（scope 哈希目录、原子写、清理/sweep）；OpenCode 会话仅放行当前作用域 `role.md`/`memory.md` 的 `read`；`BOT_AI_CONTEXT_READ_ENABLED`（默认 false）/`BOT_CONTEXT_DIR`；权限拒绝 fail-closed；群角色变更重置共享会话；`/reset`、`/forget`、Bot/目标删除清理文档。
 - **安全/部署**：生产目录 `/var/lib/antifieldcloud-context`（`antifieldcloud:opencode` 2750）；systemd `ReadWritePaths`；读范围矩阵（正向/越权/注入/群私聊隔离）作为发布门禁；上下文目录不入备份。
-- **状态**：本地实现与门禁完成（`npm test` 521/1 skip、`test:web` 222、服务端覆盖率 92.93/78.37/88.55）；生产 release `20261027T060134Z`/commit `aedc3c7`（schema17；完整 Access smoke 33/0/0/2；读范围矩阵 6/6 通过；真实 QQ 私聊首轮/后续与群聊首轮通过；drill `20261027T061319Z` 通过）；文档模式已显式启用 `mcp:send:read:aad221f1`。待 Tag/Release，Windows 备份任务标记待用户重装刷新到 0.7.3。
+- **状态**：本地实现与门禁完成（`npm test` 521/1 skip、`test:web` 222、服务端覆盖率 92.93/78.37/88.55）；生产 release `20261027T060134Z`/commit `aedc3c7`（schema17；完整 Access smoke 33/0/0/2；读范围矩阵 7/7 通过；真实 QQ 私聊首轮/后续与群聊首轮通过；drill `20261027T061319Z` 通过）；文档模式已显式启用 `mcp:send:read:aad221f1`。待 Tag/Release，Windows 备份任务标记待用户重装刷新到 0.7.3。
 
 ## v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口；schema v17；OpenCode v2.1.4）
 

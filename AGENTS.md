@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.3，2026-10-27 本地门禁）：`npm test` **521**（1 skip，server+scripts，含 scripts 30）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.93% / Branches 78.37% / Functions 88.55%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；读范围矩阵 6/6；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记待用户以管理员 PowerShell 重装刷新到 0.7.3）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
+当前基线（v0.7.3，2026-10-27 本地门禁）：`npm test` **521**（1 skip，server+scripts，含 scripts 30）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.93% / Branches 78.37% / Functions 88.55%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；读范围矩阵 7/7；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记待用户以管理员 PowerShell 重装刷新到 0.7.3）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -168,7 +168,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   Chat/记忆：`BOT_CHAT_RATE_PER_MINUTE=30`、`BOT_MEMORY_MAX_ITEMS=200`、`BOT_MEMORY_PROMPT_MAX_CHARS=3000`、`BOT_MEMORY_PROMPT_MAX_ITEMS=12`、`BOT_MEMORY_TTL_EPISODE_DAYS=90`、`BOT_MEMORY_TTL_TASK_DAYS=30`；
   连通性：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`；
   群聊：`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`、`BOT_AI_SEND_TOOL_ENABLED=false`（启用前安装 `botmsg` MCP）；
-  上下文文档：`BOT_AI_CONTEXT_READ_ENABLED=false`（默认；生产已显式 true，读范围矩阵 6/6 通过）、`BOT_CONTEXT_DIR=/var/lib/antifieldcloud-context`（生产显式、OpenCode 组可读、不得位于 DATA_DIR 内）；
+  上下文文档：`BOT_AI_CONTEXT_READ_ENABLED=false`（默认；生产已显式 true，读范围矩阵 7/7 通过）、`BOT_CONTEXT_DIR=/var/lib/antifieldcloud-context`（生产显式、OpenCode 组可读、不得位于 DATA_DIR 内）；
   **连续外发：生产固定 1000ms 最小间隔（按 Bot/AppID 串行，代码内 `DEFAULT_SEND_INTERVAL_MS`；无 env 开关；测试注入 0）。**
   搜索：`BOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`BOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。
@@ -195,4 +195,4 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 10. Bot 平台后台注册（QQ 官方 Bot，用户在 q.qq.com 完成，Agent 不代替）：创建机器人取得 AppID/AppSecret → 在 `/bots` 新建 QQ Bot 录入 → 回调地址填 `https://app.<domain>/api/bot/webhook/<botId>` 并处理 `op=13` 校验 → 订阅 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE` → 登记目标 → 开启 `BOT_ENABLED=true` 并重启。图片理解需 `BOT_AI_ENABLED=true` 且模型支持 image。
 11. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/BACKUP.md` §7 与 `docs/ACCEPTANCE.md`。
 12. SSH 仅公钥的回滚窗口当前已关闭：旧备份归档到 `/var/backups/antifieldcloud/`（0600 root），活动配置未改；后续如再次变更仍按 `docs/DEPLOY.md` §9.7 保留 24h 回滚窗口。
-13. v0.7.3 Bot 文档模式启用（默认关闭，生产已于 2026-10-27 启用）：读范围矩阵 6/6 通过（作用域内正向；作用域外/env/DB/其他作用域/shell/注入全部拒绝），真实 QQ 私聊首轮/后续与群聊首轮通过；生产 `BOT_AI_CONTEXT_READ_ENABLED=true`。回滚设 `false` 重启，无需恢复 schema/DB。
+13. v0.7.3 Bot 文档模式启用（默认关闭，生产已于 2026-10-27 启用）：读范围矩阵 7/7 通过（作用域内正向；作用域外/env/DB/其他作用域/shell/注入全部拒绝），真实 QQ 私聊首轮/后续与群聊首轮通过；生产 `BOT_AI_CONTEXT_READ_ENABLED=true`。回滚设 `false` 重启，无需恢复 schema/DB。
