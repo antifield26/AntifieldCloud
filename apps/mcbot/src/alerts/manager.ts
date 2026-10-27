@@ -4,8 +4,18 @@ import type { EventBus } from '../events/bus.ts'
 import type { HistoryStore } from '../history/store.ts'
 import type { Logger } from '../logger.ts'
 import type { RuntimeState } from '../state.ts'
+import { countFood } from '../tasks/inventory.ts'
 
-export type AlertType = 'low_health' | 'task_failed' | 'disconnected' | 'chest_full' | 'defense_retreat'
+export type AlertType =
+  | 'low_health'
+  | 'task_failed'
+  | 'disconnected'
+  | 'chest_full'
+  | 'defense_retreat'
+  | 'inventory_full'
+  | 'low_food'
+  | 'memory_high'
+  | 'auto_restock_failed'
 export type AlertSeverity = 'warning' | 'error'
 
 export interface AlertEvent {
@@ -78,12 +88,27 @@ export class AlertManager {
     const bot = this.deps.getBot()
     if (!bot?.entity || !this.deps.state.minecraft.connected) return
     const health = this.deps.state.player.health ?? bot.health
-    if (health === null || !Number.isFinite(health)) return
-    if (health <= this.deps.config.alerts.healthThreshold) {
+    if (health !== null && Number.isFinite(health) && health <= this.deps.config.alerts.healthThreshold) {
       this.raise('low_health', `Lofii 血量偏低：${Math.round(health)}/20`, {
         health,
         threshold: this.deps.config.alerts.healthThreshold
       }, 'warning')
+    }
+    if (bot.inventory) {
+      const freeSlots = bot.inventory.emptySlotCount()
+      if (freeSlots <= this.deps.config.inventoryAlertFreeSlots) {
+        this.raise('inventory_full', `背包快满了：剩余 ${freeSlots} 格`, {
+          freeSlots,
+          threshold: this.deps.config.inventoryAlertFreeSlots
+        }, 'warning')
+      }
+      const food = countFood(bot)
+      if (food <= this.deps.config.foodAlertThreshold) {
+        this.raise('low_food', `食物偏低：${food} 个`, {
+          food,
+          threshold: this.deps.config.foodAlertThreshold
+        }, 'warning')
+      }
     }
   }
 }

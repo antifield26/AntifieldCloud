@@ -60,12 +60,16 @@ export function safeSpotNear (bot: Bot, config: Config, point: { x: number, y: n
   return candidates[0] ?? null
 }
 
-export function findChest (bot: Bot, config: Config): Block {
-  const base = bot.blockAt(new Vec3(config.chest.x, config.chest.y, config.chest.z), false)
+export function findChestAt (bot: Bot, point: { x: number, y: number, z: number }, label = '存箱'): Block {
+  const base = bot.blockAt(new Vec3(point.x, point.y, point.z), false)
   if (base?.name === 'chest' || base?.name === 'trapped_chest') return base
-  const pair = bot.blockAt(new Vec3(config.chest.x, config.chest.y, config.chest.z + 1), false)
+  const pair = bot.blockAt(new Vec3(point.x, point.y, point.z + 1), false)
   if (pair?.name === 'chest' || pair?.name === 'trapped_chest') return pair
-  throw new TaskError('找不到存箱，请确认箱子还在原地')
+  throw new TaskError(`找不到${label}，请确认箱子还在原地`)
+}
+
+export function findChest (bot: Bot, config: Config): Block {
+  return findChestAt(bot, config.chest)
 }
 
 export function isMatureWheat (block: Block | null): boolean {

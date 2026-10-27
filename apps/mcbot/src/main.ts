@@ -24,11 +24,15 @@ import { PresenceManager } from './presence/manager.ts'
 import { TaskManager } from './tasks/manager.ts'
 import { TaskStore } from './tasks/store.ts'
 import { ProactiveManager } from './proactive.ts'
+import { SdNotify } from './runtime/sdnotify.ts'
+import { MemoryGuard } from './runtime/memory-guard.ts'
 
 async function main (): Promise<void> {
   const packageInfo = readPackageInfo()
   const config = loadConfig(process.env, packageInfo.version)
   const logger = createLogger(config.logLevel)
+  const sdnotify = new SdNotify({ logger: logger.withScope('watchdog') })
+  if (sdnotify.enabled) logger.info('systemd notify socket detected', { watchdogEnabled: config.watchdog.enabled })
   const state = new RuntimeState({
     version: config.version,
     username: config.botUsername,
@@ -131,6 +135,14 @@ async function main (): Promise<void> {
     getBot: () => client.getBot()
   })
   alerts.start()
+  const memoryGuard = new MemoryGuard({
+    limitMb: config.rssLimitMb,
+    checkMs: config.rssCheckMs,
+    logger: logger.withScope('memory-guard'),
+    onHigh: (rssMb, limitMb) => {
+      alerts.raise('memory_high', `内存占用偏高：${rssMb} MB（阈值 ${limitMb} MB）`, { rssMb, limitMb }, 'warning')
+    }
+  })
   client.setDisconnectHandler(reason => {
     alerts.raise('disconnected', `Lofii 断线：${reason}`, { reason }, 'error')
   })
@@ -158,6 +170,11 @@ async function main (): Promise<void> {
     getServerTimeTicks: () => admin.timeNow()
   })
   await tasks.init()
+  let restockTimer: NodeJS.Timeout | null = null
+  if (config.autoRestock) {
+    restockTimer = setInterval(() => { void tasks.autoRestock() }, config.autoRestockIntervalMs)
+    restockTimer.unref?.()
+  }
 
   const commands = new CommandExecutor({
     config,
@@ -212,6 +229,14 @@ async function main (): Promise<void> {
     getBot: () => client.getBot()
   })
   await http.start()
+  // systemd Type=notify：启动完成后必须发送 READY=1；未由 systemd 启动时自动 no-op。
+  sdnotify.ready()
+  let heartbeatTimer: NodeJS.Timeout | null = null
+  if (config.watchdog.enabled && sdnotify.enabled) {
+    heartbeatTimer = setInterval(() => { sdnotify.watchdog() }, config.watchdog.heartbeatMs)
+    heartbeatTimer.unref?.()
+  }
+  memoryGuard.start()
 
   const presence = new PresenceManager({
     config,
@@ -252,6 +277,10 @@ async function main (): Promise<void> {
     }, 12000)
     force.unref?.()
     try {
+      sdnotify.stopping()
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
+      if (restockTimer) clearInterval(restockTimer)
+      memoryGuard.stop()
       ai.stop()
       statePublisher.stop()
       alerts.stop()

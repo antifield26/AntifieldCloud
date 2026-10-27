@@ -1,15 +1,29 @@
 import type { Bot } from 'mineflayer'
 import type { Chest } from 'mineflayer'
 import { sleep, TaskError, TaskStopError, requireBot, type TaskContext } from './types.ts'
-import { findChest } from './navigation.ts'
-import { isFood, isKeptItem } from './inventory.ts'
+import { findChestAt } from './navigation.ts'
+import { isFood, isKeptItem, itemStorageCategory, type StorageCategory } from './inventory.ts'
+import type { ConfigPoint } from '../config.ts'
 
 export interface SupplyRequest {
   name: string
   count: number
 }
 
-async function openChest (ctx: TaskContext): Promise<{ bot: Bot, chest: Chest }> {
+function chestPoint (ctx: TaskContext, category: StorageCategory): ConfigPoint {
+  return ctx.config.storageChests[category] ?? ctx.config.chest
+}
+
+function chestLabel (category: StorageCategory): string {
+  switch (category) {
+    case 'ores': return '矿石箱'
+    case 'food': return '食物箱'
+    case 'saplings': return '树苗箱'
+    case 'misc': return '杂物箱'
+  }
+}
+
+async function openChestAt (ctx: TaskContext, point: ConfigPoint, label: string): Promise<{ bot: Bot, chest: Chest }> {
   const bot = requireBot(ctx)
   let lastError: Error | null = null
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -23,7 +37,7 @@ async function openChest (ctx: TaskContext): Promise<{ bot: Bot, chest: Chest }>
     }
     try {
       await ctx.movement.waitForChunks()
-      const block = findChest(bot, ctx.config)
+      const block = findChestAt(bot, point, label)
       const position = bot.entity?.position
       const close = position
         ? Math.hypot(position.x - block.position.x, position.y - block.position.y, position.z - block.position.z) <= 4
@@ -47,12 +61,13 @@ async function openChest (ctx: TaskContext): Promise<{ bot: Bot, chest: Chest }>
       lastError = error instanceof Error ? error : new Error(String(error))
       ctx.logger.warn('task: open chest failed, retrying', {
         attempt: attempt + 1,
+        label,
         error: lastError.message
       })
       await sleep(500, ctx.signal)
     }
   }
-  throw lastError ?? new TaskError('找不到存箱，请确认箱子还在原地')
+  throw lastError ?? new TaskError(`找不到${label}，请确认箱子还在原地`)
 }
 
 function chestFreeSlots (chest: Chest): number {
@@ -60,64 +75,92 @@ function chestFreeSlots (chest: Chest): number {
 }
 
 export async function withdrawSupplies (ctx: TaskContext, requests: SupplyRequest[]): Promise<void> {
-  const { bot, chest } = await openChest(ctx)
-  try {
-    for (const request of requests) {
-      const have = bot.inventory.items()
-        .filter(item => item.name === request.name)
-        .reduce((sum, item) => sum + item.count, 0)
-      const missing = Math.max(0, request.count - have)
-      if (missing === 0) continue
-      const stacks = request.name === 'food'
-        ? chest.containerItems().filter(item => isFood(bot, item))
-        : chest.containerItems().filter(item => item.name === request.name)
-      let remaining = missing
-      for (const stack of stacks) {
-        if (remaining <= 0) break
-        const take = Math.min(remaining, stack.count)
-        await chest.withdraw(stack.type, null, take)
-        remaining -= take
-      }
-      if (remaining > 0) {
-        throw new TaskError(request.name === 'food' ? '箱子里没有足够的食物' : `箱子里没有足够的 ${request.name}`)
-      }
-    }
-  } finally {
+  const categories: StorageCategory[] = ['food', 'saplings', 'misc', 'ores']
+  for (const category of categories) {
+    const categoryRequests = requests.filter(request => supplyCategory(request.name) === category)
+    if (categoryRequests.length === 0) continue
+    const label = chestLabel(category)
+    const { bot, chest } = await openChestAt(ctx, chestPoint(ctx, category), label)
     try {
-      await chest.close()
-    } catch {
-      // ignore
+      for (const request of categoryRequests) {
+        const have = bot.inventory.items()
+          .filter(item => item.name === request.name)
+          .reduce((sum, item) => sum + item.count, 0)
+        const missing = Math.max(0, request.count - have)
+        if (missing === 0) continue
+        const stacks = request.name === 'food'
+          ? chest.containerItems().filter(item => isFood(bot, item))
+          : chest.containerItems().filter(item => item.name === request.name)
+        let remaining = missing
+        for (const stack of stacks) {
+          if (remaining <= 0) break
+          const take = Math.min(remaining, stack.count)
+          await chest.withdraw(stack.type, null, take)
+          remaining -= take
+        }
+        if (remaining > 0) {
+          throw new TaskError(request.name === 'food' ? `${label}里没有足够的食物` : `${label}里没有足够的 ${request.name}`)
+        }
+      }
+    } finally {
+      try {
+        await chest.close()
+      } catch {
+        // ignore
+      }
     }
   }
+}
+
+function supplyCategory (name: string): StorageCategory {
+  if (name === 'food') return 'food'
+  if (name.endsWith('_sapling')) return 'saplings'
+  return 'misc'
 }
 
 export async function depositProduce (ctx: TaskContext): Promise<number> {
   const bot = requireBot(ctx)
   const items = bot.inventory.items().filter(item => !isKeptItem(bot, item))
   if (items.length === 0) return 0
-  const { chest } = await openChest(ctx)
+  const grouped = new Map<StorageCategory, typeof items>()
+  for (const item of items) {
+    const category = itemStorageCategory(bot, item)
+    const bucket = grouped.get(category)
+    if (bucket) bucket.push(item)
+    else grouped.set(category, [item])
+  }
   let deposited = 0
-  try {
-    if (chestFreeSlots(chest) === 0) throw new TaskError('箱子满了，我先停下')
-    for (const item of items) {
-      try {
-        await chest.deposit(item.type, null, item.count)
-        deposited += item.count
-      } catch (error) {
-        throw new TaskError(`存箱失败：${error instanceof Error ? error.message : String(error)}`)
+  let lastError: string | null = null
+  for (const [category, bucket] of grouped) {
+    const label = chestLabel(category)
+    let opened: { bot: Bot, chest: Chest } | null = null
+    try {
+      opened = await openChestAt(ctx, chestPoint(ctx, category), label)
+      const { chest } = opened
+      if (chestFreeSlots(chest) === 0) throw new TaskError(`${label}满了，我先停下`)
+      for (const item of bucket) {
+        try {
+          await chest.deposit(item.type, null, item.count)
+          deposited += item.count
+        } catch (error) {
+          throw new TaskError(`${label}存箱失败：${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+    } catch (error) {
+      if (error instanceof TaskStopError) throw error
+      lastError = error instanceof Error ? error.message : String(error)
+      ctx.logger.warn('task: deposit category failed', { category, error: lastError })
+    } finally {
+      if (opened) {
+        try {
+          await opened.chest.close()
+        } catch {
+          // ignore
+        }
       }
     }
-    const remaining = bot.inventory.items().filter(item => !isKeptItem(bot, item))
-    if (remaining.length > 0 && chestFreeSlots(chest) === 0) {
-      throw new TaskError('箱子满了，还有一些东西没存进去')
-    }
-  } finally {
-    try {
-      await chest.close()
-    } catch {
-      // ignore
-    }
   }
+  if (deposited === 0 && lastError) throw new TaskError(lastError)
   if (deposited > 0) {
     ctx.updateProgress({ deposited: ctx.progress.deposited + deposited })
     ctx.logger.info('task: deposited items', { count: deposited })

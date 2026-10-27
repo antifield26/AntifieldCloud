@@ -1,5 +1,11 @@
 import type { LogLevel } from './logger.ts'
 
+export interface ConfigPoint {
+  x: number
+  y: number
+  z: number
+}
+
 export interface Config {
   version: string
   botUsername: string
@@ -64,6 +70,9 @@ export interface Config {
     maxMinutes: number
     protectRadius: number
     ores: string[]
+    deepEnabled: boolean
+    deepMinY: number
+    deepMaxY: number
   }
   forest: {
     species: string[]
@@ -115,6 +124,13 @@ export interface Config {
     cropY: number
   }
   chest: { x: number, y: number, z: number }
+  /** 按类别分箱存储；未配置的分类回退到主箱 chest。 */
+  storageChests: {
+    ores: ConfigPoint | null
+    food: ConfigPoint | null
+    saplings: ConfigPoint | null
+    misc: ConfigPoint | null
+  }
   fishStand: { x: number, y: number, z: number }
   fishWater: { x: number, y: number, z: number }
   taskMaxMinutes: number
@@ -140,6 +156,24 @@ export interface Config {
   auditMaxBytes: number
   auditRetentionDays: number
   controlRateLimit: number
+  /** systemd sd_notify 看门狗（NOTIFY_SOCKET 存在时生效）。 */
+  watchdog: { enabled: boolean, heartbeatMs: number }
+  /** RSS 上限告警（MB，0=关闭）与检查周期。 */
+  rssLimitMb: number
+  rssCheckMs: number
+  /** AI 受控工具：默认关闭；仅允许白名单内的只读/低风险工具。 */
+  aiToolsEnabled: boolean
+  aiToolAllowlist: string[]
+  aiMaxToolCalls: number
+  /** 库存/补货告警与自动补货。 */
+  inventoryAlertFreeSlots: number
+  foodAlertThreshold: number
+  autoRestock: boolean
+  autoRestockIntervalMs: number
+  /** 基地守卫/玩家护送/航点探索任务参数。 */
+  guardRadius: number
+  escortDistance: number
+  exploreWaypoints: Array<ConfigPoint & { name: string }>
   logLevel: LogLevel
   logAiPrompt: boolean
 }
@@ -240,6 +274,75 @@ function assertInSafeZone (
   }
 }
 
+/** 可选坐标点：三个 env 都缺失返回 null；只配置一部分视为错误。 */
+function readOptionalPoint (
+  env: Env,
+  prefix: string,
+  safe: { minX: number, maxX: number, minZ: number, maxZ: number }
+): ConfigPoint | null {
+  const rawX = env[`${prefix}_X`]
+  const rawY = env[`${prefix}_Y`]
+  const rawZ = env[`${prefix}_Z`]
+  const present = [rawX, rawY, rawZ].filter(value => value !== undefined && value.trim() !== '')
+  if (present.length === 0) return null
+  if (present.length !== 3) throw new ConfigError(`${prefix}_X/Y/Z must be set together`)
+  const point = {
+    x: readNumber(env, `${prefix}_X`, 0, -30000000, 30000000),
+    y: readNumber(env, `${prefix}_Y`, 0, -256, 512),
+    z: readNumber(env, `${prefix}_Z`, 0, -30000000, 30000000)
+  }
+  assertInSafeZone(prefix, point, safe)
+  return point
+}
+
+const MAX_EXPLORE_WAYPOINTS = 32
+
+/** EXPlORE_WAYPOINTS 形如 `home:175:64:410;farm:180:64:435`；名称唯一且都在安全区内。 */
+function readExploreWaypoints (
+  env: Env,
+  safe: { minX: number, maxX: number, minZ: number, maxZ: number }
+): Array<ConfigPoint & { name: string }> {
+  const raw = readString(env, 'EXPLORE_WAYPOINTS', '').trim()
+  if (raw === '') return []
+  const names = new Set<string>()
+  const waypoints: Array<ConfigPoint & { name: string }> = []
+  for (const entry of raw.split(';').map(item => item.trim()).filter(Boolean)) {
+    const parts = entry.split(':').map(item => item.trim())
+    if (parts.length !== 4) throw new ConfigError('EXPLORE_WAYPOINTS entries must be name:x:y:z')
+    const [name, rawX, rawY, rawZ] = parts
+    if (!name || !/^[A-Za-z0-9_]{1,24}$/.test(name)) {
+      throw new ConfigError('EXPLORE_WAYPOINTS name must be 1-24 letters, digits or underscores')
+    }
+    if (names.has(name)) throw new ConfigError(`EXPLORE_WAYPOINTS has duplicate name: ${name}`)
+    names.add(name)
+    const x = Number(rawX)
+    const y = Number(rawY)
+    const z = Number(rawZ)
+    if (![x, y, z].every(value => Number.isFinite(value))) {
+      throw new ConfigError(`EXPLORE_WAYPOINTS coordinates must be numbers: ${entry}`)
+    }
+    if (x < -30000000 || x > 30000000 || z < -30000000 || z > 30000000 || y < -256 || y > 512) {
+      throw new ConfigError(`EXPLORE_WAYPOINTS coordinates out of range: ${entry}`)
+    }
+    assertInSafeZone(`EXPLORE_WAYPOINTS ${name}`, { x, z }, safe)
+    waypoints.push({ name, x, y, z })
+    if (waypoints.length > MAX_EXPLORE_WAYPOINTS) {
+      throw new ConfigError(`EXPLORE_WAYPOINTS supports at most ${MAX_EXPLORE_WAYPOINTS} points`)
+    }
+  }
+  return waypoints
+}
+
+const AI_TOOL_NAMES = new Set(['status', 'inventory', 'task_status', 'task_start', 'task_stop'])
+
+function readAiToolAllowlist (env: Env): string[] {
+  const names = readNameList(env, 'AI_TOOL_ALLOWLIST', 'status,inventory,task_status')
+  for (const name of names) {
+    if (!AI_TOOL_NAMES.has(name)) throw new ConfigError(`AI_TOOL_ALLOWLIST has unknown tool: ${name}`)
+  }
+  return names
+}
+
 export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
   const dataDir = readString(env, 'DATA_DIR', '/var/lib/mcbot')
   const httpHost = readString(env, 'HTTP_HOST', '127.0.0.1')
@@ -290,6 +393,12 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     y: readNumber(env, 'CHEST_Y', 64, -256, 512),
     z: readNumber(env, 'CHEST_Z', 435, -30000000, 30000000)
   }
+  const storageChests = {
+    ores: readOptionalPoint(env, 'CHEST_ORES', safeZone),
+    food: readOptionalPoint(env, 'CHEST_FOOD', safeZone),
+    saplings: readOptionalPoint(env, 'CHEST_SAPLINGS', safeZone),
+    misc: readOptionalPoint(env, 'CHEST_MISC', safeZone)
+  }
   const fishStand = {
     x: readNumber(env, 'FISH_STAND_X', 204.5, -30000000, 30000000),
     y: readNumber(env, 'FISH_STAND_Y', 63, -256, 512),
@@ -333,9 +442,20 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     maxMinutes: readInt(env, 'MINE_MAX_MINUTES', 30, 1, 120),
     protectRadius: readNumber(env, 'MINE_PROTECT_RADIUS', 16, 0, 64),
     ores: readNameList(env, 'MINE_ORES',
-      'coal_ore,deepslate_coal_ore,iron_ore,deepslate_iron_ore,copper_ore,deepslate_copper_ore')
+      'coal_ore,deepslate_coal_ore,iron_ore,deepslate_iron_ore,copper_ore,deepslate_copper_ore'),
+    deepEnabled: readBool(env, 'MINE_DEEP_ENABLED', false),
+    deepMinY: readNumber(env, 'MINE_DEEP_MIN_Y', 0, -256, 512),
+    deepMaxY: readNumber(env, 'MINE_DEEP_MAX_Y', 59, -256, 512)
   }
   if (mining.minY > mining.maxY) throw new ConfigError('MINE_MIN_Y must be <= MINE_MAX_Y')
+  if (mining.deepEnabled) {
+    if (mining.deepMinY > mining.deepMaxY) {
+      throw new ConfigError('MINE_DEEP_MIN_Y must be <= MINE_DEEP_MAX_Y')
+    }
+    if (mining.deepMaxY >= mining.minY) {
+      throw new ConfigError('MINE_DEEP_MAX_Y must be < MINE_MIN_Y')
+    }
+  }
   const forest = {
     species: readNameList(env, 'FOREST_SPECIES', 'oak,spruce,birch'),
     protectRadius: readNumber(env, 'FOREST_PROTECT_RADIUS', 16, 0, 64),
@@ -451,6 +571,7 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     safeZone,
     farm,
     chest,
+    storageChests,
     fishStand,
     fishWater,
     taskMaxMinutes: readInt(env, 'TASK_MAX_MINUTES', 60, 1, 180),
@@ -480,6 +601,22 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     auditMaxBytes: readInt(env, 'AUDIT_MAX_BYTES', 5242880, 65536, 1073741824),
     auditRetentionDays: readInt(env, 'AUDIT_RETENTION_DAYS', 30, 1, 3650),
     controlRateLimit: readInt(env, 'CONTROL_RATE_LIMIT', 30, 1, 1000),
+    watchdog: {
+      enabled: readBool(env, 'WATCHDOG_ENABLED', true),
+      heartbeatMs: readInt(env, 'WATCHDOG_HEARTBEAT_MS', 20000, 5000, 120000)
+    },
+    rssLimitMb: readInt(env, 'RSS_LIMIT_MB', 0, 0, 8192),
+    rssCheckMs: readInt(env, 'RSS_CHECK_MS', 30000, 5000, 600000),
+    aiToolsEnabled: readBool(env, 'AI_TOOLS_ENABLED', false),
+    aiToolAllowlist: readAiToolAllowlist(env),
+    aiMaxToolCalls: readInt(env, 'AI_MAX_TOOL_CALLS', 2, 1, 4),
+    inventoryAlertFreeSlots: readInt(env, 'INVENTORY_ALERT_FREE_SLOTS', 2, 0, 9),
+    foodAlertThreshold: readInt(env, 'FOOD_ALERT_THRESHOLD', 4, 0, 20),
+    autoRestock: readBool(env, 'AUTO_RESTOCK', false),
+    autoRestockIntervalMs: readInt(env, 'AUTO_RESTOCK_INTERVAL_MS', 300000, 60000, 3600000),
+    guardRadius: readNumber(env, 'GUARD_RADIUS', 16, 4, 32),
+    escortDistance: readNumber(env, 'ESCORT_DISTANCE', 12, 4, 32),
+    exploreWaypoints: readExploreWaypoints(env, safeZone),
     logLevel: readLogLevel(env),
     logAiPrompt: readBool(env, 'LOG_AI_PROMPT', false)
   })

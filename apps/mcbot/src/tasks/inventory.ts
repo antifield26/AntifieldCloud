@@ -22,6 +22,33 @@ const TOOL_NAMES = new Set([
 
 const FISH_NAMES = new Set(['cod', 'salmon', 'tropical_fish', 'pufferfish'])
 
+export type StorageCategory = 'ores' | 'food' | 'saplings' | 'misc'
+
+const ORE_NAMES = new Set([
+  'coal',
+  'charcoal',
+  'raw_iron',
+  'raw_copper',
+  'raw_gold',
+  'iron_ingot',
+  'copper_ingot',
+  'gold_ingot',
+  'redstone',
+  'lapis_lazuli',
+  'diamond',
+  'emerald',
+  'quartz',
+  'netherite_scrap'
+])
+
+/** 分箱归类：矿石/食物/树苗优先，其余进杂项箱。 */
+export function itemStorageCategory (bot: Bot, item: Item): StorageCategory {
+  if (item.name.endsWith('_ore') || ORE_NAMES.has(item.name)) return 'ores'
+  if (isFood(bot, item) || FISH_NAMES.has(item.name)) return 'food'
+  if (item.name.endsWith('_sapling')) return 'saplings'
+  return 'misc'
+}
+
 export function isFood (bot: Bot, item: Item): boolean {
   const registry = bot.registry as unknown as { foodsByName?: Record<string, unknown> }
   return Boolean(registry.foodsByName?.[item.name])

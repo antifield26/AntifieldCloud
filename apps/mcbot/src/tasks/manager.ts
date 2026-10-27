@@ -927,8 +927,34 @@ export class TaskManager implements TaskController {
     if (this.loop) await this.loop.catch(() => {})
   }
 
-  async depositNow (): Promise<void> {
-    if (this.active) {
+  /** 空闲时按需去主箱补食物/工具；失败只告警，不打断在线状态。 */
+  async autoRestock (): Promise<void> {
+    const { config } = this.deps
+    if (!config.autoRestock || this.stopped || this.active || this.pending || this.queue.length > 0) return
+    const bot = this.deps.getBot()
+    if (!bot?.entity || !bot.inventory) return
+    const freshTool = (name: string): boolean => bot.inventory.items().some(item =>
+      item.name === name && ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10
+    )
+    const requests: Array<{ name: string, count: number }> = []
+    if (countFood(bot) < config.foodAlertThreshold + 2) requests.push({ name: 'food', count: 8 })
+    if (!freshTool('iron_pickaxe')) requests.push({ name: 'iron_pickaxe', count: 1 })
+    if (!freshTool('iron_axe')) requests.push({ name: 'iron_axe', count: 1 })
+    if (requests.length === 0) return
+    const fake = this.createActive('fishing', randomUUID(), Date.now())
+    try {
+      await withdrawSupplies(this.context(fake, false), requests)
+      this.logger.info('auto restock done', { items: requests.map(request => request.name) })
+      await this.say('补给好了。')
+    } catch (error) {
+      if (error instanceof TaskStopError) return
+      const message = error instanceof Error ? error.message : String(error)
+      this.logger.warn('auto restock failed', { error: message })
+      this.deps.alerts?.raise('auto_restock_failed', `自动补货失败：${message}`, { error: message }, 'warning')
+    }
+  }
+
+  async depositNow (): Promise<void> {    if (this.active) {
       this.active.depositRequested = true
       await this.say('好，我存一下。')
       return

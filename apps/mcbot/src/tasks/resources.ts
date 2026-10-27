@@ -120,23 +120,34 @@ export interface OreTarget {
   kind: 'coal' | 'iron' | 'copper'
 }
 
+/** 挖矿扫描的 y 区间：可选深层带 + 原有表层带；顺序即优先级。 */
+export function miningBands (config: Config): Array<[number, number]> {
+  const bands: Array<[number, number]> = []
+  if (config.mining.deepEnabled) bands.push([config.mining.deepMinY, config.mining.deepMaxY])
+  bands.push([config.mining.minY, config.mining.maxY])
+  return bands
+}
+
 export function scanExposedOres (bot: Bot, config: Config): OreTarget[] {
   const allowed = new Set(config.mining.ores)
   const targets: OreTarget[] = []
   const position = bot.entity?.position ?? null
+  const bands = miningBands(config)
   for (let x = config.safeZone.minX; x <= config.safeZone.maxX; x++) {
     for (let z = config.safeZone.minZ; z <= config.safeZone.maxZ; z++) {
       if (insideProtected(config, x, z, config.mining.protectRadius)) continue
-      for (let y = config.mining.minY; y <= config.mining.maxY; y++) {
-        const point = new Vec3(x, y, z)
-        const block = blockAt(bot, point)
-        if (!block || !allowed.has(block.name)) continue
-        const kind = oreKind(block.name)
-        if (!kind) continue
-        if (!hasAirNeighbor(bot, point)) continue
-        if (hasLiquidNeighbor(bot, point)) continue
-        if (playerNear(bot, point, 8)) continue
-        targets.push({ position: point, name: block.name, kind })
+      for (const [minY, maxY] of bands) {
+        for (let y = minY; y <= maxY; y++) {
+          const point = new Vec3(x, y, z)
+          const block = blockAt(bot, point)
+          if (!block || !allowed.has(block.name)) continue
+          const kind = oreKind(block.name)
+          if (!kind) continue
+          if (!hasAirNeighbor(bot, point)) continue
+          if (hasLiquidNeighbor(bot, point)) continue
+          if (playerNear(bot, point, 8)) continue
+          targets.push({ position: point, name: block.name, kind })
+        }
       }
     }
   }
