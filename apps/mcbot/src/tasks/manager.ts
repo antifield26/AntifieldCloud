@@ -62,6 +62,11 @@ class DefenseRetreatError extends TaskError {
   }
 }
 
+/** 断线/重连/服务器重启类错误视为可恢复的连接损失，不消耗任务失败重试次数。 */
+export function isTransientConnectionLoss (message: string): boolean {
+  return /服务器还没连回来|连接|断线|重连|disconnect|connection|socket|ECONN|ETIMEDOUT|timed out|server (?:closed|restart)|kicked/i.test(message)
+}
+
 export interface TaskManagerDeps {
   config: Config
   logger: Logger
@@ -77,8 +82,7 @@ export interface TaskManagerDeps {
   getServerTimeTicks?: () => Promise<number | null>
 }
 
-const EMPTY_PROGRESS: TaskProgress = {
-  fishCaught: 0,
+const EMPTY_PROGRESS: TaskProgress = {  fishCaught: 0,
   wheatHarvested: 0,
   planted: 0,
   deposited: 0,
@@ -482,6 +486,19 @@ export class TaskManager implements TaskController {
           break
         }
         const message = error instanceof Error ? error.message : String(error)
+        if (isTransientConnectionLoss(message)) {
+          active.lastError = message
+          this.logger.warn('task paused for reconnect', { name: active.name, error: message })
+          this.publish(active, 'recovering')
+          const remaining = active.deadline - Date.now()
+          if (remaining <= 0) break
+          try {
+            await this.waitForBot(Math.min(120000, Math.max(1000, remaining)))
+          } catch {
+            if (Date.now() >= active.deadline) break
+          }
+          continue
+        }
         attempt += 1
         active.failures = attempt
         active.lastError = message
