@@ -37,9 +37,20 @@
 - 验收：65 单元测试、砍树累计 ≥32 原木/≥8 补种、队列跨重启、farm soak；详见 `docs/ACCEPTANCE.md`。
 - 边界：不做 RCON/管理只读、`/metrics`、告警、多 Bot、语音、Discord/QQ。
 
-## v0.5 运维与自动化扩展（待定）
+## v0.5.0（已完成：只读 RCON / SQLite 历史 / SSE 告警 / 表层矿 / 天然林 / 睡觉 / 巡逻）
 
-- 管理助手只读（RCON TPS/白名单/备份状态）、指标历史与告警。
-- 定点挖矿、天然林/更多树种、睡觉跳夜（Vote2Sleep）、巡逻。
-- 更稳的跨维度移动；多次 pending 任务链/长期任务。
+- 管理只读：现有 RCON 密码 + Bot 端命令白名单 `tps`/`list`/`whitelist list`/`time`；`GET /admin/status`；无写管理接口。
+- 历史/告警：SQLite 60 秒采样/30 天；`GET /history`；SSE `alert`（低血量/任务失败/断线/箱子满/防御撤退，5 分钟冷却）。
+- 安全区扩至 `x111–239, z410–474`；任务上限 60 分钟；队列仍 3。
+- 表层矿：煤/铁/铜、y≥60、裸露矿、保护盒 16、不挖隧道。
+- 天然林：安全区扫描 oak/spruce/birch、保护盒 16、逐棵补种。
+- 睡觉：home 附近床 + Vote2Sleep；无法跳夜正常结束。
+- 巡逻：安全区边界四角（内缩 4）、最多 15 分钟、不主动追怪。
+- 验收：75 单元测试、挖矿 ≥16、天然林 ≥16、巡逻 4/4、20 分钟 soak、历史/告警；详见 `docs/ACCEPTANCE.md`。
+- 边界：不做跨维度、多 Bot/语音/Discord/QQ、Prometheus `/metrics`、webhook、AntifieldCloud 改动。
+
+## v0.6 待定
+
+- 更稳的跨维度移动/多次 pending 任务链/长期任务。
 - 多角色人设、语音、聊天与 Discord/QQ 互通（复用 AntifieldCloud Bot 能力，用户主导）。
+- 更细的指标导出/外部通知（用户确认后再做）。

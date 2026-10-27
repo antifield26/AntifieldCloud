@@ -22,12 +22,17 @@ export function findBedNear (bot: Bot, config: Config): Block | null {
   const position = bot.entity?.position
   if (!position) return null
   const radius = Math.floor(config.sleep.bedSearchRadius)
+  // Search around home, not the bot's transient position (it may still be at
+  // the chest after final deposit).
+  const centerX = Math.floor(config.home.x)
+  const centerY = Math.floor(config.home.y)
+  const centerZ = Math.floor(config.home.z)
   const beds: Block[] = []
   for (let dx = -radius; dx <= radius; dx++) {
     for (let dz = -radius; dz <= radius; dz++) {
-      if (!insideSafeZone(config, position.x + dx, position.z + dz)) continue
+      if (!insideSafeZone(config, centerX + dx, centerZ + dz)) continue
       for (let dy = -3; dy <= 3; dy++) {
-        const block = bot.blockAt(new Vec3(Math.floor(position.x) + dx, Math.floor(position.y) + dy, Math.floor(position.z) + dz), false)
+        const block = bot.blockAt(new Vec3(centerX + dx, centerY + dy, centerZ + dz), false)
         if (block && isBed(block.name)) beds.push(block)
       }
     }

@@ -142,7 +142,10 @@ test('v0.5 natural forest finds only species with leaves and soil', () => {
 })
 
 test('v0.5 sleep finds a nearby bed and patrol uses the four safe-zone corners', () => {
-  const config = makeConfig({ safeZone: { minX: 0, maxX: 20, minZ: 0, maxZ: 20 } })
+  const config = makeConfig({
+    safeZone: { minX: 0, maxX: 20, minZ: 0, maxZ: 20 },
+    home: { x: 5, y: 64, z: 5 }
+  })
   const blocks = new Map<string, string>()
   blocks.set('6,64,5', 'red_bed')
   const bed = findBedNear(fakeBlockBot(blocks), config)
