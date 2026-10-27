@@ -1,4 +1,4 @@
-# 验收记录（Lofii Bot v0.2.0 / v0.3.0）
+# 验收记录（Lofii Bot v0.2.0 / v0.3.0 / v0.4.0）
 
 ## 1. 环境
 
@@ -171,4 +171,93 @@
 - 最终 release：`/opt/lofii-bot/releases/20261026T135428Z`（docs 提交；运行时代码与 `20261026T132859Z` 相同）。
 - `/healthz` 200，version 0.3.0；验收结束时 0 玩家、`state=idle`、任务 idle。
 - 代码与 `docs/` 同仓库提交；v0.3.0 验收通过；v0.2.0 的钓鱼/种田/恢复功能回归由 58 个测试与 soak 覆盖。
+
+## 7. v0.4.0 验收（队列 / 砍树 / 被动防御 / 记忆摘要）
+
+### 7.1 环境
+
+| 项目 | 值 |
+|---|---|
+| 验收日期 | 2026-10-27（Asia/Shanghai） |
+| Lofii 版本 | 0.4.0 |
+| Pi | Raspberry Pi 5 8GB / Debian 13；Node v26.12.1 |
+| Minecraft | Paper 26.1.2，协议 775 |
+| 代码/soak release | `/opt/lofii-bot/releases/20261027T024631Z` |
+| 树场 | `x180–193, z455–464`；实际地面块 y=63、原木从 y=64 起 |
+| 玩家 | Antifield 在线/离线混合；最终 0 玩家 |
+
+### 7.2 结果汇总
+
+| # | 检查 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 本地 `npm run check` | ✅ 65/65 | `tsc --noEmit` + 65 个 `node:test` |
+| 2 | 0.4.0 部署/健康 | ✅ | `/healthz` 200，version 0.4.0 |
+| 3 | 任务队列 | ✅ | active + 3 排队；第 4 个拒绝；正常完成自动下一个；stop/失败清队列 |
+| 4 | 队列跨重启 | ✅ | active fishing + 2 queue → restart → pending + queue 2 → resume → active；stop 清空 |
+| 5 | 砍树 | ✅ | 累计 **47 原木、14 树苗补种**（跨 4 次任务；首次因树场 Y 配置错误未补种，修正后逐棵补种）；原木存箱 |
+| 6 | 被动防御 | ✅ | 现场 **5 次 zombie 击杀、0 死亡**（farming 4 + fishing 1）；未攻击 creeper/enderman/玩家 |
+| 7 | 20 分钟 soak | ✅ | fishing `elapsedSec=1241`（20 分 41 秒），43 鱼，deposited=51，0 失败/0 重连 |
+| 8 | 动态下线 | ✅ | 任务结束无玩家，约 70 秒后 `state=idle`、`players=0`、`connected=false` |
+| 9 | 内存 | ✅ | `MemoryCurrent=150.4 MB`、`MemoryPeak=154.1 MB`；采样 RSS 峰值约 193.6 MB |
+| 10 | 记忆摘要 | ✅（单测） | 40 turns 触发、≤1000 字、prompt 注入、AI 失败回退、v1 memory 迁移 |
+| 11 | 审计 | ✅ | task/queue/combat/movement 元数据；无 Token/聊天正文 |
+| 12 | AntifieldCloud | ✅ | 未修改仓库/`/opt/antifieldcloud`/服务 |
+| 13 | 管理/指标 | ✅ | 未引入 RCON 管理、`/metrics`、告警、webhook |
+
+### 7.3 砍树证据
+
+- 实际树场与计划值差一层：地面块 y=63，原木从 y=64 起；首次按 y=64/65 配置扫描时把第二层当树基，导致“没有土壤/不补种”。
+- 修正 `TREE_FARM_GROUND_Y=63`、`TREE_FARM_LOG_MIN_Y=64` 后，日志确认逐棵补种。
+- 四次任务累计：`logsChopped=24+15+3+5=47`，`saplingsPlanted=0+12+1+1=14`；首次 0 补种是 Y 配置错误，修正后正常。
+- 代表日志：`task finished {"name":"woodcutting","progress":{"treesChopped":12,"logsChopped":15,"saplingsPlanted":12...}}`；`task: deposited items {"count":28}`。
+- 箱子曾因 creeper 爆炸被摧毁；已用一次性 RCON `setblock` 恢复空箱，后续任务正常存箱。补给/清理是一次性验收操作，未引入 Bot 管理接口。
+
+### 7.4 队列证据
+
+- active fishing + 排队 farming/woodcutting；`/task` 显示 `queue` 2。
+- `systemctl restart` 后 `/task`：`state=pending_resume`，`pendingResume` 与 `queue` 2 均保留。
+- `POST /task/resume` → 202；active fishing 恢复，queue 仍为 2。
+- `POST /task/stop` → 202；active 停止，queue 清空。
+- 独立测试：empty woodcutting 完成 → 自动启动排队的 fishing（`task.queue_started` 日志）。
+- 单元测试覆盖 queue max 3、pending 409、失败/stop 清队列、v1 task-state 迁移。
+
+### 7.5 防御/战斗证据
+
+- 最终 farming 任务中 4 次 `combat.kill` zombie；fishing soak 中 1 次；合计 5 次，0 死亡。
+- 审计样例：
+
+```json
+{"event":"combat.kill","source":"combat","actor":"lofii","action":"zombie","result":"completed","details":{"kills":1,"radius":12}}
+```
+
+- 防御日志：`defense: engaging {"target":"zombie","threats":1,"health":20,"food":20}` → `defense: threats cleared {"kills":1}`。
+- 低血量/多怪时按设计撤退；skeleton 曾把血量打到 12.2，任务撤退并失败（清队列），未死亡。
+- 早期（10:31–10:35）Lofii 在未完成任务/装备丢失状态下被 skeleton/creeper 击杀多次；这是测试环境敌对怪与补给问题，不是最终防御路径。之后清理怪物、恢复箱子/装备并修正 farming 检查点后，最终 5 杀/0 死。
+- 未使用 `/summon`；只依赖自然怪。5 杀达到原目标。
+
+### 7.6 最终 soak
+
+- 版本：`20261027T024631Z`；任务：fishing；Antifield 在线过、后离线；Lofii 任务保活。
+- 时长：`elapsedSec=1241`（20 分 41 秒）。
+- 鱼获：`fishCaught=43`；最终 `deposited=51`；`failures=0`；`reconnects=0`。
+- 战斗：soak 内 1 次 zombie 击杀；0 死亡。
+- 内存：`MemoryCurrent=150.4 MB`、`MemoryPeak=154.1 MB`；RSS 采样峰值 193.6 MB。
+- SSE：152 行事件，无错误；任务结束约 70 秒后动态下线，`players=0`。
+- TPS 未采集：未引入只读 RCON/TPS 管理通道。
+
+### 7.7 边界与未测项
+
+- **HTTP-only 非强制**：默认保留游戏内 Antifield/AI 直接触发；未开启 `HTTP_ONLY_HIGH_RISK`。
+- 生产 Token 轮换未演练（按用户要求不轮换）。
+- 记忆摘要只做单测；未在生产制造 20 来回聊天（避免额外 AI 成本）。
+- 无 RCON 管理助手、TPS/白名单/备份状态、`/metrics`、告警、webhook、审计查询接口。
+- 未修改 AntifieldCloud；面板侧 SSE/控制接入由用户实施。
+- 树场/战斗装备/补给依赖基地箱子与一次性验收补给；长期运行需保持备货。
+- 盾牌 best-effort；本轮击杀以铁剑+铁甲完成。
+
+### 7.8 最终 release
+
+- 运行时代码/soak release：`20261027T024631Z`；最终 docs release 见 `/opt/lofii-bot/current`。
+- v0.4.0 验收通过：队列、砍树、被动防御、20 分钟 soak、动态下线、审计；65 个测试全绿。
+
 
