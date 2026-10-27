@@ -11,11 +11,19 @@ export interface MemoryTurn {
   at: string
 }
 
+export interface MemorySummary {
+  text: string
+  updatedAt: string
+  coveredExchanges: number
+}
+
 interface MemoryFile {
-  version: 1
+  version: 2
   player: string
   uuid: string
   updatedAt: string
+  summary: MemorySummary | null
+  sinceSummaryTurns: number
   turns: MemoryTurn[]
 }
 
@@ -44,7 +52,7 @@ function parseMemoryFile (raw: string): MemoryFile | null {
   }
   if (!parsed || typeof parsed !== 'object') return null
   const record = parsed as Record<string, unknown>
-  if (record.version !== 1) return null
+  if (record.version !== 1 && record.version !== 2) return null
   if (typeof record.player !== 'string' || typeof record.uuid !== 'string') return null
   if (typeof record.updatedAt !== 'string' || !Array.isArray(record.turns)) return null
   const turns: MemoryTurn[] = []
@@ -54,11 +62,29 @@ function parseMemoryFile (raw: string): MemoryFile | null {
     if (!isMemoryRole(turn.role) || typeof turn.text !== 'string' || typeof turn.at !== 'string') continue
     turns.push({ role: turn.role, text: turn.text, at: turn.at })
   }
+  let summary: MemorySummary | null = null
+  if (record.summary && typeof record.summary === 'object') {
+    const rawSummary = record.summary as Record<string, unknown>
+    if (typeof rawSummary.text === 'string' &&
+      typeof rawSummary.updatedAt === 'string' &&
+      typeof rawSummary.coveredExchanges === 'number' &&
+      Number.isFinite(rawSummary.coveredExchanges)) {
+      summary = {
+        text: rawSummary.text,
+        updatedAt: rawSummary.updatedAt,
+        coveredExchanges: rawSummary.coveredExchanges
+      }
+    }
+  }
   return {
-    version: 1,
+    version: 2,
     player: record.player,
     uuid: record.uuid,
     updatedAt: record.updatedAt,
+    summary,
+    sinceSummaryTurns: typeof record.sinceSummaryTurns === 'number' && Number.isFinite(record.sinceSummaryTurns)
+      ? record.sinceSummaryTurns
+      : 0,
     turns
   }
 }
@@ -144,15 +170,65 @@ export class MemoryStore {
     return this.cache.get(key)?.turns.slice(-this.options.maxTurns * 2) ?? []
   }
 
+  summary (player: string, uuid: string): MemorySummary | null {
+    return this.cache.get(safeKey(player, uuid))?.summary ?? null
+  }
+
+  summaryDue (player: string, uuid: string, turns: number): boolean {
+    const file = this.cache.get(safeKey(player, uuid))
+    return Boolean(file && file.sinceSummaryTurns >= turns)
+  }
+
+  summaryTurns (player: string, uuid: string): number {
+    return this.cache.get(safeKey(player, uuid))?.sinceSummaryTurns ?? 0
+  }
+
+  async applySummary (player: string, uuid: string, text: string, coveredExchanges: number): Promise<void> {
+    const key = safeKey(player, uuid)
+    const previous = this.pending.get(key) ?? Promise.resolve()
+    const run = previous.then(async () => {
+      const existing = this.cache.get(key) ?? {
+        version: 2 as const,
+        player,
+        uuid,
+        updatedAt: new Date().toISOString(),
+        summary: null,
+        sinceSummaryTurns: 0,
+        turns: []
+      }
+      const file: MemoryFile = {
+        ...existing,
+        version: 2,
+        summary: {
+          text,
+          updatedAt: new Date().toISOString(),
+          coveredExchanges: (existing.summary?.coveredExchanges ?? 0) + coveredExchanges
+        },
+        sinceSummaryTurns: 0
+      }
+      this.cache.set(key, file)
+      await this.writeAtomic(key, file)
+    })
+    const guarded = run.then(() => {}, () => {})
+    this.pending.set(key, guarded)
+    try {
+      await run
+    } finally {
+      if (this.pending.get(key) === guarded) this.pending.delete(key)
+    }
+  }
+
   async append (player: string, uuid: string, userText: string, assistantText: string): Promise<void> {
     const key = safeKey(player, uuid)
     const previous = this.pending.get(key) ?? Promise.resolve()
     const run = previous.then(async () => {
       const existing = this.cache.get(key) ?? {
-        version: 1 as const,
+        version: 2 as const,
         player,
         uuid,
         updatedAt: new Date().toISOString(),
+        summary: null,
+        sinceSummaryTurns: 0,
         turns: []
       }
       const now = new Date().toISOString()
@@ -161,7 +237,15 @@ export class MemoryStore {
         { role: 'user' as const, text: userText, at: now },
         { role: 'assistant' as const, text: assistantText, at: now }
       ].slice(-this.options.maxTurns * 2)
-      const file: MemoryFile = { version: 1, player, uuid, updatedAt: now, turns }
+      const file: MemoryFile = {
+        ...existing,
+        version: 2,
+        player,
+        uuid,
+        updatedAt: now,
+        sinceSummaryTurns: existing.sinceSummaryTurns + 2,
+        turns
+      }
       this.cache.set(key, file)
       await this.writeAtomic(key, file)
     })
@@ -190,7 +274,7 @@ export class MemoryStore {
   async cleanupExpired (): Promise<void> {
     for (const [key, file] of this.cache) {
       const pruned = this.prune(file)
-      if (pruned.turns.length === 0) {
+      if (pruned.turns.length === 0 && !pruned.summary) {
         this.cache.delete(key)
         try {
           await unlink(this.fileFor(key))

@@ -4,7 +4,7 @@ import type { Logger } from './logger.ts'
 
 export interface AuditEntry {
   event: string
-  source: 'http_control' | 'chat' | 'ai_intent' | 'task' | 'movement' | 'system'
+  source: 'http_control' | 'chat' | 'ai_intent' | 'task' | 'movement' | 'combat' | 'system'
   actor: string
   action: string
   result: 'accepted' | 'completed' | 'denied' | 'failed' | 'interrupted'

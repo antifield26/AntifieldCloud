@@ -39,7 +39,31 @@ export interface Config {
   memoryDir: string
   memoryMaxTurns: number
   memoryRetentionDays: number
+  memorySummaryEnabled: boolean
+  memorySummaryTurns: number
+  memorySummaryMaxChars: number
   taskEnabled: boolean
+  queueMax: number
+  treeFarm: {
+    minX: number
+    maxX: number
+    minZ: number
+    maxZ: number
+    groundY: number
+    logMinY: number
+    maxY: number
+    logType: string
+    saplingType: string
+  }
+  treeMaxLogs: number
+  treeDepositEveryMs: number
+  defenseEnabled: boolean
+  defenseRadius: number
+  defenseHealthThreshold: number
+  defenseFoodThreshold: number
+  defenseMaxHostiles: number
+  defenseTargets: string[]
+  chunkWaitMs: number
   home: { x: number, y: number, z: number }
   safeZone: { minX: number, maxX: number, minZ: number, maxZ: number }
   farm: {
@@ -141,6 +165,13 @@ function readAllowlist (env: Env): string[] {
   return [...new Set(names)]
 }
 
+function readNameList (env: Env, key: string, fallback: string): string[] {
+  const raw = readString(env, key, fallback)
+  const names = raw.split(',').map(item => item.trim().toLowerCase()).filter(Boolean)
+  if (names.length === 0) throw new ConfigError(`${key} must contain at least one name`)
+  return [...new Set(names)]
+}
+
 function isLoopbackHost (host: string): boolean {
   return host === '127.0.0.1' || host === '::1' || host === 'localhost'
 }
@@ -229,12 +260,31 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     y: readNumber(env, 'FISH_WATER_Y', 62.5, -256, 512),
     z: readNumber(env, 'FISH_WATER_Z', 470.5, -30000000, 30000000)
   }
+  const treeFarm = {
+    minX: readNumber(env, 'TREE_FARM_MIN_X', 180, -30000000, 30000000),
+    maxX: readNumber(env, 'TREE_FARM_MAX_X', 193, -30000000, 30000000),
+    minZ: readNumber(env, 'TREE_FARM_MIN_Z', 455, -30000000, 30000000),
+    maxZ: readNumber(env, 'TREE_FARM_MAX_Z', 464, -30000000, 30000000),
+    groundY: readNumber(env, 'TREE_FARM_GROUND_Y', 64, -256, 512),
+    logMinY: readNumber(env, 'TREE_FARM_LOG_MIN_Y', 65, -256, 512),
+    maxY: readNumber(env, 'TREE_FARM_MAX_Y', 96, -256, 512),
+    logType: readString(env, 'TREE_LOG_TYPE', 'oak_log'),
+    saplingType: readString(env, 'TREE_SAPLING_TYPE', 'oak_sapling')
+  }
+  if (treeFarm.minX > treeFarm.maxX || treeFarm.minZ > treeFarm.maxZ) {
+    throw new ConfigError('TREE_FARM_MIN_* must be <= TREE_FARM_MAX_*')
+  }
+  if (treeFarm.logMinY <= treeFarm.groundY || treeFarm.maxY < treeFarm.logMinY) {
+    throw new ConfigError('TREE_FARM_LOG_MIN_Y must be > TREE_FARM_GROUND_Y and <= TREE_FARM_MAX_Y')
+  }
   assertInSafeZone('BOT_HOME', home, safeZone)
   assertInSafeZone('FARM', { x: farm.minX, z: farm.minZ }, safeZone)
   assertInSafeZone('FARM', { x: farm.maxX, z: farm.maxZ }, safeZone)
   assertInSafeZone('CHEST', chest, safeZone)
   assertInSafeZone('FISH_STAND', fishStand, safeZone)
   assertInSafeZone('FISH_WATER', fishWater, safeZone)
+  assertInSafeZone('TREE_FARM', { x: treeFarm.minX, z: treeFarm.minZ }, safeZone)
+  assertInSafeZone('TREE_FARM', { x: treeFarm.maxX, z: treeFarm.maxZ }, safeZone)
 
   return Object.freeze({
     version,
@@ -275,7 +325,29 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     memoryDir: readString(env, 'MEMORY_DIR', `${dataDir}/memory`),
     memoryMaxTurns: readInt(env, 'MEMORY_MAX_TURNS', 20, 1, 200),
     memoryRetentionDays: readInt(env, 'MEMORY_RETENTION_DAYS', 30, 1, 3650),
+    memorySummaryEnabled: readBool(env, 'MEMORY_SUMMARY_ENABLED', true),
+    memorySummaryTurns: (() => {
+      const turns = readInt(env, 'MEMORY_SUMMARY_TURNS', 40, 2, 1000)
+      if (turns % 2 !== 0) throw new ConfigError('MEMORY_SUMMARY_TURNS must be an even number')
+      return turns
+    })(),
+    memorySummaryMaxChars: readInt(env, 'MEMORY_SUMMARY_MAX_CHARS', 1000, 100, 5000),
     taskEnabled: readBool(env, 'TASK_ENABLED', true),
+    queueMax: readInt(env, 'QUEUE_MAX', 3, 1, 10),
+    treeFarm,
+    treeMaxLogs: readInt(env, 'TREE_MAX_LOGS', 128, 1, 2048),
+    treeDepositEveryMs: readInt(env, 'TREE_DEPOSIT_EVERY_MS', 300000, 60000, 3600000),
+    defenseEnabled: readBool(env, 'DEFENSE_ENABLED', true),
+    defenseRadius: readNumber(env, 'DEFENSE_RADIUS', 12, 4, 32),
+    defenseHealthThreshold: readNumber(env, 'DEFENSE_HEALTH_THRESHOLD', 12, 1, 20),
+    defenseFoodThreshold: readNumber(env, 'DEFENSE_FOOD_THRESHOLD', 6, 1, 20),
+    defenseMaxHostiles: readInt(env, 'DEFENSE_MAX_HOSTILES', 2, 1, 10),
+    defenseTargets: readNameList(
+      env,
+      'DEFENSE_TARGETS',
+      'zombie,husk,drowned,skeleton,stray,spider,cave_spider'
+    ),
+    chunkWaitMs: readInt(env, 'CHUNK_WAIT_MS', 5000, 500, 60000),
     home,
     safeZone,
     farm,

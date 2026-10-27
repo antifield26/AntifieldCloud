@@ -82,6 +82,7 @@ export class ChatRouter {
     const map: Record<string, CommandName> = {
       fish: 'fish',
       farm: 'farm',
+      woodcutting: 'woodcutting',
       stopTask: 'stopTask',
       home: 'home',
       deposit: 'deposit',

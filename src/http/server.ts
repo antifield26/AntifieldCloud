@@ -231,27 +231,40 @@ export class HttpApi {
     if (!config.taskEnabled) return sendError(res, 503, 'task_disabled', 'tasks are disabled')
     try {
       const body = await readJsonBody(req)
-      if (!isObject(body) || (body.name !== 'fishing' && body.name !== 'farming')) {
-        throw new InvalidMessageError('name must be fishing or farming')
-      }
-      if (state.task.active) {
-        this.auditDenied('task.start', 'task_active', requestId, body.name)
-        return sendError(res, 409, 'task_active', 'a task is already active')
+      if (!isObject(body) || (body.name !== 'fishing' && body.name !== 'farming' && body.name !== 'woodcutting')) {
+        throw new InvalidMessageError('name must be fishing, farming or woodcutting')
       }
       if (state.task.pendingResume) {
         this.auditDenied('task.start', 'resume_pending', requestId, body.name)
         return sendError(res, 409, 'resume_pending', 'a pending task must be resumed or discarded first')
       }
+      const result = await tasks.start(body.name, 'panel')
+      if (result.status === 'rejected') {
+        this.auditDenied('task.start', result.reason ?? 'rejected', requestId, body.name)
+        if (result.reason === 'queue_full') return sendError(res, 409, 'queue_full', 'task queue is full')
+        if (result.reason === 'resume_pending') return sendError(res, 409, 'resume_pending', 'a pending task must be resumed first')
+        if (result.reason === 'task_disabled') return sendError(res, 503, 'task_disabled', 'tasks are disabled')
+        return sendError(res, 409, 'task_rejected', 'task was rejected')
+      }
       this.deps.audit.append({
-        event: 'task.start',
+        event: result.status === 'queued' ? 'task.queued' : 'task.start',
         source: 'http_control',
         actor: 'panel',
         action: body.name,
         result: 'accepted',
-        requestId
+        requestId,
+        details: result.status === 'queued' ? { position: result.position } : {}
       })
-      void tasks.start(body.name, 'panel')
-      sendJson(res, { status: 202, body: { ok: true, requestId, task: this.deps.state.task } })
+      sendJson(res, {
+        status: 202,
+        body: {
+          ok: true,
+          queued: result.status === 'queued',
+          position: result.position ?? null,
+          requestId,
+          task: this.deps.state.task
+        }
+      })
     } catch (error) {
       if (error instanceof BodyTooLargeError) return sendError(res, 413, 'payload_too_large', 'request body is too large')
       if (error instanceof InvalidMessageError) return sendError(res, 400, 'invalid_request', error.message)
@@ -262,26 +275,28 @@ export class HttpApi {
   private async handleTaskStop (req: IncomingMessage, res: ServerResponse): Promise<void> {
     const { state, tasks } = this.deps
     const requestId = this.requestId(req)
-    if (state.task.active) {
+    if (state.task.active || state.task.queue.length > 0) {
       tasks.requestStop('http')
       this.deps.audit.append({
         event: 'task.stop',
         source: 'http_control',
         actor: 'panel',
-        action: state.task.name ?? 'task',
+        action: state.task.name ?? 'queue',
         result: 'accepted',
-        requestId
+        requestId,
+        details: { clearedQueue: state.task.queue.length }
       })
       sendJson(res, { status: 202, body: { ok: true, requestId, task: this.deps.state.task } })
       return
     }
     if (state.task.pendingResume) {
+      const name = state.task.pendingResume.name
       await tasks.discardPending('http')
       this.deps.audit.append({
         event: 'task.discard_pending',
         source: 'http_control',
         actor: 'panel',
-        action: state.task.pendingResume.name,
+        action: name,
         result: 'accepted',
         requestId
       })

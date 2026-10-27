@@ -3,6 +3,7 @@ import { createLogger } from './logger.ts'
 import { readPackageInfo } from './version.ts'
 import { RuntimeState } from './state.ts'
 import { AuditLogger } from './audit.ts'
+import { Defender } from './combat/defender.ts'
 import { EventBus } from './events/bus.ts'
 import { StatePublisher } from './events/state-publisher.ts'
 import { MemoryStore } from './memory/store.ts'
@@ -90,6 +91,13 @@ async function main (): Promise<void> {
   movement.setNotify(message => {
     void chatSender.say(message, 'movement').catch(() => {})
   })
+  const defender = new Defender({
+    config,
+    logger: logger.withScope('defense'),
+    movement,
+    audit,
+    getBot: () => client.getBot()
+  })
 
   const tasks = new TaskManager({
     config,
@@ -100,7 +108,8 @@ async function main (): Promise<void> {
     events,
     audit,
     store: new TaskStore(config.taskStateFile, logger.withScope('tasks.store')),
-    getBot: () => client.getBot()
+    getBot: () => client.getBot(),
+    defender: config.defenseEnabled ? defender : undefined
   })
   await tasks.init()
 

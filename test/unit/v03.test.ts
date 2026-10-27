@@ -60,18 +60,22 @@ test('task store roundtrips and quarantines corrupt files', async () => {
   const file = path.join(dir, 'task-state.json')
   const store = new TaskStore(file, logger)
   const saved: PersistedTask = {
-    version: 1,
     taskId: 'task-1',
     name: 'fishing',
     startedAt: 1000,
     deadline: 2000,
-    progress: { fishCaught: 3, wheatHarvested: 0, planted: 0, deposited: 1 },
+    progress: {
+      fishCaught: 3, wheatHarvested: 0, planted: 0, deposited: 1,
+      treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0
+    },
     failures: 0,
     savedAt: 1500
   }
   try {
-    await store.save(saved)
-    assert.deepEqual(await store.load(), saved)
+    await store.save({ version: 2, active: saved, queue: [], savedAt: 1500 })
+    const loaded = await store.load()
+    assert.deepEqual(loaded?.active, saved)
+    assert.deepEqual(loaded?.queue, [])
     await store.clear()
     assert.equal(await store.load(), null)
     await writeFile(file, '{broken', 'utf8')
@@ -101,13 +105,20 @@ test('task manager exposes a pending resume and can discard it', async () => {
   })
   try {
     await store.save({
-      version: 1,
-      taskId: 'pending-1',
-      name: 'farming',
-      startedAt: Date.now() - 5000,
-      deadline: Date.now() + 600000,
-      progress: { fishCaught: 0, wheatHarvested: 2, planted: 3, deposited: 0 },
-      failures: 1,
+      version: 2,
+      active: {
+        taskId: 'pending-1',
+        name: 'farming',
+        startedAt: Date.now() - 5000,
+        deadline: Date.now() + 600000,
+        progress: {
+          fishCaught: 0, wheatHarvested: 2, planted: 3, deposited: 0,
+          treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0
+        },
+        failures: 1,
+        savedAt: Date.now() - 1000
+      },
+      queue: [],
       savedAt: Date.now() - 1000
     })
     await manager.init()
@@ -143,13 +154,20 @@ test('task manager expires an old pending resume', async () => {
   })
   try {
     await store.save({
-      version: 1,
-      taskId: 'expired-1',
-      name: 'fishing',
-      startedAt: Date.now() - 60_000,
-      deadline: Date.now() + 600000,
-      progress: { fishCaught: 1, wheatHarvested: 0, planted: 0, deposited: 0 },
-      failures: 0,
+      version: 2,
+      active: {
+        taskId: 'expired-1',
+        name: 'fishing',
+        startedAt: Date.now() - 60_000,
+        deadline: Date.now() + 600000,
+        progress: {
+          fishCaught: 1, wheatHarvested: 0, planted: 0, deposited: 0,
+          treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0
+        },
+        failures: 0,
+        savedAt: Date.now() - 60_000
+      },
+      queue: [],
       savedAt: Date.now() - 60_000
     })
     await manager.init()
@@ -176,7 +194,7 @@ test('HTTP control uses a separate token and emits SSE hello', async () => {
     say: async (text: string) => [text]
   } as unknown as ChatSender
   const fakeTasks = {
-    start: async (name: 'fishing' | 'farming') => {
+    start: async (name: 'fishing' | 'farming' | 'woodcutting') => {
       state.setTask({
         enabled: true,
         active: true,
@@ -184,11 +202,16 @@ test('HTTP control uses a separate token and emits SSE hello', async () => {
         state: 'running',
         startedAt: new Date().toISOString(),
         elapsedSec: 0,
-        progress: { fishCaught: 0, wheatHarvested: 0, planted: 0, deposited: 0 },
+        progress: {
+          fishCaught: 0, wheatHarvested: 0, planted: 0, deposited: 0,
+          treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0
+        },
         failures: 0,
         lastError: null,
-        pendingResume: null
+        pendingResume: null,
+        queue: []
       })
+      return { status: 'started' as const }
     },
     requestStop: () => {},
     stopAndWait: async () => {},

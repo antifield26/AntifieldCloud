@@ -63,14 +63,25 @@ export interface MemorySnapshot {
   turns: number
 }
 
-export type TaskName = 'fishing' | 'farming'
-export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping' | 'pending_resume'
+export type TaskName = 'fishing' | 'farming' | 'woodcutting'
+export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping' | 'defending' | 'pending_resume'
 
 export interface TaskProgress {
   fishCaught: number
   wheatHarvested: number
   planted: number
   deposited: number
+  treesChopped: number
+  logsChopped: number
+  saplingsPlanted: number
+  mobsKilled: number
+}
+
+export interface QueuedTask {
+  taskId: string
+  name: TaskName
+  requestedBy: string
+  requestedAt: string
 }
 
 export interface PendingResume {
@@ -93,6 +104,7 @@ export interface TaskSnapshot {
   failures: number
   lastError: string | null
   pendingResume: PendingResume | null
+  queue: QueuedTask[]
 }
 
 export interface StatusSnapshot {
@@ -190,10 +202,20 @@ export class RuntimeState {
       state: 'idle',
       startedAt: null,
       elapsedSec: 0,
-      progress: { fishCaught: 0, wheatHarvested: 0, planted: 0, deposited: 0 },
+      progress: {
+        fishCaught: 0,
+        wheatHarvested: 0,
+        planted: 0,
+        deposited: 0,
+        treesChopped: 0,
+        logsChopped: 0,
+        saplingsPlanted: 0,
+        mobsKilled: 0
+      },
       failures: 0,
       lastError: null,
-      pendingResume: null
+      pendingResume: null,
+      queue: []
     }
   }
 
@@ -254,7 +276,8 @@ export class RuntimeState {
       progress: patch.progress ? { ...patch.progress } : this.task.progress,
       pendingResume: patch.pendingResume === undefined
         ? this.task.pendingResume
-        : (patch.pendingResume ? { ...patch.pendingResume, progress: { ...patch.pendingResume.progress } } : null)
+        : (patch.pendingResume ? { ...patch.pendingResume, progress: { ...patch.pendingResume.progress } } : null),
+      queue: patch.queue ? patch.queue.map(item => ({ ...item })) : this.task.queue
     }
   }
 
@@ -265,7 +288,8 @@ export class RuntimeState {
       progress: { ...this.task.progress },
       pendingResume: this.task.pendingResume
         ? { ...this.task.pendingResume, progress: { ...this.task.pendingResume.progress } }
-        : null
+        : null,
+      queue: this.task.queue.map(item => ({ ...item }))
     }
     if (task.startedAt && (task.active || task.state === 'pending_resume')) {
       const startedAt = Date.parse(task.startedAt)

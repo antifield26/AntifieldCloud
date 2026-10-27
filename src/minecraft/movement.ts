@@ -122,6 +122,31 @@ export class MovementManager {
     throw new MovementError('传送没有生效，可能被服务器拒绝了')
   }
 
+  async waitForChunks (timeoutMs?: number): Promise<void> {
+    const bot = this.requireBot()
+    const config = this.requireConfig()
+    const wait = timeoutMs ?? config.chunkWaitMs
+    try {
+      await Promise.race([
+        bot.waitForChunksToLoad(),
+        new Promise<void>(resolve => setTimeout(resolve, wait))
+      ])
+    } catch (error) {
+      this.logger.warn('movement: chunk wait failed', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+
+  private assertSameDimension (username: string): void {
+    const bot = this.requireBot()
+    const player = bot.players[username]
+    const dimension = (player?.entity as { dimension?: string } | null | undefined)?.dimension
+    if (dimension && bot.game?.dimension && dimension !== bot.game.dimension) {
+      throw new MovementError('跨维度暂不支持')
+    }
+  }
+
   async teleportTo (x: number, y: number, z: number): Promise<void> {
     const bot = this.requireBot()
     const config = this.requireConfig()
@@ -135,21 +160,30 @@ export class MovementManager {
     this.logger.info('movement teleport', { x, y, z })
     bot.chat(command)
     await this.waitForNear(x, y, z, 3, 6000)
+    await this.waitForChunks(config.chunkWaitMs)
   }
 
   async teleportToPlayer (username: string): Promise<void> {
     const bot = this.requireBot()
     const config = this.requireConfig()
     if (!/^[A-Za-z0-9_]{1,16}$/.test(username)) throw new MovementError('目标名字无效')
-    if (!bot.players[username]) throw new MovementError(`${username} 不在线`)
+    const player = bot.players[username]
+    if (!player) throw new MovementError(`${username} 不在线`)
+    this.assertSameDimension(username)
+    if (!player.entity) {
+      // The player entity can be unloaded while the player is still online.
+      this.logger.info('movement teleport to unloaded player', { username })
+    }
     this.logger.info('movement teleport to player', { username })
     bot.chat(`/tp ${config.botUsername} ${username}`)
     await new Promise(resolve => setTimeout(resolve, 1000))
+    await this.waitForChunks()
   }
 
   async teleportNearPoint (x: number, y: number, z: number, radius = 4): Promise<Vec3> {
     const bot = this.requireBot()
     const config = this.requireConfig()
+    await this.waitForChunks()
     const spot = safeSpotNear(bot, config, { x, y, z }, radius)
     if (!spot) throw new MovementError('附近找不到安全落点')
     await this.teleportTo(spot.x, spot.y, spot.z)
@@ -170,7 +204,7 @@ export class MovementManager {
     const previous = this.current
     this.current = 'task'
     let timeout: NodeJS.Timeout | null = null
-    try {
+    const tryGoto = async (): Promise<void> => {
       await Promise.race([
         bot.pathfinder.goto(new goals.GoalNear(x, y, z, radius)),
         new Promise<never>((_resolve, reject) => {
@@ -184,16 +218,28 @@ export class MovementManager {
           }, timeoutMs)
         })
       ])
-    } catch (error) {
+    }
+    try {
+      await tryGoto()
+    } catch (firstError) {
       if (allowTeleport) {
-        this.logger.warn('movement path failed, trying teleport', {
+        this.logger.warn('movement path failed, retrying after chunks', {
           x, y, z,
-          error: error instanceof Error ? error.message : String(error)
+          error: firstError instanceof Error ? firstError.message : String(firstError)
         })
-        await this.teleportNearPoint(x, y, z, Math.max(3, radius + 2))
+        await this.waitForChunks()
+        try {
+          await tryGoto()
+        } catch (error) {
+          this.logger.warn('movement path failed, trying teleport', {
+            x, y, z,
+            error: error instanceof Error ? error.message : String(error)
+          })
+          await this.teleportNearPoint(x, y, z, Math.max(3, radius + 2))
+        }
         return
       }
-      throw new MovementError(`走不过去：${error instanceof Error ? error.message : String(error)}`)
+      throw new MovementError(`走不过去：${firstError instanceof Error ? firstError.message : String(firstError)}`)
     } finally {
       if (timeout) clearTimeout(timeout)
       this.current = previous
@@ -215,6 +261,7 @@ export class MovementManager {
   async comeTo (username: string, timeoutMs = 30000): Promise<'arrived' | 'cancelled'> {
     const bot = this.requireBot()
     const config = this.requireConfig()
+    this.assertSameDimension(username)
     const target = targetFor(bot, username)
     if (!target?.entity) {
       if (bot.players[username]) {
@@ -301,6 +348,12 @@ export class MovementManager {
   follow (username: string, maxMs = 600000): void {
     const bot = this.requireBot()
     const config = this.requireConfig()
+    try {
+      this.assertSameDimension(username)
+    } catch (error) {
+      this.notify?.(error instanceof Error ? error.message : String(error))
+      throw error
+    }
     const target = targetFor(bot, username)
     if (!target?.entity) {
       if (bot.players[username]) {

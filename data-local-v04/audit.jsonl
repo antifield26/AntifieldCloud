@@ -1,0 +1,8 @@
+{"ts":"2026-10-27T02:03:56.776Z","event":"service.start","source":"system","actor":"system","action":"start","result":"accepted","details":{"version":"0.4.0"}}
+{"ts":"2026-10-27T02:03:57.381Z","event":"task.start","source":"http_control","actor":"panel","action":"woodcutting","result":"accepted","details":{"taskId":"c3e14ca6-de6a-4f7c-beac-3dd93da64053"}}
+{"ts":"2026-10-27T02:03:57.384Z","event":"task.start","source":"http_control","actor":"panel","action":"woodcutting","result":"accepted","requestId":"f37bb864-3f44-40a3-81ac-2c0cae88bcdc","details":{}}
+{"ts":"2026-10-27T02:03:57.395Z","event":"task.queued","source":"http_control","actor":"panel","action":"fishing","result":"accepted","details":{"taskId":"9b22c68d-b024-4788-897f-55325c4eb740","position":1}}
+{"ts":"2026-10-27T02:03:57.395Z","event":"task.queued","source":"http_control","actor":"panel","action":"fishing","result":"accepted","requestId":"744811a6-114b-4c4a-b4d1-327b2840e332","details":{"position":1}}
+{"ts":"2026-10-27T02:03:57.414Z","event":"task.stop","source":"system","actor":"system","action":"woodcutting","result":"accepted","details":{"taskId":"c3e14ca6-de6a-4f7c-beac-3dd93da64053","reason":"http","clearedQueue":1}}
+{"ts":"2026-10-27T02:03:57.414Z","event":"task.queue_cleared","source":"task","actor":"system","action":"queue","result":"accepted","details":{"reason":"http","cleared":1}}
+{"ts":"2026-10-27T02:03:57.414Z","event":"task.stop","source":"http_control","actor":"panel","action":"woodcutting","result":"accepted","requestId":"0ff42ebb-9a45-4eee-b1f8-eedffce7c85c","details":{"clearedQueue":0}}

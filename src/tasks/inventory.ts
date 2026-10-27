@@ -9,7 +9,13 @@ const TOOL_NAMES = new Set([
   'iron_axe',
   'iron_hoe',
   'fishing_rod',
-  'wheat_seeds'
+  'shield',
+  'iron_helmet',
+  'iron_chestplate',
+  'iron_leggings',
+  'iron_boots',
+  'wheat_seeds',
+  'oak_sapling'
 ])
 
 const FISH_NAMES = new Set(['cod', 'salmon', 'tropical_fish', 'pufferfish'])

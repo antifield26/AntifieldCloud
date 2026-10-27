@@ -34,7 +34,10 @@ export interface TaskContext {
   requestDeposit: () => void
   depositRequested: () => boolean
   clearDepositRequest: () => void
+  defend: () => Promise<'none' | 'cleared'>
 }
+
+export type TaskStartStatus = 'started' | 'queued' | 'rejected'
 
 export function requireBot (ctx: TaskContext): Bot {
   const bot = ctx.getBot()
@@ -75,8 +78,14 @@ export function stopSignal (signal: AbortSignal): Promise<never> {
   })
 }
 
+export interface TaskStartResult {
+  status: TaskStartStatus
+  position?: number
+  reason?: string
+}
+
 export interface TaskController {
-  start: (name: TaskName, username: string) => Promise<void>
+  start: (name: TaskName, username: string) => Promise<TaskStartResult>
   requestStop: (reason: string) => void
   stopAndWait: (reason: string) => Promise<void>
   depositNow: () => Promise<void>

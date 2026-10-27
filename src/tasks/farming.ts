@@ -4,7 +4,6 @@ import { Vec3 } from 'vec3'
 import { depositProduce } from './deposit.ts'
 import { countItem, eatIfNeeded, emptySlots, findItem } from './inventory.ts'
 import { findEmptyFarmland, findMatureWheat } from './navigation.ts'
-import { nearbyHostile } from './safety.ts'
 import {
   isExpired,
   requireBot,
@@ -98,8 +97,7 @@ export async function runFarming (ctx: TaskContext): Promise<void> {
       continue
     }
     if (bot.health < 8) throw new TaskError('血量太低了，我先回家')
-    const hostile = nearbyHostile(bot)
-    if (hostile) throw new TaskError(`附近有 ${hostile}，我先回家`)
+    await ctx.defend()
     await eatIfNeeded(ctx)
     if (emptySlots(bot) <= 3) {
       await depositProduce(ctx)

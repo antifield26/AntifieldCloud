@@ -95,10 +95,20 @@ test('status lines include the active task progress', () => {
     state: 'running',
     startedAt: new Date().toISOString(),
     elapsedSec: 12,
-    progress: { fishCaught: 3, wheatHarvested: 0, planted: 0, deposited: 0 },
+    progress: {
+      fishCaught: 3,
+      wheatHarvested: 0,
+      planted: 0,
+      deposited: 0,
+      treesChopped: 0,
+      logsChopped: 0,
+      saplingsPlanted: 0,
+      mobsKilled: 0
+    },
     failures: 0,
     lastError: null,
-    pendingResume: null
+    pendingResume: null,
+    queue: []
   }
   const lines = buildStatusLines(bot, { describe: () => '待机' } as never, task)
   assert.equal(lines.length, 3)
