@@ -1107,7 +1107,7 @@ export class AlertService {
   }
 
   /**
-   * 记录来源外部服务（v0.8.0：Lofii）的告警事件。
+   * 记录来源外部服务（v0.8.0：mcbot）的告警事件。
    *
    * 与本地指标告警的区别：不参与 alert_state 状态机（外部服务自己维护告警状态），
    * 事件 status 固定为 `event`，避免被前端/清理逻辑当成 firing/resolved；

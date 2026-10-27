@@ -279,6 +279,8 @@ test('v17 库升级到 v18：chatbot 表/列/meta 键全量重命名且数据保
           ON CONFLICT(key) DO UPDATE SET value = excluded.value;
         INSERT INTO meta (key, value) VALUES ('bot_group_memory_migrated_v1', '1')
           ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+        INSERT INTO meta (key, value) VALUES ('lofii.event_cursor', '{"bootId":"b","lastEventId":7,"lastTs":"2026-10-21T00:00:00.000Z"}')
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value;
       `)
     })
     const upgraded = openDatabase({ path })
@@ -302,6 +304,10 @@ test('v17 库升级到 v18：chatbot 表/列/meta 键全量重命名且数据保
       assert.equal(oldMeta.c, 0)
       const newMeta = upgraded.prepare("SELECT COUNT(*) AS c FROM meta WHERE key IN ('chatbot_group_memory_migrated_v1')").get() as { c: number }
       assert.equal(newMeta.c, 1)
+      const cursor = upgraded.prepare("SELECT value FROM meta WHERE key = 'mcbot.event_cursor'").get() as { value: string } | undefined
+      assert.equal(cursor?.value, '{"bootId":"b","lastEventId":7,"lastTs":"2026-10-21T00:00:00.000Z"}')
+      const oldCursor = upgraded.prepare("SELECT COUNT(*) AS c FROM meta WHERE key = 'lofii.event_cursor'").get() as { c: number }
+      assert.equal(oldCursor.c, 0)
     } finally {
       upgraded.close()
     }

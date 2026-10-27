@@ -71,9 +71,9 @@ export function registerDashboardRoutes(
     metricsRetentionDays: config.metricsRetentionDays,
     chatbotsEnabled: config.chatbotEnabled && config.chatbotSecretKey.length > 0,
     chatbotPlatforms: [...CHATBOT_PLATFORMS],
-    /** v0.8.0 Lofii 对接开关与控制能力（控制 Token 为空 = 只读）。 */
-    lofiiEnabled: config.lofiiEnabled,
-    lofiiControlEnabled: config.lofiiEnabled && config.lofiiControlToken.length > 0,
+    /** v0.8.0 mcbot 对接开关与控制能力（控制 Token 为空 = 只读）。 */
+    mcbotEnabled: config.mcbotEnabled,
+    mcbotControlEnabled: config.mcbotEnabled && config.mcbotControlToken.length > 0,
     /** 审计写入诊断：失败计数/最近错误（不含明细），用于发现 DB 忙/磁盘满导致的审计丢失。 */
     audit: getAuditDiagnostics(db),
   }))

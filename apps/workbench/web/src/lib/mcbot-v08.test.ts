@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
-  lofiiAlertTypeLabel,
-  lofiiEventsSupported,
-  lofiiSeverityLabel,
-  lofiiTaskNameLabel,
-  lofiiTaskProgressRows,
+  mcbotAlertTypeLabel,
+  mcbotEventsSupported,
+  mcbotSeverityLabel,
+  mcbotTaskNameLabel,
+  mcbotTaskProgressRows,
   safeLofiiStatus,
-} from './lofii'
-import type { LofiiSnapshot, LofiiStatus } from '../api/types'
+} from './mcbot'
+import type { McbotSnapshot, McbotStatus } from '../api/types'
 
-const emptySnapshot = (overrides: Partial<LofiiSnapshot> = {}): LofiiSnapshot => ({
+const emptySnapshot = (overrides: Partial<McbotSnapshot> = {}): McbotSnapshot => ({
   enabled: true,
   reachable: true,
   stale: false,
@@ -25,9 +25,9 @@ const emptySnapshot = (overrides: Partial<LofiiSnapshot> = {}): LofiiSnapshot =>
   ...overrides,
 })
 
-describe('Lofii v0.8.0 展示层容错', () => {
+describe('mcbot v0.8.0 展示层容错', () => {
   it('status 缺嵌套段时归一化为可渲染默认值', () => {
-    const normalized = safeLofiiStatus({} as LofiiStatus)
+    const normalized = safeLofiiStatus({} as McbotStatus)
     expect(normalized).not.toBeNull()
     expect(normalized?.task.queue).toEqual([])
     expect(normalized?.task.progress.fishCaught).toBe(0)
@@ -40,16 +40,16 @@ describe('Lofii v0.8.0 展示层容错', () => {
       ...emptySnapshot(),
       eventsSupported: undefined,
       contractVersion: undefined,
-    } as unknown as LofiiSnapshot
-    expect(lofiiEventsSupported(legacy)).toBe(false)
-    expect(lofiiEventsSupported({ ...legacy, contractVersion: 1 } as LofiiSnapshot)).toBe(true)
-    expect(lofiiEventsSupported(null)).toBe(false)
+    } as unknown as McbotSnapshot
+    expect(mcbotEventsSupported(legacy)).toBe(false)
+    expect(mcbotEventsSupported({ ...legacy, contractVersion: 1 } as McbotSnapshot)).toBe(true)
+    expect(mcbotEventsSupported(null)).toBe(false)
   })
 
   it('__proto__/constructor 等键不会命中原型链对象', () => {
-    expect(lofiiTaskNameLabel('__proto__')).toBe('__proto__')
-    expect(lofiiAlertTypeLabel('__proto__')).toBe('__proto__')
-    expect(lofiiSeverityLabel('__proto__')).toBe('__proto__')
-    expect(lofiiTaskProgressRows({ name: '__proto__' } as never)).toEqual([])
+    expect(mcbotTaskNameLabel('__proto__')).toBe('__proto__')
+    expect(mcbotAlertTypeLabel('__proto__')).toBe('__proto__')
+    expect(mcbotSeverityLabel('__proto__')).toBe('__proto__')
+    expect(mcbotTaskProgressRows({ name: '__proto__' } as never)).toEqual([])
   })
 })

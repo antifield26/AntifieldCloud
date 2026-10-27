@@ -1,14 +1,14 @@
 /**
- * Lofii 服务：轮询 Lofii Bot（仅 loopback）的 /status 与 /events/recent，缓存最新状态与事件，
+ * mcbot 服务：轮询 mcbot Bot（仅 loopback）的 /status 与 /events/recent，缓存最新状态与事件，
  * 把上游 `alert` 事件映射为本应用告警（status=event，不写 alert_state），并提供控制代理。
  *
  * 安全与行为约束：
  * - 轮询单飞（single-flight）：上一轮未结束时复用同一 Promise，绝不并发/堆积请求。
  * - 轮询失败只更新 reachable/stale/error，保留上一次成功的状态快照与事件缓存。
- * - /events/recent 返回 404（旧版 Lofii 无事件流）只把 eventsSupported 置 false，/status 仍可用。
- * - 告警游标持久化在 meta `lofii.event_cursor`（{bootId,lastEventId,lastTs}）：
+ * - /events/recent 返回 404（旧版 mcbot 无事件流）只把 eventsSupported 置 false，/status 仍可用。
+ * - 告警游标持久化在 meta `mcbot.event_cursor`（{bootId,lastEventId,lastTs}）：
  *   首次/无游标/bootId 变化只建立基线，不重放 ring 内旧告警；之后只处理游标之后的 alert，
- *   并按游标去重。LOFII_ALERTS_ENABLED=false 时仍推进游标但不写告警。
+ *   并按游标去重。MCBOT_ALERTS_ENABLED=false 时仍推进游标但不写告警。
  * - 聊天事件只进内存缓存（最多 100 条，newest-first），不落库、不写日志。
  * - 控制成功后立即刷新一次；start()/stop() 的定时器 unref，不阻止进程退出。
  */
@@ -17,43 +17,43 @@ import type { AlertService, AlertSeverity, ExternalAlertInput } from '../alerts/
 import type { Config } from '../config.ts'
 import { getMeta, setMeta } from '../db.ts'
 import {
-  LofiiClient,
-  LofiiError,
-  type LofiiEvent,
-  type LofiiHistoryKind,
-  type LofiiHistoryQuery,
-  type LofiiRecentResult,
+  McbotClient,
+  McbotError,
+  type McbotEvent,
+  type McbotHistoryKind,
+  type McbotHistoryQuery,
+  type McbotRecentResult,
 } from './client.ts'
 
 /** 告警游标 meta key；JSON {bootId,lastEventId,lastTs}。 */
-export const LOFII_EVENT_CURSOR_KEY = 'lofii.event_cursor'
+export const MCBOT_EVENT_CURSOR_KEY = 'mcbot.event_cursor'
 /** 事件内存缓存上限（API 最多返回 100 条）。 */
-export const LOFII_EVENT_CACHE_LIMIT = 100
+export const MCBOT_EVENT_CACHE_LIMIT = 100
 /** 事件缓存总的序列化字节上限；防止大量大 JSON 事件长期占用内存。 */
-export const LOFII_EVENT_CACHE_MAX_BYTES = 512 * 1024
+export const MCBOT_EVENT_CACHE_MAX_BYTES = 512 * 1024
 /** 每轮向上游最多取 200 条（ring 500），覆盖一次突发，避免只看 100 条漏告警。 */
-export const LOFII_EVENT_POLL_LIMIT = 200
+export const MCBOT_EVENT_POLL_LIMIT = 200
 /** 连续多少次轮询间隔没有成功（3 个 poll 周期）判定 stale。 */
-export const LOFII_STALE_POLLS = 3
+export const MCBOT_STALE_POLLS = 3
 
-export interface LofiiAlertCursor {
+export interface McbotAlertCursor {
   bootId: string
   lastEventId: string | null
   lastTs: string | null
 }
 
-export interface LofiiServiceDeps {
+export interface McbotServiceDeps {
   db: DatabaseSync
   config: Config
   alerts: Pick<AlertService, 'recordExternal'>
   log?: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
   /** 测试注入；默认按 config 构建。 */
-  client?: LofiiClient
+  client?: McbotClient
   /** 测试注入时钟；默认 new Date()。 */
   now?: () => Date
 }
 
-export interface LofiiSnapshot {
+export interface McbotSnapshot {
   enabled: boolean
   reachable: boolean
   stale: boolean
@@ -67,29 +67,29 @@ export interface LofiiSnapshot {
   error: string | null
   status: Record<string, unknown> | null
   /** newest-first，最多 100 条。 */
-  events: LofiiEvent[]
+  events: McbotEvent[]
 }
 
-export interface LofiiPollResult {
+export interface McbotPollResult {
   skipped: boolean
   ok: boolean
   error: string | null
   alerts: number
 }
 
-interface LofiiAlertMapping {
+interface McbotAlertMapping {
   event: string
   severity: AlertSeverity
   title: string
 }
 
-/** 上游告警类型 → 本应用稳定事件名/级别（未知类型统一 lofii_alert）。 */
-export const LOFII_ALERT_MAP: Record<string, LofiiAlertMapping> = {
-  low_health: { event: 'lofii_low_health', severity: 'warning', title: 'Lofii 血量偏低' },
-  task_failed: { event: 'lofii_task_failed', severity: 'critical', title: 'Lofii 任务失败' },
-  disconnected: { event: 'lofii_disconnected', severity: 'critical', title: 'Lofii 连接断开' },
-  chest_full: { event: 'lofii_chest_full', severity: 'warning', title: 'Lofii 储物箱已满' },
-  defense_retreat: { event: 'lofii_defense_retreat', severity: 'warning', title: 'Lofii 防御撤退' },
+/** 上游告警类型 → 本应用稳定事件名/级别（未知类型统一 mcbot_alert）。 */
+export const MCBOT_ALERT_MAP: Record<string, McbotAlertMapping> = {
+  low_health: { event: 'mcbot_low_health', severity: 'warning', title: 'mcbot 血量偏低' },
+  task_failed: { event: 'mcbot_task_failed', severity: 'critical', title: 'mcbot 任务失败' },
+  disconnected: { event: 'mcbot_disconnected', severity: 'critical', title: 'mcbot 连接断开' },
+  chest_full: { event: 'mcbot_chest_full', severity: 'warning', title: 'mcbot 储物箱已满' },
+  defense_retreat: { event: 'mcbot_defense_retreat', severity: 'warning', title: 'mcbot 防御撤退' },
 }
 
 const MAX_DETAILS_DEPTH = 2
@@ -132,32 +132,32 @@ function sanitizeDetails(value: Record<string, unknown>): Record<string, unknown
 
 /**
  * 把上游 alert envelope 映射为 ExternalAlertInput。
- * 非 alert 事件返回 null；未知 type 仍映射为 lofii_alert（severity 按上游 error→critical）。
+ * 非 alert 事件返回 null；未知 type 仍映射为 mcbot_alert（severity 按上游 error→critical）。
  */
-export function mapLofiiAlert(event: LofiiEvent): ExternalAlertInput | null {
+export function mapLofiiAlert(event: McbotEvent): ExternalAlertInput | null {
   if (event.type !== 'alert') return null
   const data = isRecord(event.data) ? event.data : {}
-  const lofiiType = typeof data.type === 'string' && data.type.trim() ? data.type.trim().slice(0, 64) : 'unknown'
-  const known = Object.prototype.hasOwnProperty.call(LOFII_ALERT_MAP, lofiiType)
-    ? LOFII_ALERT_MAP[lofiiType]
+  const mcbotType = typeof data.type === 'string' && data.type.trim() ? data.type.trim().slice(0, 64) : 'unknown'
+  const known = Object.prototype.hasOwnProperty.call(MCBOT_ALERT_MAP, mcbotType)
+    ? MCBOT_ALERT_MAP[mcbotType]
     : undefined
   const severity: AlertSeverity = known
     ? known.severity
     : data.severity === 'error'
       ? 'critical'
       : 'warning'
-  const title = known?.title ?? 'Lofii 告警'
+  const title = known?.title ?? 'mcbot 告警'
   const upstreamMessage = typeof data.message === 'string' && data.message.trim() ? data.message.trim() : ''
   const message = (upstreamMessage || title).slice(0, 500)
   const upstreamDetails = isRecord(data.details) ? data.details : {}
   const details: Record<string, unknown> = {
     ...sanitizeDetails(upstreamDetails),
-    source: 'lofii',
-    lofiiEventId: event.id,
-    lofiiType,
+    source: 'mcbot',
+    mcbotEventId: event.id,
+    mcbotType,
   }
   return {
-    event: known?.event ?? 'lofii_alert',
+    event: known?.event ?? 'mcbot_alert',
     severity,
     title,
     message,
@@ -176,7 +176,7 @@ function eventSeq(id: string, bootId: string): number | null {
 }
 
 /** 取游标之后的事件：优先按 ring 内位置定位，窗口外回退到序号/时间比较，无法判断则宁可不重复。 */
-export function eventsAfterCursor(events: LofiiEvent[], cursor: LofiiAlertCursor): LofiiEvent[] {
+export function eventsAfterCursor(events: McbotEvent[], cursor: McbotAlertCursor): McbotEvent[] {
   if (!cursor.lastEventId) return []
   const index = events.findIndex((event) => event.id === cursor.lastEventId)
   if (index >= 0) return events.slice(index + 1)
@@ -191,7 +191,7 @@ export function eventsAfterCursor(events: LofiiEvent[], cursor: LofiiAlertCursor
   })
 }
 
-function compareEventsNewestFirst(a: LofiiEvent, b: LofiiEvent): number {
+function compareEventsNewestFirst(a: McbotEvent, b: McbotEvent): number {
   const ta = Date.parse(a.ts)
   const tb = Date.parse(b.ts)
   if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) return tb - ta
@@ -200,19 +200,19 @@ function compareEventsNewestFirst(a: LofiiEvent, b: LofiiEvent): number {
 }
 
 function errorCodeOf(error: unknown): string {
-  return error instanceof LofiiError ? error.code : 'lofii_upstream_error'
+  return error instanceof McbotError ? error.code : 'mcbot_upstream_error'
 }
 
-export class LofiiService {
+export class McbotService {
   private readonly db: DatabaseSync
   private readonly config: Config
   private readonly alerts: Pick<AlertService, 'recordExternal'>
-  private readonly log: NonNullable<LofiiServiceDeps['log']>
-  private readonly client: LofiiClient
+  private readonly log: NonNullable<McbotServiceDeps['log']>
+  private readonly client: McbotClient
   private readonly now: () => Date
   private timer: NodeJS.Timeout | null = null
-  private inFlight: Promise<LofiiPollResult> | null = null
-  private events: LofiiEvent[] = []
+  private inFlight: Promise<McbotPollResult> | null = null
+  private events: McbotEvent[] = []
   private statusSnapshot: Record<string, unknown> | null = null
   private version: string | null = null
   private contractVersion: number | null = null
@@ -226,7 +226,7 @@ export class LofiiService {
   /** 上一次记录到日志的错误，避免轮询失败期间每 5s 重复告警日志。 */
   private lastLoggedError: string | null = null
 
-  constructor(deps: LofiiServiceDeps) {
+  constructor(deps: McbotServiceDeps) {
     this.db = deps.db
     this.config = deps.config
     this.alerts = deps.alerts
@@ -235,17 +235,17 @@ export class LofiiService {
       deps.log ??
       ((level, message, detail) => {
         const line = detail ? `${message} ${JSON.stringify(detail)}` : message
-        if (level === 'error') console.error(`[lofii] ${line}`)
-        else if (level === 'warn') console.warn(`[lofii] ${line}`)
-        else console.info(`[lofii] ${line}`)
+        if (level === 'error') console.error(`[mcbot] ${line}`)
+        else if (level === 'warn') console.warn(`[mcbot] ${line}`)
+        else console.info(`[mcbot] ${line}`)
       })
     this.client =
       deps.client ??
-      new LofiiClient({
-        baseUrl: this.config.lofiiUrl,
-        readToken: this.config.lofiiReadToken,
-        controlToken: this.config.lofiiControlToken,
-        timeoutMs: this.config.lofiiTimeoutMs,
+      new McbotClient({
+        baseUrl: this.config.mcbotUrl,
+        readToken: this.config.mcbotReadToken,
+        controlToken: this.config.mcbotControlToken,
+        timeoutMs: this.config.mcbotTimeoutMs,
       })
   }
 
@@ -253,15 +253,15 @@ export class LofiiService {
 
   /** 由进程入口在 listen 后调用；关闭状态下为空操作，重复调用幂等。 */
   start(): void {
-    if (!this.config.lofiiEnabled || this.timer) return
+    if (!this.config.mcbotEnabled || this.timer) return
     this.timer = setInterval(() => {
       void this.pollOnce().catch((error: unknown) => {
-        this.log('error', 'Lofii 轮询异常', { error: errorCodeOf(error) })
+        this.log('error', 'mcbot 轮询异常', { error: errorCodeOf(error) })
       })
-    }, this.config.lofiiPollMs)
+    }, this.config.mcbotPollMs)
     this.timer.unref?.()
     void this.pollOnce().catch((error: unknown) => {
-      this.log('error', 'Lofii 轮询异常', { error: errorCodeOf(error) })
+      this.log('error', 'mcbot 轮询异常', { error: errorCodeOf(error) })
     })
   }
 
@@ -274,9 +274,9 @@ export class LofiiService {
   // ---------- 轮询 ----------
 
   /** 单次轮询；单飞：上一轮未完成时直接复用同一 Promise（测试与 refresh 也会用到）。 */
-  pollOnce(): Promise<LofiiPollResult> {
-    if (!this.config.lofiiEnabled) {
-      return Promise.resolve({ skipped: true, ok: false, error: 'lofii_disabled', alerts: 0 })
+  pollOnce(): Promise<McbotPollResult> {
+    if (!this.config.mcbotEnabled) {
+      return Promise.resolve({ skipped: true, ok: false, error: 'mcbot_disabled', alerts: 0 })
     }
     if (this.inFlight) return this.inFlight
     const run = this.runPoll()
@@ -290,9 +290,9 @@ export class LofiiService {
   }
 
   /** 控制成功后立即刷新：若已有在途轮询先等它结束，再执行一轮保证拿到最新状态。 */
-  async refresh(): Promise<LofiiPollResult> {
-    if (!this.config.lofiiEnabled) {
-      return { skipped: true, ok: false, error: 'lofii_disabled', alerts: 0 }
+  async refresh(): Promise<McbotPollResult> {
+    if (!this.config.mcbotEnabled) {
+      return { skipped: true, ok: false, error: 'mcbot_disabled', alerts: 0 }
     }
     if (this.inFlight) {
       try {
@@ -304,11 +304,11 @@ export class LofiiService {
     return this.pollOnce()
   }
 
-  private async runPoll(): Promise<LofiiPollResult> {
+  private async runPoll(): Promise<McbotPollResult> {
     const startedAt = this.now()
     const [statusResult, recentResult] = await Promise.allSettled([
       this.client.status(),
-      this.client.recentEvents(LOFII_EVENT_POLL_LIMIT),
+      this.client.recentEvents(MCBOT_EVENT_POLL_LIMIT),
     ])
     this.lastPollAt = startedAt.toISOString()
     let error: string | null = null
@@ -335,11 +335,11 @@ export class LofiiService {
         alertCount = this.advanceCursor(recentResult.value)
       } catch (cause) {
         // 游标/告警写库失败不影响状态轮询；本轮 error 暴露给前端但不回滚已有缓存。
-        this.log('warn', 'Lofii 告警游标处理失败', { error: errorCodeOf(cause) })
-        if (!error) error = 'lofii_cursor_failed'
+        this.log('warn', 'mcbot 告警游标处理失败', { error: errorCodeOf(cause) })
+        if (!error) error = 'mcbot_cursor_failed'
       }
-    } else if (recentResult.reason instanceof LofiiError && recentResult.reason.statusCode === 404) {
-      // 旧版 Lofii 没有 /events/recent：明确降级，状态仍可用。
+    } else if (recentResult.reason instanceof McbotError && recentResult.reason.statusCode === 404) {
+      // 旧版 mcbot 没有 /events/recent：明确降级，状态仍可用。
       this.eventsSupported = false
       this.contractVersion = null
     } else if (!error) {
@@ -350,9 +350,9 @@ export class LofiiService {
     // 只在错误状态变化时写一条日志：轮询失败期间不重复刷屏，恢复时记录一次。
     if (this.error !== this.lastLoggedError) {
       if (this.error) {
-        this.log('warn', 'Lofii 上游不可用', { error: this.error, reachable: this.reachable })
+        this.log('warn', 'mcbot 上游不可用', { error: this.error, reachable: this.reachable })
       } else if (this.lastLoggedError) {
-        this.log('info', 'Lofii 上游已恢复', { reachable: this.reachable, eventsSupported: this.eventsSupported })
+        this.log('info', 'mcbot 上游已恢复', { reachable: this.reachable, eventsSupported: this.eventsSupported })
       }
       this.lastLoggedError = this.error
     }
@@ -360,20 +360,20 @@ export class LofiiService {
   }
 
   /** 合并事件到内存缓存：按 id 去重、newest-first、最多 100 条且总字节有界。 */
-  private mergeEvents(incoming: LofiiEvent[]): void {
+  private mergeEvents(incoming: McbotEvent[]): void {
     if (incoming.length === 0) return
     const seen = new Set<string>()
-    const merged: LofiiEvent[] = []
+    const merged: McbotEvent[] = []
     for (const event of [...incoming, ...this.events]) {
       if (seen.has(event.id)) continue
       seen.add(event.id)
       merged.push(event)
     }
     merged.sort(compareEventsNewestFirst)
-    const bounded: LofiiEvent[] = []
+    const bounded: McbotEvent[] = []
     let bytes = 0
     for (const event of merged) {
-      if (bounded.length >= LOFII_EVENT_CACHE_LIMIT) break
+      if (bounded.length >= MCBOT_EVENT_CACHE_LIMIT) break
       let size: number
       try {
         size = Buffer.byteLength(JSON.stringify(event), 'utf8')
@@ -381,7 +381,7 @@ export class LofiiService {
         // 不可序列化的事件不进入 UI 缓存；游标/告警处理仍使用原始事件。
         continue
       }
-      if (bytes + size > LOFII_EVENT_CACHE_MAX_BYTES) break
+      if (bytes + size > MCBOT_EVENT_CACHE_MAX_BYTES) break
       bounded.push(event)
       bytes += size
     }
@@ -390,8 +390,8 @@ export class LofiiService {
 
   // ---------- 告警游标 ----------
 
-  private readCursor(): LofiiAlertCursor | null {
-    const raw = getMeta(this.db, LOFII_EVENT_CURSOR_KEY)
+  private readCursor(): McbotAlertCursor | null {
+    const raw = getMeta(this.db, MCBOT_EVENT_CURSOR_KEY)
     if (!raw) return null
     let parsed: unknown
     try {
@@ -409,7 +409,7 @@ export class LofiiService {
     }
   }
 
-  private writeCursor(cursor: LofiiAlertCursor): void {
+  private writeCursor(cursor: McbotAlertCursor): void {
     const current = this.readCursor()
     if (
       current &&
@@ -419,7 +419,7 @@ export class LofiiService {
     ) {
       return
     }
-    setMeta(this.db, LOFII_EVENT_CURSOR_KEY, JSON.stringify(cursor))
+    setMeta(this.db, MCBOT_EVENT_CURSOR_KEY, JSON.stringify(cursor))
   }
 
   /**
@@ -428,7 +428,7 @@ export class LofiiService {
    * - 告警开关关闭：仍推进游标，不写事件。
    * - 返回本轮写入的告警事件数。
    */
-  private advanceCursor(recent: LofiiRecentResult): number {
+  private advanceCursor(recent: McbotRecentResult): number {
     if (!this.eventsSupported) return 0
     const lastEvent = recent.events.at(-1)
     const lastId = recent.lastEventId ?? lastEvent?.id ?? null
@@ -444,18 +444,18 @@ export class LofiiService {
     let count = 0
     // 记录最后一条已完整处理的事件；告警写入失败时游标停在该事件，下一轮重试失败事件，
     // 避免“错误被吞掉但游标照常推进”导致告警永久丢失。
-    let processed: LofiiEvent | null = null
+    let processed: McbotEvent | null = null
     for (const event of after) {
-      if (event.type === 'alert' && this.config.lofiiAlertsEnabled) {
+      if (event.type === 'alert' && this.config.mcbotAlertsEnabled) {
         const input = mapLofiiAlert(event)
         if (input) {
           try {
             if (this.alerts.recordExternal(input) !== null) count += 1
           } catch (cause) {
-            this.log('warn', 'Lofii 告警写入失败', {
+            this.log('warn', 'mcbot 告警写入失败', {
               error: errorCodeOf(cause),
-              lofiiEventId: event.id,
-              lofiiType: input.details.lofiiType,
+              mcbotEventId: event.id,
+              mcbotType: input.details.mcbotType,
             })
             if (processed) {
               this.writeCursor({
@@ -481,15 +481,15 @@ export class LofiiService {
   // ---------- 查询 ----------
 
   get enabled(): boolean {
-    return this.config.lofiiEnabled
+    return this.config.mcbotEnabled
   }
 
   get controlEnabled(): boolean {
-    return this.config.lofiiEnabled && this.config.lofiiControlToken.length > 0
+    return this.config.mcbotEnabled && this.config.mcbotControlToken.length > 0
   }
 
   get alertsEnabled(): boolean {
-    return this.config.lofiiAlertsEnabled
+    return this.config.mcbotAlertsEnabled
   }
 
   get supportsEvents(): boolean {
@@ -497,14 +497,14 @@ export class LofiiService {
   }
 
   /** 当前状态快照（禁用时返回 enabled:false 的空壳）。 */
-  snapshot(): LofiiSnapshot {
-    if (!this.config.lofiiEnabled) {
+  snapshot(): McbotSnapshot {
+    if (!this.config.mcbotEnabled) {
       return {
         enabled: false,
         reachable: false,
         stale: false,
         controlEnabled: false,
-        alertsEnabled: this.config.lofiiAlertsEnabled,
+        alertsEnabled: this.config.mcbotAlertsEnabled,
         eventsSupported: false,
         version: null,
         contractVersion: null,
@@ -519,7 +519,7 @@ export class LofiiService {
       reachable: this.reachable,
       stale: this.isStale(),
       controlEnabled: this.controlEnabled,
-      alertsEnabled: this.config.lofiiAlertsEnabled,
+      alertsEnabled: this.config.mcbotAlertsEnabled,
       eventsSupported: this.eventsSupported,
       version: this.version,
       contractVersion: this.contractVersion,
@@ -533,8 +533,8 @@ export class LofiiService {
   /** stale：未连通且（从未成功过时已连续失败 3 轮，或距上次成功超过 3 个轮询周期）。 */
   private isStale(): boolean {
     if (this.reachable) return false
-    if (this.lastSuccessAt === null) return this.failedPolls >= LOFII_STALE_POLLS
-    return this.now().getTime() - this.lastSuccessAt > LOFII_STALE_POLLS * this.config.lofiiPollMs
+    if (this.lastSuccessAt === null) return this.failedPolls >= MCBOT_STALE_POLLS
+    return this.now().getTime() - this.lastSuccessAt > MCBOT_STALE_POLLS * this.config.mcbotPollMs
   }
 
   // ---------- 控制代理（成功即刷新） ----------
@@ -557,21 +557,21 @@ export class LofiiService {
 
   /** /say 使用读 Token，只读模式（无控制 Token）下仍可用。 */
   async say(message: string): Promise<Record<string, unknown>> {
-    if (!this.config.lofiiEnabled) throw new LofiiError('lofii_disabled', 'Lofii 对接未启用')
+    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
     const result = await this.client.say(message)
     await this.refresh()
     return result
   }
 
-  async history(kind: LofiiHistoryKind, query: LofiiHistoryQuery = {}): Promise<Record<string, unknown>> {
-    if (!this.config.lofiiEnabled) throw new LofiiError('lofii_disabled', 'Lofii 对接未启用')
+  async history(kind: McbotHistoryKind, query: McbotHistoryQuery = {}): Promise<Record<string, unknown>> {
+    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
     return this.client.history(kind, query)
   }
 
   private async control<T>(run: () => Promise<T>): Promise<T> {
-    if (!this.config.lofiiEnabled) throw new LofiiError('lofii_disabled', 'Lofii 对接未启用')
+    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
     if (!this.controlEnabled) {
-      throw new LofiiError('lofii_control_disabled', 'Lofii 控制接口未启用（未配置控制 Token）')
+      throw new McbotError('mcbot_control_disabled', 'mcbot 控制接口未启用（未配置控制 Token）')
     }
     const result = await run()
     await this.refresh()

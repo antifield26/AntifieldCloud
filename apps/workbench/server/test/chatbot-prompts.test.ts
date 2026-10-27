@@ -1,5 +1,5 @@
 /**
- * v0.5.9 提示词：普通 Chat 使用角色卡（个人卡或内置 lofii），固定安全边界与记忆注入；
+ * v0.5.9 提示词：普通 Chat 使用角色卡（个人卡或内置 mcbot），固定安全边界与记忆注入；
  * 任务模式与自定义提示词已随 /ask 移除。
  */
 import assert from 'node:assert/strict'
@@ -12,10 +12,10 @@ import {
 } from '../src/chatbot/prompts.ts'
 import { DEFAULT_CHAT_ROLE } from '../src/chatbot/roles.ts'
 
-test('提示词：默认使用内置 lofii 角色、固定安全边界；无记忆时不注入空记忆段', () => {
+test('提示词：默认使用内置 mcbot 角色、固定安全边界；无记忆时不注入空记忆段', () => {
   const prompt = buildBotPrompt({ userText: '整理一下备份现状' })
   assert.ok(prompt.includes('[系统提示]'))
-  assert.ok(prompt.includes('[角色卡：lofii]'))
+  assert.ok(prompt.includes('[角色卡：mcbot]'))
   assert.ok(prompt.includes(DEFAULT_CHAT_ROLE.prompt))
   // 默认角色卡只保留名字 + 对话风格，不再注入详细人设/背景，避免影响用户对话调整出的个性。
   assert.match(DEFAULT_CHAT_ROLE.prompt, /对话风格/u)
@@ -50,7 +50,7 @@ test('提示词：群聊环境声明未点名时不要每轮发言，点名时�
   assert.ok(tool.includes('普通闲聊不需要每轮调用工具'))
 })
 
-test('提示词：个人角色卡覆盖 lofii，并保留安全边界与记忆', () => {
+test('提示词：个人角色卡覆盖 mcbot，并保留安全边界与记忆', () => {
   const prompt = buildBotPrompt({
     roleCard: { name: '猫娘', prompt: '说话简短，偶尔用喵。' },
     memory: '用户喜欢深色模式',
@@ -58,7 +58,7 @@ test('提示词：个人角色卡覆盖 lofii，并保留安全边界与记忆',
   })
   assert.ok(prompt.includes('[角色卡：猫娘]'))
   assert.ok(prompt.includes('说话简短，偶尔用喵。'))
-  assert.equal(prompt.includes('[角色卡：lofii]'), false)
+  assert.equal(prompt.includes('[角色卡：mcbot]'), false)
   assert.ok(prompt.includes(SAFETY_BOUNDARY))
   assert.ok(prompt.includes('用户喜欢深色模式'))
   assert.match(prompt, /\[用户消息\]\n你好$/)
@@ -98,7 +98,7 @@ test('v0.7.3 文档提示词：首轮含角色卡正文，后续轮只含角色�
   assert.equal(followUp.includes('喜欢红茶'), false)
 })
 
-test('v0.7.3 文档提示词：默认 lofii、记忆关闭占位、群聊/搜索/发送工具区段保留', () => {
+test('v0.7.3 文档提示词：默认 mcbot、记忆关闭占位、群聊/搜索/发送工具区段保留', () => {
   const { initial, followUp } = buildBotPrompts({
     docs: { ...DOCS, memoryItems: 0, memoryEnabled: false },
     groupMode: 'all',
@@ -113,7 +113,7 @@ test('v0.7.3 文档提示词：默认 lofii、记忆关闭占位、群聊/搜索
     assert.equal(prompt.includes('botmsg_send_message'), true)
     assert.equal(prompt.includes('（已关闭）'), true)
   }
-  assert.ok(initial.includes('[角色卡：lofii]'))
-  assert.equal(followUp.includes('[角色卡：lofii]'), false)
-  assert.ok(followUp.includes('角色：lofii'))
+  assert.ok(initial.includes('[角色卡：mcbot]'))
+  assert.equal(followUp.includes('[角色卡：mcbot]'), false)
+  assert.ok(followUp.includes('角色：mcbot'))
 })

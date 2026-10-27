@@ -558,11 +558,11 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
   })
   try {
     const id = fx.alerts.recordExternal({
-      event: 'lofii_low_health',
+      event: 'mcbot_low_health',
       severity: 'warning',
-      title: 'Lofii 血量偏低',
-      message: 'Lofii 血量 8/20',
-      details: { source: 'lofii', lofiiEventId: 'b1-1', lofiiType: 'low_health' },
+      title: 'mcbot 血量偏低',
+      message: 'mcbot 血量 8/20',
+      details: { source: 'mcbot', mcbotEventId: 'b1-1', mcbotType: 'low_health' },
     })
     assert.equal(typeof id, 'number')
     assert.ok((id ?? 0) > 0)
@@ -577,14 +577,14 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
       details_json: string
       delivered_at: string | null
     }
-    assert.equal(row.event, 'lofii_low_health')
+    assert.equal(row.event, 'mcbot_low_health')
     assert.equal(row.severity, 'warning')
     assert.equal(row.status, 'event')
-    assert.equal(row.title, 'Lofii 血量偏低')
+    assert.equal(row.title, 'mcbot 血量偏低')
     assert.deepEqual(JSON.parse(row.details_json), {
-      source: 'lofii',
-      lofiiEventId: 'b1-1',
-      lofiiType: 'low_health',
+      source: 'mcbot',
+      mcbotEventId: 'b1-1',
+      mcbotType: 'low_health',
     })
     // 外部事件不参与本地状态机：没有 alert_state 行。
     const stateCount = (fx.db.prepare('SELECT COUNT(*) AS c FROM alert_state').get() as { c: number }).c
@@ -600,7 +600,7 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
     assert.equal(calls[0]?.url, WEBHOOK)
     const payload = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
     assert.equal(payload.source, 'antifieldcloud')
-    assert.equal(payload.event, 'lofii_low_health')
+    assert.equal(payload.event, 'mcbot_low_health')
     assert.equal(payload.status, 'event')
     const delivered = fx.db.prepare('SELECT delivered_at FROM alert_events WHERE id = ?').get(id) as {
       delivered_at: string | null
@@ -608,7 +608,7 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Chat
     assert.ok(delivered.delivered_at)
     assert.equal(notified.length, 1)
     assert.equal(notified[0]?.status, 'event')
-    assert.equal(notified[0]?.event, 'lofii_low_health')
+    assert.equal(notified[0]?.event, 'mcbot_low_health')
   } finally {
     fx.close()
   }
@@ -627,11 +627,11 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
   })
   try {
     const id = failure.alerts.recordExternal({
-      event: 'lofii_task_failed',
+      event: 'mcbot_task_failed',
       severity: 'critical',
-      title: 'Lofii 任务失败',
+      title: 'mcbot 任务失败',
       message: '任务失败',
-      details: { source: 'lofii', lofiiEventId: 'b1-2', lofiiType: 'task_failed' },
+      details: { source: 'mcbot', mcbotEventId: 'b1-2', mcbotType: 'task_failed' },
     })
     assert.ok(id)
     await new Promise((resolve) => setTimeout(resolve, 50))
@@ -658,11 +658,11 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
   })
   try {
     const id = noWebhook.alerts.recordExternal({
-      event: 'lofii_alert',
+      event: 'mcbot_alert',
       severity: 'warning',
-      title: 'Lofii 告警',
+      title: 'mcbot 告警',
       message: '未知告警',
-      details: { source: 'lofii', lofiiEventId: 'b1-3', lofiiType: 'unknown' },
+      details: { source: 'mcbot', mcbotEventId: 'b1-3', mcbotType: 'unknown' },
     })
     assert.ok(id)
     await new Promise((resolve) => setTimeout(resolve, 30))
@@ -670,7 +670,7 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
       delivery_error: string | null
     }
     assert.match(row.delivery_error ?? '', /未配置/)
-    assert.deepEqual(notified, ['lofii_alert'], '未配置 webhook 也要通知 Chatbot')
+    assert.deepEqual(notified, ['mcbot_alert'], '未配置 webhook 也要通知 Chatbot')
   } finally {
     noWebhook.close()
   }
@@ -691,11 +691,11 @@ test('recordExternal：ALERTS_ENABLED=false 时不写库、不投递、不通知
   })
   try {
     const id = fx.alerts.recordExternal({
-      event: 'lofii_disconnected',
+      event: 'mcbot_disconnected',
       severity: 'critical',
-      title: 'Lofii 连接断开',
+      title: 'mcbot 连接断开',
       message: '断线',
-      details: { source: 'lofii', lofiiEventId: 'b1-4', lofiiType: 'disconnected' },
+      details: { source: 'mcbot', mcbotEventId: 'b1-4', mcbotType: 'disconnected' },
     })
     assert.equal(id, null)
     await new Promise((resolve) => setTimeout(resolve, 10))

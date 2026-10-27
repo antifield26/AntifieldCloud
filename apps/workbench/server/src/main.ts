@@ -26,7 +26,7 @@ async function main(): Promise<void> {
     stopping = true
     context.app.log.info({ signal }, '正在关闭')
     clearInterval(maintenance)
-    context.lofii.stop()
+    context.mcbot.stop()
     context.alerts.stop()
     // http-proxy 的 WS 隧道不会随 server.close() 自动断开；先关闭再 app.close()，
     // 否则存在活动隧道时 Fastify 会等到 Node 的 120s keep-alive 超时。

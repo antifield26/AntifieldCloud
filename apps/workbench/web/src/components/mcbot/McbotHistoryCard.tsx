@@ -1,15 +1,15 @@
-// Lofii 历史：告警 / 采样两段式切换，默认查询最近 24 小时、最多 100 条。
-// 数据来自 GET /api/lofii/history（服务端透传 Lofii 形状）；只读表格，不使用图表库。
+// mcbot 历史：告警 / 采样两段式切换，默认查询最近 24 小时、最多 100 条。
+// 数据来自 GET /api/mcbot/history（服务端透传 mcbot 形状）；只读表格，不使用图表库。
 // 安全边界：只渲染白名单字段与纯文本，details 不展开，不展示 Token/URL。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { api, isAbortError, toErrorMessage } from '../../api/client'
 import type {
-  LofiiHistory,
-  LofiiHistoryAlert,
-  LofiiHistoryKind,
-  LofiiHistorySample,
+  McbotHistory,
+  McbotHistoryAlert,
+  McbotHistoryKind,
+  McbotHistorySample,
 } from '../../api/types'
 import { Badge } from '../Badge'
 import type { BadgeTone } from '../Badge'
@@ -22,20 +22,20 @@ import { Table } from '../Table'
 import type { Column } from '../Table'
 import { cx } from '../../lib/classnames'
 import {
-  lofiiAlertTypeLabel,
-  lofiiBotStateLabel,
-  lofiiHistoryAlertText,
-  lofiiSeverityLabel,
-  lofiiTaskNameLabel,
-  lofiiTaskStateLabel,
-} from '../../lib/lofii'
+  mcbotAlertTypeLabel,
+  mcbotBotStateLabel,
+  mcbotHistoryAlertText,
+  mcbotSeverityLabel,
+  mcbotTaskNameLabel,
+  mcbotTaskStateLabel,
+} from '../../lib/mcbot'
 
 /** 历史查询窗口：最近 24 小时。 */
 const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000
 /** 单次最多展示条数（服务端上限 200，这里固定 100）。 */
 const HISTORY_LIMIT = 100
 
-const KIND_OPTIONS: readonly { id: LofiiHistoryKind; label: string }[] = [
+const KIND_OPTIONS: readonly { id: McbotHistoryKind; label: string }[] = [
   { id: 'alerts', label: '告警' },
   { id: 'samples', label: '采样' },
 ]
@@ -52,7 +52,7 @@ function numberOrDash(value: number | null | undefined, digits = 0): string {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : '—'
 }
 
-const SAMPLE_COLUMNS: Column<LofiiHistorySample>[] = [
+const SAMPLE_COLUMNS: Column<McbotHistorySample>[] = [
   {
     key: 'ts',
     header: '时间',
@@ -68,13 +68,13 @@ const SAMPLE_COLUMNS: Column<LofiiHistorySample>[] = [
   {
     key: 'state',
     header: '状态',
-    render: (row) => lofiiBotStateLabel(row.state),
+    render: (row) => mcbotBotStateLabel(row.state),
   },
   {
     key: 'task',
     header: '任务',
     render: (row) =>
-      row.taskName ? `${lofiiTaskNameLabel(row.taskName)} · ${lofiiTaskStateLabel(row.taskState)}` : '—',
+      row.taskName ? `${mcbotTaskNameLabel(row.taskName)} · ${mcbotTaskStateLabel(row.taskState)}` : '—',
   },
   {
     key: 'vitals',
@@ -98,7 +98,7 @@ const SAMPLE_COLUMNS: Column<LofiiHistorySample>[] = [
   },
 ]
 
-const ALERT_COLUMNS: Column<LofiiHistoryAlert>[] = [
+const ALERT_COLUMNS: Column<McbotHistoryAlert>[] = [
   {
     key: 'ts',
     header: '时间',
@@ -107,31 +107,31 @@ const ALERT_COLUMNS: Column<LofiiHistoryAlert>[] = [
   {
     key: 'type',
     header: '类型',
-    render: (row) => lofiiAlertTypeLabel(row.type),
+    render: (row) => mcbotAlertTypeLabel(row.type),
   },
   {
     key: 'severity',
     header: '级别',
-    render: (row) => <Badge tone={severityTone(row.severity)}>{lofiiSeverityLabel(row.severity)}</Badge>,
+    render: (row) => <Badge tone={severityTone(row.severity)}>{mcbotSeverityLabel(row.severity)}</Badge>,
   },
   {
     key: 'message',
     header: '内容',
-    render: (row) => <span className="lofii-history-message">{row.message || lofiiHistoryAlertText(row)}</span>,
+    render: (row) => <span className="mcbot-history-message">{row.message || mcbotHistoryAlertText(row)}</span>,
   },
 ]
 
 /** 历史卡片：告警/采样切换、刷新、空态与错误态。 */
-export function LofiiHistoryCard() {
-  const [kind, setKind] = useState<LofiiHistoryKind>('alerts')
-  const [data, setData] = useState<LofiiHistory | null>(null)
+export function McbotHistoryCard() {
+  const [kind, setKind] = useState<McbotHistoryKind>('alerts')
+  const [data, setData] = useState<McbotHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const requestIdRef = useRef(0)
   const abortRef = useRef<AbortController | null>(null)
 
-  const load = useCallback(async (targetKind: LofiiHistoryKind): Promise<void> => {
+  const load = useCallback(async (targetKind: McbotHistoryKind): Promise<void> => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -140,7 +140,7 @@ export function LofiiHistoryCard() {
     const to = new Date()
     const from = new Date(to.getTime() - HISTORY_WINDOW_MS)
     try {
-      const result = await api.lofii.history(
+      const result = await api.mcbot.history(
         {
           kind: targetKind,
           from: from.toISOString(),
@@ -154,7 +154,7 @@ export function LofiiHistoryCard() {
       setError(null)
     } catch (loadError) {
       if (isAbortError(loadError) || requestId !== requestIdRef.current) return
-      setError(toErrorMessage(loadError, '加载 Lofii 历史失败'))
+      setError(toErrorMessage(loadError, '加载 mcbot 历史失败'))
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
     }
@@ -185,8 +185,8 @@ export function LofiiHistoryCard() {
       title="历史记录"
       description="最近 24 小时的告警或采样记录，只读表格。"
       actions={
-        <div className="lofii-history-actions">
-          <div className="segmented lofii-history-tabs" role="group" aria-label="Lofii 历史类型">
+        <div className="mcbot-history-actions">
+          <div className="segmented mcbot-history-tabs" role="group" aria-label="mcbot 历史类型">
             {KIND_OPTIONS.map((option) => (
               <button
                 key={option.id}
@@ -205,7 +205,7 @@ export function LofiiHistoryCard() {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="刷新 Lofii 历史记录"
+            aria-label="刷新 mcbot 历史记录"
             title="刷新"
             loading={refreshing}
             onClick={() => void refresh()}
@@ -223,12 +223,12 @@ export function LofiiHistoryCard() {
           rowKey={(row, index) => `alert-${row.id ?? 'row'}-${index}`}
           loading={tableLoading}
           skeletonRows={3}
-          caption="Lofii 告警历史"
+          caption="mcbot 告警历史"
           empty={
             <EmptyState
               compact
               title="暂无告警记录"
-              description="最近 24 小时 Lofii 没有产生告警；低血量、任务失败、断线等会记录在这里。"
+              description="最近 24 小时 mcbot 没有产生告警；低血量、任务失败、断线等会记录在这里。"
             />
           }
         />
@@ -239,19 +239,19 @@ export function LofiiHistoryCard() {
           rowKey={(row, index) => `sample-${row.ts}-${index}`}
           loading={tableLoading}
           skeletonRows={3}
-          caption="Lofii 采样历史"
+          caption="mcbot 采样历史"
           empty={
             <EmptyState
               compact
               title="暂无采样记录"
-              description="Lofii 每 60 秒采样一次连接、任务、血量与 TPS；最近 24 小时没有数据。"
+              description="mcbot 每 60 秒采样一次连接、任务、血量与 TPS；最近 24 小时没有数据。"
             />
           }
         />
       )}
 
       <p className="card-footnote">
-        最近 24 小时 · 最多 {HISTORY_LIMIT} 条；采样由 Lofii 每 60 秒写入一次，时间按 Asia/Shanghai 展示。
+        最近 24 小时 · 最多 {HISTORY_LIMIT} 条；采样由 mcbot 每 60 秒写入一次，时间按 Asia/Shanghai 展示。
       </p>
     </Card>
   )

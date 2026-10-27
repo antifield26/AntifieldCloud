@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   whitelist: vi.fn(),
 }))
 
-const metaMock = vi.hoisted(() => ({ lofiiEnabled: true }))
+const metaMock = vi.hoisted(() => ({ mcbotEnabled: true }))
 
 vi.mock('../api/client', () => ({
   api: {
@@ -35,15 +35,15 @@ vi.mock('../api/client', () => ({
 
 vi.mock('../meta/MetaContext', () => ({
   useAppMeta: () => ({
-    meta: { lofiiEnabled: metaMock.lofiiEnabled },
+    meta: { mcbotEnabled: metaMock.mcbotEnabled },
     loading: false,
     refresh: async () => undefined,
   }),
 }))
 
-// 页面测试只关心标签切换，Lofii 面板本身由 LofiiPanel.test.tsx 覆盖。
-vi.mock('../components/lofii/LofiiPanel', () => ({
-  LofiiPanel: () => <div data-testid="lofii-panel-stub">Lofii 面板内容</div>,
+// 页面测试只关心标签切换，mcbot 面板本身由 McbotPanel.test.tsx 覆盖。
+vi.mock('../components/mcbot/McbotPanel', () => ({
+  McbotPanel: () => <div data-testid="mcbot-panel-stub">mcbot 面板内容</div>,
 }))
 
 function mcStatus(): MinecraftStatus {
@@ -63,7 +63,7 @@ function mcStatus(): MinecraftStatus {
 
 function whitelist(): WhitelistResult {
   return {
-    names: ['Antifield', 'lofii'],
+    names: ['Antifield', 'mcbot'],
     checkedAt: '2026-10-27T08:00:00.000Z',
     error: null,
   }
@@ -98,7 +98,7 @@ function locationText(): string {
 }
 
 beforeEach(() => {
-  metaMock.lofiiEnabled = true
+  metaMock.mcbotEnabled = true
   mocks.mcStatus.mockResolvedValue(mcStatus())
   mocks.whitelist.mockResolvedValue(whitelist())
 })
@@ -106,56 +106,56 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('Minecraft 页标签', () => {
-  it('启用 Lofii 时显示可访问标签，默认停留在服务器内容', async () => {
+  it('启用 mcbot 时显示可访问标签，默认停留在服务器内容', async () => {
     renderPage()
     expect(await screen.findByRole('tablist', { name: 'Minecraft 页面分区' })).toBeTruthy()
     expect(screen.getByRole('tab', { name: '服务器' }).getAttribute('aria-selected')).toBe('true')
-    expect(screen.getByRole('tab', { name: 'Lofii' }).getAttribute('aria-selected')).toBe('false')
+    expect(screen.getByRole('tab', { name: 'mcbot' }).getAttribute('aria-selected')).toBe('false')
     expect(screen.getByRole('heading', { level: 1, name: 'Minecraft' })).toBeTruthy()
     expect(
       await screen.findByText('本页只提供状态查看与白名单增删，不提供服务器启停、控制台或任意 RCON 命令。'),
     ).toBeTruthy()
-    expect(screen.queryByTestId('lofii-panel-stub')).toBeNull()
+    expect(screen.queryByTestId('mcbot-panel-stub')).toBeNull()
   })
 
-  it('切换到 Lofii 写入 ?tab=lofii，切回服务器清除参数', async () => {
+  it('切换到 mcbot 写入 ?tab=mcbot，切回服务器清除参数', async () => {
     renderPage()
-    await userEvent.click(screen.getByRole('tab', { name: 'Lofii' }))
-    expect(await screen.findByTestId('lofii-panel-stub')).toBeTruthy()
-    expect(screen.getByRole('heading', { level: 1, name: 'Lofii' })).toBeTruthy()
-    expect(locationText()).toBe('/minecraft?tab=lofii')
+    await userEvent.click(screen.getByRole('tab', { name: 'mcbot' }))
+    expect(await screen.findByTestId('mcbot-panel-stub')).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'mcbot' })).toBeTruthy()
+    expect(locationText()).toBe('/minecraft?tab=mcbot')
 
     await userEvent.click(screen.getByRole('tab', { name: '服务器' }))
     expect(locationText()).toBe('/minecraft')
-    expect(screen.queryByTestId('lofii-panel-stub')).toBeNull()
+    expect(screen.queryByTestId('mcbot-panel-stub')).toBeNull()
     expect(screen.getByRole('heading', { level: 1, name: 'Minecraft' })).toBeTruthy()
   })
 
-  it('支持 ?tab=lofii 深链初始化', async () => {
-    renderPage('/minecraft?tab=lofii')
-    expect(await screen.findByTestId('lofii-panel-stub')).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'Lofii' }).getAttribute('aria-selected')).toBe('true')
+  it('支持 ?tab=mcbot 深链初始化', async () => {
+    renderPage('/minecraft?tab=mcbot')
+    expect(await screen.findByTestId('mcbot-panel-stub')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'mcbot' }).getAttribute('aria-selected')).toBe('true')
   })
 
-  it('支持 #lofii 深链初始化，并在切回服务器时清理 hash', async () => {
-    renderPage('/minecraft#lofii')
-    expect(await screen.findByTestId('lofii-panel-stub')).toBeTruthy()
+  it('支持 #mcbot 深链初始化，并在切回服务器时清理 hash', async () => {
+    renderPage('/minecraft#mcbot')
+    expect(await screen.findByTestId('mcbot-panel-stub')).toBeTruthy()
     await userEvent.click(screen.getByRole('tab', { name: '服务器' }))
-    expect(screen.queryByTestId('lofii-panel-stub')).toBeNull()
+    expect(screen.queryByTestId('mcbot-panel-stub')).toBeNull()
     expect(locationText()).toBe('/minecraft')
   })
 
   it('切换标签时保留其他查询参数', async () => {
     renderPage('/minecraft?foo=1&bar=2')
-    await userEvent.click(screen.getByRole('tab', { name: 'Lofii' }))
+    await userEvent.click(screen.getByRole('tab', { name: 'mcbot' }))
     expect(locationText()).toContain('foo=1')
     expect(locationText()).toContain('bar=2')
-    expect(locationText()).toContain('tab=lofii')
+    expect(locationText()).toContain('tab=mcbot')
 
     await userEvent.click(screen.getByRole('tab', { name: '服务器' }))
     expect(locationText()).toContain('foo=1')
     expect(locationText()).toContain('bar=2')
-    expect(locationText()).not.toContain('tab=lofii')
+    expect(locationText()).not.toContain('tab=mcbot')
   })
 
   it('键盘方向键可在两个标签间切换', async () => {
@@ -164,15 +164,15 @@ describe('Minecraft 页标签', () => {
     await userEvent.click(serverTab)
     serverTab.focus()
     await userEvent.keyboard('{ArrowRight}')
-    expect(await screen.findByTestId('lofii-panel-stub')).toBeTruthy()
-    expect(screen.getByRole('tab', { name: 'Lofii' }).getAttribute('aria-selected')).toBe('true')
+    expect(await screen.findByTestId('mcbot-panel-stub')).toBeTruthy()
+    expect(screen.getByRole('tab', { name: 'mcbot' }).getAttribute('aria-selected')).toBe('true')
   })
 
-  it('meta.lofiiEnabled=false 时隐藏 Lofii 标签并回退服务器内容', async () => {
-    metaMock.lofiiEnabled = false
-    renderPage('/minecraft?tab=lofii')
+  it('meta.mcbotEnabled=false 时隐藏 mcbot 标签并回退服务器内容', async () => {
+    metaMock.mcbotEnabled = false
+    renderPage('/minecraft?tab=mcbot')
     expect(screen.queryByRole('tablist')).toBeNull()
-    expect(screen.queryByTestId('lofii-panel-stub')).toBeNull()
+    expect(screen.queryByTestId('mcbot-panel-stub')).toBeNull()
     expect(screen.getByRole('heading', { level: 1, name: 'Minecraft' })).toBeTruthy()
     expect(
       await screen.findByText('本页只提供状态查看与白名单增删，不提供服务器启停、控制台或任意 RCON 命令。'),

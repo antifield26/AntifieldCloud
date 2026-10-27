@@ -95,14 +95,14 @@ test('v0.5.5：/role show/off/on/delete 与会话重置（全部会话映射清�
     assert.deepEqual(sessions.map((item) => item.mode), [], '角色变更应清理该目标的全部会话映射')
 
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'role-chat-2', content: '你好' }))
-    assert.ok(fixture.aiCalls.at(-1)?.prompt.includes('[角色卡：lofii]'), '停用个人角色后回落到默认 lofii')
+    assert.ok(fixture.aiCalls.at(-1)?.prompt.includes('[角色卡：mcbot]'), '停用个人角色后回落到默认 mcbot')
     assert.equal(fixture.aiCalls.at(-1)?.prompt.includes('[角色卡：老师]'), false)
 
     await command(fixture, '/role on', 'role-5')
     await command(fixture, '/role delete', 'role-6')
     await command(fixture, '/role show', 'role-7')
     reply = lastMessageText(fixture)
-    assert.equal(reply, '当前角色：lofii（默认）')
+    assert.equal(reply, '当前角色：mcbot（默认）')
     assert.equal(reply.includes('角色卡详情'), false)
     assert.equal(
       (fixture.db
@@ -142,7 +142,7 @@ test('v0.5.6：/role 不扩大其他命令权限，群内斜杠命令全部禁�
   }
 })
 
-test('v0.5.5：非法 /role set 不写库；群聊使用默认 lofii', async () => {
+test('v0.5.5：非法 /role set 不写库；群聊使用默认 mcbot', async () => {
   const fixture = setup()
   try {
     await command(fixture, '/role set [坏] 设定', 'role-9')
@@ -175,23 +175,23 @@ test('v0.5.5：非法 /role set 不写库；群聊使用默认 lofii', async () 
     )
     assert.equal(fixture.aiCalls.length, 2)
     assert.ok(fixture.aiCalls[0]?.prompt.includes('[角色卡：猫娘]'), '私聊 Chat 应使用个人角色卡')
-    assert.ok(fixture.aiCalls[1]?.prompt.includes('[角色卡：lofii]'), '群聊应使用默认 lofii')
+    assert.ok(fixture.aiCalls[1]?.prompt.includes('[角色卡：mcbot]'), '群聊应使用默认 mcbot')
     assert.equal(fixture.aiCalls[1]?.prompt.includes('[角色卡：猫娘]'), false)
   } finally {
     fixture.cleanup()
   }
 })
 
-test('v0.5.6：无个人卡时私聊使用默认 lofii，/role 文案友好', async () => {
+test('v0.5.6：无个人卡时私聊使用默认 mcbot，/role 文案友好', async () => {
   const fixture = setup()
   try {
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'role-chat-5', content: '你好' }))
-    assert.ok(fixture.aiCalls[0]?.prompt.includes('[角色卡：lofii]'))
+    assert.ok(fixture.aiCalls[0]?.prompt.includes('[角色卡：mcbot]'))
     assert.equal(fixture.aiCalls[0]?.prompt.includes('自然、友好、简洁地进行普通聊天'), false)
 
     await command(fixture, '/role show', 'role-13')
     let reply = lastMessageText(fixture)
-    assert.ok(reply.includes('当前角色：lofii'))
+    assert.ok(reply.includes('当前角色：mcbot'))
     assert.equal(reply.includes('Chat'), false)
     assert.equal(reply.includes('会话'), false)
     assert.equal(reply.includes('/ask'), false)

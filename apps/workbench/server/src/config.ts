@@ -192,19 +192,19 @@ export interface Config {
   chatbotConnectivityIntervalSeconds: number
   chatbotConnectivityTimeoutSeconds: number
   /**
-   * v0.8.0 Lofii Minecraft Chatbot（独立附属服务，仅 loopback HTTP）对接。
+   * v0.8.0 mcbot Minecraft Chatbot（独立附属服务，仅 loopback HTTP）对接。
    * 读/控制 Token 分离：控制 Token 为空表示只读，任务/移动接口返回 503。
    */
-  lofiiEnabled: boolean
-  lofiiUrl: string
-  lofiiReadToken: string
-  lofiiControlToken: string
+  mcbotEnabled: boolean
+  mcbotUrl: string
+  mcbotReadToken: string
+  mcbotControlToken: string
   /** 单次上游请求超时（毫秒）。 */
-  lofiiTimeoutMs: number
+  mcbotTimeoutMs: number
   /** 状态/事件轮询间隔（毫秒）。 */
-  lofiiPollMs: number
-  /** 是否把 Lofii 上游告警写入本应用告警事件（关闭后仍推进游标）。 */
-  lofiiAlertsEnabled: boolean
+  mcbotPollMs: number
+  /** 是否把 mcbot 上游告警写入本应用告警事件（关闭后仍推进游标）。 */
+  mcbotAlertsEnabled: boolean
 }
 
 const DEFAULT_ENV_FILE = '/etc/antifieldcloud/env'
@@ -429,13 +429,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     chatbotConnectivityEnabled: bool(merged, 'CHATBOT_CONNECTIVITY_ENABLED', true),
     chatbotConnectivityIntervalSeconds: int(merged, 'CHATBOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
     chatbotConnectivityTimeoutSeconds: int(merged, 'CHATBOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
-    lofiiEnabled: bool(merged, 'LOFII_ENABLED', false),
-    lofiiUrl: str(merged, 'LOFII_URL', 'http://127.0.0.1:3010').replace(/\/+$/, ''),
-    lofiiReadToken: str(merged, 'LOFII_READ_TOKEN', ''),
-    lofiiControlToken: str(merged, 'LOFII_CONTROL_TOKEN', ''),
-    lofiiTimeoutMs: int(merged, 'LOFII_TIMEOUT_MS', 2500, 500, 10_000),
-    lofiiPollMs: int(merged, 'LOFII_POLL_MS', 5000, 2000, 60_000),
-    lofiiAlertsEnabled: bool(merged, 'LOFII_ALERTS_ENABLED', true),
+    mcbotEnabled: bool(merged, 'MCBOT_ENABLED', false),
+    mcbotUrl: str(merged, 'MCBOT_URL', 'http://127.0.0.1:3010').replace(/\/+$/, ''),
+    mcbotReadToken: str(merged, 'MCBOT_READ_TOKEN', ''),
+    mcbotControlToken: str(merged, 'MCBOT_CONTROL_TOKEN', ''),
+    mcbotTimeoutMs: int(merged, 'MCBOT_TIMEOUT_MS', 2500, 500, 10_000),
+    mcbotPollMs: int(merged, 'MCBOT_POLL_MS', 5000, 2000, 60_000),
+    mcbotAlertsEnabled: bool(merged, 'MCBOT_ALERTS_ENABLED', true),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')
@@ -484,20 +484,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   // 代理只允许固定 loopback 上游；非 loopback 会把应用会话/密码暴露给外部主机（配置错误即拒绝启动）。
   validateLoopbackUrl(config.opencodeUrl, 'OPENCODE_URL')
-  // Lofii 上游同样只允许 loopback：读/控制 Token 不得发往外部主机；仅在启用时校验，
+  // mcbot 上游同样只允许 loopback：读/控制 Token 不得发往外部主机；仅在启用时校验，
   // 关闭状态下允许保留空 Token/默认地址，便于随时开关。
-  if (config.lofiiEnabled) {
-    validateLoopbackUrl(config.lofiiUrl, 'LOFII_URL')
+  if (config.mcbotEnabled) {
+    validateLoopbackUrl(config.mcbotUrl, 'MCBOT_URL')
     // 基地址只允许根路径：userinfo/query/hash/子路径都可能让 Token 发往意外端点。
-    const lofiiUrl = new URL(config.lofiiUrl)
-    if (lofiiUrl.username || lofiiUrl.password) {
-      throw new Error('LOFII_URL 不允许包含用户名/密码')
+    const mcbotUrl = new URL(config.mcbotUrl)
+    if (mcbotUrl.username || mcbotUrl.password) {
+      throw new Error('MCBOT_URL 不允许包含用户名/密码')
     }
-    if ((lofiiUrl.pathname !== '' && lofiiUrl.pathname !== '/') || lofiiUrl.search || lofiiUrl.hash) {
-      throw new Error('LOFII_URL 只允许 scheme://host[:port]，不允许路径/查询/片段')
+    if ((mcbotUrl.pathname !== '' && mcbotUrl.pathname !== '/') || mcbotUrl.search || mcbotUrl.hash) {
+      throw new Error('MCBOT_URL 只允许 scheme://host[:port]，不允许路径/查询/片段')
     }
-    if (!config.lofiiReadToken) {
-      throw new Error('LOFII_ENABLED=true 时必须配置 LOFII_READ_TOKEN')
+    if (!config.mcbotReadToken) {
+      throw new Error('MCBOT_ENABLED=true 时必须配置 MCBOT_READ_TOKEN')
     }
   }
   if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')

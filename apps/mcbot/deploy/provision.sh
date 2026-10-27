@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time Lofii bot provisioning on the Raspberry Pi.
+# One-time mcbot provisioning on the Raspberry Pi.
 # Usage: sudo bash deploy/provision.sh [--server-config] [--force]
 set -euo pipefail
 
@@ -24,25 +24,25 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-echo "== Lofii bot provisioning =="
+echo "== mcbot provisioning =="
 
-if ! getent group lofiibot >/dev/null 2>&1; then
-  addgroup --system lofiibot
+if ! getent group mcbot >/dev/null 2>&1; then
+  addgroup --system mcbot
 fi
-if ! id lofiibot >/dev/null 2>&1; then
-  adduser --system --ingroup lofiibot --home /var/lib/lofii-bot --shell /usr/sbin/nologin --no-create-home lofiibot
+if ! id mcbot >/dev/null 2>&1; then
+  adduser --system --ingroup mcbot --home /var/lib/mcbot --shell /usr/sbin/nologin --no-create-home mcbot
 fi
 
-install -d -o root -g root -m 0755 /opt/lofii-bot /opt/lofii-bot/releases /etc/lofii-bot
-install -d -o lofiibot -g lofiibot -m 0700 /var/lib/lofii-bot /var/lib/lofii-bot/memory
+install -d -o root -g root -m 0755 /opt/mcbot /opt/mcbot/releases /etc/mcbot
+install -d -o mcbot -g mcbot -m 0700 /var/lib/mcbot /var/lib/mcbot/memory
 
-sudo -u lofiibot test -w /var/lib/lofii-bot
+sudo -u mcbot test -w /var/lib/mcbot
 
 bash "$SCRIPT_DIR/bootstrap-env.sh"
 
-install -m 0644 "$SCRIPT_DIR/lofii-bot.service" /etc/systemd/system/lofii-bot.service
+install -m 0644 "$SCRIPT_DIR/mcbot.service" /etc/systemd/system/mcbot.service
 systemctl daemon-reload
-systemctl enable lofii-bot.service
+systemctl enable mcbot.service
 
 if [ "$SERVER_CONFIG" -eq 1 ]; then
   echo "== Minecraft server configuration =="
@@ -96,5 +96,5 @@ if [ "$SERVER_CONFIG" -eq 1 ]; then
 fi
 
 echo "== provision complete =="
-echo "next: deploy a release and start lofii-bot.service"
-echo "env: /etc/lofii-bot/env (root:lofiibot 0640)"
+echo "next: deploy a release and start mcbot.service"
+echo "env: /etc/mcbot/env (root:mcbot 0640)"

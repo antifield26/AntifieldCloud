@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Generate /etc/lofii-bot/env for Lofii. Run as root on the Raspberry Pi.
+# Generate /etc/mcbot/env for mcbot（游戏内人格名 Lofii）. Run as root on the Raspberry Pi.
 set -euo pipefail
 
-ENV_FILE="/etc/lofii-bot/env"
+ENV_FILE="/etc/mcbot/env"
 OPENCODE_ENV="/etc/opencode/opencode.env"
 ROTATE_TOKEN=0
 ROTATE_CONTROL_TOKEN=0
@@ -20,12 +20,12 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 
-if ! getent group lofiibot >/dev/null 2>&1; then
-  echo "group lofiibot is missing; run provision.sh first" >&2
+if ! getent group mcbot >/dev/null 2>&1; then
+  echo "group mcbot is missing; run provision.sh first" >&2
   exit 1
 fi
 
-install -d -m 0755 /etc/lofii-bot
+install -d -m 0755 /etc/mcbot
 
 existing() {
   local key="$1"
@@ -98,7 +98,7 @@ RCON_PORT="$(choose RCON_PORT 25575)"
 RCON_TIMEOUT_MS="$(choose RCON_TIMEOUT_MS 4000)"
 ADMIN_POLL_MS="$(choose ADMIN_POLL_MS 60000)"
 HISTORY_ENABLED="$(choose HISTORY_ENABLED true)"
-HISTORY_DB="$(choose HISTORY_DB "/var/lib/lofii-bot/history.db")"
+HISTORY_DB="$(choose HISTORY_DB "/var/lib/mcbot/history.db")"
 HISTORY_SAMPLE_MS="$(choose HISTORY_SAMPLE_MS 60000)"
 HISTORY_RETENTION_DAYS="$(choose HISTORY_RETENTION_DAYS 30)"
 ALERTS_ENABLED="$(choose ALERTS_ENABLED true)"
@@ -158,7 +158,7 @@ BOT_USERNAME="$(choose BOT_USERNAME lofii)"
 MC_HOST="$(choose MC_HOST 127.0.0.1)"
 MC_PORT="$(choose MC_PORT 25565)"
 MC_VERSION="$(choose MC_VERSION 26.1)"
-DATA_DIR="$(choose DATA_DIR /var/lib/lofii-bot)"
+DATA_DIR="$(choose DATA_DIR /var/lib/mcbot)"
 TASK_STATE_FILE="$(choose TASK_STATE_FILE "$DATA_DIR/task-state.json")"
 AUDIT_FILE="$(choose AUDIT_FILE "$DATA_DIR/audit.jsonl")"
 MEMORY_DIR="$(choose MEMORY_DIR "$DATA_DIR/memory")"
@@ -301,11 +301,11 @@ umask 027
   echo "LOG_AI_PROMPT=$LOG_AI_PROMPT"
 } > "$TMP_FILE"
 
-install -m 0640 -o root -g lofiibot "$TMP_FILE" "$ENV_FILE"
+install -m 0640 -o root -g mcbot "$TMP_FILE" "$ENV_FILE"
 rm -f "$TMP_FILE"
 trap - EXIT
 
-echo "wrote $ENV_FILE (mode 0640 root:lofiibot)"
+echo "wrote $ENV_FILE (mode 0640 root:mcbot)"
 echo "http=http://$HTTP_HOST:$HTTP_PORT token_length=${#HTTP_TOKEN} control_token_length=${#HTTP_CONTROL_TOKEN}"
 echo "opencode=$OPENCODE_URL user=$OPENCODE_USERNAME model=$AI_MODEL_PROVIDER/$AI_MODEL_ID"
 

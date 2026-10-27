@@ -1,6 +1,6 @@
-// Minecraft 页：服务器只读状态/白名单管理与 Lofii 面板两个标签页。
-// 标签状态写入 ?tab=lofii（保留其他查询参数），首次加载支持 ?tab=lofii 或 #lofii 深链。
-// Lofii 集成未启用（meta.lofiiEnabled=false）时不展示 Lofii 标签页，页面行为与旧版一致。
+// Minecraft 页：服务器只读状态/白名单管理与 mcbot 面板两个标签页。
+// 标签状态写入 ?tab=mcbot（保留其他查询参数），首次加载支持 ?tab=mcbot 或 #mcbot 深链。
+// mcbot 集成未启用（meta.mcbotEnabled=false）时不展示 mcbot 标签页，页面行为与旧版一致。
 
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
@@ -8,20 +8,20 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useAppMeta } from '../meta/MetaContext'
 import { PageHeader } from '../components/PageHeader'
 import { MinecraftServerPanel } from '../components/minecraft/MinecraftServerPanel'
-import { LofiiPanel } from '../components/lofii/LofiiPanel'
+import { McbotPanel } from '../components/mcbot/McbotPanel'
 import { cx } from '../lib/classnames'
 
-type MinecraftTab = 'server' | 'lofii'
+type MinecraftTab = 'server' | 'mcbot'
 
 const TABS: readonly { id: MinecraftTab; label: string }[] = [
   { id: 'server', label: '服务器' },
-  { id: 'lofii', label: 'Lofii' },
+  { id: 'mcbot', label: 'mcbot' },
 ]
 
-/** 深链初始化：?tab=lofii 或 #lofii 均进入 Lofii 标签页。 */
+/** 深链初始化：?tab=mcbot 或 #mcbot 均进入 mcbot 标签页。 */
 function initialTabFromUrl(search: string, hash: string): MinecraftTab {
   const params = new URLSearchParams(search)
-  return params.get('tab') === 'lofii' || hash === '#lofii' ? 'lofii' : 'server'
+  return params.get('tab') === 'mcbot' || hash === '#mcbot' ? 'mcbot' : 'server'
 }
 
 /** 页面标题与描述按当前标签切换。 */
@@ -30,13 +30,13 @@ const TAB_COPY: Record<MinecraftTab, { title: string; description: string }> = {
     title: 'Minecraft',
     description: '服务器只读状态与白名单管理',
   },
-  lofii: {
-    title: 'Lofii',
-    description: 'Lofii Bot 运行状态、任务控制、事件流与历史（数据来自本机 Lofii 接口）',
+  mcbot: {
+    title: 'mcbot',
+    description: 'mcbot Bot 运行状态、任务控制、事件流与历史（数据来自本机 mcbot 接口）',
   },
 }
 
-/** Minecraft 页：可键盘操作的“服务器 / Lofii”标签页外壳。 */
+/** Minecraft 页：可键盘操作的“服务器 / mcbot”标签页外壳。 */
 export function Minecraft() {
   const { meta } = useAppMeta()
   const location = useLocation()
@@ -44,9 +44,9 @@ export function Minecraft() {
   const [tab, setTab] = useState<MinecraftTab>(() => initialTabFromUrl(location.search, location.hash))
   const tabButtons = useRef<Array<HTMLButtonElement | null>>([])
 
-  // 服务端未启用 Lofii 时回退到服务器标签，避免渲染不可用面板。
-  const showLofii = meta.lofiiEnabled
-  const activeTab: MinecraftTab = tab === 'lofii' && !showLofii ? 'server' : tab
+  // 服务端未启用 mcbot 时回退到服务器标签，避免渲染不可用面板。
+  const showLofii = meta.mcbotEnabled
+  const activeTab: MinecraftTab = tab === 'mcbot' && !showLofii ? 'server' : tab
   const copy = TAB_COPY[activeTab]
 
   // 浏览器前进/后退或外部跳转改变 URL 时同步标签状态（组件保持挂载时 state 不会自动更新）。
@@ -58,11 +58,11 @@ export function Minecraft() {
   const selectTab = (next: MinecraftTab): void => {
     setTab(next)
     const params = new URLSearchParams(location.search)
-    if (next === 'lofii') params.set('tab', 'lofii')
+    if (next === 'mcbot') params.set('tab', 'mcbot')
     else params.delete('tab')
     const search = params.toString()
-    // 服务器标签清理 #lofii 深链；Lofii 标签保留其他锚点不动。
-    const hash = next === 'lofii' ? location.hash : location.hash === '#lofii' ? '' : location.hash
+    // 服务器标签清理 #mcbot 深链；mcbot 标签保留其他锚点不动。
+    const hash = next === 'mcbot' ? location.hash : location.hash === '#mcbot' ? '' : location.hash
     navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash }, { replace: true })
   }
 
@@ -117,7 +117,7 @@ export function Minecraft() {
           aria-labelledby={`minecraft-tab-${activeTab}`}
           tabIndex={0}
         >
-          {activeTab === 'lofii' ? <LofiiPanel /> : <MinecraftServerPanel />}
+          {activeTab === 'mcbot' ? <McbotPanel /> : <MinecraftServerPanel />}
         </div>
       ) : (
         <MinecraftServerPanel />

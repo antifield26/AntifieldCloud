@@ -18,7 +18,7 @@ test('v0.5.2：QQ C2C 未登记用户可直接 Chat，并写入结构化记忆�
   try {
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'c2c-chat-1', content: '记住我喜欢深色模式' }))
     assert.equal(fixture.aiCalls.length, 1)
-    assert.match(fixture.aiCalls[0]?.prompt ?? '', /\[系统提示\][\s\S]*\[角色卡：lofii\][\s\S]*记住我喜欢深色模式/)
+    assert.match(fixture.aiCalls[0]?.prompt ?? '', /\[系统提示\][\s\S]*\[角色卡：mcbot\][\s\S]*记住我喜欢深色模式/)
     assert.deepEqual(fixture.extractCalls.map((item) => item.userText), ['记住我喜欢深色模式'])
     assert.match(lastMessageText(fixture), /AI 回复/)
 

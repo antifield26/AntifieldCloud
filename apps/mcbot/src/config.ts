@@ -241,7 +241,7 @@ function assertInSafeZone (
 }
 
 export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
-  const dataDir = readString(env, 'DATA_DIR', '/var/lib/lofii-bot')
+  const dataDir = readString(env, 'DATA_DIR', '/var/lib/mcbot')
   const httpHost = readString(env, 'HTTP_HOST', '127.0.0.1')
   const httpAllowNonLoopback = readBool(env, 'HTTP_ALLOW_NON_LOOPBACK', false)
   if (!httpAllowNonLoopback && !isLoopbackHost(httpHost)) {

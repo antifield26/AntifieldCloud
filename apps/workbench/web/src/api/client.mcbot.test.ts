@@ -38,7 +38,7 @@ function lastBody(): unknown {
   return typeof body === 'string' ? JSON.parse(body) : null
 }
 
-describe('v0.8.0 Lofii API 客户端', () => {
+describe('v0.8.0 mcbot API 客户端', () => {
   it('status 使用只读端点并解析快照字段', async () => {
     fetchMock.mockResolvedValue(
       mockResponse({
@@ -58,8 +58,8 @@ describe('v0.8.0 Lofii API 客户端', () => {
         },
       }),
     )
-    const snapshot = await api.lofii.status()
-    expect(lastCall().url).toBe('/api/lofii/status')
+    const snapshot = await api.mcbot.status()
+    expect(lastCall().url).toBe('/api/mcbot/status')
     expect(lastCall().init.method).toBe('GET')
     expect(snapshot.eventsSupported).toBe(true)
     expect(snapshot.contractVersion).toBe(1)
@@ -78,14 +78,14 @@ describe('v0.8.0 Lofii API 客户端', () => {
         },
       }),
     )
-    const history = await api.lofii.history({
+    const history = await api.mcbot.history({
       kind: 'samples',
       from: '2026-10-26T08:00:00.000Z',
       to: '2026-10-27T08:00:00.000Z',
       limit: 100,
     })
     const url = new URL(lastCall().url, 'http://localhost')
-    expect(url.pathname).toBe('/api/lofii/history')
+    expect(url.pathname).toBe('/api/mcbot/history')
     expect(url.searchParams.get('kind')).toBe('samples')
     expect(url.searchParams.get('limit')).toBe('100')
     expect(url.searchParams.get('from')).toBe('2026-10-26T08:00:00.000Z')
@@ -94,32 +94,32 @@ describe('v0.8.0 Lofii API 客户端', () => {
 
   it('任务控制使用 POST 与 JSON body', async () => {
     fetchMock.mockResolvedValue(mockResponse({ body: { ok: true } }))
-    await api.lofii.startTask('patrol')
-    expect(lastCall().url).toBe('/api/lofii/tasks')
+    await api.mcbot.startTask('patrol')
+    expect(lastCall().url).toBe('/api/mcbot/tasks')
     expect(lastCall().init.method).toBe('POST')
     expect(lastBody()).toEqual({ name: 'patrol' })
 
-    await api.lofii.stopTask()
-    expect(lastCall().url).toBe('/api/lofii/tasks/stop')
+    await api.mcbot.stopTask()
+    expect(lastCall().url).toBe('/api/mcbot/tasks/stop')
     expect(lastCall().init.method).toBe('POST')
     expect(lastBody()).toEqual({})
 
-    await api.lofii.resumeTask('task-1')
-    expect(lastCall().url).toBe('/api/lofii/tasks/resume')
+    await api.mcbot.resumeTask('task-1')
+    expect(lastCall().url).toBe('/api/mcbot/tasks/resume')
     expect(lastBody()).toEqual({ taskId: 'task-1' })
 
-    await api.lofii.resumeTask()
+    await api.mcbot.resumeTask()
     expect(lastBody()).toEqual({})
 
-    await api.lofii.move('follow', 'Antifield')
-    expect(lastCall().url).toBe('/api/lofii/move')
+    await api.mcbot.move('follow', 'Antifield')
+    expect(lastCall().url).toBe('/api/mcbot/move')
     expect(lastBody()).toEqual({ action: 'follow', target: 'Antifield' })
 
-    await api.lofii.move('home')
+    await api.mcbot.move('home')
     expect(lastBody()).toEqual({ action: 'home' })
 
-    await api.lofii.say('晚上好')
-    expect(lastCall().url).toBe('/api/lofii/say')
+    await api.mcbot.say('晚上好')
+    expect(lastCall().url).toBe('/api/mcbot/say')
     expect(lastBody()).toEqual({ message: '晚上好' })
 
     // 写操作附带 CSRF 头
@@ -127,25 +127,25 @@ describe('v0.8.0 Lofii API 客户端', () => {
     expect(headers['X-CSRF-Token']).toBe('csrf-test-token')
   })
 
-  it('lofii_* 错误解析为中文兜底文案并保留状态码', async () => {
+  it('mcbot_* 错误解析为中文兜底文案并保留状态码', async () => {
     const cases: Array<{ code: string; status: number; contains: string }> = [
-      { code: 'lofii_control_disabled', status: 503, contains: '控制未启用' },
-      { code: 'lofii_unavailable', status: 503, contains: '不可达' },
-      { code: 'lofii_auth_failed', status: 502, contains: 'Token 认证失败' },
-      { code: 'lofii_resume_pending', status: 409, contains: '可恢复任务' },
-      { code: 'lofii_resume_failed', status: 409, contains: '恢复失败' },
-      { code: 'lofii_queue_full', status: 409, contains: '队列已满' },
-      { code: 'lofii_task_disabled', status: 503, contains: '任务功能已关闭' },
-      { code: 'lofii_not_connected', status: 409, contains: '尚未连接' },
-      { code: 'lofii_rate_limited', status: 429, contains: '过于频繁' },
-      { code: 'lofii_invalid_request', status: 400, contains: '参数不合法' },
-      { code: 'lofii_disabled', status: 503, contains: '集成未启用' },
+      { code: 'mcbot_control_disabled', status: 503, contains: '控制未启用' },
+      { code: 'mcbot_unavailable', status: 503, contains: '不可达' },
+      { code: 'mcbot_auth_failed', status: 502, contains: 'Token 认证失败' },
+      { code: 'mcbot_resume_pending', status: 409, contains: '可恢复任务' },
+      { code: 'mcbot_resume_failed', status: 409, contains: '恢复失败' },
+      { code: 'mcbot_queue_full', status: 409, contains: '队列已满' },
+      { code: 'mcbot_task_disabled', status: 503, contains: '任务功能已关闭' },
+      { code: 'mcbot_not_connected', status: 409, contains: '尚未连接' },
+      { code: 'mcbot_rate_limited', status: 429, contains: '过于频繁' },
+      { code: 'mcbot_invalid_request', status: 400, contains: '参数不合法' },
+      { code: 'mcbot_disabled', status: 503, contains: '集成未启用' },
     ]
     for (const testCase of cases) {
       fetchMock.mockResolvedValue(
         mockResponse({ status: testCase.status, body: { error: { code: testCase.code } } }),
       )
-      const error = await api.lofii.stopTask().catch((caught: unknown) => caught)
+      const error = await api.mcbot.stopTask().catch((caught: unknown) => caught)
       expect(error).toBeInstanceOf(ApiError)
       expect((error as ApiError).status).toBe(testCase.status)
       expect((error as ApiError).code).toBe(testCase.code)
@@ -157,20 +157,20 @@ describe('v0.8.0 Lofii API 客户端', () => {
     fetchMock.mockResolvedValue(
       mockResponse({
         status: 409,
-        body: { error: { code: 'lofii_task_active', message: 'Lofii 正在巡逻，请先停止任务' } },
+        body: { error: { code: 'mcbot_task_active', message: 'mcbot 正在巡逻，请先停止任务' } },
       }),
     )
-    const error = await api.lofii.move('home').catch((caught: unknown) => caught)
-    expect((error as ApiError).message).toBe('Lofii 正在巡逻，请先停止任务')
+    const error = await api.mcbot.move('home').catch((caught: unknown) => caught)
+    expect((error as ApiError).message).toBe('mcbot 正在巡逻，请先停止任务')
   })
 
-  it('/api/version 透传 Lofii 功能开关（旧服务端缺失时保持 undefined）', async () => {
+  it('/api/version 透传 mcbot 功能开关（旧服务端缺失时保持 undefined）', async () => {
     fetchMock.mockResolvedValue(
-      mockResponse({ body: { version: '0.8.0', lofiiEnabled: true, lofiiControlEnabled: false } }),
+      mockResponse({ body: { version: '0.8.0', mcbotEnabled: true, mcbotControlEnabled: false } }),
     )
     const version = await api.getVersion()
     expect(version.version).toBe('0.8.0')
-    expect(version.lofiiEnabled).toBe(true)
-    expect(version.lofiiControlEnabled).toBe(false)
+    expect(version.mcbotEnabled).toBe(true)
+    expect(version.mcbotControlEnabled).toBe(false)
   })
 })

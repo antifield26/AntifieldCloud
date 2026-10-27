@@ -1,4 +1,4 @@
-/* v0.8.0 新增样式：Minecraft 页“服务器 / Lofii”标签、Lofii 状态/任务/移动/聊天、
+/* v0.8.0 新增样式：Minecraft 页“服务器 / mcbot”标签、mcbot 状态/任务/移动/聊天、
    事件流与历史表格。约束：只引用设计令牌；窄屏 390px 不产生页面级横向滚动；
    长玩家名/错误信息使用 overflow-wrap 换行。 */
 
@@ -21,7 +21,7 @@
 }
 
 .minecraft-server-panel,
-.lofii-panel {
+.mcbot-panel {
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -57,27 +57,27 @@
   border-radius: 10px;
 }
 
-/* ================= Lofii 卡片内部间距 ================= */
+/* ================= mcbot 卡片内部间距 ================= */
 
-.lofii-panel .card-body > * + * {
+.mcbot-panel .card-body > * + * {
   margin-top: 12px;
 }
 
-.lofii-panel .card-body > .subsection-title {
+.mcbot-panel .card-body > .subsection-title {
   margin-top: 18px;
 }
 
-.lofii-panel .subsection-title + * {
+.mcbot-panel .subsection-title + * {
   margin-top: 8px;
 }
 
-.lofii-panel dl,
-.lofii-panel ol,
-.lofii-panel ul {
+.mcbot-panel dl,
+.mcbot-panel ol,
+.mcbot-panel ul {
   margin: 0;
 }
 
-.lofii-muted {
+.mcbot-muted {
   margin: 0;
   color: var(--text-dim);
   font-size: 12.5px;
@@ -85,13 +85,13 @@
 
 /* ================= 状态网格 ================= */
 
-.lofii-status-grid {
+.mcbot-status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
 }
 
-.lofii-fact {
+.mcbot-fact {
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -102,31 +102,31 @@
   background: rgba(255, 255, 255, 0.018);
 }
 
-.lofii-fact-label {
+.mcbot-fact-label {
   color: var(--text-dim);
   font-size: 11.5px;
 }
 
-.lofii-fact-value {
+.mcbot-fact-value {
   overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 550;
 }
 
-.lofii-fact-hint {
+.mcbot-fact-hint {
   overflow-wrap: anywhere;
   color: var(--text-dim);
   font-size: 11px;
   line-height: 1.45;
 }
 
-.lofii-fact-sub {
+.mcbot-fact-sub {
   color: var(--text-dim);
   font-weight: 400;
 }
 
-/* 任务卡内的紧凑指标网格复用 .lofii-fact。 */
-.lofii-task-facts {
+/* 任务卡内的紧凑指标网格复用 .mcbot-fact。 */
+.mcbot-task-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
@@ -134,14 +134,14 @@
 
 /* ================= 任务进度 / 队列 / 控制 ================= */
 
-.lofii-progress {
+.mcbot-progress {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 10px;
   padding: 0;
 }
 
-.lofii-progress-row {
+.mcbot-progress-row {
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
@@ -152,18 +152,18 @@
   font-size: 12px;
 }
 
-.lofii-progress-row dt {
+.mcbot-progress-row dt {
   color: var(--text-dim);
 }
 
-.lofii-progress-row dd {
+.mcbot-progress-row dd {
   margin: 0;
   color: var(--accent);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.lofii-queue {
+.mcbot-queue {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -171,7 +171,7 @@
   list-style: none;
 }
 
-.lofii-queue-item {
+.mcbot-queue-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -182,7 +182,7 @@
   font-size: 12.5px;
 }
 
-.lofii-queue-index {
+.mcbot-queue-index {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -196,82 +196,82 @@
   font-weight: 600;
 }
 
-.lofii-queue-name {
+.mcbot-queue-name {
   font-weight: 550;
   overflow-wrap: anywhere;
 }
 
-.lofii-queue-time {
+.mcbot-queue-time {
   flex: none;
   margin-left: auto;
   color: var(--text-dim);
   font-size: 11.5px;
 }
 
-.lofii-pending {
+.mcbot-pending {
   align-items: center;
 }
 
-.lofii-pending-actions {
+.mcbot-pending-actions {
   display: flex;
   flex: none;
   gap: 8px;
   margin-left: auto;
 }
 
-.lofii-task-controls {
+.mcbot-task-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 8px;
 }
 
-.lofii-task-select {
+.mcbot-task-select {
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-width: 170px;
 }
 
-.lofii-task-select .select-field,
-.lofii-task-select .select {
+.mcbot-task-select .select-field,
+.mcbot-task-select .select {
   width: 100%;
 }
 
 /* ================= 移动 / 聊天 ================= */
 
-.lofii-columns {
+.mcbot-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   min-width: 0;
 }
 
-.lofii-move-form {
+.mcbot-move-form {
   display: flex;
   flex-direction: column;
   gap: 6px;
   max-width: 260px;
 }
 
-.lofii-move-form .select-field,
-.lofii-move-form .select {
+.mcbot-move-form .select-field,
+.mcbot-move-form .select {
   width: 100%;
 }
 
-.lofii-move-actions {
+.mcbot-move-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.lofii-say-form {
+.mcbot-say-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.lofii-say-input {
+.mcbot-say-input {
   height: auto;
   min-height: 86px;
   padding: 10px 12px;
@@ -280,7 +280,7 @@
   resize: vertical;
 }
 
-.lofii-say-footer {
+.mcbot-say-footer {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -288,7 +288,7 @@
   gap: 8px;
 }
 
-.lofii-say-preview {
+.mcbot-say-preview {
   margin: 0;
   max-height: 180px;
   overflow: auto;
@@ -301,13 +301,13 @@
 
 /* ================= 事件流 ================= */
 
-.lofii-event-filters {
+.mcbot-event-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.lofii-filter-button {
+.mcbot-filter-button {
   height: 28px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -324,19 +324,19 @@
     background-color var(--transition);
 }
 
-.lofii-filter-button:hover {
+.mcbot-filter-button:hover {
   border-color: var(--border-strong);
   color: var(--text);
 }
 
-.lofii-filter-button-active {
+.mcbot-filter-button-active {
   border-color: rgba(34, 211, 238, 0.4);
   background: var(--accent-soft);
   color: var(--accent);
   font-weight: 600;
 }
 
-.lofii-event-list {
+.mcbot-event-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -344,7 +344,7 @@
   list-style: none;
 }
 
-.lofii-event {
+.mcbot-event {
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -353,66 +353,66 @@
   background: rgba(255, 255, 255, 0.015);
 }
 
-.lofii-event-chat {
+.mcbot-event-chat {
   border-left-color: var(--accent);
 }
 
-.lofii-event-task {
+.mcbot-event-task {
   border-left-color: var(--success);
 }
 
-.lofii-event-movement {
+.mcbot-event-movement {
   border-left-color: var(--accent-strong);
 }
 
-.lofii-event-alert {
+.mcbot-event-alert {
   border-left-color: var(--warning);
 }
 
-.lofii-event-head {
+.mcbot-event-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.lofii-event-time {
+.mcbot-event-time {
   flex: none;
   color: var(--text-dim);
   font-size: 11.5px;
 }
 
-.lofii-event-chat,
-.lofii-event-summary {
+.mcbot-event-chat,
+.mcbot-event-summary {
   margin: 6px 0 0;
   overflow-wrap: anywhere;
   font-size: 12.5px;
   line-height: 1.6;
 }
 
-.lofii-event-chat {
+.mcbot-event-chat {
   color: var(--text);
   white-space: pre-wrap;
 }
 
-.lofii-event-summary {
+.mcbot-event-summary {
   color: var(--text-muted);
 }
 
 /* ================= 历史记录 ================= */
 
-.lofii-history-actions {
+.mcbot-history-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.lofii-history-tabs .segmented-button {
+.mcbot-history-tabs .segmented-button {
   min-height: 28px;
 }
 
-.lofii-history-message {
+.mcbot-history-message {
   display: inline-block;
   overflow-wrap: anywhere;
 }
@@ -420,46 +420,46 @@
 /* ================= 响应式 ================= */
 
 @media (max-width: 960px) {
-  .lofii-columns {
+  .mcbot-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
 @media (max-width: 640px) {
-  .lofii-status-grid {
+  .mcbot-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .lofii-task-facts {
+  .mcbot-task-facts {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .lofii-pending-actions {
+  .mcbot-pending-actions {
     margin-left: 0;
   }
 
-  .lofii-task-controls {
+  .mcbot-task-controls {
     align-items: stretch;
   }
 
-  .lofii-task-select {
+  .mcbot-task-select {
     flex: 1 1 100%;
     min-width: 0;
   }
 
-  .lofii-task-controls .btn {
+  .mcbot-task-controls .btn {
     flex: 1 1 140px;
   }
 
-  .lofii-move-form {
+  .mcbot-move-form {
     max-width: none;
   }
 
-  .lofii-move-actions .btn {
+  .mcbot-move-actions .btn {
     flex: 1 1 120px;
   }
 
-  .lofii-history-actions {
+  .mcbot-history-actions {
     width: 100%;
     justify-content: space-between;
   }

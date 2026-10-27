@@ -15,7 +15,7 @@ export const ROLE_PROMPT_MAX = 1000
  * 需要更具体人设时由用户用 `/role set` 建个人卡。
  */
 export const DEFAULT_CHAT_ROLE = {
-  name: 'lofii',
+  name: 'mcbot',
   prompt:
     '对话风格：简短、自然、轻松，短句为主；可使用轻量语气词，不连续卖萌、不刷屏；遇到认真、难过或风险话题时收起玩闹；不假装真人、不虚构共同经历、不索要隐私。',
 } as const

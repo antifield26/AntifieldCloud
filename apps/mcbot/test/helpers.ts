@@ -9,7 +9,7 @@ export function baseEnv (overrides: Record<string, string | undefined> = {}): Re
   return {
     HTTP_TOKEN: '0123456789abcdef0123456789abcdef',
     AI_ENABLED: 'false',
-    DATA_DIR: path.join(os.tmpdir(), 'lofii-bot-test-data'),
+    DATA_DIR: path.join(os.tmpdir(), 'mcbot-test-data'),
     ...overrides
   }
 }
@@ -45,7 +45,7 @@ export async function waitFor (predicate: () => boolean, timeoutMs = 2000, inter
   throw new Error(`waitFor timed out after ${timeoutMs}ms`)
 }
 
-export async function tempDir (prefix = 'lofii-bot-'): Promise<string> {
+export async function tempDir (prefix = 'mcbot-'): Promise<string> {
   return mkdtemp(path.join(os.tmpdir(), prefix))
 }
 

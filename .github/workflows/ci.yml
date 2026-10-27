@@ -125,7 +125,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
       - name: Shellcheck scripts
-        run: shellcheck -S warning scripts/*.sh deploy/*.sh
+        run: shellcheck -S warning scripts/*.sh deploy/*.sh apps/mcbot/deploy/*.sh
 
   nftables:
     runs-on: ubuntu-latest
@@ -151,7 +151,7 @@ jobs:
       - name: Check PowerShell BOM and syntax (PS 5.1)
         shell: powershell
         run: |
-          $files = Get-ChildItem scripts -Filter *.ps1
+          $files = @(Get-ChildItem scripts -Filter *.ps1) + @(Get-ChildItem apps/mcbot/scripts -Filter *.ps1)
           if ($files.Count -eq 0) { Write-Error "No PowerShell scripts found"; exit 1 }
           $failed = $false
           foreach ($file in $files) {

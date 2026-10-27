@@ -146,7 +146,7 @@ export class ChatbotContextStore {
   prepare(input: ChatbotContextPrepareInput): ChatbotContextPrepareResult {
     const scopeDir = contextScopeDir(this.dir, input.chatbotId, input.targetExternalId, input.sessionUserId)
     this.ensureScopeDir(scopeDir)
-    const roleName = input.role.name.trim().slice(0, 64) || 'lofii'
+    const roleName = input.role.name.trim().slice(0, 64) || 'mcbot'
     const rolePrompt = input.role.prompt.trim()
     const roleContent = `[角色卡：${roleName}]\n${rolePrompt}\n`
     const memoryLabel = input.groupMemory ? '群聊共享记忆' : '长期记忆'

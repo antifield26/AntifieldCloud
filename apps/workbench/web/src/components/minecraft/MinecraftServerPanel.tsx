@@ -1,5 +1,5 @@
 // Minecraft 服务器分区：只读状态 + 白名单增删；不提供启停与任意命令。
-// 从 /minecraft 页拆出，供“服务器”标签页复用；Lofii 标签页在 LofiiPanel 中实现。
+// 从 /minecraft 页拆出，供“服务器”标签页复用；mcbot 标签页在 McbotPanel 中实现。
 
 import { useCallback, useEffect, useState } from 'react'
 import type { FormEvent } from 'react'

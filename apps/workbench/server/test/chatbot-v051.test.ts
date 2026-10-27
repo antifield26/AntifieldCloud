@@ -55,7 +55,7 @@ test('v0.5.9：C2C Chat 调用 AI（角色卡+安全边界），AI 关闭时不�
     const result = await sendWebhook(enabled, c2cWebhook(enabled.appSecret, { id: 'chat-1', content: '你好' }))
     assert.equal(result.status, 200)
     assert.equal(enabled.aiCalls.length, 1)
-    assert.match(enabled.aiCalls[0]?.prompt ?? '', /\[角色卡：lofii\][\s\S]*\[安全边界\][\s\S]*你好$/)
+    assert.match(enabled.aiCalls[0]?.prompt ?? '', /\[角色卡：mcbot\][\s\S]*\[安全边界\][\s\S]*你好$/)
     assert.match(lastMessageText(enabled), /AI 回复/)
   } finally {
     enabled.cleanup()

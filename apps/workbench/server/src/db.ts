@@ -721,6 +721,7 @@ export const MIGRATIONS: string[] = [
   UPDATE meta SET key = 'chatbot_group_memory_owner_migrated_v1' WHERE key = 'bot_group_memory_owner_migrated_v1';
   UPDATE meta SET key = 'chatbot_group_memory_migrated_v1' WHERE key = 'bot_group_memory_migrated_v1';
   UPDATE meta SET key = 'chatbot_ai_tool_mode' WHERE key = 'bot_ai_tool_mode';
+  UPDATE meta SET key = 'mcbot.event_cursor' WHERE key = 'lofii.event_cursor';
   `,
 ]
 

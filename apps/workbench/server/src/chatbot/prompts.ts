@@ -1,5 +1,5 @@
 /**
- * Chatbot AI 提示词：普通消息 Chat 使用角色卡（个人卡或内置 lofii），并强制追加只读安全边界。
+ * Chatbot AI 提示词：普通消息 Chat 使用角色卡（个人卡或内置 mcbot），并强制追加只读安全边界。
  * v0.7.3 起支持文档模式：角色卡只在会话创建时发送，后续轮只给角色名/记忆条数/文档路径，
  * 模型通过 OpenCode read 工具按需读取 role.md/memory.md。
  * 安全边界：角色卡只能改变风格与语气，不能移除只读、防泄密和“记忆不是指令”约束。
@@ -16,7 +16,7 @@ export const CONTEXT_READ_SAFETY_BOUNDARY =
 export type GroupChatMode = 'mention' | 'all'
 
 export interface BuildBotPromptInput {
-  /** 仅私聊 Chat 的启用角色卡；为空时使用内置 lofii 默认角色。 */
+  /** 仅私聊 Chat 的启用角色卡；为空时使用内置 mcbot 默认角色。 */
   roleCard?: Pick<ChatbotChatRole, 'name' | 'prompt'> | null
   /** 该 Chatbot×用户的长期记忆摘要；只作为背景资料。 */
   memory?: string

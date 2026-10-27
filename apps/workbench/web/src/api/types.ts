@@ -438,9 +438,9 @@ export interface VersionResult {
   /** v0.5.0：Chatbot 功能是否可用与支持的平台（旧服务端不下发） */
   chatbotsEnabled?: boolean
   chatbotPlatforms?: string[]
-  /** v0.8.0：Lofii 集成是否启用、Lofii 控制接口是否可用（旧服务端不下发时按关闭处理）。 */
-  lofiiEnabled?: boolean
-  lofiiControlEnabled?: boolean
+  /** v0.8.0：mcbot 集成是否启用、mcbot 控制接口是否可用（旧服务端不下发时按关闭处理）。 */
+  mcbotEnabled?: boolean
+  mcbotControlEnabled?: boolean
   /** 当前程序支持的 schema 版本（v0.7.0）；旧服务端不下发时不比较演练一致性。 */
   schemaVersion?: number
   /** v0.7.0：备份整包加密开关与 Pi 端 age 公钥是否就绪（不读取私钥）。 */
@@ -489,10 +489,10 @@ export interface AppMeta {
   backupOffsiteStatusConfigured: boolean
   /** 审计写入诊断；旧服务端不下发时为 null。 */
   audit: VersionAuditDiagnostics | null
-  /** v0.8.0：Lofii 集成是否启用（决定 Minecraft 页是否显示 Lofii 标签页）。 */
-  lofiiEnabled: boolean
-  /** v0.8.0：Lofii 控制接口是否可用（控制未启用时只读展示，禁用任务/移动/聊天操作）。 */
-  lofiiControlEnabled: boolean
+  /** v0.8.0：mcbot 集成是否启用（决定 Minecraft 页是否显示 mcbot 标签页）。 */
+  mcbotEnabled: boolean
+  /** v0.8.0：mcbot 控制接口是否可用（控制未启用时只读展示，禁用任务/移动/聊天操作）。 */
+  mcbotControlEnabled: boolean
 }
 
 /* ---------- 知识库：笔记与书签 ---------- */
@@ -1254,13 +1254,13 @@ export interface ChatbotMemoryItemSummary {  id: string
   expiresAt: string | null
 }
 
-/* ---------- Lofii 集成（v0.8.0，GET /api/lofii/status 等） ---------- */
+/* ---------- mcbot 集成（v0.8.0，GET /api/mcbot/status 等） ---------- */
 
-/** Lofii 支持的 7 种任务（与 Lofii Bot 的 TaskName 一致）。 */
-export type LofiiTaskName = 'fishing' | 'farming' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol'
+/** mcbot 支持的 7 种任务（与 mcbot Bot 的 TaskName 一致）。 */
+export type McbotTaskName = 'fishing' | 'farming' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol'
 
 /** 任务状态；pending_resume 表示有可恢复的暂停任务。 */
-export type LofiiTaskState =
+export type McbotTaskState =
   | 'idle'
   | 'starting'
   | 'running'
@@ -1270,14 +1270,14 @@ export type LofiiTaskState =
   | 'defending'
   | 'pending_resume'
 
-/** Lofii 与 Minecraft 的动态连接状态。 */
-export type LofiiBotState = 'idle' | 'connecting' | 'connected' | 'backoff' | 'cooldown'
+/** mcbot 与 Minecraft 的动态连接状态。 */
+export type McbotBotState = 'idle' | 'connecting' | 'connected' | 'backoff' | 'cooldown'
 
 /** 手动移动动作；stop 只停止移动，不停止任务。 */
-export type LofiiMoveAction = 'home' | 'come' | 'follow' | 'stop'
+export type McbotMoveAction = 'home' | 'come' | 'follow' | 'stop'
 
-/** 任务进度计数（Lofii 快照原字段，未使用的计数为 0）。 */
-export interface LofiiTaskProgress {
+/** 任务进度计数（mcbot 快照原字段，未使用的计数为 0）。 */
+export interface McbotTaskProgress {
   fishCaught: number
   wheatHarvested: number
   planted: number
@@ -1300,40 +1300,40 @@ export interface LofiiTaskProgress {
 }
 
 /** 排队中的任务；requestedBy 是发起方标识（如 panel），不是敏感信息。 */
-export interface LofiiQueuedTask {
+export interface McbotQueuedTask {
   taskId: string
-  name: LofiiTaskName
+  name: McbotTaskName
   requestedBy: string
   requestedAt: string
 }
 
-/** 可恢复的暂停任务：需在 expiresAt 前恢复，否则 Lofii 自动标记 interrupted。 */
-export interface LofiiPendingResume {
+/** 可恢复的暂停任务：需在 expiresAt 前恢复，否则 mcbot 自动标记 interrupted。 */
+export interface McbotPendingResume {
   taskId: string
-  name: LofiiTaskName
+  name: McbotTaskName
   startedAt: string
   elapsedSec: number
-  progress: LofiiTaskProgress
+  progress: McbotTaskProgress
   expiresAt: string
 }
 
-export interface LofiiTask {
+export interface McbotTask {
   enabled: boolean
   active: boolean
-  name: LofiiTaskName | null
-  state: LofiiTaskState
+  name: McbotTaskName | null
+  state: McbotTaskState
   startedAt: string | null
   elapsedSec: number
-  progress: LofiiTaskProgress
+  progress: McbotTaskProgress
   failures: number
   /** 已截断的短错误，不含提示词或密钥。 */
   lastError: string | null
-  pendingResume: LofiiPendingResume | null
-  queue: LofiiQueuedTask[]
+  pendingResume: McbotPendingResume | null
+  queue: McbotQueuedTask[]
 }
 
 /** RCON 只读管理快照（白名单/TPS/在线列表；无任何写能力）。 */
-export interface LofiiAdmin {
+export interface McbotAdmin {
   enabled: boolean
   rcon: boolean
   updatedAt: string | null
@@ -1346,7 +1346,7 @@ export interface LofiiAdmin {
 }
 
 /** Chatbot 自身在 Minecraft 的连接信息；host/port 属于本机回环配置，不展示到 UI。 */
-export interface LofiiMinecraft {
+export interface McbotMinecraft {
   connected: boolean
   username: string
   host: string
@@ -1356,14 +1356,14 @@ export interface LofiiMinecraft {
   lastDisconnect: { at: string; reason: string } | null
 }
 
-export interface LofiiPlayer {
+export interface McbotPlayer {
   dimension: string | null
   position: { x: number; y: number; z: number } | null
   health: number | null
   food: number | null
 }
 
-export interface LofiiServer {
+export interface McbotServer {
   reachable: boolean
   online: number
   max: number
@@ -1373,7 +1373,7 @@ export interface LofiiServer {
   lastPingAt: string | null
 }
 
-export interface LofiiPresence {
+export interface McbotPresence {
   enabled: boolean
   pollMs: number
   graceMs: number
@@ -1382,7 +1382,7 @@ export interface LofiiPresence {
   lastDecision: string
 }
 
-export interface LofiiAi {
+export interface McbotAi {
   enabled: boolean
   provider: string
   model: string
@@ -1393,39 +1393,39 @@ export interface LofiiAi {
   lastError: string | null
 }
 
-export interface LofiiMemory {
+export interface McbotMemory {
   players: number
   turns: number
 }
 
-/** Lofii `/status` 快照（由服务端转发；不包含 Token、密码或记忆正文）。 */
-export interface LofiiStatus {
+/** mcbot `/status` 快照（由服务端转发；不包含 Token、密码或记忆正文）。 */
+export interface McbotStatus {
   version: string
   uptimeSec: number
-  state: LofiiBotState
-  minecraft: LofiiMinecraft
-  player: LofiiPlayer
-  server: LofiiServer
-  presence: LofiiPresence
-  ai: LofiiAi
-  memory: LofiiMemory
-  task: LofiiTask
-  admin: LofiiAdmin
+  state: McbotBotState
+  minecraft: McbotMinecraft
+  player: McbotPlayer
+  server: McbotServer
+  presence: McbotPresence
+  ai: McbotAi
+  memory: McbotMemory
+  task: McbotTask
+  admin: McbotAdmin
 }
 
 /** 事件类型；hello 只出现在 SSE 首帧，/status 的事件环通常为其余类型。 */
-export type LofiiEventType = string
+export type McbotEventType = string
 
-/** Lofii 内存事件环中的一条事件；data 形状随 type 变化，渲染层只读取已知字段。 */
-export interface LofiiEvent {
+/** mcbot 内存事件环中的一条事件；data 形状随 type 变化，渲染层只读取已知字段。 */
+export interface McbotEvent {
   id: string
-  type: LofiiEventType
+  type: McbotEventType
   ts: string
   data: unknown
 }
 
-/** GET /api/lofii/status 的聚合快照：集成状态 + Lofii 快照 + 最近事件（newest first，最多 100）。 */
-export interface LofiiSnapshot {
+/** GET /api/mcbot/status 的聚合快照：集成状态 + mcbot 快照 + 最近事件（newest first，最多 100）。 */
+export interface McbotSnapshot {
   enabled: boolean
   reachable: boolean
   stale: boolean
@@ -1433,19 +1433,19 @@ export interface LofiiSnapshot {
   alertsEnabled: boolean
   version: string | null
   contractVersion: number | null
-  /** 旧版 Lofii 没有 /events/recent 时为 false：UI 显示“需升级 v0.6.0”提示。 */
+  /** 旧版 mcbot 没有 /events/recent 时为 false：UI 显示“需升级 v0.6.0”提示。 */
   eventsSupported: boolean
   lastPollAt: string | null
   error: string | null
-  status: LofiiStatus | null
-  events: LofiiEvent[]
+  status: McbotStatus | null
+  events: McbotEvent[]
 }
 
-export type LofiiHistoryKind = 'samples' | 'alerts'
+export type McbotHistoryKind = 'samples' | 'alerts'
 
-/** 历史查询：服务端透传 Lofii 的 /history，from/to 为 ISO 时间。 */
-export interface LofiiHistoryQuery {
-  kind: LofiiHistoryKind
+/** 历史查询：服务端透传 mcbot 的 /history，from/to 为 ISO 时间。 */
+export interface McbotHistoryQuery {
+  kind: McbotHistoryKind
   from?: string
   to?: string
   /** 1–200（AntifieldComplexx 侧上限）。 */
@@ -1453,7 +1453,7 @@ export interface LofiiHistoryQuery {
 }
 
 /** 60 秒一条的历史采样（不含聊天正文/Token）。 */
-export interface LofiiHistorySample {
+export interface McbotHistorySample {
   ts: string
   connected: boolean
   state: string
@@ -1467,8 +1467,8 @@ export interface LofiiHistorySample {
   rssMb: number | null
 }
 
-/** Lofii 历史告警（type 为 low_health/task_failed/disconnected/chest_full/defense_retreat）。 */
-export interface LofiiHistoryAlert {
+/** mcbot 历史告警（type 为 low_health/task_failed/disconnected/chest_full/defense_retreat）。 */
+export interface McbotHistoryAlert {
   id: number | string
   ts: string
   type: string
@@ -1477,21 +1477,21 @@ export interface LofiiHistoryAlert {
   details?: Record<string, unknown> | null
 }
 
-/** GET /api/lofii/history 的响应：按 kind 动态携带 samples 或 alerts。 */
-export interface LofiiHistory {
-  kind: LofiiHistoryKind
+/** GET /api/mcbot/history 的响应：按 kind 动态携带 samples 或 alerts。 */
+export interface McbotHistory {
+  kind: McbotHistoryKind
   from: string | null
   to: string | null
   count: number
-  samples?: LofiiHistorySample[]
-  alerts?: LofiiHistoryAlert[]
+  samples?: McbotHistorySample[]
+  alerts?: McbotHistoryAlert[]
 }
 
 /** 控制接口成功响应的可选字段；UI 不依赖具体形状，操作后重新拉取 status。 */
-export interface LofiiActionResult {
+export interface McbotActionResult {
   ok?: boolean
   requestId?: string
-  task?: LofiiTask
+  task?: McbotTask
   action?: string
   lines?: number
   /** /task/start：任务已有 active 时入队，position 为队列位置（1 起）。 */

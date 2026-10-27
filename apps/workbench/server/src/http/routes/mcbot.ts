@@ -1,33 +1,33 @@
 /**
- * Lofii 对接 HTTP 路由（v0.8.0）。
+ * mcbot 对接 HTTP 路由（v0.8.0）。
  *
  * 边界：
  * - 全部需要登录；控制接口额外校验 CSRF，并按 IP 限流（控制 20/min，聊天 10/min）。
  * - 上游错误统一映射为 AppError：禁用/不可用 503、鉴权/上游异常 502、上游 400/409
- *   保留状态码并透传稳定码 `lofii_<上游 code>`；message 不含内部 URL/Token。
+ *   保留状态码并透传稳定码 `mcbot_<上游 code>`；message 不含内部 URL/Token。
  * - 审计记录控制动作元数据；/say 只记录字符数，绝不记录聊天正文。
  */
 import type { FastifyInstance } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../../config.ts'
-import { LofiiError } from '../../lofii/client.ts'
-import type { LofiiService } from '../../lofii/service.ts'
+import { McbotError } from '../../mcbot/client.ts'
+import type { McbotService } from '../../mcbot/service.ts'
 import { SlidingWindowLimiter } from '../../auth/limiter.ts'
 import { AppError, badRequest, rateLimited } from '../../util/errors.ts'
 import { audit } from '../../auth/audit.ts'
 import { asRecord, clientIp, parsePositiveInt } from '../util.ts'
 import { csrfGuard, requireAuth } from '../guards.ts'
 
-/** Lofii 支持的 7 种任务名（与上游 /task/start 一致）。 */
-export const LOFII_TASK_NAMES = ['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol'] as const
-export type LofiiTaskName = (typeof LOFII_TASK_NAMES)[number]
-export const LOFII_MOVE_ACTIONS = ['home', 'come', 'follow', 'stop'] as const
-export type LofiiMoveAction = (typeof LOFII_MOVE_ACTIONS)[number]
+/** mcbot 支持的 7 种任务名（与上游 /task/start 一致）。 */
+export const MCBOT_TASK_NAMES = ['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol'] as const
+export type McbotTaskName = (typeof MCBOT_TASK_NAMES)[number]
+export const MCBOT_MOVE_ACTIONS = ['home', 'come', 'follow', 'stop'] as const
+export type McbotMoveAction = (typeof MCBOT_MOVE_ACTIONS)[number]
 /** 与上游 /say 一致：trim 后 1..720 字符。 */
-export const LOFII_SAY_MAX_CHARS = 720
+export const MCBOT_SAY_MAX_CHARS = 720
 
-const TASK_NAMES = new Set<string>(LOFII_TASK_NAMES)
-const MOVE_ACTIONS = new Set<string>(LOFII_MOVE_ACTIONS)
+const TASK_NAMES = new Set<string>(MCBOT_TASK_NAMES)
+const MOVE_ACTIONS = new Set<string>(MCBOT_MOVE_ACTIONS)
 
 /** 聊天/taskId 不允许 C0 控制字符与 DEL（避免命令/日志/上游参数注入面）。 */
 function hasControlChars(value: string): boolean {
@@ -40,48 +40,48 @@ function hasControlChars(value: string): boolean {
 
 /** 上游稳定错误码的中文兜底文案；不含上游 message，避免英文/内部细节外泄。 */
 const ERROR_MESSAGES: Record<string, string> = {
-  lofii_disabled: 'Lofii 对接未启用',
-  lofii_control_disabled: 'Lofii 控制接口未启用（未配置控制 Token）',
-  lofii_unavailable: 'Lofii 服务不可用',
-  lofii_auth_failed: 'Lofii 鉴权失败（Token 无效）',
-  lofii_upstream_error: 'Lofii 上游响应异常',
-  lofii_rate_limited: 'Lofii 请求过于频繁，请稍后重试',
-  lofii_resume_pending: 'Lofii 有待恢复任务，请先恢复或停止',
-  lofii_queue_full: 'Lofii 任务队列已满',
-  lofii_no_active_task: 'Lofii 当前没有运行中的任务',
-  lofii_no_pending_task: 'Lofii 当前没有待恢复的任务',
-  lofii_resume_failed: 'Lofii 任务恢复失败（可能已过期或 taskId 不匹配）',
-  lofii_task_active: 'Lofii 任务运行中，请先停止任务再移动',
-  lofii_target_not_online: '目标玩家不在线',
-  lofii_not_connected: 'Lofii 当前未连接 Minecraft',
-  lofii_task_disabled: 'Lofii 任务功能已关闭',
-  lofii_history_disabled: 'Lofii 历史功能已关闭',
-  lofii_invalid_request: 'Lofii 拒绝了请求参数',
+  mcbot_disabled: 'mcbot 对接未启用',
+  mcbot_control_disabled: 'mcbot 控制接口未启用（未配置控制 Token）',
+  mcbot_unavailable: 'mcbot 服务不可用',
+  mcbot_auth_failed: 'mcbot 鉴权失败（Token 无效）',
+  mcbot_upstream_error: 'mcbot 上游响应异常',
+  mcbot_rate_limited: 'mcbot 请求过于频繁，请稍后重试',
+  mcbot_resume_pending: 'mcbot 有待恢复任务，请先恢复或停止',
+  mcbot_queue_full: 'mcbot 任务队列已满',
+  mcbot_no_active_task: 'mcbot 当前没有运行中的任务',
+  mcbot_no_pending_task: 'mcbot 当前没有待恢复的任务',
+  mcbot_resume_failed: 'mcbot 任务恢复失败（可能已过期或 taskId 不匹配）',
+  mcbot_task_active: 'mcbot 任务运行中，请先停止任务再移动',
+  mcbot_target_not_online: '目标玩家不在线',
+  mcbot_not_connected: 'mcbot 当前未连接 Minecraft',
+  mcbot_task_disabled: 'mcbot 任务功能已关闭',
+  mcbot_history_disabled: 'mcbot 历史功能已关闭',
+  mcbot_invalid_request: 'mcbot 拒绝了请求参数',
 }
 
 function errorMessageFor(code: string, fallback: string): string {
   return ERROR_MESSAGES[code] ?? fallback
 }
 
-/** LofiiError → 稳定的 AppError（保留上游 400/409，其余按契约 503/502/429）。 */
+/** McbotError → 稳定的 AppError（保留上游 400/409，其余按契约 503/502/429）。 */
 export function toLofiiAppError(error: unknown): AppError {
   if (error instanceof AppError) return error
-  if (error instanceof LofiiError) {
+  if (error instanceof McbotError) {
     const code = error.code
     if (error.statusCode === 400 || error.statusCode === 409) {
-      return new AppError(error.statusCode, code, errorMessageFor(code, 'Lofii 拒绝了请求'))
+      return new AppError(error.statusCode, code, errorMessageFor(code, 'mcbot 拒绝了请求'))
     }
     if (error.statusCode === 429) {
-      return new AppError(429, 'lofii_rate_limited', errorMessageFor('lofii_rate_limited', '请稍后重试'), {
+      return new AppError(429, 'mcbot_rate_limited', errorMessageFor('mcbot_rate_limited', '请稍后重试'), {
         retryAfterSec: 60,
       })
     }
-    if (code === 'lofii_auth_failed' || code === 'lofii_upstream_error') {
-      return new AppError(502, code, errorMessageFor(code, 'Lofii 上游响应异常'))
+    if (code === 'mcbot_auth_failed' || code === 'mcbot_upstream_error') {
+      return new AppError(502, code, errorMessageFor(code, 'mcbot 上游响应异常'))
     }
-    return new AppError(503, code, errorMessageFor(code, 'Lofii 服务不可用'))
+    return new AppError(503, code, errorMessageFor(code, 'mcbot 服务不可用'))
   }
-  return new AppError(502, 'lofii_upstream_error', errorMessageFor('lofii_upstream_error', 'Lofii 上游响应异常'))
+  return new AppError(502, 'mcbot_upstream_error', errorMessageFor('mcbot_upstream_error', 'mcbot 上游响应异常'))
 }
 
 /** 查询参数时间：空值忽略；非 ISO 返回 400，避免静默变全量查询。 */
@@ -92,14 +92,14 @@ function timeParam(value: unknown, field: string): string | null {
   return new Date(Date.parse(text)).toISOString()
 }
 
-function requireEnabled(lofii: LofiiService): void {
-  if (!lofii.enabled) throw new AppError(503, 'lofii_disabled', errorMessageFor('lofii_disabled', 'Lofii 对接未启用'))
+function requireEnabled(mcbot: McbotService): void {
+  if (!mcbot.enabled) throw new AppError(503, 'mcbot_disabled', errorMessageFor('mcbot_disabled', 'mcbot 对接未启用'))
 }
 
 export function registerLofiiRoutes(
   app: FastifyInstance,
   config: Config,
-  lofii: LofiiService,
+  mcbot: McbotService,
   db: DatabaseSync,
 ): void {
   const csrf = csrfGuard(config)
@@ -108,14 +108,14 @@ export function registerLofiiRoutes(
 
   /** 控制失败审计：只记稳定错误码，不记 Token/URL/上游原文。 */
   function auditFailure(actor: { username: string; ip: string | null }, action: string, error: unknown): void {
-    const code = error instanceof LofiiError ? error.code : 'lofii_upstream_error'
-    audit(db, actor.username, 'lofii.control_failed', action, { code }, actor.ip)
+    const code = error instanceof McbotError ? error.code : 'mcbot_upstream_error'
+    audit(db, actor.username, 'mcbot.control_failed', action, { code }, actor.ip)
   }
 
-  app.get('/api/lofii/status', { preHandler: [requireAuth] }, async () => lofii.snapshot())
+  app.get('/api/mcbot/status', { preHandler: [requireAuth] }, async () => mcbot.snapshot())
 
-  app.get('/api/lofii/history', { preHandler: [requireAuth] }, async (request) => {
-    requireEnabled(lofii)
+  app.get('/api/mcbot/history', { preHandler: [requireAuth] }, async (request) => {
+    requireEnabled(mcbot)
     const query = asRecord(request.query)
     const rawKind = query.kind === undefined || query.kind === '' ? 'samples' : query.kind
     if (rawKind !== 'samples' && rawKind !== 'alerts') throw badRequest('kind 必须是 samples 或 alerts', 'invalid_request')
@@ -123,7 +123,7 @@ export function registerLofiiRoutes(
     const to = timeParam(query.to, 'to')
     const limit = parsePositiveInt(query.limit, 100, 1, 200)
     try {
-      return await lofii.history(rawKind, {
+      return await mcbot.history(rawKind, {
         ...(from ? { from } : {}),
         ...(to ? { to } : {}),
         limit,
@@ -133,43 +133,43 @@ export function registerLofiiRoutes(
     }
   })
 
-  app.post('/api/lofii/tasks', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(lofii)
+  app.post('/api/mcbot/tasks', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
     const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
     const retry = controlLimiter.hit(clientIp(request))
     if (retry > 0) throw rateLimited(retry)
     const body = asRecord(request.body)
     const name = typeof body.name === 'string' ? body.name.trim() : ''
     if (!TASK_NAMES.has(name)) {
-      throw badRequest(`任务名必须是 ${LOFII_TASK_NAMES.join('/')} 之一`, 'invalid_request')
+      throw badRequest(`任务名必须是 ${MCBOT_TASK_NAMES.join('/')} 之一`, 'invalid_request')
     }
     try {
-      const result = await lofii.startTask(name)
-      audit(db, actor.username, 'lofii.task.start', name, { name }, actor.ip)
+      const result = await mcbot.startTask(name)
+      audit(db, actor.username, 'mcbot.task.start', name, { name }, actor.ip)
       return { ok: true, ...result }
     } catch (error) {
-      auditFailure(actor, 'lofii.task.start', error)
+      auditFailure(actor, 'mcbot.task.start', error)
       throw toLofiiAppError(error)
     }
   })
 
-  app.post('/api/lofii/tasks/stop', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(lofii)
+  app.post('/api/mcbot/tasks/stop', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
     const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
     const retry = controlLimiter.hit(clientIp(request))
     if (retry > 0) throw rateLimited(retry)
     try {
-      const result = await lofii.stopTask()
-      audit(db, actor.username, 'lofii.task.stop', 'task', null, actor.ip)
+      const result = await mcbot.stopTask()
+      audit(db, actor.username, 'mcbot.task.stop', 'task', null, actor.ip)
       return { ok: true, ...result }
     } catch (error) {
-      auditFailure(actor, 'lofii.task.stop', error)
+      auditFailure(actor, 'mcbot.task.stop', error)
       throw toLofiiAppError(error)
     }
   })
 
-  app.post('/api/lofii/tasks/resume', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(lofii)
+  app.post('/api/mcbot/tasks/resume', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
     const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
     const retry = controlLimiter.hit(clientIp(request))
     if (retry > 0) throw rateLimited(retry)
@@ -192,24 +192,24 @@ export function registerLofiiRoutes(
       taskId = normalized
     }
     try {
-      const result = await lofii.resumeTask(taskId)
-      audit(db, actor.username, 'lofii.task.resume', taskId ?? 'task', { taskId: taskId ?? null }, actor.ip)
+      const result = await mcbot.resumeTask(taskId)
+      audit(db, actor.username, 'mcbot.task.resume', taskId ?? 'task', { taskId: taskId ?? null }, actor.ip)
       return { ok: true, ...result }
     } catch (error) {
-      auditFailure(actor, 'lofii.task.resume', error)
+      auditFailure(actor, 'mcbot.task.resume', error)
       throw toLofiiAppError(error)
     }
   })
 
-  app.post('/api/lofii/move', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(lofii)
+  app.post('/api/mcbot/move', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
     const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
     const retry = controlLimiter.hit(clientIp(request))
     if (retry > 0) throw rateLimited(retry)
     const body = asRecord(request.body)
     const action = typeof body.action === 'string' ? body.action : ''
     if (!MOVE_ACTIONS.has(action)) {
-      throw badRequest(`action 必须是 ${LOFII_MOVE_ACTIONS.join('/')} 之一`, 'invalid_request')
+      throw badRequest(`action 必须是 ${MCBOT_MOVE_ACTIONS.join('/')} 之一`, 'invalid_request')
     }
     let target: string | undefined
     if (body.target !== undefined && body.target !== null) {
@@ -219,21 +219,21 @@ export function registerLofiiRoutes(
       if (trimmed) target = trimmed
     }
     try {
-      const result = await lofii.move(action, target)
-      audit(db, actor.username, 'lofii.move', action, { action, target: target ?? null }, actor.ip)
+      const result = await mcbot.move(action, target)
+      audit(db, actor.username, 'mcbot.move', action, { action, target: target ?? null }, actor.ip)
       return { ok: true, ...result }
     } catch (error) {
-      auditFailure(actor, 'lofii.move', error)
+      auditFailure(actor, 'mcbot.move', error)
       throw toLofiiAppError(error)
     }
   })
 
-  app.post('/api/lofii/say', { preHandler: [requireAuth, csrf] }, async (request) => {
-    requireEnabled(lofii)
+  app.post('/api/mcbot/say', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
     // /say 是写操作；即使上游用读 Token，应用侧也必须要求控制 Token，
     // 避免只读模式成为绕过任务/移动权限的写通道。
-    if (!lofii.controlEnabled) {
-      throw new AppError(503, 'lofii_control_disabled', errorMessageFor('lofii_control_disabled', 'Lofii 控制接口未启用'))
+    if (!mcbot.controlEnabled) {
+      throw new AppError(503, 'mcbot_control_disabled', errorMessageFor('mcbot_control_disabled', 'mcbot 控制接口未启用'))
     }
     const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
     const retry = sayLimiter.hit(clientIp(request))
@@ -242,10 +242,10 @@ export function registerLofiiRoutes(
     const raw = typeof body.message === 'string' ? body.message : ''
     const message = raw.trim()
     if (!message) throw badRequest('消息不能为空', 'invalid_request')
-    if (message.length > LOFII_SAY_MAX_CHARS) {
-      throw badRequest(`消息最多 ${LOFII_SAY_MAX_CHARS} 字符`, 'invalid_request')
+    if (message.length > MCBOT_SAY_MAX_CHARS) {
+      throw badRequest(`消息最多 ${MCBOT_SAY_MAX_CHARS} 字符`, 'invalid_request')
     }
-    // 上游 Lofii 会按行宽切分聊天且只在整段开头转义 /；必须拒绝任意位置的 ASCII /，
+    // 上游 mcbot 会按行宽切分聊天且只在整段开头转义 /；必须拒绝任意位置的 ASCII /，
     // 否则“填充字符 + /命令”会在切分后的第二行命中 mineflayer 命令通道。
     if (message.includes('/')) {
       throw badRequest('聊天内容不能包含 /（不支持命令，含切分后的命令行）', 'message_must_not_start_with_slash')
@@ -254,12 +254,12 @@ export function registerLofiiRoutes(
       throw badRequest('聊天内容不能包含控制字符', 'invalid_request')
     }
     try {
-      const result = await lofii.say(message)
+      const result = await mcbot.say(message)
       // 审计只记录字符数，绝不记录聊天正文。
-      audit(db, actor.username, 'lofii.say', null, { chars: message.length }, actor.ip)
+      audit(db, actor.username, 'mcbot.say', null, { chars: message.length }, actor.ip)
       return { ok: true, ...result }
     } catch (error) {
-      auditFailure(actor, 'lofii.say', error)
+      auditFailure(actor, 'mcbot.say', error)
       throw toLofiiAppError(error)
     }
   })

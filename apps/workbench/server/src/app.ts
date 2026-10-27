@@ -44,8 +44,8 @@ import { SearxngSearchClient } from './chatbot/search.ts'
 import { registerBotRoutes } from './http/routes/chatbots.ts'
 import { registerBotWebhookRoutes } from './http/routes/chatbot-webhook.ts'
 import { registerBotAiToolRoutes } from './http/routes/chatbot-ai-tool.ts'
-import { LofiiService } from './lofii/service.ts'
-import { registerLofiiRoutes } from './http/routes/lofii.ts'
+import { McbotService } from './mcbot/service.ts'
+import { registerLofiiRoutes } from './http/routes/mcbot.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -65,13 +65,13 @@ export interface AppContext {
   metrics: MetricsService
   chatbots: ChatbotService
   proxy: OpenCodeProxy
-  /** v0.8.0 Lofii Minecraft Chatbot 对接（禁用时 snapshot 为 enabled:false）。 */
-  lofii: LofiiService
+  /** v0.8.0 mcbot Minecraft Chatbot 对接（禁用时 snapshot 为 enabled:false）。 */
+  mcbot: McbotService
   /** listen 成功后启动指标采样（metricsEnabled=false 时空操作；重复调用幂等）。 */
   startMetrics(): void
   /** listen 成功后启动 Chatbot 投递/发布队列（Chatbot 未启用时为空操作；重复调用幂等）。 */
   startBots(): void
-  /** listen 成功后启动 Lofii 状态/事件轮询（未启用时为空操作；重复调用幂等）。 */
+  /** listen 成功后启动 mcbot 状态/事件轮询（未启用时为空操作；重复调用幂等）。 */
   startLofii(): void
   runMaintenance(): void
 }
@@ -223,8 +223,8 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     },
     notifyEvent: (event) => chatbots.notifyAlert(event),
   })
-  // Lofii 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
-  const lofii = new LofiiService({
+  // mcbot 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
+  const mcbot = new McbotService({
     db,
     config,
     alerts,
@@ -367,7 +367,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerBotRoutes(app, config, chatbots, auth)
   registerBotWebhookRoutes(app, config, chatbots)
   registerBotAiToolRoutes(app, chatbots)
-  registerLofiiRoutes(app, config, lofii, db)
+  registerLofiiRoutes(app, config, mcbot, db)
 
   registerErrorHandler(app)
 
@@ -396,7 +396,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   app.addHook('onClose', async () => {
-    lofii.stop()
+    mcbot.stop()
     alerts.stop()
     metricsSampler.stop()
     // ARCH-04：关闭前有限等待 Chatbot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。
@@ -423,7 +423,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   }
 
   function startLofii(): void {
-    lofii.start()
+    mcbot.start()
   }
 
   function runMaintenance(): void {
@@ -467,7 +467,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     metrics,
     chatbots,
     proxy,
-    lofii,
+    mcbot,
     startMetrics,
     startBots,
     startLofii,

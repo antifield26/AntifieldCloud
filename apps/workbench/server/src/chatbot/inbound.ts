@@ -111,7 +111,7 @@ export function parseCommandText(text: string): ParsedCommand | null {
 
 /**
  * 仅@/名字提及模式：用 Chatbot 名称做保守文本匹配（大小写不敏感）。
- * 边界要求：ASCII 字母/数字/下划线相邻时不算命中（`lofii` 不匹配 `xlofiix`）；
+ * 边界要求：ASCII 字母/数字/下划线相邻时不算命中（`mcbot` 不匹配 `xlofiix`）；
  * 中文没有空格分词，名字紧贴汉字仍视为命中；单字符名称过于容易误触发，不参与名字匹配（只认平台 mentions）。
  */
 export function isBotNameMentioned(chatbotName: string, text: string): boolean {

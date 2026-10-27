@@ -225,7 +225,7 @@ async function main (): Promise<void> {
   const statePublisher = new StatePublisher({ state, events })
   statePublisher.start()
 
-  logger.info('lofii-bot started', {
+  logger.info('mcbot started', {
     version: config.version,
     bot: config.botUsername,
     server: `${config.mcHost}:${config.mcPort}`,

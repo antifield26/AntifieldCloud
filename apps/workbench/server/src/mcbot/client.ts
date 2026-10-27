@@ -1,45 +1,45 @@
 /**
- * Lofii Bot HTTP 客户端（v0.8.0 只读/控制）。
+ * mcbot Bot HTTP 客户端（v0.8.0 只读/控制）。
  *
  * 安全边界：
  * - 上游地址由 config 校验为 loopback + http(s)；客户端始终 `redirect: 'error'`，
  *   避免被 302 引到外部主机后把 Token 发出去；每次请求带超时 AbortSignal。
  * - 读 Token 只用于 /status、/events/recent、/history、/say；控制 Token 只用于
- *   /task/* 与 /move；控制 Token 为空时控制方法直接返回 lofii_control_disabled。
- * - 错误统一为稳定 `LofiiError`（code/statusCode/upstreamCode），message 会移除上游
+ *   /task/* 与 /move；控制 Token 为空时控制方法直接返回 mcbot_control_disabled。
+ * - 错误统一为稳定 `McbotError`（code/statusCode/upstreamCode），message 会移除上游
  *   地址与两个 Token，绝不把 URL/Token 写进错误文本或日志。
- * - 响应体上限 2 MiB；非 JSON、5xx 统一映射为 lofii_upstream_error。
+ * - 响应体上限 2 MiB；非 JSON、5xx 统一映射为 mcbot_upstream_error。
  * - fetch 可注入，测试不访问真实网络。
  */
 
-/** 单次响应体上限：Lofii 是本地进程，正常响应远小于该值。 */
-export const LOFII_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+/** 单次响应体上限：mcbot 是本地进程，正常响应远小于该值。 */
+export const MCBOT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 
-export type LofiiHistoryKind = 'samples' | 'alerts'
+export type McbotHistoryKind = 'samples' | 'alerts'
 
-/** Lofii 事件 envelope（/events/recent 与 SSE 相同）。 */
-export interface LofiiEvent {
+/** mcbot 事件 envelope（/events/recent 与 SSE 相同）。 */
+export interface McbotEvent {
   id: string
   type: string
   ts: string
   data: unknown
 }
 
-export interface LofiiRecentResult {
+export interface McbotRecentResult {
   contractVersion: number | null
   bootId: string
   lastEventId: string | null
   /** 与上游一致：旧 → 新排序。 */
-  events: LofiiEvent[]
+  events: McbotEvent[]
 }
 
-export interface LofiiHistoryQuery {
+export interface McbotHistoryQuery {
   from?: string
   to?: string
   limit?: number
 }
 
-export interface LofiiClientOptions {
+export interface McbotClientOptions {
   baseUrl: string
   readToken: string
   controlToken: string
@@ -47,18 +47,18 @@ export interface LofiiClientOptions {
   fetch?: typeof fetch
 }
 
-/** 上游 5xx 中可安全透传的稳定业务错误码（Lofii 用 503 表示任务/控制/历史关闭）。 */
+/** 上游 5xx 中可安全透传的稳定业务错误码（mcbot 用 503 表示任务/控制/历史关闭）。 */
 const STABLE_UPSTREAM_5XX_CODES = new Set(['task_disabled', 'control_disabled', 'history_disabled'])
 
-/** 稳定错误码；`lofii_<upstream>` 表示上游明确业务错误。 */
-export class LofiiError extends Error {
+/** 稳定错误码；`mcbot_<upstream>` 表示上游明确业务错误。 */
+export class McbotError extends Error {
   readonly code: string
   readonly statusCode: number | null
   readonly upstreamCode: string | null
 
   constructor(code: string, message: string, statusCode: number | null = null, upstreamCode: string | null = null) {
     super(message)
-    this.name = 'LofiiError'
+    this.name = 'McbotError'
     this.code = code
     this.statusCode = statusCode
     this.upstreamCode = upstreamCode
@@ -69,7 +69,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-function toEvent(value: unknown): LofiiEvent | null {
+function toEvent(value: unknown): McbotEvent | null {
   if (!isRecord(value)) return null
   if (typeof value.id !== 'string' || !value.id) return null
   if (typeof value.type !== 'string' || !value.type) return null
@@ -105,14 +105,14 @@ function extractErrorMessage(body: unknown): string | null {
   return typeof body.message === 'string' && body.message.trim() ? body.message.trim() : null
 }
 
-export class LofiiClient {
+export class McbotClient {
   private readonly baseUrl: string
   private readonly readToken: string
   private readonly controlToken: string
   private readonly timeoutMs: number
   private readonly fetchImpl: typeof fetch
 
-  constructor(options: LofiiClientOptions) {
+  constructor(options: McbotClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, '')
     this.readToken = options.readToken
     this.controlToken = options.controlToken
@@ -123,20 +123,20 @@ export class LofiiClient {
   /** /status 完整快照；只做对象校验，字段由上游契约保证。 */
   async status(): Promise<Record<string, unknown>> {
     const body = await this.request('/status', { method: 'GET', token: this.readToken })
-    if (!isRecord(body)) throw new LofiiError('lofii_upstream_error', 'Lofii 状态响应格式不合法')
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 状态响应格式不合法')
     return body
   }
 
   /** /events/recent（v0.6.0+）；返回旧 → 新的最近事件与契约版本。 */
-  async recentEvents(limit = 100): Promise<LofiiRecentResult> {
+  async recentEvents(limit = 100): Promise<McbotRecentResult> {
     const normalized = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 200) : 100
     const body = await this.request(`/events/recent?limit=${normalized}`, { method: 'GET', token: this.readToken })
-    if (!isRecord(body)) throw new LofiiError('lofii_upstream_error', 'Lofii 事件响应格式不合法')
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 事件响应格式不合法')
     const bootId = typeof body.bootId === 'string' ? body.bootId : ''
-    if (!bootId) throw new LofiiError('lofii_upstream_error', 'Lofii 事件响应缺少 bootId')
+    if (!bootId) throw new McbotError('mcbot_upstream_error', 'mcbot 事件响应缺少 bootId')
     const contractVersion =
       typeof body.contractVersion === 'number' && Number.isFinite(body.contractVersion) ? body.contractVersion : null
-    const events = Array.isArray(body.events) ? body.events.map(toEvent).filter((event): event is LofiiEvent => event !== null) : []
+    const events = Array.isArray(body.events) ? body.events.map(toEvent).filter((event): event is McbotEvent => event !== null) : []
     return {
       contractVersion,
       bootId,
@@ -146,16 +146,16 @@ export class LofiiClient {
   }
 
   /** /history?kind=samples|alerts：原样返回上游响应体（kind/from/to/count/samples|alerts）。 */
-  async history(kind: LofiiHistoryKind, query: LofiiHistoryQuery = {}): Promise<Record<string, unknown>> {
+  async history(kind: McbotHistoryKind, query: McbotHistoryQuery = {}): Promise<Record<string, unknown>> {
     const params = new URLSearchParams({ kind })
     if (query.from) params.set('from', query.from)
     if (query.to) params.set('to', query.to)
     if (query.limit !== undefined) params.set('limit', String(query.limit))
     const body = await this.request(`/history?${params.toString()}`, { method: 'GET', token: this.readToken })
-    if (!isRecord(body)) throw new LofiiError('lofii_upstream_error', 'Lofii 历史响应格式不合法')
-    if (body.kind !== kind) throw new LofiiError('lofii_upstream_error', 'Lofii 历史响应类型不匹配')
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 历史响应格式不合法')
+    if (body.kind !== kind) throw new McbotError('mcbot_upstream_error', 'mcbot 历史响应类型不匹配')
     const rows = body[kind]
-    if (!Array.isArray(rows)) throw new LofiiError('lofii_upstream_error', 'Lofii 历史响应缺少数组')
+    if (!Array.isArray(rows)) throw new McbotError('mcbot_upstream_error', 'mcbot 历史响应缺少数组')
     // 只透传对象行，避免畸形数组让前端 Table 渲染时解引用 null/原始值崩溃。
     return {
       ...body,
@@ -182,16 +182,16 @@ export class LofiiClient {
   /** /say 使用读 Token（与上游契约一致）；不执行任何斜杠命令。 */
   async say(message: string): Promise<Record<string, unknown>> {
     const body = await this.request('/say', { method: 'POST', token: this.readToken, payload: { message } })
-    if (!isRecord(body)) throw new LofiiError('lofii_upstream_error', 'Lofii 聊天响应格式不合法')
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 聊天响应格式不合法')
     return body
   }
 
   private async control(path: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     if (!this.controlToken) {
-      throw new LofiiError('lofii_control_disabled', 'Lofii 控制接口未启用（未配置控制 Token）')
+      throw new McbotError('mcbot_control_disabled', 'mcbot 控制接口未启用（未配置控制 Token）')
     }
     const body = await this.request(path, { method: 'POST', token: this.controlToken, payload })
-    if (!isRecord(body)) throw new LofiiError('lofii_upstream_error', 'Lofii 响应格式不合法')
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 响应格式不合法')
     return body
   }
 
@@ -216,15 +216,15 @@ export class LofiiClient {
       })
     } catch {
       // 网络错误/超时/重定向拒绝：不暴露底层 message（可能包含 URL）。
-      throw new LofiiError('lofii_unavailable', 'Lofii 服务不可用')
+      throw new McbotError('mcbot_unavailable', 'mcbot 服务不可用')
     }
 
     let raw: Uint8Array
     try {
       raw = await this.readCappedBody(response)
     } catch (error) {
-      if (error instanceof LofiiError) throw error
-      throw new LofiiError('lofii_unavailable', 'Lofii 响应读取失败')
+      if (error instanceof McbotError) throw error
+      throw new McbotError('mcbot_unavailable', 'mcbot 响应读取失败')
     }
     const text = new TextDecoder().decode(raw)
     let parsed: unknown = null
@@ -242,7 +242,7 @@ export class LofiiClient {
       throw this.mapHttpError(response.status, parsed)
     }
     if (!parsedOk) {
-      throw new LofiiError('lofii_upstream_error', 'Lofii 响应不是合法 JSON', response.status)
+      throw new McbotError('mcbot_upstream_error', 'mcbot 响应不是合法 JSON', response.status)
     }
     return parsed
   }
@@ -253,14 +253,14 @@ export class LofiiClient {
    */
   private async readCappedBody(response: Response): Promise<Uint8Array> {
     const declared = Number(response.headers.get('content-length') ?? '')
-    if (Number.isFinite(declared) && declared > LOFII_MAX_RESPONSE_BYTES) {
-      throw new LofiiError('lofii_upstream_error', 'Lofii 响应超过大小上限')
+    if (Number.isFinite(declared) && declared > MCBOT_MAX_RESPONSE_BYTES) {
+      throw new McbotError('mcbot_upstream_error', 'mcbot 响应超过大小上限')
     }
     const body = response.body
     if (!body) {
       const buffer = await response.arrayBuffer()
-      if (buffer.byteLength > LOFII_MAX_RESPONSE_BYTES) {
-        throw new LofiiError('lofii_upstream_error', 'Lofii 响应超过大小上限')
+      if (buffer.byteLength > MCBOT_MAX_RESPONSE_BYTES) {
+        throw new McbotError('mcbot_upstream_error', 'mcbot 响应超过大小上限')
       }
       return new Uint8Array(buffer)
     }
@@ -273,13 +273,13 @@ export class LofiiClient {
         if (done) break
         if (!value || value.byteLength === 0) continue
         total += value.byteLength
-        if (total > LOFII_MAX_RESPONSE_BYTES) {
+        if (total > MCBOT_MAX_RESPONSE_BYTES) {
           try {
             await reader.cancel()
           } catch {
             // 取消失败不影响拒绝结果。
           }
-          throw new LofiiError('lofii_upstream_error', 'Lofii 响应超过大小上限')
+          throw new McbotError('mcbot_upstream_error', 'mcbot 响应超过大小上限')
         }
         chunks.push(value)
       }
@@ -299,30 +299,30 @@ export class LofiiClient {
     return result
   }
 
-  private mapHttpError(status: number, parsed: unknown): LofiiError {
+  private mapHttpError(status: number, parsed: unknown): McbotError {
     const rawCode = extractErrorCode(parsed)
     // 防御上游把 Token 回显进 error 字段：错误码也不得携带凭据。
     const upstreamCode = rawCode && !this.containsSecret(rawCode) ? rawCode : rawCode ? 'invalid_request' : null
     const upstreamMessage = extractErrorMessage(parsed)
     if (status === 401 || status === 403) {
-      return new LofiiError('lofii_auth_failed', 'Lofii 鉴权失败（Token 无效）', status)
+      return new McbotError('mcbot_auth_failed', 'mcbot 鉴权失败（Token 无效）', status)
     }
     if (status === 404) {
-      return new LofiiError(upstreamCode ? `lofii_${upstreamCode}` : 'lofii_not_found', 'Lofii 接口不存在', status, upstreamCode)
+      return new McbotError(upstreamCode ? `mcbot_${upstreamCode}` : 'mcbot_not_found', 'mcbot 接口不存在', status, upstreamCode)
     }
     if (status >= 400 && status < 500) {
       const code = upstreamCode ?? 'invalid_request'
-      return new LofiiError(`lofii_${code}`, this.sanitizeMessage(upstreamMessage ?? 'Lofii 请求被拒绝'), status, code)
+      return new McbotError(`mcbot_${code}`, this.sanitizeMessage(upstreamMessage ?? 'mcbot 请求被拒绝'), status, code)
     }
     if (status >= 500 && upstreamCode && STABLE_UPSTREAM_5XX_CODES.has(upstreamCode)) {
-      return new LofiiError(
-        `lofii_${upstreamCode}`,
-        this.sanitizeMessage(upstreamMessage ?? 'Lofii 功能未启用'),
+      return new McbotError(
+        `mcbot_${upstreamCode}`,
+        this.sanitizeMessage(upstreamMessage ?? 'mcbot 功能未启用'),
         status,
         upstreamCode,
       )
     }
-    return new LofiiError('lofii_upstream_error', `Lofii 上游错误（HTTP ${status}）`, status)
+    return new McbotError('mcbot_upstream_error', `mcbot 上游错误（HTTP ${status}）`, status)
   }
 
   /** 上游 message 可能包含地址（如错误栈）；移除本机地址与两个 Token（大小写不敏感）。 */

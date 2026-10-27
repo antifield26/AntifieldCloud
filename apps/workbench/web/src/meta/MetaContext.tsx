@@ -59,8 +59,8 @@ function fallbackMeta(): AppMeta {
     backupAgeRecipientConfigured: false,
     backupOffsiteStatusConfigured: false,
     audit: null,
-    lofiiEnabled: false,
-    lofiiControlEnabled: false,
+    mcbotEnabled: false,
+    mcbotControlEnabled: false,
   }
 }
 
@@ -114,8 +114,8 @@ function buildMeta(version: VersionResult): AppMeta {
     backupAgeRecipientConfigured: version.backupAgeRecipientConfigured === true,
     backupOffsiteStatusConfigured: version.backupOffsiteStatusConfigured === true,
     audit: version.audit ?? null,
-    lofiiEnabled: version.lofiiEnabled === true,
-    lofiiControlEnabled: version.lofiiControlEnabled === true,
+    mcbotEnabled: version.mcbotEnabled === true,
+    mcbotControlEnabled: version.mcbotControlEnabled === true,
   }
 }
 

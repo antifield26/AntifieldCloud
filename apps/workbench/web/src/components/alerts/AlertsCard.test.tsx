@@ -118,17 +118,17 @@ describe('AlertsCard 筛选与分页', () => {
     )
   })
 
-  it('v0.8 Lofii 事件告警显示中文标签与“已记录”状态', async () => {
+  it('v0.8 mcbot 事件告警显示中文标签与“已记录”状态', async () => {
     mocks.list.mockResolvedValue(
       result(
         [
           {
             ...alertItem(9),
-            event: 'lofii_low_health',
+            event: 'mcbot_low_health',
             title: '',
             severity: 'warning',
             status: 'event',
-            message: 'Lofii 血量偏低：8/20',
+            message: 'mcbot 血量偏低：8/20',
           },
         ],
         1,
@@ -136,9 +136,9 @@ describe('AlertsCard 筛选与分页', () => {
     )
     renderCard()
     // title 为空时回退为事件中文标签（事件筛选下拉里也有同名选项）
-    expect((await screen.findAllByText('Lofii 血量过低')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('mcbot 血量过低')).length).toBeGreaterThan(0)
     expect(screen.getByText('已记录', { selector: '.badge' })).toBeTruthy()
-    expect(screen.getByText('Lofii 血量偏低：8/20')).toBeTruthy()
+    expect(screen.getByText('mcbot 血量偏低：8/20')).toBeTruthy()
 
     // 状态筛选包含“已记录”，选择后带 status=event 请求
     const statusSelect = screen.getByLabelText('按状态筛选告警历史')
@@ -152,8 +152,8 @@ describe('AlertsCard 筛选与分页', () => {
       ),
     )
 
-    // 事件筛选包含 Lofii 条件
+    // 事件筛选包含 mcbot 条件
     const eventSelect = screen.getByLabelText('按事件筛选告警历史')
-    expect(within(eventSelect).getByRole('option', { name: 'Lofii 血量过低' })).toBeTruthy()
+    expect(within(eventSelect).getByRole('option', { name: 'mcbot 血量过低' })).toBeTruthy()
   })
 })

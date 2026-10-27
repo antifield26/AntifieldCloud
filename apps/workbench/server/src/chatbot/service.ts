@@ -1351,13 +1351,13 @@ export class ChatbotService {
         nameLength: name.length,
         promptLength: prompt.length,
       })
-      return `专属角色「${name}」已设置，私聊将使用该角色；群聊仍使用默认 lofii。`
+      return `专属角色「${name}」已设置，私聊将使用该角色；群聊仍使用默认 mcbot。`
     }
 
     if (sub === 'off' || sub === 'on') {
       if (!card) {
         return sub === 'off'
-          ? '当前没有专属角色，正在使用默认 lofii。'
+          ? '当前没有专属角色，正在使用默认 mcbot。'
           : '当前没有专属角色，可先用 /role set 设置。'
       }
       const enabled = sub === 'on'
@@ -1370,7 +1370,7 @@ export class ChatbotService {
       })
       return enabled
         ? `专属角色「${card.name}」已启用。`
-        : '专属角色已暂停，当前使用默认 lofii。'
+        : '专属角色已暂停，当前使用默认 mcbot。'
     }
 
     if (sub === 'delete') {
@@ -1383,7 +1383,7 @@ export class ChatbotService {
         user: result.userId.slice(0, 64),
         action: 'delete',
       })
-      return '专属角色已删除，当前使用默认 lofii。'
+      return '专属角色已删除，当前使用默认 mcbot。'
     }
 
     return roleUsage()

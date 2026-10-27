@@ -1,10 +1,10 @@
 {
-  "name": "lofii-bot",
+  "name": "@antifieldcomplexx/mcbot",
   "version": "0.6.1",
   "private": true,
   "license": "MIT",
   "type": "module",
-  "description": "Lofii Minecraft AI companion bot for Paper 26.1.2 on Raspberry Pi 5",
+  "description": "mcbot（原 lofii-bot）Minecraft AI companion bot for Paper 26.1.2 on Raspberry Pi 5",
   "engines": {
     "node": ">=26"
   },

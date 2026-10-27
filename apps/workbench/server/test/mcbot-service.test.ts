@@ -1,17 +1,17 @@
-/** Lofii 服务测试：轮询缓存、单飞、降级、游标基线与去重、告警映射、控制刷新。 */
+/** mcbot 服务测试：轮询缓存、单飞、降级、游标基线与去重、告警映射、控制刷新。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { Config } from '../src/config.ts'
 import type { ExternalAlertInput } from '../src/alerts/service.ts'
 import { getMeta, setMeta } from '../src/db.ts'
-import { LofiiClient, type LofiiEvent } from '../src/lofii/client.ts'
+import { McbotClient, type McbotEvent } from '../src/mcbot/client.ts'
 import {
-  LOFII_EVENT_CACHE_LIMIT,
-  LOFII_EVENT_CURSOR_KEY,
-  LofiiService,
+  MCBOT_EVENT_CACHE_LIMIT,
+  MCBOT_EVENT_CURSOR_KEY,
+  McbotService,
   eventsAfterCursor,
   mapLofiiAlert,
-} from '../src/lofii/service.ts'
+} from '../src/mcbot/service.ts'
 import { cleanupDir, tempDataDir, testConfig, testDb } from './helpers.ts'
 
 const T0 = '2026-10-01T00:00:00.000Z'
@@ -20,7 +20,7 @@ function isoTick(index: number): string {
   return new Date(Date.parse(T0) + index * 1000).toISOString()
 }
 
-function ev(id: string, type: string, tick: number, data: unknown = {}): LofiiEvent {
+function ev(id: string, type: string, tick: number, data: unknown = {}): McbotEvent {
   return { id, type, ts: isoTick(tick), data }
 }
 
@@ -51,7 +51,7 @@ interface ServiceFixture {
   dir: string
   db: ReturnType<typeof testDb>
   config: Config
-  service: LofiiService
+  service: McbotService
   clock: { now: () => Date; set: (iso: string) => void; advance: (ms: number) => void }
   recordCalls: ExternalAlertInput[]
   calls: { url: string; init: RequestInit }[]
@@ -62,11 +62,11 @@ interface ServiceFixture {
 function serviceFixture(options: FixtureOptions = {}): ServiceFixture {
   const dir = tempDataDir()
   const config = testConfig(dir, {
-    lofiiEnabled: true,
-    lofiiReadToken: 'read-token',
-    lofiiControlToken: 'control-token',
-    lofiiTimeoutMs: 500,
-    lofiiPollMs: 5000,
+    mcbotEnabled: true,
+    mcbotReadToken: 'read-token',
+    mcbotControlToken: 'control-token',
+    mcbotTimeoutMs: 500,
+    mcbotPollMs: 5000,
     ...options.config,
   })
   const db = testDb(dir)
@@ -95,14 +95,14 @@ function serviceFixture(options: FixtureOptions = {}): ServiceFixture {
     return handler(new URL(url), init ?? {})
   }) as typeof fetch
   const logs: { level: string; message: string; detail?: Record<string, unknown> }[] = []
-  const client = new LofiiClient({
-    baseUrl: config.lofiiUrl,
-    readToken: config.lofiiReadToken,
-    controlToken: config.lofiiControlToken,
-    timeoutMs: config.lofiiTimeoutMs,
+  const client = new McbotClient({
+    baseUrl: config.mcbotUrl,
+    readToken: config.mcbotReadToken,
+    controlToken: config.mcbotControlToken,
+    timeoutMs: config.mcbotTimeoutMs,
     fetch: impl,
   })
-  const service = new LofiiService({
+  const service = new McbotService({
     db,
     config,
     alerts: { recordExternal },
@@ -128,7 +128,7 @@ function serviceFixture(options: FixtureOptions = {}): ServiceFixture {
 }
 
 function cursor(db: ReturnType<typeof testDb>): { bootId: string; lastEventId: string | null; lastTs: string | null } | null {
-  const raw = getMeta(db, LOFII_EVENT_CURSOR_KEY)
+  const raw = getMeta(db, MCBOT_EVENT_CURSOR_KEY)
   return raw ? (JSON.parse(raw) as { bootId: string; lastEventId: string | null; lastTs: string | null }) : null
 }
 
@@ -223,7 +223,7 @@ test('事件缓存最多 100 条且 newest-first', async () => {
   })
   try {
     await fx.service.pollOnce()
-    assert.equal(fx.service.snapshot().events.length, LOFII_EVENT_CACHE_LIMIT)
+    assert.equal(fx.service.snapshot().events.length, MCBOT_EVENT_CACHE_LIMIT)
     assert.deepEqual(fx.service.snapshot().events.slice(0, 3).map((event) => event.id), ['b1-120', 'b1-119', 'b1-118'])
   } finally {
     fx.close()
@@ -249,11 +249,11 @@ test('轮询失败只降级 reachable/stale/error，保留旧 status/events', as
     fx.clock.advance(5000)
     const failed = await fx.service.pollOnce()
     assert.equal(failed.ok, false)
-    assert.equal(failed.error, 'lofii_unavailable')
+    assert.equal(failed.error, 'mcbot_unavailable')
     const snapshot = fx.service.snapshot()
     assert.equal(snapshot.reachable, false)
     assert.equal(snapshot.stale, false)
-    assert.equal(snapshot.error, 'lofii_unavailable')
+    assert.equal(snapshot.error, 'mcbot_unavailable')
     assert.deepEqual(snapshot.status, before.status, '失败不应清空旧状态快照')
     assert.deepEqual(snapshot.events.map((event) => event.id), ['b1-1'], '失败不应清空旧事件缓存')
     assert.equal(snapshot.version, '0.6.0')
@@ -295,7 +295,7 @@ test('/events/recent 404：eventsSupported=false 但 /status 仍可用，contrac
 })
 
 test('空 ring 基线：首轮无事件写空基线，之后第一条例告警正常处理', async () => {
-  let events: LofiiEvent[] = []
+  let events: McbotEvent[] = []
   const fx = serviceFixture({
     handler: handlerFor({
       recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
@@ -309,7 +309,7 @@ test('空 ring 基线：首轮无事件写空基线，之后第一条例告警�
     events = [ev('b1-1', 'alert', 1, { type: 'low_health', message: '血量偏低' })]
     await fx.service.pollOnce()
     assert.equal(fx.recordCalls.length, 1, '空 ring 基线之后的首条告警不应被吞掉')
-    assert.equal(fx.recordCalls[0]?.event, 'lofii_low_health')
+    assert.equal(fx.recordCalls[0]?.event, 'mcbot_low_health')
     assert.equal(cursor(fx.db)?.lastEventId, 'b1-1')
   } finally {
     fx.close()
@@ -356,7 +356,7 @@ test('游标：bootId 变化只重建基线，不重放旧 ring 告警', async (
     assert.equal(fx.recordCalls.length, 0, '首次只建立基线')
     assert.equal(cursor(fx.db)?.lastEventId, 'b1-2')
 
-    // Lofii 重启：bootId 变化，ring 内同类型旧告警不得补发。
+    // mcbot 重启：bootId 变化，ring 内同类型旧告警不得补发。
     boot = 'b2'
     events = [
       ev('b2-1', 'alert', 3, { type: 'low_health' }),
@@ -370,7 +370,7 @@ test('游标：bootId 变化只重建基线，不重放旧 ring 告警', async (
     events = [...events, ev('b2-3', 'alert', 5, { type: 'task_failed', message: '任务失败' })]
     await fx.service.pollOnce()
     assert.equal(fx.recordCalls.length, 1)
-    assert.equal(fx.recordCalls[0]?.event, 'lofii_task_failed')
+    assert.equal(fx.recordCalls[0]?.event, 'mcbot_task_failed')
     assert.equal(cursor(fx.db)?.lastEventId, 'b2-3')
   } finally {
     fx.close()
@@ -378,7 +378,7 @@ test('游标：bootId 变化只重建基线，不重放旧 ring 告警', async (
 })
 
 test('游标去重：只处理游标之后的 alert；重复窗口不重复写入', async () => {
-  let events: LofiiEvent[] = [ev('b1-1', 'alert', 1, { type: 'low_health' }), ev('b1-2', 'task', 2)]
+  let events: McbotEvent[] = [ev('b1-1', 'alert', 1, { type: 'low_health' }), ev('b1-2', 'task', 2)]
   const fx = serviceFixture({
     handler: handlerFor({
       recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
@@ -397,7 +397,7 @@ test('游标去重：只处理游标之后的 alert；重复窗口不重复写�
     ]
     await fx.service.pollOnce()
     assert.equal(fx.recordCalls.length, 1)
-    assert.equal(fx.recordCalls[0]?.event, 'lofii_chest_full')
+    assert.equal(fx.recordCalls[0]?.event, 'mcbot_chest_full')
     assert.equal(cursor(fx.db)?.lastEventId, 'b1-4')
 
     // 同一窗口再轮询：cursor 之后无新事件，不重复。
@@ -408,13 +408,13 @@ test('游标去重：只处理游标之后的 alert；重复窗口不重复写�
     events = [ev('b1-4', 'task', 4), ev('b1-5', 'alert', 5, { type: 'disconnected' })]
     await fx.service.pollOnce()
     assert.equal(fx.recordCalls.length, 2)
-    assert.equal(fx.recordCalls[1]?.event, 'lofii_disconnected')
+    assert.equal(fx.recordCalls[1]?.event, 'mcbot_disconnected')
   } finally {
     fx.close()
   }
 })
 
-test('告警映射：5 种已知类型 + 未知类型，details 含 source/lofiiEventId/lofiiType 且被清洗', async () => {
+test('告警映射：5 种已知类型 + 未知类型，details 含 source/mcbotEventId/mcbotType 且被清洗', async () => {
   const fx = serviceFixture({
     handler: handlerFor({
       recent: () =>
@@ -444,7 +444,7 @@ test('告警映射：5 种已知类型 + 未知类型，details 含 source/lofii
     // 建立基线后再来一轮新事件，验证映射（先推进 cursor 到 b1-0，避免首次基线吞掉）。
     setMeta(
       fx.db,
-      LOFII_EVENT_CURSOR_KEY,
+      MCBOT_EVENT_CURSOR_KEY,
       JSON.stringify({ bootId: 'b1', lastEventId: 'b1-0', lastTs: isoTick(0) }),
     )
     await fx.service.pollOnce()
@@ -452,21 +452,21 @@ test('告警映射：5 种已知类型 + 未知类型，details 含 source/lofii
     assert.deepEqual(
       fx.recordCalls.map((input) => `${input.event}:${input.severity}`),
       [
-        'lofii_low_health:warning',
-        'lofii_task_failed:critical',
-        'lofii_disconnected:critical',
-        'lofii_chest_full:warning',
-        'lofii_defense_retreat:warning',
-        'lofii_alert:critical',
+        'mcbot_low_health:warning',
+        'mcbot_task_failed:critical',
+        'mcbot_disconnected:critical',
+        'mcbot_chest_full:warning',
+        'mcbot_defense_retreat:warning',
+        'mcbot_alert:critical',
       ],
     )
     assert.equal(fx.recordCalls[0]?.message, '血量 8/20')
-    assert.equal(fx.recordCalls[0]?.details.source, 'lofii')
-    assert.equal(fx.recordCalls[0]?.details.lofiiEventId, 'b1-1')
-    assert.equal(fx.recordCalls[0]?.details.lofiiType, 'low_health')
+    assert.equal(fx.recordCalls[0]?.details.source, 'mcbot')
+    assert.equal(fx.recordCalls[0]?.details.mcbotEventId, 'b1-1')
+    assert.equal(fx.recordCalls[0]?.details.mcbotType, 'low_health')
     assert.equal(fx.recordCalls[0]?.details.health, 8)
     const unknown = fx.recordCalls[5]?.details
-    assert.equal(unknown?.lofiiType, 'gremlin')
+    assert.equal(unknown?.mcbotType, 'gremlin')
     assert.equal(unknown?.ok, true)
     assert.equal(String(unknown?.long).length, 300, '超长字符串应截断')
     assert.deepEqual(unknown?.nested, { deep: null }, '超过深度限制的内层对象降级为 null')
@@ -476,15 +476,15 @@ test('告警映射：5 种已知类型 + 未知类型，details 含 source/lofii
   }
 })
 
-test('LOFII_ALERTS_ENABLED=false：推进游标但不写告警；重新启用后不补发旧告警', async () => {
-  let events: LofiiEvent[] = [ev('b1-1', 'alert', 1, { type: 'low_health' })]
+test('MCBOT_ALERTS_ENABLED=false：推进游标但不写告警；重新启用后不补发旧告警', async () => {
+  let events: McbotEvent[] = [ev('b1-1', 'alert', 1, { type: 'low_health' })]
   const fx = serviceFixture({
-    config: { lofiiAlertsEnabled: false },
+    config: { mcbotAlertsEnabled: false },
     handler: handlerFor({
       recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: events.at(-1)?.id ?? null, events }),
     }),
   })
-  let second: LofiiService | null = null
+  let second: McbotService | null = null
   try {
     await fx.service.pollOnce() // 基线
     events = [...events, ev('b1-2', 'alert', 2, { type: 'task_failed' })]
@@ -494,16 +494,16 @@ test('LOFII_ALERTS_ENABLED=false：推进游标但不写告警；重新启用后
     assert.equal(cursor(fx.db)?.lastEventId, 'b1-2', '告警关闭仍推进游标')
 
     // 用同一 DB 新建启用告警的服务：旧告警已越过游标，不得补发。
-    const enabledConfig = { ...fx.config, lofiiAlertsEnabled: true }
-    second = new LofiiService({
+    const enabledConfig = { ...fx.config, mcbotAlertsEnabled: true }
+    second = new McbotService({
       db: fx.db,
       config: enabledConfig,
       alerts: { recordExternal: (input) => (fx.recordCalls.push(input), fx.recordCalls.length) },
-      client: new LofiiClient({
-        baseUrl: fx.config.lofiiUrl,
-        readToken: fx.config.lofiiReadToken,
-        controlToken: fx.config.lofiiControlToken,
-        timeoutMs: fx.config.lofiiTimeoutMs,
+      client: new McbotClient({
+        baseUrl: fx.config.mcbotUrl,
+        readToken: fx.config.mcbotReadToken,
+        controlToken: fx.config.mcbotControlToken,
+        timeoutMs: fx.config.mcbotTimeoutMs,
         fetch: (async (input: string | URL | Request) => {
           const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
           if (url.pathname === '/status') return json(statusBody())
@@ -518,7 +518,7 @@ test('LOFII_ALERTS_ENABLED=false：推进游标但不写告警；重新启用后
     events = [...events, ev('b1-3', 'alert', 3, { type: 'disconnected' })]
     await second.pollOnce()
     assert.equal(fx.recordCalls.length, 1)
-    assert.equal(fx.recordCalls[0]?.event, 'lofii_disconnected')
+    assert.equal(fx.recordCalls[0]?.event, 'mcbot_disconnected')
   } finally {
     second?.stop()
     fx.close()
@@ -564,15 +564,15 @@ test('控制代理：控制成功后立即刷新；只读模式只允许 /say；
   }
 })
 
-test('只读模式（无控制 Token）：控制方法抛 lofii_control_disabled，/say 仍可用并刷新', async () => {
+test('只读模式（无控制 Token）：控制方法抛 mcbot_control_disabled，/say 仍可用并刷新', async () => {
   const fx = serviceFixture({
-    config: { lofiiControlToken: '' },
+    config: { mcbotControlToken: '' },
     handler: handlerFor({ recent: () => json({ contractVersion: 1, bootId: 'b1', lastEventId: null, events: [] }) }),
   })
   try {
     await assert.rejects(
       () => fx.service.startTask('fishing'),
-      (error: unknown) => (error as { code?: string }).code === 'lofii_control_disabled',
+      (error: unknown) => (error as { code?: string }).code === 'mcbot_control_disabled',
     )
     assert.equal(fx.calls.length, 0)
     assert.equal(fx.service.snapshot().controlEnabled, false)
@@ -603,13 +603,13 @@ test('start/stop：空操作幂等、启动即轮询、停止后不再定时轮�
   }
 
   // 禁用状态：start 不建定时器、pollOnce 跳过、snapshot 为空壳。
-  const disabled = serviceFixture({ config: { lofiiEnabled: false } })
+  const disabled = serviceFixture({ config: { mcbotEnabled: false } })
   try {
     disabled.service.start()
     disabled.service.stop()
     const result = await disabled.service.pollOnce()
     assert.equal(result.skipped, true)
-    assert.equal(result.error, 'lofii_disabled')
+    assert.equal(result.error, 'mcbot_disabled')
     const snapshot = disabled.service.snapshot()
     assert.equal(snapshot.enabled, false)
     assert.equal(snapshot.eventsSupported, false)
@@ -633,7 +633,7 @@ test('meta 中游标损坏：按无游标处理（基线，不重放旧告警）
     }),
   })
   try {
-    setMeta(fx.db, LOFII_EVENT_CURSOR_KEY, '{broken json')
+    setMeta(fx.db, MCBOT_EVENT_CURSOR_KEY, '{broken json')
     await fx.service.pollOnce()
     assert.equal(fx.recordCalls.length, 0)
     assert.equal(cursor(fx.db)?.lastEventId, 'b1-1')

@@ -31,13 +31,13 @@ function setup(admin = false) {
   return fixture
 }
 
-test('v0.5.9：普通 Chat 使用 lofii 角色卡、安全边界与长期记忆，审计不含记忆正文', async () => {
+test('v0.5.9：普通 Chat 使用 mcbot 角色卡、安全边界与长期记忆，审计不含记忆正文', async () => {
   const fixture = setup()
   try {
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'chat-1', content: '今天有点累' }))
     assert.equal(fixture.aiCalls.length, 1)
     const prompt = fixture.aiCalls[0]?.prompt ?? ''
-    assert.ok(prompt.includes('[角色卡：lofii]'))
+    assert.ok(prompt.includes('[角色卡：mcbot]'))
     assert.ok(prompt.includes(SAFETY_BOUNDARY))
     assert.ok(prompt.includes('用户喜欢深色模式'))
     assert.match(prompt, /\[用户消息\]\n今天有点累$/)
@@ -50,7 +50,7 @@ test('v0.5.9：普通 Chat 使用 lofii 角色卡、安全边界与长期记忆�
   }
 })
 
-test('v0.5.9：个人角色卡覆盖默认 lofii', async () => {
+test('v0.5.9：个人角色卡覆盖默认 mcbot', async () => {
   const fixture = setup()
   try {
     fixture.db
@@ -63,7 +63,7 @@ test('v0.5.9：个人角色卡覆盖默认 lofii', async () => {
     const prompt = fixture.aiCalls[0]?.prompt ?? ''
     assert.ok(prompt.includes('[角色卡：猫娘]'))
     assert.ok(prompt.includes('说话简短，偶尔用喵。'))
-    assert.equal(prompt.includes('[角色卡：lofii]'), false)
+    assert.equal(prompt.includes('[角色卡：mcbot]'), false)
     assert.ok(prompt.includes(SAFETY_BOUNDARY))
   } finally {
     fixture.cleanup()

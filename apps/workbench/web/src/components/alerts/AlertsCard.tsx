@@ -54,13 +54,13 @@ const EVENT_LABELS: Record<string, string> = {
   offsite_failed: '异地副本失败',
   backup_encryption_missing: '备份加密公钥缺失',
   backup_encryption_failed: '备份加密失败',
-  // v0.8.0：Lofii 事件告警（事件状态 event 只记录，不参与活跃告警）
-  lofii_low_health: 'Lofii 血量过低',
-  lofii_task_failed: 'Lofii 任务失败',
-  lofii_disconnected: 'Lofii 断线',
-  lofii_chest_full: 'Lofii 箱子已满',
-  lofii_defense_retreat: 'Lofii 防御撤退',
-  lofii_alert: 'Lofii 告警',
+  // v0.8.0：mcbot 事件告警（事件状态 event 只记录，不参与活跃告警）
+  mcbot_low_health: 'mcbot 血量过低',
+  mcbot_task_failed: 'mcbot 任务失败',
+  mcbot_disconnected: 'mcbot 断线',
+  mcbot_chest_full: 'mcbot 箱子已满',
+  mcbot_defense_retreat: 'mcbot 防御撤退',
+  mcbot_alert: 'mcbot 告警',
 }
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -81,7 +81,7 @@ const STATUS_LABELS: Record<string, string> = {
   normal: '正常',
   ok: '正常',
   unknown: '未知',
-  /** v0.8.0：Lofii 事件告警只记录状态，不代表当前活跃告警。 */
+  /** v0.8.0：mcbot 事件告警只记录状态，不代表当前活跃告警。 */
   event: '已记录',
 }
 
@@ -110,13 +110,13 @@ const KNOWN_EVENTS = [
   'drill_stale',
   'offsite_overdue',
   'backup_encryption_missing',
-  // v0.8.0：Lofii 事件告警
-  'lofii_low_health',
-  'lofii_task_failed',
-  'lofii_disconnected',
-  'lofii_chest_full',
-  'lofii_defense_retreat',
-  'lofii_alert',
+  // v0.8.0：mcbot 事件告警
+  'mcbot_low_health',
+  'mcbot_task_failed',
+  'mcbot_disconnected',
+  'mcbot_chest_full',
+  'mcbot_defense_retreat',
+  'mcbot_alert',
 ]
 
 function severityLabel(severity: string): string {

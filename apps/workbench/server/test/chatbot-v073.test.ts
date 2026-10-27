@@ -44,24 +44,24 @@ test('v0.7.3：文档模式首轮含角色卡正文，后续轮与记忆正文�
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'v073-1', content: '今天有点累' }))
     assert.equal(fixture.aiCalls.length, 1)
     const first = fixture.aiCalls[0]!
-    assert.match(first.initialPrompt ?? '', /\[角色卡：lofii\]/)
+    assert.match(first.initialPrompt ?? '', /\[角色卡：mcbot\]/)
     assert.match(first.initialPrompt ?? '', /上下文文档/)
-    assert.equal(first.prompt.includes('[角色卡：lofii]'), false, 'followUp 不含角色卡正文')
+    assert.equal(first.prompt.includes('[角色卡：mcbot]'), false, 'followUp 不含角色卡正文')
     assert.equal(first.prompt.includes('喜欢红茶'), false, 'followUp 不含记忆正文')
     assert.match(lastMessageText(fixture), /AI 回复/)
 
     const dir = scopeDir(fixture, USER, USER)
     const role = readFileSync(join(dir, 'role.md'), 'utf8')
     const memory = readFileSync(join(dir, 'memory.md'), 'utf8')
-    assert.match(role, /\[角色卡：lofii\]/)
+    assert.match(role, /\[角色卡：mcbot\]/)
     assert.match(memory, /喜欢红茶/)
 
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'v073-2', content: '第二句话' }))
     assert.equal(fixture.aiCalls.length, 2)
     const second = fixture.aiCalls[1]!
-    assert.equal(second.prompt.includes('[角色卡：lofii]'), false)
+    assert.equal(second.prompt.includes('[角色卡：mcbot]'), false)
     assert.equal(second.prompt.includes('喜欢红茶'), false)
-    assert.ok(second.prompt.includes('角色：lofii'))
+    assert.ok(second.prompt.includes('角色：mcbot'))
     assert.equal(second.prompt.includes(join(dir, 'role.md')), true)
 
     const audit = fixture.audits.filter((item) => item.action === 'chatbot.ai.chat').at(-1)
@@ -108,7 +108,7 @@ test('v0.7.3：/role set 重置会话并更新角色文档', async () => {
   try {
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'v073-role-1', content: '你好' }))
     const dir = scopeDir(fixture, USER, USER)
-    assert.match(readFileSync(join(dir, 'role.md'), 'utf8'), /\[角色卡：lofii\]/)
+    assert.match(readFileSync(join(dir, 'role.md'), 'utf8'), /\[角色卡：mcbot\]/)
 
     await sendWebhook(
       fixture,
@@ -233,7 +233,7 @@ test('v0.7.3：flag=false 时保持旧内联提示词（角色卡/记忆正文�
     seedMemory(fixture)
     await sendWebhook(fixture, c2cWebhook(fixture.appSecret, { id: 'v073-inline-1', content: '你好' }))
     const call = fixture.aiCalls[0]!
-    assert.match(call.prompt, /\[角色卡：lofii\]/)
+    assert.match(call.prompt, /\[角色卡：mcbot\]/)
     assert.match(call.prompt, /喜欢红茶/)
     const audit = fixture.audits.filter((item) => item.action === 'chatbot.ai.chat').at(-1)
     assert.equal(audit?.detail?.context, 'inline')

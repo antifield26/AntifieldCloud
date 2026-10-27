@@ -1,4 +1,4 @@
-/** Lofii 路由与接线测试：认证/CSRF/校验/限流/错误映射/审计/历史透传/version 字段。 */
+/** mcbot 路由与接线测试：认证/CSRF/校验/限流/错误映射/审计/历史透传/version 字段。 */
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { FastifyInstance } from 'fastify'
@@ -6,11 +6,11 @@ import type { Config } from '../src/config.ts'
 import { buildApp } from '../src/app.ts'
 import { DashboardService } from '../src/dashboard/service.ts'
 import { FileService } from '../src/files/service.ts'
-import { LofiiClient } from '../src/lofii/client.ts'
-import { LofiiService } from '../src/lofii/service.ts'
+import { McbotClient } from '../src/mcbot/client.ts'
+import { McbotService } from '../src/mcbot/service.ts'
 import { MinecraftService } from '../src/mc/service.ts'
 import { registerDashboardRoutes } from '../src/http/routes/dashboard.ts'
-import { registerLofiiRoutes } from '../src/http/routes/lofii.ts'
+import { registerLofiiRoutes } from '../src/http/routes/mcbot.ts'
 import { createSession } from '../src/auth/sessions.ts'
 import { cleanupDir, seedAdmin, tempDataDir, testConfig, testDb } from './helpers.ts'
 import { authHeaders, createAuthedApp, csrfHeadersOnly, phase2Fixture, type Phase2Fixture } from './phase2-fixtures.ts'
@@ -50,21 +50,21 @@ function defaultHandler(url: URL): Response {
   return json({ error: 'not_found', message: 'not found' }, 404)
 }
 
-interface LofiiAppFixture {
+interface McbotAppFixture {
   fixture: Phase2Fixture
   app: FastifyInstance
-  service: LofiiService
+  service: McbotService
   calls: { url: URL; init: RequestInit }[]
   close: () => Promise<void>
 }
 
-async function makeLofiiApp(options: { config?: Partial<Config>; handler?: Handler } = {}): Promise<LofiiAppFixture> {
+async function makeLofiiApp(options: { config?: Partial<Config>; handler?: Handler } = {}): Promise<McbotAppFixture> {
   const fixture = phase2Fixture({
-    lofiiEnabled: true,
-    lofiiReadToken: 'read-token',
-    lofiiControlToken: 'control-token',
-    lofiiPollMs: 60_000,
-    lofiiTimeoutMs: 500,
+    mcbotEnabled: true,
+    mcbotReadToken: 'read-token',
+    mcbotControlToken: 'control-token',
+    mcbotPollMs: 60_000,
+    mcbotTimeoutMs: 500,
     ...options.config,
   })
   const calls: { url: URL; init: RequestInit }[] = []
@@ -74,14 +74,14 @@ async function makeLofiiApp(options: { config?: Partial<Config>; handler?: Handl
     calls.push({ url, init: init ?? {} })
     return handler(url, init ?? {})
   }) as typeof fetch
-  const client = new LofiiClient({
-    baseUrl: fixture.config.lofiiUrl,
-    readToken: fixture.config.lofiiReadToken,
-    controlToken: fixture.config.lofiiControlToken,
-    timeoutMs: fixture.config.lofiiTimeoutMs,
+  const client = new McbotClient({
+    baseUrl: fixture.config.mcbotUrl,
+    readToken: fixture.config.mcbotReadToken,
+    controlToken: fixture.config.mcbotControlToken,
+    timeoutMs: fixture.config.mcbotTimeoutMs,
     fetch: impl,
   })
-  const service = new LofiiService({
+  const service = new McbotService({
     db: fixture.db,
     config: fixture.config,
     alerts: { recordExternal: () => 1 },
@@ -118,13 +118,13 @@ function auditRows(db: Phase2Fixture['db']): { action: string; target: string | 
 
 const SENSITIVE = ['read-token', 'control-token', '127.0.0.1:3010']
 
-test('GET /api/lofii/status：登录校验、快照字段（含 eventsSupported）与禁用降级', async () => {
+test('GET /api/mcbot/status：登录校验、快照字段（含 eventsSupported）与禁用降级', async () => {
   const fx = await makeLofiiApp()
   try {
-    const anonymous = await fx.app.inject({ method: 'GET', url: '/api/lofii/status' })
+    const anonymous = await fx.app.inject({ method: 'GET', url: '/api/mcbot/status' })
     assert.equal(anonymous.statusCode, 401)
 
-    const before = await fx.app.inject({ method: 'GET', url: '/api/lofii/status', headers: authHeaders() })
+    const before = await fx.app.inject({ method: 'GET', url: '/api/mcbot/status', headers: authHeaders() })
     assert.equal(before.statusCode, 200)
     const initial = before.json() as Record<string, unknown>
     assert.equal(initial.enabled, true)
@@ -136,7 +136,7 @@ test('GET /api/lofii/status：登录校验、快照字段（含 eventsSupported�
     assert.deepEqual(initial.events, [])
 
     await fx.service.pollOnce()
-    const after = await fx.app.inject({ method: 'GET', url: '/api/lofii/status', headers: authHeaders() })
+    const after = await fx.app.inject({ method: 'GET', url: '/api/mcbot/status', headers: authHeaders() })
     const body = after.json() as Record<string, unknown>
     assert.equal(body.reachable, true)
     assert.equal(body.stale, false)
@@ -151,9 +151,9 @@ test('GET /api/lofii/status：登录校验、快照字段（含 eventsSupported�
     await fx.close()
   }
 
-  const disabled = await makeLofiiApp({ config: { lofiiEnabled: false } })
+  const disabled = await makeLofiiApp({ config: { mcbotEnabled: false } })
   try {
-    const status = await disabled.app.inject({ method: 'GET', url: '/api/lofii/status', headers: authHeaders() })
+    const status = await disabled.app.inject({ method: 'GET', url: '/api/mcbot/status', headers: authHeaders() })
     assert.equal(status.statusCode, 200)
     const body = status.json() as Record<string, unknown>
     assert.equal(body.enabled, false)
@@ -163,15 +163,15 @@ test('GET /api/lofii/status：登录校验、快照字段（含 eventsSupported�
 
     const blocked = await disabled.app.inject({
       method: 'POST',
-      url: '/api/lofii/tasks/stop',
+      url: '/api/mcbot/tasks/stop',
       headers: authHeaders(),
     })
     assert.equal(blocked.statusCode, 503)
-    assert.equal(blocked.json().error.code, 'lofii_disabled')
+    assert.equal(blocked.json().error.code, 'mcbot_disabled')
 
-    const history = await disabled.app.inject({ method: 'GET', url: '/api/lofii/history', headers: authHeaders() })
+    const history = await disabled.app.inject({ method: 'GET', url: '/api/mcbot/history', headers: authHeaders() })
     assert.equal(history.statusCode, 503)
-    assert.equal(history.json().error.code, 'lofii_disabled')
+    assert.equal(history.json().error.code, 'mcbot_disabled')
   } finally {
     await disabled.close()
   }
@@ -182,7 +182,7 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
   try {
     const noCsrf = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/tasks',
+      url: '/api/mcbot/tasks',
       headers: csrfHeadersOnly(),
       payload: { name: 'fishing' },
     })
@@ -191,7 +191,7 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
 
     const started = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/tasks',
+      url: '/api/mcbot/tasks',
       headers: authHeaders(),
       payload: { name: 'fishing' },
     })
@@ -203,13 +203,13 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
     assert.equal((startBody.task as { name?: string }).name, 'fishing')
     assert.equal(authOf(fx.calls[0]!), 'Bearer control-token')
 
-    const stopped = await fx.app.inject({ method: 'POST', url: '/api/lofii/tasks/stop', headers: authHeaders() })
+    const stopped = await fx.app.inject({ method: 'POST', url: '/api/mcbot/tasks/stop', headers: authHeaders() })
     assert.equal(stopped.statusCode, 200)
     assert.equal(stopped.json().ok, true)
 
     const resumed = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/tasks/resume',
+      url: '/api/mcbot/tasks/resume',
       headers: authHeaders(),
       payload: { taskId: 'task-1' },
     })
@@ -218,7 +218,7 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
 
     const moved = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/move',
+      url: '/api/mcbot/move',
       headers: authHeaders(),
       payload: { action: 'come', target: 'Antifield' },
     })
@@ -228,7 +228,7 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
     const secret = '这是一条聊天正文'
     const said = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
       payload: { message: secret },
     })
@@ -240,12 +240,12 @@ test('控制路由：CSRF、上游字段保留、审计动作（不记 say 正�
 
     const rows = auditRows(fx.fixture.db)
     const actions = rows.map((row) => row.action)
-    assert.ok(actions.includes('lofii.task.start'))
-    assert.ok(actions.includes('lofii.task.stop'))
-    assert.ok(actions.includes('lofii.task.resume'))
-    assert.ok(actions.includes('lofii.move'))
-    assert.ok(actions.includes('lofii.say'))
-    const sayAudit = rows.find((row) => row.action === 'lofii.say')
+    assert.ok(actions.includes('mcbot.task.start'))
+    assert.ok(actions.includes('mcbot.task.stop'))
+    assert.ok(actions.includes('mcbot.task.resume'))
+    assert.ok(actions.includes('mcbot.move'))
+    assert.ok(actions.includes('mcbot.say'))
+    const sayAudit = rows.find((row) => row.action === 'mcbot.say')
     assert.deepEqual(JSON.parse(sayAudit?.detail_json ?? '{}'), { chars: secret.length })
     const serializedAudit = JSON.stringify(rows)
     assert.ok(!serializedAudit.includes(secret), '审计不得包含聊天正文')
@@ -262,7 +262,7 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
   try {
     const badName = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/tasks',
+      url: '/api/mcbot/tasks',
       headers: authHeaders(),
       payload: { name: 'cooking' },
     })
@@ -271,7 +271,7 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
 
     const badAction = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/move',
+      url: '/api/mcbot/move',
       headers: authHeaders(),
       payload: { action: 'teleport' },
     })
@@ -279,7 +279,7 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
 
     const badTaskId = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/tasks/resume',
+      url: '/api/mcbot/tasks/resume',
       headers: authHeaders(),
       payload: { taskId: 123 },
     })
@@ -288,7 +288,7 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
     for (const taskId of ['   ', 'a\u0000b', 'a b']) {
       const invalidTaskId = await fx.app.inject({
         method: 'POST',
-        url: '/api/lofii/tasks/resume',
+        url: '/api/mcbot/tasks/resume',
         headers: authHeaders(),
         payload: { taskId },
       })
@@ -297,7 +297,7 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
 
     const emptySay = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
       payload: { message: '   ' },
     })
@@ -305,7 +305,7 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
 
     const longSay = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
       payload: { message: 'x'.repeat(721) },
     })
@@ -313,7 +313,7 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
 
     const slashSay = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
       payload: { message: '/help' },
     })
@@ -323,16 +323,16 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
     // 关键回归：上游按 240 字符切行，第二行以 / 开头会变成命令；应用必须拒绝任意位置 /。
     const splitInjection = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
-      payload: { message: `${'a'.repeat(240)}/op Lofii` },
+      payload: { message: `${'a'.repeat(240)}/op mcbot` },
     })
     assert.equal(splitInjection.statusCode, 400)
     assert.equal(splitInjection.json().error.code, 'message_must_not_start_with_slash')
 
     const controlCharSay = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
       payload: { message: 'hello\u0000world' },
     })
@@ -341,21 +341,21 @@ test('参数校验：任务名/action/taskId/say 长度与 / 前缀、history ki
 
     const badKind = await fx.app.inject({
       method: 'GET',
-      url: '/api/lofii/history?kind=bogus',
+      url: '/api/mcbot/history?kind=bogus',
       headers: authHeaders(),
     })
     assert.equal(badKind.statusCode, 400)
 
     const badTime = await fx.app.inject({
       method: 'GET',
-      url: '/api/lofii/history?from=not-a-date',
+      url: '/api/mcbot/history?from=not-a-date',
       headers: authHeaders(),
     })
     assert.equal(badTime.statusCode, 400)
 
     const overLimit = await fx.app.inject({
       method: 'GET',
-      url: '/api/lofii/history?limit=9999',
+      url: '/api/mcbot/history?limit=9999',
       headers: authHeaders(),
     })
     assert.equal(overLimit.statusCode, 200)
@@ -386,7 +386,7 @@ test('history 原样透传上游响应 {kind,from,to,count,samples|alerts}', asy
     const to = '2026-10-02T00:00:00.000Z'
     const response = await fx.app.inject({
       method: 'GET',
-      url: `/api/lofii/history?kind=alerts&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=50`,
+      url: `/api/mcbot/history?kind=alerts&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&limit=50`,
       headers: authHeaders(),
     })
     assert.equal(response.statusCode, 200)
@@ -404,10 +404,10 @@ test('限流：控制 20/min/IP、say 10/min/IP，超限 429 rate_limited', asyn
   const fx = await makeLofiiApp()
   try {
     for (let index = 0; index < 20; index += 1) {
-      const response = await fx.app.inject({ method: 'POST', url: '/api/lofii/tasks/stop', headers: authHeaders() })
+      const response = await fx.app.inject({ method: 'POST', url: '/api/mcbot/tasks/stop', headers: authHeaders() })
       assert.equal(response.statusCode, 200, `第 ${index + 1} 次控制应放行`)
     }
-    const controlLimited = await fx.app.inject({ method: 'POST', url: '/api/lofii/tasks/stop', headers: authHeaders() })
+    const controlLimited = await fx.app.inject({ method: 'POST', url: '/api/mcbot/tasks/stop', headers: authHeaders() })
     assert.equal(controlLimited.statusCode, 429)
     assert.equal(controlLimited.json().error.code, 'rate_limited')
     assert.ok(controlLimited.headers['retry-after'])
@@ -415,7 +415,7 @@ test('限流：控制 20/min/IP、say 10/min/IP，超限 429 rate_limited', asyn
     for (let index = 0; index < 10; index += 1) {
       const response = await fx.app.inject({
         method: 'POST',
-        url: '/api/lofii/say',
+        url: '/api/mcbot/say',
         headers: authHeaders(),
         payload: { message: `hi ${index}` },
       })
@@ -423,7 +423,7 @@ test('限流：控制 20/min/IP、say 10/min/IP，超限 429 rate_limited', asyn
     }
     const sayLimited = await fx.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
       payload: { message: 'one too many' },
     })
@@ -454,7 +454,7 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
     async function postAndExpect(expectedStatus: number, expectedCode: string): Promise<Record<string, unknown>> {
       const response = await fx.app.inject({
         method: 'POST',
-        url: '/api/lofii/tasks/resume',
+        url: '/api/mcbot/tasks/resume',
         headers: authHeaders(),
         payload: {},
       })
@@ -468,22 +468,22 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
     }
 
     mode = 'unavailable'
-    await postAndExpect(503, 'lofii_unavailable')
+    await postAndExpect(503, 'mcbot_unavailable')
     mode = 'auth'
-    await postAndExpect(502, 'lofii_auth_failed')
+    await postAndExpect(502, 'mcbot_auth_failed')
     mode = 'upstream'
-    await postAndExpect(502, 'lofii_upstream_error')
+    await postAndExpect(502, 'mcbot_upstream_error')
     mode = 'resume'
-    await postAndExpect(409, 'lofii_resume_pending')
+    await postAndExpect(409, 'mcbot_resume_pending')
     mode = 'bad'
-    await postAndExpect(400, 'lofii_invalid_request')
+    await postAndExpect(400, 'mcbot_invalid_request')
 
-    // 失败也必须留下 lofii.control_failed 审计，且不带敏感信息。
-    const failures = auditRows(fx.fixture.db).filter((row) => row.action === 'lofii.control_failed')
+    // 失败也必须留下 mcbot.control_failed 审计，且不带敏感信息。
+    const failures = auditRows(fx.fixture.db).filter((row) => row.action === 'mcbot.control_failed')
     assert.equal(failures.length, 5)
     assert.deepEqual(
       failures.map((row) => JSON.parse(row.detail_json ?? '{}').code),
-      ['lofii_unavailable', 'lofii_auth_failed', 'lofii_upstream_error', 'lofii_resume_pending', 'lofii_invalid_request'],
+      ['mcbot_unavailable', 'mcbot_auth_failed', 'mcbot_upstream_error', 'mcbot_resume_pending', 'mcbot_invalid_request'],
     )
     for (const value of SENSITIVE) {
       assert.ok(!JSON.stringify(failures).includes(value))
@@ -492,36 +492,36 @@ test('错误映射：unavailable 503 / auth_failed 502 / upstream_error 502 / �
     await fx.close()
   }
 
-  // 只读模式（无控制 Token）：任务/移动/聊天写操作均 503 lofii_control_disabled。
-  const readonly = await makeLofiiApp({ config: { lofiiControlToken: '' } })
+  // 只读模式（无控制 Token）：任务/移动/聊天写操作均 503 mcbot_control_disabled。
+  const readonly = await makeLofiiApp({ config: { mcbotControlToken: '' } })
   try {
     const blocked = await readonly.app.inject({
       method: 'POST',
-      url: '/api/lofii/tasks/stop',
+      url: '/api/mcbot/tasks/stop',
       headers: authHeaders(),
     })
     assert.equal(blocked.statusCode, 503)
-    assert.equal(blocked.json().error.code, 'lofii_control_disabled')
+    assert.equal(blocked.json().error.code, 'mcbot_control_disabled')
 
     const say = await readonly.app.inject({
       method: 'POST',
-      url: '/api/lofii/say',
+      url: '/api/mcbot/say',
       headers: authHeaders(),
       payload: { message: '只读不能说话' },
     })
     assert.equal(say.statusCode, 503)
-    assert.equal(say.json().error.code, 'lofii_control_disabled')
+    assert.equal(say.json().error.code, 'mcbot_control_disabled')
   } finally {
     await readonly.close()
   }
 })
 
-test('/api/version 增加 lofiiEnabled/lofiiControlEnabled', async () => {
+test('/api/version 增加 mcbotEnabled/mcbotControlEnabled', async () => {
   const dir = tempDataDir()
   const config = testConfig(dir, {
-    lofiiEnabled: true,
-    lofiiReadToken: 'read-token',
-    lofiiControlToken: 'control-token',
+    mcbotEnabled: true,
+    mcbotReadToken: 'read-token',
+    mcbotControlToken: 'control-token',
   })
   const db = testDb(dir)
   try {
@@ -535,8 +535,8 @@ test('/api/version 增加 lofiiEnabled/lofiiControlEnabled', async () => {
       const response = await app.inject({ method: 'GET', url: '/api/version', headers: authHeaders() })
       assert.equal(response.statusCode, 200)
       const body = response.json() as Record<string, unknown>
-      assert.equal(body.lofiiEnabled, true)
-      assert.equal(body.lofiiControlEnabled, true)
+      assert.equal(body.mcbotEnabled, true)
+      assert.equal(body.mcbotControlEnabled, true)
     } finally {
       await app.close()
     }
@@ -546,27 +546,27 @@ test('/api/version 增加 lofiiEnabled/lofiiControlEnabled', async () => {
   }
 })
 
-test('app.ts 接线：AppContext.lofii / startLofii / 关闭无悬挂定时器，API 可用', async () => {
+test('app.ts 接线：AppContext.mcbot / startLofii / 关闭无悬挂定时器，API 可用', async () => {
   const dir = tempDataDir()
-  const config = testConfig(dir, { lofiiEnabled: false })
+  const config = testConfig(dir, { mcbotEnabled: false })
   const db = testDb(dir)
   const seeded = await seedAdmin(db)
   const context = await buildApp(config, db)
   try {
-    assert.equal(context.lofii.snapshot().enabled, false)
+    assert.equal(context.mcbot.snapshot().enabled, false)
     context.startLofii()
     context.startLofii()
     const session = createSession(db, seeded.userId, 'csrf-version', 7, '127.0.0.1', 'test')
     const headers = { cookie: `af_session=${session.token}` }
 
-    const status = await context.app.inject({ method: 'GET', url: '/api/lofii/status', headers })
+    const status = await context.app.inject({ method: 'GET', url: '/api/mcbot/status', headers })
     assert.equal(status.statusCode, 200)
     assert.equal(status.json().enabled, false)
 
     const version = await context.app.inject({ method: 'GET', url: '/api/version', headers })
     assert.equal(version.statusCode, 200)
-    assert.equal(version.json().lofiiEnabled, false)
-    assert.equal(version.json().lofiiControlEnabled, false)
+    assert.equal(version.json().mcbotEnabled, false)
+    assert.equal(version.json().mcbotControlEnabled, false)
   } finally {
     await context.app.close()
     db.close()

@@ -2,17 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
-  LofiiHistory,
-  LofiiHistoryAlert,
-  LofiiHistoryQuery,
-  LofiiHistorySample,
-  LofiiSnapshot,
-  LofiiStatus,
-  LofiiTask,
-  LofiiTaskProgress,
+  McbotHistory,
+  McbotHistoryAlert,
+  McbotHistoryQuery,
+  McbotHistorySample,
+  McbotSnapshot,
+  McbotStatus,
+  McbotTask,
+  McbotTaskProgress,
 } from '../../api/types'
 import { ToastProvider } from '../Toast'
-import { LofiiPanel } from './LofiiPanel'
+import { McbotPanel } from './McbotPanel'
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(),
@@ -26,7 +26,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../../api/client', () => ({
   api: {
-    lofii: {
+    mcbot: {
       status: mocks.status,
       history: mocks.history,
       startTask: mocks.startTask,
@@ -51,7 +51,7 @@ vi.mock('../../api/client', () => ({
     Boolean(error && typeof error === 'object' && (error as { name?: unknown }).name === 'AbortError'),
 }))
 
-function progress(overrides: Partial<LofiiTaskProgress> = {}): LofiiTaskProgress {
+function progress(overrides: Partial<McbotTaskProgress> = {}): McbotTaskProgress {
   return {
     fishCaught: 0,
     wheatHarvested: 0,
@@ -76,7 +76,7 @@ function progress(overrides: Partial<LofiiTaskProgress> = {}): LofiiTaskProgress
   }
 }
 
-function idleTask(overrides: Partial<LofiiTask> = {}): LofiiTask {
+function idleTask(overrides: Partial<McbotTask> = {}): McbotTask {
   return {
     enabled: true,
     active: false,
@@ -93,7 +93,7 @@ function idleTask(overrides: Partial<LofiiTask> = {}): LofiiTask {
   }
 }
 
-function activeTask(overrides: Partial<LofiiTask> = {}): LofiiTask {
+function activeTask(overrides: Partial<McbotTask> = {}): McbotTask {
   return idleTask({
     active: true,
     name: 'fishing',
@@ -105,14 +105,14 @@ function activeTask(overrides: Partial<LofiiTask> = {}): LofiiTask {
   })
 }
 
-function lofiiStatus(overrides: Partial<LofiiStatus> = {}): LofiiStatus {
+function mcbotStatus(overrides: Partial<McbotStatus> = {}): McbotStatus {
   return {
     version: '0.6.0',
     uptimeSec: 3600,
     state: 'connected',
     minecraft: {
       connected: true,
-      username: 'lofii',
+      username: 'mcbot',
       host: '127.0.0.1',
       port: 25565,
       version: '26.1',
@@ -155,8 +155,8 @@ function lofiiStatus(overrides: Partial<LofiiStatus> = {}): LofiiStatus {
       updatedAt: '2026-10-27T07:59:00.000Z',
       lastError: null,
       tps: { one: 19.6, five: 19.8, fifteen: 19.9 },
-      online: { count: 2, max: 6, players: ['Antifield', 'lofii'] },
-      whitelist: { count: 6, names: ['lofii', 'Antifield'] },
+      online: { count: 2, max: 6, players: ['Antifield', 'mcbot'] },
+      whitelist: { count: 6, names: ['mcbot', 'Antifield'] },
       time: { ticks: 21461, label: '03:27' },
       backup: { status: 'unknown' },
     },
@@ -164,7 +164,7 @@ function lofiiStatus(overrides: Partial<LofiiStatus> = {}): LofiiStatus {
   }
 }
 
-function snapshot(overrides: Partial<LofiiSnapshot> = {}): LofiiSnapshot {
+function snapshot(overrides: Partial<McbotSnapshot> = {}): McbotSnapshot {
   return {
     enabled: true,
     reachable: true,
@@ -176,13 +176,13 @@ function snapshot(overrides: Partial<LofiiSnapshot> = {}): LofiiSnapshot {
     eventsSupported: true,
     lastPollAt: '2026-10-27T08:00:00.000Z',
     error: null,
-    status: lofiiStatus(),
+    status: mcbotStatus(),
     events: [],
     ...overrides,
   }
 }
 
-function sample(): LofiiHistorySample {
+function sample(): McbotHistorySample {
   return {
     ts: '2026-10-27T07:59:00.000Z',
     connected: true,
@@ -198,36 +198,36 @@ function sample(): LofiiHistorySample {
   }
 }
 
-function alert(): LofiiHistoryAlert {
+function alert(): McbotHistoryAlert {
   return {
     id: 1,
     ts: '2026-10-27T07:30:00.000Z',
     type: 'low_health',
     severity: 'warning',
-    message: 'Lofii 血量偏低：8/20',
+    message: 'mcbot 血量偏低：8/20',
     details: {},
   }
 }
 
-function alertsResult(): LofiiHistory {
+function alertsResult(): McbotHistory {
   return { kind: 'alerts', from: null, to: null, count: 1, alerts: [alert()] }
 }
 
-function samplesResult(): LofiiHistory {
+function samplesResult(): McbotHistory {
   return { kind: 'samples', from: null, to: null, count: 1, samples: [sample()] }
 }
 
 function renderPanel() {
   return render(
     <ToastProvider>
-      <LofiiPanel />
+      <McbotPanel />
     </ToastProvider>,
   )
 }
 
 beforeEach(() => {
   mocks.status.mockResolvedValue(snapshot())
-  mocks.history.mockImplementation(async (query: LofiiHistoryQuery) =>
+  mocks.history.mockImplementation(async (query: McbotHistoryQuery) =>
     query.kind === 'samples' ? samplesResult() : alertsResult(),
   )
   mocks.startTask.mockResolvedValue({ ok: true })
@@ -239,26 +239,26 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
-describe('LofiiPanel 状态与降级', () => {
-  it('Lofii 集成未启用时只显示说明，不渲染控制与历史', async () => {
+describe('McbotPanel 状态与降级', () => {
+  it('mcbot 集成未启用时只显示说明，不渲染控制与历史', async () => {
     mocks.status.mockResolvedValue(
       snapshot({ enabled: false, reachable: false, status: null, events: [] }),
     )
     renderPanel()
-    expect(await screen.findByText(/Lofii 集成未启用/)).toBeTruthy()
+    expect(await screen.findByText(/mcbot 集成未启用/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: '开始任务' })).toBeNull()
     expect(mocks.history).not.toHaveBeenCalled()
   })
 
   it('不可达且数据过期时显示中文警告并保留缓存状态', async () => {
     mocks.status.mockResolvedValue(
-      snapshot({ reachable: false, stale: true, error: 'lofii_unavailable' }),
+      snapshot({ reachable: false, stale: true, error: 'mcbot_unavailable' }),
     )
     renderPanel()
-    expect(await screen.findByText(/无法连接 Lofii：Lofii 服务不可达/)).toBeTruthy()
-    expect(screen.getByText(/Lofii 数据已过期/)).toBeTruthy()
+    expect(await screen.findByText(/无法连接 mcbot：mcbot 服务不可达/)).toBeTruthy()
+    expect(screen.getByText(/mcbot 数据已过期/)).toBeTruthy()
     // 缓存的状态数据仍然展示
-    expect(screen.getByText('已连接（lofii）')).toBeTruthy()
+    expect(screen.getByText('已连接（mcbot）')).toBeTruthy()
     expect(screen.getByText('2 / 6')).toBeTruthy()
   })
 
@@ -267,20 +267,20 @@ describe('LofiiPanel 状态与降级', () => {
       snapshot({ reachable: false, status: null, events: [], lastPollAt: null, error: null }),
     )
     renderPanel()
-    expect(await screen.findByText(/正在等待 Lofii 首次轮询结果/)).toBeTruthy()
-    expect(screen.queryByText(/无法连接 Lofii/)).toBeNull()
+    expect(await screen.findByText(/正在等待 mcbot 首次轮询结果/)).toBeTruthy()
+    expect(screen.queryByText(/无法连接 mcbot/)).toBeNull()
   })
 
   it('上游 status 缺嵌套段时容忍缺失，不让整个面板崩溃', async () => {
-    mocks.status.mockResolvedValue(snapshot({ status: {} as LofiiStatus }))
+    mocks.status.mockResolvedValue(snapshot({ status: {} as McbotStatus }))
     renderPanel()
-    expect(await screen.findByText('Lofii 状态')).toBeTruthy()
+    expect(await screen.findByText('mcbot 状态')).toBeTruthy()
     expect(screen.getAllByText('事件流').length).toBeGreaterThan(0)
   })
 
   it('status 可达但事件轮询/游标失败时显示可见警告', async () => {
     mocks.status.mockResolvedValue(
-      snapshot({ reachable: true, error: 'lofii_upstream_error', eventsSupported: true }),
+      snapshot({ reachable: true, error: 'mcbot_upstream_error', eventsSupported: true }),
     )
     renderPanel()
     expect(await screen.findByText(/事件流\/告警游标异常/)).toBeTruthy()
@@ -290,17 +290,17 @@ describe('LofiiPanel 状态与降级', () => {
   it('刷新失败时保留上次成功的数据并提示', async () => {
     mocks.status
       .mockResolvedValueOnce(snapshot())
-      .mockRejectedValueOnce(new Error('Lofii 不可达'))
+      .mockRejectedValueOnce(new Error('mcbot 不可达'))
     renderPanel()
-    expect(await screen.findByText('已连接（lofii）')).toBeTruthy()
-    await userEvent.click(screen.getByRole('button', { name: '刷新 Lofii 状态' }))
+    expect(await screen.findByText('已连接（mcbot）')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '刷新 mcbot 状态' }))
     expect(await screen.findByText(/显示上次成功获取的数据/)).toBeTruthy()
-    expect(screen.getByText('已连接（lofii）')).toBeTruthy()
+    expect(screen.getByText('已连接（mcbot）')).toBeTruthy()
   })
 
   it('控制未启用时禁用任务/移动/聊天操作并显示说明', async () => {
     mocks.status.mockResolvedValue(
-      snapshot({ controlEnabled: false, status: lofiiStatus({ task: activeTask() }) }),
+      snapshot({ controlEnabled: false, status: mcbotStatus({ task: activeTask() }) }),
     )
     renderPanel()
     expect(await screen.findByText(/任务\/移动\/聊天操作已禁用/)).toBeTruthy()
@@ -313,7 +313,7 @@ describe('LofiiPanel 状态与降级', () => {
   })
 })
 
-describe('LofiiPanel 任务控制', () => {
+describe('McbotPanel 任务控制', () => {
   it('开始任务需要二次确认，并按所选任务调用接口', async () => {
     renderPanel()
     expect(await screen.findByRole('button', { name: '开始任务' })).toBeEnabled()
@@ -321,15 +321,15 @@ describe('LofiiPanel 任务控制', () => {
     await userEvent.click(screen.getByRole('button', { name: '开始任务' }))
 
     const dialog = await screen.findByRole('dialog', { name: '开始任务' })
-    expect(within(dialog).getByText(/确定让 Lofii 开始「巡逻」任务/)).toBeTruthy()
+    expect(within(dialog).getByText(/确定让 mcbot 开始「巡逻」任务/)).toBeTruthy()
     await userEvent.click(within(dialog).getByRole('button', { name: '开始' }))
 
     await waitFor(() => expect(mocks.startTask).toHaveBeenCalledWith('patrol'))
-    expect(await screen.findByText(/已请求 Lofii 开始「巡逻」任务/)).toBeTruthy()
+    expect(await screen.findByText(/已请求 mcbot 开始「巡逻」任务/)).toBeTruthy()
   })
 
   it('停止任务确认文案说明会清空队列', async () => {
-    mocks.status.mockResolvedValue(snapshot({ status: lofiiStatus({ task: activeTask() }) }))
+    mocks.status.mockResolvedValue(snapshot({ status: mcbotStatus({ task: activeTask() }) }))
     renderPanel()
     await userEvent.click(await screen.findByRole('button', { name: '停止任务' }))
     const dialog = await screen.findByRole('dialog', { name: '停止任务' })
@@ -341,7 +341,7 @@ describe('LofiiPanel 任务控制', () => {
   it('待恢复任务显示横幅并可确认恢复', async () => {
     mocks.status.mockResolvedValue(
       snapshot({
-        status: lofiiStatus({
+        status: mcbotStatus({
           task: idleTask({
             state: 'pending_resume',
             name: 'fishing',
@@ -365,22 +365,22 @@ describe('LofiiPanel 任务控制', () => {
     await waitFor(() => expect(mocks.resumeTask).toHaveBeenCalledWith('task-pending-1'))
   })
 
-  it('移动目标排除 Lofii 自己，过来使用所选玩家', async () => {
+  it('移动目标排除 mcbot 自己，过来使用所选玩家', async () => {
     renderPanel()
     const select = (await screen.findByLabelText('选择移动目标玩家')) as HTMLSelectElement
     expect(within(select).getByRole('option', { name: 'Antifield' })).toBeTruthy()
-    expect(within(select).queryByRole('option', { name: 'lofii' })).toBeNull()
+    expect(within(select).queryByRole('option', { name: 'mcbot' })).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: '过来' }))
     await waitFor(() => expect(mocks.move).toHaveBeenCalledWith('come', 'Antifield'))
-    expect(await screen.findByText(/已请求 Lofii 过来/)).toBeTruthy()
+    expect(await screen.findByText(/已请求 mcbot 过来/)).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: '回家' }))
     await waitFor(() => expect(mocks.move).toHaveBeenLastCalledWith('home', undefined))
   })
 })
 
-describe('LofiiPanel 游戏内聊天', () => {
+describe('McbotPanel 游戏内聊天', () => {
   it('拒绝以 / 开头的内容，不打开确认、不调用接口', async () => {
     renderPanel()
     const input = await screen.findByLabelText('游戏内聊天内容')
@@ -394,7 +394,7 @@ describe('LofiiPanel 游戏内聊天', () => {
   it('拒绝切分边界后的 / 命令行（上游按 240 字符切行）', async () => {
     renderPanel()
     const input = await screen.findByLabelText('游戏内聊天内容')
-    await userEvent.type(input, `${'a'.repeat(240)}/op Lofii`)
+    await userEvent.type(input, `${'a'.repeat(240)}/op mcbot`)
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
     expect(await screen.findByText(/聊天内容不能包含 \//)).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -417,7 +417,7 @@ describe('LofiiPanel 游戏内聊天', () => {
   })
 })
 
-describe('LofiiPanel 事件流', () => {
+describe('McbotPanel 事件流', () => {
   it('聊天事件以纯文本展示，其余事件显示结构化摘要并支持筛选', async () => {
     mocks.status.mockResolvedValue(
       snapshot({
@@ -438,18 +438,18 @@ describe('LofiiPanel 事件流', () => {
       }),
     )
     renderPanel()
-    expect(await screen.findByText('Lofii：好，我去钓鱼啦。')).toBeTruthy()
+    expect(await screen.findByText('mcbot：好，我去钓鱼啦。')).toBeTruthy()
     expect(screen.getByText(/任务已开始 · 钓鱼 · 进行中/)).toBeTruthy()
 
     await userEvent.click(screen.getByRole('button', { name: '聊天' }))
-    expect(screen.getByText('Lofii：好，我去钓鱼啦。')).toBeTruthy()
+    expect(screen.getByText('mcbot：好，我去钓鱼啦。')).toBeTruthy()
     expect(screen.queryByText(/任务已开始 · 钓鱼 · 进行中/)).toBeNull()
 
     await userEvent.click(screen.getByRole('button', { name: '全部' }))
     expect(screen.getByText(/任务已开始 · 钓鱼 · 进行中/)).toBeTruthy()
   })
 
-  it('旧版 Lofii 不支持事件时显示升级提示', async () => {
+  it('旧版 mcbot 不支持事件时显示升级提示', async () => {
     mocks.status.mockResolvedValue(
       snapshot({ contractVersion: null, eventsSupported: false, events: [] }),
     )
@@ -458,13 +458,13 @@ describe('LofiiPanel 事件流', () => {
   })
 })
 
-describe('LofiiPanel 历史记录', () => {
+describe('McbotPanel 历史记录', () => {
   it('默认加载最近 24 小时告警，切换采样后表格更新', async () => {
     renderPanel()
     // Table 同时渲染桌面表格与移动端卡片，文本会出现两次。
-    expect((await screen.findAllByText('Lofii 血量偏低：8/20')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText('mcbot 血量偏低：8/20')).length).toBeGreaterThan(0)
 
-    const firstQuery = mocks.history.mock.calls[0]?.[0] as LofiiHistoryQuery
+    const firstQuery = mocks.history.mock.calls[0]?.[0] as McbotHistoryQuery
     expect(firstQuery.kind).toBe('alerts')
     expect(firstQuery.limit).toBe(100)
     const windowMs = Date.parse(firstQuery.to ?? '') - Date.parse(firstQuery.from ?? '')
@@ -472,7 +472,7 @@ describe('LofiiPanel 历史记录', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '采样' }))
     await waitFor(() => {
-      const lastQuery = mocks.history.mock.calls[mocks.history.mock.calls.length - 1]?.[0] as LofiiHistoryQuery
+      const lastQuery = mocks.history.mock.calls[mocks.history.mock.calls.length - 1]?.[0] as McbotHistoryQuery
       expect(lastQuery.kind).toBe('samples')
     })
     expect((await screen.findAllByText('钓鱼 · 进行中')).length).toBeGreaterThan(0)

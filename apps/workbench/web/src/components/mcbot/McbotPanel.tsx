@@ -1,6 +1,6 @@
-// Lofii 面板（/minecraft 的 Lofii 标签页）：状态、任务控制、移动、游戏内聊天、事件流与历史。
-// 数据来自 GET /api/lofii/status（5 秒轮询）与 GET /api/lofii/history；写操作走 /api/lofii/*。
-// 安全边界：不展示 Lofii Token/地址/内部路径，聊天与事件一律纯文本渲染；开始/停止/恢复/发送均需二次确认。
+// mcbot 面板（/minecraft 的 mcbot 标签页）：状态、任务控制、移动、游戏内聊天、事件流与历史。
+// 数据来自 GET /api/mcbot/status（5 秒轮询）与 GET /api/mcbot/history；写操作走 /api/mcbot/*。
+// 安全边界：不展示 mcbot Token/地址/内部路径，聊天与事件一律纯文本渲染；开始/停止/恢复/发送均需二次确认。
 // 降级：禁用显示说明；不可达/过期显示缓存数据与警告；控制未启用时禁用全部写操作。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -19,13 +19,13 @@ import {
 } from 'lucide-react'
 import { api, isAbortError, isApiError, toErrorMessage } from '../../api/client'
 import type {
-  LofiiActionResult,
-  LofiiMoveAction,
-  LofiiPendingResume,
-  LofiiSnapshot,
-  LofiiStatus,
-  LofiiTask,
-  LofiiTaskName,
+  McbotActionResult,
+  McbotMoveAction,
+  McbotPendingResume,
+  McbotSnapshot,
+  McbotStatus,
+  McbotTask,
+  McbotTaskName,
 } from '../../api/types'
 import { usePolling } from '../../hooks/usePolling'
 import { Badge } from '../Badge'
@@ -37,24 +37,24 @@ import { InlineError } from '../InlineError'
 import { RelativeTime } from '../RelativeTime'
 import { SkeletonText } from '../Skeleton'
 import { useToast } from '../Toast'
-import { LofiiEventsCard } from './LofiiEventsCard'
-import { LofiiHistoryCard } from './LofiiHistoryCard'
+import { McbotEventsCard } from './McbotEventsCard'
+import { McbotHistoryCard } from './McbotHistoryCard'
 import { formatDuration } from '../../lib/format'
 import {
-  LOFII_MOVE_ACTION_LABELS,
-  LOFII_TASK_NAMES,
-  lofiiBotStateLabel,
-  lofiiErrorLabel,
-  lofiiOnlinePlayers,
-  lofiiTaskNameLabel,
-  lofiiTaskProgressRows,
-  lofiiTaskStateLabel,
+  MCBOT_MOVE_ACTION_LABELS,
+  MCBOT_TASK_NAMES,
+  mcbotBotStateLabel,
+  mcbotErrorLabel,
+  mcbotOnlinePlayers,
+  mcbotTaskNameLabel,
+  mcbotTaskProgressRows,
+  mcbotTaskStateLabel,
   safeLofiiStatus,
-} from '../../lib/lofii'
+} from '../../lib/mcbot'
 
-/** /api/lofii/status 轮询间隔。 */
+/** /api/mcbot/status 轮询间隔。 */
 const STATUS_POLL_MS = 5000
-/** /say 内容上限（Lofii 契约）。 */
+/** /say 内容上限（mcbot 契约）。 */
 const SAY_MAX_CHARS = 720
 
 /** 聊天内容不允许 C0 控制字符与 DEL。 */
@@ -67,7 +67,7 @@ function hasControlChars(value: string): boolean {
 }
 
 type ConfirmState =
-  | { type: 'start'; name: LofiiTaskName }
+  | { type: 'start'; name: McbotTaskName }
   | { type: 'stop' }
   | { type: 'resume' }
   | { type: 'say'; message: string }
@@ -79,23 +79,23 @@ function dashNumber(value: number | null | undefined, digits = 0): string {
 
 function Fact({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
-    <div className="lofii-fact">
-      <span className="lofii-fact-label">{label}</span>
-      <span className="lofii-fact-value">{children}</span>
-      {hint ? <span className="lofii-fact-hint">{hint}</span> : null}
+    <div className="mcbot-fact">
+      <span className="mcbot-fact-label">{label}</span>
+      <span className="mcbot-fact-value">{children}</span>
+      {hint ? <span className="mcbot-fact-hint">{hint}</span> : null}
     </div>
   )
 }
 
 /* ---------- 状态卡 ---------- */
 
-function LofiiStatusCard({
+function McbotStatusCard({
   snapshot,
   error,
   refreshing,
   onRefresh,
 }: {
-  snapshot: LofiiSnapshot
+  snapshot: McbotSnapshot
   error: string | null
   refreshing: boolean
   onRefresh: () => void
@@ -114,8 +114,8 @@ function LofiiStatusCard({
 
   return (
     <Card
-      title="Lofii 状态"
-      description="Lofii 每 5 秒被轮询一次；页面隐藏时暂停请求，刷新失败时保留上次成功的数据。"
+      title="mcbot 状态"
+      description="mcbot 每 5 秒被轮询一次；页面隐藏时暂停请求，刷新失败时保留上次成功的数据。"
       actions={
         <div className="card-actions-inline">
           <Badge tone={snapshot.reachable ? 'success' : 'danger'} dot>
@@ -127,7 +127,7 @@ function LofiiStatusCard({
           <Button
             variant="ghost"
             size="icon"
-            aria-label="刷新 Lofii 状态"
+            aria-label="刷新 mcbot 状态"
             title="刷新"
             loading={refreshing}
             onClick={onRefresh}
@@ -139,10 +139,10 @@ function LofiiStatusCard({
       {error ? <InlineError message={`${error}（显示上次成功获取的数据）`} onRetry={onRefresh} /> : null}
 
       {status ? (
-        <div className="lofii-status-grid">
+        <div className="mcbot-status-grid">
           <Fact label="运行状态">
             <Badge tone={status.state === 'connected' ? 'success' : status.state === 'idle' ? 'muted' : 'warning'}>
-              {lofiiBotStateLabel(status.state)}
+              {mcbotBotStateLabel(status.state)}
             </Badge>
           </Fact>
           <Fact label="Minecraft 连接">
@@ -159,7 +159,7 @@ function LofiiStatusCard({
           >
             {tpsText}
           </Fact>
-          <Fact label="Lofii 血量 / 饥饿" hint={status.player.dimension ?? undefined}>
+          <Fact label="mcbot 血量 / 饥饿" hint={status.player.dimension ?? undefined}>
             {dashNumber(status.player.health)} / {dashNumber(status.player.food)}
           </Fact>
           <Fact
@@ -175,14 +175,14 @@ function LofiiStatusCard({
           <Fact label="记忆">
             {status.memory.players} 位玩家 / {status.memory.turns} 轮
           </Fact>
-          <Fact label="Lofii 版本">
+          <Fact label="mcbot 版本">
             {snapshot.version ?? status.version ?? '未知'}
-            <span className="lofii-fact-sub">
+            <span className="mcbot-fact-sub">
               {' '}
               · 契约 {typeof snapshot.contractVersion === 'number' ? `v${snapshot.contractVersion}` : '—'}
             </span>
           </Fact>
-          <Fact label="Lofii 运行时长">{formatDuration(status.uptimeSec)}</Fact>
+          <Fact label="mcbot 运行时长">{formatDuration(status.uptimeSec)}</Fact>
           <Fact label="白名单数量" hint={status.admin.lastError ?? undefined}>
             {status.admin.whitelist.count ?? '—'}
           </Fact>
@@ -193,15 +193,15 @@ function LofiiStatusCard({
           </Fact>
           <Fact label="事件流">
             {Array.isArray(snapshot.events) ? snapshot.events.length : 0} 条
-            <span className="lofii-fact-sub"> · 内存环</span>
+            <span className="mcbot-fact-sub"> · 内存环</span>
           </Fact>
         </div>
       ) : (
         <EmptyState
           compact
           icon={<Clock size={22} />}
-          title="暂无 Lofii 状态快照"
-          description="Lofii 不可达或尚未完成首次轮询；可稍后重试或查看下方缓存的事件与历史。"
+          title="暂无 mcbot 状态快照"
+          description="mcbot 不可达或尚未完成首次轮询；可稍后重试或查看下方缓存的事件与历史。"
         />
       )}
 
@@ -222,7 +222,7 @@ function LofiiStatusCard({
       <p className="card-footnote">
         上次轮询 <RelativeTime ts={snapshot.lastPollAt} fallback="—" />
         {typeof snapshot.contractVersion === 'number' && snapshot.contractVersion < 1
-          ? ' · Lofii 契约版本过低'
+          ? ' · mcbot 契约版本过低'
           : ''}
       </p>
     </Card>
@@ -231,7 +231,7 @@ function LofiiStatusCard({
 
 /* ---------- 任务卡 ---------- */
 
-function LofiiTaskCard({
+function McbotTaskCard({
   status,
   controlReady,
   taskName,
@@ -241,27 +241,27 @@ function LofiiTaskCard({
   onResume,
   onDiscardPending,
 }: {
-  status: LofiiStatus
+  status: McbotStatus
   controlReady: boolean
-  taskName: LofiiTaskName
-  onTaskNameChange: (name: LofiiTaskName) => void
+  taskName: McbotTaskName
+  onTaskNameChange: (name: McbotTaskName) => void
   onStart: () => void
   onStop: () => void
   onResume: () => void
   onDiscardPending: () => void
 }) {
-  const task: LofiiTask = status.task
-  const pending: LofiiPendingResume | null = task.pendingResume
-  const progressRows = lofiiTaskProgressRows(task)
+  const task: McbotTask = status.task
+  const pending: McbotPendingResume | null = task.pendingResume
+  const progressRows = mcbotTaskProgressRows(task)
   const taskFeatureDisabled = task.enabled === false
   const startDisabled = !controlReady || taskFeatureDisabled || pending !== null
   const stopDisabled =
     !controlReady || (!task.active && pending === null && task.queue.length === 0)
 
   const startHint = !controlReady
-    ? '控制未启用或 Lofii 不可达，任务操作不可用。'
+    ? '控制未启用或 mcbot 不可达，任务操作不可用。'
     : taskFeatureDisabled
-      ? 'Lofii 任务功能未启用（TASK_ENABLED=false）。'
+      ? 'mcbot 任务功能未启用（TASK_ENABLED=false）。'
       : pending
         ? '有待恢复任务，需先恢复或放弃后才能开始新任务。'
         : task.active
@@ -271,7 +271,7 @@ function LofiiTaskCard({
   return (
     <Card
       title="任务"
-      description="任务由 Lofii 自动执行；开始、停止与恢复都需要二次确认。"
+      description="任务由 mcbot 自动执行；开始、停止与恢复都需要二次确认。"
       actions={
         <Badge tone={task.active ? 'success' : pending ? 'warning' : 'muted'}>
           {task.active ? '进行中' : pending ? '待恢复' : '空闲'}
@@ -279,12 +279,12 @@ function LofiiTaskCard({
       }
     >
       {pending ? (
-        <div className="notice notice-warning lofii-pending">
+        <div className="notice notice-warning mcbot-pending">
           <span>
-            有待恢复任务「{lofiiTaskNameLabel(pending.name)}」：已运行 {formatDuration(pending.elapsedSec)}，
-            需在 <RelativeTime ts={pending.expiresAt} fallback="截止时间未知" /> 前确认恢复，否则 Lofii 会自动中断。
+            有待恢复任务「{mcbotTaskNameLabel(pending.name)}」：已运行 {formatDuration(pending.elapsedSec)}，
+            需在 <RelativeTime ts={pending.expiresAt} fallback="截止时间未知" /> 前确认恢复，否则 mcbot 会自动中断。
           </span>
-          <div className="lofii-pending-actions">
+          <div className="mcbot-pending-actions">
             <Button
               size="sm"
               variant="primary"
@@ -302,15 +302,15 @@ function LofiiTaskCard({
       ) : null}
 
       {taskFeatureDisabled ? (
-        <div className="notice notice-muted">Lofii 任务功能未启用（TASK_ENABLED=false）。</div>
+        <div className="notice notice-muted">mcbot 任务功能未启用（TASK_ENABLED=false）。</div>
       ) : null}
       {task.lastError ? <div className="notice notice-warning">任务最近错误：{task.lastError}</div> : null}
 
-      <div className="lofii-task-facts">
-        <Fact label="当前任务">{task.active || pending ? lofiiTaskNameLabel(task.name) : '空闲'}</Fact>
+      <div className="mcbot-task-facts">
+        <Fact label="当前任务">{task.active || pending ? mcbotTaskNameLabel(task.name) : '空闲'}</Fact>
         <Fact label="任务状态">
           <Badge tone={task.active ? 'success' : pending ? 'warning' : 'muted'}>
-            {lofiiTaskStateLabel(task.state)}
+            {mcbotTaskStateLabel(task.state)}
           </Badge>
         </Fact>
         <Fact label="已运行">
@@ -322,51 +322,51 @@ function LofiiTaskCard({
 
       <h3 className="subsection-title">任务进度</h3>
       {progressRows.length > 0 ? (
-        <dl className="lofii-progress">
+        <dl className="mcbot-progress">
           {progressRows.map((row) => (
-            <div className="lofii-progress-row" key={row.label}>
+            <div className="mcbot-progress-row" key={row.label}>
               <dt>{row.label}</dt>
               <dd>{row.value}</dd>
             </div>
           ))}
         </dl>
       ) : (
-        <p className="lofii-muted">当前任务没有进度数据。</p>
+        <p className="mcbot-muted">当前任务没有进度数据。</p>
       )}
 
       <h3 className="subsection-title">任务队列</h3>
       {task.queue.length > 0 ? (
-        <ol className="lofii-queue">
+        <ol className="mcbot-queue">
           {task.queue.map((item, index) => (
-            <li className="lofii-queue-item" key={`${item.taskId}-${index}`}>
-              <span className="lofii-queue-index" aria-hidden="true">
+            <li className="mcbot-queue-item" key={`${item.taskId}-${index}`}>
+              <span className="mcbot-queue-index" aria-hidden="true">
                 {index + 1}
               </span>
-              <span className="lofii-queue-name">{lofiiTaskNameLabel(item.name)}</span>
-              <RelativeTime ts={item.requestedAt} className="lofii-queue-time" />
+              <span className="mcbot-queue-name">{mcbotTaskNameLabel(item.name)}</span>
+              <RelativeTime ts={item.requestedAt} className="mcbot-queue-time" />
             </li>
           ))}
         </ol>
       ) : (
-        <p className="lofii-muted">队列为空。</p>
+        <p className="mcbot-muted">队列为空。</p>
       )}
 
-      <div className="lofii-task-controls">
-        <div className="lofii-task-select">
-          <label className="field-label" htmlFor="lofii-task-select">
+      <div className="mcbot-task-controls">
+        <div className="mcbot-task-select">
+          <label className="field-label" htmlFor="mcbot-task-select">
             任务
           </label>
           <div className="select-field">
             <select
-              id="lofii-task-select"
+              id="mcbot-task-select"
               className="select"
               value={taskName}
               disabled={!controlReady || taskFeatureDisabled}
-              onChange={(event) => onTaskNameChange(event.target.value as LofiiTaskName)}
+              onChange={(event) => onTaskNameChange(event.target.value as McbotTaskName)}
             >
-              {LOFII_TASK_NAMES.map((name) => (
+              {MCBOT_TASK_NAMES.map((name) => (
                 <option key={name} value={name}>
-                  {lofiiTaskNameLabel(name)}
+                  {mcbotTaskNameLabel(name)}
                 </option>
               ))}
             </select>
@@ -408,18 +408,18 @@ function LofiiTaskCard({
 
 /* ---------- 移动 / 聊天 ---------- */
 
-function LofiiMoveCard({
+function McbotMoveCard({
   status,
   controlReady,
   moveBusy,
   onMove,
 }: {
-  status: LofiiStatus
+  status: McbotStatus
   controlReady: boolean
-  moveBusy: LofiiMoveAction | null
-  onMove: (action: LofiiMoveAction, target: string | undefined) => void
+  moveBusy: McbotMoveAction | null
+  onMove: (action: McbotMoveAction, target: string | undefined) => void
 }) {
-  const players = lofiiOnlinePlayers(status)
+  const players = mcbotOnlinePlayers(status)
   const [selected, setSelected] = useState('')
   const selectedTarget = players.includes(selected) ? selected : players[0] ?? ''
   const taskActive = status.task.active === true
@@ -428,24 +428,24 @@ function LofiiMoveCard({
   const moveDisabled = !controlReady || taskActive || !connected
 
   const hint = !controlReady
-    ? '控制未启用或 Lofii 不可达，移动不可用。'
+    ? '控制未启用或 mcbot 不可达，移动不可用。'
     : taskActive
-      ? 'Lofii 任务进行中，需先停止任务才能手动移动。'
+      ? 'mcbot 任务进行中，需先停止任务才能手动移动。'
       : !connected
-        ? 'Lofii 尚未连接 Minecraft，移动不可用。'
+        ? 'mcbot 尚未连接 Minecraft，移动不可用。'
         : players.length === 0
           ? '暂无其他在线玩家，过来/跟随不可用。'
           : '移动结果会以事件形式返回；回家/停下不需要目标玩家。'
 
   return (
-    <Card title="移动控制" description="手动让 Lofii 移动；移动可随时停下，不改变任务状态。">
-      <div className="lofii-move-form">
-        <label className="field-label" htmlFor="lofii-move-target">
+    <Card title="移动控制" description="手动让 mcbot 移动；移动可随时停下，不改变任务状态。">
+      <div className="mcbot-move-form">
+        <label className="field-label" htmlFor="mcbot-move-target">
           目标玩家
         </label>
         <div className="select-field">
           <select
-            id="lofii-move-target"
+            id="mcbot-move-target"
             className="select"
             value={selectedTarget}
             disabled={targetsDisabled}
@@ -464,7 +464,7 @@ function LofiiMoveCard({
           </select>
         </div>
       </div>
-      <div className="lofii-move-actions">
+      <div className="mcbot-move-actions">
         <Button
           icon={<Home size={16} aria-hidden="true" />}
           disabled={moveDisabled}
@@ -503,7 +503,7 @@ function LofiiMoveCard({
   )
 }
 
-function LofiiSayCard({
+function McbotSayCard({
   ready,
   text,
   error,
@@ -522,14 +522,14 @@ function LofiiSayCard({
   }
 
   return (
-    <Card title="游戏内聊天" description="以 Lofii 的身份向游戏内发送聊天；只聊天，绝不执行命令。">
-      <form className="lofii-say-form" onSubmit={handleSubmit}>
-        <label className="sr-only" htmlFor="lofii-say-input">
+    <Card title="游戏内聊天" description="以 mcbot 的身份向游戏内发送聊天；只聊天，绝不执行命令。">
+      <form className="mcbot-say-form" onSubmit={handleSubmit}>
+        <label className="sr-only" htmlFor="mcbot-say-input">
           游戏内聊天内容
         </label>
         <textarea
-          id="lofii-say-input"
-          className="input lofii-say-input"
+          id="mcbot-say-input"
+          className="input mcbot-say-input"
           value={text}
           rows={3}
           maxLength={SAY_MAX_CHARS}
@@ -538,7 +538,7 @@ function LofiiSayCard({
           disabled={!ready}
           onChange={(event) => onTextChange(event.target.value)}
         />
-        <div className="lofii-say-footer">
+        <div className="mcbot-say-footer">
           <span className="field-hint">
             {text.length}/{SAY_MAX_CHARS} · 发送前需要二次确认
           </span>
@@ -564,17 +564,17 @@ function LofiiSayCard({
 
 /* ---------- 面板 ---------- */
 
-export function LofiiPanel() {
+export function McbotPanel() {
   const toast = useToast()
-  const [snapshot, setSnapshot] = useState<LofiiSnapshot | null>(null)
+  const [snapshot, setSnapshot] = useState<McbotSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
-  const [taskName, setTaskName] = useState<LofiiTaskName>('fishing')
+  const [taskName, setTaskName] = useState<McbotTaskName>('fishing')
   const [sayText, setSayText] = useState('')
   const [sayError, setSayError] = useState<string | null>(null)
-  const [moveBusy, setMoveBusy] = useState<LofiiMoveAction | null>(null)
+  const [moveBusy, setMoveBusy] = useState<McbotMoveAction | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [actionBusy, setActionBusy] = useState(false)
   const requestIdRef = useRef(0)
@@ -588,7 +588,7 @@ export function LofiiPanel() {
     const requestId = requestIdRef.current + 1
     requestIdRef.current = requestId
     try {
-      const next = await api.lofii.status(controller.signal)
+      const next = await api.mcbot.status(controller.signal)
       if (requestId !== requestIdRef.current) return
       setSnapshot(next)
       setError(null)
@@ -596,7 +596,7 @@ export function LofiiPanel() {
     } catch (loadError) {
       if (isAbortError(loadError) || requestId !== requestIdRef.current) return
       // 刷新失败保留上次成功的数据，只更新错误提示。
-      setError(toErrorMessage(loadError, '加载 Lofii 状态失败'))
+      setError(toErrorMessage(loadError, '加载 mcbot 状态失败'))
       setErrorCode(isApiError(loadError) ? loadError.code : null)
     } finally {
       if (requestId === requestIdRef.current) setLoading(false)
@@ -618,8 +618,8 @@ export function LofiiPanel() {
   }
 
   const runAction = async (
-    action: () => Promise<LofiiActionResult>,
-    successText: (result: LofiiActionResult) => string,
+    action: () => Promise<McbotActionResult>,
+    successText: (result: McbotActionResult) => string,
   ): Promise<boolean> => {
     setActionBusy(true)
     try {
@@ -628,7 +628,7 @@ export function LofiiPanel() {
       await load()
       return true
     } catch (actionError) {
-      toast.error(toErrorMessage(actionError, 'Lofii 操作失败，请重试'))
+      toast.error(toErrorMessage(actionError, 'mcbot 操作失败，请重试'))
       return false
     } finally {
       setActionBusy(false)
@@ -640,7 +640,7 @@ export function LofiiPanel() {
   const controlReady = snapshot?.enabled === true && snapshot.reachable && snapshot.controlEnabled
   // /say 是写操作：只读模式（未配置控制 Token）必须禁用，避免成为绕过权限的写通道。
   const sayReady = controlReady
-  const disabled = snapshot ? !snapshot.enabled : errorCode === 'lofii_disabled'
+  const disabled = snapshot ? !snapshot.enabled : errorCode === 'mcbot_disabled'
   const pendingResume = status?.task.pendingResume ?? null
   /** 应用刚启动时首次轮询完成前 reachable=false/lastPollAt=null 属正常，不提示“不可达”。 */
   const awaitingFirstPoll =
@@ -649,10 +649,10 @@ export function LofiiPanel() {
   /* 集成禁用：只显示说明，不渲染任何控制与数据区。 */
   if (disabled) {
     return (
-      <div className="lofii-panel">
+      <div className="mcbot-panel">
         <div className="notice notice-muted">
           <span>
-            Lofii 集成未启用（服务端 LOFII_ENABLED=false）。启用后需要配置 Lofii 地址与 Token 并重启应用；
+            mcbot 集成未启用（服务端 MCBOT_ENABLED=false）。启用后需要配置 mcbot 地址与 Token 并重启应用；
             本页不展示任何 Token、内部地址或凭据。
           </span>
           <Button size="sm" variant="secondary" loading={refreshing} onClick={() => void refresh()}>
@@ -666,15 +666,15 @@ export function LofiiPanel() {
   /* 首次加载失败：给出错误与重试入口。 */
   if (!snapshot) {
     return (
-      <div className="lofii-panel">
+      <div className="mcbot-panel">
         <Card
-          title="Lofii 状态"
+          title="mcbot 状态"
           loading={loading}
           skeleton={<SkeletonText lines={5} />}
-          error={loading ? null : error ?? '无法获取 Lofii 状态'}
+          error={loading ? null : error ?? '无法获取 mcbot 状态'}
           onRetry={() => void refresh()}
         >
-          <p className="lofii-muted">Lofii 状态不可用。</p>
+          <p className="mcbot-muted">mcbot 状态不可用。</p>
         </Card>
       </div>
     )
@@ -688,8 +688,8 @@ export function LofiiPanel() {
   let confirmTone: 'danger' | 'primary' = 'primary'
   if (confirm?.type === 'start') {
     confirmTitle = '开始任务'
-    confirmMessage = `确定让 Lofii 开始「${lofiiTaskNameLabel(confirm.name)}」任务？`
-    confirmDetails = '任务由 Lofii 自动执行；进行中可在本页停止，停止会清空排队任务。'
+    confirmMessage = `确定让 mcbot 开始「${mcbotTaskNameLabel(confirm.name)}」任务？`
+    confirmDetails = '任务由 mcbot 自动执行；进行中可在本页停止，停止会清空排队任务。'
     confirmText = '开始'
   } else if (confirm?.type === 'stop') {
     const discardingPending = pendingResume !== null && status?.task.active !== true
@@ -705,16 +705,16 @@ export function LofiiPanel() {
   } else if (confirm?.type === 'resume') {
     confirmTitle = '恢复任务'
     confirmMessage = pendingResume
-      ? `确定恢复「${lofiiTaskNameLabel(pendingResume.name)}」任务？`
+      ? `确定恢复「${mcbotTaskNameLabel(pendingResume.name)}」任务？`
       : '确定恢复待恢复任务？'
     confirmDetails = pendingResume
-      ? `将从原进度继续；需在 ${formatDuration(Math.max(0, Math.round((Date.parse(pendingResume.expiresAt) - Date.now()) / 1000)))} 内确认，否则 Lofii 自动中断。`
+      ? `将从原进度继续；需在 ${formatDuration(Math.max(0, Math.round((Date.parse(pendingResume.expiresAt) - Date.now()) / 1000)))} 内确认，否则 mcbot 自动中断。`
       : '将从原进度继续。'
     confirmText = '恢复'
   } else if (confirm?.type === 'say') {
     confirmTitle = '发送游戏内聊天'
     confirmMessage = `确定向游戏内发送这条消息（${confirm.message.length} 个字符）？`
-    confirmDetails = <p className="lofii-say-preview">{confirm.message}</p>
+    confirmDetails = <p className="mcbot-say-preview">{confirm.message}</p>
     confirmText = '发送'
   }
 
@@ -722,24 +722,24 @@ export function LofiiPanel() {
     if (!confirm || actionBusy) return
     switch (confirm.type) {
       case 'start': {
-        const label = lofiiTaskNameLabel(confirm.name)
+        const label = mcbotTaskNameLabel(confirm.name)
         void runAction(
-          () => api.lofii.startTask(confirm.name),
+          () => api.mcbot.startTask(confirm.name),
           (result) =>
             result.queued
               ? `「${label}」已加入任务队列${typeof result.position === 'number' ? `（第 ${result.position} 位）` : ''}`
-              : `已请求 Lofii 开始「${label}」任务`,
+              : `已请求 mcbot 开始「${label}」任务`,
         )
         break
       }
       case 'stop':
-        void runAction(() => api.lofii.stopTask(), () => '已请求 Lofii 停止任务')
+        void runAction(() => api.mcbot.stopTask(), () => '已请求 mcbot 停止任务')
         break
       case 'resume':
-        void runAction(() => api.lofii.resumeTask(pendingResume?.taskId), () => '已请求 Lofii 恢复任务')
+        void runAction(() => api.mcbot.resumeTask(pendingResume?.taskId), () => '已请求 mcbot 恢复任务')
         break
       case 'say':
-        void runAction(() => api.lofii.say(confirm.message), () => '已发送游戏内聊天').then((ok) => {
+        void runAction(() => api.mcbot.say(confirm.message), () => '已发送游戏内聊天').then((ok) => {
           if (!ok) return
           setSayText('')
           setSayError(null)
@@ -772,59 +772,59 @@ export function LofiiPanel() {
     setConfirm({ type: 'say', message })
   }
 
-  const handleMove = async (action: LofiiMoveAction, target: string | undefined): Promise<void> => {
+  const handleMove = async (action: McbotMoveAction, target: string | undefined): Promise<void> => {
     if (moveBusy) return
     setMoveBusy(action)
     try {
-      await api.lofii.move(action, target)
+      await api.mcbot.move(action, target)
       toast.success(
         target
-          ? `已请求 Lofii ${LOFII_MOVE_ACTION_LABELS[action]}（目标 ${target}）`
-          : `已请求 Lofii ${LOFII_MOVE_ACTION_LABELS[action]}`,
+          ? `已请求 mcbot ${MCBOT_MOVE_ACTION_LABELS[action]}（目标 ${target}）`
+          : `已请求 mcbot ${MCBOT_MOVE_ACTION_LABELS[action]}`,
       )
       await load()
     } catch (moveError) {
-      toast.error(toErrorMessage(moveError, 'Lofii 移动请求失败，请重试'))
+      toast.error(toErrorMessage(moveError, 'mcbot 移动请求失败，请重试'))
     } finally {
       setMoveBusy(null)
     }
   }
 
   return (
-    <div className="lofii-panel">
+    <div className="mcbot-panel">
       {awaitingFirstPoll ? (
         <div className="notice notice-muted">
-          <span>正在等待 Lofii 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。</span>
+          <span>正在等待 mcbot 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。</span>
         </div>
       ) : !snapshot.reachable ? (
         <div className="notice notice-warning">
           <span>
-            无法连接 Lofii：{lofiiErrorLabel(snapshot.error)}。当前显示上次成功轮询的缓存数据，控制操作不可用。
+            无法连接 mcbot：{mcbotErrorLabel(snapshot.error)}。当前显示上次成功轮询的缓存数据，控制操作不可用。
           </span>
         </div>
       ) : null}
       {snapshot.stale ? (
         <div className="notice notice-warning">
           <span>
-            Lofii 数据已过期（上次成功轮询 <RelativeTime ts={snapshot.lastPollAt} fallback="未知时间" />
-            ），请检查 Lofii 进程；新数据恢复前请勿依赖当前状态。
+            mcbot 数据已过期（上次成功轮询 <RelativeTime ts={snapshot.lastPollAt} fallback="未知时间" />
+            ），请检查 mcbot 进程；新数据恢复前请勿依赖当前状态。
           </span>
         </div>
       ) : null}
       {snapshot.reachable && snapshot.error ? (
         <div className="notice notice-warning">
           <span>
-            Lofii 状态可达，但事件流/告警游标异常：{lofiiErrorLabel(snapshot.error)}；事件流可能停止更新，控制仍可尝试。
+            mcbot 状态可达，但事件流/告警游标异常：{mcbotErrorLabel(snapshot.error)}；事件流可能停止更新，控制仍可尝试。
           </span>
         </div>
       ) : null}
       {!snapshot.controlEnabled ? (
         <div className="notice notice-muted">
-          Lofii 控制未启用（服务端未配置 LOFII_CONTROL_TOKEN）：任务/移动/聊天操作已禁用。
+          mcbot 控制未启用（服务端未配置 MCBOT_CONTROL_TOKEN）：任务/移动/聊天操作已禁用。
         </div>
       ) : null}
 
-      <LofiiStatusCard
+      <McbotStatusCard
         snapshot={snapshot}
         error={error}
         refreshing={refreshing}
@@ -833,7 +833,7 @@ export function LofiiPanel() {
 
       {status ? (
         <>
-          <LofiiTaskCard
+          <McbotTaskCard
             status={status}
             controlReady={controlReady}
             taskName={taskName}
@@ -843,14 +843,14 @@ export function LofiiPanel() {
             onResume={() => setConfirm({ type: 'resume' })}
             onDiscardPending={() => setConfirm({ type: 'stop' })}
           />
-          <div className="lofii-columns">
-            <LofiiMoveCard
+          <div className="mcbot-columns">
+            <McbotMoveCard
               status={status}
               controlReady={controlReady}
               moveBusy={moveBusy}
               onMove={(action, target) => void handleMove(action, target)}
             />
-            <LofiiSayCard
+            <McbotSayCard
               ready={sayReady}
               text={sayText}
               error={sayError}
@@ -864,8 +864,8 @@ export function LofiiPanel() {
         </>
       ) : null}
 
-      <LofiiEventsCard snapshot={snapshot} />
-      <LofiiHistoryCard />
+      <McbotEventsCard snapshot={snapshot} />
+      <McbotHistoryCard />
 
       <ConfirmDialog
         open={confirm !== null}
