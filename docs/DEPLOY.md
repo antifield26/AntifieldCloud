@@ -14,7 +14,7 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v17**：`audit_write_failures` 保存审计失败诊断；`bot_group_roles` 保存群聊共享角色卡；`bot_memory_items`/`bot_memory_state` 保存结构化记忆；`bot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
-- 当前生产：**v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；读范围矩阵 7/7 通过；真实 QQ 私聊首轮/后续与群聊首轮通过；文档 mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过）。v0.7.3 文档模式已在生产显式启用；schema 保持 v17（无迁移）。备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
+- 当前生产：**v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；读范围矩阵 7/7 通过；真实 QQ 私聊首轮/后续与群聊首轮通过；文档 mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过；Tag `v0.7.3` + GitHub Release 已发布）。v0.7.3 文档模式已在生产显式启用；schema 保持 v17（无迁移）。备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.0，Cloudflare Access bypass 见 §5.2。
 

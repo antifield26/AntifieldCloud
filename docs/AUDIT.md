@@ -575,4 +575,4 @@
 - **产品风险 A13（模型不读文档）**：后续轮不再携带角色/记忆正文，若模型不调用 `read`，人设/记忆可能弱化；通过真实 QQ 首轮/后续、记忆召回、`/forget` 验收观察，可随时用 flag 回退内联提示词。**生产观察**：私聊后续轮模型实际调用 `read` 读取 `role.md`/`memory.md`，未见人设弱化；记忆召回与 `/forget` 未在生产做破坏性验证。
 - **运维缺陷 F1（drill 增量链误报）**：`drill-verify.mjs` 的 `details` 未返回 manifest `since`，`drill.ps1` 对所有含 inc 的链误报 `chain_since_missing`；生产首次演练 `20261027T061021Z` 暴露。已补字段与单测，重跑 `20261027T061319Z` 通过（full+5 inc、schema17）。
 - **明确残余**：首轮角色卡仍存在于 OpenCode 会话历史（后续请求不再发送正文）；OpenCode 进程是信任边界（可读全部上下文作用域）；群共享记忆在群成员间可见为既有语义；上下文目录为派生数据、不进入备份，恢复后重建。
-- **未决**：Tag `v0.7.3` + GitHub Release；Windows 每日备份任务标记待用户以管理员 PowerShell 重装；生产未做破坏性 `/forget confirm` 与多成员群聊第二轮回读（自动化测试覆盖，留作可选复验）。
+- **未决**：Tag `v0.7.3` + GitHub Release 已发布；Windows 每日备份任务已重装并刷新到 0.7.3；生产未做破坏性 `/forget confirm` 与多成员群聊第二轮回读（自动化测试覆盖，留作可选复验）。

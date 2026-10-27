@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.7.3（**已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收，待 Tag/Release**），schema **v17**（无迁移），OpenCode **v2.1.4**。当前生产 v0.7.3（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；文档模式已显式启用，mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
+> 状态：v0.7.3（**已发布：Tag `v0.7.3` + GitHub Release [AntifieldCloud v0.7.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.3)；已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**），schema **v17**（无迁移），OpenCode **v2.1.4**。当前生产 v0.7.3（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；文档模式已显式启用，mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
 > 测试基线：`npm test` **521**（1 skip）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`check-version`（严格 `0.7.3`）、`build`（`index-fid8njfw.js` 726.86 kB）均通过；Node.js **v26.12.1**。
 > 部署与运维见 [docs/DEPLOY.md](docs/DEPLOY.md)，备份/恢复见 [docs/BACKUP.md](docs/BACKUP.md)，契约见 [docs/API.md](docs/API.md)，路线与验收记录见 [docs/ROADMAP.md](docs/ROADMAP.md) 与 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
 

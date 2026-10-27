@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.3（已部署生产并完成读范围/QQ 正向验收，待 Tag/Release；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.7.3 新增 Bot 上下文文档 + 按需 `read`：角色卡只在会话创建时发送，后续轮只给角色名/记忆条数/只读文档路径，`BotContextStore` 按作用域哈希写 `role.md`/`memory.md`，OpenCode 仅放行当前作用域两份文档的 `read`；`BOT_AI_CONTEXT_READ_ENABLED` 默认 false，生产读范围矩阵通过后已显式启用。当前生产为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；文档 mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过；真实 QQ 私聊首轮/后续与群聊首轮通过）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.7.3（已发布 Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围/QQ 正向验收；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.7.3 新增 Bot 上下文文档 + 按需 `read`：角色卡只在会话创建时发送，后续轮只给角色名/记忆条数/只读文档路径，`BotContextStore` 按作用域哈希写 `role.md`/`memory.md`，OpenCode 仅放行当前作用域两份文档的 `read`；`BOT_AI_CONTEXT_READ_ENABLED` 默认 false，生产读范围矩阵通过后已显式启用。当前生产为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；文档 mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过；真实 QQ 私聊首轮/后续与群聊首轮通过）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.3，2026-10-27 本地门禁）：`npm test` **521**（1 skip，server+scripts，含 scripts 30）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.93% / Branches 78.37% / Functions 88.55%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；读范围矩阵 7/7；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记待用户以管理员 PowerShell 重装刷新到 0.7.3）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
+当前基线（v0.7.3，2026-10-27 本地门禁）：`npm test` **521**（1 skip，server+scripts，含 scripts 30）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.93% / Branches 78.37% / Functions 88.55%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；读范围矩阵 7/7；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记已刷新到 0.7.3）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 

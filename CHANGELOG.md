@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.7.3] - 2026-10-27（已部署生产并完成读范围/QQ 正向验收，待 Tag/Release；schema 保持 v17）
+## [v0.7.3] - 2026-10-27（已发布：Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围/QQ 正向验收；schema 保持 v17）
 
 ### Added
 
@@ -27,9 +27,9 @@
 
 ### Deployed
 
-- **生产部署（2026-10-27）**：release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；迁移前快照 `db-predeploy-20261027T060230013Z.sqlite`（sha256 `300a3957921504fd9ec487c07c5c8e3c4604ef1e374ae24dfbfb5a6dafe593ad`）；完整 Access smoke **33/0/0/2**；读范围矩阵 7/7 通过后启用 `BOT_AI_CONTEXT_READ_ENABLED=true`。
+- **生产部署（2026-10-27）**：release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；迁移前快照 `db-predeploy-20261027T060230013Z.sqlite`（sha256 `300a3957921504fd9ec487c07c5c8e3c4604ef1e374ae24dfbfb5a6dafe593ad`）；完整 Access smoke **34/0/0/2**（Windows 任务标记重装后）；读范围矩阵 7/7 通过后启用 `BOT_AI_CONTEXT_READ_ENABLED=true`。
 - **真实 QQ 验收**：私聊首轮 851 字符含 `[角色卡：lofii]`+文档路径，后续 763 字符不含角色卡正文但保留文档路径，模型实际 `read` `role.md`/`memory.md`；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档路径；审计 `bot.ai.chat.context=docs`，`bot.ai.tool_mode_reset` 清 6 个旧会话。
-- **演练与运维**：drill `20261027T061319Z` 通过并写回 Pi 状态；Windows 每日备份任务标记仍为 0.7.2，需用户以管理员 PowerShell 重装；未执行 Tag/Release。
+- **演练与运维**：drill `20261027T061319Z` 通过并写回 Pi 状态；Windows 每日备份任务已重装并刷新到 0.7.3（脚本 SHA 一致，完整 smoke 34/0/0/2）；Tag `v0.7.3` + GitHub Release 已发布。
 
 ## [v0.7.2] - 2026-10-25（已发布：Tag `v0.7.2` + GitHub Release）
 

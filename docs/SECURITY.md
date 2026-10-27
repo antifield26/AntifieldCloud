@@ -329,4 +329,4 @@
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见（`audit_write_failures` 持久化）。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`BOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
   - 当前基线：`npm test` **521**（1 skip）、`test:web` **222**、服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`check-version` 严格 `0.7.3`、`check-prod-deps` 通过。
-  - 生产：release `20261025T132950Z`/commit `eb74382`，部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill `20261025T133743Z` schema17 通过；OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过。
+  - 生产：release `20261027T060134Z`/commit `aedc3c7`，完整 Access smoke **34/0/0/2**；读范围矩阵 7/7 通过；drill `20261027T061319Z` schema17 通过；OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过；文档模式已显式启用。

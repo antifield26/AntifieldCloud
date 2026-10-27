@@ -5,8 +5,8 @@
 ## 当前版本
 
 - **版本**：v0.7.3；schema **v17**（无迁移）；OpenCode **v2.1.4**；Node.js **v26.12.1**。
-- **状态**：**已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**（2026-10-27）；生产 release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；文档模式已显式启用 `mcp:send:read:aad221f1`；drill `20261027T061319Z` schema17 通过。
-- **发布**：待 Tag `v0.7.3` + GitHub Release；Windows 每日备份任务需用户用管理员 PowerShell 重装以刷新 0.7.3 标记（当前 0.7.2，不影响应用运行）。
+- **状态**：**已发布 Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**（2026-10-27）；生产 release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；文档模式已显式启用 `mcp:send:read:aad221f1`；drill `20261027T061319Z` schema17 通过。
+- **发布**：Tag `v0.7.3` + GitHub Release [AntifieldCloud v0.7.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.3) 已完成；Windows 每日备份任务已重装并刷新到 0.7.3 标记。
 - **测试基线**：`npm test` **521**（1 skip，server+scripts）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version`（严格 `0.7.3`）通过。
 
 ## 范围
