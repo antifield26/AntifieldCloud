@@ -12,7 +12,7 @@ import { depositProduce, oneShotDeposit, withdrawSupplies } from './deposit.ts'
 import { runFarming } from './farming.ts'
 import { runFishing } from './fishing.ts'
 import { runWoodcutting } from './woodcutting.ts'
-import { countItem, countFood, findItem } from './inventory.ts'
+import { countItem, countFood, findItem, isKeptItem } from './inventory.ts'
 import { TaskStore, type PersistedQueueTask, type PersistedTask } from './store.ts'
 import {
   requireBot,
@@ -618,7 +618,8 @@ export class TaskManager implements TaskController {
     const bot = this.deps.getBot()
     let depositError: string | null = null
     const produced = active.progress.fishCaught + active.progress.wheatHarvested + active.progress.logsChopped
-    if (config.autoDeposit && bot?.entity && produced > 0) {
+    const hasLeftover = Boolean(bot?.entity && bot.inventory.items().some(item => !isKeptItem(bot, item)))
+    if (config.autoDeposit && bot?.entity && (produced > 0 || hasLeftover)) {
       try {
         await depositProduce(this.context(active))
       } catch (error) {
