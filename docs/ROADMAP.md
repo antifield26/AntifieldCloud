@@ -1,10 +1,10 @@
 # 路线图
 
-## v0.8.1（本地实现与门禁完成 2026-10-27，生产仍 v0.8.0 待部署；尚未 Tag/Release；v0.8.0 的 Minor 安全补丁；schema 保持 v17；OpenCode v2.1.4）
+## v0.8.1（生产部署与只读/API/安全回归验收完成 2026-10-27；尚未 Tag/Release；v0.8.0 的 Minor 安全补丁；schema 保持 v17；OpenCode v2.1.4）
 
 - **范围**：修复 v0.8.0 Minor 补审计发现——`/say` 分块命令注入（SEC6-01 P1：控制 Token 必需、任意 ASCII `/` 与 C0 拒绝）、上游数据原型链/形状（SEC6-02 P2：own-property 查表、history 形状校验、原型键清洗）、流式 2 MiB 响应上限、Token 脱敏大小写不敏感、事件缓存 ≤512 KiB、轮询 200 条、游标失败重试、前端状态归一化/部分失败警告/防竞态；上游 lofii-bot **v0.6.1**（最低 v0.6.0，契约 v1）逐行中和行首 `/`。
 - **版本事实**：AntifieldCloud **0.8.1**（`package.json`/lock/`deploy/env.example`）；本地 `npm run check` 通过、`npm test` **572**（571 pass、1 skip）、`test:web` **256**（48 文件）、服务端覆盖率 93.04/78.77/88.67、前端 55.83/51.29/48.66、build 通过；`check-version` 严格 `0.8.1` 通过。
-- **状态**：**生产仍为 v0.8.0，v0.8.1 待部署**；尚未 Tag/GitHub Release。真实 Lofii 告警未触发；Windows 每日任务安装标记待用户重装；残余（告警幂等键 schema v18、告警风暴并发上限、Lofii 进程未纳监控、lastError 透传、loopback 端口范围、stop 不取消在途轮询）见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
+- **状态**：**v0.8.1 已部署生产并完成只读/API/安全回归验收（2026-10-27）**：应用 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17，部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2（`-SkipLocalTaskCheck`）；lofii-bot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` match；`/api/version`/`/api/lofii/status` 正常，`/say` 任意 `/` 与 C0 均 400。**尚未 Tag/GitHub Release**；真实 Lofii 告警未触发；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）；只读 `/say` 503 仅单测/集成覆盖；Windows 每日任务安装标记待用户重装；残余（告警幂等键 schema v18、告警风暴并发上限、Lofii 进程未纳监控、lastError 透传、loopback 端口范围、stop 不取消在途轮询）见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
 
 ## v0.8.0（生产部署与只读/API 验收已完成 2026-10-27，待 Tag/Release 收尾；Lofii Bot 只读/控制/告警对接 + `/minecraft` 合并标签；schema 保持 v17；OpenCode v2.1.4）
 

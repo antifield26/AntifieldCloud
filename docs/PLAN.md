@@ -5,8 +5,8 @@
 ## 当前版本
 
 - **版本**：**v0.8.1**（v0.8.0 的 Minor 安全补丁）；schema 保持 **v17**（无迁移）；OpenCode **v2.1.4**；Node.js **v26.12.1**；上游 lofii-bot **v0.6.1**（最低 v0.6.0，契约 v1）。
-- **状态**：**本地实现与门禁完成（2026-10-27），生产仍为 v0.8.0，待部署**；**尚未 Tag/GitHub Release**。生产 v0.8.0 已完成部署、只读/API 验收、完整 Access smoke（35/0/0/2，`-SkipLocalTaskCheck`）与 UI 视觉确认（Edge headless 经 SSH 隧道截图）；v0.8.0 的剩余收尾见 `docs/ACCEPTANCE.md` v0.8.0 节。
-- **发布**：v0.8.1 **尚未部署生产、尚未 Tag/Release**；等 Lead 完成部署与 smoke 后回填生产证据。
+- **状态**：**生产部署与只读/API/安全回归验收完成（2026-10-27 CST）**；**尚未 Tag/GitHub Release**。生产应用 **v0.8.1**（release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2（`-SkipLocalTaskCheck`）；lofii-bot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match）；上一生产 v0.8.0 保留为回滚点。生产 UI 沿用 v0.8.0 视觉确认（v0.8.1 未重新截图）。
+- **发布**：v0.8.1 **尚未 Tag/Release**；部署与验收证据已回填 `docs/ACCEPTANCE.md` v0.8.1 节。
 - **测试基线（v0.8.1 本地，2026-10-27 实测）**：`npm run check` 通过；`npm test` **572**（571 pass、1 skip，server=87 + scripts=4 共 91 文件）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **Lines 93.04% / Branches 78.77% / Functions 88.67%**、前端 **Lines 55.83% / Branches 51.29% / Functions 48.66%**（门禁通过）；`npm run build` 通过；`node scripts/check-version.mjs` 严格模式 `0.8.1` 通过（`deploy/env.example APP_VERSION=0.8.1`）。
 
 ## 范围（v0.8.1 安全补丁）
@@ -59,17 +59,18 @@
 3. **Web 加固**（完成）：`safeLofiiStatus`、`eventsSupported` 回退、部分失败警告、请求序号 + Abort、own-property 标签查表、`/say` 任意 `/` 拒绝、历史形状错误可见。
 4. **上游 lofii-bot v0.6.1**（完成，另行提交）：`splitOutgoing` 逐行中和行首 `/`，新增 239/240/255/480 边界测试。
 5. **测试/门禁**（完成）：`npm run check`、`test:coverage`、`test:web:coverage`、`build`、`check-version`（0.8.1）通过；新增/扩展 Lofii 回归测试。
-6. **文档与验收**（完成）：本文件、README/AGENTS/CHANGELOG/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT；生产部署与 smoke 由 Lead 在 0.8.1 上执行后回填。
+6. **文档与验收**（完成）：本文件、README/AGENTS/CHANGELOG/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT；生产部署、smoke、已认证 API 与安全回归已由 Lead 在 0.8.1 上执行并回填。
 
 ## 验收
 
 - **本地（v0.8.1 已完成）**：`npm run check` 通过；`npm test` 572（571 pass、1 skip）、`npm run test:web` 256（48 文件）；服务端覆盖率 93.04/78.77/88.67、前端 55.83/51.29/48.66（门禁通过）；`npm run build` 通过；`check-version` 严格模式通过；`/say` 回归覆盖只读 503、任意 `/`、C0、240 字符切分边界（见 `docs/ACCEPTANCE.md` v0.8.1 节）。
-- **生产（v0.8.0 已实测，v0.8.1 待部署）**：
-  1. v0.8.0 应用部署 release `/opt/antifieldcloud/releases/20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；迁移前快照与 env 备份齐全。
-  2. v0.8.0 部署内只读 smoke **26/0/0/2**；完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`）；生产 UI 视觉确认已完成。
-  3. v0.8.0 生产 API 探针 status/version/history、CSRF 403、patrol start/stop、审计与临时会话清理已验证。
-  4. **v0.8.1 尚未部署**：部署后需验证 `/healthz` v0.8.1/schema17、`/say` 只读 503、任意 `/` 400、C0 400、smoke（`-ExpectedLofiiVersion 0.6.1`）与文档回填。
-- **生产边界（不得写成已完成）**：真实 Lofii 告警未触发（单元/集成覆盖，`alert_events` 暂无 `lofii_*`）；Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.1（用户手动步骤/残余，非失败）；v0.8.0 尚未 Tag/Release，v0.8.1 亦未 Tag/Release。
+- **生产（v0.8.1 已实测，2026-10-27）**：
+  1. 应用部署 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17（uptime/DB ok）；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3…1bd991a`）；上一生产 v0.8.0 保留为回滚点。
+  2. 部署内只读 smoke **26/0/0/2**；完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1）。
+  3. lofii-bot v0.6.1（release `20261027T111640Z`/commit `a0a28da`）仅 loopback，Token `--check` read/control 均 match；`meta.lofii.event_cursor` 已更新。
+  4. 已认证 API：`/api/version` 200（v0.8.1、lofii 两开关 true）；`/api/lofii/status` 200（enabled/reachable/control/eventsSupported=true，version 0.6.1/contract 1）；`/say` 240 填充+`/op` 400、C0 400；临时会话已删（0）；审计无 `lofii.say`、`alert_events` `lofii_*` 仍 0；journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空。
+  5. **UI 未在 v0.8.1 重新截图**（v0.8.0 视觉确认仍有效）；只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）。
+- **生产边界（不得写成已完成）**：真实 Lofii 告警未触发（单元/集成覆盖，`alert_events` 暂无 `lofii_*`）；Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.1（用户手动步骤/残余，非失败）；v0.8.0 与 v0.8.1 均尚未 Tag/Release。
 
 ## 非目标（本版不做）
 

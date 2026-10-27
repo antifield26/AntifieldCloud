@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**本地实现与门禁完成，生产仍为 v0.8.0 待部署；尚未 Tag/GitHub Release**；schema 保持 v17；OpenCode v2.1.4）
+## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**生产部署与只读/API/安全回归验收已完成（2026-10-27）；尚未 Tag/GitHub Release**；schema 保持 v17；OpenCode v2.1.4）
 
 ### Security
 
@@ -21,14 +21,17 @@
 
 ### Deploy
 
-- **生产仍为 v0.8.0**（release `20261027T094412Z`/commit `9ae5809`，`/healthz` v0.8.0/schema17；部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2（`-SkipLocalTaskCheck`）；生产 UI 视觉确认已完成）。**v0.8.1 尚未部署生产、尚未 Tag/Release**。
-- 部署顺序：先升级 lofii-bot 到 **v0.6.1** 并重新 `sync-lofii-tokens.sh`（`--check` match）→ 部署 AntifieldCloud 0.8.1 → `smoke.ps1 -ExpectedVersion 0.8.1 -ExpectedLofiiVersion 0.6.1` → 验证只读 `/say` 503、任意 `/` 400、C0 400 与 UI；回填 `docs/ACCEPTANCE.md`。
-- 回滚：只回退应用 release 即可（schema 不变、env 无需改动）；lofii-bot v0.6.1 对 v0.8.0 兼容；回退后 `/say` 恢复旧语义，需同步下调安全结论。
+- **生产部署（2026-10-27 CST）**：应用 release `/opt/antifieldcloud/releases/20261027T113055Z`，commit `5405a8d`；`/healthz` = v0.8.1/schema17（uptime/DB ok）；迁移前 DB 快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`）。上一生产 **v0.8.0**（release `20261027T094412Z`/commit `9ae5809`）保留为回滚点。
+- **smoke**：部署内只读 smoke **26 PASS / 0 FAIL / 0 WARN / 2 SKIP**；完整公网 Access smoke **35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（`-SkipLocalTaskCheck`；期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；2 SKIP=加密/异地默认关闭）。
+- **lofii-bot**：升级到 **v0.6.1**（release `/opt/lofii-bot/releases/20261027T111640Z`/commit `a0a28da`，仅 loopback）；`sync-lofii-tokens.sh --check` **read=match control=match**；`LOFII_ENABLED=true`，`meta.lofii.event_cursor` 已更新。
+- **已认证 API/安全回归**（临时验收会话已删，计数 0）：`/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）；`/api/lofii/status` 200（enabled/reachable/control/eventsSupported=true，version=0.6.1/contract=1）；`/say` 240 填充 + `/op` → **400 `message_must_not_start_with_slash`**；`/say` C0 控制字符 → **400 `invalid_request`**；只读 `/say` 503 由单元/集成测试覆盖（生产控制 Token 已配置，未改配置实测）。
+- **环境/日志证据**：`audit_log` 仅 `lofii.task.start/stop`，无 `lofii.say`（拒绝请求不写审计）；`alert_events` 中 `lofii_*` 仍为 0；journal 无 error、0 条 64hex；env 0640；`systemctl --failed` 为空。
+- 回滚：回退到 v0.8.0 release `20261027T094412Z`（schema 不变、env 无需改动）；lofii-bot v0.6.1 对 v0.8.0 兼容；回退后 `/say` 恢复旧语义，需同步下调安全结论。
 
 ### Pending
 
-- v0.8.0 与 v0.8.1 **均尚未 Tag/GitHub Release**；v0.8.1 待部署生产与 `/say`/UI 复验。
-- 明确残余（未修）：告警事件无幂等键（schema v18 下一 minor）、告警风暴并发 webhook/Bot 上限、Lofii 进程未纳入 `service_down` 监控/metrics、`/status`/`history` 的 `lastError` 原样透传（admin-only）、`LOFII_URL` 允许任意 loopback 端口、`stop()` 不取消在途轮询、`lastSuccessAt` 未下发（stale 文案仍用 `lastPollAt`）、真实 Lofii 告警未触发、Windows 每日任务安装标记待用户重装。详见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
+- v0.8.0 与 v0.8.1 **均尚未 Tag/GitHub Release**。
+- 明确残余（未修）：告警事件无幂等键（schema v18 下一 minor）、告警风暴并发 webhook/Bot 上限、Lofii 进程未纳入 `service_down` 监控/metrics、`/status`/`history` 的 `lastError` 原样透传（admin-only）、`LOFII_URL` 允许任意 loopback 端口、`stop()` 不取消在途轮询、`lastSuccessAt` 未下发（stale 文案仍用 `lastPollAt`）、真实 Lofii 告警未触发、**v0.8.1 未重新做生产 UI 截图/视觉复验**（v0.8.0 视觉确认仍有效）、Windows 每日任务安装标记待用户重装。详见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
 
 ## [v0.8.0] - 2026-10-27（生产部署与只读/API 验收已完成（2026-10-27）；待 Tag/Release 收尾；schema 保持 v17）
 

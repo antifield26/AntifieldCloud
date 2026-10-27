@@ -97,14 +97,15 @@
 | webhook 与 Bot 通知串行、关闭不排空、通知文案英文码 | ARCH6-18 | 未并行/未排空；Lofii 事件通知未中文化 |
 | 真实 Lofii 告警未触发 | 三轨共同证据边界 | `alert_events` 暂无 `lofii_*`；映射/webhook/Bot 由单元/集成测试覆盖 |
 | Windows 每日任务安装标记待用户重装 | 部署残余 | 需用户管理员 PowerShell 重装 `install-backup-task.ps1`（非失败） |
-| **v0.8.1 尚未部署/尚未 Tag/Release** | 发布边界 | 生产仍 v0.8.0；部署后需复验 `/say`、UI 与 smoke |
+| **v0.8.1 尚未 Tag/Release** | 发布边界 | v0.8.1 已于 2026-10-27 部署生产并完成只读/API/安全回归验收（release `20261027T113055Z`/commit `5405a8d`，smoke 26/0/0/2 + 完整 Access 35/0/0/2，`/say` 任意 `/` 与 C0 均 400）；仅缺 Tag/Release；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效），只读 `/say` 503 仅单测/集成覆盖 |
 
 ### 4. 验证与边界
 
 - 本地（v0.8.1）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（门禁通过）；`npm run build` 通过；`check-version` 严格 `0.8.1`。
+- 生产（v0.8.1，2026-10-27 部署并验收）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17，迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`）；lofii-bot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match；已认证 `/api/version`/`/api/lofii/status` 200；`/say` 240 填充+`/op` 400、C0 400；审计无 `lofii.say`、`alert_events` `lofii_*` 仍 0、journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空；临时会话已删（0）。
 - 上游 lofii-bot v0.6.1：`splitOutgoing` 逐行中和行首 `/`；新增 239/240/255/480 边界测试（另行提交，不属本仓库）。
-- 证据边界：未在生产实际发送 `/op`/聊天命令、未触发真实 Lofii 告警、未做真实 webhook/QQ 投递；三轨审计为只读审计 + 进程内 PoC；生产 v0.8.0 的部署/只读验收/UI 视觉/smoke 证据见 `docs/ACCEPTANCE.md`。
-- 发布边界：**v0.8.0 与 v0.8.1 均尚未 Tag/GitHub Release**；v0.8.1 生产待部署。
+- 证据边界：审计本身未在生产实际发送 `/op`/聊天命令、未触发真实 Lofii 告警、未做真实 webhook/QQ 投递；三轨审计为只读审计 + 进程内 PoC；生产证据由 Lead 于 v0.8.1 部署后实测回填（见 `docs/ACCEPTANCE.md` v0.8.1 节）。只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）。
+- 发布边界：**v0.8.0 与 v0.8.1 均尚未 Tag/GitHub Release**；v0.8.1 已部署生产并验收。
 
 ## 第一轮（v0.2.0，2026-10-19）
 
