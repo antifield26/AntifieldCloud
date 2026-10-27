@@ -1,5 +1,11 @@
 # Changelog
 
+## 未发布
+
+### Changed
+
+- **项目更名为 AntifieldComplexx**（2026-10-27，原 AntifieldCloud）：GitHub 仓库改名为 `antifield26/AntifieldComplexx`（旧地址由 GitHub 自动重定向），同步 README / AGENTS / docs / UI / 包名（`antifieldcomplexx`）与仓库链接。**生产运行时标识符不变**（`/opt|/etc|/var/lib/antifieldcloud`、服务用户 `antifieldcloud`、systemd `antifieldcloud*.service/.timer`、Windows 任务 `AntifieldCloud-*`、告警 webhook `source`/签名头等兼容标识符），无需重新部署；此前发布的 Tag 与 GitHub Release 标题保留旧名。
+
 ## [v0.8.1] - 2026-10-27（v0.8.0 的 Minor 安全补丁；**已发布：annotated Tag `v0.8.1` + GitHub Release（2026-10-27）；生产部署与只读/API/安全回归验收完成**；schema 保持 v17；OpenCode v2.1.4）
 
 ### Security
@@ -31,8 +37,8 @@
 
 ### Release
 
-- **v0.8.1 已发布**：annotated Tag `v0.8.1`（target 为发布文档 commit）；GitHub Release `AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.1 ），2026-10-27。
-- **v0.8.0 已发布**：annotated Tag `v0.8.0` → commit `c5ec851`；GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0 ），publishedAt `2026-10-27T12:02:45Z`。
+- **v0.8.1 已发布**：annotated Tag `v0.8.1`（target 为发布文档 commit）；GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1 ），2026-10-27。
+- **v0.8.0 已发布**：annotated Tag `v0.8.0` → commit `c5ec851`；GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0 ），publishedAt `2026-10-27T12:02:45Z`。
 
 ### Pending
 
@@ -71,12 +77,12 @@
 - 完整公网 Access smoke（2026-10-27，`smoke.ps1 ... -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0 -SkipLocalTaskCheck -AccessClientId/-AccessClientSecret`；域名/主机/备份目录按实际替换）：**35 PASS / 0 FAIL / 0 WARN / 2 SKIP**（2 SKIP=加密/异地默认关闭），含 Lofii Bot active/version 0.6.0/contractVersion=1、公网 Access、安全头、PWA、备份旁文件校验。`-SkipLocalTaskCheck` 原因：Windows 每日应用归档任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤/残余，**不是失败**；不声称任务已刷新）。
 - 运行验证：`meta.lofii.event_cursor` 已建立 `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`（轮询成功）；生产 API 探针 `/api/lofii/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2；无 CSRF 的 POST `403 csrf_failed`；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文；临时验收会话已删除（`user_agent='v080-acceptance'` 计数 0）。
 - 回滚：`LOFII_ENABLED=false`（可选清空 Token）+ 重启即回到 v0.7.3 行为，`meta.lofii.event_cursor` 可保留/删除，无 schema/DB 回滚；只读模式只需清空 `LOFII_CONTROL_TOKEN`。
-- 发布状态：**已发布**——annotated Tag `v0.8.0` 指向 commit `c5ec851`；GitHub Release 标题 `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`，URL https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0 ，publishedAt `2026-10-27T12:02:45Z`；Release notes 已包含 Lofii 功能/安全边界/生产证据/已知边界。生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，告警映射/webhook/Bot 由单元/集成测试覆盖，`alert_events` 暂无 `lofii_*`）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败；smoke 用 `-SkipLocalTaskCheck`）。
+- 发布状态：**已发布**——annotated Tag `v0.8.0` 指向 commit `c5ec851`；GitHub Release 标题 `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`，URL https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0 ，publishedAt `2026-10-27T12:02:45Z`；Release notes 已包含 Lofii 功能/安全边界/生产证据/已知边界。生产 UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，告警映射/webhook/Bot 由单元/集成测试覆盖，`alert_events` 暂无 `lofii_*`）；Windows 每日备份任务安装标记仍为旧版本，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新到 0.8.0（用户手动步骤，非失败；smoke 用 `-SkipLocalTaskCheck`）。
 
 ### Release
 
-- **v0.8.0 已发布**：annotated Tag `v0.8.0` → commit `c5ec851`；GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0 ），publishedAt `2026-10-27T12:02:45Z`。
-- **v0.8.1 已发布**：annotated Tag `v0.8.1` + GitHub Release `AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.1 ），2026-10-27。
+- **v0.8.0 已发布**：annotated Tag `v0.8.0` → commit `c5ec851`；GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0 ），publishedAt `2026-10-27T12:02:45Z`。
+- **v0.8.1 已发布**：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`（https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1 ），2026-10-27。
 
 ### Pending
 
@@ -149,7 +155,7 @@
 - `bot-ai.test.ts` 新增真实 `OpenCodeBotAi` 用例：同群两个成员只创建一个会话、只保留一条映射，并清理旧分用户映射。
 - 本地门禁：`npm test` **491**（Bot 定向 **193**）、`test:web` **222**、服务端覆盖率 **92.75/78.23/87.82**（Lines/Branches/Functions）、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`（`index-C0QZV4hZ.js`）、`check-version` 严格 `0.7.1` 通过。
 - 生产部署：release `20261025T031856Z`/commit `d8bdfc5`，`/healthz` v0.7.1/schema16；迁移前快照 `db-predeploy-20261025T031929034Z.sqlite`（sha256 `c61e1e32…47cc`）；部署内 smoke **23/23**、完整 Access smoke **33/0/0/2**（env 已清理；Windows 备份任务标记已刷新到 0.7.1，手动运行 result=0 并拉取新归档）；启动后生产群聊旧分用户映射清零；部署代码探针验证同群两个成员只创建 1 个会话并清理旧映射；真实 Bot Test 群由两个成员产生 3 条 prompt、4 条 assistant，数据库仅一条 `__group__` 映射，用户确认验收通过。
-- Tag/GitHub Release 已发布：annotated Tag `v0.7.1` + [AntifieldCloud v0.7.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.1)。
+- Tag/GitHub Release 已发布：annotated Tag `v0.7.1` + [AntifieldComplexx v0.7.1](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.7.1)。
 
 ## [v0.7.0] - 2026-10-25（已发布：Tag `v0.7.0` + GitHub Release）
 
@@ -208,7 +214,7 @@
 - 本地门禁（2026-10-25）：`npm run check` 通过；`npm test` **487**、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.67/78.14/87.95**（Lines/Branches/Functions）；前端覆盖率 **52.31/47.32/45.02**（Lines/Branches/Functions，Statements 50.12）；`npm run build` 通过（`index-C0QZV4hZ.js` 726.72 kB）；`check-version` 严格模式 `version ok 0.7.0`；`check-prod-deps` 通过；`scripts/test` 29 pass；Bot 定向 189 pass。追加 D-20：同一 Bot 连续外发文本最小间隔 1000ms（分段/发送工具/兜底/队列统一，按 AppID 串行；测试注入 0）。
 - OpenCode **v2.1.4** 已于 2026-10-25 08:21 CST 在生产只读升级：升级前备份 v2.1.3 二进制/data/env/unit/MCP（`/var/backups/opencode/opencode-bin-20261025T002014Z.tar.gz`，sha256 `78c279e6…8b19`）；V1–V9、V14 PASS，V10–V13（真实 QQ/记忆/发送工具/搜索）待真实用户联调。
 - 生产应用 **v0.7.0 已部署**（2026-10-25 08:53/09:06/09:45/10:16 CST，最终 commit `4f40ccd`，release `/opt/antifieldcloud/releases/20261025T021609Z`；`/healthz` v0.7.0/schema16；迁移前快照 `db-predeploy-20261025T021642566Z.sqlite` sha256 `fa0696bf…bf05`；上一 release `20261025T014533Z` 保留可回滚）；部署内 smoke 23/23；完整 Access smoke 网络恢复后 **31 PASS/0 FAIL/1 WARN/2 SKIP**（两次中间复核曾遇公网 curl 超时，非应用回归）；D-20 与 DSML 修复均已包含（生产代码探针分别验证 1001ms 与真实 DSML 文本清洗）；Windows 备份任务安装标记需管理员重跑 `install-backup-task.ps1`。
-- Tag/GitHub Release 已发布：annotated Tag `v0.7.0` + [AntifieldCloud v0.7.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.0)（2026-10-25 用户验收通过）；加密/异地副本启用演练仍待用户密钥/rclone 配置后执行。
+- Tag/GitHub Release 已发布：annotated Tag `v0.7.0` + [AntifieldComplexx v0.7.0](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.7.0)（2026-10-25 用户验收通过）；加密/异地副本启用演练仍待用户密钥/rclone 配置后执行。
 
 ## [v0.6.6] - 2026-10-24（已发布）
 
@@ -225,8 +231,8 @@
 - 版本升到 **0.6.6**；schema 保持 **v16**（无迁移；`deploy.ps1 -ExpectedSchemaVersion 16` 不变）。
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **414**（新增群聊用户名 head、共享记忆隔离、群聊默认沉默、记忆迁移回归）、`npm run test:web` **181**。
 - 生产部署（2026-10-24 18:05 CST）：release `20261024T100522Z`/commit `1f6980e`（v0.6.6/schema 16，含用户/群聊记忆两栏与迁移）；迁移前快照 `db-predeploy-20261024T100552756Z.sqlite`（sha256 `2cd3e5be3646d90031755d6d76378475369fce43d4ab367345d69873e6d2b0b9`）；`/healthz` v0.6.6/schema16；部署内只读 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；启动迁移 `bot_group_memory_migrated_v1=2026-10-24T10:05:54.350Z`，群共享条目 4 条、用户级条目 4 条保留；部署后备份 `snapshot-20261024T100729047Z-inc.tar.gz`（245155 bytes，sha256 `21cabc05142103a30ba058fdef8a5ab24d09ac3176d811dffff6e15aa79309cd`，secrets=ok，PC 已 ack）。
-- v0.6.5 的 `/role show` 与失效 AI 会话重建修复一并包含在本版；v0.6.5 已单独补发 Tag `v0.6.5` + [GitHub Release](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.5)。
-- 发布（2026-10-24 18:20 CST）：annotated Tag `v0.6.6` + GitHub Release [AntifieldCloud v0.6.6](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.6)（Latest）；Tag 指向本版发布提交，生产代码 commit `1f6980e`、生产 release `20261024T100522Z`。
+- v0.6.5 的 `/role show` 与失效 AI 会话重建修复一并包含在本版；v0.6.5 已单独补发 Tag `v0.6.5` + [GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.5)。
+- 发布（2026-10-24 18:20 CST）：annotated Tag `v0.6.6` + GitHub Release [AntifieldComplexx v0.6.6](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.6)（Latest）；Tag 指向本版发布提交，生产代码 commit `1f6980e`、生产 release `20261024T100522Z`。
 - v0.6.5 发布信息（并入 v0.6.6）：生产 release `20261024T085435Z`/commit `c48ea8a`（v0.6.5/schema16）；迁移前快照 `db-predeploy-20261024T085507536Z.sqlite`（sha256 `e0062e5a8b6320cee4a81c98f28852c64a84994d4867909e539bd28aa29a9c14`）；部署内只读 smoke 16/16、完整 Access smoke 24/24；部署后备份 `snapshot-20261024T085621039Z-inc.tar.gz`（241426 bytes，sha256 `2d52c76f96fc7fe3895ca8fb11795d59925c2f9340cf646ce5d682de95adbbc6`，secrets=ok）；已补发 annotated Tag `v0.6.5` + GitHub Release。
 
 ## [v0.6.5] - 2026-10-24（已发布：Tag `v0.6.5` + GitHub Release）
@@ -274,7 +280,7 @@
 - 生产 env 增加 `BOT_AI_SEND_TOOL_ENABLED=true`、`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`；安装 `botmsg` MCP（`/opt/botmsg-mcp`）并重启 opencode，`/api/mcp` 显示 `botmsg connected`；OpenCode 探测会话确认模型可调用 `botmsg_send_message`（假 turn 凭据按预期返回失败）。
 - 部署后备份 `snapshot-20261024T065433557Z-inc.tar.gz`（218203 bytes，sha256 `83e9693375898717a3590f68656dbe0b7a198d4076bb9c28e098ed754b3e26db`，secrets=ok，PC 已 ack）。
 - 环境事件与恢复：2026-10-24 12:15 CST 校园网 Portal 认证失效导致 Cloudflare tunnel 出站 7844（TCP/UDP）被拦截，公网 530、浏览器 1033；13:46 CST 经 Pi 出口重新完成校园网认证后，cloudflared precheck 全 PASS（DNS/TCP/UDP/API），服务 active（NRestarts=0）、公网健康 200，完整 Access smoke **24/24（0 警告）**；本机应用/数据全程正常。
-- 发布状态：多用户内测用户验收通过（2026-10-24）；已推送 main、annotated Tag `v0.6.4`、GitHub Release [AntifieldCloud v0.6.4](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.4)。
+- 发布状态：多用户内测用户验收通过（2026-10-24）；已推送 main、annotated Tag `v0.6.4`、GitHub Release [AntifieldComplexx v0.6.4](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.4)。
 
 ## [v0.6.3] - 2026-10-23（已发布：Tag/Release v0.6.3）
 
@@ -296,7 +302,7 @@
 - 本地门禁：`npm run check`/`check-version` 通过；`npm test` **399**、`npm run test:web` **180**；服务端覆盖率 Lines **92.28%** / Branches **77.42%** / Functions **87.07%**；build bundle `index-BHmn1DCi.js` 691.34 kB。
 - 生产部署（2026-10-23）：最终 release `20261023T142411Z`/commit `7ac1d27`（v0.6.3/schema 16，含全量消息平台配置提示）；迁移前快照 `db-predeploy-20261023T142445335Z.sqlite`（sha256 `256e34ac…3098`）；`/healthz` v0.6.3/schema16；部署内只读 smoke 16/16、完整 Access smoke 24/24（0 警告）；drill `20261023T140323Z` schema16 通过；部署后备份 `snapshot-20261023T142611502Z-inc.tar.gz`（195705 bytes，sha256 `89cbf7c6…c449`，secrets=ok）。
 - 验收（2026-10-23 23:08 CST）：群角色卡「大肥鱼」在群聊实际生效（`role:true`）；QQ 平台完成“接收所有消息”/`GROUP_MESSAGE_CREATE`/群主“获取群内全部消息”后，非 @ 群消息入站并正常 Chat（`bot_events` `15:08:21Z` chat/ok，`bot.ai.chat`）；群聊斜杠命令静默；用户确认验收通过。
-- 发布（2026-10-23）：annotated Tag `v0.6.3` + GitHub Release [AntifieldCloud v0.6.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.3)（Latest）。
+- 发布（2026-10-23）：annotated Tag `v0.6.3` + GitHub Release [AntifieldComplexx v0.6.3](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.3)（Latest）。
 
 ## [v0.6.2] - 2026-10-23（已发布：Tag/Release v0.6.2）
 
@@ -407,7 +413,7 @@
 - OpenCode 已先升至 **v2.1.3** 并验证；本版不包含 OpenCode 变更步骤。
 - 生产 env 可保留 `COOKIE_DOMAIN=.父域` 用于清理旧 Cookie（不再设置新 Cookie）；无需新增 schema/env 键。
 - 本地门禁（2026-10-23）：`npm run check` 通过；`npm test` **383**（server+scripts，含新增回归）、`npm run test:web` **176**（32 文件）；服务端覆盖率 Lines **92.39%** / Branches **77.83%** / Functions **87.14%**（`npm run test:coverage` exit 0）、`npm run test:web:coverage` exit 0；`npm run build` 通过（bundle `index-D9PlQHRh.js` 680.45 kB）。
-- **已部署并验收通过（2026-10-23）**：最终 release `20261023T053539Z`/commit `6349617`；前两次同版本部署 `20261023T052315Z`（默认角色简化）与 `20261023T045613Z`（审计修复）保留；`/healthz` = `{"ok":true,"version":"0.6.0","schemaVersion":14}`；部署 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；最终迁移前快照 `db-predeploy-20261023T053611142Z.sqlite`（sha256 `8a96fe8eccea0875a52362f23f37d9f9213b609a36caf2c7f15a5830e376e445`）；drill `20261023T050104Z` schema14（`latestDb=db-20261023T045938554Z.sqlite`、世界归档已校验）；部署后备份 `snapshot-20261023T053645712Z-inc.tar.gz`（163398 bytes，sha256 `da0a75c121116623251a33f6740a8c13406f4d17b00cb80045f6d957f0d7faf8`，PC 已拉取/ack）+ 密钥包 `secrets-20261023T053647Z.tar.age`（1477127 bytes，含 opencode DB；A5-DATA-01 生产复验通过，`secretsOk=true`）。已推送 main、annotated Tag `v0.6.0`、GitHub Release [AntifieldCloud v0.6.0](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.6.0)（Latest，2026-10-23 13:51 CST）。
+- **已部署并验收通过（2026-10-23）**：最终 release `20261023T053539Z`/commit `6349617`；前两次同版本部署 `20261023T052315Z`（默认角色简化）与 `20261023T045613Z`（审计修复）保留；`/healthz` = `{"ok":true,"version":"0.6.0","schemaVersion":14}`；部署 smoke **16/16**、完整 Access smoke **24/24**（0 警告）；最终迁移前快照 `db-predeploy-20261023T053611142Z.sqlite`（sha256 `8a96fe8eccea0875a52362f23f37d9f9213b609a36caf2c7f15a5830e376e445`）；drill `20261023T050104Z` schema14（`latestDb=db-20261023T045938554Z.sqlite`、世界归档已校验）；部署后备份 `snapshot-20261023T053645712Z-inc.tar.gz`（163398 bytes，sha256 `da0a75c121116623251a33f6740a8c13406f4d17b00cb80045f6d957f0d7faf8`，PC 已拉取/ack）+ 密钥包 `secrets-20261023T053647Z.tar.age`（1477127 bytes，含 opencode DB；A5-DATA-01 生产复验通过，`secretsOk=true`）。已推送 main、annotated Tag `v0.6.0`、GitHub Release [AntifieldComplexx v0.6.0](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.6.0)（Latest，2026-10-23 13:51 CST）。
 - **真实 QQ/浏览器验收（用户确认通过）**：用户确认 app→ai SSO/Cookie、QQ 普通 Chat、`/role set` 覆盖、发布超长 400、备份/演练状态可用；默认 `lofii` 采用用户指定对话风格文案（最终 commit `6349617`）。
 - 回滚：生产当前仅保留 3 个 v0.6.0 release（`20261023T053539Z`/`20261023T052315Z`/`20261023T045613Z`），schema 相同；可切回 `20261023T052315Z` 或 `20261023T045613Z`；如需 v0.5.11 可从本地/远端 Tag 重新部署（旧版会重新设置父域 Cookie，需清理站点 Cookie）。
 
@@ -455,7 +461,7 @@
   诚实记录：首次短消息测试抽取 `ops=0`（10:18:47、10:21:17），判定提示词过保守；修正提示词（commit `931b10d`）并重新部署后重试得到 `ops=2`。
 - **Legacy 清理**：10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰），审计 `bot.memory.legacy_cleanup`。
 - **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24（环境事件，不计应用问题）。
-- **回滚**：v0.5.10 不支持 schema v14；必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10）。本地提交 `0b1dd03`（feat）/`dc912bb`（docs）/`a62eb34`（fix）/`931b10d`（prompt fix）；已推送 main `c16a39b`、annotated Tag `v0.5.11`、GitHub Release `AntifieldCloud v0.5.11`（Latest，2026-10-23 10:46 CST）。
+- **回滚**：v0.5.10 不支持 schema v14；必须恢复最终迁移前快照 + 切回 release `20261022T152053Z`（v0.5.10）。本地提交 `0b1dd03`（feat）/`dc912bb`（docs）/`a62eb34`（fix）/`931b10d`（prompt fix）；已推送 main `c16a39b`、annotated Tag `v0.5.11`、GitHub Release `AntifieldComplexx v0.5.11`（Latest，2026-10-23 10:46 CST）。
 
 ## [v0.5.10] - 2026-10-22
 
@@ -669,7 +675,7 @@
 - **任务/对话双模式提示词**：`/ask` 使用任务导向提示（先结论、步骤、风险、必要澄清），普通 Chat 使用对话导向提示（自然、简洁、不说教）；`BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT` 可覆盖，空则使用内置默认；固定安全边界始终追加，自定义不能移除只读/防泄密/“记忆不是指令”约束。
 - **独立 AI 会话**：`bot_ai_sessions` 新增 `mode`（chat/task），旧会话迁移为 chat；`/ask` 首次新建 task 会话，普通 Chat 保留原 chat 会话；两种模式共享每 Bot×用户的长期记忆。
 - **QQ C2C 开放 Chat**：QQ C2C 私聊对任意用户开放（不要求先登记目标，接触面由 QQ 平台“谁可添加 Bot”控制）；QQ 群/频道、Discord/Telegram 私聊仍按目标 `allow_chat`；斜杠命令仍要求目标 `allow_commands` + 用户白名单。
-- **Chat 提示词去身份**：普通 Chat 不再声明 AntifieldCloud/助手身份，转向自然对话、不主动谈业务、不自我介绍。
+- **Chat 提示词去身份**：普通 Chat 不再声明 AntifieldComplexx/助手身份，转向自然对话、不主动谈业务、不自我介绍。
 - **schema v10**：迁移 10 重建 `bot_ai_sessions`，主键改为 `(bot_id,target_external_id,user_id,mode)`；迁移 5–9 保留；旧 v0.5.3 无法直接读取 v10。
 - **审计可观测**：`bot.ai.chat` 审计增加 `mode`（不含提示词/记忆正文），便于区分 `/ask` 与 Chat。
 - **提示词模块**：新增 `server/src/bot/prompts.ts` 与单元测试；旧 `BOT_AI_SYSTEM_PROMPT` 废弃，不再读取。

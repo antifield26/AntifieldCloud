@@ -14,7 +14,7 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v17**：`audit_write_failures` 保存审计失败诊断；`bot_group_roles` 保存群聊共享角色卡；`bot_memory_items`/`bot_memory_state` 保存结构化记忆；`bot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
-- 当前生产：**v0.8.1**（release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite` sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，**无 `-SkipLocalTaskCheck`**，期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；2 SKIP=备份整包加密/异地副本默认关闭）；Lofii 已启用：lofii-bot **v0.6.1** release `20261027T111640Z`/commit `a0a28da`、`LOFII_ENABLED=true`、Token `--check` read/control 均 match、`meta.lofii.event_cursor` 已更新；生产已认证 API `/api/version`/`/api/lofii/status` 200，`/say` 任意 `/` 与 C0 均 400，审计无 `lofii.say`；v0.8.1 未重新做生产 UI 截图，沿用 v0.8.0 视觉确认）。**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release [AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.1)（2026-10-27）**；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务已重装并验证（`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致 `7febb768…636d`、任务 Ready）。**上一生产为 v0.8.0**（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2、UI 视觉确认已完成；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**；保留为回滚点）；再上一生产为 v0.7.3（Tag + GitHub Release 已发布）。schema 保持 v17（无迁移），OpenCode v2.1.4 不变；备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
+- 当前生产：**v0.8.1**（release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite` sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，**无 `-SkipLocalTaskCheck`**，期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；2 SKIP=备份整包加密/异地副本默认关闭）；Lofii 已启用：lofii-bot **v0.6.1** release `20261027T111640Z`/commit `a0a28da`、`LOFII_ENABLED=true`、Token `--check` read/control 均 match、`meta.lofii.event_cursor` 已更新；生产已认证 API `/api/version`/`/api/lofii/status` 200，`/say` 任意 `/` 与 C0 均 400，审计无 `lofii.say`；v0.8.1 未重新做生产 UI 截图，沿用 v0.8.0 视觉确认）。**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release [AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1)（2026-10-27）**；真实 Lofii 告警联动未触发（单元/集成覆盖）；Windows 每日备份任务已重装并验证（`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致 `7febb768…636d`、任务 Ready）。**上一生产为 v0.8.0**（release `20261027T094412Z`/commit `9ae5809`，部署内只读 smoke 26/0/0/2、完整 Access smoke 35/0/0/2、UI 视觉确认已完成；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**；保留为回滚点）；再上一生产为 v0.7.3（Tag + GitHub Release 已发布）。schema 保持 v17（无迁移），OpenCode v2.1.4 不变；备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
 - **v0.8.1 部署记录（2026-10-27，已执行）**：`npm run check` 通过、`npm test` 572、`test:web` 256、build 通过；先升级 lofii-bot 到 v0.6.1 并同步 Token（`--check` match），再部署应用 0.8.1；按 §3.8 第 7 步验证 `/say` 任意 `/` 400、C0 400 与 smoke（`-ExpectedVersion 0.8.1 -ExpectedLofiiVersion 0.6.1`）。**只读 `/say` 503 仅由单元/集成测试覆盖**（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新截图 UI。
 - Lofii 默认关闭（v0.8.0 引入，v0.8.1 加固；**生产已启用**）：`LOFII_ENABLED=false` 且无 Token 时应用正常运行，`/api/lofii/*` 返回 503、页面不显示 Lofii 入口；生产当前 `LOFII_ENABLED=true`（读/控制 Token 均配置、仅 loopback），启用/回滚顺序见 §3.8，Token 同步见 §3.8，smoke 见 §6。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
@@ -147,7 +147,7 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
 ## 3. 从 PC 部署（带迁移前 DB 快照与自动回滚）
 
 ```powershell
-cd "$env:USERPROFILE\projects\AntifieldCloud"
+cd "$env:USERPROFILE\projects\AntifieldComplexx"
 npm run check
 .\scripts\deploy.ps1 -PiHost 192.0.2.10   # 替换为 Pi 实际直连地址
 ```
@@ -281,7 +281,7 @@ curl -fsS http://127.0.0.1:3000/healthz
 sudo bash scripts/install-searxng.sh
 # 2) 验证 JSON 搜索（生产网络仅启用 Bing；Google/DuckDuckGo/Brave 会超时，不要启用）
 curl -fsS --max-time 20 \
-  'http://127.0.0.1:8888/search?q=AntifieldCloud&format=json&engines=bing' | head -c 500
+  'http://127.0.0.1:8888/search?q=AntifieldComplexx&format=json&engines=bing' | head -c 500
 # 3) 应用 env（/etc/antifieldcloud/env）追加/修改；然后重启应用
 BOT_SEARCH_ENABLED=true
 BOT_SEARCH_URL=http://127.0.0.1:8888
@@ -453,9 +453,9 @@ sudo systemctl restart antifieldcloud
    | 面板“控制未启用”但 Token 已配置 | 确认 `LOFII_ENABLED=true`、Token 非空且已重启；`/api/version.lofiiControlEnabled` 应为 true |
    | 告警历史出现 `status='event'` | 预期：Lofii alert 只记录、不参与活跃/恢复；`LOFII_ALERTS_ENABLED=false` 可停止写入 |
 
-> **验收边界**：别名/端口/Token 只使用占位值。**v0.8.0 生产验证记录（2026-10-27 CST，历史）**：部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，2 SKIP=加密/异地默认关闭），含 Lofii Bot active/version 0.6.0/contractVersion=1；lofii-bot v0.6.0（release `/opt/lofii-bot/releases/20261027T092737Z`）`/healthz` `version=0.6.0`/`contractVersion=1`；读 Token `/events/recent` 200，无 Token/控制 Token 访问读接口 401，`limit=201` 400；`sync-lofii-tokens.sh --check` 同步前 mismatch/mismatch、同步后 match/match（不回显 Token、自动备份 env）；`LOFII_ENABLED=true`（读/控制 Token 均配置）重启后 `/healthz` v0.8.0；`meta.lofii.event_cursor` = `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`；生产 API 探针 `/api/lofii/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2、无 CSRF POST 403；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文。**边界**：未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；**Windows 每日备份任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（用户手动步骤/残余，非失败）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
+> **验收边界**：别名/端口/Token 只使用占位值。**v0.8.0 生产验证记录（2026-10-27 CST，历史）**：部署内只读 smoke **26/0/0/2**、完整 Access smoke **35/0/0/2**（`-SkipLocalTaskCheck`，2 SKIP=加密/异地默认关闭），含 Lofii Bot active/version 0.6.0/contractVersion=1；lofii-bot v0.6.0（release `/opt/lofii-bot/releases/20261027T092737Z`）`/healthz` `version=0.6.0`/`contractVersion=1`；读 Token `/events/recent` 200，无 Token/控制 Token 访问读接口 401，`limit=201` 400；`sync-lofii-tokens.sh --check` 同步前 mismatch/mismatch、同步后 match/match（不回显 Token、自动备份 env）；`LOFII_ENABLED=true`（读/控制 Token 均配置）重启后 `/healthz` v0.8.0；`meta.lofii.event_cursor` = `{"bootId":"c2135fc2","lastEventId":"c2135fc2-7","lastTs":"2026-10-27T09:47:17.670Z"}`；生产 API 探针 `/api/lofii/status` 200（enabled/reachable/eventsSupported/controlEnabled 均 true，version 0.6.0/contractVersion 1）、`/api/version` 200（lofiiEnabled/lofiiControlEnabled 均 true）、`/history?kind=samples&limit=2` 200 count=2、无 CSRF POST 403；`/tasks`（patrol）/`/tasks/stop` 200 后 task idle/queue 0/pendingResume 0，审计 `lofii.task.start`/`lofii.task.stop` 且无聊天正文。**边界**：未触发真实 Lofii 告警（避免向生产 Bot/外部通道发测试通知，`alert_events` 暂无 `lofii_*`，映射/webhook/Bot 由单元/集成测试覆盖）；生产 `/minecraft` UI 视觉确认已完成（Edge headless 经 SSH 隧道截图，Lofii 面板正常渲染；临时会话已清理，用户仍可自行复核）；**Windows 每日备份任务安装标记仍为旧版本**，需用户管理员 PowerShell 重装 `install-backup-task.ps1` 刷新（用户手动步骤/残余，非失败）；**已发布：annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release `AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接`（publishedAt `2026-10-27T12:02:45Z`）**。
 
-> **v0.8.1 生产验证记录（2026-10-27 CST）**：应用 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17（uptime/DB ok）；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`）。部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（**含本地备份任务标记检查，无 `-SkipLocalTaskCheck`**；期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；此前两次失败为 Cloudflare 隧道瞬断，恢复后全绿）。lofii-bot 升级到 **v0.6.1**（release `/opt/lofii-bot/releases/20261027T111640Z`/commit `a0a28da`），`sync-lofii-tokens.sh --check` **read=match control=match**；`LOFII_ENABLED=true`，`meta.lofii.event_cursor` 已更新。**Windows 备份任务重装**：`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致（`7febb768…636d`）、任务 Ready。已认证 API（临时验收会话已删，计数 0）：`/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）、`/api/lofii/status` 200（enabled/reachable/control/eventsSupported=true，version=0.6.1/contract=1）；`/say` 240 填充 + `/op` → 400 `message_must_not_start_with_slash`；`/say` C0 → 400 `invalid_request`。审计仅 `lofii.task.start/stop`，无 `lofii.say`；`alert_events` `lofii_*` 仍 0；journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空。**边界**：只读 `/say` 503 仅由单元/集成测试覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）；未触发真实 Lofii 告警；**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复`（2026-10-27）**。
+> **v0.8.1 生产验证记录（2026-10-27 CST）**：应用 release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17（uptime/DB ok）；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3fb21e0ec64cd3cbe6b1567206910a34988ea0f67799f0c3341bd991a`）。部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（**含本地备份任务标记检查，无 `-SkipLocalTaskCheck`**；期望 0.8.1/schema17/OpenCode 2.1.4/Lofii 0.6.1；此前两次失败为 Cloudflare 隧道瞬断，恢复后全绿）。lofii-bot 升级到 **v0.6.1**（release `/opt/lofii-bot/releases/20261027T111640Z`/commit `a0a28da`），`sync-lofii-tokens.sh --check` **read=match control=match**；`LOFII_ENABLED=true`，`meta.lofii.event_cursor` 已更新。**Windows 备份任务重装**：`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致（`7febb768…636d`）、任务 Ready。已认证 API（临时验收会话已删，计数 0）：`/api/version` 200（v0.8.1、lofiiEnabled/lofiiControlEnabled=true）、`/api/lofii/status` 200（enabled/reachable/control/eventsSupported=true，version=0.6.1/contract=1）；`/say` 240 填充 + `/op` → 400 `message_must_not_start_with_slash`；`/say` C0 → 400 `invalid_request`。审计仅 `lofii.task.start/stop`，无 `lofii.say`；`alert_events` `lofii_*` 仍 0；journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空。**边界**：只读 `/say` 503 仅由单元/集成测试覆盖（生产控制 Token 已配置，未改配置实测）；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）；未触发真实 Lofii 告警；**v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release `AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复`（2026-10-27）**。
 
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 
@@ -536,7 +536,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 **Access 配置不在仓库内；未配置/漏配时表现为 Webhook 404/302、`/healthz` 302、公开分享被重定向。**
 
 生产当前配置（API 创建；含 AI 主机）：
-- 主应用 `AntifieldCloud`：`app.<domain>`，One-time PIN IdP，策略 `Owner allow`（指定邮箱）+ `Smoke service token`（`non_identity`，指定 service token）。
+- 主应用 `AntifieldComplexx`：`app.<domain>`，One-time PIN IdP，策略 `Owner allow`（指定邮箱）+ `Smoke service token`（`non_identity`，指定 service token）。
 - 4 个独立 **Bypass** 应用（各自 `Bypass Everyone`）：`/healthz`、`/api/bot/webhook`、`/s`、`/api/public/shares`。
 - service token 名称 `smoke-readonly`，有效期 1 年；Client ID/Secret 只保存在 PC `.local/cf-access.env`（gitignored），不写仓库；`CF_ACCESS_APP_AI_ID` 也已写入该文件。
 - 已实测：未登录 `/` 302 到 `*.cloudflareaccess.com`；4 个 bypass 路径返回应用状态码而非 302；带 token 访问 `/api/bots/status` 为 401；`ai` 未认证 302、service token 401；smoke 33/33（含任务标记）。
@@ -544,7 +544,7 @@ sudo cloudflared tunnel info <TUNNEL_UUID>    # 检查 connector 与版本升级
 手工重建/迁移时按以下步骤：
 
 1. Zero Trust → Access → Applications → Add an application → Self-hosted：
-   - Application name：`AntifieldCloud`；Session duration：建议 8–24h。
+   - Application name：`AntifieldComplexx`；Session duration：建议 8–24h。
    - Public hostname：`app.<domain>`（路径留空）。
    - Policy：`Allow`，Include 选择本人邮箱（One-time PIN）或已配置的身份提供商；不要添加 `Everyone`/`Bypass` 到整站。
 2. **先创建 4 个独立的 path 应用**（路径应用的优先级高于整站主应用）：
@@ -739,13 +739,13 @@ ls -lh /var/lib/antifieldcloud/world-backups/
 
 ```powershell
 # 先手动跑一次（直连网线可达；脚本在仓库 scripts/ 下，也可自行复制到固定路径）
-cd "$env:USERPROFILE\projects\AntifieldCloud"
+cd "$env:USERPROFILE\projects\AntifieldComplexx"
 .\scripts\world-pull.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
 # 创建周任务：每周日 12:00（路径/参数按实际替换）
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-  -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldCloud\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
+  -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldComplexx\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 12:00
-Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldCloud 世界备份周度拉取"
+Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldComplexx 世界备份周度拉取"
 ```
 
 - 两阶段：scp `.part` → 远端 `.sha256` 比对 → 原子改名 → 删除远端归档/旁文件（ack）；**失败不 ack、不动远端**，退出码 1。
@@ -756,7 +756,7 @@ Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Tr
 ### 9.5 恢复演练（drill.ps1，季度/升级前）
 
 ```powershell
-cd "$env:USERPROFILE\projects\AntifieldCloud"
+cd "$env:USERPROFILE\projects\AntifieldComplexx"
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 17
 # 加密归档：提供离线私钥（先解密校验 plainSha/plainSize，再复用 drill-verify 全量校验）
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 17 -AgeIdentityPath "$env:USERPROFILE\.age\backup-age-identity.txt"
@@ -958,7 +958,7 @@ rclone config            # 新建 remote（如 myremote），保存凭据到当�
 rclone lsd myremote:     # 验证可访问
 
 # 2) 安装异地副本计划任务（可同时保留每日应用归档任务）
-cd "$env:USERPROFILE\projects\AntifieldCloud"
+cd "$env:USERPROFILE\projects\AntifieldComplexx"
 .\scripts\install-backup-task.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" `
   -InstallOffsiteTask -OffsiteRemote myremote -OffsiteRemotePath AntifieldCloud/backups -OffsiteRemoteLabel myremote
 

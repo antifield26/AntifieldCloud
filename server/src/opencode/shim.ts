@@ -44,7 +44,7 @@ export const OPENCODE_SHIM_SCRIPT = String.raw`(() => {
       if (!id) throw new Error('missing session id')
       location.assign('/server/' + encodeOrigin() + '/session/' + encodeURIComponent(id))
     } catch (error) {
-      console.error('[AntifieldCloud] opencode new session failed', error)
+      console.error('[AntifieldComplexx] opencode new session failed', error)
       showError('创建会话失败，请刷新页面后重试')
     } finally {
       window.__afCreatingSession = false

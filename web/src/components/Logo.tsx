@@ -19,7 +19,7 @@ export function Logo({ size = 36, withText = false, className }: LogoProps) {
       </span>
       {withText ? (
         <span className="logo-text">
-          <strong className="logo-name">AntifieldCloud</strong>
+          <strong className="logo-name">AntifieldComplexx</strong>
           <span className="logo-subtitle">个人工作台</span>
         </span>
       ) : null}

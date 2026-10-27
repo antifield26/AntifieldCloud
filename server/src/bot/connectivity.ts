@@ -131,7 +131,7 @@ export class BotConnectivityMonitor {
         method: 'GET',
         redirect: 'manual',
         signal: controller.signal,
-        headers: { accept: '*/*', 'user-agent': 'AntifieldCloud-connectivity/1' },
+        headers: { accept: '*/*', 'user-agent': 'AntifieldComplexx-connectivity/1' },
       })
       // 4xx/5xx 也说明网络路径和 TLS 可用；只把传输失败判为不可达。
       return { reachable: true, latencyMs: Date.now() - started, status: response.status, error: null }

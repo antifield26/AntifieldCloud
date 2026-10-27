@@ -65,7 +65,7 @@ test('BOT-01：孤儿会话清理只删旧默认标题，新命名/前缀相似�
       { id: 'ses-legacy-memory', title: 'AntifieldCloud Memory' },
       { id: 'ses-custom-chat', title: '旧目标 Chat' },
       { id: 'ses-custom-memory', title: '旧目标 Memory' },
-      { id: 'ses-prefix-like', title: 'AntifieldCloud 群 Chat' },
+      { id: 'ses-prefix-like', title: 'AntifieldComplexx 群 Chat' },
     ]
     const ai = (fixture.service as unknown as { deps: { ai: Record<string, unknown> } }).deps.ai
     ai.deleteSession = async (id: string) => {

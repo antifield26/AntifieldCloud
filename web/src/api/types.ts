@@ -1448,7 +1448,7 @@ export interface LofiiHistoryQuery {
   kind: LofiiHistoryKind
   from?: string
   to?: string
-  /** 1–200（AntifieldCloud 侧上限）。 */
+  /** 1–200（AntifieldComplexx 侧上限）。 */
   limit?: number
 }
 

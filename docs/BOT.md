@@ -2,7 +2,7 @@
 
 兼容性基于 OpenCode v2.1.4。
 
-AntifieldCloud 的 Bot 模块把运维告警、只读状态查询、AI 问答（普通消息 Chat）、QQ 入站图片理解和手动/定时文本发布接到 **QQ 官方 Bot**。
+AntifieldComplexx 的 Bot 模块把运维告警、只读状态查询、AI 问答（普通消息 Chat）、QQ 入站图片理解和手动/定时文本发布接到 **QQ 官方 Bot**。
 平台仅 QQ：Telegram / Discord / Slack、Discord Gateway、只读按钮、媒体/多附件发布、群聊触发方式（`chatTrigger`）均不属于当前能力。
 QQ 入站图片理解默认开启（`BOT_AI_VISION_ENABLED=true`），图片经 OpenCode 交给模型 provider 处理。
 企业微信/钉钉/飞书与多管理员审批未实现。

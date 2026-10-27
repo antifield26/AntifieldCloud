@@ -963,7 +963,7 @@ export class AlertService {
     const body = this.buildPayload(event)
     const headers: Record<string, string> = {
       'content-type': 'application/json; charset=utf-8',
-      'user-agent': `AntifieldCloud/${this.config.appVersion}`,
+      'user-agent': `AntifieldComplexx/${this.config.appVersion}`,
     }
     if (this.config.alertWebhookSecret) {
       const signature = createHmac('sha256', this.config.alertWebhookSecret).update(body).digest('hex')
@@ -1171,7 +1171,7 @@ export class AlertService {
       severity: 'info',
       status: 'firing',
       title: '测试告警',
-      message: '这是一条来自 AntifieldCloud 的测试告警，无需处理。',
+      message: '这是一条来自 AntifieldComplexx 的测试告警，无需处理。',
       details_json: JSON.stringify({ source: 'manual' }),
       created_at: now.toISOString(),
       delivered_at: null,

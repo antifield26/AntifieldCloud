@@ -159,7 +159,7 @@ $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" 
 try {
   Register-ScheduledTask `
     -TaskName "AntifieldCloud-Backup-Pull" `
-    -Description "AntifieldCloud 每日备份：从 $PiHost 拉取增量/全量归档到 $BackupRoot" `
+    -Description "AntifieldComplexx 每日备份：从 $PiHost 拉取增量/全量归档到 $BackupRoot" `
     -Action $action `
     -Trigger @($daily, $logon) `
     -Settings $settings `
@@ -199,7 +199,7 @@ if ($installOffsite) {
   try {
     Register-ScheduledTask `
       -TaskName "AntifieldCloud-Backup-Offsite" `
-      -Description "AntifieldCloud 异地副本：只把加密归档（.tar.gz.age）同步到 rclone 远端" `
+      -Description "AntifieldComplexx 异地副本：只把加密归档（.tar.gz.age）同步到 rclone 远端" `
       -Action $offsiteAction `
       -Trigger @($offsiteTrigger) `
       -Settings $offsiteSettings `

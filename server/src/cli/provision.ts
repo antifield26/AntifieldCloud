@@ -44,7 +44,7 @@ function parseArgs(argv: string[]): Options {
 }
 
 function printHelp(): void {
-  console.log(`AntifieldCloud provisioning
+  console.log(`AntifieldComplexx provisioning
 
 用法：
   node scripts/provision.mjs [--username <name>]

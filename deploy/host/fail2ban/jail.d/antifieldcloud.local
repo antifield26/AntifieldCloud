@@ -1,4 +1,4 @@
-# AntifieldCloud fail2ban sshd jail（OPS-09 模板；安装到 /etc/fail2ban/jail.d/）
+# AntifieldComplexx fail2ban sshd jail（OPS-09 模板；安装到 /etc/fail2ban/jail.d/）
 # nftables 后端 + dbfile 持久化：nftables 重启会清空 f2b set，由
 # deploy/systemd/nftables.service.d/10-fail2ban-restore.conf 延迟重启 fail2ban 从数据库恢复封禁。
 [sshd]

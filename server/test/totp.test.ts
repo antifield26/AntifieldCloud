@@ -33,7 +33,7 @@ test('otpauth URI 包含密钥、发行方与参数', () => {
   const uri = otpauthUri('JBSWY3DPEHPK3PXP', 'antifield')
   assert.match(uri, /^otpauth:\/\/totp\//)
   assert.match(uri, /secret=JBSWY3DPEHPK3PXP/)
-  assert.match(uri, /issuer=AntifieldCloud/)
+  assert.match(uri, /issuer=AntifieldComplexx/)
   assert.match(uri, /digits=6/)
   assert.match(uri, /period=30/)
 })

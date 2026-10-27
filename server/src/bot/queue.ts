@@ -333,7 +333,7 @@ export class BotQueue {
   /** 管理端“发送测试消息”：直接发送并记录一条已发送的 test 投递。 */
   async sendTest(bot: BotRow, target: BotTargetRow): Promise<void> {
     const adapter = this.deps.adapterFor(bot)
-    const result = await adapter.send(target, { text: 'AntifieldCloud Bot 测试消息：配置可用。' })
+    const result = await adapter.send(target, { text: 'AntifieldComplexx Bot 测试消息：配置可用。' })
     this.db
       .prepare(
         `INSERT INTO bot_deliveries (id, bot_id, target_id, kind, payload_json, status, attempts, external_id, created_at, updated_at, sent_at)

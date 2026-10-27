@@ -1,4 +1,4 @@
-/* AntifieldCloud Service Worker（无构建步骤，纯静态）。
+/* AntifieldComplexx Service Worker（无构建步骤，纯静态）。
  * 安全边界：
  * - 只缓存静态壳资源（离线页、图标、manifest）与构建后的 /assets/* 哈希资源；
  * - 绝不缓存 /api/*（含文件内容）、/healthz 与公开分享页 /s/*；

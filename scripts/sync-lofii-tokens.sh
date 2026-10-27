@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# v0.8.0：把 lofii-bot 的读/控制 Token 同步到 AntifieldCloud env（root 执行）。
+# v0.8.0：把 lofii-bot 的读/控制 Token 同步到 AntifieldComplexx env（root 执行）。
 #
 # 安全边界：
 # - 只读取 /etc/lofii-bot/env 的 HTTP_TOKEN/HTTP_CONTROL_TOKEN，绝不读取或复制
@@ -36,7 +36,7 @@ if [[ ! -r "$LOFII_ENV" ]]; then
   exit 1
 fi
 if [[ ! -r "$APP_ENV" ]]; then
-  echo "无法读取 $APP_ENV（先运行 AntifieldCloud bootstrap-env.sh）" >&2
+  echo "无法读取 $APP_ENV（先运行 AntifieldComplexx bootstrap-env.sh）" >&2
   exit 1
 fi
 

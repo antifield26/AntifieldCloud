@@ -303,7 +303,7 @@ export function PublicShare() {
         ) : null}
 
         <footer className="public-share-footer">
-          由 AntifieldCloud 提供 · 分享链接仅限持有人使用，请勿公开传播
+          由 AntifieldComplexx 提供 · 分享链接仅限持有人使用，请勿公开传播
         </footer>
       </div>
     </main>

@@ -159,7 +159,7 @@ export function Login({ next }: LoginPageProps) {
       <div className="login-card">
         <div className="login-brand">
           <Logo size={48} />
-          <h1 className="login-title">AntifieldCloud</h1>
+          <h1 className="login-title">AntifieldComplexx</h1>
           <p className="login-subtitle">个人工作台</p>
         </div>
 

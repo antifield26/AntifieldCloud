@@ -214,7 +214,7 @@ export function Settings() {
   const handleDownloadCodes = (): void => {
     if (!codes) return
     const content = [
-      'AntifieldCloud 恢复码',
+      'AntifieldComplexx 恢复码',
       `生成时间：${formatDateTimeWithSeconds(new Date().toISOString())}（Asia/Shanghai）`,
       '',
       '每个恢复码只能使用一次，请离线妥善保存。',
@@ -223,7 +223,7 @@ export function Settings() {
       ...codes,
       '',
     ].join('\n')
-    downloadTextFile(`antifieldcloud-recovery-codes-${formatDate(new Date().toISOString())}.txt`, content)
+    downloadTextFile(`antifieldcomplexx-recovery-codes-${formatDate(new Date().toISOString())}.txt`, content)
     setCodesSaved(true)
   }
 
@@ -521,7 +521,7 @@ export function Settings() {
           <BackupManager backupStatus={backupStatus} />
         </Card>
 
-        <Card title="关于" description="AntifieldCloud · 个人工作台" className="settings-card">
+        <Card title="关于" description="AntifieldComplexx · 个人工作台" className="settings-card">
           <dl className="settings-list">
             <div className="settings-list-row">
               <dt>版本</dt>

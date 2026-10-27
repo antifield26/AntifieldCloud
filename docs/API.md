@@ -1,4 +1,4 @@
-# AntifieldCloud HTTP API 契约
+# AntifieldComplexx HTTP API 契约
 
 服务端与前端共同遵守本文件。所有路径除特别说明外均以 `https://app.example.com` 为源（占位域名；实际见 `.local/DEPLOYMENT.md`）。
 
@@ -832,7 +832,7 @@ Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 需要会话 + CSRF + **控制 Token**（v0.8.1 起 `/say` 是游戏内写操作，只读模式重必须返回 `503 lofii_control_disabled`）。body：
 
 ```json
-{ "message": "来自 AntifieldCloud 的问候" }
+{ "message": "来自 AntifieldComplexx 的问候" }
 ```
 
 成功 `200 { "ok": true, "lines": 1 }`。约束：trim 后非空、≤**720** 字符、**任意位置不能包含 ASCII `/`**（`400 message_must_not_start_with_slash`；防止“填充字符 + /命令”在上游按 240 字符切行后的第二行命中 mineflayer 命令通道）、不能包含 C0 控制字符/DEL（`400 invalid_request`）；Lofii 未连接 → `409 lofii_not_connected`；上游限流 → `429 lofii_rate_limited`。上游 lofii-bot v0.6.1 还会逐行把行首 `/` 中和为全角 `／`（防御纵深，应用侧不依赖）。**只聊天、不执行命令；内容不落库、不写日志，审计只记字符数**。

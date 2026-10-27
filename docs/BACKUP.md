@@ -104,7 +104,7 @@ $CLI --snapshot-db                # 仅做一致性 DB 快照（部署/升级前
 
 ```powershell
 # 管理员 PowerShell；-PiHost/-BackupRoot 会显式写入任务参数（不要再依赖脚本默认占位值）
-cd "$env:USERPROFILE\projects\AntifieldCloud"
+cd "$env:USERPROFILE\projects\AntifieldComplexx"
 .\scripts\install-backup-task.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
 # 可选：同时安装异地副本任务（默认关闭；需先配置 rclone remote）
 .\scripts\install-backup-task.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" `
@@ -244,14 +244,14 @@ cat /var/lib/antifieldcloud/world-backup-status.json
 
 ```powershell
 # 管理员 PowerShell；参数按实际直连地址/备份根目录填写（脚本在仓库 scripts/ 下，也可自行复制到固定路径）
-cd "$env:USERPROFILE\projects\AntifieldCloud"
+cd "$env:USERPROFILE\projects\AntifieldComplexx"
 .\scripts\world-pull.ps1 -PiHost 192.0.2.10 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups"
 
 # 手动创建周任务（示例：每周日 12:00；路径按实际安装位置替换）
 $action = New-ScheduledTaskAction -Execute "powershell.exe" `
-  -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldCloud\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
+  -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\<user>\projects\AntifieldComplexx\scripts\world-pull.ps1" -PiHost 192.0.2.10 -BackupRoot "%USERPROFILE%\AntifieldCloudBackups"'
 $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Sunday -At 12:00
-Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldCloud 世界备份周度拉取"
+Register-ScheduledTask -TaskName "AntifieldCloud-World-Pull" -Action $action -Trigger $trigger -Description "AntifieldComplexx 世界备份周度拉取"
 ```
 
 - `install-backup-task.ps1` **只安装每日应用归档任务**，不会创建世界拉取/演练任务；世界任务由用户手动安装（建议使用仓库路径或复制脚本后固定路径）。
@@ -299,7 +299,7 @@ sudo rm -rf /home/antifield/minecraft-backups
 
 ```powershell
 # 应用归档链 + DB + manifest + 可选世界归档
-cd "$env:USERPROFILE\projects\AntifieldCloud"
+cd "$env:USERPROFILE\projects\AntifieldComplexx"
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 14
 # 需要解包验证世界（先确认临时盘 ≥3× 世界归档体积）
 .\scripts\drill.ps1 -BackupRoot "$env:USERPROFILE\AntifieldCloudBackups" -ExpectedSchemaVersion 14 -IncludeWorld

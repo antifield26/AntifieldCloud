@@ -1,5 +1,5 @@
 [Unit]
-Description=AntifieldCloud personal workbench
+Description=AntifieldComplexx personal workbench
 Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
 After=network-online.target
 Wants=network-online.target

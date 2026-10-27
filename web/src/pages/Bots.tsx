@@ -414,7 +414,7 @@ function BotDisabledGuide({
           生成 32 字节 base64 密钥并设置 <code className="bot-code">BOT_SECRET_KEY</code>，例如
           {' '}<code className="bot-code">openssl rand -base64 32</code>。
         </li>
-        <li>重启 AntifieldCloud 服务，使环境变量生效。</li>
+        <li>重启 AntifieldComplexx 服务，使环境变量生效。</li>
         <li>返回本页点击“重新检测”；Bot 列表与配置分区使用的是同一套服务端开关。</li>
       </ol>
       <div className="notice notice-muted">

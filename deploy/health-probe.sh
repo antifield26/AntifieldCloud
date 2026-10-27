@@ -1,5 +1,5 @@
 #!/bin/sh
-# AntifieldCloud 主机健康探针（root，由 antifieldcloud-health.timer 每 60s 调用一次）：
+# AntifieldComplexx 主机健康探针（root，由 antifieldcloud-health.timer 每 60s 调用一次）：
 # 采集 vcgencmd 欠压/降频/温度与风扇转速，原子写入 /run/antifieldcloud/pi-health.json。
 # 应用侧（alerts 模块）只读该 JSON 做告警；探针失败不应影响主服务。
 set -eu

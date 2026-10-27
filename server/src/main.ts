@@ -65,7 +65,7 @@ async function main(): Promise<void> {
       webDist: config.webDistDir,
       env: config.nodeEnv,
     },
-    'AntifieldCloud 已启动',
+    'AntifieldComplexx 已启动',
   )
   const users = db.prepare('SELECT COUNT(*) AS c FROM users').get() as { c: number }
   if (users.c === 0) {

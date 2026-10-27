@@ -1,5 +1,5 @@
 [Unit]
-Description=Run AntifieldCloud host health probe every 60s
+Description=Run AntifieldComplexx host health probe every 60s
 Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
 
 [Timer]

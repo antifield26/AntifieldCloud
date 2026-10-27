@@ -93,7 +93,7 @@ export function verifyTotpForReauth(secret: string, code: string, lastStep: numb
   return null
 }
 
-export function otpauthUri(secret: string, username: string, issuer = 'AntifieldCloud'): string {
+export function otpauthUri(secret: string, username: string, issuer = 'AntifieldComplexx'): string {
   const label = encodeURIComponent(`${issuer}:${username}`)
   const params = new URLSearchParams({
     secret,

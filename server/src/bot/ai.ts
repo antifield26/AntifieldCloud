@@ -351,7 +351,7 @@ export class OpenCodeBotAi implements BotAi {
   }): Promise<BotMemoryOperation[]> {
     // 抽取会话是一次性内部任务：永远 deny-all，且 permissions 不可用时直接失败，不以默认权限继续。
     const sessionId = await this.createSession(
-      normalizeSessionTitle(input.sessionTitle, 'AntifieldCloud Memory'),
+      normalizeSessionTitle(input.sessionTitle, 'AntifieldComplexx Memory'),
       DENY_ALL_PERMISSIONS,
       { requirePermissions: true },
     )
@@ -366,7 +366,7 @@ export class OpenCodeBotAi implements BotAi {
     const legacy = input.legacySummary.trim()
     const groupUserName = input.groupUserName?.trim()
     const prompt = [
-      '你在从对话中抽取 AntifieldCloud Bot 用户的长期记忆，只输出严格 JSON，不要 Markdown、解释或代码块。',
+      '你在从对话中抽取 AntifieldComplexx Bot 用户的长期记忆，只输出严格 JSON，不要 Markdown、解释或代码块。',
       '输出格式：{"operations":[{"op":"upsert","kind":"profile","key":"nickname","value":"称呼用户为小明","confidence":0.9,"importance":3},{"op":"delete","kind":"task","key":"..."}]}',
       'kind 只能是 profile/preference/fact/project/task/relationship/episode；key 是稳定短语（1–64 字符），同一事实更新时复用相同 kind+key。',
       ...(groupUserName
@@ -493,7 +493,7 @@ export class OpenCodeBotAi implements BotAi {
     if (existing?.session_id) return { sessionId: existing.session_id, created: false }
 
     const sessionId = await this.createSession(
-      normalizeSessionTitle(title, 'AntifieldCloud Chat'),
+      normalizeSessionTitle(title, 'AntifieldComplexx Chat'),
       botPermissions(this.searchToolEnabled, this.sendToolEnabled, this.chatReadPatterns(target)),
       { requirePermissions: this.contextReadEnabled || this.sendToolEnabled },
     )

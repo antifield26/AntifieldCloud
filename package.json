@@ -1,9 +1,9 @@
 {
-  "name": "antifieldcloud",
+  "name": "antifieldcomplexx",
   "version": "0.8.1",
   "private": true,
   "license": "MIT",
-  "description": "AntifieldCloud · Raspberry Pi 5 个人工作台",
+  "description": "AntifieldComplexx · Raspberry Pi 5 个人工作台",
   "type": "module",
   "engines": {
     "node": ">=26"

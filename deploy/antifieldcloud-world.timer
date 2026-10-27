@@ -1,5 +1,5 @@
 [Unit]
-Description=Weekly AntifieldCloud Minecraft world consistent backup
+Description=Weekly AntifieldComplexx Minecraft world consistent backup
 Documentation=file:///opt/antifieldcloud/current/docs/DEPLOY.md
 
 [Timer]

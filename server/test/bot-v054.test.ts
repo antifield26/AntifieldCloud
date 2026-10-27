@@ -95,7 +95,7 @@ test('v0.6.4：/help 仅输出命令列表，无标题、说明或用法注释',
   for (const text of [helpText(), publicHelpText()]) {
     assert.equal(text.includes('查看帮助'), false)
     assert.equal(text.includes('命令仅在'), false)
-    assert.equal(text.includes('AntifieldCloud'), false)
+    assert.equal(text.includes('AntifieldComplexx'), false)
     assert.equal(text.includes('Chat'), false)
     assert.equal(text.includes('管理员'), false)
   }

@@ -1,4 +1,4 @@
-# AntifieldCloud v0.8.1 实施计划（当前状态）
+# AntifieldComplexx v0.8.1 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/ACCEPTANCE.md`；契约见 `docs/API.md`；界面见 `docs/UI-SPEC.md`。
 
@@ -6,7 +6,7 @@
 
 - **版本**：**v0.8.1**（v0.8.0 的 Minor 安全补丁）；schema 保持 **v17**（无迁移）；OpenCode **v2.1.4**；Node.js **v26.12.1**；上游 lofii-bot **v0.6.1**（最低 v0.6.0，契约 v1）。
 - **状态**：**生产部署与只读/API/安全回归验收完成（2026-10-27 CST）；v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release（2026-10-27）**。生产应用 **v0.8.1**（release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke 26/0/0/2、完整 Access smoke **36/0/0/2**（含本地任务标记检查，无 `-SkipLocalTaskCheck`）；lofii-bot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match）；上一生产 v0.8.0 保留为回滚点。生产 UI 沿用 v0.8.0 视觉确认（v0.8.1 未重新截图）。
-- **发布**：v0.8.1 **已发布**——annotated Tag `v0.8.1` + GitHub Release [AntifieldCloud v0.8.1：Lofii 安全补丁与稳定性修复](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.1)（2026-10-27）；v0.8.0 **已发布**——annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release [AntifieldCloud v0.8.0：Lofii Minecraft Bot 对接](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.8.0)（publishedAt `2026-10-27T12:02:45Z`）；部署与验收证据已回填 `docs/ACCEPTANCE.md` v0.8.1 节。
+- **发布**：v0.8.1 **已发布**——annotated Tag `v0.8.1` + GitHub Release [AntifieldComplexx v0.8.1：Lofii 安全补丁与稳定性修复](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1)（2026-10-27）；v0.8.0 **已发布**——annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release [AntifieldComplexx v0.8.0：Lofii Minecraft Bot 对接](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0)（publishedAt `2026-10-27T12:02:45Z`）；部署与验收证据已回填 `docs/ACCEPTANCE.md` v0.8.1 节。
 - **测试基线（v0.8.1 本地，2026-10-27 实测）**：`npm run check` 通过；`npm test` **572**（571 pass、1 skip，server=87 + scripts=4 共 91 文件）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **Lines 93.04% / Branches 78.77% / Functions 88.67%**、前端 **Lines 55.83% / Branches 51.29% / Functions 48.66%**（门禁通过）；`npm run build` 通过；`node scripts/check-version.mjs` 严格模式 `0.8.1` 通过（`deploy/env.example APP_VERSION=0.8.1`）。
 
 ## 范围（v0.8.1 安全补丁）
@@ -14,7 +14,7 @@
 - **修复 SEC6-01（P1）/say 分块命令注入**：`POST /api/lofii/say` 现在**必须启用控制 Token**（只读模式 `503 lofii_control_disabled`）；拒绝**任意位置 ASCII `/`**（含填充 240 字符后放在切分第二行的命令）与 C0 控制字符/DEL；上游 lofii-bot v0.6.1 的 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深，新增 239/240/255/480 边界测试）。
 - **修复 SEC6-02/03/04（P2/P3）**：`mapLofiiAlert` 与前端标签查表改为 own-property（避免 `__proto__`/`constructor` 命中原型链）；`sanitizeDetails` 跳过原型键；`/history` 校验 `kind`/数组/行形状并只透传对象行；`LofiiClient` 响应改为**流式** 2 MiB 上限（不再先 `arrayBuffer()` 后检查）；Token 脱敏大小写不敏感；事件缓存增加 512 KiB 总字节上限；上游轮询 `recent` 改为 200 条。
 - **修复 ARCH/DBG 健壮性**：前端 `safeLofiiStatus` 归一化缺失嵌套段；`/status` 可达但 `events`/游标失败时显示可见警告；`eventsSupported` 对 `undefined` 正确回退；`LofiiPanel.load` 请求序号 + Abort 防旧响应覆盖；`mapLofiiAlert` 5 种已知类型/未知类型均安全；上游 5xx 的明确业务码 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`；告警写入失败时游标停在上一条已处理事件并在下一轮重试；`taskId` 拒绝纯空白/控制字符/内部空白；`LOFII_URL` 拒绝 userinfo/路径/查询/片段；`sync-lofii-tokens.sh` 改为同目录临时文件 + `mv` 原子替换。
-- **版本/文档**：AntifieldCloud 0.8.1（`package.json`/lock/`deploy/env.example`）；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT 同步；schema/OpenCode 工具版本不变。
+- **版本/文档**：AntifieldComplexx 0.8.1（`package.json`/lock/`deploy/env.example`）；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT 同步；schema/OpenCode 工具版本不变。
 - **明确残余（本轮不修）**：告警事件无幂等键（schema v18 下一 minor）；告警风暴并发 webhook/Bot 上限；Lofii 进程未纳入 `service_down` 监控/metrics；`/status`/`history` 的 `lastError` 原样透传（admin-only）；`LOFII_URL` 允许任意 loopback 端口；`stop()` 不取消在途轮询；真实 Lofii 告警未触发；**v0.8.1 已发布 Tag+Release**。详见 `docs/AUDIT.md` v0.8.0 Minor 补审计节。
 
 ## 关键决策
@@ -32,7 +32,7 @@
 | Web | `/minecraft` 合并双标签；Lofii 未启用不显示标签；禁用/不可达/过期/部分失败/控制未启用分别有降级文案；状态归一化、轮询防竞态；不展示 Token/地址/内部路径 |
 | schema | 保持 **v17**，无迁移；仅 `meta` 键 `lofii.event_cursor` |
 | 默认状态 | `LOFII_ENABLED=false`、读/控制 Token 为空；升级/回滚不影响既有功能 |
-| 部署顺序 | 先升级 lofii-bot 到 v0.6.1（仅 loopback）→ root 同步 Token、核对 `--check` → 部署 AntifieldCloud 0.8.1 → `LOFII_ENABLED=true` 重启 → `/api/lofii/status`、`/say` 只读 503、任意 `/` 400 与 smoke（`-ExpectedLofiiVersion 0.6.1`）验证 |
+| 部署顺序 | 先升级 lofii-bot 到 v0.6.1（仅 loopback）→ root 同步 Token、核对 `--check` → 部署 AntifieldComplexx 0.8.1 → `LOFII_ENABLED=true` 重启 → `/api/lofii/status`、`/say` 只读 503、任意 `/` 400 与 smoke（`-ExpectedLofiiVersion 0.6.1`）验证 |
 | 回滚 | `LOFII_ENABLED=false` + 重启即停用 Lofii；版本回退上一 release；schema 不变、无 DB 回滚 |
 
 ## 架构与数据流
