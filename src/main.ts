@@ -154,7 +154,8 @@ async function main (): Promise<void> {
     store: new TaskStore(config.taskStateFile, logger.withScope('tasks.store')),
     getBot: () => client.getBot(),
     defender: config.defenseEnabled ? defender : undefined,
-    alerts
+    alerts,
+    getServerTimeTicks: () => admin.timeNow()
   })
   await tasks.init()
 

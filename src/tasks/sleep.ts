@@ -32,7 +32,12 @@ export function findBedNear (bot: Bot, config: Config): Block | null {
       }
     }
   }
-  beds.sort((a, b) => a.position.distanceTo(position) - b.position.distanceTo(position))
+  beds.sort((a, b) => {
+    const aFoot = typeof a.getProperties === 'function' && a.getProperties().part === 'foot' ? 0 : 1
+    const bFoot = typeof b.getProperties === 'function' && b.getProperties().part === 'foot' ? 0 : 1
+    if (aFoot !== bFoot) return aFoot - bFoot
+    return a.position.distanceTo(position) - b.position.distanceTo(position)
+  })
   return beds[0] ?? null
 }
 
@@ -41,9 +46,17 @@ export function findBedNear (bot: Bot, config: Config): Block | null {
  * the plugin (minimum 1 player, 40% threshold) skips the night. If the night
  * is not skipped, the task ends normally rather than failing.
  */
+async function currentTicks (ctx: TaskContext): Promise<number | null> {
+  if (ctx.serverTimeTicks) {
+    const ticks = await ctx.serverTimeTicks()
+    if (ticks !== null) return ticks
+  }
+  return ctx.state.admin.time.ticks
+}
+
 export async function runSleep (ctx: TaskContext): Promise<void> {
   const bot = requireBot(ctx)
-  const serverTicks = ctx.state.admin.time.ticks
+  const serverTicks = await currentTicks(ctx)
   ctx.updateProgress({ sleepVotes: 0, nightSkipped: 0 })
   ctx.logger.info('sleep: time check', {
     serverTicks,
@@ -73,12 +86,18 @@ export async function runSleep (ctx: TaskContext): Promise<void> {
   const startedAt = Date.now()
   while (Date.now() - startedAt < ctx.config.sleep.voteWaitMs) {
     if (ctx.signal.aborted) throw new TaskStopError()
-    if (!isNightOrStorm(bot, ctx.state.admin.time.ticks)) {
+    const ticks = await currentTicks(ctx)
+    if (ticks !== null && ticks >= 0 && ticks < 12000) {
       ctx.updateProgress({ nightSkipped: 1 })
-      ctx.logger.info('sleep: night skipped')
+      ctx.logger.info('sleep: night skipped', { serverTicks: ticks })
       return
     }
-    await sleep(500, ctx.signal)
+    if (!isNightOrStorm(bot, ticks)) {
+      ctx.updateProgress({ nightSkipped: 1 })
+      ctx.logger.info('sleep: night skipped by weather', { serverTicks: ticks })
+      return
+    }
+    await sleep(3000, ctx.signal)
   }
   ctx.logger.info('sleep: vote did not skip night')
 }

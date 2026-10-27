@@ -145,6 +145,24 @@ export class AdminService {
     }
   }
 
+  async timeNow (): Promise<number | null> {
+    if (!this.deps.config.rcon.enabled) return null
+    try {
+      const text = await this.client.command('time')
+      const time = parseTime(text)
+      if (time.ticks !== null) {
+        this.lastGood = { ...this.lastGood, time }
+        this.deps.state.setAdmin(this.lastGood)
+      }
+      return time.ticks
+    } catch (error) {
+      this.logger.warn('admin: time query failed', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return null
+    }
+  }
+
   async refresh (): Promise<void> {
     if (this.stopped) return
     if (!this.deps.config.rcon.enabled) return

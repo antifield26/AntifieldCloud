@@ -35,6 +35,7 @@ export interface TaskContext {
   depositRequested: () => boolean
   clearDepositRequest: () => void
   defend: () => Promise<'none' | 'cleared'>
+  serverTimeTicks?: () => Promise<number | null>
 }
 
 export type TaskStartStatus = 'started' | 'queued' | 'rejected'

@@ -71,6 +71,7 @@ export interface TaskManagerDeps {
   getBot: () => Bot | null
   defender?: TaskDefender
   alerts?: AlertManager
+  getServerTimeTicks?: () => Promise<number | null>
 }
 
 const EMPTY_PROGRESS: TaskProgress = {
@@ -678,7 +679,8 @@ export class TaskManager implements TaskController {
       clearDepositRequest: () => { active.depositRequested = false },
       defend: async () => {
         return await this.defend(active)
-      }
+      },
+      serverTimeTicks: this.deps.getServerTimeTicks
     }
   }
 
