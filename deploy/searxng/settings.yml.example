@@ -1,6 +1,6 @@
 # SearXNG 私有实例配置模板（AntifieldComplexx v0.6.1）
 # 实际文件：/etc/searxng/settings.yml（0600 root:searxng 或 searxng:searxng）
-# 仅监听 loopback；JSON 格式供 Bot 联网搜索使用；不开启公开实例/图片代理/limiter。
+# 仅监听 loopback；JSON 格式供 Chatbot 联网搜索使用；不开启公开实例/图片代理/limiter。
 use_default_settings: true
 
 general:

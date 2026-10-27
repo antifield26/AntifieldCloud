@@ -226,7 +226,7 @@ if (-not $SkipPublic) {
   }
   if ($accessArgs.Count -gt 0) {
     Check "Cloudflare Access service token" {
-      $code = Get-HttpStatus "$AppUrl/api/bots/status" -ExtraArgs $accessArgs
+      $code = Get-HttpStatus "$AppUrl/api/chatbots/status" -ExtraArgs $accessArgs
       if ($code -ne "401") { throw "HTTP $code（预期 401：带 Access token 后到达应用但未登录）" }
       "HTTP 401（Access 通过、应用鉴权生效）"
     }
@@ -383,7 +383,7 @@ sudo sh -c 'P=$(grep -E "^OPENCODE_PASSWORD=" /etc/opencode/opencode.env | head 
     "botmsg+searxng 已连接"
   }
   SoftCheck "MCP 进程数量（<= $MaxMcpProcesses）" {
-    $countText = (Invoke-PiSsh "pgrep -fc 'bot-tool-mcp.mjs|searxng-mcp.mjs' 2>/dev/null || echo 0" -TimeoutSeconds 30 | Out-String).Trim()
+    $countText = (Invoke-PiSsh "pgrep -fc 'chatbot-tool-mcp.mjs|searxng-mcp.mjs' 2>/dev/null || echo 0" -TimeoutSeconds 30 | Out-String).Trim()
     $count = [int]$countText
     if ($count -gt $MaxMcpProcesses) { throw "MCP 进程数 $count 超过阈值 $MaxMcpProcesses（可能重复 spawn/残留）" }
     "count=$count"
@@ -451,12 +451,12 @@ if (-not $SkipEnvDrift) {
   }
 }
 
-# v0.7.3 Bot 上下文文档目录：默认关闭时只提示；启用时校验目录/属主/opencode 可读。
-SoftCheck "Bot 上下文文档目录（BOT_AI_CONTEXT_READ_ENABLED）" {
-  $enabled = (Get-PiEnvValue "BOT_AI_CONTEXT_READ_ENABLED").ToLowerInvariant()
+# v0.7.3 Chatbot 上下文文档目录：默认关闭时只提示；启用时校验目录/属主/opencode 可读。
+SoftCheck "Chatbot 上下文文档目录（CHATBOT_AI_CONTEXT_READ_ENABLED）" {
+  $enabled = (Get-PiEnvValue "CHATBOT_AI_CONTEXT_READ_ENABLED").ToLowerInvariant()
   if (@("1", "true", "yes", "on") -notcontains $enabled) { return "SKIP: 文档模式默认关闭" }
-  $dir = (Get-PiEnvValue "BOT_CONTEXT_DIR").Trim()
-  if ([string]::IsNullOrWhiteSpace($dir)) { throw "BOT_AI_CONTEXT_READ_ENABLED=true 但 BOT_CONTEXT_DIR 为空" }
+  $dir = (Get-PiEnvValue "CHATBOT_CONTEXT_DIR").Trim()
+  if ([string]::IsNullOrWhiteSpace($dir)) { throw "CHATBOT_AI_CONTEXT_READ_ENABLED=true 但 CHATBOT_CONTEXT_DIR 为空" }
   $safeDir = $dir.Replace("'", "'\''")
   $out = (Invoke-PiSsh "stat -c '%a %U %G' '$safeDir' 2>/dev/null; sudo -u opencode test -r '$safeDir' && echo readable || echo unreadable; sudo -u antifieldcloud test -w '$safeDir' && echo writable || echo unwritable" | Out-String)
   if ($out -notmatch "readable") { throw "OpenCode 用户不可读上下文目录（检查目录属主/组权限）：$dir" }
@@ -578,7 +578,7 @@ if (-not $SkipScriptHash) {
   # 安装在 release 之外的自研 MCP/健康探针：不一致说明“仓库更新但未重跑安装脚本”。
   SoftCheck "Pi 已安装 MCP/探针脚本一致" {
     $pairs = @(
-      @{ Local = "scripts/bot-tool-mcp.mjs"; Remote = "/opt/botmsg-mcp/bot-tool-mcp.mjs" },
+      @{ Local = "scripts/chatbot-tool-mcp.mjs"; Remote = "/opt/botmsg-mcp/chatbot-tool-mcp.mjs" },
       @{ Local = "scripts/searxng-mcp.mjs"; Remote = "/opt/searxng-mcp/searxng-mcp.mjs" },
       @{ Local = "deploy/health-probe.sh"; Remote = "/usr/local/libexec/antifieldcloud-health.sh" }
     )

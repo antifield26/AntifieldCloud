@@ -38,12 +38,12 @@ import { registerAlertRoutes } from './http/routes/alerts.ts'
 import { registerBackupRoutes } from './http/routes/backups.ts'
 import { registerUploadRoutes } from './http/routes/uploads.ts'
 import { registerMetricsRoutes } from './http/routes/metrics.ts'
-import { BotService } from './bot/service.ts'
-import { OpenCodeBotAi } from './bot/ai.ts'
-import { SearxngSearchClient } from './bot/search.ts'
-import { registerBotRoutes } from './http/routes/bots.ts'
-import { registerBotWebhookRoutes } from './http/routes/bot-webhook.ts'
-import { registerBotAiToolRoutes } from './http/routes/bot-ai-tool.ts'
+import { ChatbotService } from './chatbot/service.ts'
+import { OpenCodeBotAi } from './chatbot/ai.ts'
+import { SearxngSearchClient } from './chatbot/search.ts'
+import { registerBotRoutes } from './http/routes/chatbots.ts'
+import { registerBotWebhookRoutes } from './http/routes/chatbot-webhook.ts'
+import { registerBotAiToolRoutes } from './http/routes/chatbot-ai-tool.ts'
 import { LofiiService } from './lofii/service.ts'
 import { registerLofiiRoutes } from './http/routes/lofii.ts'
 import { wantsHtml } from './http/util.ts'
@@ -63,13 +63,13 @@ export interface AppContext {
   backups: BackupService
   uploads: UploadService
   metrics: MetricsService
-  bots: BotService
+  chatbots: ChatbotService
   proxy: OpenCodeProxy
-  /** v0.8.0 Lofii Minecraft Bot 对接（禁用时 snapshot 为 enabled:false）。 */
+  /** v0.8.0 Lofii Minecraft Chatbot 对接（禁用时 snapshot 为 enabled:false）。 */
   lofii: LofiiService
   /** listen 成功后启动指标采样（metricsEnabled=false 时空操作；重复调用幂等）。 */
   startMetrics(): void
-  /** listen 成功后启动 Bot 投递/发布队列（Bot 未启用时为空操作；重复调用幂等）。 */
+  /** listen 成功后启动 Chatbot 投递/发布队列（Chatbot 未启用时为空操作；重复调用幂等）。 */
   startBots(): void
   /** listen 成功后启动 Lofii 状态/事件轮询（未启用时为空操作；重复调用幂等）。 */
   startLofii(): void
@@ -134,7 +134,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     files,
     log: (level, message, detail) => app.log[level](detail ?? {}, message),
   })
-  const bots = new BotService({
+  const chatbots = new ChatbotService({
     db,
     config,
     log: (level, message, detail) => {
@@ -143,7 +143,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       else if (level === 'warn') app.log.warn(payload, message)
       else app.log.info(payload, message)
     },
-    audit: (action, target, detail) => audit(db, 'bot', action, target, detail, null),
+    audit: (action, target, detail) => audit(db, 'chatbot', action, target, detail, null),
     ai: new OpenCodeBotAi({
       db,
       config,
@@ -154,16 +154,16 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
         else app.log.info(payload, message)
       },
     }),
-    ...(config.botSearchEnabled
+    ...(config.chatbotSearchEnabled
       ? {
           search: new SearxngSearchClient({
-            baseUrl: config.botSearchUrl,
-            timeoutMs: config.botSearchTimeoutSeconds,
-            maxResults: config.botSearchMaxResults,
-            language: config.botSearchLanguage,
-            safeSearch: config.botSearchSafeSearch,
-            maxSnippetChars: config.botSearchMaxSnippetChars,
-            engines: config.botSearchEngines,
+            baseUrl: config.chatbotSearchUrl,
+            timeoutMs: config.chatbotSearchTimeoutSeconds,
+            maxResults: config.chatbotSearchMaxResults,
+            language: config.chatbotSearchLanguage,
+            safeSearch: config.chatbotSearchSafeSearch,
+            maxSnippetChars: config.chatbotSearchMaxSnippetChars,
+            engines: config.chatbotSearchEngines,
           }),
         }
       : {}),
@@ -221,7 +221,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
       const status = await mc.status()
       return { online: status.online, error: status.error }
     },
-    notifyEvent: (event) => bots.notifyAlert(event),
+    notifyEvent: (event) => chatbots.notifyAlert(event),
   })
   // Lofii 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
   const lofii = new LofiiService({
@@ -364,9 +364,9 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerBackupRoutes(app, config, backups, db)
   registerUploadRoutes(app, config, uploads)
   registerMetricsRoutes(app, metrics)
-  registerBotRoutes(app, config, bots, auth)
-  registerBotWebhookRoutes(app, config, bots)
-  registerBotAiToolRoutes(app, bots)
+  registerBotRoutes(app, config, chatbots, auth)
+  registerBotWebhookRoutes(app, config, chatbots)
+  registerBotAiToolRoutes(app, chatbots)
   registerLofiiRoutes(app, config, lofii, db)
 
   registerErrorHandler(app)
@@ -399,17 +399,17 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     lofii.stop()
     alerts.stop()
     metricsSampler.stop()
-    // ARCH-04：关闭前有限等待 Bot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。
+    // ARCH-04：关闭前有限等待 Chatbot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。
     // 最多等 15s，超时仍继续关闭（不阻塞 systemd stop），并记录警告。
-    const drain = bots.waitForIdle().catch((error: unknown) => {
-      app.log.warn({ err: error }, 'Bot 关闭排空失败')
+    const drain = chatbots.waitForIdle().catch((error: unknown) => {
+      app.log.warn({ err: error }, 'Chatbot 关闭排空失败')
     })
     const timeout = new Promise<void>((resolve) => {
       const timer = setTimeout(() => resolve(), 15_000)
       timer.unref?.()
     })
     await Promise.race([drain, timeout])
-    bots.stop()
+    chatbots.stop()
     proxy.close()
   })
 
@@ -419,7 +419,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   }
 
   function startBots(): void {
-    bots.start()
+    chatbots.start()
   }
 
   function startLofii(): void {
@@ -465,7 +465,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     backups,
     uploads,
     metrics,
-    bots,
+    chatbots,
     proxy,
     lofii,
     startMetrics,

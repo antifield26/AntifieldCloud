@@ -1,13 +1,13 @@
-// v0.7.0 审计动作映射：Bot/备份/附件等新动作必须有中文与分组，未知动作保持原样。
+// v0.7.0 审计动作映射：Chatbot/备份/附件等新动作必须有中文与分组，未知动作保持原样。
 import { describe, expect, it } from 'vitest'
 import { AUDIT_ACTION_GROUPS, auditActionMeta, auditCategory } from './audit'
 
 describe('审计动作映射 v0.7.0', () => {
-  it('Bot 动作映射到机器人分类且不再显示原始英文', () => {
-    expect(auditActionMeta('bot.create')).toMatchObject({ label: '创建 Bot', category: 'bot' })
-    expect(auditActionMeta('bot.memory.extract').category).toBe('bot')
-    expect(auditActionMeta('bot.webhook.rejected').category).toBe('bot')
-    expect(auditCategory('bot.ai.permissions_fallback')).toBe('bot')
+  it('Chatbot 动作映射到机器人分类且不再显示原始英文', () => {
+    expect(auditActionMeta('chatbot.create')).toMatchObject({ label: '创建 Chatbot', category: 'chatbot' })
+    expect(auditActionMeta('chatbot.memory.extract').category).toBe('chatbot')
+    expect(auditActionMeta('chatbot.webhook.rejected').category).toBe('chatbot')
+    expect(auditCategory('chatbot.ai.permissions_fallback')).toBe('chatbot')
   })
 
   it('备份/附件/文件动作有中文映射', () => {
@@ -21,7 +21,7 @@ describe('审计动作映射 v0.7.0', () => {
   it('筛选分组含机器人分组且覆盖所有已映射动作', () => {
     const groups = new Map(AUDIT_ACTION_GROUPS.map((group) => [group.label, group.options.map((option) => option.value)]))
     expect(groups.has('机器人')).toBe(true)
-    expect(groups.get('机器人')).toContain('bot.memory.toggle')
+    expect(groups.get('机器人')).toContain('chatbot.memory.toggle')
     expect(groups.get('备份与恢复')).toContain('backup_ack')
     expect(groups.get('知识库')).toContain('note_attachment_delete')
   })

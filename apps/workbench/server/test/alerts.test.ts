@@ -543,7 +543,7 @@ test('offsite_overdue：阈值 0 时关闭条件，即使状态文件存在也�
   }
 })
 
-test('recordExternal：status=event、不写 alert_state、异步 webhook + Bot 通知', async () => {
+test('recordExternal：status=event、不写 alert_state、异步 webhook + Chatbot 通知', async () => {
   const calls: { url: string; init?: RequestInit }[] = []
   const notified: { id: number; event: string; status: string; severity: string; title: string }[] = []
   const fx = alertFixture({
@@ -594,7 +594,7 @@ test('recordExternal：status=event、不写 alert_state、异步 webhook + Bot 
     ).c
     assert.equal(firedCount, 0)
 
-    // 投递是异步的：等待后台任务完成后检查 webhook 与 Bot 通知。
+    // 投递是异步的：等待后台任务完成后检查 webhook 与 Chatbot 通知。
     await new Promise((resolve) => setTimeout(resolve, 30))
     assert.equal(calls.length, 1)
     assert.equal(calls[0]?.url, WEBHOOK)
@@ -670,7 +670,7 @@ test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 
       delivery_error: string | null
     }
     assert.match(row.delivery_error ?? '', /未配置/)
-    assert.deepEqual(notified, ['lofii_alert'], '未配置 webhook 也要通知 Bot')
+    assert.deepEqual(notified, ['lofii_alert'], '未配置 webhook 也要通知 Chatbot')
   } finally {
     noWebhook.close()
   }

@@ -295,10 +295,10 @@ export class AuthService {
   }
 
   /**
-   * Bot 发布等敏感外发操作的 TOTP 再认证（只验 TOTP，不要求密码）。
+   * Chatbot 发布等敏感外发操作的 TOTP 再认证（只验 TOTP，不要求密码）。
    * 失败计入 reauth/TOTP 限流与审计；成功后推进 last_step 防重放。
    */
-  async confirmTotp(context: AuthContext, totpCode: string, ip: string, action = 'reauth_bot_publish'): Promise<void> {
+  async confirmTotp(context: AuthContext, totpCode: string, ip: string, action = 'reauth_chatbot_publish'): Promise<void> {
     const retry = this.reauthLimiter.hit(ip)
     if (retry > 0) throw rateLimited(retry)
     const globalRetry = this.reauthGlobalLimiter.hit('global')

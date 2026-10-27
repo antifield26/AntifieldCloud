@@ -435,9 +435,9 @@ export interface VersionResult {
   /** 归档导入单请求上限与恢复文件数上限（v0.3 已下发，前端用于预检提示） */
   backupImportMaxBytes?: number
   backupRestoreMaxEntries?: number
-  /** v0.5.0：Bot 功能是否可用与支持的平台（旧服务端不下发） */
-  botsEnabled?: boolean
-  botPlatforms?: string[]
+  /** v0.5.0：Chatbot 功能是否可用与支持的平台（旧服务端不下发） */
+  chatbotsEnabled?: boolean
+  chatbotPlatforms?: string[]
   /** v0.8.0：Lofii 集成是否启用、Lofii 控制接口是否可用（旧服务端不下发时按关闭处理）。 */
   lofiiEnabled?: boolean
   lofiiControlEnabled?: boolean
@@ -975,53 +975,53 @@ export interface MetricsResult {
   series: MetricsPoint[]
 }
 
-/* ---------- 机器人管理（v0.5.0，GET/POST /api/bots*） ---------- */
+/* ---------- 机器人管理（v0.5.0，GET/POST /api/chatbots*） ---------- */
 
-/** 当前仅支持 QQ 官方 Bot。 */
-export type BotPlatform = 'qq'
-export type BotTargetKind = 'channel' | 'user' | 'group'
-export interface BotConnectivityProbe {
+/** 当前仅支持 QQ 官方 Chatbot。 */
+export type ChatbotPlatform = 'qq'
+export type ChatbotTargetKind = 'channel' | 'user' | 'group'
+export interface ChatbotConnectivityProbe {
   reachable: boolean
   latencyMs: number | null
   status: number | null
   error: string | null
 }
 /** 出站连通性快照：外网 -> QQ 平台 API（Pi 直连，不依赖代理隧道）；不含凭据。 */
-export interface BotConnectivitySnapshot {
+export interface ChatbotConnectivitySnapshot {
   checkedAt: string | null
   checking: boolean
-  internet: BotConnectivityProbe
-  platforms: Partial<Record<BotPlatform, BotConnectivityProbe>>
+  internet: ChatbotConnectivityProbe
+  platforms: Partial<Record<ChatbotPlatform, ChatbotConnectivityProbe>>
 }
-export type BotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'test'
-export type BotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
-export type BotPublishStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled'
+export type ChatbotDeliveryKind = 'notification' | 'command_reply' | 'publish' | 'test'
+export type ChatbotDeliveryStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'dead'
+export type ChatbotPublishStatus = 'draft' | 'queued' | 'sending' | 'sent' | 'failed' | 'canceled'
 
 /** AI 工具隔离状态；supported=false 表示 OpenCode 拒绝 deny-all permissions 后降级（未隔离）。 */
-export interface BotToolIsolationStatus {
+export interface ChatbotToolIsolationStatus {
   supported: boolean
   fallbackCount: number
   fallbackAt: string | null
 }
 
-/** 运行状态：即使 Bot 功能未启用，status 接口仍可用于判断具体原因。 */
-export interface BotStatus {
+/** 运行状态：即使 Chatbot 功能未启用，status 接口仍可用于判断具体原因。 */
+export interface ChatbotStatus {
   enabled: boolean
   keyConfigured: boolean
-  bots: number
+  chatbots: number
   enabledBots: number
   targets: number
   queuedDeliveries: number
   queuedPublishes: number
   lastError: string | null
   /** AI 工具隔离状态；未配置 AI 时为 null。 */
-  aiToolIsolation?: BotToolIsolationStatus | null
+  aiToolIsolation?: ChatbotToolIsolationStatus | null
 }
 
-/** Bot 摘要：不包含 AppSecret 等密钥字段。 */
-export interface BotSummary {
+/** Chatbot 摘要：不包含 AppSecret 等密钥字段。 */
+export interface ChatbotSummary {
   id: string
-  platform: BotPlatform
+  platform: ChatbotPlatform
   name: string
   enabled: boolean
   /** 平台公开配置（QQ 为 appId），绝不包含密钥。 */
@@ -1036,10 +1036,10 @@ export interface BotSummary {
   keyVersion: number
 }
 
-export interface BotInboundTarget {
-  botId: string
+export interface ChatbotInboundTarget {
+  chatbotId: string
   targetExternalId: string
-  targetKind: BotTargetKind
+  targetKind: ChatbotTargetKind
   userId: string
   userName: string | null
   isDirect: boolean
@@ -1048,12 +1048,12 @@ export interface BotInboundTarget {
 
 export type GroupReplyMode = 'mention' | 'all'
 
-export interface BotTarget {
+export interface ChatbotTarget {
   id: string
-  botId: string
+  chatbotId: string
   externalId: string
   label: string
-  kind: BotTargetKind
+  kind: ChatbotTargetKind
   allowCommands: boolean
   allowNotifications: boolean
   /** 是否允许该目标内成员普通消息 Chat；不授予斜杠命令权限。 */
@@ -1065,12 +1065,12 @@ export interface BotTarget {
   createdAt: string
 }
 
-export interface BotDelivery {
+export interface ChatbotDelivery {
   id: string
-  botId: string
+  chatbotId: string
   targetId: string | null
-  kind: BotDeliveryKind
-  status: BotDeliveryStatus
+  kind: ChatbotDeliveryKind
+  status: ChatbotDeliveryStatus
   attempts: number
   nextAttemptAt: string | null
   lastError: string | null
@@ -1081,13 +1081,13 @@ export interface BotDelivery {
   sentAt: string | null
 }
 
-export interface BotPublishJob {
+export interface ChatbotPublishJob {
   id: string
-  botId: string
+  chatbotId: string
   targetId: string
   text: string
   scheduledAt: string | null
-  status: BotPublishStatus
+  status: ChatbotPublishStatus
   attempts: number
   lastError: string | null
   /** 服务端根据 lastError 映射的中文提示（可能为空）。 */
@@ -1096,27 +1096,27 @@ export interface BotPublishJob {
   sentAt: string | null
 }
 
-/** 创建 Bot：密钥字段只提交、不回显。QQ 的 AppID 放 config.appId。 */
-export interface BotCreateInput {
-  platform: BotPlatform
+/** 创建 Chatbot：密钥字段只提交、不回显。QQ 的 AppID 放 config.appId。 */
+export interface ChatbotCreateInput {
+  platform: ChatbotPlatform
   name: string
-  /** QQ 官方 Bot AppSecret。 */
+  /** QQ 官方 Chatbot AppSecret。 */
   token: string
   config?: Record<string, unknown>
 }
 
-/** 更新 Bot：省略/留空密钥表示保持原值；platform 不可修改。 */
-export interface BotUpdateInput {
+/** 更新 Chatbot：省略/留空密钥表示保持原值；platform 不可修改。 */
+export interface ChatbotUpdateInput {
   name?: string
   enabled?: boolean
   config?: Record<string, unknown>
   token?: string
 }
 
-export interface BotTargetInput {
+export interface ChatbotTargetInput {
   externalId: string
   label: string
-  kind: BotTargetKind
+  kind: ChatbotTargetKind
   allowCommands: boolean
   allowNotifications: boolean
   allowChat?: boolean
@@ -1125,10 +1125,10 @@ export interface BotTargetInput {
   quietEndMinute?: number | null
 }
 
-export type BotTargetPatch = Partial<Omit<BotTargetInput, 'externalId'>>
+export type ChatbotTargetPatch = Partial<Omit<ChatbotTargetInput, 'externalId'>>
 
 /** 发布任务：QQ 仅支持纯文本；发布属数据外发，必须 TOTP 再认证。 */
-export interface BotPublishInput {
+export interface ChatbotPublishInput {
   targetId: string
   text: string
   /** 6 位 TOTP 验证码，服务端校验后立即丢弃，不写入队列。 */
@@ -1138,8 +1138,8 @@ export interface BotPublishInput {
   confirmText: 'PUBLISH'
 }
 
-/** Bot 运维指标（v0.5.1）。 */
-export interface BotMetrics {
+/** Chatbot 运维指标（v0.5.1）。 */
+export interface ChatbotMetrics {
   hours: number
   deliveries: { total: number; sent: number; failed: number; dead: number; successRate: number }
   publishes: { total: number; sent: number; failed: number }
@@ -1153,21 +1153,21 @@ export interface BotMetrics {
 /* ---------- 机器人诊断与用户数据（v0.5.7） ---------- */
 
 /** 单项连接检查结果：只描述凭据/Webhook/配置是否可用，不含任何密钥。 */
-export interface BotHealthItem {
+export interface ChatbotHealthItem {
   name: string
   ok: boolean
   detail: string
 }
 
-/** POST /api/bots/:id/check 的脱敏结果。 */
-export interface BotHealthCheck {
+/** POST /api/chatbots/:id/check 的脱敏结果。 */
+export interface ChatbotHealthCheck {
   ok: boolean
-  items: BotHealthItem[]
+  items: ChatbotHealthItem[]
   checkedAt: string
 }
 
 /** 入站事件元数据：不含消息正文、用户名等个人数据。 */
-export interface BotEventItem {
+export interface ChatbotEventItem {
   eventId: string
   kind: string | null
   outcome: string | null
@@ -1179,7 +1179,7 @@ export interface BotEventItem {
 }
 
 /** 私聊角色卡摘要：服务端只返回元数据，正文不通过 Web 暴露。 */
-export interface BotRoleSummary {
+export interface ChatbotRoleSummary {
   userId: string
   userName: string | null
   name: string
@@ -1191,7 +1191,7 @@ export interface BotRoleSummary {
 }
 
 /** 群聊角色卡列表项：未配置时 name/enabled/updatedAt 为空。 */
-export interface BotGroupRoleSummary {
+export interface ChatbotGroupRoleSummary {
   targetId: string
   targetLabel: string
   targetExternalId: string
@@ -1202,7 +1202,7 @@ export interface BotGroupRoleSummary {
 }
 
 /** 群聊角色卡编辑详情（管理员可编辑正文）。 */
-export interface BotGroupRoleDetail {
+export interface ChatbotGroupRoleDetail {
   targetId: string
   targetLabel: string
   targetExternalId: string
@@ -1214,7 +1214,7 @@ export interface BotGroupRoleDetail {
 }
 
 /** 结构化长期记忆类型（v0.5.11）。 */
-export type BotMemoryKind =
+export type ChatbotMemoryKind =
   | 'profile'
   | 'preference'
   | 'fact'
@@ -1224,29 +1224,29 @@ export type BotMemoryKind =
   | 'episode'
 
 /** 管理端用户级记忆元数据：只含条目数/类型分布，不含任何 key/value 正文。 */
-export interface BotMemoryUserSummary {
+export interface ChatbotMemoryUserSummary {
   userId: string
   userName: string | null
   itemCount: number
-  kinds: Partial<Record<BotMemoryKind, number>>
+  kinds: Partial<Record<ChatbotMemoryKind, number>>
   memoryEnabled: boolean
   /** 最近一条记忆更新时间；无条目时为 null。 */
   updatedAt: string | null
 }
 
 /** 管理端群聊共享记忆元数据：按群目标聚合，不含 key/value。 */
-export interface BotMemoryGroupSummary {
+export interface ChatbotMemoryGroupSummary {
   scope: string
   targetExternalId: string
   targetName: string
   itemCount: number
-  kinds: Partial<Record<BotMemoryKind, number>>
+  kinds: Partial<Record<ChatbotMemoryKind, number>>
   updatedAt: string | null
 }
 
 /** 管理端单条记忆元数据：绝不包含 key/value 正文。 */
-export interface BotMemoryItemSummary {  id: string
-  kind: BotMemoryKind
+export interface ChatbotMemoryItemSummary {  id: string
+  kind: ChatbotMemoryKind
   importance: number
   confidence: number
   updatedAt: string
@@ -1345,7 +1345,7 @@ export interface LofiiAdmin {
   backup: { status: string }
 }
 
-/** Bot 自身在 Minecraft 的连接信息；host/port 属于本机回环配置，不展示到 UI。 */
+/** Chatbot 自身在 Minecraft 的连接信息；host/port 属于本机回环配置，不展示到 UI。 */
 export interface LofiiMinecraft {
   connected: boolean
   username: string

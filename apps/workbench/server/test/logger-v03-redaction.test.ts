@@ -22,17 +22,17 @@ test('分享 token URL 脱敏：/s/ 与 /api/public/shares/', () => {
   assert.equal(redactSensitiveRequestUrl(''), '')
 })
 
-test('Bot Webhook 路径中的 botId 脱敏，不误伤 /api/bots 管理接口', () => {
+test('Chatbot Webhook 路径中的 chatbotId 脱敏，不误伤 /api/chatbots 管理接口', () => {
   assert.equal(
-    redactSensitiveRequestUrl('/api/bot/webhook/123e4567-e89b-12d3-a456-426614174000'),
-    '/api/bot/webhook/[REDACTED]',
+    redactSensitiveRequestUrl('/api/chatbot/webhook/123e4567-e89b-12d3-a456-426614174000'),
+    '/api/chatbot/webhook/[REDACTED]',
   )
   assert.equal(
-    redactSensitiveRequestUrl('/api/bot/webhook/123e4567-e89b-12d3-a456-426614174000?op=13'),
-    '/api/bot/webhook/[REDACTED]?op=13',
+    redactSensitiveRequestUrl('/api/chatbot/webhook/123e4567-e89b-12d3-a456-426614174000?op=13'),
+    '/api/chatbot/webhook/[REDACTED]?op=13',
   )
-  assert.equal(redactSensitiveRequestUrl('/api/bots'), '/api/bots')
-  assert.equal(redactSensitiveRequestUrl('/api/bots/status'), '/api/bots/status')
+  assert.equal(redactSensitiveRequestUrl('/api/chatbots'), '/api/chatbots')
+  assert.equal(redactSensitiveRequestUrl('/api/chatbots/status'), '/api/chatbots/status')
 })
 
 test('AI SSO ticket 路径脱敏，不误伤普通 /__af 路径', () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SearXNG 私有实例安装/更新（Debian 13，Node 项目外；不使用 Docker）。
-# 仅监听 127.0.0.1:8888，供 AntifieldComplexx Bot 的 JSON 搜索使用；应用侧只读。
+# 仅监听 127.0.0.1:8888，供 AntifieldComplexx Chatbot 的 JSON 搜索使用；应用侧只读。
 # 幂等：已存在的 /etc/searxng/settings.yml 不会被覆盖；git 仓库/venv 缺失时才创建。
 set -euo pipefail
 

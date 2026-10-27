@@ -64,7 +64,7 @@ export interface AlertDeps {
   serviceUnits?: Record<string, string>
   /** unknown 连续评估阈值（默认 3，测试可调小）。 */
   unknownThreshold?: number
-  /** 事件落库后通知 Bot 平台（不阻塞/不影响告警主流程）。 */
+  /** 事件落库后通知 Chatbot 平台（不阻塞/不影响告警主流程）。 */
   notifyEvent?: (event: {
     id: number
     event: string
@@ -756,7 +756,7 @@ export class AlertService {
             createdAt: event.created_at,
           })
         } catch (error) {
-          this.deps.log('warn', 'Bot 告警通知入队失败', { error: this.sanitizeError(error) })
+          this.deps.log('warn', 'Chatbot 告警通知入队失败', { error: this.sanitizeError(error) })
         }
       }
       try {
@@ -1111,7 +1111,7 @@ export class AlertService {
    *
    * 与本地指标告警的区别：不参与 alert_state 状态机（外部服务自己维护告警状态），
    * 事件 status 固定为 `event`，避免被前端/清理逻辑当成 firing/resolved；
-   * 落库后异步复用现有 webhook 投递与 Bot 通知，不阻塞调用方。
+   * 落库后异步复用现有 webhook 投递与 Chatbot 通知，不阻塞调用方。
    * 全局告警关闭（ALERTS_ENABLED=false）时不写库、不投递。
    */
   recordExternal(input: ExternalAlertInput): number | null {
@@ -1140,7 +1140,7 @@ export class AlertService {
     return event.id
   }
 
-  /** 外部事件的后台投递：webhook 与 Bot 通知互不阻断，失败只记录脱敏日志。 */
+  /** 外部事件的后台投递：webhook 与 Chatbot 通知互不阻断，失败只记录脱敏日志。 */
   private async deliverExternal(event: AlertEventRow): Promise<void> {
     try {
       await this.deliver(event)
@@ -1158,7 +1158,7 @@ export class AlertService {
         createdAt: event.created_at,
       })
     } catch (error) {
-      this.deps.log('warn', 'Bot 告警通知入队失败', { error: this.sanitizeError(error) })
+      this.deps.log('warn', 'Chatbot 告警通知入队失败', { error: this.sanitizeError(error) })
     }
   }
 

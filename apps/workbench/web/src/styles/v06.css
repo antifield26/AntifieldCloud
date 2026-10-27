@@ -3,23 +3,23 @@
 
 /* ================= 角色与记忆 / 诊断：面板骨架 ================= */
 
-.bot-userdata,
-.bot-diagnostics {
+.chatbot-userdata,
+.chatbot-diagnostics {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
 }
 
-.bot-userdata > .card,
-.bot-diagnostics > .card,
-.bot-userdata .card-body,
-.bot-diagnostics .card-body {
+.chatbot-userdata > .card,
+.chatbot-diagnostics > .card,
+.chatbot-userdata .card-body,
+.chatbot-diagnostics .card-body {
   min-width: 0;
 }
 
-.bot-privacy-note,
-.bot-diag-privacy {
+.chatbot-privacy-note,
+.chatbot-diag-privacy {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -28,15 +28,15 @@
   line-height: 1.55;
 }
 
-.bot-privacy-note svg,
-.bot-diag-privacy svg {
+.chatbot-privacy-note svg,
+.chatbot-diag-privacy svg {
   flex: none;
   margin-top: 2px;
 }
 
 /* ================= 角色与记忆 ================= */
 
-.bot-userdata-user {
+.chatbot-userdata-user {
   display: inline-block;
   max-width: 180px;
   overflow: hidden;
@@ -45,50 +45,50 @@
   white-space: nowrap;
 }
 
-.bot-userdata-name {
+.chatbot-userdata-name {
   overflow-wrap: anywhere;
 }
 
-.bot-userdata-length {
+.chatbot-userdata-length {
   color: var(--text-muted);
   font-size: 12.5px;
   white-space: nowrap;
 }
 
-.bot-userdata-actions {
+.chatbot-userdata-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
 }
 
-.bot-userdata-pager,
-.bot-diag-pager {
+.chatbot-userdata-pager,
+.chatbot-diag-pager {
   padding: 12px 0 0;
   border-top: 1px solid var(--border);
 }
 
 /* ================= 诊断：筛选、事件与错误 ================= */
 
-.bot-diag-actions {
+.chatbot-diag-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.bot-diag-filter {
+.chatbot-diag-filter {
   min-width: 132px;
 }
 
-.bot-diag-kind {
+.chatbot-diag-kind {
   color: var(--text-muted);
   font-family: var(--mono);
   font-size: 11.5px;
   overflow-wrap: anywhere;
 }
 
-.bot-diag-id {
+.chatbot-diag-id {
   display: inline-block;
   max-width: 150px;
   overflow: hidden;
@@ -100,7 +100,7 @@
   white-space: nowrap;
 }
 
-.bot-diag-error-list {
+.chatbot-diag-error-list {
   display: flex;
   flex-direction: column;
   margin: 0;
@@ -108,7 +108,7 @@
   list-style: none;
 }
 
-.bot-diag-error {
+.chatbot-diag-error {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -117,18 +117,18 @@
   border-bottom: 1px solid var(--border);
 }
 
-.bot-diag-error:last-child {
+.chatbot-diag-error:last-child {
   border-bottom: none;
 }
 
-.bot-diag-error-head {
+.chatbot-diag-error-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
 }
 
-.bot-diag-error-message {
+.chatbot-diag-error-message {
   margin: 0;
   overflow-wrap: anywhere;
   color: #fca5a5;
@@ -138,7 +138,7 @@
   word-break: break-word;
 }
 
-.bot-diag-error-hint {
+.chatbot-diag-error-hint {
   display: flex;
   align-items: flex-start;
   gap: 6px;
@@ -149,21 +149,21 @@
   line-height: 1.5;
 }
 
-.bot-diag-error-hint svg {
+.chatbot-diag-error-hint svg {
   flex: none;
   margin-top: 2px;
 }
 
 /* ================= 连接检查结果 ================= */
 
-.bot-health {
+.chatbot-health {
   min-width: 0;
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
-.bot-health-summary {
+.chatbot-health-summary {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -171,11 +171,11 @@
   margin-bottom: 10px;
 }
 
-.bot-health-summary .field-hint {
+.chatbot-health-summary .field-hint {
   margin: 0;
 }
 
-.bot-health-list {
+.chatbot-health-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -184,7 +184,7 @@
   list-style: none;
 }
 
-.bot-health-item {
+.chatbot-health-item {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -196,23 +196,23 @@
   background: rgba(255, 255, 255, 0.015);
 }
 
-.bot-health-item-warning {
+.chatbot-health-item-warning {
   border-color: rgba(251, 191, 36, 0.28);
   background: var(--warning-soft);
 }
 
-.bot-health-item > svg {
+.chatbot-health-item > svg {
   flex: none;
   margin-top: 1px;
 }
 
-.bot-health-name {
+.chatbot-health-name {
   font-size: 12.5px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.bot-health-detail {
+.chatbot-health-detail {
   flex: 1 1 100%;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -224,7 +224,7 @@
 
 /* ================= 新表格：窄屏容器内横向滚动 ================= */
 
-.bots-table-scroll {
+.chatbots-table-scroll {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -232,7 +232,7 @@
 
 @media (max-width: 640px) {
   /* 六个标签两行或三行换行，避免挤成横向滚动条 */
-  .bots-tabs .segmented-button {
+  .chatbots-tabs .segmented-button {
     flex: 1 1 30%;
     min-width: 0;
     padding: 0 6px;
@@ -243,43 +243,43 @@
   }
 
   /* 窄屏保留表格结构，由容器横向滚动；页面本身不溢出 */
-  .bots-table-scroll {
+  .chatbots-table-scroll {
     padding-bottom: 4px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: rgba(0, 0, 0, 0.12);
   }
 
-  .bots-table-scroll .table {
+  .chatbots-table-scroll .table {
     display: table;
     min-width: 660px;
   }
 
-  .bots-table-scroll .table-cards {
+  .chatbots-table-scroll .table-cards {
     display: none;
   }
 
-  .bots-table-scroll .table th:first-child,
-  .bots-table-scroll .table td:first-child {
+  .chatbots-table-scroll .table th:first-child,
+  .chatbots-table-scroll .table td:first-child {
     padding-left: 12px;
   }
 
-  .bots-table-scroll .table th:last-child,
-  .bots-table-scroll .table td:last-child {
+  .chatbots-table-scroll .table th:last-child,
+  .chatbots-table-scroll .table td:last-child {
     padding-right: 12px;
   }
 
-  .bot-diag-actions {
+  .chatbot-diag-actions {
     width: 100%;
   }
 
-  .bot-diag-filter {
+  .chatbot-diag-filter {
     flex: 1 1 132px;
   }
 
-  .bot-userdata-actions .btn,
-  .bot-diag-pager .btn,
-  .bot-userdata-pager .btn {
+  .chatbot-userdata-actions .btn,
+  .chatbot-diag-pager .btn,
+  .chatbot-userdata-pager .btn {
     flex: 1 1 auto;
   }
 }

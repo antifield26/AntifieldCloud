@@ -19,27 +19,27 @@ import type {
   BookmarkInput,
   BookmarkListResult,
   BookmarkPatch,
-  BotCreateInput,
-  BotDelivery,
-  BotEventItem,
-  BotHealthCheck,
-  BotInboundTarget,
-  BotMemoryItemSummary,
-  BotMemoryGroupSummary,
-  BotMemoryUserSummary,
-  BotMetrics,
-  BotConnectivitySnapshot,
-  BotGroupRoleDetail,
-  BotGroupRoleSummary,
-  BotPublishInput,
-  BotPublishJob,
-  BotRoleSummary,
-  BotStatus,
-  BotSummary,
-  BotTarget,
-  BotTargetInput,
-  BotTargetPatch,
-  BotUpdateInput,
+  ChatbotCreateInput,
+  ChatbotDelivery,
+  ChatbotEventItem,
+  ChatbotHealthCheck,
+  ChatbotInboundTarget,
+  ChatbotMemoryItemSummary,
+  ChatbotMemoryGroupSummary,
+  ChatbotMemoryUserSummary,
+  ChatbotMetrics,
+  ChatbotConnectivitySnapshot,
+  ChatbotGroupRoleDetail,
+  ChatbotGroupRoleSummary,
+  ChatbotPublishInput,
+  ChatbotPublishJob,
+  ChatbotRoleSummary,
+  ChatbotStatus,
+  ChatbotSummary,
+  ChatbotTarget,
+  ChatbotTargetInput,
+  ChatbotTargetPatch,
+  ChatbotUpdateInput,
   ClearTrashResult,
   ChunkUploadInit,
   ChunkUploadStatus,
@@ -170,12 +170,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   upload_completed: '上传会话已完成，无法取消',
   invalid_chunk_index: '分片序号不合法',
   invalid_chunk_size: '分片大小不合法',
-  // v0.5.0：Bot 配置与队列
-  bot_disabled: 'Bot 功能未启用',
-  bot_key_missing: '未配置 BOT_SECRET_KEY，Bot 功能暂不可用',
-  bot_key_invalid: 'BOT_SECRET_KEY 配置无效',
+  // v0.5.0：Chatbot 配置与队列
+  chatbot_disabled: 'Chatbot 功能未启用',
+  chatbot_key_missing: '未配置 CHATBOT_SECRET_KEY，Chatbot 功能暂不可用',
+  chatbot_key_invalid: 'CHATBOT_SECRET_KEY 配置无效',
   totp_required: '发布需要 TOTP 验证码',
-  invalid_bot_config: 'Bot 配置不合法，请检查 Token 与密钥',
+  invalid_chatbot_config: 'Chatbot 配置不合法，请检查 Token 与密钥',
   target_missing: '投递目标不存在或已被删除',
   media_missing: '媒体文件不存在或不可发布',
   empty_payload: '投递内容为空',
@@ -194,8 +194,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   upload_assembling: '服务端正在拼接文件，请稍后重试（断点已保留）',
   upload_expired: '上传会话已过期，请重新上传',
   too_many_attachments: '附件数量超过限制',
-  // v0.7.0：Bot AI 工具隔离 fail-closed（不降级为无工具模式）
-  bot_ai_tool_isolation_unavailable: 'Bot AI 工具安全隔离不可用，已拒绝本轮 AI 请求（请检查 botmsg MCP 与隔离配置）',
+  // v0.7.0：Chatbot AI 工具隔离 fail-closed（不降级为无工具模式）
+  chatbot_ai_tool_isolation_unavailable: 'Chatbot AI 工具安全隔离不可用，已拒绝本轮 AI 请求（请检查 botmsg MCP 与隔离配置）',
   // v0.8.0：Lofii 集成（服务端把 Lofii 上游错误映射为 lofii_* 前缀）
   lofii_disabled: 'Lofii 集成未启用（LOFII_ENABLED=false）',
   lofii_unavailable: 'Lofii 服务不可达，请检查 Lofii 进程与 Token 配置',
@@ -1291,48 +1291,48 @@ export const api = {
   },
   /**
    * 机器人管理（v0.5.0）：所有接口要求登录；配置接口在功能未启用时返回
-   * 503 bot_disabled / bot_key_missing。密钥只写不读，响应中不含密钥。
+   * 503 chatbot_disabled / chatbot_key_missing。密钥只写不读，响应中不含密钥。
    */
-  bots: {
-    status(signal?: AbortSignal): Promise<BotStatus> {
-      return get<BotStatus>('/api/bots/status', { signal })
+  chatbots: {
+    status(signal?: AbortSignal): Promise<ChatbotStatus> {
+      return get<ChatbotStatus>('/api/chatbots/status', { signal })
     },
-    connectivity(signal?: AbortSignal): Promise<BotConnectivitySnapshot> {
-      return get<BotConnectivitySnapshot>('/api/bots/connectivity', { signal })
+    connectivity(signal?: AbortSignal): Promise<ChatbotConnectivitySnapshot> {
+      return get<ChatbotConnectivitySnapshot>('/api/chatbots/connectivity', { signal })
     },
-    checkConnectivity(): Promise<BotConnectivitySnapshot> {
-      return post<BotConnectivitySnapshot>('/api/bots/connectivity/check')
+    checkConnectivity(): Promise<ChatbotConnectivitySnapshot> {
+      return post<ChatbotConnectivitySnapshot>('/api/chatbots/connectivity/check')
     },
-    async list(signal?: AbortSignal): Promise<BotSummary[]> {
-      const result = await get<{ items: BotSummary[] }>('/api/bots', { signal })
+    async list(signal?: AbortSignal): Promise<ChatbotSummary[]> {
+      const result = await get<{ items: ChatbotSummary[] }>('/api/chatbots', { signal })
       return result.items
     },
-    async get(id: string, signal?: AbortSignal): Promise<BotSummary> {
-      const result = await get<{ bot: BotSummary }>(`/api/bots/${encodeId(id)}`, { signal })
-      return result.bot
+    async get(id: string, signal?: AbortSignal): Promise<ChatbotSummary> {
+      const result = await get<{ chatbot: ChatbotSummary }>(`/api/chatbots/${encodeId(id)}`, { signal })
+      return result.chatbot
     },
-    async metrics(id: string, hours = 24, signal?: AbortSignal): Promise<BotMetrics> {
-      const result = await get<{ metrics: BotMetrics }>(
-        `/api/bots/${encodeId(id)}/metrics${buildQuery({ hours })}`,
+    async metrics(id: string, hours = 24, signal?: AbortSignal): Promise<ChatbotMetrics> {
+      const result = await get<{ metrics: ChatbotMetrics }>(
+        `/api/chatbots/${encodeId(id)}/metrics${buildQuery({ hours })}`,
         { signal },
       )
       return result.metrics
     },
-    async create(input: BotCreateInput): Promise<BotSummary> {
-      const result = await post<{ bot: BotSummary }>('/api/bots', input)
-      return result.bot
+    async create(input: ChatbotCreateInput): Promise<ChatbotSummary> {
+      const result = await post<{ chatbot: ChatbotSummary }>('/api/chatbots', input)
+      return result.chatbot
     },
-    async update(id: string, input: BotUpdateInput): Promise<BotSummary> {
-      const result = await patch<{ bot: BotSummary }>(`/api/bots/${encodeId(id)}`, input)
-      return result.bot
+    async update(id: string, input: ChatbotUpdateInput): Promise<ChatbotSummary> {
+      const result = await patch<{ chatbot: ChatbotSummary }>(`/api/chatbots/${encodeId(id)}`, input)
+      return result.chatbot
     },
     remove(id: string): Promise<OkResult> {
-      return del<OkResult>(`/api/bots/${encodeId(id)}`)
+      return del<OkResult>(`/api/chatbots/${encodeId(id)}`)
     },
-    /** 发送测试消息；省略 targetId 时服务端使用该 Bot 的第一个目标。 */
+    /** 发送测试消息；省略 targetId 时服务端使用该 Chatbot 的第一个目标。 */
     test(id: string, targetId?: string): Promise<OkResult> {
       return post<OkResult>(
-        `/api/bots/${encodeId(id)}/test`,
+        `/api/chatbots/${encodeId(id)}/test`,
         targetId ? { targetId } : {},
       )
     },
@@ -1340,17 +1340,17 @@ export const api = {
      * 连接自检（v0.5.7）：服务端校验 Token/Webhook/公开配置并更新 last_checked_at。
      * 返回项只描述可用性与脱敏原因，不含任何密钥。
      */
-    async check(id: string): Promise<BotHealthCheck> {
-      const result = await post<{ health: BotHealthCheck }>(`/api/bots/${encodeId(id)}/check`)
+    async check(id: string): Promise<ChatbotHealthCheck> {
+      const result = await post<{ health: ChatbotHealthCheck }>(`/api/chatbots/${encodeId(id)}/check`)
       return result.health
     },
     /** 入站事件元数据（v0.5.7）：支持时间范围/结果筛选与分页，不返回消息正文。 */
     events(
       id: string,
       options: { hours?: number; outcome?: string; limit?: number; offset?: number } = {},
-    ): Promise<{ items: BotEventItem[]; total: number }> {
-      return get<{ items: BotEventItem[]; total: number }>(
-        `/api/bots/${encodeId(id)}/events${buildQuery({
+    ): Promise<{ items: ChatbotEventItem[]; total: number }> {
+      return get<{ items: ChatbotEventItem[]; total: number }>(
+        `/api/chatbots/${encodeId(id)}/events${buildQuery({
           hours: options.hours,
           outcome: options.outcome,
           limit: options.limit,
@@ -1363,41 +1363,41 @@ export const api = {
       list(
         id: string,
         options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: BotRoleSummary[]; total: number }> {
-        return get<{ items: BotRoleSummary[]; total: number }>(
-          `/api/bots/${encodeId(id)}/roles${buildQuery({ limit: options.limit, offset: options.offset })}`,
+      ): Promise<{ items: ChatbotRoleSummary[]; total: number }> {
+        return get<{ items: ChatbotRoleSummary[]; total: number }>(
+          `/api/chatbots/${encodeId(id)}/roles${buildQuery({ limit: options.limit, offset: options.offset })}`,
         )
       },
       /** 启用/停用某个用户的角色卡，不修改角色正文。 */
       async setEnabled(id: string, userId: string, enabled: boolean): Promise<void> {
-        await patch<OkResult>(`/api/bots/${encodeId(id)}/roles/${encodeId(userId)}`, { enabled })
+        await patch<OkResult>(`/api/chatbots/${encodeId(id)}/roles/${encodeId(userId)}`, { enabled })
       },
       async remove(id: string, userId: string): Promise<void> {
-        await del<OkResult>(`/api/bots/${encodeId(id)}/roles/${encodeId(userId)}`)
+        await del<OkResult>(`/api/chatbots/${encodeId(id)}/roles/${encodeId(userId)}`)
       },
     },
     /** 群聊角色卡：管理员可读写名字与正文；普通用户不可见。 */
     groupRoles: {
-      list(id: string): Promise<{ items: BotGroupRoleSummary[] }> {
-        return get<{ items: BotGroupRoleSummary[] }>(`/api/bots/${encodeId(id)}/group-roles`)
+      list(id: string): Promise<{ items: ChatbotGroupRoleSummary[] }> {
+        return get<{ items: ChatbotGroupRoleSummary[] }>(`/api/chatbots/${encodeId(id)}/group-roles`)
       },
-      get(id: string, targetId: string): Promise<{ groupRole: BotGroupRoleDetail | null }> {
-        return get<{ groupRole: BotGroupRoleDetail | null }>(
-          `/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
+      get(id: string, targetId: string): Promise<{ groupRole: ChatbotGroupRoleDetail | null }> {
+        return get<{ groupRole: ChatbotGroupRoleDetail | null }>(
+          `/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
         )
       },
-      async save(id: string, targetId: string, input: { name: string; prompt: string }): Promise<BotGroupRoleDetail> {
-        const result = await put<{ groupRole: BotGroupRoleDetail }>(
-          `/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
+      async save(id: string, targetId: string, input: { name: string; prompt: string }): Promise<ChatbotGroupRoleDetail> {
+        const result = await put<{ groupRole: ChatbotGroupRoleDetail }>(
+          `/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`,
           input,
         )
         return result.groupRole
       },
       async setEnabled(id: string, targetId: string, enabled: boolean): Promise<void> {
-        await patch<OkResult>(`/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`, { enabled })
+        await patch<OkResult>(`/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`, { enabled })
       },
       async remove(id: string, targetId: string): Promise<void> {
-        await del<OkResult>(`/api/bots/${encodeId(id)}/group-roles/${encodeId(targetId)}`)
+        await del<OkResult>(`/api/chatbots/${encodeId(id)}/group-roles/${encodeId(targetId)}`)
       },
     },
     memories: {
@@ -1405,9 +1405,9 @@ export const api = {
       list(
         id: string,
         options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: BotMemoryUserSummary[]; total: number }> {
-        return get<{ items: BotMemoryUserSummary[]; total: number }>(
-          `/api/bots/${encodeId(id)}/memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
+      ): Promise<{ items: ChatbotMemoryUserSummary[]; total: number }> {
+        return get<{ items: ChatbotMemoryUserSummary[]; total: number }>(
+          `/api/chatbots/${encodeId(id)}/memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
         )
       },
       /** 单用户记忆条目元数据：只含类型/权重/时间，不含 key/value。 */
@@ -1415,9 +1415,9 @@ export const api = {
         id: string,
         userId: string,
         options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: BotMemoryItemSummary[]; total: number }> {
-        return get<{ items: BotMemoryItemSummary[]; total: number }>(
-          `/api/bots/${encodeId(id)}/memories/${encodeId(userId)}/items${buildQuery({
+      ): Promise<{ items: ChatbotMemoryItemSummary[]; total: number }> {
+        return get<{ items: ChatbotMemoryItemSummary[]; total: number }>(
+          `/api/chatbots/${encodeId(id)}/memories/${encodeId(userId)}/items${buildQuery({
             limit: options.limit,
             offset: options.offset,
           })}`,
@@ -1426,12 +1426,12 @@ export const api = {
       /** 删除单条记忆；只提交条目 id，服务端不回传正文。 */
       async removeItem(id: string, userId: string, itemId: string): Promise<void> {
         await del<OkResult>(
-          `/api/bots/${encodeId(id)}/memories/${encodeId(userId)}/items/${encodeId(itemId)}`,
+          `/api/chatbots/${encodeId(id)}/memories/${encodeId(userId)}/items/${encodeId(itemId)}`,
         )
       },
       /** 删除某用户的全部记忆条目。 */
       async remove(id: string, userId: string): Promise<void> {
-        await del<OkResult>(`/api/bots/${encodeId(id)}/memories/${encodeId(userId)}`)
+        await del<OkResult>(`/api/chatbots/${encodeId(id)}/memories/${encodeId(userId)}`)
       },
     },
     groupMemories: {
@@ -1439,71 +1439,71 @@ export const api = {
       list(
         id: string,
         options: { limit?: number; offset?: number } = {},
-      ): Promise<{ items: BotMemoryGroupSummary[]; total: number }> {
-        return get<{ items: BotMemoryGroupSummary[]; total: number }>(
-          `/api/bots/${encodeId(id)}/group-memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
+      ): Promise<{ items: ChatbotMemoryGroupSummary[]; total: number }> {
+        return get<{ items: ChatbotMemoryGroupSummary[]; total: number }>(
+          `/api/chatbots/${encodeId(id)}/group-memories${buildQuery({ limit: options.limit, offset: options.offset })}`,
         )
       },
       /** 清空某个群目标的共享记忆。 */
       async remove(id: string, scope: string): Promise<void> {
-        await del<OkResult>(`/api/bots/${encodeId(id)}/group-memories/${encodeId(scope)}`)
+        await del<OkResult>(`/api/chatbots/${encodeId(id)}/group-memories/${encodeId(scope)}`)
       },
     },
     targets: {
-      async list(botId: string, signal?: AbortSignal): Promise<BotTarget[]> {
-        const result = await get<{ items: BotTarget[] }>(`/api/bots/${encodeId(botId)}/targets`, { signal })
+      async list(chatbotId: string, signal?: AbortSignal): Promise<ChatbotTarget[]> {
+        const result = await get<{ items: ChatbotTarget[] }>(`/api/chatbots/${encodeId(chatbotId)}/targets`, { signal })
         return result.items
       },
-      async listInbound(botId: string, limit = 50, signal?: AbortSignal): Promise<BotInboundTarget[]> {
-        const result = await get<{ items: BotInboundTarget[] }>(
-          `/api/bots/${encodeId(botId)}/inbound-targets${buildQuery({ limit })}`,
+      async listInbound(chatbotId: string, limit = 50, signal?: AbortSignal): Promise<ChatbotInboundTarget[]> {
+        const result = await get<{ items: ChatbotInboundTarget[] }>(
+          `/api/chatbots/${encodeId(chatbotId)}/inbound-targets${buildQuery({ limit })}`,
           { signal },
         )
         return result.items
       },
-      async create(botId: string, input: BotTargetInput): Promise<BotTarget> {
-        const result = await post<{ target: BotTarget }>(`/api/bots/${encodeId(botId)}/targets`, input)
+      async create(chatbotId: string, input: ChatbotTargetInput): Promise<ChatbotTarget> {
+        const result = await post<{ target: ChatbotTarget }>(`/api/chatbots/${encodeId(chatbotId)}/targets`, input)
         return result.target
       },
-      async update(botId: string, targetId: string, patchBody: BotTargetPatch): Promise<BotTarget> {
-        const result = await patch<{ target: BotTarget }>(
-          `/api/bots/${encodeId(botId)}/targets/${encodeId(targetId)}`,
+      async update(chatbotId: string, targetId: string, patchBody: ChatbotTargetPatch): Promise<ChatbotTarget> {
+        const result = await patch<{ target: ChatbotTarget }>(
+          `/api/chatbots/${encodeId(chatbotId)}/targets/${encodeId(targetId)}`,
           patchBody,
         )
         return result.target
       },
-      remove(botId: string, targetId: string): Promise<OkResult> {
-        return del<OkResult>(`/api/bots/${encodeId(botId)}/targets/${encodeId(targetId)}`)
+      remove(chatbotId: string, targetId: string): Promise<OkResult> {
+        return del<OkResult>(`/api/chatbots/${encodeId(chatbotId)}/targets/${encodeId(targetId)}`)
       },
     },
     deliveries: {
-      async list(botId: string, limit = 50, signal?: AbortSignal): Promise<BotDelivery[]> {
-        const result = await get<{ items: BotDelivery[] }>(
-          `/api/bots/${encodeId(botId)}/deliveries${buildQuery({ limit })}`,
+      async list(chatbotId: string, limit = 50, signal?: AbortSignal): Promise<ChatbotDelivery[]> {
+        const result = await get<{ items: ChatbotDelivery[] }>(
+          `/api/chatbots/${encodeId(chatbotId)}/deliveries${buildQuery({ limit })}`,
           { signal },
         )
         return result.items
       },
       /** 仅 failed/dead 可重试；服务端返回 404 表示不可重试。 */
-      retry(botId: string, deliveryId: string): Promise<OkResult> {
-        return post<OkResult>(`/api/bots/${encodeId(botId)}/deliveries/${encodeId(deliveryId)}/retry`)
+      retry(chatbotId: string, deliveryId: string): Promise<OkResult> {
+        return post<OkResult>(`/api/chatbots/${encodeId(chatbotId)}/deliveries/${encodeId(deliveryId)}/retry`)
       },
     },
     publish: {
-      async list(botId: string, limit = 50, signal?: AbortSignal): Promise<BotPublishJob[]> {
-        const result = await get<{ items: BotPublishJob[] }>(
-          `/api/bots/${encodeId(botId)}/publish${buildQuery({ limit })}`,
+      async list(chatbotId: string, limit = 50, signal?: AbortSignal): Promise<ChatbotPublishJob[]> {
+        const result = await get<{ items: ChatbotPublishJob[] }>(
+          `/api/chatbots/${encodeId(chatbotId)}/publish${buildQuery({ limit })}`,
           { signal },
         )
         return result.items
       },
-      async create(botId: string, input: BotPublishInput): Promise<BotPublishJob> {
-        const result = await post<{ job: BotPublishJob }>(`/api/bots/${encodeId(botId)}/publish`, input)
+      async create(chatbotId: string, input: ChatbotPublishInput): Promise<ChatbotPublishJob> {
+        const result = await post<{ job: ChatbotPublishJob }>(`/api/chatbots/${encodeId(chatbotId)}/publish`, input)
         return result.job
       },
       /** 取消 queued/draft 任务；已进入发送流程的任务返回 404。 */
-      cancel(botId: string, jobId: string): Promise<OkResult> {
-        return del<OkResult>(`/api/bots/${encodeId(botId)}/publish/${encodeId(jobId)}`)
+      cancel(chatbotId: string, jobId: string): Promise<OkResult> {
+        return del<OkResult>(`/api/chatbots/${encodeId(chatbotId)}/publish/${encodeId(jobId)}`)
       },
     },
   },

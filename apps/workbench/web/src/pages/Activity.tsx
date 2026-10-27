@@ -27,7 +27,7 @@ const CATEGORY_TONES: Record<AuditCategory, BadgeTone> = {
   knowledge: 'accent',
   alert: 'warning',
   backup: 'warning',
-  bot: 'info',
+  chatbot: 'info',
   other: 'muted',
 }
 

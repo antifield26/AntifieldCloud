@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 将 SearXNG MCP 搜索工具接入 OpenCode v2（不重启 Minecraft，仅重启 opencode）。
-# 目标：Bot Chat 只能调用 searxng_web_search；其余工具在 Bot 会话权限中仍 deny。
+# 目标：Chatbot Chat 只能调用 searxng_web_search；其余工具在 Chatbot 会话权限中仍 deny。
 # 幂等：覆盖 /opt/searxng-mcp/searxng-mcp.mjs 与 mcp.servers.searxng 条目；保留其它配置。
 set -euo pipefail
 
@@ -49,7 +49,7 @@ servers["searxng"] = {
         "SEARXNG_URL": "http://127.0.0.1:8888",
         "SEARXNG_ENGINES": "bing",
     },
-    # 直接暴露 searxng_web_search；Bot 会话权限可精确允许该工具而不放行 Code Mode。
+    # 直接暴露 searxng_web_search；Chatbot 会话权限可精确允许该工具而不放行 Code Mode。
     "codemode": False,
 }
 dir_name = os.path.dirname(path) or "."
@@ -76,4 +76,4 @@ if systemctl list-unit-files opencode.service >/dev/null 2>&1; then
   systemctl is-active opencode
 fi
 echo "SearXNG MCP 已安装：$DEST；OpenCode 配置已更新：$CONFIG"
-echo "应用侧仍需 BOT_SEARCH_ENABLED=true/BOT_SEARCH_MODE=mcp 并重启 antifieldcloud。"
+echo "应用侧仍需 CHATBOT_SEARCH_ENABLED=true/CHATBOT_SEARCH_MODE=mcp 并重启 antifieldcloud。"

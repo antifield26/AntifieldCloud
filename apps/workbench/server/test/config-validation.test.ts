@@ -54,12 +54,12 @@ test('APP_ORIGIN 与 AI_ORIGIN 不能相同', () => {
   }
 })
 
-test('BOT_SEARCH_MODE 非法值拒绝启动', () => {
+test('CHATBOT_SEARCH_MODE 非法值拒绝启动', () => {
   const dir = tempDataDir()
   try {
     assert.throws(
-      () => loadConfig({ ...baseEnv(dir), BOT_SEARCH_MODE: 'mcp-typo' }),
-      /BOT_SEARCH_MODE 非法/,
+      () => loadConfig({ ...baseEnv(dir), CHATBOT_SEARCH_MODE: 'mcp-typo' }),
+      /CHATBOT_SEARCH_MODE 非法/,
     )
   } finally {
     cleanupDir(dir)
@@ -76,7 +76,7 @@ test('APP_VERSION 未设置时使用开发默认值，不再回退到历史版�
   }
 })
 
-test('BOT_AI_CONTEXT_READ_ENABLED：生产必须显式设置 BOT_CONTEXT_DIR', () => {
+test('CHATBOT_AI_CONTEXT_READ_ENABLED：生产必须显式设置 CHATBOT_CONTEXT_DIR', () => {
   const dir = tempDataDir()
   try {
     assert.throws(
@@ -84,16 +84,16 @@ test('BOT_AI_CONTEXT_READ_ENABLED：生产必须显式设置 BOT_CONTEXT_DIR', (
         loadConfig({
           ...baseEnv(dir),
           NODE_ENV: 'production',
-          BOT_AI_CONTEXT_READ_ENABLED: 'true',
+          CHATBOT_AI_CONTEXT_READ_ENABLED: 'true',
         }),
-      /必须显式设置 BOT_CONTEXT_DIR/,
+      /必须显式设置 CHATBOT_CONTEXT_DIR/,
     )
   } finally {
     cleanupDir(dir)
   }
 })
 
-test('BOT_AI_CONTEXT_READ_ENABLED：生产拒绝 DATA_DIR 内路径与通配符', () => {
+test('CHATBOT_AI_CONTEXT_READ_ENABLED：生产拒绝 DATA_DIR 内路径与通配符', () => {
   const dir = tempDataDir()
   try {
     assert.throws(
@@ -101,8 +101,8 @@ test('BOT_AI_CONTEXT_READ_ENABLED：生产拒绝 DATA_DIR 内路径与通配符'
         loadConfig({
           ...baseEnv(dir),
           NODE_ENV: 'production',
-          BOT_AI_CONTEXT_READ_ENABLED: 'true',
-          BOT_CONTEXT_DIR: join(dir, 'bot-context'),
+          CHATBOT_AI_CONTEXT_READ_ENABLED: 'true',
+          CHATBOT_CONTEXT_DIR: join(dir, 'chatbot-context'),
         }),
       /不能位于 DATA_DIR 内/,
     )
@@ -110,8 +110,8 @@ test('BOT_AI_CONTEXT_READ_ENABLED：生产拒绝 DATA_DIR 内路径与通配符'
       () =>
         loadConfig({
           ...baseEnv(dir),
-          BOT_AI_CONTEXT_READ_ENABLED: 'true',
-          BOT_CONTEXT_DIR: `${dir}/*`,
+          CHATBOT_AI_CONTEXT_READ_ENABLED: 'true',
+          CHATBOT_CONTEXT_DIR: `${dir}/*`,
         }),
       /不能包含 \* 或 \?/,
     )
@@ -119,8 +119,8 @@ test('BOT_AI_CONTEXT_READ_ENABLED：生产拒绝 DATA_DIR 内路径与通配符'
       () =>
         loadConfig({
           ...baseEnv(dir),
-          BOT_AI_CONTEXT_READ_ENABLED: 'true',
-          BOT_CONTEXT_DIR: 'relative/context',
+          CHATBOT_AI_CONTEXT_READ_ENABLED: 'true',
+          CHATBOT_CONTEXT_DIR: 'relative/context',
         }),
       /必须是绝对路径/,
     )
@@ -129,21 +129,21 @@ test('BOT_AI_CONTEXT_READ_ENABLED：生产拒绝 DATA_DIR 内路径与通配符'
   }
 })
 
-test('BOT_AI_CONTEXT_READ_ENABLED：非生产默认目录可加载；生产缺失目录启动失败', () => {
+test('CHATBOT_AI_CONTEXT_READ_ENABLED：非生产默认目录可加载；生产缺失目录启动失败', () => {
   const dir = tempDataDir()
   try {
-    const dev = loadConfig({ ...baseEnv(dir), BOT_AI_CONTEXT_READ_ENABLED: 'true' })
-    assert.equal(dev.botAiContextReadEnabled, true)
-    assert.equal(dev.botContextDir, join(dir, 'bot-context'))
+    const dev = loadConfig({ ...baseEnv(dir), CHATBOT_AI_CONTEXT_READ_ENABLED: 'true' })
+    assert.equal(dev.chatbotAiContextReadEnabled, true)
+    assert.equal(dev.chatbotContextDir, join(dir, 'chatbot-context'))
 
     const missing = join(tmpdir(), `antifieldcloud-missing-${randomUUID()}`)
     const prod = loadConfig({
       ...baseEnv(dir),
       NODE_ENV: 'production',
-      BOT_AI_CONTEXT_READ_ENABLED: 'true',
-      BOT_CONTEXT_DIR: missing,
+      CHATBOT_AI_CONTEXT_READ_ENABLED: 'true',
+      CHATBOT_CONTEXT_DIR: missing,
     })
-    assert.throws(() => ensureRuntimeDirs(prod), /BOT_CONTEXT_DIR 不存在/)
+    assert.throws(() => ensureRuntimeDirs(prod), /CHATBOT_CONTEXT_DIR 不存在/)
   } finally {
     cleanupDir(dir)
   }

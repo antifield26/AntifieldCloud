@@ -100,99 +100,99 @@ export interface Config {
   alertCheckIntervalSeconds: number
   piHealthFile: string
   appVersion: string
-  /** Bot 平台总开关；关闭后所有 Bot API/队列/入站均不可用。 */
-  botEnabled: boolean
-  /** 32 字节 base64 AES-256-GCM 密钥；为空时 Bot 功能降级禁用。 */
-  botSecretKey: string
+  /** Chatbot 平台总开关；关闭后所有 Chatbot API/队列/入站均不可用。 */
+  chatbotEnabled: boolean
+  /** 32 字节 base64 AES-256-GCM 密钥；为空时 Chatbot 功能降级禁用。 */
+  chatbotSecretKey: string
   /** 入站 Webhook 原始请求体上限。 */
-  botWebhookMaxBodyBytes: number
+  chatbotWebhookMaxBodyBytes: number
   /** 出站队列扫描间隔（秒）。 */
-  botDeliveryIntervalSeconds: number
+  chatbotDeliveryIntervalSeconds: number
   /** 单条投递最大尝试次数。 */
-  botDeliveryMaxAttempts: number
+  chatbotDeliveryMaxAttempts: number
   /** 入站事件去重/投递记录保留天数。 */
-  botEventRetentionDays: number
+  chatbotEventRetentionDays: number
   /** 每个用户/目标每分钟命令上限。 */
-  botCommandRatePerMinute: number
+  chatbotCommandRatePerMinute: number
   /** 定时发布最长提前天数。 */
-  botPublishMaxScheduledDays: number
-  /** 最多配置的 Bot 数。 */
-  botMaxBots: number
+  chatbotPublishMaxScheduledDays: number
+  /** 最多配置的 Chatbot 数。 */
+  chatbotMaxBots: number
   /** AI 对话（v0.5.1，通过 OpenCode 本地 HTTP API）；默认关闭。 */
-  botAiEnabled: boolean
+  chatbotAiEnabled: boolean
   /** 可选模型 provider/model；为空使用 OpenCode 默认模型。 */
-  botAiProvider: string
-  botAiModel: string
-  botAiTimeoutSeconds: number
-  botAiMaxPromptChars: number
-  botAiRatePerHour: number
-  botAiSessionRetentionDays: number
+  chatbotAiProvider: string
+  chatbotAiModel: string
+  chatbotAiTimeoutSeconds: number
+  chatbotAiMaxPromptChars: number
+  chatbotAiRatePerHour: number
+  chatbotAiSessionRetentionDays: number
   /** v0.5.2 Chat/记忆/多附件/Gateway。 */
-  botChatRatePerMinute: number
-  botAiMemoryMaxChars: number
+  chatbotChatRatePerMinute: number
+  chatbotAiMemoryMaxChars: number
   /** 长期记忆自动清理周期（天）；与 7 天的会话映射保留期独立。 */
-  botAiMemoryRetentionDays: number
+  chatbotAiMemoryRetentionDays: number
   /** 累计多少条 Chat 后合并触发一次记忆摘要。 */
-  botAiMemoryBatchMessages: number
+  chatbotAiMemoryBatchMessages: number
   /** 用户空闲多少秒后合并触发记忆摘要；0 表示关闭空闲触发、只按条数触发。 */
-  botAiMemoryIdleFlushSeconds: number
+  chatbotAiMemoryIdleFlushSeconds: number
   /** 结构化记忆：每用户最多条目数（超出按过期/重要度清理）。 */
-  botMemoryMaxItems: number
+  chatbotMemoryMaxItems: number
   /** 注入提示词的记忆字符预算与条数上限。 */
-  botMemoryPromptMaxChars: number
-  botMemoryPromptMaxItems: number
-  /** episode/task 的默认存活天数；fact/project 复用 BOT_AI_MEMORY_RETENTION_DAYS。 */
-  botMemoryTtlEpisodeDays: number
-  botMemoryTtlTaskDays: number
+  chatbotMemoryPromptMaxChars: number
+  chatbotMemoryPromptMaxItems: number
+  /** episode/task 的默认存活天数；fact/project 复用 CHATBOT_AI_MEMORY_RETENTION_DAYS。 */
+  chatbotMemoryTtlEpisodeDays: number
+  chatbotMemoryTtlTaskDays: number
 
   /** AI 回答最大字符数；QQ 适配器会按平台上限分段发送。 */
-  botAiMaxReplyChars: number
+  chatbotAiMaxReplyChars: number
   /** 图片理解总开关（OpenCode prompt files + 多模态模型）；默认开启。 */
-  botAiVisionEnabled: boolean
+  chatbotAiVisionEnabled: boolean
   /** 单张入站图片大小上限（字节）。 */
-  botAiImageMaxBytes: number
+  chatbotAiImageMaxBytes: number
   /** v0.6.1：同一会话连续消息合并窗口（毫秒）；0 关闭合并但仍串行。 */
-  botChatBurstWindowMs: number
+  chatbotChatBurstWindowMs: number
   /** 从首条消息起最长等待（毫秒），避免持续输入导致不回复。 */
-  botChatBurstMaxWaitMs: number
+  chatbotChatBurstMaxWaitMs: number
   /** 单批最大消息数；达到后立即触发。 */
-  botChatBurstMaxMessages: number
+  chatbotChatBurstMaxMessages: number
   /** v0.6.4：群聊目标设为全量消息时，非 @ 消息使用更长的合并窗口。 */
-  botChatBurstGroupAllWindowMs: number
+  chatbotChatBurstGroupAllWindowMs: number
   /** v0.6.4：全量群聊合并从首条起的最长等待。 */
-  botChatBurstGroupAllMaxWaitMs: number
+  chatbotChatBurstGroupAllMaxWaitMs: number
   /** v0.6.4：是否允许模型调用 send_message 工具发送消息（需安装 botmsg MCP）。 */
-  botAiSendToolEnabled: boolean
+  chatbotAiSendToolEnabled: boolean
   /**
    * v0.7.3：Chat 上下文文档 + read 工具开关。
    * 开启后角色卡/记忆落盘为只读文档，模型按需 read；默认关闭，OpenCode 读范围验证通过后启用。
    */
-  botAiContextReadEnabled: boolean
+  chatbotAiContextReadEnabled: boolean
   /** v0.7.3：上下文文档根目录；生产必须显式配置为 OpenCode 组可读的独立目录。 */
-  botContextDir: string
-  /** v0.6.1：SearXNG 联网搜索总开关；开启时必须配置 BOT_SEARCH_URL。 */
-  botSearchEnabled: boolean
+  chatbotContextDir: string
+  /** v0.6.1：SearXNG 联网搜索总开关；开启时必须配置 CHATBOT_SEARCH_URL。 */
+  chatbotSearchEnabled: boolean
   /** SearXNG 基址（生产建议 loopback 私有实例），仅 http/https。 */
-  botSearchUrl: string
+  chatbotSearchUrl: string
   /** 自动判断并搜索（显式 /search 不受此开关影响）。 */
-  botSearchAuto: boolean
+  chatbotSearchAuto: boolean
   /** 搜索触发模式：mcp=模型通过 SearXNG MCP 工具自行决定；prefetch=服务端关键词预取。 */
-  botSearchMode: 'mcp' | 'prefetch'
-  botSearchMaxResults: number
-  botSearchTimeoutSeconds: number
-  botSearchMaxSnippetChars: number
-  botSearchLanguage: string
-  botSearchSafeSearch: boolean
+  chatbotSearchMode: 'mcp' | 'prefetch'
+  chatbotSearchMaxResults: number
+  chatbotSearchTimeoutSeconds: number
+  chatbotSearchMaxSnippetChars: number
+  chatbotSearchLanguage: string
+  chatbotSearchSafeSearch: boolean
   /** 逗号分隔的 SearXNG 引擎名；默认 bing（网络受限环境避免无谓 timeout）。 */
-  botSearchEngines: string
-  /** 每 Bot×用户每小时搜索次数上限。 */
-  botSearchRatePerHour: number
+  chatbotSearchEngines: string
+  /** 每 Chatbot×用户每小时搜索次数上限。 */
+  chatbotSearchRatePerHour: number
   /** v0.5.3 出站连通性探测与自动恢复；默认开启。 */
-  botConnectivityEnabled: boolean
-  botConnectivityIntervalSeconds: number
-  botConnectivityTimeoutSeconds: number
+  chatbotConnectivityEnabled: boolean
+  chatbotConnectivityIntervalSeconds: number
+  chatbotConnectivityTimeoutSeconds: number
   /**
-   * v0.8.0 Lofii Minecraft Bot（独立附属服务，仅 loopback HTTP）对接。
+   * v0.8.0 Lofii Minecraft Chatbot（独立附属服务，仅 loopback HTTP）对接。
    * 读/控制 Token 分离：控制 Token 为空表示只读，任务/移动接口返回 503。
    */
   lofiiEnabled: boolean
@@ -292,8 +292,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const dataDir = resolve(str(merged, 'DATA_DIR', resolve(process.cwd(), 'data')))
   const webDistDir = resolve(str(merged, 'WEB_DIST_DIR', resolve(process.cwd(), 'web', 'dist')))
   // 默认放在 DATA_DIR 下仅用于本地开发；生产由部署创建独立目录并显式配置（OpenCode 需可读）。
-  const rawBotContextDir = (merged.BOT_CONTEXT_DIR ?? '').trim()
-  const botContextDir = resolve(rawBotContextDir || resolve(dataDir, 'bot-context'))
+  const rawBotContextDir = (merged.CHATBOT_CONTEXT_DIR ?? '').trim()
+  const chatbotContextDir = resolve(rawBotContextDir || resolve(dataDir, 'chatbot-context'))
   const appOrigin = str(merged, 'APP_ORIGIN', 'https://app.example.com')
   const aiOrigin = str(merged, 'AI_ORIGIN', 'https://ai.example.com')
   const config: Config = {
@@ -378,57 +378,57 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     alertCheckIntervalSeconds: int(merged, 'ALERT_CHECK_INTERVAL_SECONDS', 300, 60, 3600),
     piHealthFile: str(merged, 'PI_HEALTH_FILE', '/run/antifieldcloud/pi-health.json'),
     appVersion: str(merged, 'APP_VERSION', '0.0.0-dev'),
-    botEnabled: bool(merged, 'BOT_ENABLED', false),
-    botSecretKey: str(merged, 'BOT_SECRET_KEY', ''),
-    botWebhookMaxBodyBytes: int(merged, 'BOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
-    botDeliveryIntervalSeconds: int(merged, 'BOT_DELIVERY_INTERVAL_SECONDS', 30, 5, 300),
-    botDeliveryMaxAttempts: int(merged, 'BOT_DELIVERY_MAX_ATTEMPTS', 5, 1, 20),
-    botEventRetentionDays: int(merged, 'BOT_EVENT_RETENTION_DAYS', 7, 1, 90),
-    botCommandRatePerMinute: int(merged, 'BOT_COMMAND_RATE_PER_MINUTE', 120, 1, 600),
-    botPublishMaxScheduledDays: int(merged, 'BOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),
-    botMaxBots: int(merged, 'BOT_MAX_BOTS', 10, 1, 50),
-    botAiEnabled: bool(merged, 'BOT_AI_ENABLED', false),
-    botAiProvider: str(merged, 'BOT_AI_PROVIDER', ''),
-    botAiModel: str(merged, 'BOT_AI_MODEL', ''),
-    botAiTimeoutSeconds: int(merged, 'BOT_AI_TIMEOUT_SECONDS', 60, 10, 180),
-    botAiMaxPromptChars: int(merged, 'BOT_AI_MAX_PROMPT_CHARS', 2000, 100, 8000),
-    botAiRatePerHour: int(merged, 'BOT_AI_RATE_PER_HOUR', 120, 1, 600),
-    botAiSessionRetentionDays: int(merged, 'BOT_AI_SESSION_RETENTION_DAYS', 7, 1, 90),
-    botChatRatePerMinute: int(merged, 'BOT_CHAT_RATE_PER_MINUTE', 30, 1, 120),
-    botAiMemoryMaxChars: int(merged, 'BOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
-    botAiMemoryRetentionDays: int(merged, 'BOT_AI_MEMORY_RETENTION_DAYS', 365, 30, 3650),
-    botAiMemoryBatchMessages: int(merged, 'BOT_AI_MEMORY_BATCH_MESSAGES', 3, 1, 20),
-    botAiMemoryIdleFlushSeconds: int(merged, 'BOT_AI_MEMORY_IDLE_FLUSH_SECONDS', 120, 0, 3600),
-    botMemoryMaxItems: int(merged, 'BOT_MEMORY_MAX_ITEMS', 200, 20, 1000),
-    botMemoryPromptMaxChars: int(merged, 'BOT_MEMORY_PROMPT_MAX_CHARS', 3000, 500, 8000),
-    botMemoryPromptMaxItems: int(merged, 'BOT_MEMORY_PROMPT_MAX_ITEMS', 12, 1, 50),
-    botMemoryTtlEpisodeDays: int(merged, 'BOT_MEMORY_TTL_EPISODE_DAYS', 90, 1, 365),
-    botMemoryTtlTaskDays: int(merged, 'BOT_MEMORY_TTL_TASK_DAYS', 30, 1, 180),
-    botAiMaxReplyChars: int(merged, 'BOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
-    botAiVisionEnabled: bool(merged, 'BOT_AI_VISION_ENABLED', true),
-    botAiImageMaxBytes: int(merged, 'BOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),
-    botChatBurstWindowMs: int(merged, 'BOT_CHAT_BURST_WINDOW_MS', 3000, 0, 8000),
-    botChatBurstMaxWaitMs: int(merged, 'BOT_CHAT_BURST_MAX_WAIT_MS', 10000, 1000, 20000),
-    botChatBurstMaxMessages: int(merged, 'BOT_CHAT_BURST_MAX_MESSAGES', 10, 1, 20),
-    botChatBurstGroupAllWindowMs: int(merged, 'BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS', 8000, 0, 30000),
-    botChatBurstGroupAllMaxWaitMs: int(merged, 'BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS', 20000, 1000, 60000),
-    botAiSendToolEnabled: bool(merged, 'BOT_AI_SEND_TOOL_ENABLED', false),
-    botAiContextReadEnabled: bool(merged, 'BOT_AI_CONTEXT_READ_ENABLED', false),
-    botContextDir,
-    botSearchEnabled: bool(merged, 'BOT_SEARCH_ENABLED', false),
-    botSearchUrl: str(merged, 'BOT_SEARCH_URL', ''),
-    botSearchAuto: bool(merged, 'BOT_SEARCH_AUTO', true),
-    botSearchMode: parseBotSearchMode(merged),
-    botSearchMaxResults: int(merged, 'BOT_SEARCH_MAX_RESULTS', 5, 1, 10),
-    botSearchTimeoutSeconds: int(merged, 'BOT_SEARCH_TIMEOUT_SECONDS', 8, 1, 30),
-    botSearchMaxSnippetChars: int(merged, 'BOT_SEARCH_MAX_SNIPPET_CHARS', 500, 100, 1500),
-    botSearchLanguage: str(merged, 'BOT_SEARCH_LANGUAGE', 'zh-CN'),
-    botSearchSafeSearch: bool(merged, 'BOT_SEARCH_SAFESEARCH', true),
-    botSearchEngines: str(merged, 'BOT_SEARCH_ENGINES', 'bing'),
-    botSearchRatePerHour: int(merged, 'BOT_SEARCH_RATE_PER_HOUR', 60, 1, 600),
-    botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
-    botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
-    botConnectivityTimeoutSeconds: int(merged, 'BOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
+    chatbotEnabled: bool(merged, 'CHATBOT_ENABLED', false),
+    chatbotSecretKey: str(merged, 'CHATBOT_SECRET_KEY', ''),
+    chatbotWebhookMaxBodyBytes: int(merged, 'CHATBOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
+    chatbotDeliveryIntervalSeconds: int(merged, 'CHATBOT_DELIVERY_INTERVAL_SECONDS', 30, 5, 300),
+    chatbotDeliveryMaxAttempts: int(merged, 'CHATBOT_DELIVERY_MAX_ATTEMPTS', 5, 1, 20),
+    chatbotEventRetentionDays: int(merged, 'CHATBOT_EVENT_RETENTION_DAYS', 7, 1, 90),
+    chatbotCommandRatePerMinute: int(merged, 'CHATBOT_COMMAND_RATE_PER_MINUTE', 120, 1, 600),
+    chatbotPublishMaxScheduledDays: int(merged, 'CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),
+    chatbotMaxBots: int(merged, 'CHATBOT_MAX_BOTS', 10, 1, 50),
+    chatbotAiEnabled: bool(merged, 'CHATBOT_AI_ENABLED', false),
+    chatbotAiProvider: str(merged, 'CHATBOT_AI_PROVIDER', ''),
+    chatbotAiModel: str(merged, 'CHATBOT_AI_MODEL', ''),
+    chatbotAiTimeoutSeconds: int(merged, 'CHATBOT_AI_TIMEOUT_SECONDS', 60, 10, 180),
+    chatbotAiMaxPromptChars: int(merged, 'CHATBOT_AI_MAX_PROMPT_CHARS', 2000, 100, 8000),
+    chatbotAiRatePerHour: int(merged, 'CHATBOT_AI_RATE_PER_HOUR', 120, 1, 600),
+    chatbotAiSessionRetentionDays: int(merged, 'CHATBOT_AI_SESSION_RETENTION_DAYS', 7, 1, 90),
+    chatbotChatRatePerMinute: int(merged, 'CHATBOT_CHAT_RATE_PER_MINUTE', 30, 1, 120),
+    chatbotAiMemoryMaxChars: int(merged, 'CHATBOT_AI_MEMORY_MAX_CHARS', 4096, 512, 16384),
+    chatbotAiMemoryRetentionDays: int(merged, 'CHATBOT_AI_MEMORY_RETENTION_DAYS', 365, 30, 3650),
+    chatbotAiMemoryBatchMessages: int(merged, 'CHATBOT_AI_MEMORY_BATCH_MESSAGES', 3, 1, 20),
+    chatbotAiMemoryIdleFlushSeconds: int(merged, 'CHATBOT_AI_MEMORY_IDLE_FLUSH_SECONDS', 120, 0, 3600),
+    chatbotMemoryMaxItems: int(merged, 'CHATBOT_MEMORY_MAX_ITEMS', 200, 20, 1000),
+    chatbotMemoryPromptMaxChars: int(merged, 'CHATBOT_MEMORY_PROMPT_MAX_CHARS', 3000, 500, 8000),
+    chatbotMemoryPromptMaxItems: int(merged, 'CHATBOT_MEMORY_PROMPT_MAX_ITEMS', 12, 1, 50),
+    chatbotMemoryTtlEpisodeDays: int(merged, 'CHATBOT_MEMORY_TTL_EPISODE_DAYS', 90, 1, 365),
+    chatbotMemoryTtlTaskDays: int(merged, 'CHATBOT_MEMORY_TTL_TASK_DAYS', 30, 1, 180),
+    chatbotAiMaxReplyChars: int(merged, 'CHATBOT_AI_MAX_REPLY_CHARS', 4000, 1000, 12000),
+    chatbotAiVisionEnabled: bool(merged, 'CHATBOT_AI_VISION_ENABLED', true),
+    chatbotAiImageMaxBytes: int(merged, 'CHATBOT_AI_IMAGE_MAX_BYTES', 10 * MIB, 1 * MIB, 20 * MIB),
+    chatbotChatBurstWindowMs: int(merged, 'CHATBOT_CHAT_BURST_WINDOW_MS', 3000, 0, 8000),
+    chatbotChatBurstMaxWaitMs: int(merged, 'CHATBOT_CHAT_BURST_MAX_WAIT_MS', 10000, 1000, 20000),
+    chatbotChatBurstMaxMessages: int(merged, 'CHATBOT_CHAT_BURST_MAX_MESSAGES', 10, 1, 20),
+    chatbotChatBurstGroupAllWindowMs: int(merged, 'CHATBOT_CHAT_BURST_GROUP_ALL_WINDOW_MS', 8000, 0, 30000),
+    chatbotChatBurstGroupAllMaxWaitMs: int(merged, 'CHATBOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS', 20000, 1000, 60000),
+    chatbotAiSendToolEnabled: bool(merged, 'CHATBOT_AI_SEND_TOOL_ENABLED', false),
+    chatbotAiContextReadEnabled: bool(merged, 'CHATBOT_AI_CONTEXT_READ_ENABLED', false),
+    chatbotContextDir,
+    chatbotSearchEnabled: bool(merged, 'CHATBOT_SEARCH_ENABLED', false),
+    chatbotSearchUrl: str(merged, 'CHATBOT_SEARCH_URL', ''),
+    chatbotSearchAuto: bool(merged, 'CHATBOT_SEARCH_AUTO', true),
+    chatbotSearchMode: parseBotSearchMode(merged),
+    chatbotSearchMaxResults: int(merged, 'CHATBOT_SEARCH_MAX_RESULTS', 5, 1, 10),
+    chatbotSearchTimeoutSeconds: int(merged, 'CHATBOT_SEARCH_TIMEOUT_SECONDS', 8, 1, 30),
+    chatbotSearchMaxSnippetChars: int(merged, 'CHATBOT_SEARCH_MAX_SNIPPET_CHARS', 500, 100, 1500),
+    chatbotSearchLanguage: str(merged, 'CHATBOT_SEARCH_LANGUAGE', 'zh-CN'),
+    chatbotSearchSafeSearch: bool(merged, 'CHATBOT_SEARCH_SAFESEARCH', true),
+    chatbotSearchEngines: str(merged, 'CHATBOT_SEARCH_ENGINES', 'bing'),
+    chatbotSearchRatePerHour: int(merged, 'CHATBOT_SEARCH_RATE_PER_HOUR', 60, 1, 600),
+    chatbotConnectivityEnabled: bool(merged, 'CHATBOT_CONNECTIVITY_ENABLED', true),
+    chatbotConnectivityIntervalSeconds: int(merged, 'CHATBOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
+    chatbotConnectivityTimeoutSeconds: int(merged, 'CHATBOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
     lofiiEnabled: bool(merged, 'LOFII_ENABLED', false),
     lofiiUrl: str(merged, 'LOFII_URL', 'http://127.0.0.1:3010').replace(/\/+$/, ''),
     lofiiReadToken: str(merged, 'LOFII_READ_TOKEN', ''),
@@ -446,36 +446,36 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (config.alertWebhookType !== 'generic') {
     throw new Error('ALERT_WEBHOOK_TYPE 目前只支持 generic')
   }
-  if (config.botSearchEnabled) {
-    if (!config.botSearchUrl) throw new Error('BOT_SEARCH_ENABLED=true 时必须配置 BOT_SEARCH_URL')
-    validateHttpUrl(config.botSearchUrl, 'BOT_SEARCH_URL')
+  if (config.chatbotSearchEnabled) {
+    if (!config.chatbotSearchUrl) throw new Error('CHATBOT_SEARCH_ENABLED=true 时必须配置 CHATBOT_SEARCH_URL')
+    validateHttpUrl(config.chatbotSearchUrl, 'CHATBOT_SEARCH_URL')
   }
-  if (config.botAiContextReadEnabled) {
-    const rawContextDir = (merged.BOT_CONTEXT_DIR ?? '').trim()
+  if (config.chatbotAiContextReadEnabled) {
+    const rawContextDir = (merged.CHATBOT_CONTEXT_DIR ?? '').trim()
     if (rawContextDir && !isAbsolute(rawContextDir)) {
-      throw new Error('BOT_CONTEXT_DIR 必须是绝对路径')
+      throw new Error('CHATBOT_CONTEXT_DIR 必须是绝对路径')
     }
-    if (/[*?]/.test(rawContextDir || config.botContextDir)) {
-      throw new Error('BOT_CONTEXT_DIR 不能包含 * 或 ?（会被 OpenCode 当作权限通配符）')
+    if (/[*?]/.test(rawContextDir || config.chatbotContextDir)) {
+      throw new Error('CHATBOT_CONTEXT_DIR 不能包含 * 或 ?（会被 OpenCode 当作权限通配符）')
     }
-    if (config.botContextDir === resolve('/')) {
-      throw new Error('BOT_CONTEXT_DIR 不能是文件系统根目录')
+    if (config.chatbotContextDir === resolve('/')) {
+      throw new Error('CHATBOT_CONTEXT_DIR 不能是文件系统根目录')
     }
     if (config.nodeEnv === 'production') {
       if (!rawContextDir) {
-        throw new Error('BOT_AI_CONTEXT_READ_ENABLED=true 时生产必须显式设置 BOT_CONTEXT_DIR')
+        throw new Error('CHATBOT_AI_CONTEXT_READ_ENABLED=true 时生产必须显式设置 CHATBOT_CONTEXT_DIR')
       }
       // OpenCode 以独立用户运行；DATA_DIR 为 0750，放在其内部会导致 OpenCode 无法穿越。
-      if (config.botContextDir === config.dataDir || config.botContextDir.startsWith(config.dataDir + sep)) {
-        throw new Error('BOT_CONTEXT_DIR 不能位于 DATA_DIR 内（OpenCode 无法穿越 0750 父目录）')
+      if (config.chatbotContextDir === config.dataDir || config.chatbotContextDir.startsWith(config.dataDir + sep)) {
+        throw new Error('CHATBOT_CONTEXT_DIR 不能位于 DATA_DIR 内（OpenCode 无法穿越 0750 父目录）')
       }
     }
   }
-  if (config.botChatBurstWindowMs > config.botChatBurstMaxWaitMs) {
-    throw new Error('BOT_CHAT_BURST_WINDOW_MS 不能大于 BOT_CHAT_BURST_MAX_WAIT_MS')
+  if (config.chatbotChatBurstWindowMs > config.chatbotChatBurstMaxWaitMs) {
+    throw new Error('CHATBOT_CHAT_BURST_WINDOW_MS 不能大于 CHATBOT_CHAT_BURST_MAX_WAIT_MS')
   }
-  if (config.botChatBurstGroupAllWindowMs > config.botChatBurstGroupAllMaxWaitMs) {
-    throw new Error('BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS 不能大于 BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS')
+  if (config.chatbotChatBurstGroupAllWindowMs > config.chatbotChatBurstGroupAllMaxWaitMs) {
+    throw new Error('CHATBOT_CHAT_BURST_GROUP_ALL_WINDOW_MS 不能大于 CHATBOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS')
   }
   validateOrigin(config.appOrigin, 'APP_ORIGIN')
   validateOrigin(config.aiOrigin, 'AI_ORIGIN')
@@ -501,14 +501,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }
   }
   if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
-  if (config.botSecretKey) {
+  if (config.chatbotSecretKey) {
     let key: Buffer
     try {
-      key = Buffer.from(config.botSecretKey, 'base64')
+      key = Buffer.from(config.chatbotSecretKey, 'base64')
     } catch {
-      throw new Error('BOT_SECRET_KEY 必须是 base64 编码的 32 字节密钥')
+      throw new Error('CHATBOT_SECRET_KEY 必须是 base64 编码的 32 字节密钥')
     }
-    if (key.length !== 32) throw new Error('BOT_SECRET_KEY 必须是 base64 编码的 32 字节密钥')
+    if (key.length !== 32) throw new Error('CHATBOT_SECRET_KEY 必须是 base64 编码的 32 字节密钥')
   }
   if (config.nodeEnv === 'production' && !['127.0.0.1', 'localhost', '::1'].includes(config.host)) {
     throw new Error('生产环境 HOST 必须是 loopback（应用只允许本地反代访问）')
@@ -518,9 +518,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
 /** 搜索触发模式：非法值直接拒绝，避免拼写错误被静默当成 mcp。 */
 function parseBotSearchMode(env: Record<string, string>): 'mcp' | 'prefetch' {
-  const raw = (env.BOT_SEARCH_MODE ?? 'mcp').trim().toLowerCase()
+  const raw = (env.CHATBOT_SEARCH_MODE ?? 'mcp').trim().toLowerCase()
   if (raw !== 'mcp' && raw !== 'prefetch') {
-    throw new Error(`配置项 BOT_SEARCH_MODE 非法：${raw}（允许 mcp/prefetch）`)
+    throw new Error(`配置项 CHATBOT_SEARCH_MODE 非法：${raw}（允许 mcp/prefetch）`)
   }
   return raw
 }
@@ -597,19 +597,19 @@ export function resolveLegacyCookieDomain(env: Record<string, string>, appOrigin
 export function ensureRuntimeDirs(config: Config): void {
   const dirs = [config.dataDir, resolve(config.dataDir, 'files'), resolve(config.dataDir, 'tmp'), resolve(config.dataDir, 'backups')]
   for (const dir of dirs) mkdirSync(dir, { recursive: true })
-  if (!config.botAiContextReadEnabled) return
-  if (existsSync(config.botContextDir)) {
+  if (!config.chatbotAiContextReadEnabled) return
+  if (existsSync(config.chatbotContextDir)) {
     try {
-      accessSync(config.botContextDir, constants.W_OK | constants.X_OK)
+      accessSync(config.chatbotContextDir, constants.W_OK | constants.X_OK)
     } catch {
-      throw new Error(`BOT_CONTEXT_DIR 不可写/不可进入：${config.botContextDir}（检查属主与权限）`)
+      throw new Error(`CHATBOT_CONTEXT_DIR 不可写/不可进入：${config.chatbotContextDir}（检查属主与权限）`)
     }
     return
   }
   if (config.nodeEnv === 'production') {
     throw new Error(
-      `BOT_CONTEXT_DIR 不存在：${config.botContextDir}（部署时创建：install -d -o antifieldcloud -g opencode -m 2750 <dir>）`,
+      `CHATBOT_CONTEXT_DIR 不存在：${config.chatbotContextDir}（部署时创建：install -d -o antifieldcloud -g opencode -m 2750 <dir>）`,
     )
   }
-  mkdirSync(config.botContextDir, { recursive: true, mode: 0o750 })
+  mkdirSync(config.chatbotContextDir, { recursive: true, mode: 0o750 })
 }

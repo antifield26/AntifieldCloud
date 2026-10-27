@@ -1,4 +1,4 @@
-import { Activity, Archive, Bell, BookOpen, Bot, FileText, LogIn, Share2, Users } from 'lucide-react'
+import { Activity, Archive, Bell, BookOpen, Bot as Chatbot, FileText, LogIn, Share2, Users } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { AuditItem } from '../api/types'
 import { auditActionMeta } from '../lib/audit'
@@ -14,7 +14,7 @@ const CATEGORY_ICONS: Record<AuditCategory, LucideIcon> = {
   knowledge: BookOpen,
   alert: Bell,
   backup: Archive,
-  bot: Bot,
+  chatbot: Chatbot,
   other: Activity,
 }
 

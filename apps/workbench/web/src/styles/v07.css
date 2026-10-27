@@ -1,14 +1,14 @@
 /* v0.5.11 新增样式：结构化长期记忆面板（类型分布标签、条目对话框内的元数据表）。
    约束：只展示条目元数据；窄屏沿用 v06 的表格容器横向滚动，不产生页面级横向滚动。 */
 
-.bot-memory-kinds {
+.chatbot-memory-kinds {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 6px;
   min-width: 0;
 }
 
-.bot-memory-kind {
+.chatbot-memory-kind {
   display: inline-flex;
   align-items: center;
   gap: 3px;
@@ -22,13 +22,13 @@
   white-space: nowrap;
 }
 
-.bot-memory-kind-count {
+.chatbot-memory-kind-count {
   color: var(--accent);
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
 
-.bot-memory-items {
+.chatbot-memory-items {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -36,21 +36,21 @@
 }
 
 /* 长期记忆左右两栏：用户记忆 / 群聊记忆；窄屏改为上下排列。 */
-.bot-memory-columns {
+.chatbot-memory-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 18px;
   min-width: 0;
 }
 
-.bot-memory-column {
+.chatbot-memory-column {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
 }
 
-.bot-memory-column-head {
+.chatbot-memory-column-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -60,19 +60,19 @@
   border-bottom: 1px solid var(--border);
 }
 
-.bot-memory-column-head h3 {
+.chatbot-memory-column-head h3 {
   margin: 0;
   font-size: 14px;
   font-weight: 650;
 }
 
 @media (max-width: 1100px) {
-  .bot-memory-columns {
+  .chatbot-memory-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.bot-memory-items-meta {
+.chatbot-memory-items-meta {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -81,18 +81,18 @@
   font-size: 12px;
 }
 
-.bot-memory-score {
+.chatbot-memory-score {
   color: var(--text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 @media (max-width: 640px) {
-  .bot-memory-kinds {
+  .chatbot-memory-kinds {
     gap: 3px 4px;
   }
 
-  .bot-memory-kind {
+  .chatbot-memory-kind {
     font-size: 11px;
   }
 }

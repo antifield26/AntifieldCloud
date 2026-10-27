@@ -9,7 +9,7 @@ import { SUPPORTED_SCHEMA_VERSION } from '../../db.ts'
 import { badRequest } from '../../util/errors.ts'
 import { asRecord, parsePositiveInt } from '../util.ts'
 import { requireAuth } from '../guards.ts'
-import { BOT_PLATFORMS } from '../../bot/types.ts'
+import { CHATBOT_PLATFORMS } from '../../chatbot/types.ts'
 
 /** 时间过滤参数：空值忽略；非法 ISO 时间返回 400，避免静默变全量查询。 */
 function timeParam(value: unknown, field: string): string | null {
@@ -69,8 +69,8 @@ export function registerDashboardRoutes(
     metricsEnabled: config.metricsEnabled,
     metricsSampleSeconds: config.metricsSampleSeconds,
     metricsRetentionDays: config.metricsRetentionDays,
-    botsEnabled: config.botEnabled && config.botSecretKey.length > 0,
-    botPlatforms: [...BOT_PLATFORMS],
+    chatbotsEnabled: config.chatbotEnabled && config.chatbotSecretKey.length > 0,
+    chatbotPlatforms: [...CHATBOT_PLATFORMS],
     /** v0.8.0 Lofii 对接开关与控制能力（控制 Token 为空 = 只读）。 */
     lofiiEnabled: config.lofiiEnabled,
     lofiiControlEnabled: config.lofiiEnabled && config.lofiiControlToken.length > 0,

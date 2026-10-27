@@ -1,5 +1,5 @@
 [Unit]
-Description=SearXNG private search (AntifieldComplexx Bot web search)
+Description=SearXNG private search (AntifieldComplexx Chatbot web search)
 Documentation=https://docs.searxng.org/
 After=network-online.target
 Wants=network-online.target

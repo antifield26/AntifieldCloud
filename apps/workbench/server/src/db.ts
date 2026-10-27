@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-const MIGRATIONS: string[] = [
+export const MIGRATIONS: string[] = [
   `
   CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -689,6 +689,38 @@ const MIGRATIONS: string[] = [
   );
   INSERT OR IGNORE INTO audit_write_failures (id, failure_count, updated_at)
     VALUES (1, 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+  `,
+  `
+  -- v1.0.0：QQ Bot 子系统全量更名为 chatbot（表/列/meta 键）。
+  -- 历史迁移 SQL 保持原样（迁移只追加）：全新库先建 bot_*，再由本迁移改名。
+  ALTER TABLE bots RENAME TO chatbots;
+  ALTER TABLE bot_targets RENAME TO chatbot_targets;
+  ALTER TABLE bot_deliveries RENAME TO chatbot_deliveries;
+  ALTER TABLE bot_publish_jobs RENAME TO chatbot_publish_jobs;
+  ALTER TABLE bot_events RENAME TO chatbot_events;
+  ALTER TABLE bot_ai_sessions RENAME TO chatbot_ai_sessions;
+  ALTER TABLE bot_ai_memories RENAME TO chatbot_ai_memories;
+  ALTER TABLE bot_memory_items RENAME TO chatbot_memory_items;
+  ALTER TABLE bot_memory_state RENAME TO chatbot_memory_state;
+  ALTER TABLE bot_group_roles RENAME TO chatbot_group_roles;
+  ALTER TABLE bot_inbound_targets RENAME TO chatbot_inbound_targets;
+  ALTER TABLE bot_chat_roles RENAME TO chatbot_chat_roles;
+
+  ALTER TABLE chatbot_targets RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_deliveries RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_publish_jobs RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_events RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_ai_sessions RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_ai_memories RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_memory_items RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_memory_state RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_group_roles RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_inbound_targets RENAME COLUMN bot_id TO chatbot_id;
+  ALTER TABLE chatbot_chat_roles RENAME COLUMN bot_id TO chatbot_id;
+
+  UPDATE meta SET key = 'chatbot_group_memory_owner_migrated_v1' WHERE key = 'bot_group_memory_owner_migrated_v1';
+  UPDATE meta SET key = 'chatbot_group_memory_migrated_v1' WHERE key = 'bot_group_memory_migrated_v1';
+  UPDATE meta SET key = 'chatbot_ai_tool_mode' WHERE key = 'bot_ai_tool_mode';
   `,
 ]
 
