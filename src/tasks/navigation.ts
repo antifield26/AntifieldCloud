@@ -23,8 +23,12 @@ export function assertSafe (config: Config, x: number, z: number): void {
   }
 }
 
+function isTreeBlock (name: string): boolean {
+  return name.endsWith('_log') || name.endsWith('_wood') || name.endsWith('_leaves')
+}
+
 function isSolidGround (block: Block | null): boolean {
-  return block !== null && block.boundingBox === 'block' && !HAZARD_BLOCKS.has(block.name)
+  return block !== null && block.boundingBox === 'block' && !HAZARD_BLOCKS.has(block.name) && !isTreeBlock(block.name)
 }
 
 function isClear (block: Block | null): boolean {
