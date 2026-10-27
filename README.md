@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.7.3（本地实现与门禁完成，待生产部署），schema **v17**（无迁移），OpenCode **v2.1.4**。当前生产 v0.7.2（release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；部署内 smoke 24/0/1/2、完整 Access smoke 33/0/0/2；drill `20261025T133743Z` 通过）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
-> 测试基线：`npm test` **520**（1 skip）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.33/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`check-version`（严格 `0.7.3`）、`build`（`index-fid8njfw.js` 726.86 kB）均通过；Node.js **v26.12.1**。
+> 状态：v0.7.3（**已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收，待 Tag/Release**），schema **v17**（无迁移），OpenCode **v2.1.4**。当前生产 v0.7.3（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；文档模式已显式启用，mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
+> 测试基线：`npm test` **521**（1 skip）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`check-version`（严格 `0.7.3`）、`build`（`index-fid8njfw.js` 726.86 kB）均通过；Node.js **v26.12.1**。
 > 部署与运维见 [docs/DEPLOY.md](docs/DEPLOY.md)，备份/恢复见 [docs/BACKUP.md](docs/BACKUP.md)，契约见 [docs/API.md](docs/API.md)，路线与验收记录见 [docs/ROADMAP.md](docs/ROADMAP.md) 与 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
 
 ## 技术栈
@@ -11,9 +11,9 @@
 - 服务端：Node.js >= 26（生产 v26.12.1；原生 TypeScript，无编译步骤）+ Fastify + `node:sqlite`（WAL）
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用；当前结论为**暂不升级、保留双 alias**
-- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（schema v17；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭，OpenCode 读范围验证后启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
+- Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（schema v17；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭；生产读范围矩阵 6/6 通过后已显式启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **520**，1 skip）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 Lines/Functions/Branches 91/85/76；前端 50/45/42）
+- 测试：`node --test`（服务端 + 运维脚本 **521**，1 skip）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 Lines/Functions/Branches 91/85/76；前端 50/45/42）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能

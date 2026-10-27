@@ -219,7 +219,7 @@
     不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
 21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；文档模式再放行当前作用域 `external_directory` 与精确 `read` 两份文档。若 OpenCode 明确以 400 拒绝该字段，进入 10 分钟重试窗口并记录状态/审计，启用发送工具或文档模式时**拒绝新 Chat**（503 `bot_ai_tool_isolation_unavailable` + 固定提示），不再以默认权限继续；窗口到点放行一次重试，上游恢复后自动恢复。
     当前生产 OpenCode **v2.1.4** 的 OpenAPI 声明支持该字段（升级矩阵已验证创建会话 200、模型 assistant text 正常与 deny-all 负路径无 tool）；仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
-    **文档模式残余**：read 范围依赖 OpenCode 对 session `permissions` 资源的实际匹配语义；生产启用前必须用真实 OpenCode 做作用域内/外负路径矩阵，失败则保持关闭；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；OpenCode 进程本身仍是信任边界（其可读全部上下文作用域）。
+    **文档模式残余**：read 范围依赖 OpenCode 对 session `permissions` 资源的实际匹配语义；生产已于 2026-10-27 用真实 OpenCode 完成作用域内/外负路径矩阵 **6/6 通过**（作用域外/env/DB/其他作用域/shell/注入全部拒绝），随后才启用；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；OpenCode 进程本身仍是信任边界（其可读全部上下文作用域）。
     产品代价：隔离不可用期间 Bot Chat 暂停，属明确取舍（可用性让位于安全）。
 22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
     生产已安装并实测封禁恢复；Cloudflare Access 也已配置并纳入带 token 的 smoke，剩余为 service token/API Token 轮换与季度演练。
@@ -328,5 +328,5 @@
   - AI 主机：`/__af/sso/*` 超限 429、匿名请求 429、审计按 action+IP 去重。
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见（`audit_write_failures` 持久化）。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`BOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
-  - 当前基线：`npm test` **520**（1 skip）、`test:web` **222**、服务端覆盖率 **92.93/78.33/88.55**、前端 **52.31/47.32/45.02**；`check-version` 严格 `0.7.3`、`check-prod-deps` 通过。
+  - 当前基线：`npm test` **521**（1 skip）、`test:web` **222**、服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`check-version` 严格 `0.7.3`、`check-prod-deps` 通过。
   - 生产：release `20261025T132950Z`/commit `eb74382`，部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill `20261025T133743Z` schema17 通过；OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过。

@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.3（本地实现与门禁完成，待生产部署；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.7.3 新增 Bot 上下文文档 + 按需 `read`：角色卡只在会话创建时发送，后续轮只给角色名/记忆条数/只读文档路径，`BotContextStore` 按作用域哈希写 `role.md`/`memory.md`，OpenCode 仅放行当前作用域两份文档的 `read`；`BOT_AI_CONTEXT_READ_ENABLED` 默认 false，生产读范围矩阵通过后启用。当前生产仍为 **v0.7.2**（release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill `20261025T133743Z` 通过）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.7.3（已部署生产并完成读范围/QQ 正向验收，待 Tag/Release；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.7.3 新增 Bot 上下文文档 + 按需 `read`：角色卡只在会话创建时发送，后续轮只给角色名/记忆条数/只读文档路径，`BotContextStore` 按作用域哈希写 `role.md`/`memory.md`，OpenCode 仅放行当前作用域两份文档的 `read`；`BOT_AI_CONTEXT_READ_ENABLED` 默认 false，生产读范围矩阵通过后已显式启用。当前生产为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；文档 mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过；真实 QQ 私聊首轮/后续与群聊首轮通过）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.3，2026-10-27 本地门禁）：`npm test` **520**（1 skip，server+scripts，含 scripts 29）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.93% / Branches 78.33% / Functions 88.55%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前仍为 **v0.7.2**（release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill 报告 `20261025T133743Z` schema17 通过；备份加密/异地副本关闭）；v0.7.3 生产部署与读范围验证待执行。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
+当前基线（v0.7.3，2026-10-27 本地门禁）：`npm test` **521**（1 skip，server+scripts，含 scripts 30）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.93% / Branches 78.37% / Functions 88.55%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；读范围矩阵 6/6；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记待用户以管理员 PowerShell 重装刷新到 0.7.3）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -159,7 +159,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - 世界备份：`antifieldcloud-world.timer` 每周日 12:00（显式 Asia/Shanghai，`Persistent=true`）以 root 执行 `scripts/backup-world.mjs`，归档到 `/var/lib/antifieldcloud/world-backups`、保留 4 份；Minecraft 世界约 4.1 GiB，周备份耗时与磁盘余量按 1.5× 世界体积预留。
 - 定时策略：仅项目世界备份 timer 统一到周日 12:00；健康探针保持 60s；系统维护 timer（apt/logrotate/fstrim 等）保持发行版默认。
 - 备份/灾备状态文件由脚本写入、应用只读：`/var/lib/antifieldcloud/world-backup-status.json`、`world-pull-status.json`、`drill-status.json`、`backup-offsite-status.json`（0644）；Dashboard/Settings 与告警读取。
-- Bot 上下文文档目录（v0.7.3，默认关闭）：`/var/lib/antifieldcloud-context`（`install -d -o antifieldcloud -g opencode -m 2750`；文件 0640，不跟随符号链接，不进入备份）；应用 unit 的 `ReadWritePaths` 需包含该目录。
+- Bot 上下文文档目录（v0.7.3；默认关闭，生产已显式启用）：`/var/lib/antifieldcloud-context`（`install -d -o antifieldcloud -g opencode -m 2750`；文件 0640，不跟随符号链接，不进入备份）；应用 unit 的 `ReadWritePaths` 已包含该目录。
 - systemd 加固：`antifieldcloud.service` 已加 `CapabilityBoundingSet=`（空）、`RestrictAddressFamilies`、`PrivateDevices`、`ProtectClock/Hostname/KernelLogs`、`RestrictSUIDSGID/Realtime` 等；`antifieldcloud-world.service` 同样加固并有 `flock`、4h 超时。
 - nftables：默认拒绝入站；22 仅 `192.0.2.0/24` + `198.51.100.0/24`（TEST-NET 占位，安装前替换为实际直连/校园网段）且新建连接限速 20/min；25565 仅同网段；25575 仅 loopback；DHCP 仅 `eth0`/`wlan0`。**改 22 网段前先确认当前 SSH 来源在允许集合内**。
 - SSH 仅公钥：`/etc/ssh/sshd_config.d/00-` drop-in 先于其它配置生效（禁用密码/键盘交互，保留公钥）；旧回滚备份归档在 `/var/backups/antifieldcloud/`（0600 root），`/root` 无残留，活动配置未改；`fail2ban` 已安装并启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set。**手工 `systemctl reload nftables` 不触发该 drop-in，仍需 `systemctl restart fail2ban`**。主机级配置模板见 `deploy/host/`（sshd/fail2ban/cloudflared/journald/log2ram），`backup-secrets.sh --include-host-config` 可纳入密钥包。
@@ -168,7 +168,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   Chat/记忆：`BOT_CHAT_RATE_PER_MINUTE=30`、`BOT_MEMORY_MAX_ITEMS=200`、`BOT_MEMORY_PROMPT_MAX_CHARS=3000`、`BOT_MEMORY_PROMPT_MAX_ITEMS=12`、`BOT_MEMORY_TTL_EPISODE_DAYS=90`、`BOT_MEMORY_TTL_TASK_DAYS=30`；
   连通性：`BOT_CONNECTIVITY_ENABLED=true`、`BOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`BOT_CONNECTIVITY_TIMEOUT_SECONDS=8`；
   群聊：`BOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`BOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`、`BOT_AI_SEND_TOOL_ENABLED=false`（启用前安装 `botmsg` MCP）；
-  上下文文档：`BOT_AI_CONTEXT_READ_ENABLED=false`（OpenCode 读范围矩阵通过后启用）、`BOT_CONTEXT_DIR=/var/lib/antifieldcloud-context`（生产显式、OpenCode 组可读、不得位于 DATA_DIR 内）；
+  上下文文档：`BOT_AI_CONTEXT_READ_ENABLED=false`（默认；生产已显式 true，读范围矩阵 6/6 通过）、`BOT_CONTEXT_DIR=/var/lib/antifieldcloud-context`（生产显式、OpenCode 组可读、不得位于 DATA_DIR 内）；
   **连续外发：生产固定 1000ms 最小间隔（按 Bot/AppID 串行，代码内 `DEFAULT_SEND_INTERVAL_MS`；无 env 开关；测试注入 0）。**
   搜索：`BOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`BOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。
@@ -195,4 +195,4 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 10. Bot 平台后台注册（QQ 官方 Bot，用户在 q.qq.com 完成，Agent 不代替）：创建机器人取得 AppID/AppSecret → 在 `/bots` 新建 QQ Bot 录入 → 回调地址填 `https://app.<domain>/api/bot/webhook/<botId>` 并处理 `op=13` 校验 → 订阅 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE` → 登记目标 → 开启 `BOT_ENABLED=true` 并重启。图片理解需 `BOT_AI_ENABLED=true` 且模型支持 image。
 11. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/BACKUP.md` §7 与 `docs/ACCEPTANCE.md`。
 12. SSH 仅公钥的回滚窗口当前已关闭：旧备份归档到 `/var/backups/antifieldcloud/`（0600 root），活动配置未改；后续如再次变更仍按 `docs/DEPLOY.md` §9.7 保留 24h 回滚窗口。
-13. v0.7.3 Bot 文档模式启用（默认关闭）：先按 `docs/DEPLOY.md` §3.7 完成 OpenCode 读范围矩阵（作用域内正向 + 作用域外/环境文件/DB/shell/相对路径负向），通过后再设 `BOT_AI_CONTEXT_READ_ENABLED=true` 并重启；真实 QQ 首轮/后续提示词、记忆召回、`/forget`、群共享会话与负向拒绝验收。回滚设 `false` 重启，无需恢复 schema/DB。
+13. v0.7.3 Bot 文档模式启用（默认关闭，生产已于 2026-10-27 启用）：读范围矩阵 6/6 通过（作用域内正向；作用域外/env/DB/其他作用域/shell/注入全部拒绝），真实 QQ 私聊首轮/后续与群聊首轮通过；生产 `BOT_AI_CONTEXT_READ_ENABLED=true`。回滚设 `false` 重启，无需恢复 schema/DB。

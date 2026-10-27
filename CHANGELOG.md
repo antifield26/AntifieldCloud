@@ -1,6 +1,6 @@
 # Changelog
 
-## [v0.7.3] - 2026-10-27（本地实现与门禁完成，待生产部署；schema 保持 v17）
+## [v0.7.3] - 2026-10-27（已部署生产并完成读范围/QQ 正向验收，待 Tag/Release；schema 保持 v17）
 
 ### Added
 
@@ -16,10 +16,20 @@
 - 文档目录位于 DATA_DIR 外，systemd `ReadWritePaths` 显式放行；生产要求显式 `BOT_CONTEXT_DIR` 且不能在 DATA_DIR 内；目录文件不进入备份。
 - 生产发布门禁新增 OpenCode 读范围矩阵：作用域内正向读取、作用域外/环境文件/数据库/shell/相对路径/其他作用域全部拒绝；失败则保持关闭。
 
+### Fixed
+
+- `scripts/drill-verify.mjs` 的 manifest 校验 details 未返回 `since`，导致 `drill.ps1` 对任何增量归档误报 `chain_since_missing`；补 `details.since` 与单测后，生产 drill `20261027T061319Z` 通过（full + 5 inc、schema17）。
+
 ### Tests
 
-- 新增 `bot-context.test.ts`、`bot-v073.test.ts`；扩展 `bot-prompts.test.ts`、`bot-ai.test.ts`、`config-validation.test.ts`、QQ 测试夹具（`initialPrompt`）。
-- 本地门禁：`npm test` **520**（1 skip，server+scripts）、`npm run test:web` **222**（44 文件）、服务端覆盖率 **92.93/78.33/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version` 严格 `0.7.3` 通过（以最终门禁记录为准）。
+- 新增 `bot-context.test.ts`、`bot-v073.test.ts`；扩展 `bot-prompts.test.ts`、`bot-ai.test.ts`、`config-validation.test.ts`、QQ 测试夹具（`initialPrompt`）；drill-verify 增加 `details.since` 回归测试。
+- 本地门禁：`npm test` **521**（1 skip，server+scripts）、`npm run test:web` **222**（44 文件）、服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version` 严格 `0.7.3` 通过。
+
+### Deployed
+
+- **生产部署（2026-10-27）**：release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；迁移前快照 `db-predeploy-20261027T060230013Z.sqlite`（sha256 `300a3957921504fd9ec487c07c5c8e3c4604ef1e374ae24dfbfb5a6dafe593ad`）；完整 Access smoke **33/0/0/2**；读范围矩阵 6/6 通过后启用 `BOT_AI_CONTEXT_READ_ENABLED=true`。
+- **真实 QQ 验收**：私聊首轮 851 字符含 `[角色卡：lofii]`+文档路径，后续 763 字符不含角色卡正文但保留文档路径，模型实际 `read` `role.md`/`memory.md`；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档路径；审计 `bot.ai.chat.context=docs`，`bot.ai.tool_mode_reset` 清 6 个旧会话。
+- **演练与运维**：drill `20261027T061319Z` 通过并写回 Pi 状态；Windows 每日备份任务标记仍为 0.7.2，需用户以管理员 PowerShell 重装；未执行 Tag/Release。
 
 ## [v0.7.2] - 2026-10-25（已发布：Tag `v0.7.2` + GitHub Release）
 

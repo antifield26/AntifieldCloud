@@ -569,9 +569,10 @@
 ## 第七轮（v0.7.3 规划期对抗性分析，2026-10-27）
 
 - **范围**：Bot 提示词文档化（角色卡只在会话创建时发送、记忆按需 `read`）与 OpenCode read 权限扩大。
-- **结论**：功能本地实现与门禁完成，默认关闭；生产启用前必须完成真实 OpenCode 读范围矩阵。P0=0/P1=0（本地门禁），2 个发布阻断未决项与 1 个产品风险记录如下。
-- **阻断项 A1（read 范围语义）**：OpenCode 接受 `permissions` 不等于已按路径拦截；若 `read` 规则未生效，模型可能读取 `/etc/antifieldcloud/env`、OpenCode 凭据/DB 并外发。缓解：`deny *` 首位 + 仅放行当前作用域 `external_directory` + 精确 `read role.md/memory.md`；默认关闭；生产矩阵作用域内/外/注入/shell/相对路径全部验证，失败保持关闭。
-- **阻断项 A2（权限降级）**：旧逻辑在 permissions 被拒时可无 permissions 重建（默认全工具）；文档模式开启后必须以 503 `bot_ai_tool_isolation_unavailable` fail-closed，记忆抽取会话也要求 permissions 生效。已由单测/集成覆盖。
-- **产品风险 A13（模型不读文档）**：后续轮不再携带角色/记忆正文，若模型不调用 `read`，人设/记忆可能弱化；通过真实 QQ 首轮/后续、记忆召回、`/forget` 验收观察，可随时用 flag 回退内联提示词。
+- **结论**：功能本地实现与门禁完成，默认关闭；生产 OpenCode 读范围矩阵已于 2026-10-27 **6/6 通过**并显式启用（真实 QQ 私聊首轮/后续、群聊首轮通过）。P0=0/P1=0；A1/A2 阻断已由生产矩阵与自动化测试关闭，A13 保留为观察项；另记录部署期发现的 drill 链校验缺陷 F1（已修复）。
+- **阻断项 A1（read 范围语义）**：OpenCode 接受 `permissions` 不等于已按路径拦截；若 `read` 规则未生效，模型可能读取 `/etc/antifieldcloud/env`、OpenCode 凭据/DB 并外发。缓解：`deny *` 首位 + 仅放行当前作用域 `external_directory` + 精确 `read role.md/memory.md`；默认关闭；生产矩阵作用域内/外/注入/shell/相对路径全部验证，失败保持关闭。**生产结果（2026-10-27）**：矩阵 6/6 PASS，作用域外/env/DB/其他作用域/shell/注入均拒绝，阻断关闭。
+- **阻断项 A2（权限降级）**：旧逻辑在 permissions 被拒时可无 permissions 重建（默认全工具）；文档模式开启后必须以 503 `bot_ai_tool_isolation_unavailable` fail-closed，记忆抽取会话也要求 permissions 生效。已由单测/集成覆盖。**生产未人为制造 permissions 拒绝**（避免影响线上），保持为自动化测试保证项。
+- **产品风险 A13（模型不读文档）**：后续轮不再携带角色/记忆正文，若模型不调用 `read`，人设/记忆可能弱化；通过真实 QQ 首轮/后续、记忆召回、`/forget` 验收观察，可随时用 flag 回退内联提示词。**生产观察**：私聊后续轮模型实际调用 `read` 读取 `role.md`/`memory.md`，未见人设弱化；记忆召回与 `/forget` 未在生产做破坏性验证。
+- **运维缺陷 F1（drill 增量链误报）**：`drill-verify.mjs` 的 `details` 未返回 manifest `since`，`drill.ps1` 对所有含 inc 的链误报 `chain_since_missing`；生产首次演练 `20261027T061021Z` 暴露。已补字段与单测，重跑 `20261027T061319Z` 通过（full+5 inc、schema17）。
 - **明确残余**：首轮角色卡仍存在于 OpenCode 会话历史（后续请求不再发送正文）；OpenCode 进程是信任边界（可读全部上下文作用域）；群共享记忆在群成员间可见为既有语义；上下文目录为派生数据、不进入备份，恢复后重建。
-- **未决**：生产部署、读范围矩阵、smoke/drill 与真实 QQ 验收待执行；矩阵失败则 v0.7.3 功能保持关闭并记录阻断，不把 mock 全绿当线上通过。
+- **未决**：Tag `v0.7.3` + GitHub Release；Windows 每日备份任务标记待用户以管理员 PowerShell 重装；生产未做破坏性 `/forget confirm` 与多成员群聊第二轮回读（自动化测试覆盖，留作可选复验）。

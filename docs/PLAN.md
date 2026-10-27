@@ -5,9 +5,9 @@
 ## 当前版本
 
 - **版本**：v0.7.3；schema **v17**（无迁移）；OpenCode **v2.1.4**；Node.js **v26.12.1**。
-- **状态**：本地实现与门禁完成，**待生产部署**；当前生产仍为 v0.7.2（release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill `20261025T133743Z` schema17 通过）。
-- **发布**：本地验收与生产读范围验证通过后 Tag `v0.7.3` + GitHub Release。
-- **测试基线**：`npm test` **520**（1 skip，server+scripts）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.33/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version`（严格 `0.7.3`）通过。
+- **状态**：**已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**（2026-10-27）；生产 release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；文档模式已显式启用 `mcp:send:read:aad221f1`；drill `20261027T061319Z` schema17 通过。
+- **发布**：待 Tag `v0.7.3` + GitHub Release；Windows 每日备份任务需用户用管理员 PowerShell 重装以刷新 0.7.3 标记（当前 0.7.2，不影响应用运行）。
+- **测试基线**：`npm test` **521**（1 skip，server+scripts）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`npm run build`、`check-version`（严格 `0.7.3`）通过。
 
 ## 范围
 
@@ -53,5 +53,5 @@
 
 - **功能级**：`BOT_AI_CONTEXT_READ_ENABLED=false` + 重启；`resetSessionsForToolMode` 因 mode 变化清会话，恢复 v0.7.2 内联提示词；上下文目录可保留或删除，无 schema/DB 变更。
 - **版本级**：`deploy.ps1` 回退上一 release；schema 仍 v17；v0.7.2 忽略新 env/目录；unit 多出的 `ReadWritePaths` 无害。
-- **读范围失败**：保持 flag=false，不开启功能；记录到 `docs/AUDIT.md`/`docs/ACCEPTANCE.md`，不以 mock 结果代替线上验证。
+- **读范围失败**：保持 flag=false，不开启功能；记录到 `docs/AUDIT.md`/`docs/ACCEPTANCE.md`，不以 mock 结果代替线上验证。生产矩阵已于 2026-10-27 通过（作用域内正向 + 作用域外/env/DB/其他作用域/shell/注入全部拒绝）。
 - **数据**：上下文目录为派生数据，可直接删除；记忆/角色权威仍在 DB 与角色卡表。

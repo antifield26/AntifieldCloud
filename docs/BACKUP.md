@@ -320,6 +320,7 @@ cd "$env:USERPROFILE\projects\AntifieldCloud"
 | 日期 | 操作人 | 全量归档 | 增量数量 | 最新 DB schema | 世界归档 | 结果 | 报告/备注 |
 |---|---|---|---|---|---|---|---|
 | 2026-10-25 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 0 | 17 | 通过 | 通过 | drill 报告 `20261025T133743Z`；链连续性/SHA/解包/DB integrity/FK/schema |
+| 2026-10-27 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 5 | 17 | 通过 | 通过 | drill 报告 `20261027T061319Z`；首次 `20261027T061021Z` 因 drill-verify 未返回 `details.since` 误报断链，修复后本报告通过；链连续性/SHA/解包/DB integrity/FK/schema/世界归档 |
 |  |  |  |  |  |  |  | （下一次演练填写） |
 
 - 未填写记录的“演练通过”声明无效；报告文件与 `.local/DR-DRILL.md` 作为证据保存。

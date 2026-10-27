@@ -14,7 +14,7 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v17**：`audit_write_failures` 保存审计失败诊断；`bot_group_roles` 保存群聊共享角色卡；`bot_memory_items`/`bot_memory_state` 保存结构化记忆；`bot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
-- 当前生产：v0.7.2（release `20261025T132950Z`/commit `eb74382`，`/healthz` v0.7.2/schema17；部署内 smoke 24/0/1/2、完整 Access smoke **33/0/0/2**；drill `20261025T133743Z` schema17 通过）。v0.7.3 本地实现与门禁完成，**待部署**；schema 保持 v17（无迁移）。备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
+- 当前生产：**v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **33/0/0/2**；读范围矩阵 6/6 通过；真实 QQ 私聊首轮/后续与群聊首轮通过；文档 mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过）。v0.7.3 文档模式已在生产显式启用；schema 保持 v17（无迁移）。备份整包加密/异地副本默认关闭，异地副本不配置 remote；回滚目标为上一 release 及对应迁移前快照（见 §11）。
 - Bot 默认关闭：`BOT_ENABLED=false` 且无 `BOT_SECRET_KEY` 时应用正常运行，只是 `/api/bot/webhook/*` 返回 404、`/api/bots*` 写接口 503；
   启用顺序见 §3.0，Cloudflare Access bypass 见 §5.2。
 
@@ -163,7 +163,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 ### 3.0 应用部署步骤（当前版本；schema v17）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-27 本地实测：`npm test` 520（1 skip）、`test:web` 222、服务端覆盖率 92.93/78.33/88.55、前端 52.31/47.32/45.02、check-version `version ok 0.7.3`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-27 本地实测：`npm test` 521（1 skip）、`test:web` 222、服务端覆盖率 92.93/78.37/88.55、前端 52.31/47.32/45.02、check-version `version ok 0.7.3`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.1.4 升级（先于应用部署，按 §3.2）**：备份 v2.1.3 二进制/data/env/unit/MCP 配置 → `opencode upgrade 2.1.4` → 14 项矩阵验收 → 失败回滚；
@@ -362,6 +362,13 @@ sudo systemctl restart antifieldcloud
 
 10. **回滚**：`BOT_AI_CONTEXT_READ_ENABLED=false` + 重启即可恢复内联提示词；上下文目录可保留（派生数据）或删除；
     不需要恢复 schema/DB/OpenCode 配置。
+
+> **生产验证记录（2026-10-27，release `20261027T060134Z`）**：目录/属组/读写校验通过；矩阵 6/6 PASS
+> （作用域内正向；作用域外哨兵、应用 env、其他作用域、shell canary、prompt injection 全部拒绝；
+> OpenCode 接受 `external_directory` + 精确 `read` permissions）；启用后 `bot_ai_tool_mode=mcp:send:read:aad221f1`，
+> 旧会话 6→0 重置。真实 QQ 私聊：首轮 851 字符含 `[角色卡：lofii]`+文档段，后续 763 字符不含角色卡正文但保留文档路径，
+> 模型实际 `read` 了 `role.md`/`memory.md`；群聊首轮 1104 字符含群角色卡 `大肥鱼`+文档段。
+> 未在生产执行破坏性 `/forget` 与群聊第二成员/多轮负路径，二者由自动化测试覆盖，保留为后续可选复验。
 
 ## 4. 初始化管理员与 TOTP（必须由本人交互执行）
 
@@ -776,7 +783,7 @@ sudo sshd -T | grep -E '^(passwordauthentication|kbdinteractiveauthentication|pu
    一次图片识别成功与一次降级；Chat 至少一条真实模型回复；`/help` 非管理员/管理员差异与 `/ask` 被拒/管理员回帮助不调用 AI；`/reset`、`/forget confirm` 实际发送；诊断分区有事件/中文错误提示；角色与记忆分区启停/删除（仅元数据）。
    记录 `bot_deliveries` 状态与平台消息 id（不记录 AppSecret/记忆正文）。未完成联调前保持 `BOT_ENABLED=false`/`BOT_AI_ENABLED=false`；
    未配置 AI/图片时在 `docs/ACCEPTANCE.md` 标“待配置/待验证”。
-   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。当前生产 v0.7.2/schema17，smoke 与 drill 结果见 §6；v0.7.3 的文档模式验收按 §3.7 执行。
+   **真实 QQ 正向验收（v0.7.2 已通过）**：C2C 文本命令/自助命令/权限拒绝/文本 Chat/真实图片端到端均有生产证据；诊断/角色记忆面板与文本发布按用户确认整体通过。当前生产 v0.7.3/schema17，smoke 与 drill 结果见 §6；v0.7.3 文档模式验收记录见 §3.7。
 生产 env 迁移已完成（命令 120/AI 120/Chat 30、删除 `BOT_AI_TASK_PROMPT`/`BOT_AI_CHAT_PROMPT`、权限 640、APP_VERSION=0.5.9，原 env 备份 `/var/lib/antifieldcloud/env-backup-v058-20261022223449.bak`）；回滚切回 `20261022T134852Z` + 还原 env 备份（20/10/6）。用户已实发验收通过（2026-10-22 22:39–22:41 CST：非管理员 `/help` 有生产事件证据，其余为用户确认；22:41 原话“验收通过”）。
 
 ### 9.9 Bot 队列/发布故障排查
