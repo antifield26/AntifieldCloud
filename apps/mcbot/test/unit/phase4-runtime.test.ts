@@ -120,8 +120,7 @@ test('配置 v1.0.0 新字段默认值与校验', () => {
 
   const custom = loadConfig(baseEnv({
     AI_TOOLS_ENABLED: 'true',
-    AI_TOOL_ALLOWLIST: 'status, task_stop',
-    MINE_DEEP_ENABLED: 'true',
+    AI_TOOL_ALLOWLIST: 'status, inventory',    MINE_DEEP_ENABLED: 'true',
     MINE_DEEP_MIN_Y: '10',
     MINE_DEEP_MAX_Y: '50',
     EXPLORE_WAYPOINTS: 'home:175:64:410;farm:180:64:435',
@@ -131,7 +130,7 @@ test('配置 v1.0.0 新字段默认值与校验', () => {
     AUTO_RESTOCK: 'true'
   }), '1.0.0')
   assert.equal(custom.aiToolsEnabled, true)
-  assert.deepEqual(custom.aiToolAllowlist, ['status', 'task_stop'])
+  assert.deepEqual(custom.aiToolAllowlist, ['status', 'inventory'])
   assert.deepEqual(custom.exploreWaypoints.map(point => point.name), ['home', 'farm'])
   assert.deepEqual(custom.storageChests.ores, { x: 184, y: 64, z: 437 })
   assert.equal(custom.autoRestock, true)

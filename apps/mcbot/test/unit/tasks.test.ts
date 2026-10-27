@@ -118,7 +118,10 @@ test('status lines include the active task progress', () => {
       sleepVotes: 0,
       nightSkipped: 0,
       patrolWaypoints: 0,
-      patrolDistance: 0
+      patrolDistance: 0,
+      guardKills: 0,
+      escortDistance: 0,
+      exploreWaypoints: 0
     },
     failures: 0,
     lastError: null,

@@ -333,7 +333,7 @@ function readExploreWaypoints (
   return waypoints
 }
 
-const AI_TOOL_NAMES = new Set(['status', 'inventory', 'task_status', 'task_start', 'task_stop'])
+const AI_TOOL_NAMES = new Set(['status', 'inventory', 'task_status'])
 
 function readAiToolAllowlist (env: Env): string[] {
   const names = readNameList(env, 'AI_TOOL_ALLOWLIST', 'status,inventory,task_status')

@@ -45,6 +45,9 @@ function taskLabel (name: TaskSnapshot['name']): string {
     case 'forest': return '天然林'
     case 'sleep': return '睡觉'
     case 'patrol': return '巡逻'
+    case 'guard': return '守卫'
+    case 'escort': return '护送'
+    case 'explore': return '探索'
     default: return '任务'
   }
 }
@@ -73,6 +76,9 @@ export function buildStatusLines (bot: Bot, movement: MovementManager, task?: Ta
     }
     if (task.name === 'sleep') return task.progress.nightSkipped > 0 ? '已跳夜' : '等待投票'
     if (task.name === 'patrol') return `边界点 ${task.progress.patrolWaypoints}`
+    if (task.name === 'guard') return `处理威胁 ${task.progress.guardKills} 次`
+    if (task.name === 'escort') return `护送距离 ${task.progress.escortDistance} 格`
+    if (task.name === 'explore') return `航点 ${task.progress.exploreWaypoints}`
     return `鱼 ${task.progress.fishCaught} · 收 ${task.progress.wheatHarvested} · 种 ${task.progress.planted}`
   })()
   const taskText = task?.active

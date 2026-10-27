@@ -6,6 +6,7 @@ import type { MemoryStore } from '../memory/store.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
 import { OpenCodeClient, AiError } from './opencode.ts'
 import { AI_DISABLED_REPLY, FALLBACK_REPLY, buildGameContext, buildPrompt, buildSummaryPrompt, sanitizeAiOutput } from './prompt.ts'
+import { buildAiToolContext } from './tools.ts'
 
 interface QueueItem {
   username: string
@@ -98,7 +99,10 @@ export class AiChatService {
     const uuid = player?.uuid ?? item.username
     const turns = memory.load(item.username, uuid)
     const summary = memory.summary(item.username, uuid)
-    const context = buildGameContext(bot)
+    const context = [
+      buildGameContext(bot),
+      buildAiToolContext(config, { bot, task: state.task })
+    ].filter(Boolean).join('\n')
     const prompt = buildPrompt({
       player: item.username,
       message: item.message,

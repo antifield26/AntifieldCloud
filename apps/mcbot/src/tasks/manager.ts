@@ -17,6 +17,9 @@ import { runMining } from './mining.ts'
 import { runForest } from './forest.ts'
 import { runSleep } from './sleep.ts'
 import { runPatrol } from './patrol.ts'
+import { runGuard } from './guard.ts'
+import { runEscort } from './escort.ts'
+import { runExplore } from './explore.ts'
 import { FOREST_SPECIES } from './resources.ts'
 import { countItem, countFood, findItem, isKeptItem } from './inventory.ts'
 import { TaskStore, type PersistedQueueTask, type PersistedTask } from './store.ts'
@@ -93,7 +96,10 @@ const EMPTY_PROGRESS: TaskProgress = {
   sleepVotes: 0,
   nightSkipped: 0,
   patrolWaypoints: 0,
-  patrolDistance: 0
+  patrolDistance: 0,
+  guardKills: 0,
+  escortDistance: 0,
+  exploreWaypoints: 0
 }
 
 function label (name: TaskName): string {
@@ -105,6 +111,9 @@ function label (name: TaskName): string {
     case 'forest': return '砍天然林'
     case 'sleep': return '睡觉'
     case 'patrol': return '巡逻'
+    case 'guard': return '守卫'
+    case 'escort': return '护送'
+    case 'explore': return '航点探索'
   }
 }
 
@@ -117,6 +126,9 @@ function startMessage (name: TaskName): string {
     case 'forest': return '好，我去天然林看看。'
     case 'sleep': return '好，我去看看能不能睡觉。'
     case 'patrol': return '好，我沿安全区巡逻一圈。'
+    case 'guard': return '好，我守着基地。'
+    case 'escort': return '好，我跟着你护卫。'
+    case 'explore': return '好，我去航点看看。'
   }
 }
 
@@ -456,7 +468,10 @@ export class TaskManager implements TaskController {
         else if (active.name === 'mining') await runMining(ctx)
         else if (active.name === 'forest') await runForest(ctx)
         else if (active.name === 'sleep') await runSleep(ctx)
-        else await runPatrol(ctx)
+        else if (active.name === 'patrol') await runPatrol(ctx)
+        else if (active.name === 'guard') await runGuard(ctx)
+        else if (active.name === 'escort') await runEscort(ctx)
+        else await runExplore(ctx)
         break
       } catch (error) {
         if (this.shutdownPending) break
@@ -525,7 +540,8 @@ export class TaskManager implements TaskController {
       }
       return
     }
-    if (active.name === 'mining' || active.name === 'forest' || active.name === 'sleep' || active.name === 'patrol') {
+    if (active.name === 'mining' || active.name === 'forest' || active.name === 'sleep' || active.name === 'patrol' ||
+      active.name === 'guard' || active.name === 'escort' || active.name === 'explore') {
       const bot = requireBot(this.context(active))
       if (bot.entity && Math.hypot(
         bot.entity.position.x - config.home.x,
@@ -587,7 +603,7 @@ export class TaskManager implements TaskController {
         { name: 'food', count: 4 }
       ]
       if (!hasFreshAxe || saplings < 8 || countFood(bot) < 4) await this.withdraw(ctx, requests)
-    } else if (active.name === 'patrol') {
+    } else if (active.name === 'patrol' || active.name === 'guard' || active.name === 'escort' || active.name === 'explore') {
       requests = [{ name: 'food', count: 4 }]
       if (countFood(bot) < 4) await this.withdraw(ctx, requests)
     } else if (active.name === 'sleep') {
@@ -629,8 +645,8 @@ export class TaskManager implements TaskController {
       if (saplings === 0) throw new TaskError('箱子里没有天然林树苗')
     } else if (active.name === 'sleep') {
       // Sleep has no supplies.
-    } else if (active.name === 'patrol') {
-      // Patrol only needs food.
+    } else if (active.name === 'patrol' || active.name === 'guard' || active.name === 'escort' || active.name === 'explore') {
+      // Patrol/guard/escort/explore only need food.
     } else {
       const axes = fresh.inventory.items().filter(item => item.name === 'iron_axe')
       if (!axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)) {
@@ -762,6 +778,18 @@ export class TaskManager implements TaskController {
       }
       case 'patrol': {
         await this.say(`巡逻结束，走过 ${active.progress.patrolWaypoints} 个边界点。`)
+        break
+      }
+      case 'guard': {
+        await this.say(`守卫结束，处理了 ${active.progress.guardKills} 次威胁。`)
+        break
+      }
+      case 'escort': {
+        await this.say(`护送结束，陪你走了约 ${active.progress.escortDistance} 格。`)
+        break
+      }
+      case 'explore': {
+        await this.say(`探索结束，到达 ${active.progress.exploreWaypoints} 个航点。`)
         break
       }
       default: {

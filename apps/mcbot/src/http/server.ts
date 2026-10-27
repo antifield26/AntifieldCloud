@@ -304,9 +304,9 @@ export class HttpApi {
     if (!config.taskEnabled) return sendError(res, 503, 'task_disabled', 'tasks are disabled')
     try {
       const body = await readJsonBody(req)
-      const taskNames = new Set(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol'])
+      const taskNames = new Set(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore'])
       if (!isObject(body) || typeof body.name !== 'string' || !taskNames.has(body.name)) {
-        throw new InvalidMessageError('name must be fishing, farming, woodcutting, mining, forest, sleep or patrol')
+        throw new InvalidMessageError('name must be fishing, farming, woodcutting, mining, forest, sleep, patrol, guard, escort or explore')
       }
       if (state.task.pendingResume) {
         this.auditDenied('task.start', 'resume_pending', requestId, body.name)

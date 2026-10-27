@@ -55,7 +55,10 @@ function normalizeProgress (value: unknown): TaskProgress {
     sleepVotes: normalizeNumber(record.sleepVotes),
     nightSkipped: normalizeNumber(record.nightSkipped),
     patrolWaypoints: normalizeNumber(record.patrolWaypoints),
-    patrolDistance: normalizeNumber(record.patrolDistance)
+    patrolDistance: normalizeNumber(record.patrolDistance),
+    guardKills: normalizeNumber(record.guardKills),
+    escortDistance: normalizeNumber(record.escortDistance),
+    exploreWaypoints: normalizeNumber(record.exploreWaypoints)
   }
 }
 
@@ -67,7 +70,8 @@ const NEW_PROGRESS_KEYS = [
   'treesChopped', 'logsChopped', 'saplingsPlanted', 'mobsKilled',
   'oresMined', 'coalMined', 'ironMined', 'copperMined',
   'forestTreesChopped', 'naturalLogsChopped', 'naturalSaplingsPlanted',
-  'sleepVotes', 'nightSkipped', 'patrolWaypoints', 'patrolDistance'
+  'sleepVotes', 'nightSkipped', 'patrolWaypoints', 'patrolDistance',
+  'guardKills', 'escortDistance', 'exploreWaypoints'
 ]
 
 function isProgress (value: unknown): value is TaskProgress {
@@ -76,7 +80,7 @@ function isProgress (value: unknown): value is TaskProgress {
   return NEW_PROGRESS_KEYS.every(key => typeof record[key] === 'number' && Number.isFinite(record[key]))
 }
 
-const TASK_NAMES = new Set<TaskName>(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol'])
+const TASK_NAMES = new Set<TaskName>(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore'])
 
 function isName (value: unknown): value is TaskName {
   return typeof value === 'string' && TASK_NAMES.has(value as TaskName)

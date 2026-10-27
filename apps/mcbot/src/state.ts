@@ -63,7 +63,17 @@ export interface MemorySnapshot {
   turns: number
 }
 
-export type TaskName = 'fishing' | 'farming' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol'
+export type TaskName =
+  | 'fishing'
+  | 'farming'
+  | 'woodcutting'
+  | 'mining'
+  | 'forest'
+  | 'sleep'
+  | 'patrol'
+  | 'guard'
+  | 'escort'
+  | 'explore'
 export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping' | 'defending' | 'pending_resume'
 
 export interface TaskProgress {
@@ -86,6 +96,9 @@ export interface TaskProgress {
   nightSkipped: number
   patrolWaypoints: number
   patrolDistance: number
+  guardKills: number
+  escortDistance: number
+  exploreWaypoints: number
 }
 
 export interface AdminSnapshot {
@@ -246,7 +259,10 @@ export class RuntimeState {
         sleepVotes: 0,
         nightSkipped: 0,
         patrolWaypoints: 0,
-        patrolDistance: 0
+        patrolDistance: 0,
+        guardKills: 0,
+        escortDistance: 0,
+        exploreWaypoints: 0
       },
       failures: 0,
       lastError: null,

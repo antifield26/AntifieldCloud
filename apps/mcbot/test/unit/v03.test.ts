@@ -69,7 +69,7 @@ test('task store roundtrips and quarantines corrupt files', async () => {
       treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0,
       oresMined: 0, coalMined: 0, ironMined: 0, copperMined: 0,
       forestTreesChopped: 0, naturalLogsChopped: 0, naturalSaplingsPlanted: 0,
-      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0
+      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0, guardKills: 0, escortDistance: 0, exploreWaypoints: 0
     },
     failures: 0,
     savedAt: 1500
@@ -119,7 +119,7 @@ test('task manager exposes a pending resume and can discard it', async () => {
           treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0,
       oresMined: 0, coalMined: 0, ironMined: 0, copperMined: 0,
       forestTreesChopped: 0, naturalLogsChopped: 0, naturalSaplingsPlanted: 0,
-      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0
+      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0, guardKills: 0, escortDistance: 0, exploreWaypoints: 0
         },
         failures: 1,
         savedAt: Date.now() - 1000
@@ -171,7 +171,7 @@ test('task manager expires an old pending resume', async () => {
           treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0,
       oresMined: 0, coalMined: 0, ironMined: 0, copperMined: 0,
       forestTreesChopped: 0, naturalLogsChopped: 0, naturalSaplingsPlanted: 0,
-      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0
+      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0, guardKills: 0, escortDistance: 0, exploreWaypoints: 0
         },
         failures: 0,
         savedAt: Date.now() - 60_000
@@ -216,7 +216,7 @@ test('HTTP control uses a separate token and emits SSE hello', async () => {
           treesChopped: 0, logsChopped: 0, saplingsPlanted: 0, mobsKilled: 0,
       oresMined: 0, coalMined: 0, ironMined: 0, copperMined: 0,
       forestTreesChopped: 0, naturalLogsChopped: 0, naturalSaplingsPlanted: 0,
-      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0
+      sleepVotes: 0, nightSkipped: 0, patrolWaypoints: 0, patrolDistance: 0, guardKills: 0, escortDistance: 0, exploreWaypoints: 0
         },
         failures: 0,
         lastError: null,
