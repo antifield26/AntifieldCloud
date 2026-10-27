@@ -1,17 +1,24 @@
 #!/usr/bin/env node
 /**
  * 依赖边界检查（CI 用）：
- * 服务端运行时只安装 `dependencies`（`npm ci --omit=dev`），这里静态扫描 server/src 的裸模块导入，
+ * 应用运行时只安装 `dependencies`（`npm ci --omit=dev`），这里静态扫描应用包 server/src 的裸模块导入，
  * 确认没有引用 devDependencies 或未声明的包。避免本地有 node_modules 时漏掉生产依赖缺失。
+ *
+ * 用法：`node scripts/check-prod-deps.mjs [--app-dir apps/workbench]`
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { builtinModules } from 'node:module'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 
-const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
+const args = process.argv.slice(2)
+const argIndex = args.indexOf('--app-dir')
+const appDir = resolve(process.cwd(), argIndex >= 0 ? (args[argIndex + 1] ?? 'apps/workbench') : 'apps/workbench')
+
+const pkg = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8'))
 const prodDependencies = new Set(Object.keys(pkg.dependencies ?? {}))
 const devDependencies = new Set(Object.keys(pkg.devDependencies ?? {}))
 const builtins = new Set([...builtinModules, ...builtinModules.map((name) => `node:${name}`)])
+const appDirRelative = relative(process.cwd(), appDir).replaceAll('\\', '/') || '.'
 
 function walk(dir) {
   const files = []
@@ -34,7 +41,7 @@ function packageName(specifier) {
 
 const problems = []
 let scanned = 0
-for (const file of walk(join(process.cwd(), 'server', 'src'))) {
+for (const file of walk(join(appDir, 'server', 'src'))) {
   const text = readFileSync(file, 'utf8')
   for (const match of text.matchAll(specifierPattern)) {
     const specifier = match[1] ?? match[2] ?? match[3]
@@ -46,7 +53,7 @@ for (const file of walk(join(process.cwd(), 'server', 'src'))) {
     scanned++
     const name = packageName(specifier)
     if (prodDependencies.has(name)) continue
-    const where = `${relative(process.cwd(), file)}: ${specifier}`
+    const where = `${relative(appDir, file)}: ${specifier}`
     if (devDependencies.has(name)) problems.push(`运行时文件引用了 devDependency：${where}`)
     else problems.push(`运行时文件引用了未声明的依赖：${where}`)
   }
@@ -56,4 +63,4 @@ if (problems.length > 0) {
   for (const problem of problems) console.error(`✗ ${problem}`)
   process.exit(1)
 }
-console.log(`依赖边界检查通过：扫描 server/src，裸导入 ${scanned} 处，均属于 dependencies 或 Node 内置模块`)
+console.log(`依赖边界检查通过：扫描 ${appDirRelative}/server/src，裸导入 ${scanned} 处，均属于 dependencies 或 Node 内置模块`)

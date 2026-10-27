@@ -44,10 +44,10 @@ function readToolVersions(root) {
   return { ok: true, schemaVersion: parsed.schemaVersion, opencodeVersion: parsed.opencodeVersion }
 }
 
-/** 从 server/src/db.ts 动态导入 SUPPORTED_SCHEMA_VERSION（只读，不打开 DB）。 */
+/** 从 apps/workbench/server/src/db.ts 动态导入 SUPPORTED_SCHEMA_VERSION（只读，不打开 DB）。 */
 async function readDbSchemaVersion(root) {
-  const path = resolve(root, 'server/src/db.ts')
-  if (!existsSync(path)) return { ok: false, error: { code: 'db_ts_missing', message: 'server/src/db.ts 不存在' } }
+  const path = resolve(root, 'apps/workbench/server/src/db.ts')
+  if (!existsSync(path)) return { ok: false, error: { code: 'db_ts_missing', message: 'apps/workbench/server/src/db.ts 不存在' } }
   try {
     const module = await import(pathToFileURL(path).href)
     const version = module.SUPPORTED_SCHEMA_VERSION
@@ -56,7 +56,7 @@ async function readDbSchemaVersion(root) {
     }
     return { ok: true, version }
   } catch (error) {
-    return { ok: false, error: { code: 'db_schema_unreadable', message: `无法导入 server/src/db.ts：${error instanceof Error ? error.message : String(error)}` } }
+    return { ok: false, error: { code: 'db_schema_unreadable', message: `无法导入 apps/workbench/server/src/db.ts：${error instanceof Error ? error.message : String(error)}` } }
   }
 }
 
@@ -122,24 +122,39 @@ function checkFile(file, pattern, packageVersion, required = true) {
 /** 执行全部检查并返回结构化结果（含 schema/OpenCode/文档当前事实交叉校验）。 */
 export async function checkVersions(root = process.cwd()) {
   const resolvedRoot = resolve(root)
-  const packagePath = resolve(resolvedRoot, 'package.json')
+  const rootPackagePath = resolve(resolvedRoot, 'package.json')
+  const appPackagePath = resolve(resolvedRoot, 'apps/workbench/package.json')
   const errors = []
-  const packageText = readText(packagePath)
-  if (packageText === null) {
-    return { ok: false, packageVersion: null, checks: [], errors: [{ code: 'package_missing', message: `cannot read ${packagePath}` }] }
+  const appPackageText = readText(appPackagePath)
+  if (appPackageText === null) {
+    return { ok: false, packageVersion: null, checks: [], errors: [{ code: 'app_package_missing', message: `cannot read ${appPackagePath}` }] }
   }
   let packageVersion
   try {
-    packageVersion = JSON.parse(packageText).version ?? null
+    packageVersion = JSON.parse(appPackageText).version ?? null
   } catch {
-    return { ok: false, packageVersion: null, checks: [], errors: [{ code: 'package_invalid', message: `${packagePath} is not valid JSON` }] }
+    return { ok: false, packageVersion: null, checks: [], errors: [{ code: 'app_package_invalid', message: `${appPackagePath} is not valid JSON` }] }
   }
   if (!packageVersion || !VERSION_PATTERN.test(packageVersion)) {
     return {
       ok: false,
       packageVersion,
       checks: [],
-      errors: [{ code: 'package_version_invalid', message: `package.json version is invalid: ${JSON.stringify(packageVersion)}` }],
+      errors: [{ code: 'app_package_version_invalid', message: `apps/workbench/package.json version is invalid: ${JSON.stringify(packageVersion)}` }],
+    }
+  }
+  // 根编排包与 workbench 必须同版本（v1.0.0 起统一版本轴）。
+  const rootPackageText = readText(rootPackagePath)
+  if (rootPackageText === null) {
+    errors.push({ code: 'root_package_missing', message: `cannot read ${rootPackagePath}` })
+  } else {
+    try {
+      const rootVersion = JSON.parse(rootPackageText).version ?? null
+      if (rootVersion !== packageVersion) {
+        errors.push({ code: 'root_version_mismatch', message: `package.json: expected ${packageVersion}, found ${rootVersion}` })
+      }
+    } catch {
+      errors.push({ code: 'root_package_invalid', message: `${rootPackagePath} is not valid JSON` })
     }
   }
 

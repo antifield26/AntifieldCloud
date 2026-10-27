@@ -405,9 +405,11 @@ describe('LofiiPanel 游戏内聊天', () => {
     renderPanel()
     const input = (await screen.findByLabelText('游戏内聊天内容')) as HTMLTextAreaElement
     await userEvent.type(input, '晚上好')
+    await waitFor(() => expect(input.value).toBe('晚上好'))
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
     const dialog = await screen.findByRole('dialog', { name: '发送游戏内聊天' })
-    expect(within(dialog).getByText('晚上好')).toBeTruthy()
+    // 覆盖率插桩会拉长渲染时序：用 findByText 等待确认弹窗内容落定，避免偶发空文本。
+    expect(await within(dialog).findByText('晚上好')).toBeTruthy()
     await userEvent.click(within(dialog).getByRole('button', { name: '发送' }))
     await waitFor(() => expect(mocks.say).toHaveBeenCalledWith('晚上好'))
     expect(await screen.findByText('已发送游戏内聊天')).toBeTruthy()

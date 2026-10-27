@@ -10,7 +10,7 @@ StartLimitBurst=5
 Type=simple
 User=antifieldcloud
 Group=antifieldcloud
-WorkingDirectory=/opt/antifieldcloud/current
+WorkingDirectory=/opt/antifieldcloud/current/apps/workbench
 EnvironmentFile=/etc/antifieldcloud/env
 Environment=NODE_ENV=production
 # 主机健康探针（antifieldcloud-health.timer）写入的只读 JSON，供告警模块读取。

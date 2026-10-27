@@ -25,6 +25,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $target = "$PiUser@$PiHost"
 $tag = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
 $tarPath = Join-Path $env:TEMP "antifieldcloud-$tag.tar.gz"
+$stageDir = Join-Path $env:TEMP "antifieldcloud-stage-$tag"
 $releaseDir = "/opt/antifieldcloud/releases/$tag"
 $currentLink = "/opt/antifieldcloud/current"
 $envFile = "/etc/antifieldcloud/env"
@@ -266,12 +267,12 @@ try {
     Write-Host "发布 commit：$headSha$(if ($dirty.Count -gt 0) { '（含未提交改动）' })"
   }
 
-  # 期望版本来自本地 package.json（发布包内同一份文件）；上传后还会与远端副本比对。
-  $packagePath = Join-Path $root "package.json"
+  # 期望版本来自 workbench 包（发布包内同一份文件）；根编排包版本由 check-version 强制一致。
+  $packagePath = Join-Path $root "apps/workbench/package.json"
   $packageText = [System.IO.File]::ReadAllText($packagePath, [System.Text.Encoding]::UTF8)
   $packageJson = $packageText | ConvertFrom-Json
   $expectedVersion = [string]$packageJson.version
-  if ($expectedVersion -notmatch '^\d+\.\d+\.\d+$') { throw "package.json version 非法：$expectedVersion" }
+  if ($expectedVersion -notmatch '^\d+\.\d+\.\d+$') { throw "apps/workbench/package.json version 非法：$expectedVersion" }
   Write-Host "目标版本：$expectedVersion"
 
   # 期望 schema / OpenCode 版本来自受 CI 交叉校验的工具版本清单（避免 deploy.ps1 硬编码 schema）。
@@ -300,8 +301,8 @@ try {
     & npm run check
     if ($LASTEXITCODE -ne 0) { throw "npm run check 失败" }
     Write-Host "== 生产依赖边界检查 =="
-    & node scripts/check-prod-deps.mjs
-    if ($LASTEXITCODE -ne 0) { throw "生产依赖边界检查失败（server/src 引用了 devDependencies/未声明依赖）" }
+    & node scripts/check-prod-deps.mjs --app-dir apps/workbench
+    if ($LASTEXITCODE -ne 0) { throw "生产依赖边界检查失败（apps/workbench/server/src 引用了 devDependencies/未声明依赖）" }
     Write-Host "== 版本/schema/OpenCode 一致性检查 =="
     & node scripts/check-version.mjs --quiet
     if ($LASTEXITCODE -ne 0) { throw "版本一致性检查失败（package/README/文档当前事实/schema/OpenCode 不一致；见上方输出）" }
@@ -311,11 +312,26 @@ try {
     & npm run build
     if ($LASTEXITCODE -ne 0) { throw "npm run build 失败" }
   }
-  if (-not (Test-Path (Join-Path $root "web/dist/index.html"))) { throw "web/dist/index.html 不存在" }
+  $webIndex = Join-Path $root "apps/workbench/web/dist/index.html"
+  if (-not (Test-Path $webIndex)) { throw "apps/workbench/web/dist/index.html 不存在" }
 
-  Write-Host "== 打包 $tag =="
+  Write-Host "== 打包 $tag（workspace 感知 staging）=="
   if (Test-Path $tarPath) { Remove-Item $tarPath -Force }
-  & tar.exe -czf $tarPath -C $root server scripts web/dist deploy docs package.json package-lock.json README.md AGENTS.md CHANGELOG.md LICENSE
+  if (Test-Path $stageDir) { Remove-Item $stageDir -Recurse -Force }
+  $stageApp = Join-Path $stageDir "apps/workbench"
+  New-Item -ItemType Directory -Path $stageApp -Force | Out-Null
+  Copy-Item (Join-Path $root "apps/workbench/server") (Join-Path $stageApp "server") -Recurse
+  New-Item -ItemType Directory -Path (Join-Path $stageApp "web") -Force | Out-Null
+  Copy-Item (Join-Path $root "apps/workbench/web/dist") (Join-Path $stageApp "web/dist") -Recurse
+  Copy-Item (Join-Path $root "apps/workbench/package.json") (Join-Path $stageApp "package.json")
+  Copy-Item (Join-Path $root "package.json"), (Join-Path $root "package-lock.json") $stageDir
+  foreach ($item in @("scripts", "deploy", "docs")) {
+    Copy-Item (Join-Path $root $item) (Join-Path $stageDir $item) -Recurse
+  }
+  foreach ($file in @("README.md", "AGENTS.md", "CHANGELOG.md", "LICENSE")) {
+    Copy-Item (Join-Path $root $file) (Join-Path $stageDir $file)
+  }
+  & tar.exe -czf $tarPath -C $stageDir .
   if ($LASTEXITCODE -ne 0) { throw "打包失败" }
   $tarSha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $tarPath).Hash.ToLower()
   $tarSize = (Get-Item -LiteralPath $tarPath).Length
@@ -351,16 +367,16 @@ try {
 
   Write-Host "== 解包与安装生产依赖 =="
   Invoke-Remote "sudo mkdir -p $releaseDir && sudo tar -xzf /tmp/antifieldcloud-$tag.tar.gz -C $releaseDir && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir && sudo rm -f /tmp/antifieldcloud-$tag.tar.gz" -TimeoutSeconds 900 | Out-Null
-  # 远端 release 版本必须与本地一致（防止打包/上传错版本）：读取远端 package.json。
-  $remotePackageText = (Invoke-Remote "cat $releaseDir/package.json" -Attempts 2 | Out-String)
+  # 远端 release 版本必须与本地一致（防止打包/上传错版本）：读取远端 workbench package.json。
+  $remotePackageText = (Invoke-Remote "cat $releaseDir/apps/workbench/package.json" -Attempts 2 | Out-String)
   try {
     $remotePackageJson = $remotePackageText | ConvertFrom-Json
   } catch {
-    throw "无法解析远端 release package.json：$remotePackageText"
+    throw "无法解析远端 release apps/workbench/package.json：$remotePackageText"
   }
   $remoteVersion = [string]$remotePackageJson.version
   if ($remoteVersion -ne $expectedVersion) {
-    throw "远端 release 版本（$remoteVersion）与本地 package.json（$expectedVersion）不一致"
+    throw "远端 release workbench 版本（$remoteVersion）与本地 apps/workbench/package.json（$expectedVersion）不一致"
   }
   $install = "cd $releaseDir && sudo /usr/local/bin/npm ci --omit=dev --ignore-scripts --no-audit --no-fund && sudo chown -R root:root $releaseDir && sudo chmod -R u+rwX,go-w $releaseDir"
   $installResult = Invoke-NativeWithTimeout -FilePath "ssh.exe" -Arguments @(
@@ -499,4 +515,5 @@ fi
 } finally {
   Pop-Location
   if (Test-Path $tarPath) { Remove-Item $tarPath -Force -ErrorAction SilentlyContinue }
+  if (Test-Path $stageDir) { Remove-Item $stageDir -Recurse -Force -ErrorAction SilentlyContinue }
 }

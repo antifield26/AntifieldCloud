@@ -73,12 +73,12 @@ jobs:
           node-version: 26
           cache: npm
 
-      # 模拟 Pi 上的生产安装，确认 server/src 没有引用 devDependencies。
+      # 模拟 Pi 上的生产安装，确认 apps/workbench/server/src 没有引用 devDependencies。
       - name: Install production dependencies only
         run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
 
       - name: Check runtime dependency boundary
-        run: node scripts/check-prod-deps.mjs
+        run: node scripts/check-prod-deps.mjs --app-dir apps/workbench
 
   audit:
     runs-on: ubuntu-latest
