@@ -1,4 +1,4 @@
-# AntifieldCloud 对接契约（Lofii Bot v0.4.0）
+# AntifieldCloud 对接契约（Lofii Bot v0.5.0）
 
 > 本文只描述 `lofii-bot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -91,7 +91,10 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
     "elapsedSec": 170,
     "progress": {
       "fishCaught": 5, "wheatHarvested": 0, "planted": 0, "deposited": 0,
-      "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0
+      "treesChopped": 0, "logsChopped": 0, "saplingsPlanted": 0, "mobsKilled": 0,
+      "oresMined": 0, "coalMined": 0, "ironMined": 0, "copperMined": 0,
+      "forestTreesChopped": 0, "naturalLogsChopped": 0, "naturalSaplingsPlanted": 0,
+      "sleepVotes": 0, "nightSkipped": 0, "patrolWaypoints": 0, "patrolDistance": 0
     },
     "failures": 0,
     "lastError": null,
@@ -204,7 +207,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "action": "started|progress|depositing|recovering|stopping|stopped|completed|failed|resume_required|resumed|interrupted|queued|queue_started|queue_cleared|defending",
+  "action": "started|progress|depositing|recovering|stopping|stopped|completed|failed|resume_required|resumed|interrupted|queued|queue_started|queue_cleared|defending|alert",
   "task": { "...TaskSnapshot..." }
 }
 ```
@@ -253,12 +256,13 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 需要控制 Token + `Content-Type: application/json`。
 
 ```json
-{ "name": "fishing|farming|woodcutting" }
+{ "name": "fishing|farming|woodcutting|mining|forest|sleep|patrol" }
 ```
 
 - 空闲：202 `{"ok":true,"queued":false,"position":null,"task":{...}}`，任务立即 active。
 - 已有 active：入队，202 `{"ok":true,"queued":true,"position":1..3,"task":{...}}`。
 - 队列最多 3 个（`QUEUE_MAX`，不含 active）；同任务允许重复。
+- 任务上限默认 60 分钟（`TASK_MAX_MINUTES`）；mining 内部 30 分钟上限。
 - 有 pending：409 `resume_pending`（必须先 resume 或 stop/清空）。
 - 队列满：409 `queue_full`。
 - 任务开关关闭：503 `task_disabled`。
@@ -353,22 +357,82 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 | 超 8 KiB | 413 | `payload_too_large` |
 | 超过 10 次/分钟 | 429 | `rate_limited` |
 
-## 8. 游戏内行为
+## 8. v0.5 管理、历史与告警
+
+### 8.1 GET /admin/status
+
+需要读 Token。只读 RCON 白名单：`tps`、`list`、`whitelist list`、`time`。
+
+```json
+{
+  "admin": {
+    "enabled": true,
+    "rcon": true,
+    "updatedAt": "2026-10-27T07:31:08.071Z",
+    "lastError": null,
+    "tps": { "one": 19.1, "five": 19.4, "fifteen": 19.8 },
+    "online": { "count": 2, "max": 6, "players": ["Antifield", "lofii"] },
+    "whitelist": { "count": 6, "names": ["lofii", "SFZ", "Jay", "Antifield", "GAY", "shoayu"] },
+    "time": { "ticks": 21461, "label": "03:27" },
+    "backup": { "status": "unknown" }
+  }
+}
+```
+
+- `/status` 也包含同一 `admin` 对象。
+- RCON 失败时 `rcon=false`，`lastError` 截断；不影响任务/HTTP。
+- 没有写管理接口、没有任意命令执行；备份目录不存在，`backup.status` 固定 `unknown`。
+
+### 8.2 GET /history
+
+需要读 Token。
+
+```text
+GET /history?kind=samples&from=<ISO>&to=<ISO>&limit=100
+GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
+```
+
+- `kind` 默认 `samples`；`limit` 1–1000（默认 100）；ISO 时间非法 → 400。
+- `samples` 每 60 秒一条；保留 30 天；字段：`ts/connected/state/taskName/taskState/health/food/memoryMb/tps/queueLen/rssMb`。
+- `alerts` 字段：`id/ts/type/severity/message/details`。
+- 响应：`{kind, from, to, count, samples|alerts}`。
+- 不含聊天正文/Token/密码。
+
+### 8.3 SSE alert
+
+```json
+{
+  "type": "alert",
+  "data": {
+    "type": "low_health|task_failed|disconnected|chest_full|defense_retreat",
+    "severity": "warning|error",
+    "message": "Lofii 血量偏低：8/20",
+    "details": {},
+    "ts": "2026-10-27T07:31:17.802Z"
+  }
+}
+```
+
+- 5 分钟同类型冷却；启动后 10 秒内不报低血量。
+- 告警写入 SQLite `alerts` 表。
+
+## 9. v0.5 游戏内行为
 
 - 唤醒词：`Lofii` / `@Lofii`（不区分大小写；只回应被点名的消息）。
 - 仅 `COMMAND_ALLOWLIST` 内玩家可下命令，默认 `Antifield`。
-- 命令：状态、钓鱼、种田、收工、回家、存东西、过来、跟随、停下、看我、挥手、帮助。
-- v0.3 默认保留游戏内/AI 意图直接触发，HTTP 控制是新增面板通道；HTTP-only **不是强制边界**。同名冒用风险仍在，只能靠审计追溯。
-- 设 `HTTP_ONLY_HIGH_RISK=true` 可关闭游戏内/AI 高风险触发（严格模式）；此时任务/移动只能走 HTTP。
+- 命令：状态、钓鱼、种田、砍树、挖矿、砍天然林、睡觉、巡逻、收工、回家、存东西、过来、跟随、停下、看我、挥手、帮助。
+- 安全区扩至 `x111–239, z410–474`；挖矿/天然林只在安全区、保护盒外操作；天然林只 oak/spruce/birch 并补种；挖矿只煤/铁/铜裸露矿、不挖隧道。
+- 睡觉用 Vote2Sleep（min 1、40%）；非夜晚/无床/vote 失败正常结束。
+- 巡逻四角安全区边界（内缩 4 格），最多 15 分钟，不主动追怪。
+- v0.5 仍默认保留游戏内/AI 意图直接触发；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
 - 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
-- AI 意图只对 Antifield 的任务类模糊语句生效；模型输出经过枚举/置信度校验，不能携带坐标或任意命令。
 
-## 9. 对接建议
+## 10. 对接建议
 
 - 面板后端用 `fetch` + `Authorization` 消费 `/events`，不要用浏览器 EventSource 直连。
 - 初始展示先拉 `/status` 与 `/task`，再用 SSE 增量更新；断线按 `Last-Event-ID` 重连，`resync:true` 时重新拉快照。
 - 控制调用只从面板后端发出，控制 Token 放后端 env；不要下发到浏览器。
-- `/say` 仅用于主动播报；不要当命令通道。
-- `409 not_connected` 是动态模式的正常状态：任务/移动需要等 Lofii 在线；`/task/start` 例外，会在后台自动连接。
-- v0.3 不提供管理助手、RCON、`/metrics`、告警 webhook、审计查询接口。
+- `/admin/status`、`/history` 使用读 Token；不可写。
+- 告警建议后端按 `type` 去重/展示，并自行决定是否通知；本版没有 webhook。
 - 任何 AntifieldCloud 侧改动、Token 注入、面板 UI 均由用户自行实施；本仓库不包含这些改动。
+- 本版不提供 `/metrics`、webhook、审计查询接口、跨维度/多 Bot/语音/桥接。

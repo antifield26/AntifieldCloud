@@ -82,6 +82,7 @@ curl -fsS http://127.0.0.1:3010/healthz
 /var/lib/lofii-bot/memory/        # 0600，按玩家 UUID
 /var/lib/lofii-bot/task-state.json # 0600，v2 active+queue+pending
 /var/lib/lofii-bot/audit.jsonl     # 0600，审计元数据，5 MB 轮转
+/var/lib/lofii-bot/history.db      # 0600，SQLite 60s 采样/告警，30 天
 /etc/systemd/system/lofii-bot.service
 ```
 
@@ -106,6 +107,8 @@ sudo systemctl restart lofii-bot
 - `OPENCODE_PASSWORD` 由 `bootstrap-env.sh` 从 `/etc/opencode/opencode.env` 读取；重跑默认保留旧值。
 - v0.3 新增变量：`HTTP_CONTROL_ENABLED`、`HTTP_ONLY_HIGH_RISK`、`SSE_MAX_CLIENTS`、`SSE_HEARTBEAT_MS`、`SSE_BUFFER_EVENTS`、`CONTROL_RATE_LIMIT`、`TASK_PENDING_TTL_MS`、`TASK_STATE_FILE`、`AUDIT_FILE`、`AUDIT_MAX_BYTES`、`AUDIT_RETENTION_DAYS`。
 - v0.4 新增变量：`QUEUE_MAX`、`TREE_FARM_MIN_X/MAX_X/MIN_Z/MAX_Z`、`TREE_FARM_GROUND_Y=63`、`TREE_FARM_LOG_MIN_Y=64`、`TREE_FARM_MAX_Y`、`TREE_LOG_TYPE`、`TREE_SAPLING_TYPE`、`TREE_MAX_LOGS`、`TREE_DEPOSIT_EVERY_MS`、`DEFENSE_ENABLED/RADIUS/HEALTH_THRESHOLD/FOOD_THRESHOLD/MAX_HOSTILES/TARGETS`、`CHUNK_WAIT_MS`、`MEMORY_SUMMARY_ENABLED/TURNS/MAX_CHARS`。
+- v0.5 新增变量：`SAFE_MIN_X=111`、`SAFE_MAX_X=239`、`SAFE_MIN_Z=410`、`SAFE_MAX_Z=474`、`TASK_MAX_MINUTES=60`、`RCON_ENABLED/HOST/PORT/PASSWORD/TIMEOUT_MS`、`ADMIN_POLL_MS`、`HISTORY_ENABLED/DB/SAMPLE_MS/RETENTION_DAYS`、`ALERTS_ENABLED/COOLDOWN_MS/HEALTH_THRESHOLD`、`MINE_MIN_Y/MAX_Y/MAX_ORES/MAX_MINUTES/PROTECT_RADIUS/ORES`、`FOREST_SPECIES/PROTECT_RADIUS/MAX_LOGS/DEPOSIT_EVERY_MS`、`BED_SEARCH_RADIUS`、`SLEEP_VOTE_WAIT_MS`、`PATROL_MAX_MINUTES`。
+- RCON 只有一个密码，所谓“只读”是 Bot 端命令白名单；生产 `/etc/lofii-bot/env` 需要 `RCON_PASSWORD`（从 `server.properties` 读取，不打印）。
 - 树场实际布局：地面块 y=63，原木从 y=64 起；`TREE_FARM_GROUND_Y=63`、`TREE_FARM_LOG_MIN_Y=64`。
 - 不要把 `/etc/lofii-bot/env` 放进仓库或日志。
 
@@ -140,6 +143,8 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 - 被动防御：任务中 12 格内 zombie/husk/drowned/skeleton/stray/spider/cave_spider 才接战；HP≤12、food≤6 或 >2 只怪撤退回家并让当前任务失败；不攻击 creeper/enderman/witch/玩家。
 - 记忆摘要：每 40 turns（20 来回）后台生成 ≤1000 字聊天摘要；失败回退，不影响聊天。
 - 任务恢复：死亡/Paper 重启后回到任务点，最多 3 次；工具/种子丢失会停止并提示，需从箱子补货。
+- 管理只读：`GET /admin/status` 返回 RCON `tps`/`list`/`whitelist list`/`time`；只允许这四条，无写操作；备份状态固定 `unknown`。
+- 历史/告警：`GET /history?kind=samples|alerts`（读 Token）；SQLite 60s/30 天；SSE `alert` 覆盖低血量/任务失败/断线/箱子满/防御撤退，5 分钟冷却。
 - systemd 重启：任务会写盘并在启动后进入 `pending_resume`；10 分钟内 `POST /task/resume` 继续，否则标记 `interrupted`。pending 期间 Lofii 按动态在线策略（通常离线）。
 - SSE：最多 8 个客户端；断线用 `Last-Event-ID` 重连；进程重启后 ring 清空，面板重新拉 `/status`/`/task`。
 - 审计：`/var/lib/lofii-bot/audit.jsonl` 只记元数据；轮转 `audit.1.jsonl`…`audit.5.jsonl`，保留 30 天；无查询接口。
@@ -157,7 +162,10 @@ curl -fsS -X POST http://127.0.0.1:3010/move \
 | AI 不回复 | `curl -u opencode:<pw> http://127.0.0.1:4096/api/info`；`/status.ai.lastError`；OpenCode 服务状态 |
 | `/say` 409 | Bot 不在线（动态模式空服）；让玩家上线或临时 `FORCE_ONLINE=true` |
 | 移动失败 | 目标实体未加载/跨维度/无路；`Lofii 状态` 看位置；需要时先 `/tp` |
-| 任务不启动 | 箱子/背包是否有鱼竿/锄/种子/铁斧/树苗/食物；`/status.task.lastError`；`Lofii 状态` 看位置 |
+| 任务不启动 | 箱子/背包是否有鱼竿/锄/种子/铁斧/铁镐/树苗/食物；`/status.task.lastError`；`Lofii 状态` 看位置 |
+| 管理 503/空 | `RCON_ENABLED`、`RCON_PASSWORD`、`RCON_PORT`；`/admin/status` 的 `rcon/lastError`；服务器 RCON 是否开启 |
+| 历史 503/空 | `HISTORY_ENABLED`、`HISTORY_DB` 权限；`/history?kind=samples`；journal `history` |
+| 告警不出现 | `ALERTS_ENABLED`；5 分钟冷却；低血量阈值 12；任务是否失败/断线/箱子满/防御撤退 |
 | 砍树不砍/不补种 | `/status.task.progress.treesChopped/logsChopped/saplingsPlanted`；树场实际地面 y=63/原木 y=64；树苗/铁斧是否够 |
 | 防御不接战 | `/status` 的 health/food；`DEFENSE_ENABLED`；目标怪种；任务 active；没有剑时只会撤退 |
 | 队列不继续 | `/task.task.queue`；active 是否失败/stop；失败会清队列 |

@@ -24,8 +24,22 @@ async function openChest (ctx: TaskContext): Promise<{ bot: Bot, chest: Chest }>
     try {
       await ctx.movement.waitForChunks()
       const block = findChest(bot, ctx.config)
-      await ctx.movement.goNearPoint(block.position.x, block.position.y, block.position.z, 2, 12000, true)
+      const position = bot.entity?.position
+      const close = position
+        ? Math.hypot(position.x - block.position.x, position.y - block.position.y, position.z - block.position.z) <= 4
+        : false
+      if (!close) {
+        // Chest access is a hard dependency for finishing a task. Pathfinding
+        // can be stuck after a stop/failed dig, so use the bounded safe
+        // teleport helper when available.
+        if (ctx.config.taskAnchorTeleport) {
+          await ctx.movement.teleportNearPoint(block.position.x, block.position.y, block.position.z, 4)
+        } else {
+          await ctx.movement.goNearPoint(block.position.x, block.position.y, block.position.z, 2, 12000, true)
+        }
+      }
       await ctx.movement.waitForChunks()
+      await bot.lookAt(block.position.offset(0.5, 0.5, 0.5), true)
       const chest = await bot.openContainer(block) as Chest
       return { bot, chest }
     } catch (error) {
