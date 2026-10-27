@@ -182,7 +182,7 @@
 | Lofii 版本 | 0.4.0 |
 | Pi | Raspberry Pi 5 8GB / Debian 13；Node v26.12.1 |
 | Minecraft | Paper 26.1.2，协议 775 |
-| 代码/soak release | `/opt/lofii-bot/releases/20261027T024631Z` |
+| 代码/soak release | `/opt/lofii-bot/releases/20261027T024631Z`；最终 docs release `/opt/lofii-bot/releases/20261027T033756Z` |
 | 树场 | `x180–193, z455–464`；实际地面块 y=63、原木从 y=64 起 |
 | 玩家 | Antifield 在线/离线混合；最终 0 玩家 |
 
@@ -257,7 +257,7 @@
 
 ### 7.8 最终 release
 
-- 运行时代码/soak release：`20261027T024631Z`；最终 docs release 见 `/opt/lofii-bot/current`。
+- 运行时代码/soak release：`20261027T024631Z`；最终 docs release：`20261027T033756Z`。
 - v0.4.0 验收通过：队列、砍树、被动防御、20 分钟 soak、动态下线、审计；65 个测试全绿。
 
 
