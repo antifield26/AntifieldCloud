@@ -14,6 +14,12 @@ export interface ReplayResult {
   resync: boolean
 }
 
+export interface RecentEvents {
+  bootId: string
+  lastEventId: string | null
+  events: BotEvent[]
+}
+
 type Subscriber = (event: BotEvent) => void
 
 export class EventBus {
@@ -70,5 +76,19 @@ export class EventBus {
     const index = this.ring.findIndex(event => event.id === lastEventId)
     if (index < 0) return { events: [], resync: true }
     return { events: this.ring.slice(index + 1), resync: false }
+  }
+
+  /**
+   * 返回 ring 内最近 `limit` 条事件，按发生顺序（旧 → 新）排列。
+   * 只读快照：不修改 ring，limit 超过 ring 长度时返回全部已有事件。
+   */
+  recent (limit: number): RecentEvents {
+    const count = Number.isInteger(limit) && limit > 0 ? limit : 0
+    const events = count === 0 ? [] : this.ring.slice(-count)
+    return {
+      bootId: this.bootId,
+      lastEventId: this.lastEventId,
+      events
+    }
   }
 }

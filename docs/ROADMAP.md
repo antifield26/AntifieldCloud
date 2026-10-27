@@ -49,7 +49,15 @@
 - 验收：75 单元测试、挖矿 ≥16、天然林 ≥16、巡逻 4/4、20 分钟 soak、历史/告警；详见 `docs/ACCEPTANCE.md`。
 - 边界：不做跨维度、多 Bot/语音/Discord/QQ、Prometheus `/metrics`、webhook、AntifieldCloud 改动。
 
-## v0.6 待定
+## v0.6.0（已完成：只读近期事件轮询 / 契约版本）
+
+- 事件只读轮询：`EventBus.recent(limit)` 返回内存 ring 最近事件（旧 → 新）；`GET /events/recent` 使用读 Token，`limit` 默认 50、范围 1–200，返回 `{contractVersion, bootId, lastEventId, events}`，不含 `hello`。
+- 契约版本：新增 `CONTRACT_VERSION=1`；`GET /healthz` 与 `GET /events/recent` 均返回 `contractVersion`，供 AntifieldCloud 判断字段兼容性。
+- 用途：面板后端低频轮询或 SSE 断线后补拉；`bootId` 变化/事件过旧时重新拉 `/status` 与 `/task`。不替代 SSE，不持久化。
+- 验收：本地 `npm run check` 全绿（typecheck + 77 个单元测试）；仅本地契约验证，未部署 Pi、未修改 AntifieldCloud。
+- 边界：不新增依赖/schema/DB/环境变量；不改任务/AI/控制行为与既有响应字段；ring 仍为内存、进程重启清空。
+
+## v0.7 待定
 
 - 更稳的跨维度移动/多次 pending 任务链/长期任务。
 - 多角色人设、语音、聊天与 Discord/QQ 互通（复用 AntifieldCloud Bot 能力，用户主导）。

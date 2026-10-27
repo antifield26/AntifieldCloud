@@ -1,4 +1,4 @@
-# AntifieldCloud 对接契约（Lofii Bot v0.5.0）
+# AntifieldCloud 对接契约（Lofii Bot v0.6.0）
 
 > 本文只描述 `lofii-bot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -7,8 +7,9 @@
 | 项目 | 值 |
 |---|---|
 | Base URL | `http://127.0.0.1:3010`（仅回环，不对外） |
-| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/task`、`/events`、`/say` |
+| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/task`、`/events`、`/events/recent`、`/say` |
 | 控制 Token | `HTTP_CONTROL_TOKEN`，仅用于 `/task/*` 与 `POST /move` |
+| 契约版本 | `CONTRACT_VERSION=1`，由 `/healthz` 与 `/events/recent` 的 `contractVersion` 返回 |
 | Token 位置 | Pi：`/etc/lofii-bot/env`（root:lofiibot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
 | 请求体上限 | 8 KiB |
@@ -30,7 +31,8 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
 ```json
 {
   "status": "ok",
-  "version": "0.3.0",
+  "version": "0.6.0",
+  "contractVersion": 1,
   "uptimeSec": 123,
   "state": "connected",
   "connected": true
@@ -39,13 +41,15 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/lofii-bot/env | cut -d= -f2-)"
 
 `state`：`idle` / `connecting` / `connected` / `backoff` / `cooldown`。动态模式下 `idle` 是正常状态（无玩家在线）。
 
+`contractVersion` 为只读契约版本（当前 `1`），与 `/events/recent` 返回值一致；新增可选字段不升版本，破坏性变更才递增。
+
 ## 3. GET /status
 
 需要读 Token。返回完整快照；v0.2 字段保持兼容，`task` 增加 `pendingResume`。
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "0.6.0",
   "uptimeSec": 123,
   "state": "connected",
   "minecraft": {
@@ -191,7 +195,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 ```json
 {
-  "version": "0.3.0",
+  "version": "0.6.0",
   "bootId": "036e732d",
   "lastEventId": "036e732d-10",
   "resync": false,
@@ -249,9 +253,42 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 
 `follow` 只发 `started`；`/move stop` 时发 `stop` 的完成事件。
 
-## 6. 控制接口
+## 6. GET /events/recent（只读轮询）
 
-### 6.1 POST /task/start
+需要读 Token；仅支持 `GET`。读取内存事件 ring 的最近事件，用于面板后端低频轮询或 SSE 断线后的补拉；**不替代 SSE**，事件不持久化。
+
+```http
+GET /events/recent?limit=50 HTTP/1.1
+Authorization: Bearer <HTTP_TOKEN>
+```
+
+| 参数 | 默认 | 约束 |
+|---|---|---|
+| `limit` | `50` | 十进制整数 1–200；非整数、0、201、空值均返回 400 |
+
+成功（200）：
+
+```json
+{
+  "contractVersion": 1,
+  "bootId": "036e732d",
+  "lastEventId": "036e732d-10",
+  "events": [
+    { "id": "036e732d-9", "type": "task", "ts": "2026-10-26T13:24:12.000Z", "data": {} },
+    { "id": "036e732d-10", "type": "presence", "ts": "2026-10-26T13:24:14.828Z", "data": {} }
+  ]
+}
+```
+
+- `events` 按发生顺序（旧 → 新）升序排列，最多 `min(limit, ring 内事件数)` 条；ring 为空时 `events: []`、`lastEventId: null`。
+- 事件 envelope 与 SSE 一致（`id/type/ts/data`），但**不含 `hello`**；`contractVersion` 当前为 `1`。
+- `bootId` 与 `lastEventId` 用于增量判断：`bootId` 变化说明进程重启，面板应重新拉 `/status`/`/task`；`lastEventId` 可保存用于去重或作为 SSE `Last-Event-ID` 的参考。
+- 错误：401 `unauthorized`（缺失/错误 Token；控制 Token 不适用）；400 `invalid_request`（`limit` 非法）；405 `method_not_allowed`（非 GET）。
+- 只读接口：不改 ring、不产生事件、不写审计；`/events`（SSE）行为不变。
+
+## 7. 控制接口
+
+### 7.1 POST /task/start
 
 需要控制 Token + `Content-Type: application/json`。
 
@@ -268,7 +305,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 - 任务开关关闭：503 `task_disabled`。
 - 不需要 Bot 已在线：任务会先进入 active，由动态存在逻辑自动连接 Lofii。
 
-### 6.2 POST /task/stop
+### 7.2 POST /task/stop
 
 ```json
 { "reason": "panel" }
@@ -278,7 +315,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 - 只有 pending：202，取消 pending 与队列（审计 `task.discard_pending`）。
 - 都没有：409 `no_active_task`。
 
-### 6.2.1 队列语义
+### 7.2.1 队列语义
 
 - active 正常完成 → 自动启动队首，SSE `task.queue_started`。
 - active 失败、防御撤退、恢复超时、`/task/stop` → 清空队列。
@@ -286,7 +323,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 - 队列与 active 一起写入 `task-state.json` v2；服务重启后 pending + queue 保留，resume 后继续。
 - v0.3 的 v1 task-state 文件自动迁移，新进度字段补 0。
 
-### 6.3 POST /task/resume
+### 7.3 POST /task/resume
 
 需要控制 Token。body 可为空，或：
 
@@ -299,7 +336,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 - 过期/taskId 不匹配：409 `resume_failed`。
 - 10 分钟（`TASK_PENDING_TTL_MS`）未确认：自动 `interrupted`，清空 pending。
 
-### 6.4 POST /move
+### 7.4 POST /move
 
 需要控制 Token + JSON。
 
@@ -314,13 +351,13 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 - Bot 未连接：409 `not_connected`。
 - 202 只表示已接受；结果通过 SSE `movement` 事件返回。
 
-### 6.4.1 砍树 / 被动防御 / 记忆摘要
+### 7.4.1 砍树 / 被动防御 / 记忆摘要
 
 - `woodcutting` 只处理固定 oak 树场 `x180–193, z455–464`；实际地面块 y=63、原木从 y=64 起；只砍 `oak_log`、逐棵补种 `oak_sapling`，原木存箱。
 - 任务中被动防御：12 格内 zombie/husk/drowned/skeleton/stray/spider/cave_spider 才接战；排除 creeper/enderman/witch/玩家；HP≤12、food≤6 或 >2 只怪时撤退回家并让当前任务失败（清队列）。
 - 记忆摘要不新增 HTTP 接口；每 40 turns（20 来回）后台生成 ≤1000 字聊天摘要，注入后续 prompt。
 
-### 6.5 错误码汇总
+### 7.5 错误码汇总
 
 | 条件 | HTTP | error |
 |---|---|---|
@@ -338,7 +375,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 | Bot 未连接 | 409 | `not_connected` |
 | 限流 | 429 | `rate_limited` |
 
-## 7. POST /say
+## 8. POST /say
 
 需要读 Token + JSON。只聊天，不执行命令。
 
@@ -357,9 +394,9 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 | 超 8 KiB | 413 | `payload_too_large` |
 | 超过 10 次/分钟 | 429 | `rate_limited` |
 
-## 8. v0.5 管理、历史与告警
+## 9. v0.5 管理、历史与告警
 
-### 8.1 GET /admin/status
+### 9.1 GET /admin/status
 
 需要读 Token。只读 RCON 白名单：`tps`、`list`、`whitelist list`、`time`。
 
@@ -383,7 +420,7 @@ SSE 帧的 `id` 字段即 envelope `id`；`event` 字段为 `hello` / `task` / `
 - RCON 失败时 `rcon=false`，`lastError` 截断；不影响任务/HTTP。
 - 没有写管理接口、没有任意命令执行；备份目录不存在，`backup.status` 固定 `unknown`。
 
-### 8.2 GET /history
+### 9.2 GET /history
 
 需要读 Token。
 
@@ -398,7 +435,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - 响应：`{kind, from, to, count, samples|alerts}`。
 - 不含聊天正文/Token/密码。
 
-### 8.3 SSE alert
+### 9.3 SSE alert
 
 ```json
 {
@@ -416,7 +453,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - 5 分钟同类型冷却；启动后 10 秒内不报低血量。
 - 告警写入 SQLite `alerts` 表。
 
-## 9. v0.5 游戏内行为
+## 10. v0.5 游戏内行为
 
 - 唤醒词：`Lofii` / `@Lofii`（不区分大小写；只回应被点名的消息）。
 - 仅 `COMMAND_ALLOWLIST` 内玩家可下命令，默认 `Antifield`。
@@ -427,10 +464,11 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - v0.5 仍默认保留游戏内/AI 意图直接触发；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
 - 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
 
-## 10. 对接建议
+## 11. 对接建议
 
 - 面板后端用 `fetch` + `Authorization` 消费 `/events`，不要用浏览器 EventSource 直连。
 - 初始展示先拉 `/status` 与 `/task`，再用 SSE 增量更新；断线按 `Last-Event-ID` 重连，`resync:true` 时重新拉快照。
+- 不便长期持有 SSE 时，可低频轮询 `GET /events/recent`（默认 50 条，可带 `limit`），由后端按 `bootId`/`lastEventId` 去重；`bootId` 变化时重新拉 `/status` 与 `/task`。`/healthz.contractVersion` 可用于契约兼容性检查。
 - 控制调用只从面板后端发出，控制 Token 放后端 env；不要下发到浏览器。
 - `/admin/status`、`/history` 使用读 Token；不可写。
 - 告警建议后端按 `type` 去重/展示，并自行决定是否通知；本版没有 webhook。

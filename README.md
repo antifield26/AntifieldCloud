@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：v0.5.0（只读 RCON / SQLite 历史 / SSE 告警 / 表层矿 / 天然林 / 睡觉 / 巡逻 / 60 分钟任务）。详细计划与验收记录见 `docs/`。
+> 当前版本：v0.6.0（只读 RCON / SQLite 历史 / SSE 告警 / 表层矿 / 天然林 / 睡觉 / 巡逻 / 60 分钟任务 / 只读近期事件轮询）。详细计划与验收记录见 `docs/`。
 
 ## 能做什么
 
@@ -22,13 +22,14 @@
 - **任务恢复**：死亡/Paper 重启后自动回任务点，最多 3 次；工具/种子丢失时停止并提示。
 - **跨 systemd 重启恢复**：任务状态写盘；服务重启后变为 `pending_resume`，面板 10 分钟内确认才继续；不自动执行。
 - **SSE 事件流**：`GET /events` 推送 `hello/presence/task/chat/movement/alert`；内存 500 条 ring、`Last-Event-ID` 回放、心跳、最多 8 客户端。
+- **只读近期事件轮询**：`GET /events/recent`（读 Token）返回 ring 最近 1–200 条事件（升序，无 `hello`）及 `bootId/lastEventId/contractVersion`，供 AntifieldCloud 低频轮询或 SSE 断线补拉；`GET /healthz` 同步返回 `contractVersion`。
 - **HTTP 控制**：独立 `HTTP_CONTROL_TOKEN` 控制 `/task/start|stop|resume` 与 `/move`；读 Token 只能看状态/SSE/`/say`。
 - **审计 JSONL**：任务/移动/HTTP/AI 触发元数据写 `/var/lib/lofii-bot/audit.jsonl`（0600、5 MB 轮转、30 天）；不含聊天正文/Token/密码。
 - **移动与家**：`回家`、远距离 `过来`、`跟随` 超过 64 格或跨维度时安全传送；只允许代码生成的 `/tp`。
 - **主动行为**：Antifield 加入问候；夜晚/雷雨/死亡固定短文；可关闭。
 - **AI 意图兜底**：固定短语优先；Antifield 的任务类模糊语句才调用 AI 分类，AI 不能直接执行任意动作。
 - **按玩家记忆**：最近 20 轮、保留 30 天；每 20 个来回后台生成 ≤1000 字聊天摘要，落盘到 `/var/lib/lofii-bot/memory`，重启后仍能记住。
-- **本机 HTTP 接口**：只读状态/任务/SSE + `/say`，独立控制 Token 的任务/移动接口；仅监听 `127.0.0.1:3010`。
+- **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
 ## 不做什么
@@ -79,6 +80,7 @@ RCON 25575 ──只读命令白名单──► AdminService ──► /admin/st
 HTTP /status ─► state 快照（含 task）
 HTTP /task ─► 当前任务 / pending
 GET /events ─► SSE（hello/presence/task/chat/movement，ring 500）
+GET /events/recent ─► 读 Token ─► ring 最近 1–200 条事件（升序，无 hello）
 HTTP /admin/status ─► 读 Token ─► RCON TPS/在线/白名单/时间
 HTTP /history ─► 读 Token ─► SQLite samples/alerts
 HTTP /task/* + /move ─► 控制 Token ─► 任务/移动 ─► 审计 JSONL
@@ -225,8 +227,9 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 - 任务状态跨 `systemctl restart lofii-bot` 保存为 `pending_resume`；10 分钟内不确认会标记 `interrupted` 并清空。Paper 重启仍走原有自动恢复。
 - HTTP 控制依赖独立 `HTTP_CONTROL_TOKEN`；`/task/start` 可以在 Lofii 离线时启动，后台按动态在线逻辑连接。`/move` 需要 Bot 已在线。
 - SSE 回放只在内存（500 条）；进程重启后客户端应重新拉 `/status`/`/task`。浏览器 EventSource 不能带 Bearer，面板应由后端消费。
+- `/events/recent` 同样只读内存 ring（`SSE_BUFFER_EVENTS`，默认 500），进程重启后清空；`bootId` 变化时应重新拉 `/status`/`/task`，不能当作持久消息队列。
 - 审计只记录动作元数据，不记录聊天正文；没有审计查询 HTTP 接口，需 SSH 查看。
-- 本仓库未修改 AntifieldCloud；面板侧 SSE/控制接入由用户实施。
+- 本仓库未修改 AntifieldCloud；面板侧 SSE/近期事件/控制接入由用户实施。
 - 农田实际为 48 格（6 列 × 8 行，中间水渠）；首次任务会自动播种，验收用 `/setblock` 催熟。
 - 钓鱼掉落物可能落在浅水；拾取会走向岸边/浅水，深水或危险区域会放弃。
 - AI 输出只用于聊天；不会触发任何游戏操作。

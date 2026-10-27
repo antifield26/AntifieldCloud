@@ -10,6 +10,7 @@ import type { Logger } from '../logger.ts'
 import type { RuntimeState, TaskName } from '../state.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
+import { CONTRACT_VERSION } from '../contract.ts'
 import { InvalidMessageError, NotConnectedError } from '../errors.ts'
 import { TaskError, type TaskController } from '../tasks/types.ts'
 import { isAuthorized } from './auth.ts'
@@ -39,6 +40,8 @@ const BODY_LIMIT = 8192
 const SAY_LIMIT = 10
 const SAY_WINDOW_MS = 60_000
 const CONTROL_WINDOW_MS = 60_000
+const RECENT_EVENTS_LIMIT_DEFAULT = 50
+const RECENT_EVENTS_LIMIT_MAX = 200
 
 class BodyTooLargeError extends Error {}
 class UnsupportedMediaTypeError extends Error {}
@@ -149,9 +152,33 @@ export class HttpApi {
         body: {
           status: 'ok',
           version: snapshot.version,
+          contractVersion: CONTRACT_VERSION,
           uptimeSec: snapshot.uptimeSec,
           state: snapshot.state,
           connected: snapshot.minecraft.connected
+        }
+      })
+      return
+    }
+    if (pathname === '/events/recent') {
+      if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
+      if (!this.authorizeRead(req, res)) return
+      let limit = RECENT_EVENTS_LIMIT_DEFAULT
+      const rawLimit = url.searchParams.get('limit')
+      if (rawLimit !== null) {
+        const message = `limit must be an integer 1..${RECENT_EVENTS_LIMIT_MAX}`
+        if (!/^\d+$/.test(rawLimit)) return sendError(res, 400, 'invalid_request', message)
+        limit = Number(rawLimit)
+        if (limit < 1 || limit > RECENT_EVENTS_LIMIT_MAX) return sendError(res, 400, 'invalid_request', message)
+      }
+      const recent = this.deps.events.recent(limit)
+      sendJson(res, {
+        status: 200,
+        body: {
+          contractVersion: CONTRACT_VERSION,
+          bootId: recent.bootId,
+          lastEventId: recent.lastEventId,
+          events: recent.events
         }
       })
       return

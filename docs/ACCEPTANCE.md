@@ -1,4 +1,4 @@
-# 验收记录（Lofii Bot v0.2.0 / v0.3.0 / v0.4.0 / v0.5.0）
+# 验收记录（Lofii Bot v0.2.0 / v0.3.0 / v0.4.0 / v0.5.0 / v0.6.0 本地）
 
 ## 1. 环境
 
@@ -345,5 +345,36 @@
 - 最终 release：`/opt/lofii-bot/releases/20261027T084117Z`。
 - 运行时代码/soak release：`20261027T080045Z`（最终 docs release `20261027T084117Z`）。
 - v0.5.0 验收通过：只读管理、SQLite 历史、SSE 告警、安全区表层矿/天然林、Vote2Sleep、四角巡逻、60 分钟队列、约 28.6 分钟混合 soak；75 个测试全绿。
+
+## 9. v0.6.0 本地验证（只读 recent events / 契约版本）
+
+### 9.1 环境
+
+| 项目 | 值 |
+|---|---|
+| 验证日期 | 2026-10-27（Asia/Shanghai） |
+| Lofii 版本 | 0.6.0（`package.json`） |
+| Node | v26.12.1 |
+| 范围 | 本地 `npm run check`（typecheck + 单元测试）；未部署 Pi，未修改 AntifieldCloud |
+
+### 9.2 结果汇总
+
+| # | 检查 | 结果 | 证据 |
+|---|---|---|---|
+| 1 | 本地 `npm run check` | ✅ | 77/77 单元测试通过（`tsc --noEmit` + `node --test test/unit`） |
+| 2 | `EventBus.recent` | ✅ | 升序、limit 截断、空 ring、超容量淘汰语义不变（`test/unit/v06.test.ts`） |
+| 3 | `/events/recent` 鉴权 | ✅ | 无 Token/控制 Token → 401；读 Token → 200 |
+| 4 | `/events/recent` 参数 | ✅ | 默认 50；`limit=1`/`200` 合法；`0`/`201`/非整数/空值 → 400 `invalid_request` |
+| 5 | 响应契约 | ✅ | `{contractVersion:1, bootId, lastEventId, events}`；事件按 `id/type/ts/data` 升序且无 `hello` |
+| 6 | `/healthz` | ✅ | 新增 `contractVersion:1`；`status/version/uptimeSec/state/connected` 保持兼容 |
+| 7 | 方法限制 | ✅ | `POST /events/recent` → 405 + `Allow: GET` |
+| 8 | 回归 | ✅ | 既有 75 个测试全部保留通过；SSE/控制/任务/管理/历史行为未改 |
+
+### 9.3 说明与边界
+
+- 本轮只做本地验证与提交：未部署到 Pi，未触发 AntifieldCloud 改动，生产接入由用户按 `docs/API.md` 实施。
+- `/events/recent` 读内存 ring（`SSE_BUFFER_EVENTS`，默认 500），进程重启后清空；`bootId` 变化时面板应重新拉 `/status` 与 `/task`。
+- `limit` 只接受十进制整数（重复参数取第一个值）；非法值统一 400，不影响 SSE `/events`。
+- 未新增依赖/schema/DB/环境变量；不改任务/AI/控制行为；无 Token 写入日志或响应。
 
 
