@@ -1,345 +1,127 @@
-import { useCallback, useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
-import { Gamepad2, RefreshCw, Trash, UserPlus, Users } from 'lucide-react'
-import { api, ApiError, toErrorMessage } from '../api/client'
-import type { MinecraftStatus, WhitelistResult } from '../api/types'
+// Minecraft 页：服务器只读状态/白名单管理与 Lofii 面板两个标签页。
+// 标签状态写入 ?tab=lofii（保留其他查询参数），首次加载支持 ?tab=lofii 或 #lofii 深链。
+// Lofii 集成未启用（meta.lofiiEnabled=false）时不展示 Lofii 标签页，页面行为与旧版一致。
+
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { useAppMeta } from '../meta/MetaContext'
 import { PageHeader } from '../components/PageHeader'
-import { Card } from '../components/Card'
-import { Badge } from '../components/Badge'
-import { Button } from '../components/Button'
-import { Table } from '../components/Table'
-import type { Column } from '../components/Table'
-import { EmptyState } from '../components/EmptyState'
-import { InlineError } from '../components/InlineError'
-import { CopyButton } from '../components/CopyButton'
-import { RelativeTime } from '../components/RelativeTime'
-import { Avatar } from '../components/Avatar'
-import { ConfirmDialog } from '../components/ConfirmDialog'
-import { useToast } from '../components/Toast'
-import type { ServiceState } from '../api/types'
+import { MinecraftServerPanel } from '../components/minecraft/MinecraftServerPanel'
+import { LofiiPanel } from '../components/lofii/LofiiPanel'
+import { cx } from '../lib/classnames'
 
-const PLAYER_NAME_PATTERN = /^[A-Za-z0-9_]{3,16}$/
+type MinecraftTab = 'server' | 'lofii'
 
-const SERVICE_STATE_LABELS: Record<ServiceState, string> = {
-  active: '运行中',
-  inactive: '已停止',
-  unknown: '未知',
+const TABS: readonly { id: MinecraftTab; label: string }[] = [
+  { id: 'server', label: '服务器' },
+  { id: 'lofii', label: 'Lofii' },
+]
+
+/** 深链初始化：?tab=lofii 或 #lofii 均进入 Lofii 标签页。 */
+function initialTabFromUrl(search: string, hash: string): MinecraftTab {
+  const params = new URLSearchParams(search)
+  return params.get('tab') === 'lofii' || hash === '#lofii' ? 'lofii' : 'server'
 }
 
-const SERVICE_TONES: Record<ServiceState, 'success' | 'danger' | 'muted'> = {
-  active: 'success',
-  inactive: 'danger',
-  unknown: 'muted',
+/** 页面标题与描述按当前标签切换。 */
+const TAB_COPY: Record<MinecraftTab, { title: string; description: string }> = {
+  server: {
+    title: 'Minecraft',
+    description: '服务器只读状态与白名单管理',
+  },
+  lofii: {
+    title: 'Lofii',
+    description: 'Lofii Bot 运行状态、任务控制、事件流与历史（数据来自本机 Lofii 接口）',
+  },
 }
 
-/** Minecraft：只读状态 + 白名单增删；不提供启停与任意命令。 */
+/** Minecraft 页：可键盘操作的“服务器 / Lofii”标签页外壳。 */
 export function Minecraft() {
-  const toast = useToast()
-  const [status, setStatus] = useState<MinecraftStatus | null>(null)
-  const [statusLoading, setStatusLoading] = useState(true)
-  const [statusError, setStatusError] = useState<string | null>(null)
-  const [whitelist, setWhitelist] = useState<WhitelistResult | null>(null)
-  const [whitelistLoading, setWhitelistLoading] = useState(true)
-  const [whitelistError, setWhitelistError] = useState<string | null>(null)
-  const [playerName, setPlayerName] = useState('')
-  const [nameError, setNameError] = useState<string | null>(null)
-  const [addBusy, setAddBusy] = useState(false)
-  const [removeTarget, setRemoveTarget] = useState<string | null>(null)
-  const [removeBusy, setRemoveBusy] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+  const { meta } = useAppMeta()
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [tab, setTab] = useState<MinecraftTab>(() => initialTabFromUrl(location.search, location.hash))
+  const tabButtons = useRef<Array<HTMLButtonElement | null>>([])
 
-  const loadStatus = useCallback(async (force = false): Promise<void> => {
-    setStatusLoading(true)
-    setStatusError(null)
-    try {
-      setStatus(await api.mc.status(force))
-    } catch (loadError) {
-      setStatusError(toErrorMessage(loadError, '读取 Minecraft 状态失败'))
-    } finally {
-      setStatusLoading(false)
-    }
-  }, [])
+  // 服务端未启用 Lofii 时回退到服务器标签，避免渲染不可用面板。
+  const showLofii = meta.lofiiEnabled
+  const activeTab: MinecraftTab = tab === 'lofii' && !showLofii ? 'server' : tab
+  const copy = TAB_COPY[activeTab]
 
-  const loadWhitelist = useCallback(async (): Promise<void> => {
-    setWhitelistLoading(true)
-    setWhitelistError(null)
-    try {
-      setWhitelist(await api.mc.whitelist())
-    } catch (loadError) {
-      setWhitelistError(toErrorMessage(loadError, '读取白名单失败'))
-    } finally {
-      setWhitelistLoading(false)
-    }
-  }, [])
-
+  // 浏览器前进/后退或外部跳转改变 URL 时同步标签状态（组件保持挂载时 state 不会自动更新）。
   useEffect(() => {
-    void loadStatus()
-    void loadWhitelist()
-  }, [loadStatus, loadWhitelist])
+    const desired = initialTabFromUrl(location.search, location.hash)
+    setTab((previous) => (previous === desired ? previous : desired))
+  }, [location.search, location.hash])
 
-  // 手动刷新跳过服务端 10 秒缓存
-  const refreshAll = async (): Promise<void> => {
-    setRefreshing(true)
-    await Promise.allSettled([loadStatus(true), loadWhitelist()])
-    setRefreshing(false)
+  const selectTab = (next: MinecraftTab): void => {
+    setTab(next)
+    const params = new URLSearchParams(location.search)
+    if (next === 'lofii') params.set('tab', 'lofii')
+    else params.delete('tab')
+    const search = params.toString()
+    // 服务器标签清理 #lofii 深链；Lofii 标签保留其他锚点不动。
+    const hash = next === 'lofii' ? location.hash : location.hash === '#lofii' ? '' : location.hash
+    navigate({ pathname: location.pathname, search: search ? `?${search}` : '', hash }, { replace: true })
   }
 
-  const applyNames = (names: string[], checkedAt?: string, error?: string | null): void => {
-    setWhitelist((previous) =>
-      previous
-        ? { ...previous, names, checkedAt: checkedAt ?? previous.checkedAt, error: error ?? null }
-        : { names, checkedAt: checkedAt ?? new Date().toISOString(), error: error ?? null },
-    )
-    setStatus((previous) => (previous ? { ...previous, whitelistCount: names.length } : previous))
-  }
-
-  const handleAdd = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    if (!showLofii) return
+    let nextIndex: number | null = null
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % TABS.length
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + TABS.length) % TABS.length
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = TABS.length - 1
+    if (nextIndex === null) return
     event.preventDefault()
-    const trimmed = playerName.trim()
-    if (!PLAYER_NAME_PATTERN.test(trimmed)) {
-      setNameError('玩家名需为 3–16 位字母、数字或下划线')
-      return
-    }
-    setAddBusy(true)
-    setNameError(null)
-    try {
-      const result = await api.mc.addWhitelist(trimmed)
-      applyNames(result.names, result.checkedAt, result.error)
-      setPlayerName('')
-      toast.success(`已将 ${result.name} 加入白名单`)
-    } catch (addError) {
-      if (addError instanceof ApiError && addError.code === 'already_whitelisted') {
-        setNameError('该玩家已在白名单中')
-      } else {
-        toast.error(toErrorMessage(addError, '添加白名单失败，请重试'))
-      }
-    } finally {
-      setAddBusy(false)
-    }
+    const next = TABS[nextIndex]
+    if (!next) return
+    selectTab(next.id)
+    window.requestAnimationFrame(() => tabButtons.current[nextIndex ?? 0]?.focus())
   }
-
-  const handleRemove = async (): Promise<void> => {
-    if (!removeTarget) return
-    setRemoveBusy(true)
-    try {
-      const result = await api.mc.removeWhitelist(removeTarget)
-      applyNames(result.names, result.checkedAt, result.error)
-      toast.success(`已将 ${result.name} 移出白名单`)
-      setRemoveTarget(null)
-    } catch (removeError) {
-      toast.error(toErrorMessage(removeError, '移除白名单失败，请重试'))
-    } finally {
-      setRemoveBusy(false)
-    }
-  }
-
-  const whitelistColumns: Column<string>[] = [
-    {
-      key: 'name',
-      header: '玩家名',
-      primary: true,
-      render: (name) => (
-        <div className="player-cell">
-          <Avatar name={name} size={26} />
-          <span className="mono">{name}</span>
-        </div>
-      ),
-    },
-    {
-      key: 'status',
-      header: '状态',
-      render: () => <Badge tone="success">已加入白名单</Badge>,
-    },
-    {
-      key: 'actions',
-      header: <span className="sr-only">操作</span>,
-      align: 'right',
-      render: (name) => (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-danger"
-          icon={<Trash size={15} aria-hidden="true" />}
-          aria-label={`移除白名单玩家 ${name}`}
-          onClick={() => setRemoveTarget(name)}
-        >
-          移除
-        </Button>
-      ),
-    },
-  ]
-
-  const names = whitelist?.names ?? []
-  const tps = status?.tps ?? null
-  const publicAddress = status?.publicAddress || null
 
   return (
     <div className="minecraft-page">
-      <PageHeader
-        title="Minecraft"
-        description="服务器只读状态与白名单管理"
-        actions={
-          <Button
-            variant="secondary"
-            icon={<RefreshCw size={16} aria-hidden="true" />}
-            loading={refreshing}
-            onClick={() => void refreshAll()}
-          >
-            刷新
-          </Button>
-        }
-      />
+      <PageHeader title={copy.title} description={copy.description} />
 
-      <div className="notice notice-muted">
-        本页只提供状态查看与白名单增删，不提供服务器启停、控制台或任意 RCON 命令。
-      </div>
+      {showLofii ? (
+        <div className="segmented minecraft-tabs" role="tablist" aria-label="Minecraft 页面分区">
+          {TABS.map((item, index) => (
+            <button
+              key={item.id}
+              ref={(element) => {
+                tabButtons.current[index] = element
+              }}
+              type="button"
+              role="tab"
+              id={`minecraft-tab-${item.id}`}
+              className={cx('segmented-button', activeTab === item.id && 'segmented-button-active')}
+              aria-selected={activeTab === item.id}
+              aria-controls="minecraft-tabpanel"
+              tabIndex={activeTab === item.id ? 0 : -1}
+              onClick={() => selectTab(item.id)}
+              onKeyDown={(event) => handleTabKeyDown(event, index)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
-      {statusError && !status ? (
-        <Card title="服务器状态" error={statusError} onRetry={() => void loadStatus()} />
+      {showLofii ? (
+        <div
+          className="minecraft-tabpanel"
+          id="minecraft-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`minecraft-tab-${activeTab}`}
+          tabIndex={0}
+        >
+          {activeTab === 'lofii' ? <LofiiPanel /> : <MinecraftServerPanel />}
+        </div>
       ) : (
-        <Card
-          title="服务器状态"
-          loading={statusLoading && !status}
-          actions={status ? <Badge tone={status.online ? 'success' : 'danger'} dot>{status.online ? '在线' : '离线'}</Badge> : undefined}
-        >
-          {status ? (
-            <>
-              <div className="mc-status-grid">
-                <div className="mc-fact">
-                  <span className="mc-fact-label">版本</span>
-                  <span className="mc-fact-value">{status.version || '未知'}</span>
-                </div>
-                <div className="mc-fact">
-                  <span className="mc-fact-label">在线玩家</span>
-                  <span className="mc-fact-value">{status.players.online} / {status.players.max}</span>
-                </div>
-                <div className="mc-fact">
-                  <span className="mc-fact-label">TPS（1m / 5m / 15m）</span>
-                  <span className="mc-fact-value">
-                    {tps ? `${tps.m1.toFixed(1)} / ${tps.m5.toFixed(1)} / ${tps.m15.toFixed(1)}` : '—'}
-                  </span>
-                </div>
-                <div className="mc-fact">
-                  <span className="mc-fact-label">白名单数量</span>
-                  <span className="mc-fact-value">{status.whitelistCount ?? '—'}</span>
-                </div>
-                <div className="mc-fact">
-                  <span className="mc-fact-label">服务状态</span>
-                  <span className="mc-fact-value">
-                    <Badge tone={SERVICE_TONES[status.serviceActive]}>{SERVICE_STATE_LABELS[status.serviceActive]}</Badge>
-                  </span>
-                </div>
-                <div className="mc-fact">
-                  <span className="mc-fact-label">公共地址</span>
-                  <span className="mc-fact-value mc-address-value">
-                    <span className="mono">{publicAddress || '—'}</span>
-                    <CopyButton
-                      value={publicAddress ?? ''}
-                      label="复制"
-                      iconOnly
-                      ariaLabel="复制 Minecraft 公共地址"
-                      disabled={!publicAddress}
-                    />
-                  </span>
-                </div>
-              </div>
-
-              {status.motd ? <p className="mc-motd">{status.motd}</p> : null}
-              {status.error ? <div className="notice notice-warning">{status.error}</div> : null}
-              {!status.error && tps === null ? (
-                <div className="notice notice-warning">RCON 不可用，TPS 与白名单数据暂时无法读取。</div>
-              ) : null}
-              <p className="card-footnote">状态检查于 <RelativeTime ts={status.checkedAt} /></p>
-            </>
-          ) : null}
-        </Card>
+        <MinecraftServerPanel />
       )}
-
-      <div className="mc-columns">
-        <Card
-          title="在线玩家"
-          actions={<Badge tone={status && status.players.online > 0 ? 'success' : 'muted'}>{status?.players.online ?? 0} 人在线</Badge>}
-        >
-          {status && status.players.names.length > 0 ? (
-            <ul className="player-chips">
-              {status.players.names.map((name) => (
-                <li key={name} className="player-chip">
-                  <Avatar name={name} size={24} />
-                  <span>{name}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState compact icon={<Gamepad2 size={22} />} title="暂无玩家在线" description="服务器在线时，这里会显示当前玩家列表。" />
-          )}
-        </Card>
-
-        <Card
-          title="白名单管理"
-          description="玩家名规则：3–16 位字母、数字或下划线；修改立即生效。"
-          actions={<Badge tone="muted"><Users size={13} aria-hidden="true" /> {names.length} 位玩家</Badge>}
-        >
-          <form className="whitelist-form" onSubmit={(event) => void handleAdd(event)}>
-            <div className="whitelist-input-row">
-              <input
-                className="input"
-                value={playerName}
-                onChange={(event) => {
-                  setPlayerName(event.target.value)
-                  setNameError(null)
-                }}
-                placeholder="输入玩家名，例如 Steve"
-                aria-label="要添加的玩家名"
-                maxLength={16}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={addBusy}
-              />
-              <Button type="submit" variant="primary" icon={<UserPlus size={16} aria-hidden="true" />} loading={addBusy}>
-                添加
-              </Button>
-            </div>
-            {nameError ? <p className="field-error" role="alert">{nameError}</p> : null}
-          </form>
-
-          {whitelistError ? (
-            <InlineError message={whitelistError} onRetry={() => void loadWhitelist()} />
-          ) : (
-            <Table
-              columns={whitelistColumns}
-              rows={names}
-              rowKey={(name) => name}
-              loading={whitelistLoading && !whitelist}
-              skeletonRows={3}
-              caption="白名单玩家列表"
-              empty={
-                <EmptyState
-                  compact
-                  icon={<Users size={22} />}
-                  title="白名单为空"
-                  description="在上方输入玩家名，添加第一位成员。"
-                />
-              }
-            />
-          )}
-
-          <p className="field-hint">白名单接口仅返回名称列表，暂不提供添加时间；修改会写入审计日志。</p>
-          <div className="notice notice-info">白名单修改立即生效；本页不提供服务器启停、控制台或任意命令。</div>
-        </Card>
-      </div>
-
-      <ConfirmDialog
-        open={removeTarget !== null}
-        title="移除白名单"
-        message={removeTarget ? `确定将「${removeTarget}」移出白名单？` : ''}
-        details="移除后该玩家需要重新加入白名单才能进入服务器。"
-        confirmText="移除"
-        loading={removeBusy}
-        onConfirm={() => void handleRemove()}
-        onClose={() => {
-          if (!removeBusy) setRemoveTarget(null)
-        }}
-      />
     </div>
   )
 }

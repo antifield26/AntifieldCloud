@@ -1,5 +1,41 @@
 # Changelog
 
+## [v0.8.0] - 2026-10-27（本地实现完成，生产部署/验收待执行；生产当前仍为 v0.7.3；schema 保持 v17）
+
+### Added
+
+- **Lofii Minecraft Bot 只读对接**：新增 `server/src/lofii/`（`client.ts`/`service.ts`）与 `GET /api/lofii/status`、`GET /api/lofii/history`。服务端每 `LOFII_POLL_MS`（默认 5s）轮询仅 loopback 的 Lofii 上游 `GET /status` 与 `GET /events/recent`（lofii-bot v0.6.0 契约 `contractVersion=1`），缓存最新快照与最近 100 条事件（内存环、newest-first）；不可达/过期（stale）/旧版无事件流时降级并在快照中可见。
+- **任务/移动/游戏内聊天控制**：`POST /api/lofii/tasks`、`/tasks/stop`、`/tasks/resume`、`/move`、`/say`；支持 7 种任务（fishing/farming/woodcutting/mining/forest/sleep/patrol）、4 种移动（home/come/follow/stop）；`/say` 只聊天不执行命令（trim 后 1–720 字符，禁止 `/` 开头）。读 Token（`/status`、`/history`、`/say`）与控制 Token（`/task/*`、`/move`）分离；控制 Token 为空时控制接口返回 `503 lofii_control_disabled`，只读与 `/say` 仍可用。
+- **告警联动**：`/events/recent` 的 `alert` 事件映射为本应用告警事件，状态固定 `status='event'`（不写 `alert_state`、不参与 firing/resolved 状态机），复用既有 webhook 投递与 Bot 通知；游标持久化在 `meta.lofii.event_cursor`（`{bootId,lastEventId,lastTs}`），首次/无游标/`bootId` 变化只建立基线、不重放 ring 内旧告警。`LOFII_ALERTS_ENABLED`（默认 true）关闭时仍推进游标但不写告警。
+- **Web `/minecraft` 合并标签页**：原 Minecraft 状态/白名单与新 Lofii 面板合并为「服务器 / Lofii」两个可键盘操作的 `role=tab` 标签页；支持 `?tab=lofii`/`#lofii` 深链、左右方向键/Home/End；`Lofii` 未启用（`/api/version.lofiiEnabled=false`）时不展示标签，页面行为与旧版一致。
+- **Lofii 面板**：状态（连接/在线/TPS/血量/AI 队列/记忆/版本/契约/告警联动）、任务（开始/停止/恢复/放弃、进度与队列、二次确认）、移动（目标玩家来自在线列表）、游戏内聊天（二次确认）、事件流（类型筛选、纯文本、最多 100 条）、历史（告警/采样、最近 24h、只读表格）；控制未启用时禁用全部写操作。
+- **配置/运维**：`LOFII_ENABLED`（默认 false）、`LOFII_URL`（默认 `http://127.0.0.1:3010`，启用时必须 loopback+http(s)）、`LOFII_READ_TOKEN`、`LOFII_CONTROL_TOKEN`、`LOFII_TIMEOUT_MS`（默认 2500，500–10000）、`LOFII_POLL_MS`（默认 5000，2000–60000）、`LOFII_ALERTS_ENABLED`（默认 true）；新增 `scripts/sync-lofii-tokens.sh`（root 从 `/etc/lofii-bot/env` 同步 HTTP_TOKEN/HTTP_CONTROL_TOKEN，`--check` 只比较，不读取/复制 RCON/OpenCode 密码，不回显 Token）；`bootstrap-env.sh`、`deploy/env.example`、`smoke.ps1 -ExpectedLofiiVersion 0.6.0`/`-SkipLofii` 同步。
+
+### Security
+
+- Lofii 上游仅允许 loopback + http(s)，启用时启动校验；客户端 `redirect: 'error'`，每次请求带超时；响应体上限 2 MiB；错误文本统一移除上游地址与两枚 Token，Token 回显进上游错误码也会被处置。
+- `/api/lofii/*` 全部需要登录；控制/移动/聊天额外校验 CSRF，并按 IP 限流（控制 20 次/分钟、`/say` 10 次/分钟）；任务/移动/聊天在 UI 二次确认；审计只记动作与元数据，`/say` 只记字符数，绝不记录聊天正文。
+- 聊天与事件只进内存缓存（最多 100 条），不落库、不写日志；历史接口透传上游只读形状；Token/上游 URL 不进入 API 响应、浏览器 bundle 或日志；`/events/recent` 由服务端轮询，浏览器不直连 Lofii。
+
+### Tests
+
+- 新增 `server/test/lofii-client.test.ts`、`lofii-service.test.ts`、`lofii-routes.test.ts`、`web/src/components/lofii/LofiiPanel.test.tsx`、`web/src/pages/Minecraft.test.tsx`、`web/src/api/client.lofii.test.ts`；扩展 `alerts.test.ts`（`recordExternal`）、`config-validation.test.ts`（`LOFII_*`）、`AlertsCard.test.tsx`（`event` 状态）。
+- 本地门禁（2026-10-27 实测）：`npm run check` 通过（typecheck + eslint + `npm test` + `npm run test:web`）；`npm test` **566**（565 pass、1 skip，server=87 + scripts=4 共 91 个测试文件）；`npm run test:web` **250**（47 文件）；服务端覆盖率 **Lines 93.06% / Branches 78.67% / Functions 88.70%**、前端 **Lines 55.48% / Branches 49.91% / Functions 48.45%**（`npm run test:coverage`、`npm run test:web:coverage` 门禁通过）；`npx tsc -p server/tsconfig.json`、`npx tsc -p web/tsconfig.json`、`eslint server web scripts --max-warnings=0` 通过；`npm run build` 通过（`index-DHjowEA5.js` 761.09 kB / gzip 227.12 kB）。
+
+### Docs
+
+- README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT 同步 v0.8.0；schema 保持 **v17**（无迁移）、OpenCode **v2.1.4**、Node.js **v26.12.1** 不变；公开文档不含真实域名/IP/Token。
+
+### Deploy
+
+- 发布前置：lofii-bot **v0.6.0+** 已作为独立服务仅监听 `127.0.0.1:3010`（契约 `contractVersion=1`）；root 执行 `scripts/sync-lofii-tokens.sh`（先从 `/etc/lofii-bot/env` 同步到应用 env，`--check` 只比较），再设 `LOFII_ENABLED=true` 并重启应用；默认保持 false，不需要 Lofii 时无定时器/网络请求。
+- 部署/验证：`deploy.ps1` 流程不变（schema v17 无迁移，迁移前 DB 快照仍生成）；smoke 新增 `-ExpectedLofiiVersion 0.6.0`（校验 `systemctl is-active lofii-bot`、`/healthz.version`、`contractVersion=1`），未启用 Lofii 用 `-SkipLofii` 且跳过项不计 PASS；`/api/version` 增 `lofiiEnabled/lofiiControlEnabled`。
+- 回滚：`LOFII_ENABLED=false`（可选清空 Token）+ 重启即回到 v0.7.3 行为，`meta.lofii.event_cursor` 可保留/删除，无 schema/DB 回滚；只读模式只需清空 `LOFII_CONTROL_TOKEN`。生产部署/验收证据回填 `docs/ACCEPTANCE.md` 后再发布 Tag。
+
+### Pending
+
+- **生产部署与验收待执行**：生产当前仍为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`）；v0.8.0 需 Lead 部署后补 `/healthz`、`smoke.ps1 -ExpectedLofiiVersion 0.6.0`（或 `-SkipLofii`）、drill 与生产 `/api/lofii/status` 验证；完成前不声明已部署/已验收。本版不新增 Tag/GitHub Release（待部署与验收通过后由 Lead 决定）。
+
 ## [v0.7.3] - 2026-10-27（已发布：Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围/QQ 正向验收；schema 保持 v17）
 
 ### Added

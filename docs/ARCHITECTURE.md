@@ -10,9 +10,11 @@ Internet
 
 Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  ├─ antifieldcloud.service (User=antifieldcloud, 127.0.0.1:3000)
- │   ├─ Host app.* → React SPA + /api（含 /api/metrics、/api/shares、/api/storage、/api/bots）
+ │   ├─ Host app.* → React SPA + /api（含 /api/metrics、/api/shares、/api/storage、/api/bots、/api/lofii）
  │   ├─ Host ai.*  → 会话校验 + Origin 校验 + 反向代理 → 127.0.0.1:4096 (opencode)
  │   ├─ 公开 Bot Webhook /api/bot/webhook/:botId → QQ Ed25519 验签 + 去重 + 命令/Chat（只读/AI）/入队
+ │   ├─ Lofii 对接 v0.8.0 → 127.0.0.1:3010（lofii-bot v0.6.0，仅 loopback）：每 5s 轮询 /status + /events/recent；
+ │   │   快照/最近 100 条事件仅内存；任务/移动/聊天控制代理；上游 alert → 本应用告警 status='event'
  │   ├─ QQ 入站图片（默认开启）→ 固定域名后缀下载（.qpic.cn/.qq.com/.qq.com.cn/.gtimg.cn，实际图床如 multimedia.nt.qq.com.cn）→ OpenCode prompt files → 模型 provider（不落盘）
  │   ├─ Bot 出站 → bots.qq.com / api.sgroup.qq.com（固定上游，15s 超时）
  │   ├─ Bot AI → 127.0.0.1:4096 OpenCode 本地 API（仅普通消息 Chat，默认关闭；无 /ask）
@@ -28,13 +30,14 @@ Raspberry Pi 5 (Debian 13, aarch64, 8 GB)
  ├─ Cloudflare Access（app.* 策略；bypass：/api/bot/webhook/*、/healthz、/s/*、/api/public/shares/*）
  ├─ antifieldcloud-world.service/.timer（root，周日 12:00，flock，4h 超时，沙箱）
  ├─ antifieldcloud-health.service/.timer（root，60s 写 /run/antifieldcloud/pi-health.json）
+ ├─ lofii-bot.service（独立附属服务，仅 127.0.0.1:3010，契约 v1；不对外、不进入 Cloudflare ingress）
  ├─ opencode.service / minecraft.service / cloudflared.service（现有）
  └─ nftables（默认拒绝；22/25565 限网段，22 限速；25575 仅 loopback）
 ```
 
 ## 2. 进程与请求路径
 
-- 单 Node 进程；Fastify 监听 `127.0.0.1:3000`。`main.ts` 在 listen 后启动告警评估与指标采样器。
+- 单 Node 进程；Fastify 监听 `127.0.0.1:3000`。`main.ts` 在 listen 后启动告警评估与指标采样器，并依次 `context.alerts.start()` → `startMetrics()` → `startBots()` → `startLofii()`；Lofii 未启用时为空操作、无定时器/网络请求。关闭时 `lofii.stop()` 先于 `app.close()`，`onClose` 也会再次调用（幂等）。
 - `onRequest` 先按 `Host` 分流：
   - `ai.<域名>`：校验 `af_session` 与 `Origin`，注入 `Authorization: Basic` 后交给 `http-proxy` 反代 opencode；未登录 HTML 302 到登录页，API/WS 401，Origin 非法 403 并审计。
   - `app.<域名>` 或 loopback：进入应用路由；附加上下文（不强制登录）。
@@ -88,6 +91,19 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
   只读取 assistant text，按 `BOT_AI_MAX_REPLY_CHARS` 截断后交给回复管线；图片以 prompt files data URL 交给模型 provider；超时/HTTP 错误只返回短码，不泄漏 OpenCode 密码/URL。
 - 配置/密钥：Bot 配置只存公开字段（QQ `appId`）；AppSecret 经 `crypto.ts` AES-256-GCM 加密后存 `bots` 三个密文字段；任何读取都只在服务端短生命周期解密。
 
+### 2.2 Lofii 请求与轮询路径（v0.8.0，默认关闭）
+
+- 组件：`server/src/lofii/client.ts`（HTTP 客户端）、`server/src/lofii/service.ts`（轮询/缓存/游标/告警映射/控制代理）、`server/src/http/routes/lofii.ts`（HTTP 路由）；`app.ts` 构造 `LofiiService` 并挂到 `AppContext.lofii`，`main.ts` 在 listen 后 `startLofii()`、退出时 `lofii.stop()`（`onClose` 同样 stop，幂等）。
+- 上游：独立附属服务 lofii-bot v0.6.0+，仅 `127.0.0.1:3010`，契约 `contractVersion=1`；应用是纯 HTTP 客户端，不消费 SSE、不访问其 RCON/OpenCode/记忆数据。
+- 轮询：`setInterval(LOFII_POLL_MS 默认 5000)` + 启动立即一轮；单飞 `inFlight` Promise，上一轮未结束复用同一 Promise（不并发/不堆积）；每轮 `Promise.allSettled([GET /status, GET /events/recent?limit=100])`。成功后更新 `statusSnapshot/version/contractVersion/lastPollAt/lastSuccessAt/failedPolls`；失败只更新 `reachable/stale/error` 并保留旧快照。`stale`：未连通且（从未成功时连续 3 轮失败，或距上次成功 > 3×轮询间隔）。
+- 客户端安全/边界：读 Token 用于 `/status`、`/events/recent`、`/history`、`/say`；控制 Token 仅用于 `/task/*` 与 `/move`；`LOFII_URL` 启动校验 loopback + http(s)；`redirect:'error'`、`AbortSignal.timeout(LOFII_TIMEOUT_MS 默认 2500)`、响应体 ≤2 MiB；错误统一 `LofiiError(code/statusCode/upstreamCode)`，message 移除上游 URL 与两枚 Token；上游 4xx 稳定码归一化为 `lofii_<code>`，401/403 → `lofii_auth_failed`，5xx/非 JSON → `lofii_upstream_error`，网络/超时/重定向 → `lofii_unavailable`。
+- 事件缓存：合并 `/events/recent` 与现有缓存，按 `id` 去重、按时间 newest-first、最多 `LOFII_EVENT_CACHE_LIMIT=100` 条；只存内存，不落库/不写日志（聊天事件正文也只存在这里）。
+- 告警游标：`meta.lofii.event_cursor={bootId,lastEventId,lastTs}`；每轮 `advanceCursor`：`eventsSupported=false` 直接返回；首次/无游标/`bootId` 变化 → 只写基线、返回 0（不重放 ring 旧告警）；否则 `eventsAfterCursor`（优先按 ring 位置，窗口外按 `<bootId>-<seq>` 序号或时间比较，无法判断宁可不重复）过滤 `type='alert'` 的事件 → `mapLofiiAlert`（已知 5 类映射 event/severity/title，未知 → `lofii_alert`，`severity==='error'` → critical）→ `AlertService.recordExternal`；`LOFII_ALERTS_ENABLED=false` 仍推进游标不写告警；写库失败只 warn 并置本轮 `error=lofii_cursor_failed`，不回滚缓存。
+- 告警落库：`AlertService.recordExternal(status='event')` 写 `alert_events`（event 截断 64、title 200、message 1000、details 清洗），不写 `alert_state`；`void deliverExternal(event)` 异步复用 webhook 与 Bot 通知，失败只记脱敏日志；`ALERTS_ENABLED=false` 时不写库/不投递。
+- 控制代理：`/tasks`、`/tasks/stop`、`/tasks/resume`、`/move` 使用控制 Token，成功后 `refresh()`（若已有在途轮询先等待再拉一轮）返回上游 `{ok:true,...}`；`/say` 使用读 Token，只读模式仍可用；控制 Token 为空时客户端直接抛 `lofii_control_disabled`（不发请求）。
+- HTTP 路由：全部 `requireAuth`；写操作加 `csrfGuard`；控制 limiter 20/min/IP、say limiter 10/min/IP；任务名/移动动作/taskId/消息长度与 `/` 前缀由服务端白名单校验；审计记动作与元数据（say 只记 chars）；`GET /api/lofii/status` 返回聚合快照（禁用时 `enabled:false` 空壳），`GET /api/lofii/history` 透传上游只读形状。
+- 前端：`/minecraft` 由 `meta.lofiiEnabled` 决定是否显示 Lofii 标签；`LofiiPanel` 每 5s 轮询 `/api/lofii/status`（页面隐藏时暂停），写操作走 `/api/lofii/*` 并在成功后刷新；浏览器不接触 Token/上游地址。
+
 ## 3. 模块
 
 | 模块 | 职责 |
@@ -105,11 +121,12 @@ Bot 出站为 Pi 直连；PC 无代理隧道脚本/计划任务，生产 env 不
 | `notes/` | 笔记/书签、标签、置顶、FTS5 搜索；附件（`origin=note`）与版本历史 |
 | `shares/` | 单文件/多文件分享 token/密码/过期/原子次数/吊销、公开元数据与逐项内容 |
 | `bot/` | QQ 官方 Bot 适配器、Chat AI、结构化长期记忆（群 scope key 用稳定 `member_openid`）、私聊角色卡、群聊目标共享角色卡、上下文文档（`context.ts`：作用域哈希、原子写、清理/sweep）、群消息模式过滤与 `GROUP_MESSAGE_CREATE`、出站连通性、AES-256-GCM 凭据、Webhook 验签/去重、命令（仅 C2C；含自助 `/reset`/`/forget confirm`）、回复管线、QQ 入站图片下载、连接自检、事件诊断、角色/记忆元数据管理、指标/静默、告警通知与文本发布队列/重试。行为保持拆分：`inbound.ts`（入站验签/限流/命令与 Chat 分发）、`diagnostics.ts`（事件/入站目标/指标/最近错误）、`queue.ts`（投递/发布状态机），`service.ts` 保留 facade/依赖装配 |
-| `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期与异地副本超期；Bot 通知入队 |
-| `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源、`requestMeta` 统一信任模型；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口 |
+| `lofii/` | v0.8.0 Lofii Minecraft Bot 对接（仅 loopback）：`client.ts`（读/控制 Token、redirect:error、超时、2 MiB 上限、稳定错误映射、URL/Token 脱敏）、`service.ts`（单飞轮询 status/recent、快照与 100 条事件内存缓存、stale、告警游标 `meta.lofii.event_cursor`、alert→`status='event'` 映射、控制代理成功后刷新）；不持久化聊天/事件，不改 schema |
+| `alerts/` | 阈值评估、状态去重/恢复、通用 webhook；世界备份/拉取/演练超期与异地副本超期；`recordExternal`（Lofii 等外部事件 `status='event'`，不写 `alert_state`，异步 webhook/Bot 通知）；Bot 通知入队 |
+| `http/` | 路由、守卫、错误处理、安全头、Host 分流、静态资源、`requestMeta` 统一信任模型；`bots.ts` 管理 API、`bot-webhook.ts` 公开入口、`lofii.ts` Lofii 只读/控制路由 |
 | `cli/` | provisioning、两阶段备份 CLI（prepare/pending/ack/snapshot-db）、backup-encryption.ts（age 加密/公钥校验/sidecar/孤儿正则） |
 | `util/` | 时间/路径/响应/错误；`status.ts` 只读状态文件解析 |
-| `web/` | React SPA（登录、Dashboard、文件、回收站、知识库、分享、MC、活动、设置、公开分享页、PWA） |
+| `web/` | React SPA（登录、Dashboard、文件、回收站、知识库、分享、MC + Lofii 面板、活动、设置、公开分享页、PWA） |
 
 脚本与部署侧：`scripts/backup-world.mjs`（root 世界一致性备份）、`scripts/world-pull.ps1`（Windows 周度拉取/ack）、
 `scripts/drill.ps1` + `scripts/drill-verify.mjs`（恢复演练）、`scripts/check-version.mjs`（版本一致性）；
@@ -152,6 +169,7 @@ SQLite（WAL）核心表（schema v17）：
   不通过 API/UI 暴露正文，按 AI 会话保留期清理；`/forget confirm` 与管理删除会同时清 DB 行与镜像。
 - `bot_inbound_targets`：`(bot_id, target_external_id, user_id)` 主键，记录最近入站目标/用户/类型/`is_direct`/`last_seen_at`；不存消息正文，每 Bot 最多 500 条、按事件保留期清理。
 - v0.7.3 上下文文档不在 SQLite：`BotContextStore` 在 `BOT_CONTEXT_DIR` 下按哈希作用域写 `role.md`/`memory.md`（派生数据，不进入备份；`/reset`/`/forget`/删除清理，维护任务回收超期孤儿）；OpenCode 仅按会话 permissions 读取当前作用域两份文档。
+- v0.8.0 Lofii 对接不新增表/列（schema 保持 v17）：告警游标只写入既有 `meta` 表的 `lofii.event_cursor` 键（JSON `{bootId,lastEventId,lastTs}`）；Lofii 事件/聊天缓存只在服务端内存，不落库；Lofii 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。
 
 世界备份/拉取/演练状态不在 SQLite：由 root/PC 脚本写 `/var/lib/antifieldcloud/{world-backup,world-pull,drill}-status.json`（0644，应用只读解析）。
 
@@ -236,6 +254,7 @@ SQLite（WAL）核心表（schema v17）：
 - Bot 部署：`bootstrap-env.sh` 生成/复用 `BOT_SECRET_KEY` 并纳管 `BOT_AI_*`、Chat/记忆键、连通性键、回答/图片键、`BOT_MEMORY_*`；
   `BOT_AI_VISION_ENABLED` 默认 true；`BOT_ENABLED` 默认 false。当前 schema v17；回滚需迁移前 DB 快照；QQ 入站图片需 OpenCode prompt files + 支持 image 的模型；平台仅 QQ 官方 Bot，无 Gateway/平台前置配置。
   Cloudflare Access 需对 Bot Webhook/health/公开分享路径 bypass（边缘配置，不在仓库内）；`smoke.ps1` 可选用 Access service token。
+- Lofii 部署（v0.8.0，默认关闭）：lofii-bot v0.6.0+ 作为独立服务仅监听 `127.0.0.1:3010`（不经 Cloudflare/nftables 对外）；应用 env 由 `bootstrap-env.sh` 纳管 `LOFII_*`，Token 由 root 执行 `scripts/sync-lofii-tokens.sh` 从 `/etc/lofii-bot/env` 同步（`--check` 只比较）；启用顺序为 lofii-bot 就绪 → 同步 Token → `LOFII_ENABLED=true` → 重启应用；回滚设 false + 重启，无 schema/DB 变更；`smoke.ps1 -ExpectedLofiiVersion 0.6.0`/`-SkipLofii` 覆盖只读检查。
 - fail2ban：dbfile 持久化封禁；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后以 `systemd-run --collect --on-active=3` 异步重启 fail2ban，从数据库恢复 set；手工 `systemctl reload nftables` 不触发 `ExecStartPost`，仍需 `systemctl restart fail2ban`。
 - 世界备份/健康探针 timer 由 root 运行；世界备份 unit 只读整机、仅 `/var/lib/antifieldcloud` 可写、flock 串行、4h 超时。
 
@@ -288,3 +307,7 @@ SQLite（WAL）核心表（schema v17）：
 8. **既有环境限制**：单管理员、`antifield` NOPASSWD sudo、RCON 监听 0.0.0.0、单 SD/无 LUKS、Cloudflare 明文、`http-proxy` 弃用警告、
    内存态限流、`Intl` 开销、迁移无校验和、健康检查为轻量就绪（非全量依赖探测）等按 `docs/SECURITY.md` §4 管理。
 9. **已收口项**：审计失败计数持久化、Bot 镜像孤儿清理、导入归档保留、告警 24h 重通知、备份锁心跳、DR-1 `clockSkew` 状态。
+10. **Lofii 事件告警语义（v0.8.0）**：外部 `alert` 仅以 `status='event'` 记录，不进入 firing/resolved 状态机，无恢复通知/冷却/去重（由上游负责）；告警只在轮询时发现，最多滞后一个 `LOFII_POLL_MS` 周期。
+11. **Lofii 聊天/事件不持久化（v0.8.0）**：事件与聊天只存在服务端内存（≤100 条），应用/Lofii 重启即丢失；不提供历史查询、导出或搜索。
+12. **Lofii 单实例与轮询延迟（v0.8.0）**：单进程内存缓存、单 Lofii 上游；控制结果最终一致，状态/事件最多滞后一个轮询周期；Lofii 不可达时仅展示缓存并降级。
+13. **v0.8.0 生产验收待执行**：本地实现与门禁完成，生产仍为 v0.7.3；在 Lead 完成部署、smoke（`-ExpectedLofiiVersion 0.6.0` 或 `-SkipLofii`）、drill 与生产 `/api/lofii/status` 联调前，不声明已上线/已验收。

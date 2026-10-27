@@ -18,6 +18,8 @@
   [string]$ExpectedVersion = "",
   [int]$ExpectedSchemaVersion = 0,
   [string]$ExpectedOpenCodeVersion = "",
+  [string]$ExpectedLofiiVersion = "",
+  [switch]$SkipLofii,
   [string[]]$ExpectedSshSources = @(),
   [int]$MaxMcpProcesses = 12,
   [string]$AccessClientId = "",
@@ -278,6 +280,26 @@ Check "Pi 服务状态" {
   $text = ($out | Out-String).Trim()
   if ($text -notmatch "active active active active") { throw $text }
   $text
+}
+
+# v0.8.0 Lofii Bot（独立附属服务）：默认只检查 active；指定 -ExpectedLofiiVersion 时同时断言版本/契约。
+if (-not $SkipLofii) {
+  Check "Lofii Bot 服务状态" {
+    $out = Invoke-PiSsh "systemctl is-active lofii-bot" | Out-String
+    $text = $out.Trim()
+    if ($text -ne "active") { throw "lofii-bot 状态：$text" }
+    "active"
+  }
+  if ($ExpectedLofiiVersion) {
+    Check "Lofii Bot 版本与契约" {
+      $out = Invoke-PiSsh "curl -fsS --max-time 5 http://127.0.0.1:3010/healthz" | Out-String
+      $health = $null
+      try { $health = $out.Trim() | ConvertFrom-Json } catch { throw "healthz 不是 JSON：$out" }
+      if ([string]$health.version -ne $ExpectedLofiiVersion) { throw "version=$($health.version)，期望 $ExpectedLofiiVersion" }
+      if ([int]$health.contractVersion -ne 1) { throw "contractVersion=$($health.contractVersion)，期望 1" }
+      "version=$($health.version) contractVersion=$($health.contractVersion)"
+    }
+  }
 }
 
 Check "Pi systemctl --failed 为空" {

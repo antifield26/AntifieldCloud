@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { AlertsCard } from './AlertsCard'
@@ -116,5 +116,44 @@ describe('AlertsCard 筛选与分页', () => {
     await waitFor(() =>
       expect(mocks.list).toHaveBeenLastCalledWith(5, { offset: 0, event: undefined, status: undefined }, expect.anything()),
     )
+  })
+
+  it('v0.8 Lofii 事件告警显示中文标签与“已记录”状态', async () => {
+    mocks.list.mockResolvedValue(
+      result(
+        [
+          {
+            ...alertItem(9),
+            event: 'lofii_low_health',
+            title: '',
+            severity: 'warning',
+            status: 'event',
+            message: 'Lofii 血量偏低：8/20',
+          },
+        ],
+        1,
+      ),
+    )
+    renderCard()
+    // title 为空时回退为事件中文标签（事件筛选下拉里也有同名选项）
+    expect((await screen.findAllByText('Lofii 血量过低')).length).toBeGreaterThan(0)
+    expect(screen.getByText('已记录', { selector: '.badge' })).toBeTruthy()
+    expect(screen.getByText('Lofii 血量偏低：8/20')).toBeTruthy()
+
+    // 状态筛选包含“已记录”，选择后带 status=event 请求
+    const statusSelect = screen.getByLabelText('按状态筛选告警历史')
+    expect(within(statusSelect).getByRole('option', { name: '已记录' })).toBeTruthy()
+    await userEvent.selectOptions(statusSelect, 'event')
+    await waitFor(() =>
+      expect(mocks.list).toHaveBeenLastCalledWith(
+        5,
+        { offset: 0, event: undefined, status: 'event' },
+        expect.anything(),
+      ),
+    )
+
+    // 事件筛选包含 Lofii 条件
+    const eventSelect = screen.getByLabelText('按事件筛选告警历史')
+    expect(within(eventSelect).getByRole('option', { name: 'Lofii 血量过低' })).toBeTruthy()
   })
 })

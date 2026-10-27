@@ -5,8 +5,9 @@
 - **公网入口**：`app.example.com`、`ai.example.com` 经 Cloudflare Tunnel（名称 `pi`，出站）；Cloudflare 终止 TLS，可见明文。
 - **Pi 本机**：应用只监听 `127.0.0.1:3000`；cloudflared 出站连接；opencode `127.0.0.1:4096`；nginx/certbot 不作为监控项。
 - **现有服务**：Minecraft（Paper 26.1.2，在线模式关闭、白名单开启）、SakuraFRP、RDP/桌面、opencode。
-- **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码、`BOT_SECRET_KEY`、APP_VERSION）、SQLite（TOTP secret、会话哈希、恢复码哈希、
+- **秘密**：`/etc/antifieldcloud/env`（RCON/opencode 密码、`BOT_SECRET_KEY`、`LOFII_READ_TOKEN`/`LOFII_CONTROL_TOKEN`、APP_VERSION）、SQLite（TOTP secret、会话哈希、恢复码哈希、
   Bot 凭据密文）、备份归档（默认明文含 TOTP/会话；开启整包加密后为 age 密文）、密钥包 age 私钥、**备份整包加密独立 age 私钥**（离线 ≥2 份，Pi 只有公钥）。
+- **Lofii Token（v0.8.0）**：`LOFII_READ_TOKEN`（`/status`、`/history`、`/say`）与 `LOFII_CONTROL_TOKEN`（`/task/*`、`/move`）分离，来自独立服务 lofii-bot 的 `/etc/lofii-bot/env`（root:lofiibot 0640），由 root 执行 `scripts/sync-lofii-tokens.sh` 同步到应用 env；应用/文档/日志/前端都不持有或回显 Token；控制 Token 为空即只读。应用不读取/复制 lofii-bot 的 RCON/OpenCode 密钥。
 - **Bot 凭据**：QQ 官方 Bot AppSecret 由 `BOT_SECRET_KEY`（AES-256-GCM）加密后落库；
   `BOT_SECRET_KEY` 只存在于 env 与加密备份中，丢失后已存 AppSecret 不可解密（只能重新录入）。
 - **数据与状态**：`/var/lib/antifieldcloud`（DB/files/backups/world-backups/secrets/bot-memory）、只读状态文件
@@ -47,6 +48,10 @@
 | QQ 入站图片外发/隐私 | 图片被模型 provider 看到或落盘 | 默认开启但仅 QQ 固定域名后缀下载、image mime/大小限制、内存不落盘、失败降级；README/SECURITY 明示图片会交给模型 provider；可 env 关闭 |
 | Bot 平台回调洪泛 | CPU/DB/限流资源耗尽 | Webhook 未验签 120/min/Bot、已验签 300/min/Bot（验签后才扣、分桶）、IP 120/min；命令 120/min/用户；拒绝/限流审计按窗口聚合；事件保留 7 天并定期清理；队列重试上限/死信 |
 | AI 工具隔离降级 | 以默认工具权限运行 Chat，模型可越权调用工具 | 降级 fail-closed——启用发送工具且隔离不可用时拒绝新 Chat（503/固定提示/诊断事件），10 分钟重试窗口，上游恢复自动恢复；不以默认权限继续 |
+| Lofii Token 泄露/被引到外部主机 | 攻击者可读状态/控制 Lofii 或伪造告警 | 读/控制 Token 分离；上游仅 loopback + http(s) 启动校验；客户端 `redirect:'error'`；Token 只在服务端 env/内存，不下发浏览器/日志/API；错误文本移除 URL/Token；同步脚本仅 root、不回显 |
+| Lofii 控制面被滥用 | 未授权启停任务/移动/游戏内发言 | 全部接口需登录；写操作 CSRF + 每 IP 限流（控制 20/min、`/say` 10/min）；服务端任务/移动/长度白名单；UI 对开始/停止/恢复/发送二次确认；审计只记动作与元数据；未配置控制 Token 即只读 |
+| Lofii 聊天/事件隐私 | 聊天正文落库或进入日志/浏览器 | 事件/聊天仅服务端内存缓存（≤100 条），不落库、不写日志/审计正文；`/say` 审计只记字符数；事件 `data` 视为不可信 unknown，UI 只读白名单字段并纯文本渲染，不展示 Token/URL/内部路径 |
+| Lofii 告警污染/重放 | 重复历史事件或伪造活跃告警 | 上游 alert 映射为 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.lofii.event_cursor`+`bootId` 基线防止重放；details 深度/键数/数组/字符串清洗；`LOFII_ALERTS_ENABLED=false` 可只推进游标不写 |
 | 供应链/依赖 | 代码执行 | 运行时依赖少；`npm ci --ignore-scripts`；不做服务端构建；CI `npm audit --omit=dev`、gitleaks、Dependabot |
 
 ## 3. 已实现控制
@@ -129,6 +134,16 @@
 - **Webhook 限流/审计收敛**：未验签与已验签请求分桶（120/min vs 300/min per Bot，验签后才扣业务桶），拒绝/限流审计按「每 Bot×动作×分钟」聚合
   （首条 + 每 50 条），未认证流量不能通过洪泛饿死合法事件或写满审计表。
 - **审计策略**：非安全审计事务外 best-effort，失败不阻断已完成的业务；失败计数/最近错误/时间在 best-effort 写入 `audit_write_failures` 并经 `GET /api/version.audit` 暴露（含 `persisted`），跨重启可见；安全关键审计（登录/再认证/发布/工具隔离/Webhook 拒绝）保持逐条记录；公开下载计数仍在事务内。
+
+### Lofii（v0.8.0，默认关闭）
+
+- **网络/上游**：lofii-bot 是独立服务，仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `LOFII_URL` 启用时必须 loopback + http(s)（启动校验，非 loopback 拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(LOFII_TIMEOUT_MS 默认 2500)`、响应体 ≤2 MiB，网络/超时/重定向统一 `lofii_unavailable` 且不暴露底层 message。
+- **Token 分离**：读 Token 仅用于 `/status`、`/events/recent`、`/history`、`/say`；控制 Token 仅用于 `/task/*`、`/move`；控制 Token 为空时控制方法直接 `lofii_control_disabled`（不发请求）。Token 来自独立 env，由 root 的 `scripts/sync-lofii-tokens.sh` 同步（只读 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN`，不读取 RCON/OpenCode 密码；写前备份 env、原子 install、保持 0640，不回显 Token）。
+- **HTTP 面**：`/api/lofii/*` 全部 `requireAuth`；写操作额外 `csrfGuard`；控制类共享 20/min/IP、`/say` 10/min/IP 限流；服务端白名单校验任务名（7 种）、移动动作（4 种）、`taskId`（≤64）、消息（trim 后 1–720、禁止 `/` 开头）；错误统一映射为固定中文文案，不含上游原文/URL/Token。
+- **审计**：`lofii.task.start/stop/resume`、`lofii.move`、`lofii.control_failed` 记录动作、目标名/动作/taskId 与稳定错误码；`lofii.say` 只记录字符数，**绝不记录聊天正文**；事件/聊天不写审计正文。
+- **告警联动**：`AlertService.recordExternal` 只写 `alert_events(status='event')`，不写 `alert_state`、不参与 firing/resolved；details 只保留清洗后的基础类型（深度≤2、键≤20、数组≤20、字符串≤300），并附加 `source/lofiiEventId/lofiiType`；异步复用 webhook（可选 HMAC）与 Bot 通知，失败只记脱敏日志；游标 `meta.lofii.event_cursor` 防重放。
+- **浏览器边界**：前端不接触 Lofii Token/上游地址，不直连 SSE/Lofii；`/api/lofii/status` 只返回聚合快照与内存事件；事件与聊天纯文本渲染，历史表格只显示白名单字段；控制未启用时全部写操作禁用。
+- **默认关闭/回滚**：`LOFII_ENABLED=false` 默认；回滚设 false（可选清空 Token）并重启即可，无 schema/DB 变更；生产应用当前为 v0.7.3，v0.8.0 部署/验收待执行。
 
 ### HTTP
 
@@ -250,6 +265,11 @@
 39. **群共享记忆迁移残余**：无法唯一映射到 `member_openid` 的旧条目保留 `legacy:` 前缀、不参与按成员删除；历史同名用户互相覆盖的内容无法自动还原；迁移只执行一次（`meta.bot_group_memory_owner_migrated_v1`），迁移后旧格式不再生成。
 40. **配置校验增强的运维影响**：`NODE_ENV` 非法值、`OPENCODE_URL` 非 loopback、`APP_ORIGIN==AI_ORIGIN`、`BOT_SEARCH_MODE` 非法值会直接拒绝启动（失败即退出）。升级后若服务起不来，先检查 env 是否含遗留非法值，不要通过放宽校验绕过。
 41. **主机配置模板为占位**：`deploy/host/` 模板含 `<SSH_USER>` 等占位，安装时必须按实际替换并做 `sshd -t`/`nft -c`/服务重启验证；模板不包含用户自定义的额外加固项，重建后需与备份的密钥包对照。
+42. **Lofii 告警只有事件语义（v0.8.0）**：上游 `alert` 仅以 `status='event'` 记录，不参与 firing/resolved 状态机，无恢复通知/冷却/去重；告警只在轮询时发现，最多滞后一个 `LOFII_POLL_MS` 周期。需要“活跃/恢复”语义时应在 Lofii 侧管理。
+43. **Lofii 聊天/事件不持久化（v0.8.0）**：事件与聊天只存在服务端内存（≤100 条），应用/Lofii 重启即丢失；不提供历史/导出/搜索，也不进入备份；`/say` 内容不落库/不写日志（审计只记字符数）。
+44. **Lofii 控制面是真实写操作（v0.8.0）**：启用控制 Token 后本应用可让 Lofii 开始/停止任务、移动与游戏内发言，属于对 Minecraft 世界的真实操作（仍受 Lofii 自身安全区/权限限制）；控制 Token 应按需配置/轮换，误操作需人工在游戏内纠正。
+45. **Lofii 单实例/轮询延迟（v0.8.0）**：单进程内存缓存、单 Lofii 上游；状态/事件最多滞后一个轮询周期，控制结果最终一致；不支持多实例/多副本/多 Lofii 实例。
+46. **v0.8.0 生产验收待执行**：本地实现与门禁完成，生产应用当前为 v0.7.3；在 Lead 完成部署、smoke（含 `-ExpectedLofiiVersion 0.6.0` 或 `-SkipLofii`）、drill 与生产 `/api/lofii/status` 联调前，不声明已上线/已验收。
 
 ## 5. 运维安全清单
 
@@ -328,5 +348,6 @@
   - AI 主机：`/__af/sso/*` 超限 429、匿名请求 429、审计按 action+IP 去重。
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见（`audit_write_failures` 持久化）。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`BOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
-  - 当前基线：`npm test` **521**（1 skip）、`test:web` **222**、服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`check-version` 严格 `0.7.3`、`check-prod-deps` 通过。
-  - 生产：release `20261027T060134Z`/commit `aedc3c7`，完整 Access smoke **34/0/0/2**；读范围矩阵 7/7 通过；drill `20261027T061319Z` schema17 通过；OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过；文档模式已显式启用。
+  - Lofii（v0.8.0）：`LOFII_URL` 非 loopback/非法协议拒绝启动；`LOFII_ENABLED=true` 缺读 Token 拒绝启动；控制 Token 为空时控制接口 503 且不发请求、`/say` 仍可用；上游 401/403→502、4xx 稳定码透传、429→429、5xx/非 JSON→502、网络/超时/重定向→503，错误文本不含 URL/Token；未认证 401、缺 CSRF 403；控制 20/min、`/say` 10/min 超限 429；`/say` 正文不写审计（只记 chars）；`/events/recent` 404 只降级 `eventsSupported=false`；告警 `status='event'` 不写 `alert_state`、游标基线不重放；事件缓存 ≤100 且仅内存。
+  - 当前基线（v0.8.0 本地，2026-10-27）：`npm test` **566**（565 pass、1 skip）、`test:web` **250**（47 文件）；服务端覆盖率 **93.06/78.67/88.70**、前端 **55.48/49.91/48.45**（Lines/Branches/Functions）；`check-version` 严格 `0.8.0` 期望（部署前以实际运行结果为准）、`check-prod-deps` 通过。
+  - 生产（当前仍为 v0.7.3）：release `20261027T060134Z`/commit `aedc3c7`，完整 Access smoke **34/0/0/2**；读范围矩阵 7/7 通过；drill `20261027T061319Z` schema17 通过；OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过；文档模式已显式启用。v0.8.0 部署/验收待 Lead 执行，完成前不声明上线。

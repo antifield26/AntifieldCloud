@@ -1,5 +1,13 @@
 # 路线图
 
+## v0.8.0（本地实现完成，生产部署/验收待执行；Lofii Bot 只读/控制/告警对接 + `/minecraft` 合并标签；schema 保持 v17；OpenCode v2.1.4）
+
+- **范围**：服务端轮询独立 Lofii Bot（仅 loopback `127.0.0.1:3010`，lofii-bot v0.6.0 契约 v1）的 `/status` 与 `/events/recent`，缓存快照与最近 100 条事件；`GET /api/lofii/status|history` 与 `POST /api/lofii/tasks|tasks/stop|tasks/resume|move|say`；7 种任务、4 种移动、游戏内聊天；读/控制 Token 分离，控制 Token 为空即只读。
+- **告警**：上游 `alert` 事件映射为 `status='event'` 历史事件（不写 `alert_state`、不参与 firing/resolved）、游标 `meta.lofii.event_cursor`（首次/重启不重放）、复用 webhook/Bot 通知；`LOFII_ALERTS_ENABLED` 默认 true。
+- **Web**：`/minecraft` 改为「服务器 / Lofii」双标签（键盘可操作、`?tab=lofii`/`#lofii` 深链）；Lofii 面板含状态/任务/移动/聊天/事件流/历史，开始/停止/恢复/发送二次确认，禁用/不可达/过期/只读分别降级；不展示 Token/地址。
+- **安全/部署**：上游仅 loopback、`redirect: 'error'`、超时、2 MiB 响应上限、错误脱敏；全部接口需登录，写操作 CSRF + IP 限流（控制 20/min、聊天 10/min）；审计不含聊天正文；`LOFII_*` env、`scripts/sync-lofii-tokens.sh`、`bootstrap-env.sh`、`deploy/env.example`、`smoke.ps1 -ExpectedLofiiVersion 0.6.0`/`-SkipLofii`；schema 无迁移。
+- **状态**：本地实现与门禁完成（2026-10-27：`npm run check` 通过；`npm test` **566**（565 pass、1 skip）、`test:web` **250**（47 文件）；覆盖率 93.06/78.67/88.70 与 55.48/49.91/48.45 门禁通过；build 通过）。**生产当前仍为 v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`）；v0.8.0 尚未 Tag/Release，部署与验收（含 `-ExpectedLofiiVersion 0.6.0` smoke、drill、生产 `/api/lofii/status` 联调）待 Lead 执行，完成前不声明已上线。
+
 ## v0.7.3（已发布：Tag `v0.7.3` + GitHub Release [AntifieldCloud v0.7.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.3)；已部署生产并完成读范围/QQ 正向验收；Bot 提示词文档化 + 按需 read；schema 保持 v17；OpenCode v2.1.4）
 
 - **范围**：角色卡只在会话创建时发送；后续轮不再发送角色卡/记忆正文，只给角色名/条数/只读文档路径；新增 `BotContextStore`（scope 哈希目录、原子写、清理/sweep）；OpenCode 会话仅放行当前作用域 `role.md`/`memory.md` 的 `read`；`BOT_AI_CONTEXT_READ_ENABLED`（默认 false）/`BOT_CONTEXT_DIR`；权限拒绝 fail-closed；群角色变更重置共享会话；`/reset`、`/forget`、Bot/目标删除清理文档。

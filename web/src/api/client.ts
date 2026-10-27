@@ -53,6 +53,12 @@ import type {
   FileListResult,
   FileSearchResult,
   KnowledgeQuery,
+  LofiiActionResult,
+  LofiiHistory,
+  LofiiHistoryQuery,
+  LofiiMoveAction,
+  LofiiSnapshot,
+  LofiiTaskName,
   LoginResult,
   MeResult,
   MetricsRange,
@@ -190,6 +196,24 @@ const ERROR_MESSAGES: Record<string, string> = {
   too_many_attachments: '附件数量超过限制',
   // v0.7.0：Bot AI 工具隔离 fail-closed（不降级为无工具模式）
   bot_ai_tool_isolation_unavailable: 'Bot AI 工具安全隔离不可用，已拒绝本轮 AI 请求（请检查 botmsg MCP 与隔离配置）',
+  // v0.8.0：Lofii 集成（服务端把 Lofii 上游错误映射为 lofii_* 前缀）
+  lofii_disabled: 'Lofii 集成未启用（LOFII_ENABLED=false）',
+  lofii_unavailable: 'Lofii 服务不可达，请检查 Lofii 进程与 Token 配置',
+  lofii_control_disabled: 'Lofii 控制未启用（服务端未配置 LOFII_CONTROL_TOKEN）',
+  lofii_auth_failed: 'Lofii Token 认证失败，请检查服务端 Lofii 配置',
+  lofii_upstream_error: 'Lofii 上游返回异常，请查看 Lofii 日志',
+  lofii_resume_pending: 'Lofii 有可恢复任务，请先恢复或停止任务',
+  lofii_resume_failed: 'Lofii 任务恢复失败（可能已过期或 taskId 不匹配）',
+  lofii_queue_full: 'Lofii 任务队列已满（最多 3 个）',
+  lofii_no_active_task: 'Lofii 当前没有进行中的任务',
+  lofii_no_pending_task: 'Lofii 没有可恢复的任务',
+  lofii_task_disabled: 'Lofii 任务功能已关闭',
+  lofii_task_active: 'Lofii 任务进行中，请先停止任务',
+  lofii_target_not_online: '目标玩家不在线',
+  lofii_not_connected: 'Lofii 尚未连接 Minecraft',
+  lofii_rate_limited: 'Lofii 操作过于频繁，请稍后再试',
+  lofii_invalid_request: 'Lofii 请求参数不合法',
+  message_must_not_start_with_slash: '聊天内容不能以 / 开头（不会执行任何命令）',
 }
 
 export class ApiError extends Error {
@@ -1224,6 +1248,45 @@ export const api = {
     },
     removeWhitelist(name: string): Promise<WhitelistMutationResult> {
       return del<WhitelistMutationResult>(`/api/mc/whitelist/${encodeId(name)}`)
+    },
+  },
+  /**
+   * Lofii 集成（v0.8.0）：状态/历史为只读 GET；任务/移动/聊天为写操作，
+   * 服务端校验登录态与 CSRF，并可能返回 lofii_disabled/lofii_control_disabled 等降级错误。
+   * 本客户端不接触 Lofii Token/URL，控制操作后由调用方重新拉取 status 校验结果。
+   */
+  lofii: {
+    status(signal?: AbortSignal): Promise<LofiiSnapshot> {
+      return get<LofiiSnapshot>('/api/lofii/status', { signal })
+    },
+    /** Lofii 历史：kind=samples|alerts；服务端透传 Lofii 形状（samples/alerts 动态键）。 */
+    history(query: LofiiHistoryQuery, signal?: AbortSignal): Promise<LofiiHistory> {
+      return get<LofiiHistory>(
+        `/api/lofii/history${buildQuery({
+          kind: query.kind,
+          from: query.from,
+          to: query.to,
+          limit: query.limit,
+        })}`,
+        { signal },
+      )
+    },
+    startTask(name: LofiiTaskName): Promise<LofiiActionResult> {
+      return post<LofiiActionResult>('/api/lofii/tasks', { name })
+    },
+    stopTask(): Promise<LofiiActionResult> {
+      return post<LofiiActionResult>('/api/lofii/tasks/stop', {})
+    },
+    /** 省略 taskId 时由服务端恢复唯一 pending 任务；带 taskId 校验是否匹配。 */
+    resumeTask(taskId?: string): Promise<LofiiActionResult> {
+      return post<LofiiActionResult>('/api/lofii/tasks/resume', taskId ? { taskId } : {})
+    },
+    /** home 忽略 target；come/follow 的 target 必须在 Lofii 在线玩家列表中。 */
+    move(action: LofiiMoveAction, target?: string): Promise<LofiiActionResult> {
+      return post<LofiiActionResult>('/api/lofii/move', target ? { action, target } : { action })
+    },
+    say(message: string): Promise<LofiiActionResult> {
+      return post<LofiiActionResult>('/api/lofii/say', { message })
     },
   },
   /**

@@ -44,6 +44,8 @@ import { SearxngSearchClient } from './bot/search.ts'
 import { registerBotRoutes } from './http/routes/bots.ts'
 import { registerBotWebhookRoutes } from './http/routes/bot-webhook.ts'
 import { registerBotAiToolRoutes } from './http/routes/bot-ai-tool.ts'
+import { LofiiService } from './lofii/service.ts'
+import { registerLofiiRoutes } from './http/routes/lofii.ts'
 import { wantsHtml } from './http/util.ts'
 
 export interface AppContext {
@@ -63,10 +65,14 @@ export interface AppContext {
   metrics: MetricsService
   bots: BotService
   proxy: OpenCodeProxy
+  /** v0.8.0 Lofii Minecraft Bot 对接（禁用时 snapshot 为 enabled:false）。 */
+  lofii: LofiiService
   /** listen 成功后启动指标采样（metricsEnabled=false 时空操作；重复调用幂等）。 */
   startMetrics(): void
   /** listen 成功后启动 Bot 投递/发布队列（Bot 未启用时为空操作；重复调用幂等）。 */
   startBots(): void
+  /** listen 成功后启动 Lofii 状态/事件轮询（未启用时为空操作；重复调用幂等）。 */
+  startLofii(): void
   runMaintenance(): void
 }
 
@@ -217,6 +223,18 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     },
     notifyEvent: (event) => bots.notifyAlert(event),
   })
+  // Lofii 轮询依赖 AlertService.recordExternal；禁用时无定时器、无网络请求。
+  const lofii = new LofiiService({
+    db,
+    config,
+    alerts,
+    log: (level, message, detail) => {
+      const payload = detail ? { detail } : {}
+      if (level === 'error') app.log.error(payload, message)
+      else if (level === 'warn') app.log.warn(payload, message)
+      else app.log.info(payload, message)
+    },
+  })
   const proxy = new OpenCodeProxy(config, auth, app.log, {
     audit: (action, target, detail, ip) => audit(db, 'anonymous', action, target, detail, ip),
   })
@@ -349,6 +367,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   registerBotRoutes(app, config, bots, auth)
   registerBotWebhookRoutes(app, config, bots)
   registerBotAiToolRoutes(app, bots)
+  registerLofiiRoutes(app, config, lofii, db)
 
   registerErrorHandler(app)
 
@@ -377,6 +396,7 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   app.addHook('onClose', async () => {
+    lofii.stop()
     alerts.stop()
     metricsSampler.stop()
     // ARCH-04：关闭前有限等待 Bot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。
@@ -400,6 +420,10 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
 
   function startBots(): void {
     bots.start()
+  }
+
+  function startLofii(): void {
+    lofii.start()
   }
 
   function runMaintenance(): void {
@@ -443,8 +467,10 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
     metrics,
     bots,
     proxy,
+    lofii,
     startMetrics,
     startBots,
+    startLofii,
     runMaintenance,
   }
 }

@@ -1,9 +1,9 @@
 # AntifieldCloud · 个人工作台
 
-面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
+面向 Raspberry Pi 5（8 GB，Debian 13）的自托管个人工作台：统一登录、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、Lofii Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v0.7.3（**已发布：Tag `v0.7.3` + GitHub Release [AntifieldCloud v0.7.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.3)；已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**），schema **v17**（无迁移），OpenCode **v2.1.4**。当前生产 v0.7.3（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；文档模式已显式启用，mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过）。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
-> 测试基线：`npm test` **521**（1 skip）、`npm run test:web` **222**（44 文件）；服务端覆盖率 **92.93/78.37/88.55**、前端 **52.31/47.32/45.02**；`npm run check`、`check-version`（严格 `0.7.3`）、`build`（`index-fid8njfw.js` 726.86 kB）均通过；Node.js **v26.12.1**。
+> 状态：v0.8.0（**本地实现完成，生产部署/验收待执行**；生产当前仍为 v0.7.3 —— release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17，完整 Access smoke **34/0/0/2**，读范围矩阵 7/7、drill `20261027T061319Z` 通过、真实 QQ 私聊/群聊正向验收通过），schema **v17**（无迁移），OpenCode **v2.1.4**。v0.8.0 新增 Lofii Minecraft Bot 对接（只读状态、任务/移动/游戏内聊天控制、事件流与告警历史）与 `/minecraft` 合并标签页，默认关闭，回滚即设 `LOFII_ENABLED=false`。备份整包加密与异地副本默认关闭，异地副本按当前运维决定保持关闭。
+> 测试基线（v0.8.0 本地，2026-10-27）：`npm test` **566**（565 pass、1 skip）、`npm run test:web` **250**（47 文件）；服务端覆盖率 **Lines 93.06% / Branches 78.67% / Functions 88.70%**、前端 **Lines 55.48% / Branches 49.91% / Functions 48.45%**（`test:coverage`、`test:web:coverage` 门禁通过）；`npm run check`（typecheck + eslint + 服务端/前端测试）、`check-version`（严格 `0.8.0`）、`build`（`index-DHjowEA5.js` 761.09 kB）均通过；Node.js **v26.12.1**。生产部署/验收待执行（生产当前仍为 v0.7.3）。
 > 部署与运维见 [docs/DEPLOY.md](docs/DEPLOY.md)，备份/恢复见 [docs/BACKUP.md](docs/BACKUP.md)，契约见 [docs/API.md](docs/API.md)，路线与验收记录见 [docs/ROADMAP.md](docs/ROADMAP.md) 与 [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)。
 
 ## 技术栈
@@ -12,8 +12,9 @@
 - 前端：React 19 + TypeScript + Vite，中文暗色界面，PWA（离线壳，不缓存 API）
 - 类型工具链：TypeScript 7.0.2（`@typescript/native` 别名提供 `tsc`）；`typescript` 包别名到 `@typescript/typescript6@6.0.2`，仅供 typescript-eslint 8.x 使用；当前结论为**暂不升级、保留双 alias**
 - Bot：仅 QQ 官方 Bot（AppSecret 派生 Ed25519：op=13 回调校验 + op=0 事件验签，`{opcode:12}` 确认）；普通消息 Chat 使用本地 OpenCode AI，结构化长期记忆落 DB（schema v17；legacy `DATA_DIR/bot-memory` 镜像仅迁移/fallback，孤儿镜像由维护任务清理）；v0.7.3 文档模式把角色卡与记忆写为只读文档，角色卡只在会话创建时发送，后续轮由模型按需 `read`（默认关闭；生产读范围矩阵 7/7 通过后已显式启用）；回复按 QQ 2000 字符分段、纯文本格式化；入站图片默认交给 AI（OpenCode prompt files + 支持 image 输入的模型）；凭据 AES-256-GCM（`BOT_SECRET_KEY`），只出站调用 QQ 平台 API 与本机 OpenCode
+- Lofii：Minecraft 附属 Bot（独立服务，仅 loopback `127.0.0.1:3010`）的只读/控制对接：读 Token 与 控制 Token 分离，控制 Token 为空即只读；服务端每 5s 轮询 `/status` 与 `/events/recent`（lofii-bot v0.6.0 契约 v1），事件环最多缓存 100 条；上游 `alert` 映射为本应用告警事件 `status='event'`；浏览器不直连 Lofii、不经手 Token
 - 部署：Cloudflare Tunnel（`app.example.com` / `ai.example.com`）+ systemd + nftables；不使用 Docker
-- 测试：`node --test`（服务端 + 运维脚本 **521**，1 skip）+ Vitest/jsdom（**222**，44 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 Lines/Functions/Branches 91/85/76；前端 50/45/42）
+- 测试：`node --test`（服务端 + 运维脚本 **566**，565 pass / 1 skip）+ Vitest/jsdom（**250**，47 文件），ESLint，`tsc --noEmit`，覆盖率门禁（服务端 Lines/Functions/Branches 91/85/76；前端 50/45/42）
 - CI：`npm run check` + `npm run build`、服务端/前端覆盖率、运行时依赖边界、`npm audit`（生产依赖）、gitleaks 密钥扫描、shellcheck、nftables 语法、PowerShell 5.1 解析/BOM 检查、版本一致性、Dependabot 月度依赖更新
 
 ## 功能
@@ -48,6 +49,19 @@
 - SLP + RCON 只读状态（版本/MOTD/在线玩家/TPS/白名单数/服务状态）；白名单增删并执行后复核。
 - 应用 API 不提供任意 RCON 命令、启停、封禁、OP；仅白名单增删 + 只读状态。
 - 世界一致性备份由 root 脚本 `scripts/backup-world.mjs` 通过固定 `save-off` → `save-all flush` → `save-on`（finally）完成，应用 API 不可触达。
+- `/minecraft` 页为「服务器 / Lofii」两个可键盘操作标签页（`role=tab`、左右方向键/Home/End，`?tab=lofii` 或 `#lofii` 深链）；`/api/version.lofiiEnabled=false` 时不展示 Lofii 标签，页面行为与旧版一致。
+
+### Lofii Minecraft Bot（v0.8.0，默认关闭）
+
+- 独立附属服务 `lofii-bot`（v0.6.0+，契约 `contractVersion=1`，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent`（默认 5s）获取状态与最近事件，**浏览器不直连 Lofii**。
+- 只读状态：运行状态、Minecraft 连接、服务器在线/TPS、Lofii 血量/饥饿、AI 队列、记忆、版本/契约、白名单数量、运行时长、断线记录；不可达/数据过期/旧版无事件流时显示缓存与降级说明。
+- 任务控制：7 种任务（钓鱼/种田/砍树/挖矿/砍天然林/睡觉/巡逻）、开始（已有任务时入队，最多 3 个）、停止（中断并清空队列）、恢复待恢复任务（过期自动中断）；开始/停止/恢复均需二次确认。
+- 移动控制：回家/过来/跟随/停下；目标玩家来自 Lofii 在线列表；任务进行中不可手动移动。
+- 游戏内聊天：以 Lofii 身份发送纯文本（trim 后 1–720 字符，禁止 `/` 开头），发送前二次确认；不执行任何命令，聊天内容不落库。
+- 事件流：`/events/recent` 内存环最近 100 条（聊天/任务/状态/移动/告警），按类型筛选、纯文本渲染；Lofii 重启后清空，本应用不保存事件历史。
+- 历史记录：`GET /api/lofii/history?kind=samples|alerts` 透传上游只读形状（默认最近 24h、最多 100 条），只读表格，不展开 details。
+- 告警：Lofii `alert` 事件映射为本应用告警事件（`status='event'`，仅记录，不参与活跃/恢复状态机），可复用 webhook 与 Bot 通知；`LOFII_ALERTS_ENABLED=false` 时只推进游标不写告警。
+- 安全：读/控制 Token 分离且仅 loopback；控制 Token 为空时控制操作禁用（只读 + `/say` 仍可用）；Token/上游地址不进入前端/API 响应/日志/审计正文，`/say` 审计只记字符数。
 
 ### opencode AI 工作区
 
@@ -83,7 +97,7 @@
 - 每 60s 采样 CPU/内存/温度/磁盘/负载，保留 30 天；`GET /api/metrics?range=1h|6h|24h|7d|30d` 按桶聚合（最多 240 点）。
 - Dashboard 四张 SVG 趋势卡（CPU/内存/温度/磁盘），1h/6h/24h/7d/30d 切换，无第三方图表库。
 - Activity 支持动作精确筛选 + 关键词 + 时间范围；Alerts 卡片支持状态/事件筛选与分页。
-- 告警条件：磁盘、温度、内存、服务、备份超期、pending 备份、备份密钥包、Minecraft、欠压，以及世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`，`ALERT_OFFSITE_MAX_AGE_HOURS` 默认 48；未配置异地副本时不产生条件、不误报）；通用 JSON webhook（10s×3 重试、可选 HMAC）、Bot 通知、去重/冷却/恢复通知、90 天事件保留；持续 firing 按 `ALERT_REPEAT_HOURS`（默认 24）重通知。
+- 告警条件：磁盘、温度、内存、服务、备份超期、pending 备份、备份密钥包、Minecraft、欠压，以及世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`，`ALERT_OFFSITE_MAX_AGE_HOURS` 默认 48；未配置异地副本时不产生条件、不误报）；通用 JSON webhook（10s×3 重试、可选 HMAC）、Bot 通知、去重/冷却/恢复通知、90 天事件保留；持续 firing 按 `ALERT_REPEAT_HOURS`（默认 24）重通知。Lofii 上游 `alert` 事件以 `status='event'` 写入同一历史（仅记录，不参与 firing/resolved 状态机、不写 `alert_state`），可复用 webhook 与 Bot 通知；`LOFII_ALERTS_ENABLED=false` 时只推进游标不写告警。
 
 ### 备份与灾备
 
@@ -114,20 +128,22 @@ npm run test:coverage    # 服务端/脚本测试 + 覆盖率门禁
 npm run test:web         # 前端 Vitest
 npm run test:web:coverage # 前端 + 覆盖率门禁
 npm run check            # typecheck + lint + 服务端测试 + 前端测试
-node scripts/check-version.mjs # 版本一致性（package.json / README / CHANGELOG / ACCEPTANCE / AGENTS / env.example / DEPLOY 标题 / lock）
+node scripts/check-version.mjs # 版本一致性（package.json / README / CHANGELOG / ACCEPTANCE / AGENTS / env.example / DEPLOY 标题 / lock / tool-versions）
 npm run provision        # 初始化管理员/TOTP（在 Pi 上以 antifieldcloud 运行）
 npm run backup           # 生成应用备份归档（在 Pi 上以 antifieldcloud 运行）
 ```
 
-部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.7.3 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`）。
+部署（PC）：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；冒烟：`.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0`（配置 Cloudflare Access 后可加 `-AccessClientId/-AccessClientSecret`；未启用 Lofii 时用 `-SkipLofii`）。
+Pi 上同步/校验 Lofii Token（root，需先部署 lofii-bot v0.6.0）：`sudo bash scripts/sync-lofii-tokens.sh`、`sudo bash scripts/sync-lofii-tokens.sh --check`（只比较不写盘，不回显 Token）。
 
 ## 目录
 
 ```text
-server/    Fastify 服务端（src + test：认证/文件/分片/笔记/分享/告警/备份/指标/Bot）
-web/       React 前端（Vite 根目录，含 PWA public/ 与 /bots 管理页）
+server/    Fastify 服务端（src + test：认证/文件/分片/笔记/分享/告警/备份/指标/Bot/Lofii 对接）
+web/       React 前端（Vite 根目录，含 PWA public/、/bots 管理页与 /minecraft 的 Lofii 面板）
 scripts/   provisioning、备份 CLI、世界备份（backup-world.mjs）、恢复演练（drill.ps1/drill-verify.mjs）、
-           Windows 拉取与部署/冒烟脚本、bootstrap-env.sh、check-version.mjs；scripts/test 为运维脚本单元测试
+           Windows 拉取与部署/冒烟脚本、bootstrap-env.sh、sync-lofii-tokens.sh、check-version.mjs；
+           scripts/test 为运维脚本单元测试
 deploy/    systemd（应用/健康探针/世界备份 timer）、nftables、cloudflared、env 模板
 docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与验收
 ```
@@ -144,6 +160,9 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - Chat 目标级 `allow_chat` 与命令 `allow_commands` 分离：非管理员只能 Chat，QQ C2C 私聊直接进入、群/频道仅 @Bot 事件（平台限制，无“全部消息”）；结构化记忆条目与 key/value 不经 API/UI 暴露（仅计数/类型/元数据），legacy 旧摘要为 fallback；仅 QQ Webhook 入站。
 - 诊断只存事件元数据（类型/结果/短码/目标与用户 ID），不存消息正文；角色/记忆管理 API 只返回元数据，正文不进入 Web/API；图片输入不可信：固定平台域名、image mime 白名单、大小上限、不落盘，失败降级为纯文字；长回复/附件 partial 失败不自动重试。
 - Chat 仅对已授权目标/C2C 开放，默认关闭且按用户每分钟/每小时限流；AI 会话新建时使用 deny-all 工具权限，若 OpenCode 明确拒绝该字段则进入 10 分钟重试窗口；启用消息发送工具时 fail-closed（新 Chat 返回 503 `bot_ai_tool_isolation_unavailable`，不以默认权限继续），上游恢复后自动恢复隔离。AI 仅把文本回复交给 Bot，不上传文件、不返回 OpenCode 凭据。
+- Lofii 对接只走 loopback：`LOFII_URL` 启用时必须为 loopback + http(s)，客户端 `redirect: 'error'`、每次请求带超时、响应体上限 2 MiB；读 Token 与控制 Token 分离，控制 Token 为空即只读；Token 不进入浏览器/bundle/API 响应/日志，错误文本移除上游地址与 Token。
+- Lofii 写操作（任务/移动/聊天）全部要求登录 + CSRF，并按 IP 限流（控制 20/min、`/say` 10/min）；服务端路由强制参数白名单（7 种任务/4 种移动/`/` 前缀拒绝/720 字符上限），UI 对开始/停止/恢复/发送二次确认；审计只记动作元数据，`/say` 只记字符数、不记录聊天正文。
+- Lofii 聊天与事件只进内存缓存（最多 100 条），不落库、不写日志；历史接口只读透传；上游告警只作为 `status='event'` 事件记录，不改变本应用主动告警状态。
 - 备份归档校验 SHA-256 与 tar 安全（拒绝路径穿越/链接/设备/超大条目）；Web 恢复只到新目录、不覆盖，整库恢复仅离线 root 流程；加密归档在 Web 一律 409，Web/应用进程不持 age 私钥。
 - 备份加密失败关闭：加密开启时 age 缺失、公钥非法、加密失败或空间不足都让 prepare 失败，不产生 pending、不降级明文；明文临时文件崩溃残留由下次 prepare/维护清理（>24h）。
 - 审计与状态可见：审计写入失败不阻断业务但计数+最近错误可见（`/api/version.audit`，失败诊断持久化在 `audit_write_failures`）；备份加密/异地状态只含开关、公钥是否就绪、别名与计数，不含私钥/远端路径/凭据。
@@ -171,6 +190,12 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1，`clockSkew` 状态可见，不自动修正）；Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
+- **v0.8.0 生产部署/验收待执行**：本地实现与门禁完成，生产当前仍为 v0.7.3；部署、smoke（含 `-ExpectedLofiiVersion 0.6.0`）、drill 与生产 Lofii 联调完成前不声明已部署/已验收。
+- **Lofii 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 Lofii 侧查看（本应用只记录与转发）。
+- **Lofii 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条），应用或 Lofii 重启即丢失；历史接口只返回 Lofii 自己的 samples/alerts，不保存聊天正文。
+- **Lofii 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；Lofii 不可达/数据过期时只展示缓存并降级。
+- **Lofii 依赖独立服务**：需先部署 lofii-bot v0.6.0+（仅 loopback、契约 v1）并同步 Token；应用不管理 Lofii 生命周期、不读取其 RCON/OpenCode 密钥；旧版无 `/events/recent` 时事件流显示升级提示。
+- **Lofii 控制面可写**：启用控制 Token 后本应用可让 Lofii 开始/停止任务、移动与游戏内发言（真实 Minecraft 操作，仍受 Lofii 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
 
 详细设计与验收标准见 `docs/ARCHITECTURE.md`、`docs/SECURITY.md`、`docs/DEPLOY.md`、`docs/BACKUP.md`、`docs/BOT.md`、`docs/API.md`、`docs/UI-SPEC.md`。
 

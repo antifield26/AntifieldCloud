@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v0.7.3（已发布 Tag `v0.7.3` + GitHub Release；已部署生产并完成读范围/QQ 正向验收；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.7.3 新增 Bot 上下文文档 + 按需 `read`：角色卡只在会话创建时发送，后续轮只给角色名/记忆条数/只读文档路径，`BotContextStore` 按作用域哈希写 `role.md`/`memory.md`，OpenCode 仅放行当前作用域两份文档的 `read`；`BOT_AI_CONTEXT_READ_ENABLED` 默认 false，生产读范围矩阵通过后已显式启用。当前生产为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；文档 mode `mcp:send:read:aad221f1`；drill `20261027T061319Z` 通过；真实 QQ 私聊首轮/后续与群聊首轮通过）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
+**当前版本 v0.8.0（本地实现与本地门禁完成，生产部署/验收待执行；分支 `main`）**：在 Raspberry Pi 5（Debian 13，8 GB）上运行的自托管个人工作台——统一登录（密码 + TOTP）、云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态/白名单、Lofii Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、OpenCode 反代、QQ 官方机器人（单平台；AI 仅普通消息 Chat）、PWA、可观测性与主机告警，以及应用归档 + 世界一致性备份 + 恢复演练的灾备链路。schema 保持 **v17**（无迁移）；v0.8.0 新增 Lofii 对接：服务端轮询独立 Lofii Bot（仅 loopback `127.0.0.1:3010`，lofii-bot v0.6.0 契约 v1）的 `/status` 与 `/events/recent`，缓存快照与最近 100 条事件，读/控制 Token 分离（控制 Token 为空即只读），上游 `alert` 映射为告警事件 `status='event'`，`/minecraft` 合并为「服务器 / Lofii」双标签；默认关闭，回滚即 `LOFII_ENABLED=false`。当前生产仍为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；文档 mode `mcp:send:read:aad221f1`；读范围矩阵 7/7；drill `20261027T061319Z` 通过；真实 QQ 私聊首轮/后续与群聊首轮通过）。运维侧 Cloudflare `ai` Access（Free 套餐无自定义 WAF）、SSH 仅公钥、Windows 世界拉取周任务、rclone v1.75.2 已就绪。备份整包加密/异地副本保持关闭（用户确认不配置 rclone remote）。**OpenCode v2.1.4**；V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过、负路径待联调。产品名 `AntifieldCloud · 个人工作台`。
 
 权威文档：
 - `docs/PLAN.md`：范围、决策、阶段与验收
@@ -46,7 +46,7 @@ npm run check          # typecheck + lint + server test + web test，提交前�
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v0.7.3，2026-10-27 本地门禁）：`npm test` **521**（1 skip，server+scripts，含 scripts 30）、`npm run test:web` **222**（44 文件）、服务端覆盖率 Lines 92.93% / Branches 78.37% / Functions 88.55%、前端覆盖率 Lines 52.31% / Branches 47.32% / Functions 45.02%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；读范围矩阵 7/7；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记已刷新到 0.7.3）。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
+当前基线（v0.8.0 本地，2026-10-27 本地门禁）：`npm test` **566**（565 pass、1 skip，server=87 + scripts=4 共 91 文件）、`npm run test:web` **250**（47 文件）、服务端覆盖率 Lines 93.06% / Branches 78.67% / Functions 88.70%、前端覆盖率 Lines 55.48% / Branches 49.91% / Functions 48.45%；覆盖率门禁为 Lines 91 / Functions 85 / Branches 76（前端 50/45/42）。生产应用当前为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17；完整 Access smoke **34/0/0/2**；读范围矩阵 7/7；真实 QQ 私聊首轮/后续与群聊首轮通过；drill 报告 `20261027T061319Z` schema17 通过；备份加密/异地副本关闭；Windows 备份任务标记已刷新到 0.7.3）；**v0.8.0 生产部署/验收待执行，完成前不得声明已上线/已验收**。OpenCode v2.1.4，V1–V9/V14 通过，V10–V13 用户真实 QQ 正向验收通过。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -72,19 +72,25 @@ server/src/
                      diagnostics.ts（事件/入站目标/指标/最近错误）、queue.ts（投递/发布状态机），
                      BotService 保留 facade/依赖装配；targets.ts（目标 CRUD）、
                      roles-admin.ts（用户/群角色卡管理）、memory-admin.ts（记忆管理），service.ts 只做 facade
+  lofii/              Lofii Minecraft Bot 对接（v0.8.0，默认关闭；仅 loopback）：client.ts（读/控制 Token 分离、redirect:error、
+                     超时、2 MiB 上限、稳定错误码与 URL/Token 脱敏）、service.ts（单飞轮询 status/recent、100 条事件内存缓存、
+                     stale、告警游标 meta.lofii.event_cursor、alert→status='event'、控制成功后刷新）；不持久化聊天/事件，无 schema 变更
   backups/           归档导入/校验、文件级恢复（skippedMissing）、Web 对加密归档的 409 边界、状态只读
   dashboard/         主机指标、服务状态、备份状态（含加密/异地）、Bot 开关、轻量存储用量
   metrics/           60s 主机指标采样、按范围分桶聚合、30 天保留清理
   notes/             笔记/书签、标签、FTS5、附件（origin=note）、版本历史
   shares/            单文件/多文件分享、密码/过期/次数/原子计数、公开逐项下载、吊销
-  alerts/            告警条件/状态机/webhook（含世界备份/拉取/演练/异地超期）与 Bot 通知入队
+  alerts/            告警条件/状态机/webhook（含世界备份/拉取/演练/异地超期）与 Bot 通知入队；
+                     recordExternal（v0.8.0 外部事件 status='event'，不写 alert_state，异步 webhook/Bot 通知）
   cli/               backup.mjs 对应 CLI（backup.ts）与 backup-encryption.ts（age 加密/公钥/sidecar）
-  http/              路由注册、错误处理、静态资源、安全头、requestMeta 信任模型、Cloudflare Access 说明
+  http/              路由注册、错误处理、静态资源、安全头、requestMeta 信任模型、Cloudflare Access 说明；
+                     bots.ts 管理 API、bot-webhook.ts 公开入口、lofii.ts Lofii 只读/控制路由
   util/              通用工具（时间、路径、响应、只读状态文件解析 + 64 KiB 上限）
-web/src/             React 页面与组件（只依赖 docs/API.md 的契约；/bots 管理页；加密/异地状态卡）
+web/src/             React 页面与组件（只依赖 docs/API.md 的契约；/bots 管理页；/minecraft 双标签与 Lofii 面板；加密/异地状态卡）
 scripts/             provision/backup CLI、世界备份 backup-world.mjs、恢复演练 drill.ps1/drill-verify.mjs、
                      world-pull.ps1、backup-pull.ps1、backup-offsite.mjs/.ps1、部署/冒烟 PowerShell、
-                     bootstrap-env.sh、backup-secrets.sh、check-version.mjs、check-prod-deps.mjs
+                     bootstrap-env.sh、backup-secrets.sh、sync-lofii-tokens.sh（root 同步 Lofii Token）、
+                     check-version.mjs、check-prod-deps.mjs
 scripts/test/        运维脚本单元测试（node --test .test.mjs）
 deploy/              systemd（应用/健康探针/世界备份 timer）、nftables 模板（TEST-NET 占位）、
                      cloudflared ingress、env 模板、host/ 主机配置模板、tool-versions.json
@@ -114,6 +120,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 14. Bot AI 工具隔离 fail-closed：OpenCode 拒绝 `permissions` 时不得以默认权限继续对话；启用发送工具或文档/read 模式且隔离不可用时新 Chat 返回 `503 bot_ai_tool_isolation_unavailable` 并回固定提示、写审计/状态；10 分钟重试窗口到点放行重试，上游恢复后自动恢复。
     文档模式只允许 `read` 当前作用域 `role.md`/`memory.md`（deny-all + 精确 read 规则）；不得放行 shell/edit/glob/grep；上下文目录不得包含密钥，文件 0640、目录 0750，不进入备份。
 15. 审计写入不得静默失败也不得回滚已完成的业务状态：非安全审计事务外 best-effort，失败计数 + 最近错误暴露到 `/api/version.audit`；安全关键审计逐条记录；公开下载计数保持在事务内。
+16. Lofii 对接（v0.8.0）读/控制 Token 必须分离且只走 loopback：`LOFII_URL` 非 loopback/非 http(s) 拒绝启动，客户端禁止跟随重定向；Token 不得进入浏览器/bundle/API 响应/日志/审计正文；控制/任务/移动/聊天必须登录 + CSRF + IP 限流并二次确认；`/say` 只聊天（禁止 `/` 开头）且审计只记字符数；聊天/事件只存内存不落库；上游告警只能以 `status='event'` 记录，不得写入 `alert_state` 或伪装 firing/resolved。
 
 ## 6. 数据库与数据
 
@@ -132,6 +139,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   `bot_memory_items` 按 `(bot_id,user_id,kind,mem_key)` 唯一保存结构化记忆（群 scope 为 `group:<targetExternalId>`，群 key 前缀为稳定 `<member_openid>:`，显示名只存 value；无法映射的旧键加 `legacy:`）、`bot_memory_state` 按 `(bot_id,user_id)` 保存 `memory_enabled` 与 `legacy_migrated_at`；
   `bot_group_roles` 按 `target_id` 保存群聊目标共享角色卡（名字 1–32、正文 1–1000，可停用；FK 级联删除）；
   `bot_inbound_targets` 按 `(bot_id,target_external_id,user_id)` 记录最近入站目标/用户名/类型/时间（不存正文）。QQ AppSecret 不落在日志/API 响应。
+- v0.8.0 Lofii 不新增表/列（schema 保持 v17）：告警游标只写 `meta.lofii.event_cursor`（`{bootId,lastEventId,lastTs}`）；Lofii 事件/聊天只在服务端内存（≤100 条，不落库）；Lofii 告警事件复用 `alert_events`（`status='event'`），不写 `alert_state`。
 - 审计只记录元数据，不记录文件内容、密码、TOTP、Cookie、Authorization；单条 actor≤64、target≤256、detail≤4 KiB。
 
 ## 7. 完成定义（DoD）
@@ -172,6 +180,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   **连续外发：生产固定 1000ms 最小间隔（按 Bot/AppID 串行，代码内 `DEFAULT_SEND_INTERVAL_MS`；无 env 开关；测试注入 0）。**
   搜索：`BOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`BOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`BOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。
+- Lofii 环境变量（v0.8.0，默认关闭）：`LOFII_ENABLED=false`、`LOFII_URL=http://127.0.0.1:3010`（启用时必须 loopback + http(s)）、`LOFII_READ_TOKEN=`、`LOFII_CONTROL_TOKEN=`（root 执行 `scripts/sync-lofii-tokens.sh` 从 `/etc/lofii-bot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步，`--check` 只比较；控制为空 = 只读）、`LOFII_TIMEOUT_MS=2500`（500–10000）、`LOFII_POLL_MS=5000`（2000–60000）、`LOFII_ALERTS_ENABLED=true`；上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS。lofii-bot v0.6.0+（契约 v1，独立 systemd 服务，仅 `127.0.0.1:3010`，不经 Cloudflare/nftables 对外）；`smoke.ps1 -ExpectedLofiiVersion 0.6.0` 校验服务 active + `/healthz.version` + `contractVersion=1`，未启用用 `-SkipLofii`。
 - 备份/灾备 env：`BACKUP_IMPORT_RETENTION_DAYS=90`（0=永久）、`ALERT_REPEAT_HOURS=24`（0=关闭；兼容键 `ALERT_COOLDOWN_MINUTES` 仍可解析）。
 - Bot 公开入口：`POST /api/bot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对 `/api/bot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。`BOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（QQ 开放平台）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；仅 QQ 官方 Bot。
@@ -196,3 +205,4 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 11. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/BACKUP.md` §7 与 `docs/ACCEPTANCE.md`。
 12. SSH 仅公钥的回滚窗口当前已关闭：旧备份归档到 `/var/backups/antifieldcloud/`（0600 root），活动配置未改；后续如再次变更仍按 `docs/DEPLOY.md` §9.7 保留 24h 回滚窗口。
 13. v0.7.3 Bot 文档模式启用（默认关闭，生产已于 2026-10-27 启用）：读范围矩阵 7/7 通过（作用域内正向；作用域外/env/DB/其他作用域/shell/注入全部拒绝），真实 QQ 私聊首轮/后续与群聊首轮通过；生产 `BOT_AI_CONTEXT_READ_ENABLED=true`。回滚设 `false` 重启，无需恢复 schema/DB。
+14. Lofii 对接启用（v0.8.0，待 Lead 部署后执行，Agent 不代替）：部署/升级 lofii-bot **v0.6.0+**（仅 loopback）→ root 执行 `scripts/sync-lofii-tokens.sh`（先 `--check`）→ 设 `LOFII_ENABLED=true` 并重启 → 验证 `/api/lofii/status` 与 `smoke.ps1 -ExpectedLofiiVersion 0.6.0`；回滚设 `false` 重启。v0.8.0 生产部署/验收完成前不得声明已上线。

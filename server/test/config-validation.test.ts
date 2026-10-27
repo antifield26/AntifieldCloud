@@ -148,3 +148,110 @@ test('BOT_AI_CONTEXT_READ_ENABLED：非生产默认目录可加载；生产缺�
     cleanupDir(dir)
   }
 })
+
+test('LOFII_* 默认值：关闭、loopback 默认地址、读控 Token 为空、2.5s/5s、告警开启', () => {
+  const dir = tempDataDir()
+  try {
+    const config = loadConfig(baseEnv(dir))
+    assert.equal(config.lofiiEnabled, false)
+    assert.equal(config.lofiiUrl, 'http://127.0.0.1:3010')
+    assert.equal(config.lofiiReadToken, '')
+    assert.equal(config.lofiiControlToken, '')
+    assert.equal(config.lofiiTimeoutMs, 2500)
+    assert.equal(config.lofiiPollMs, 5000)
+    assert.equal(config.lofiiAlertsEnabled, true)
+    // 关闭状态下允许空 Token 与任意（未校验）地址，便于随时开关。
+    assert.doesNotThrow(() => loadConfig({ ...baseEnv(dir), LOFII_ENABLED: 'false' }))
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('LOFII_URL 去尾斜杠，启用时必须 loopback 且 http(s)', () => {
+  const dir = tempDataDir()
+  try {
+    const config = loadConfig({
+      ...baseEnv(dir),
+      LOFII_ENABLED: 'true',
+      LOFII_READ_TOKEN: 'read-token',
+      LOFII_URL: 'http://127.0.0.1:3010/',
+    })
+    assert.equal(config.lofiiUrl, 'http://127.0.0.1:3010')
+    assert.doesNotThrow(() =>
+      loadConfig({
+        ...baseEnv(dir),
+        LOFII_ENABLED: 'true',
+        LOFII_READ_TOKEN: 'read-token',
+        LOFII_URL: 'http://localhost:3010',
+      }),
+    )
+    assert.throws(
+      () =>
+        loadConfig({
+          ...baseEnv(dir),
+          LOFII_ENABLED: 'true',
+          LOFII_READ_TOKEN: 'read-token',
+          LOFII_URL: 'http://10.0.0.5:3010',
+        }),
+      /必须指向 loopback/,
+    )
+    assert.throws(
+      () =>
+        loadConfig({
+          ...baseEnv(dir),
+          LOFII_ENABLED: 'true',
+          LOFII_READ_TOKEN: 'read-token',
+          LOFII_URL: 'ftp://127.0.0.1:3010',
+        }),
+      /必须是 http\(s\) URL/,
+    )
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('LOFII_ENABLED=true 必须配置 LOFII_READ_TOKEN', () => {
+  const dir = tempDataDir()
+  try {
+    assert.throws(
+      () => loadConfig({ ...baseEnv(dir), LOFII_ENABLED: 'true' }),
+      /必须配置 LOFII_READ_TOKEN/,
+    )
+    // 只要读 Token；控制 Token 为空表示只读，允许启动。
+    const readonly = loadConfig({ ...baseEnv(dir), LOFII_ENABLED: 'true', LOFII_READ_TOKEN: 'read-only' })
+    assert.equal(readonly.lofiiControlToken, '')
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('LOFII_TIMEOUT_MS / LOFII_POLL_MS 越界拒绝启动，边界值可加载', () => {
+  const dir = tempDataDir()
+  try {
+    assert.throws(() => loadConfig({ ...baseEnv(dir), LOFII_TIMEOUT_MS: '100' }), /LOFII_TIMEOUT_MS 非法/)
+    assert.throws(() => loadConfig({ ...baseEnv(dir), LOFII_TIMEOUT_MS: '10001' }), /LOFII_TIMEOUT_MS 非法/)
+    assert.throws(() => loadConfig({ ...baseEnv(dir), LOFII_POLL_MS: '1999' }), /LOFII_POLL_MS 非法/)
+    assert.throws(() => loadConfig({ ...baseEnv(dir), LOFII_POLL_MS: '60001' }), /LOFII_POLL_MS 非法/)
+    const bounds = loadConfig({ ...baseEnv(dir), LOFII_TIMEOUT_MS: '500', LOFII_POLL_MS: '2000' })
+    assert.equal(bounds.lofiiTimeoutMs, 500)
+    assert.equal(bounds.lofiiPollMs, 2000)
+    const upper = loadConfig({ ...baseEnv(dir), LOFII_TIMEOUT_MS: '10000', LOFII_POLL_MS: '60000' })
+    assert.equal(upper.lofiiTimeoutMs, 10_000)
+    assert.equal(upper.lofiiPollMs, 60_000)
+  } finally {
+    cleanupDir(dir)
+  }
+})
+
+test('LOFII_ALERTS_ENABLED 非法布尔值拒绝启动', () => {
+  const dir = tempDataDir()
+  try {
+    assert.throws(
+      () => loadConfig({ ...baseEnv(dir), LOFII_ALERTS_ENABLED: 'maybe' }),
+      /LOFII_ALERTS_ENABLED 非法布尔值/,
+    )
+    assert.equal(loadConfig({ ...baseEnv(dir), LOFII_ALERTS_ENABLED: 'false' }).lofiiAlertsEnabled, false)
+  } finally {
+    cleanupDir(dir)
+  }
+})

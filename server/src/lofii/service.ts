@@ -1,0 +1,535 @@
+/**
+ * Lofii 服务：轮询 Lofii Bot（仅 loopback）的 /status 与 /events/recent，缓存最新状态与事件，
+ * 把上游 `alert` 事件映射为本应用告警（status=event，不写 alert_state），并提供控制代理。
+ *
+ * 安全与行为约束：
+ * - 轮询单飞（single-flight）：上一轮未结束时复用同一 Promise，绝不并发/堆积请求。
+ * - 轮询失败只更新 reachable/stale/error，保留上一次成功的状态快照与事件缓存。
+ * - /events/recent 返回 404（旧版 Lofii 无事件流）只把 eventsSupported 置 false，/status 仍可用。
+ * - 告警游标持久化在 meta `lofii.event_cursor`（{bootId,lastEventId,lastTs}）：
+ *   首次/无游标/bootId 变化只建立基线，不重放 ring 内旧告警；之后只处理游标之后的 alert，
+ *   并按游标去重。LOFII_ALERTS_ENABLED=false 时仍推进游标但不写告警。
+ * - 聊天事件只进内存缓存（最多 100 条，newest-first），不落库、不写日志。
+ * - 控制成功后立即刷新一次；start()/stop() 的定时器 unref，不阻止进程退出。
+ */
+import type { DatabaseSync } from 'node:sqlite'
+import type { AlertService, AlertSeverity, ExternalAlertInput } from '../alerts/service.ts'
+import type { Config } from '../config.ts'
+import { getMeta, setMeta } from '../db.ts'
+import {
+  LofiiClient,
+  LofiiError,
+  type LofiiEvent,
+  type LofiiHistoryKind,
+  type LofiiHistoryQuery,
+  type LofiiRecentResult,
+} from './client.ts'
+
+/** 告警游标 meta key；JSON {bootId,lastEventId,lastTs}。 */
+export const LOFII_EVENT_CURSOR_KEY = 'lofii.event_cursor'
+/** 事件内存缓存上限（API 最多返回 100 条）。 */
+export const LOFII_EVENT_CACHE_LIMIT = 100
+/** 连续多少次轮询间隔没有成功（3 个 poll 周期）判定 stale。 */
+export const LOFII_STALE_POLLS = 3
+
+export interface LofiiAlertCursor {
+  bootId: string
+  lastEventId: string | null
+  lastTs: string | null
+}
+
+export interface LofiiServiceDeps {
+  db: DatabaseSync
+  config: Config
+  alerts: Pick<AlertService, 'recordExternal'>
+  log?: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
+  /** 测试注入；默认按 config 构建。 */
+  client?: LofiiClient
+  /** 测试注入时钟；默认 new Date()。 */
+  now?: () => Date
+}
+
+export interface LofiiSnapshot {
+  enabled: boolean
+  reachable: boolean
+  stale: boolean
+  controlEnabled: boolean
+  alertsEnabled: boolean
+  /** 上游是否支持 /events/recent（旧版返回 404 时为 false）。 */
+  eventsSupported: boolean
+  version: string | null
+  contractVersion: number | null
+  lastPollAt: string | null
+  error: string | null
+  status: Record<string, unknown> | null
+  /** newest-first，最多 100 条。 */
+  events: LofiiEvent[]
+}
+
+export interface LofiiPollResult {
+  skipped: boolean
+  ok: boolean
+  error: string | null
+  alerts: number
+}
+
+interface LofiiAlertMapping {
+  event: string
+  severity: AlertSeverity
+  title: string
+}
+
+/** 上游告警类型 → 本应用稳定事件名/级别（未知类型统一 lofii_alert）。 */
+export const LOFII_ALERT_MAP: Record<string, LofiiAlertMapping> = {
+  low_health: { event: 'lofii_low_health', severity: 'warning', title: 'Lofii 血量偏低' },
+  task_failed: { event: 'lofii_task_failed', severity: 'critical', title: 'Lofii 任务失败' },
+  disconnected: { event: 'lofii_disconnected', severity: 'critical', title: 'Lofii 连接断开' },
+  chest_full: { event: 'lofii_chest_full', severity: 'warning', title: 'Lofii 储物箱已满' },
+  defense_retreat: { event: 'lofii_defense_retreat', severity: 'warning', title: 'Lofii 防御撤退' },
+}
+
+const MAX_DETAILS_DEPTH = 2
+const MAX_DETAILS_KEYS = 20
+const MAX_DETAILS_ARRAY = 20
+const MAX_DETAIL_STRING = 300
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** 递归清洗上游 details：只保留 JSON 基础类型，限制深度/键数/数组长度/字符串长度。 */
+function sanitizeDetailValue(value: unknown, depth: number): unknown {
+  if (value === null || typeof value === 'boolean') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string') return value.slice(0, MAX_DETAIL_STRING)
+  if (depth >= MAX_DETAILS_DEPTH) return null
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_DETAILS_ARRAY).map((item) => sanitizeDetailValue(item, depth + 1))
+  }
+  if (isRecord(value)) {
+    const out: Record<string, unknown> = {}
+    let count = 0
+    for (const [key, item] of Object.entries(value)) {
+      if (count >= MAX_DETAILS_KEYS) break
+      out[key.slice(0, 40)] = sanitizeDetailValue(item, depth + 1)
+      count += 1
+    }
+    return out
+  }
+  return null
+}
+
+function sanitizeDetails(value: Record<string, unknown>): Record<string, unknown> {
+  return sanitizeDetailValue(value, 0) as Record<string, unknown>
+}
+
+/**
+ * 把上游 alert envelope 映射为 ExternalAlertInput。
+ * 非 alert 事件返回 null；未知 type 仍映射为 lofii_alert（severity 按上游 error→critical）。
+ */
+export function mapLofiiAlert(event: LofiiEvent): ExternalAlertInput | null {
+  if (event.type !== 'alert') return null
+  const data = isRecord(event.data) ? event.data : {}
+  const lofiiType = typeof data.type === 'string' && data.type.trim() ? data.type.trim().slice(0, 64) : 'unknown'
+  const known = LOFII_ALERT_MAP[lofiiType]
+  const severity: AlertSeverity = known ? known.severity : data.severity === 'error' ? 'critical' : 'warning'
+  const title = known?.title ?? 'Lofii 告警'
+  const upstreamMessage = typeof data.message === 'string' && data.message.trim() ? data.message.trim() : ''
+  const message = (upstreamMessage || title).slice(0, 500)
+  const upstreamDetails = isRecord(data.details) ? data.details : {}
+  const details: Record<string, unknown> = {
+    ...sanitizeDetails(upstreamDetails),
+    source: 'lofii',
+    lofiiEventId: event.id,
+    lofiiType,
+  }
+  return {
+    event: known?.event ?? 'lofii_alert',
+    severity,
+    title,
+    message,
+    details,
+  }
+}
+
+/** 事件 id 形如 `<bootId>-<seq>`；解析出进程内序号用于游标跨窗口比较。 */
+function eventSeq(id: string, bootId: string): number | null {
+  const prefix = `${bootId}-`
+  if (!id.startsWith(prefix)) return null
+  const rest = id.slice(prefix.length)
+  if (!/^\d+$/.test(rest)) return null
+  const seq = Number(rest)
+  return Number.isSafeInteger(seq) ? seq : null
+}
+
+/** 取游标之后的事件：优先按 ring 内位置定位，窗口外回退到序号/时间比较，无法判断则宁可不重复。 */
+export function eventsAfterCursor(events: LofiiEvent[], cursor: LofiiAlertCursor): LofiiEvent[] {
+  if (!cursor.lastEventId) return []
+  const index = events.findIndex((event) => event.id === cursor.lastEventId)
+  if (index >= 0) return events.slice(index + 1)
+  const cursorSeq = eventSeq(cursor.lastEventId, cursor.bootId)
+  const cursorTs = cursor.lastTs ? Date.parse(cursor.lastTs) : Number.NaN
+  return events.filter((event) => {
+    const seq = eventSeq(event.id, cursor.bootId)
+    if (cursorSeq !== null && seq !== null) return seq > cursorSeq
+    const ts = Date.parse(event.ts)
+    if (Number.isFinite(cursorTs) && Number.isFinite(ts)) return ts > cursorTs
+    return false
+  })
+}
+
+function compareEventsNewestFirst(a: LofiiEvent, b: LofiiEvent): number {
+  const ta = Date.parse(a.ts)
+  const tb = Date.parse(b.ts)
+  if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) return tb - ta
+  if (a.id === b.id) return 0
+  return a.id < b.id ? 1 : -1
+}
+
+function errorCodeOf(error: unknown): string {
+  return error instanceof LofiiError ? error.code : 'lofii_upstream_error'
+}
+
+export class LofiiService {
+  private readonly db: DatabaseSync
+  private readonly config: Config
+  private readonly alerts: Pick<AlertService, 'recordExternal'>
+  private readonly log: NonNullable<LofiiServiceDeps['log']>
+  private readonly client: LofiiClient
+  private readonly now: () => Date
+  private timer: NodeJS.Timeout | null = null
+  private inFlight: Promise<LofiiPollResult> | null = null
+  private events: LofiiEvent[] = []
+  private statusSnapshot: Record<string, unknown> | null = null
+  private version: string | null = null
+  private contractVersion: number | null = null
+  private lastPollAt: string | null = null
+  private lastSuccessAt: number | null = null
+  private reachable = false
+  private eventsSupported = true
+  private error: string | null = null
+  /** 连续未成功轮询次数：从未成功过时用于判定 stale（3 个周期）。 */
+  private failedPolls = 0
+  /** 上一次记录到日志的错误，避免轮询失败期间每 5s 重复告警日志。 */
+  private lastLoggedError: string | null = null
+
+  constructor(deps: LofiiServiceDeps) {
+    this.db = deps.db
+    this.config = deps.config
+    this.alerts = deps.alerts
+    this.now = deps.now ?? (() => new Date())
+    this.log =
+      deps.log ??
+      ((level, message, detail) => {
+        const line = detail ? `${message} ${JSON.stringify(detail)}` : message
+        if (level === 'error') console.error(`[lofii] ${line}`)
+        else if (level === 'warn') console.warn(`[lofii] ${line}`)
+        else console.info(`[lofii] ${line}`)
+      })
+    this.client =
+      deps.client ??
+      new LofiiClient({
+        baseUrl: this.config.lofiiUrl,
+        readToken: this.config.lofiiReadToken,
+        controlToken: this.config.lofiiControlToken,
+        timeoutMs: this.config.lofiiTimeoutMs,
+      })
+  }
+
+  // ---------- 生命周期 ----------
+
+  /** 由进程入口在 listen 后调用；关闭状态下为空操作，重复调用幂等。 */
+  start(): void {
+    if (!this.config.lofiiEnabled || this.timer) return
+    this.timer = setInterval(() => {
+      void this.pollOnce().catch((error: unknown) => {
+        this.log('error', 'Lofii 轮询异常', { error: errorCodeOf(error) })
+      })
+    }, this.config.lofiiPollMs)
+    this.timer.unref?.()
+    void this.pollOnce().catch((error: unknown) => {
+      this.log('error', 'Lofii 轮询异常', { error: errorCodeOf(error) })
+    })
+  }
+
+  stop(): void {
+    if (!this.timer) return
+    clearInterval(this.timer)
+    this.timer = null
+  }
+
+  // ---------- 轮询 ----------
+
+  /** 单次轮询；单飞：上一轮未完成时直接复用同一 Promise（测试与 refresh 也会用到）。 */
+  pollOnce(): Promise<LofiiPollResult> {
+    if (!this.config.lofiiEnabled) {
+      return Promise.resolve({ skipped: true, ok: false, error: 'lofii_disabled', alerts: 0 })
+    }
+    if (this.inFlight) return this.inFlight
+    const run = this.runPoll()
+    this.inFlight = run
+    const clear = (): void => {
+      if (this.inFlight === run) this.inFlight = null
+    }
+    // runPoll 内部已捕获所有失败，这里只负责结束后清空单飞标记。
+    void run.then(clear, clear)
+    return run
+  }
+
+  /** 控制成功后立即刷新：若已有在途轮询先等它结束，再执行一轮保证拿到最新状态。 */
+  async refresh(): Promise<LofiiPollResult> {
+    if (!this.config.lofiiEnabled) {
+      return { skipped: true, ok: false, error: 'lofii_disabled', alerts: 0 }
+    }
+    if (this.inFlight) {
+      try {
+        await this.inFlight
+      } catch {
+        // runPoll 自身不抛错；这里只防御注入实现的异常。
+      }
+    }
+    return this.pollOnce()
+  }
+
+  private async runPoll(): Promise<LofiiPollResult> {
+    const startedAt = this.now()
+    const [statusResult, recentResult] = await Promise.allSettled([
+      this.client.status(),
+      this.client.recentEvents(LOFII_EVENT_CACHE_LIMIT),
+    ])
+    this.lastPollAt = startedAt.toISOString()
+    let error: string | null = null
+    let alertCount = 0
+
+    if (statusResult.status === 'fulfilled') {
+      this.reachable = true
+      this.statusSnapshot = statusResult.value
+      const version = statusResult.value.version
+      if (typeof version === 'string' && version.trim()) this.version = version.trim()
+      this.lastSuccessAt = startedAt.getTime()
+      this.failedPolls = 0
+    } else {
+      this.reachable = false
+      this.failedPolls += 1
+      error = errorCodeOf(statusResult.reason)
+    }
+
+    if (recentResult.status === 'fulfilled') {
+      this.eventsSupported = true
+      this.contractVersion = recentResult.value.contractVersion
+      this.mergeEvents(recentResult.value.events)
+      try {
+        alertCount = this.advanceCursor(recentResult.value)
+      } catch (cause) {
+        // 游标/告警写库失败不影响状态轮询；本轮 error 暴露给前端但不回滚已有缓存。
+        this.log('warn', 'Lofii 告警游标处理失败', { error: errorCodeOf(cause) })
+        if (!error) error = 'lofii_cursor_failed'
+      }
+    } else if (recentResult.reason instanceof LofiiError && recentResult.reason.statusCode === 404) {
+      // 旧版 Lofii 没有 /events/recent：明确降级，状态仍可用。
+      this.eventsSupported = false
+      this.contractVersion = null
+    } else if (!error) {
+      error = errorCodeOf(recentResult.reason)
+    }
+
+    this.error = error
+    // 只在错误状态变化时写一条日志：轮询失败期间不重复刷屏，恢复时记录一次。
+    if (this.error !== this.lastLoggedError) {
+      if (this.error) {
+        this.log('warn', 'Lofii 上游不可用', { error: this.error, reachable: this.reachable })
+      } else if (this.lastLoggedError) {
+        this.log('info', 'Lofii 上游已恢复', { reachable: this.reachable, eventsSupported: this.eventsSupported })
+      }
+      this.lastLoggedError = this.error
+    }
+    return { skipped: false, ok: this.reachable && error === null, error, alerts: alertCount }
+  }
+
+  /** 合并事件到内存缓存：按 id 去重、newest-first、最多 100 条。 */
+  private mergeEvents(incoming: LofiiEvent[]): void {
+    if (incoming.length === 0) return
+    const seen = new Set<string>()
+    const merged: LofiiEvent[] = []
+    for (const event of [...incoming, ...this.events]) {
+      if (seen.has(event.id)) continue
+      seen.add(event.id)
+      merged.push(event)
+    }
+    merged.sort(compareEventsNewestFirst)
+    this.events = merged.slice(0, LOFII_EVENT_CACHE_LIMIT)
+  }
+
+  // ---------- 告警游标 ----------
+
+  private readCursor(): LofiiAlertCursor | null {
+    const raw = getMeta(this.db, LOFII_EVENT_CURSOR_KEY)
+    if (!raw) return null
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(raw)
+    } catch {
+      return null
+    }
+    if (!isRecord(parsed)) return null
+    const bootId = typeof parsed.bootId === 'string' ? parsed.bootId : ''
+    if (!bootId) return null
+    return {
+      bootId,
+      lastEventId: typeof parsed.lastEventId === 'string' && parsed.lastEventId ? parsed.lastEventId : null,
+      lastTs: typeof parsed.lastTs === 'string' && parsed.lastTs ? parsed.lastTs : null,
+    }
+  }
+
+  private writeCursor(cursor: LofiiAlertCursor): void {
+    const current = this.readCursor()
+    if (
+      current &&
+      current.bootId === cursor.bootId &&
+      current.lastEventId === cursor.lastEventId &&
+      current.lastTs === cursor.lastTs
+    ) {
+      return
+    }
+    setMeta(this.db, LOFII_EVENT_CURSOR_KEY, JSON.stringify(cursor))
+  }
+
+  /**
+   * 推进告警游标并处理游标之后的 alert：
+   * - 无游标/首次/bootId 变化：只记录基线，不重放旧 ring 告警。
+   * - 告警开关关闭：仍推进游标，不写事件。
+   * - 返回本轮写入的告警事件数。
+   */
+  private advanceCursor(recent: LofiiRecentResult): number {
+    if (!this.eventsSupported) return 0
+    const lastEvent = recent.events.at(-1)
+    const lastId = recent.lastEventId ?? lastEvent?.id ?? null
+    const lastTs = lastEvent?.ts ?? null
+    const cursor = this.readCursor()
+    // 首次/无游标/bootId 变化：只建立基线，不重放 ring 内旧告警。
+    if (!cursor || cursor.bootId !== recent.bootId) {
+      this.writeCursor({ bootId: recent.bootId, lastEventId: lastId, lastTs })
+      return 0
+    }
+    // 基线建立时 ring 为空（lastEventId=null）：之后出现的事件都是新的；ring 非空时按游标过滤。
+    const after = cursor.lastEventId ? eventsAfterCursor(recent.events, cursor) : [...recent.events]
+    let count = 0
+    for (const event of after) {
+      if (event.type !== 'alert') continue
+      if (!this.config.lofiiAlertsEnabled) continue
+      const input = mapLofiiAlert(event)
+      if (!input) continue
+      try {
+        if (this.alerts.recordExternal(input) !== null) count += 1
+      } catch (cause) {
+        this.log('warn', 'Lofii 告警写入失败', {
+          error: errorCodeOf(cause),
+          lofiiEventId: event.id,
+          lofiiType: input.details.lofiiType,
+        })
+      }
+    }
+    this.writeCursor({ bootId: recent.bootId, lastEventId: lastId ?? cursor.lastEventId, lastTs: lastTs ?? cursor.lastTs })
+    return count
+  }
+
+  // ---------- 查询 ----------
+
+  get enabled(): boolean {
+    return this.config.lofiiEnabled
+  }
+
+  get controlEnabled(): boolean {
+    return this.config.lofiiEnabled && this.config.lofiiControlToken.length > 0
+  }
+
+  get alertsEnabled(): boolean {
+    return this.config.lofiiAlertsEnabled
+  }
+
+  get supportsEvents(): boolean {
+    return this.eventsSupported
+  }
+
+  /** 当前状态快照（禁用时返回 enabled:false 的空壳）。 */
+  snapshot(): LofiiSnapshot {
+    if (!this.config.lofiiEnabled) {
+      return {
+        enabled: false,
+        reachable: false,
+        stale: false,
+        controlEnabled: false,
+        alertsEnabled: this.config.lofiiAlertsEnabled,
+        eventsSupported: false,
+        version: null,
+        contractVersion: null,
+        lastPollAt: null,
+        error: null,
+        status: null,
+        events: [],
+      }
+    }
+    return {
+      enabled: true,
+      reachable: this.reachable,
+      stale: this.isStale(),
+      controlEnabled: this.controlEnabled,
+      alertsEnabled: this.config.lofiiAlertsEnabled,
+      eventsSupported: this.eventsSupported,
+      version: this.version,
+      contractVersion: this.contractVersion,
+      lastPollAt: this.lastPollAt,
+      error: this.error,
+      status: this.statusSnapshot,
+      events: [...this.events],
+    }
+  }
+
+  /** stale：未连通且（从未成功过时已连续失败 3 轮，或距上次成功超过 3 个轮询周期）。 */
+  private isStale(): boolean {
+    if (this.reachable) return false
+    if (this.lastSuccessAt === null) return this.failedPolls >= LOFII_STALE_POLLS
+    return this.now().getTime() - this.lastSuccessAt > LOFII_STALE_POLLS * this.config.lofiiPollMs
+  }
+
+  // ---------- 控制代理（成功即刷新） ----------
+
+  async startTask(name: string): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.startTask(name))
+  }
+
+  async stopTask(): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.stopTask())
+  }
+
+  async resumeTask(taskId?: string): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.resumeTask(taskId))
+  }
+
+  async move(action: string, target?: string): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.move(action, target))
+  }
+
+  /** /say 使用读 Token，只读模式（无控制 Token）下仍可用。 */
+  async say(message: string): Promise<Record<string, unknown>> {
+    if (!this.config.lofiiEnabled) throw new LofiiError('lofii_disabled', 'Lofii 对接未启用')
+    const result = await this.client.say(message)
+    await this.refresh()
+    return result
+  }
+
+  async history(kind: LofiiHistoryKind, query: LofiiHistoryQuery = {}): Promise<Record<string, unknown>> {
+    if (!this.config.lofiiEnabled) throw new LofiiError('lofii_disabled', 'Lofii 对接未启用')
+    return this.client.history(kind, query)
+  }
+
+  private async control<T>(run: () => Promise<T>): Promise<T> {
+    if (!this.config.lofiiEnabled) throw new LofiiError('lofii_disabled', 'Lofii 对接未启用')
+    if (!this.controlEnabled) {
+      throw new LofiiError('lofii_control_disabled', 'Lofii 控制接口未启用（未配置控制 Token）')
+    }
+    const result = await run()
+    await this.refresh()
+    return result
+  }
+}

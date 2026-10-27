@@ -1,6 +1,6 @@
 # AntifieldCloud 验收记录
 
-> 当前版本 v0.7.3（**已发布：Tag `v0.7.3` + GitHub Release [AntifieldCloud v0.7.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.3)；已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**；Bot 提示词文档化 + 按需 read、默认关闭、schema 保持 v17、OpenCode v2.1.4）；v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口：审计失败持久化 schema v17、Bot 镜像清理、导入归档 90 天、告警 24h 重通知、备份锁心跳、DR-1 状态、BotService 拆分）；v0.7.1（已发布：Tag `v0.7.1` + GitHub Release [AntifieldCloud v0.7.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.1)；群聊共享会话；schema v16 无迁移）；v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）；schema v16）；v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
+> 当前版本 v0.8.0（**本地实现完成，生产部署/验收待执行**；Lofii Minecraft Bot 只读/控制/告警对接 + `/minecraft` 合并标签页；schema 保持 **v17**、OpenCode **v2.1.4**；生产当前仍为 v0.7.3，部署/验收完成前不声明已上线）；v0.7.3（**已发布：Tag `v0.7.3` + GitHub Release [AntifieldCloud v0.7.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.3)；已部署生产并完成读范围矩阵 + 真实 QQ 私聊/群聊正向验收**；Bot 提示词文档化 + 按需 read、默认关闭、schema 保持 v17、OpenCode v2.1.4）；v0.7.2（已发布：Tag `v0.7.2` + GitHub Release；D-18 收口：审计失败持久化 schema v17、Bot 镜像清理、导入归档 90 天、告警 24h 重通知、备份锁心跳、DR-1 状态、BotService 拆分）；v0.7.1（已发布：Tag `v0.7.1` + GitHub Release [AntifieldCloud v0.7.1](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.1)；群聊共享会话；schema v16 无迁移）；v0.7.0（已发布：Tag `v0.7.0` + GitHub Release；第六轮深度审计修复 + 备份整包加密 + 异地副本（默认关闭）；schema v16）；v0.6.6（已发布：Tag `v0.6.6` + GitHub Release；系统提示词精简 + 群聊用户名 head + 群聊共享记忆 + 记忆两栏/迁移；schema v16）；v0.6.5（已发布：Tag `v0.6.5` + GitHub Release；生产 release `20261024T085435Z`/commit `c48ea8a`）；v0.6.4（已发布：Tag/Release v0.6.4；多用户内测验收通过）；v0.6.3（已发布：Tag/Release v0.6.3；群聊独立角色卡 + 群消息模式 + 全量消息 + 群聊禁用斜杠命令；schema v16）；v0.6.2（已发布：Tag/Release v0.6.2，目标名称编辑 + 测试消息辨识 + 入站查重 + 投递与发布单列，schema v15 兼容列）；v0.6.1（已发布：Tag/Release v0.6.1，Bot 连续消息 + SearXNG MCP 联网搜索 + 备份状态 hotfix，schema v14）；v0.6.0（已部署并验收通过，release `20261023T053539Z`/commit `6349617`）；v0.5.11（已部署并验收通过，用户实发 2026-10-23 10:39 CST；结构化记忆系统 + schema v14）；v0.5.10（已部署并验收通过，用户实发 2026-10-22 23:26–23:29 CST；记忆/会话修复 + 移除代理隧道依赖）；v0.5.9（已部署并验收通过，用户实发 2026-10-22 22:39–22:41 CST；移除 `/ask`、限速放宽、`/help` 动态开放）；v0.5.8（已部署并验收通过，用户实发 2026-10-22 21:59–22:08 CST）/ v0.5.7 / v0.5.6 / v0.5.5 / v0.5.4 / v0.5.3 / v0.5.2 / v0.5.1 / v0.5.0 / v0.4.2 / v0.4.1 / v0.4.0 / v0.3.2 / v0.3.1 / v0.3.0 / v0.2.2 / v0.2.1 / v0.2.0 作为历史保留。v0.1.0 的交付摘要见 CHANGELOG。
 >
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
@@ -38,6 +38,30 @@
 > 真实 QQ 验收（用户实发）：最终 release 10:34:39/10:35:39/10:37:22 CST 三条 Chat → 10:37:30 `bot.memory.extract` `rounds=3 ops=2 upserts=2`（偏好+资料各 1）；10:38:40 `/memory` 成功；10:39:15 `/forget confirm` 审计 `items=2 legacy=0`，用户确认回复含“记忆条目 2 条”；之后 items=0/state=0/legacy 仅剩 2 条其他未迁移用户（未误删）/sessions 仅剩其他用户。用户 10:39 CST 确认验收通过。
 > 部署后备份 `snapshot-20261023T023941878Z-inc.tar.gz`（154594 bytes，sha256 `db55178851004dd80353cdbb31213679d61cfc8a0eb72050f8f70a34fe68a21f`，secrets=ok，PC 已拉取/ack）；legacy 清理 10:12:27 dry-run 与 `--confirm` 均 `users=0 files=0`（测试用户 legacy 已随 `/forget` 删除，另 2 条属未迁移用户未触碰，写审计 `bot.memory.legacy_cleanup`）。
 > **已知环境事件**：2026-10-23 01:08–01:13 CST Cloudflare 边缘 7844 不可达致 tunnel 短暂中断，重启 cloudflared 后恢复；公共 smoke 24/24，记录为环境事件、不计应用问题。
+
+## v0.8.0（本地实现完成；生产部署/验收待执行；Lofii 对接 + `/minecraft` 合并标签；schema 保持 v17；OpenCode v2.1.4）
+
+- **状态**：**本地实现与本地门禁完成（2026-10-27）；生产部署/验收待 Lead 执行**。生产应用当前仍为 **v0.7.3**（release `20261027T060134Z`/commit `aedc3c7`，`/healthz` v0.7.3/schema17）；v0.8.0 尚未 Tag/Release。本文件在部署、smoke、drill 与生产 Lofii 联调回填前，不声明“已部署/已验收”。
+- **范围**：服务端轮询独立 Lofii Bot（仅 loopback `127.0.0.1:3010`，lofii-bot v0.6.0 契约 v1）的 `/status` 与 `/events/recent`，缓存快照与最近 100 条事件；`GET /api/lofii/status|history`、`POST /api/lofii/tasks|tasks/stop|tasks/resume|move|say`；读/控制 Token 分离、控制 Token 为空即只读；上游 `alert` 映射为 `status='event'` 告警事件 + `meta.lofii.event_cursor` 游标；`/minecraft` 合并为「服务器 / Lofii」双标签（键盘可操作、`?tab=lofii`/`#lofii` 深链）；告警历史新增 `event` 状态与 `lofii_*` 事件标签。
+- **数据/配置**：schema 保持 **v17（无迁移）**；新增 `LOFII_ENABLED`（默认 false）、`LOFII_URL`（默认 `http://127.0.0.1:3010`）、`LOFII_READ_TOKEN`/`LOFII_CONTROL_TOKEN`（`scripts/sync-lofii-tokens.sh` 同步）、`LOFII_TIMEOUT_MS=2500`、`LOFII_POLL_MS=5000`、`LOFII_ALERTS_ENABLED=true`；`bootstrap-env.sh`/`deploy/env.example`/`smoke.ps1` 已同步。OpenCode 仍为 **v2.1.4**，Node.js v26.12.1。
+- **本地验证（2026-10-27 实测）**：
+  - `npm run check` 通过（`npm run typecheck` + `npm run lint` + `npm test` + `npm run test:web`）。
+  - `npm test` **566**（565 pass、1 skip；server=87 + scripts=4 共 91 个测试文件）。
+  - `npm run test:web` **250**（47 文件）。
+  - `npx tsc -p server/tsconfig.json`、`npx tsc -p web/tsconfig.json` 通过；`eslint server web scripts --max-warnings=0` 通过。
+  - `npm run test:coverage` 通过：服务端 **Lines 93.06% / Branches 78.67% / Functions 88.70%**（门禁 91/76/85）。
+  - `npm run test:web:coverage` 通过：前端 **Lines 55.48% / Branches 49.91% / Functions 48.45%**（门禁 50/42/45）。
+  - `npm run build` 通过：`web/dist/assets/index-DHjowEA5.js` 761.09 kB（gzip 227.12 kB）、`index-OhupI5MS.css` 92.52 kB。
+  - `node scripts/check-version.mjs --quiet`：README/CHANGELOG/ACCEPTANCE/DEPLOY/AGENTS 与 package.json `0.8.0` 一致；`deploy/env.example` `APP_VERSION=0.8.0`；schema/OpenCode 当前事实 `v17`/`v2.1.4` 不变（生产部署前以实际运行结果为准）。
+  - 新增/扩展测试：`server/test/lofii-client.test.ts`、`lofii-service.test.ts`、`lofii-routes.test.ts`、`web/src/components/lofii/LofiiPanel.test.tsx`、`web/src/pages/Minecraft.test.tsx`、`web/src/api/client.lofii.test.ts`；`alerts.test.ts`（`recordExternal`）、`config-validation.test.ts`（`LOFII_*`）、`AlertsCard.test.tsx`（`event` 状态）同步扩展。
+- **生产部署/验收（待执行，必须回填）**：
+  1. Lead 部署 v0.8.0；`/healthz` 断言 `version=0.8.0`、`schemaVersion=17`；记录 release/commit、迁移前 DB 快照与 `APP_VERSION`。
+  2. lofii-bot v0.6.0 就绪且仅 loopback；root 执行 `scripts/sync-lofii-tokens.sh --check` → `sync-lofii-tokens.sh`；按 `docs/DEPLOY.md` §3.8 设 `LOFII_ENABLED=true` 并重启。
+  3. `GET /api/lofii/status` 登录后返回 `enabled/reachable/eventsSupported/controlEnabled` 符合配置；不可达/禁用/只读（控制 Token 为空）分支分别验证；`/minecraft` 标签与面板可用。
+  4. `smoke.ps1 -ExpectedVersion 0.8.0 -ExpectedSchemaVersion 17 -ExpectedOpenCodeVersion 2.1.4 -ExpectedLofiiVersion 0.6.0`（未启用 Lofii 时 `-SkipLofii`）；跳过项不得计 PASS。
+  5. 只读 + 控制分支验证：任务/移动/聊天二次确认、`/say` 审计只记字符数、告警历史出现 `status='event'`、Token/URL 不出现在页面/日志/API 响应。
+  6. 部署后备份、ack 与 `drill.ps1 -ExpectedSchemaVersion 17`；回填本节证据前不发布 Tag/GitHub Release。
+- **明确残余**：见 `docs/AUDIT.md` v0.8.0 节与 `docs/SECURITY.md` §4（Lofii 告警仅事件语义、聊天/事件不持久化、轮询延迟/单实例、生产验收待执行）。
 
 ## v0.7.3（已发布：Tag `v0.7.3` + GitHub Release [AntifieldCloud v0.7.3](https://github.com/antifield26/AntifieldCloud/releases/tag/v0.7.3)；已部署生产并完成读范围/QQ 正向验收；Bot 提示词文档化 + 按需 read；schema 保持 v17）
 

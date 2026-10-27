@@ -252,6 +252,14 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10
 }
 
+export interface ExternalAlertInput {
+  event: string
+  severity: AlertSeverity
+  title: string
+  message: string
+  details: Record<string, unknown>
+}
+
 export class AlertService {
   private readonly db: DatabaseSync
   private readonly config: Config
@@ -1095,6 +1103,62 @@ export class AlertService {
       total: Number(total),
       state: stateItems,
       config: this.configSummary(),
+    }
+  }
+
+  /**
+   * 记录来源外部服务（v0.8.0：Lofii）的告警事件。
+   *
+   * 与本地指标告警的区别：不参与 alert_state 状态机（外部服务自己维护告警状态），
+   * 事件 status 固定为 `event`，避免被前端/清理逻辑当成 firing/resolved；
+   * 落库后异步复用现有 webhook 投递与 Bot 通知，不阻塞调用方。
+   * 全局告警关闭（ALERTS_ENABLED=false）时不写库、不投递。
+   */
+  recordExternal(input: ExternalAlertInput): number | null {
+    if (!this.config.alertsEnabled) return null
+    const createdAt = this.deps.now().toISOString()
+    const event: AlertEventRow = {
+      id: 0,
+      event: input.event.slice(0, 64),
+      severity: input.severity,
+      status: 'event',
+      title: input.title.slice(0, 200),
+      message: input.message.slice(0, 1000),
+      details_json: JSON.stringify(input.details ?? {}),
+      created_at: createdAt,
+      delivered_at: null,
+      delivery_error: null,
+    }
+    const result = this.db
+      .prepare(
+        `INSERT INTO alert_events (event, severity, status, title, message, details_json, created_at, delivered_at, delivery_error)
+         VALUES (?, ?, 'event', ?, ?, ?, ?, NULL, NULL)`,
+      )
+      .run(event.event, event.severity, event.title, event.message, event.details_json, event.created_at)
+    event.id = Number(result.lastInsertRowid)
+    void this.deliverExternal(event)
+    return event.id
+  }
+
+  /** 外部事件的后台投递：webhook 与 Bot 通知互不阻断，失败只记录脱敏日志。 */
+  private async deliverExternal(event: AlertEventRow): Promise<void> {
+    try {
+      await this.deliver(event)
+    } catch (error) {
+      this.deps.log('warn', '外部告警 webhook 投递异常', { event: event.event, error: this.sanitizeError(error) })
+    }
+    try {
+      this.deps.notifyEvent?.({
+        id: event.id,
+        event: event.event,
+        severity: event.severity,
+        status: event.status,
+        title: event.title,
+        message: event.message,
+        createdAt: event.created_at,
+      })
+    } catch (error) {
+      this.deps.log('warn', 'Bot 告警通知入队失败', { error: this.sanitizeError(error) })
     }
   }
 

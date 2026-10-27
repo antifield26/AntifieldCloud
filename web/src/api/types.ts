@@ -438,6 +438,9 @@ export interface VersionResult {
   /** v0.5.0：Bot 功能是否可用与支持的平台（旧服务端不下发） */
   botsEnabled?: boolean
   botPlatforms?: string[]
+  /** v0.8.0：Lofii 集成是否启用、Lofii 控制接口是否可用（旧服务端不下发时按关闭处理）。 */
+  lofiiEnabled?: boolean
+  lofiiControlEnabled?: boolean
   /** 当前程序支持的 schema 版本（v0.7.0）；旧服务端不下发时不比较演练一致性。 */
   schemaVersion?: number
   /** v0.7.0：备份整包加密开关与 Pi 端 age 公钥是否就绪（不读取私钥）。 */
@@ -486,6 +489,10 @@ export interface AppMeta {
   backupOffsiteStatusConfigured: boolean
   /** 审计写入诊断；旧服务端不下发时为 null。 */
   audit: VersionAuditDiagnostics | null
+  /** v0.8.0：Lofii 集成是否启用（决定 Minecraft 页是否显示 Lofii 标签页）。 */
+  lofiiEnabled: boolean
+  /** v0.8.0：Lofii 控制接口是否可用（控制未启用时只读展示，禁用任务/移动/聊天操作）。 */
+  lofiiControlEnabled: boolean
 }
 
 /* ---------- 知识库：笔记与书签 ---------- */
@@ -1245,4 +1252,249 @@ export interface BotMemoryItemSummary {  id: string
   updatedAt: string
   /** null 表示永不过期。 */
   expiresAt: string | null
+}
+
+/* ---------- Lofii 集成（v0.8.0，GET /api/lofii/status 等） ---------- */
+
+/** Lofii 支持的 7 种任务（与 Lofii Bot 的 TaskName 一致）。 */
+export type LofiiTaskName = 'fishing' | 'farming' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol'
+
+/** 任务状态；pending_resume 表示有可恢复的暂停任务。 */
+export type LofiiTaskState =
+  | 'idle'
+  | 'starting'
+  | 'running'
+  | 'depositing'
+  | 'recovering'
+  | 'stopping'
+  | 'defending'
+  | 'pending_resume'
+
+/** Lofii 与 Minecraft 的动态连接状态。 */
+export type LofiiBotState = 'idle' | 'connecting' | 'connected' | 'backoff' | 'cooldown'
+
+/** 手动移动动作；stop 只停止移动，不停止任务。 */
+export type LofiiMoveAction = 'home' | 'come' | 'follow' | 'stop'
+
+/** 任务进度计数（Lofii 快照原字段，未使用的计数为 0）。 */
+export interface LofiiTaskProgress {
+  fishCaught: number
+  wheatHarvested: number
+  planted: number
+  deposited: number
+  treesChopped: number
+  logsChopped: number
+  saplingsPlanted: number
+  mobsKilled: number
+  oresMined: number
+  coalMined: number
+  ironMined: number
+  copperMined: number
+  forestTreesChopped: number
+  naturalLogsChopped: number
+  naturalSaplingsPlanted: number
+  sleepVotes: number
+  nightSkipped: number
+  patrolWaypoints: number
+  patrolDistance: number
+}
+
+/** 排队中的任务；requestedBy 是发起方标识（如 panel），不是敏感信息。 */
+export interface LofiiQueuedTask {
+  taskId: string
+  name: LofiiTaskName
+  requestedBy: string
+  requestedAt: string
+}
+
+/** 可恢复的暂停任务：需在 expiresAt 前恢复，否则 Lofii 自动标记 interrupted。 */
+export interface LofiiPendingResume {
+  taskId: string
+  name: LofiiTaskName
+  startedAt: string
+  elapsedSec: number
+  progress: LofiiTaskProgress
+  expiresAt: string
+}
+
+export interface LofiiTask {
+  enabled: boolean
+  active: boolean
+  name: LofiiTaskName | null
+  state: LofiiTaskState
+  startedAt: string | null
+  elapsedSec: number
+  progress: LofiiTaskProgress
+  failures: number
+  /** 已截断的短错误，不含提示词或密钥。 */
+  lastError: string | null
+  pendingResume: LofiiPendingResume | null
+  queue: LofiiQueuedTask[]
+}
+
+/** RCON 只读管理快照（白名单/TPS/在线列表；无任何写能力）。 */
+export interface LofiiAdmin {
+  enabled: boolean
+  rcon: boolean
+  updatedAt: string | null
+  lastError: string | null
+  tps: { one: number | null; five: number | null; fifteen: number | null }
+  online: { count: number | null; max: number | null; players: string[] }
+  whitelist: { count: number | null; names: string[] }
+  time: { ticks: number | null; label: string | null }
+  backup: { status: string }
+}
+
+/** Bot 自身在 Minecraft 的连接信息；host/port 属于本机回环配置，不展示到 UI。 */
+export interface LofiiMinecraft {
+  connected: boolean
+  username: string
+  host: string
+  port: number
+  version: string
+  reconnects: number
+  lastDisconnect: { at: string; reason: string } | null
+}
+
+export interface LofiiPlayer {
+  dimension: string | null
+  position: { x: number; y: number; z: number } | null
+  health: number | null
+  food: number | null
+}
+
+export interface LofiiServer {
+  reachable: boolean
+  online: number
+  max: number
+  versionName: string | null
+  motd: string | null
+  latencyMs: number | null
+  lastPingAt: string | null
+}
+
+export interface LofiiPresence {
+  enabled: boolean
+  pollMs: number
+  graceMs: number
+  checkMs: number
+  otherPlayers: number
+  lastDecision: string
+}
+
+export interface LofiiAi {
+  enabled: boolean
+  provider: string
+  model: string
+  inFlight: number
+  queued: number
+  failures: number
+  lastLatencyMs: number | null
+  lastError: string | null
+}
+
+export interface LofiiMemory {
+  players: number
+  turns: number
+}
+
+/** Lofii `/status` 快照（由服务端转发；不包含 Token、密码或记忆正文）。 */
+export interface LofiiStatus {
+  version: string
+  uptimeSec: number
+  state: LofiiBotState
+  minecraft: LofiiMinecraft
+  player: LofiiPlayer
+  server: LofiiServer
+  presence: LofiiPresence
+  ai: LofiiAi
+  memory: LofiiMemory
+  task: LofiiTask
+  admin: LofiiAdmin
+}
+
+/** 事件类型；hello 只出现在 SSE 首帧，/status 的事件环通常为其余类型。 */
+export type LofiiEventType = string
+
+/** Lofii 内存事件环中的一条事件；data 形状随 type 变化，渲染层只读取已知字段。 */
+export interface LofiiEvent {
+  id: string
+  type: LofiiEventType
+  ts: string
+  data: unknown
+}
+
+/** GET /api/lofii/status 的聚合快照：集成状态 + Lofii 快照 + 最近事件（newest first，最多 100）。 */
+export interface LofiiSnapshot {
+  enabled: boolean
+  reachable: boolean
+  stale: boolean
+  controlEnabled: boolean
+  alertsEnabled: boolean
+  version: string | null
+  contractVersion: number | null
+  /** 旧版 Lofii 没有 /events/recent 时为 false：UI 显示“需升级 v0.6.0”提示。 */
+  eventsSupported: boolean
+  lastPollAt: string | null
+  error: string | null
+  status: LofiiStatus | null
+  events: LofiiEvent[]
+}
+
+export type LofiiHistoryKind = 'samples' | 'alerts'
+
+/** 历史查询：服务端透传 Lofii 的 /history，from/to 为 ISO 时间。 */
+export interface LofiiHistoryQuery {
+  kind: LofiiHistoryKind
+  from?: string
+  to?: string
+  /** 1–200（AntifieldCloud 侧上限）。 */
+  limit?: number
+}
+
+/** 60 秒一条的历史采样（不含聊天正文/Token）。 */
+export interface LofiiHistorySample {
+  ts: string
+  connected: boolean
+  state: string
+  taskName: string | null
+  taskState: string | null
+  health: number | null
+  food: number | null
+  memoryMb: number | null
+  tps: number | null
+  queueLen: number
+  rssMb: number | null
+}
+
+/** Lofii 历史告警（type 为 low_health/task_failed/disconnected/chest_full/defense_retreat）。 */
+export interface LofiiHistoryAlert {
+  id: number | string
+  ts: string
+  type: string
+  severity: string
+  message: string
+  details?: Record<string, unknown> | null
+}
+
+/** GET /api/lofii/history 的响应：按 kind 动态携带 samples 或 alerts。 */
+export interface LofiiHistory {
+  kind: LofiiHistoryKind
+  from: string | null
+  to: string | null
+  count: number
+  samples?: LofiiHistorySample[]
+  alerts?: LofiiHistoryAlert[]
+}
+
+/** 控制接口成功响应的可选字段；UI 不依赖具体形状，操作后重新拉取 status。 */
+export interface LofiiActionResult {
+  ok?: boolean
+  requestId?: string
+  task?: LofiiTask
+  action?: string
+  lines?: number
+  /** /task/start：任务已有 active 时入队，position 为队列位置（1 起）。 */
+  queued?: boolean
+  position?: number | null
 }

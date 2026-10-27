@@ -542,3 +542,167 @@ test('offsite_overdue：阈值 0 时关闭条件，即使状态文件存在也�
     fx.close()
   }
 })
+
+test('recordExternal：status=event、不写 alert_state、异步 webhook + Bot 通知', async () => {
+  const calls: { url: string; init?: RequestInit }[] = []
+  const notified: { id: number; event: string; status: string; severity: string; title: string }[] = []
+  const fx = alertFixture({
+    config: { alertWebhookUrl: WEBHOOK, alertWebhookSecret: 'whsec-test' },
+    deps: {
+      fetch: (async (url: string | URL | Request, init?: RequestInit) => {
+        calls.push({ url: String(url), init })
+        return { ok: true, status: 200 } as unknown as Response
+      }) as unknown as typeof fetch,
+      notifyEvent: (event) => notified.push(event),
+    },
+  })
+  try {
+    const id = fx.alerts.recordExternal({
+      event: 'lofii_low_health',
+      severity: 'warning',
+      title: 'Lofii 血量偏低',
+      message: 'Lofii 血量 8/20',
+      details: { source: 'lofii', lofiiEventId: 'b1-1', lofiiType: 'low_health' },
+    })
+    assert.equal(typeof id, 'number')
+    assert.ok((id ?? 0) > 0)
+    const row = fx.db
+      .prepare('SELECT event, severity, status, title, message, details_json, delivered_at FROM alert_events WHERE id = ?')
+      .get(id) as {
+      event: string
+      severity: string
+      status: string
+      title: string
+      message: string
+      details_json: string
+      delivered_at: string | null
+    }
+    assert.equal(row.event, 'lofii_low_health')
+    assert.equal(row.severity, 'warning')
+    assert.equal(row.status, 'event')
+    assert.equal(row.title, 'Lofii 血量偏低')
+    assert.deepEqual(JSON.parse(row.details_json), {
+      source: 'lofii',
+      lofiiEventId: 'b1-1',
+      lofiiType: 'low_health',
+    })
+    // 外部事件不参与本地状态机：没有 alert_state 行。
+    const stateCount = (fx.db.prepare('SELECT COUNT(*) AS c FROM alert_state').get() as { c: number }).c
+    assert.equal(stateCount, 0)
+    const firedCount = (
+      fx.db.prepare("SELECT COUNT(*) AS c FROM alert_events WHERE status = 'firing'").get() as { c: number }
+    ).c
+    assert.equal(firedCount, 0)
+
+    // 投递是异步的：等待后台任务完成后检查 webhook 与 Bot 通知。
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0]?.url, WEBHOOK)
+    const payload = JSON.parse(String(calls[0]?.init?.body)) as Record<string, unknown>
+    assert.equal(payload.source, 'antifieldcloud')
+    assert.equal(payload.event, 'lofii_low_health')
+    assert.equal(payload.status, 'event')
+    const delivered = fx.db.prepare('SELECT delivered_at FROM alert_events WHERE id = ?').get(id) as {
+      delivered_at: string | null
+    }
+    assert.ok(delivered.delivered_at)
+    assert.equal(notified.length, 1)
+    assert.equal(notified[0]?.status, 'event')
+    assert.equal(notified[0]?.event, 'lofii_low_health')
+  } finally {
+    fx.close()
+  }
+})
+
+test('recordExternal：webhook 失败只异步记录 delivery_error；未配置 webhook 不阻断通知', async () => {
+  const attempts: string[] = []
+  const failure = alertFixture({
+    config: { alertWebhookUrl: WEBHOOK },
+    deps: {
+      fetch: (async (url: string | URL | Request) => {
+        attempts.push(String(url))
+        throw new Error(`connect ECONNREFUSED ${WEBHOOK}`)
+      }) as unknown as typeof fetch,
+    },
+  })
+  try {
+    const id = failure.alerts.recordExternal({
+      event: 'lofii_task_failed',
+      severity: 'critical',
+      title: 'Lofii 任务失败',
+      message: '任务失败',
+      details: { source: 'lofii', lofiiEventId: 'b1-2', lofiiType: 'task_failed' },
+    })
+    assert.ok(id)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    assert.equal(attempts.length, 3, '后台投递失败应按既有策略重试 3 次')
+    const row = failure.db.prepare('SELECT delivered_at, delivery_error FROM alert_events WHERE id = ?').get(id) as {
+      delivered_at: string | null
+      delivery_error: string | null
+    }
+    assert.equal(row.delivered_at, null)
+    assert.ok(row.delivery_error)
+    assert.ok(!String(row.delivery_error).includes(WEBHOOK), '错误不得包含 webhook URL')
+  } finally {
+    failure.close()
+  }
+
+  const notified: string[] = []
+  const noWebhook = alertFixture({
+    deps: {
+      notifyEvent: (event) => notified.push(event.event),
+      fetch: (async () => {
+        throw new Error('不应调用 webhook')
+      }) as unknown as typeof fetch,
+    },
+  })
+  try {
+    const id = noWebhook.alerts.recordExternal({
+      event: 'lofii_alert',
+      severity: 'warning',
+      title: 'Lofii 告警',
+      message: '未知告警',
+      details: { source: 'lofii', lofiiEventId: 'b1-3', lofiiType: 'unknown' },
+    })
+    assert.ok(id)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const row = noWebhook.db.prepare('SELECT delivery_error FROM alert_events WHERE id = ?').get(id) as {
+      delivery_error: string | null
+    }
+    assert.match(row.delivery_error ?? '', /未配置/)
+    assert.deepEqual(notified, ['lofii_alert'], '未配置 webhook 也要通知 Bot')
+  } finally {
+    noWebhook.close()
+  }
+})
+
+test('recordExternal：ALERTS_ENABLED=false 时不写库、不投递、不通知', async () => {
+  let fetchCalls = 0
+  const notified: string[] = []
+  const fx = alertFixture({
+    config: { alertsEnabled: false, alertWebhookUrl: WEBHOOK },
+    deps: {
+      fetch: (async () => {
+        fetchCalls += 1
+        return { ok: true, status: 200 } as unknown as Response
+      }) as unknown as typeof fetch,
+      notifyEvent: (event) => notified.push(event.event),
+    },
+  })
+  try {
+    const id = fx.alerts.recordExternal({
+      event: 'lofii_disconnected',
+      severity: 'critical',
+      title: 'Lofii 连接断开',
+      message: '断线',
+      details: { source: 'lofii', lofiiEventId: 'b1-4', lofiiType: 'disconnected' },
+    })
+    assert.equal(id, null)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    assert.equal(events(fx).length, 0)
+    assert.equal(fetchCalls, 0)
+    assert.equal(notified.length, 0)
+  } finally {
+    fx.close()
+  }
+})

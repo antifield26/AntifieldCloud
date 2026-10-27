@@ -191,6 +191,20 @@ export interface Config {
   botConnectivityEnabled: boolean
   botConnectivityIntervalSeconds: number
   botConnectivityTimeoutSeconds: number
+  /**
+   * v0.8.0 Lofii Minecraft Bot（独立附属服务，仅 loopback HTTP）对接。
+   * 读/控制 Token 分离：控制 Token 为空表示只读，任务/移动接口返回 503。
+   */
+  lofiiEnabled: boolean
+  lofiiUrl: string
+  lofiiReadToken: string
+  lofiiControlToken: string
+  /** 单次上游请求超时（毫秒）。 */
+  lofiiTimeoutMs: number
+  /** 状态/事件轮询间隔（毫秒）。 */
+  lofiiPollMs: number
+  /** 是否把 Lofii 上游告警写入本应用告警事件（关闭后仍推进游标）。 */
+  lofiiAlertsEnabled: boolean
 }
 
 const DEFAULT_ENV_FILE = '/etc/antifieldcloud/env'
@@ -415,6 +429,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     botConnectivityEnabled: bool(merged, 'BOT_CONNECTIVITY_ENABLED', true),
     botConnectivityIntervalSeconds: int(merged, 'BOT_CONNECTIVITY_INTERVAL_SECONDS', 60, 15, 600),
     botConnectivityTimeoutSeconds: int(merged, 'BOT_CONNECTIVITY_TIMEOUT_SECONDS', 8, 2, 30),
+    lofiiEnabled: bool(merged, 'LOFII_ENABLED', false),
+    lofiiUrl: str(merged, 'LOFII_URL', 'http://127.0.0.1:3010').replace(/\/+$/, ''),
+    lofiiReadToken: str(merged, 'LOFII_READ_TOKEN', ''),
+    lofiiControlToken: str(merged, 'LOFII_CONTROL_TOKEN', ''),
+    lofiiTimeoutMs: int(merged, 'LOFII_TIMEOUT_MS', 2500, 500, 10_000),
+    lofiiPollMs: int(merged, 'LOFII_POLL_MS', 5000, 2000, 60_000),
+    lofiiAlertsEnabled: bool(merged, 'LOFII_ALERTS_ENABLED', true),
   }
   if (config.maxUploadBytes > config.quotaBytes) {
     throw new Error('MAX_UPLOAD_BYTES 不能大于 QUOTA_BYTES')
@@ -463,6 +484,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   // 代理只允许固定 loopback 上游；非 loopback 会把应用会话/密码暴露给外部主机（配置错误即拒绝启动）。
   validateLoopbackUrl(config.opencodeUrl, 'OPENCODE_URL')
+  // Lofii 上游同样只允许 loopback：读/控制 Token 不得发往外部主机；仅在启用时校验，
+  // 关闭状态下允许保留空 Token/默认地址，便于随时开关。
+  if (config.lofiiEnabled) {
+    validateLoopbackUrl(config.lofiiUrl, 'LOFII_URL')
+    if (!config.lofiiReadToken) {
+      throw new Error('LOFII_ENABLED=true 时必须配置 LOFII_READ_TOKEN')
+    }
+  }
   if (config.alertWebhookUrl) validateHttpUrl(config.alertWebhookUrl, 'ALERT_WEBHOOK_URL')
   if (config.botSecretKey) {
     let key: Buffer
@@ -489,7 +518,7 @@ function parseBotSearchMode(env: Record<string, string>): 'mcp' | 'prefetch' {
 }
 
 /** OpenCode 上游必须是 loopback：代理会注入 Basic 凭据，不能指向外部主机。 */
-function validateLoopbackUrl(value: string, key: string): void {
+export function validateLoopbackUrl(value: string, key: string): void {
   let url: URL
   try {
     url = new URL(value)

@@ -1,4 +1,4 @@
-# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0）
+# AntifieldCloud 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0 / v0.8.0 Lofii 对接）
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
@@ -7,6 +7,37 @@
   第三轮覆盖 v0.3.2 基线与 v0.4.0；第四轮覆盖 v0.4.2 基线与 v0.5.0 Bot 增量。
 - 方法：只读静态审查 + 进程内 PoC + 只读线上检查 + 回归测试；审计阶段未修改生产。
 - 结果：第一至第四轮范围内无未关闭 P0；第四轮 v0.4.2 基线 P1=0、P2=3、P3=12，Bot WIP P1=2、P2=4 均已修复；第五轮（v0.5.11→v0.6.0）P0=0、P1=1、P2=14 均已在本版修复，P3=54 记录；残余见各节“延后/残留”。
+
+## v0.8.0 Lofii 对接（本地实现，生产待部署/验收；2026-10-27）
+
+### 1. 范围与方法
+
+- 范围：`server/src/lofii/client.ts`/`service.ts`、`server/src/http/routes/lofii.ts`、`alerts/service.ts recordExternal`、`config.ts` 的 `LOFII_*`、`app.ts`/`main.ts` 生命周期、`web/src/components/lofii/*`、`web/src/pages/Minecraft.tsx`、`web/src/lib/lofii.ts`、`AlertsCard` 事件状态、`scripts/sync-lofii-tokens.sh`、`bootstrap-env.sh`、`deploy/env.example`、`smoke.ps1` Lofii 检查与对应文档。
+- 方法：只读代码审查 + 单元/路由/服务测试（进程内夹具，不访问真实 lofii-bot/网络）+ 本地门禁（typecheck/eslint/测试/覆盖率/build/check-version）；未在审计阶段修改生产、未部署 v0.8.0。
+- 计数：本轮为 v0.8.0 发布前自检，**P0=0 / P1=0 / P2=0**；未发现需要阻断发布的安全问题；以下为明确残余与验收边界，不是缺陷清单。
+
+### 2. 关键安全/正确性结论
+
+- **Token 边界**：读/控制 Token 分离；控制 Token 为空时 `LofiiClient.control` 直接抛 `lofii_control_disabled` 且不发请求；`/say` 使用读 Token；`LOFII_URL` 启用时强制 loopback + http(s)，客户端 `redirect:'error'`，超时与 2 MiB 响应上限，错误文本移除 URL/Token（含上游把 Token 回显进 error 字段的处置）。
+- **HTTP 面**：全部 `/api/lofii/*` 需登录；写操作 CSRF + 每 IP 限流（控制 20/min、say 10/min）；服务端参数白名单（7 任务/4 移动/`/` 前缀/720 字符/taskId ≤64）；`/say` 审计只记字符数，不记正文；聊天/事件仅内存缓存（≤100 条），不落库/不写日志。
+- **告警语义**：`recordExternal` 固定 `status='event'`，不写 `alert_state`、不参与 firing/resolved；`meta.lofii.event_cursor` + `bootId` 基线避免重放；`LOFII_ALERTS_ENABLED=false` 仍推进游标不写事件；details 清洗后再落库/转发。
+- **降级**：禁用/不可达/旧版无 `/events/recent`/控制未启用/首次轮询未完成均有明确快照状态与页面文案；轮询失败保留旧快照，stale 3 个周期判定；单飞避免并发堆积。
+- **schema/兼容**：无迁移（保持 v17），仅新增 `meta.lofii.event_cursor`；`/api/version` 增 `lofiiEnabled/lofiiControlEnabled`；旧前端/旧服务端按关闭/未配置降级。
+
+### 3. 本地验证证据
+
+- `npm run check` 通过；`npm test` **566**（565 pass、1 skip；91 文件）、`npm run test:web` **250**（47 文件）；服务端覆盖率 **93.06/78.67/88.70**、前端 **55.48/49.91/48.45**（门禁通过）；`npm run build` 通过（`index-DHjowEA5.js` 761.09 kB）。
+- 定向：`node --test server/test/lofii-client.test.ts server/test/lofii-service.test.ts server/test/lofii-routes.test.ts` 覆盖 Token 分离/重定向拒绝/超限/错误映射/游标/告警映射/限流/CSRF/参数校验；`web/src/pages/Minecraft.test.tsx`、`LofiiPanel.test.tsx`、`client.lofii.test.ts` 覆盖标签、降级、二次确认、纯文本渲染。
+- 证据边界：lofii-bot 为进程内假平台/夹具，未访问真实服务；真实生产 `/api/lofii/status`、smoke、drill 与只读/控制分支待 Lead 部署后回填 `docs/ACCEPTANCE.md`。
+
+### 4. v0.8.0 明确残余/已知限制
+
+1. **Lofii 告警仅事件语义**：上游 `alert` 只以 `status='event'` 记录，不进入 firing/resolved 状态机、无恢复/冷却/去重；上游告警状态需在 Lofii 侧查看。
+2. **聊天/事件不持久化**：事件与聊天只存在服务端内存（≤100 条），应用/Lofii 重启即失；不提供历史/导出/搜索；`/say` 不落库/不写日志（审计只记字符数）。
+3. **轮询延迟与单实例**：状态/事件最多滞后一个 `LOFII_POLL_MS`（默认 5s），控制结果最终一致；单进程内存缓存、单 Lofii 上游，不支持多实例/多副本。
+4. **控制面是真实写操作**：启用控制 Token 后可启停任务/移动/游戏内发言（仍受 Lofii 自身安全区/权限限制）；误操作需人工在游戏内纠正，控制 Token 应按需配置/轮换。
+5. **依赖独立服务**：需先部署 lofii-bot v0.6.0+（仅 loopback、契约 v1）并同步 Token；应用不管理其生命周期、不读取其 RCON/OpenCode 密钥。
+6. **生产验收待执行**：生产当前仍为 v0.7.3；在部署 v0.8.0、smoke（含 `-ExpectedLofiiVersion 0.6.0` 或 `-SkipLofii`）、drill 与生产 `/api/lofii/status` 联调前，不声明上线/验收通过。
 
 ## 第一轮（v0.2.0，2026-10-19）
 

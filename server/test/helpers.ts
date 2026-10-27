@@ -146,6 +146,13 @@ export function testConfig(dataDir: string, overrides: Partial<Config> = {}): Co
     botConnectivityEnabled: false,
     botConnectivityIntervalSeconds: 60,
     botConnectivityTimeoutSeconds: 8,
+    lofiiEnabled: false,
+    lofiiUrl: 'http://127.0.0.1:3010',
+    lofiiReadToken: '',
+    lofiiControlToken: '',
+    lofiiTimeoutMs: 2500,
+    lofiiPollMs: 5000,
+    lofiiAlertsEnabled: true,
     ...overrides,
   }
 }

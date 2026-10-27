@@ -54,6 +54,13 @@ const EVENT_LABELS: Record<string, string> = {
   offsite_failed: '异地副本失败',
   backup_encryption_missing: '备份加密公钥缺失',
   backup_encryption_failed: '备份加密失败',
+  // v0.8.0：Lofii 事件告警（事件状态 event 只记录，不参与活跃告警）
+  lofii_low_health: 'Lofii 血量过低',
+  lofii_task_failed: 'Lofii 任务失败',
+  lofii_disconnected: 'Lofii 断线',
+  lofii_chest_full: 'Lofii 箱子已满',
+  lofii_defense_retreat: 'Lofii 防御撤退',
+  lofii_alert: 'Lofii 告警',
 }
 
 const SEVERITY_LABELS: Record<string, string> = {
@@ -74,6 +81,8 @@ const STATUS_LABELS: Record<string, string> = {
   normal: '正常',
   ok: '正常',
   unknown: '未知',
+  /** v0.8.0：Lofii 事件告警只记录状态，不代表当前活跃告警。 */
+  event: '已记录',
 }
 
 /** 服务端支持的状态筛选值（docs/API.md §12）。 */
@@ -82,6 +91,7 @@ const STATUS_FILTERS = [
   { value: 'firing', label: '触发中' },
   { value: 'resolved', label: '已恢复' },
   { value: 'unknown', label: '未知' },
+  { value: 'event', label: '已记录' },
 ]
 
 /** 已知告警条件；服务端新增但前端未映射的条件会从实际数据中补充。 */
@@ -100,6 +110,13 @@ const KNOWN_EVENTS = [
   'drill_stale',
   'offsite_overdue',
   'backup_encryption_missing',
+  // v0.8.0：Lofii 事件告警
+  'lofii_low_health',
+  'lofii_task_failed',
+  'lofii_disconnected',
+  'lofii_chest_full',
+  'lofii_defense_retreat',
+  'lofii_alert',
 ]
 
 function severityLabel(severity: string): string {
@@ -122,12 +139,19 @@ function statusTone(status: string): BadgeTone {
   const value = status.toLowerCase()
   if (value === 'ok' || value === 'resolved' || value === 'recovered' || value === 'normal') return 'success'
   if (value === 'firing' || value === 'fired' || value === 'active') return 'danger'
+  // event 表示已记录的事件告警，不代表活跃，使用中性色调。
   return 'muted'
 }
 
 function isResolvedStatus(status: string): boolean {
   const value = status.toLowerCase()
-  return value === 'ok' || value === 'resolved' || value === 'recovered' || value === 'normal'
+  return (
+    value === 'ok' ||
+    value === 'resolved' ||
+    value === 'recovered' ||
+    value === 'normal' ||
+    value === 'event'
+  )
 }
 
 function eventLabel(event: string): string {

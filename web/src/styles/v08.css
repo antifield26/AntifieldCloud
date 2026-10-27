@@ -1,0 +1,466 @@
+/* v0.8.0 新增样式：Minecraft 页“服务器 / Lofii”标签、Lofii 状态/任务/移动/聊天、
+   事件流与历史表格。约束：只引用设计令牌；窄屏 390px 不产生页面级横向滚动；
+   长玩家名/错误信息使用 overflow-wrap 换行。 */
+
+/* ================= 页面骨架与标签 ================= */
+
+.minecraft-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.minecraft-page > .page-header {
+  margin-bottom: 0;
+}
+
+/* 新页面骨架统一用 flex gap 控制间距，抵消旧样式里的 margin。 */
+.minecraft-page .notice {
+  margin-bottom: 0;
+}
+
+.minecraft-server-panel,
+.lofii-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.minecraft-server-panel .mc-columns {
+  margin-top: 0;
+}
+
+.minecraft-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 4px;
+  padding: 4px;
+}
+
+.minecraft-tabs .segmented-button {
+  flex: 1 1 auto;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 14px;
+}
+
+.minecraft-tabpanel {
+  min-width: 0;
+}
+
+.minecraft-tabpanel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+/* ================= Lofii 卡片内部间距 ================= */
+
+.lofii-panel .card-body > * + * {
+  margin-top: 12px;
+}
+
+.lofii-panel .card-body > .subsection-title {
+  margin-top: 18px;
+}
+
+.lofii-panel .subsection-title + * {
+  margin-top: 8px;
+}
+
+.lofii-panel dl,
+.lofii-panel ol,
+.lofii-panel ul {
+  margin: 0;
+}
+
+.lofii-muted {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+/* ================= 状态网格 ================= */
+
+.lofii-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.lofii-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.lofii-fact-label {
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.lofii-fact-value {
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.lofii-fact-hint {
+  overflow-wrap: anywhere;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.lofii-fact-sub {
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+/* 任务卡内的紧凑指标网格复用 .lofii-fact。 */
+.lofii-task-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+
+/* ================= 任务进度 / 队列 / 控制 ================= */
+
+.lofii-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 0;
+}
+
+.lofii-progress-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12px;
+}
+
+.lofii-progress-row dt {
+  color: var(--text-dim);
+}
+
+.lofii-progress-row dd {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.lofii-queue {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.lofii-queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.015);
+  font-size: 12.5px;
+}
+
+.lofii-queue-index {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.lofii-queue-name {
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.lofii-queue-time {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.lofii-pending {
+  align-items: center;
+}
+
+.lofii-pending-actions {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.lofii-task-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.lofii-task-select {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 170px;
+}
+
+.lofii-task-select .select-field,
+.lofii-task-select .select {
+  width: 100%;
+}
+
+/* ================= 移动 / 聊天 ================= */
+
+.lofii-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+.lofii-move-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 260px;
+}
+
+.lofii-move-form .select-field,
+.lofii-move-form .select {
+  width: 100%;
+}
+
+.lofii-move-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.lofii-say-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lofii-say-input {
+  height: auto;
+  min-height: 86px;
+  padding: 10px 12px;
+  font-family: var(--font);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.lofii-say-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lofii-say-preview {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* ================= 事件流 ================= */
+
+.lofii-event-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lofii-filter-button {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color var(--transition),
+    color var(--transition),
+    background-color var(--transition);
+}
+
+.lofii-filter-button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.lofii-filter-button-active {
+  border-color: rgba(34, 211, 238, 0.4);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.lofii-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.lofii-event {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.lofii-event-chat {
+  border-left-color: var(--accent);
+}
+
+.lofii-event-task {
+  border-left-color: var(--success);
+}
+
+.lofii-event-movement {
+  border-left-color: var(--accent-strong);
+}
+
+.lofii-event-alert {
+  border-left-color: var(--warning);
+}
+
+.lofii-event-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.lofii-event-time {
+  flex: none;
+  color: var(--text-dim);
+  font-size: 11.5px;
+}
+
+.lofii-event-chat,
+.lofii-event-summary {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.lofii-event-chat {
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.lofii-event-summary {
+  color: var(--text-muted);
+}
+
+/* ================= 历史记录 ================= */
+
+.lofii-history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lofii-history-tabs .segmented-button {
+  min-height: 28px;
+}
+
+.lofii-history-message {
+  display: inline-block;
+  overflow-wrap: anywhere;
+}
+
+/* ================= 响应式 ================= */
+
+@media (max-width: 960px) {
+  .lofii-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .lofii-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lofii-task-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lofii-pending-actions {
+    margin-left: 0;
+  }
+
+  .lofii-task-controls {
+    align-items: stretch;
+  }
+
+  .lofii-task-select {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .lofii-task-controls .btn {
+    flex: 1 1 140px;
+  }
+
+  .lofii-move-form {
+    max-width: none;
+  }
+
+  .lofii-move-actions .btn {
+    flex: 1 1 120px;
+  }
+
+  .lofii-history-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

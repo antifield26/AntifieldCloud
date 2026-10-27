@@ -14,10 +14,11 @@
 { "error": { "code": "invalid_credentials", "message": "用户名或密码错误", "details": { } } }
 ```
 
-- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`503 bot_disabled/bot_key_missing/bot_ai_tool_isolation_unavailable/bot_ai_context_unavailable`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
+- 常见状态码：`400 invalid_request`、`401 unauthenticated/invalid_password`、`403 csrf_failed`、`404 not_found`、`410 share_expired/share_revoked/share_exhausted`、`409 conflict/quota_exceeded/archive_encrypted/chunk_conflict/backup_busy/restore_busy/plan_expired/archive_exists`、`413 file_too_large`、`415 unsupported_media_type`、`429 rate_limited`、`500 internal_error`、`502 lofii_auth_failed/lofii_upstream_error`、`503 bot_disabled/bot_key_missing/bot_ai_tool_isolation_unavailable/bot_ai_context_unavailable/lofii_disabled/lofii_control_disabled/lofii_unavailable`、`507 insufficient_storage`。`429` 同时带 `Retry-After` 响应头与 `error.details.retryAfterSec`。
 - 认证：登录成功后服务端在 **app 主机**下发 host-only `af_session`（HttpOnly）与 `af_csrf`（可读）Cookie（均不设 `Domain`；`ai` 主机使用独立 host-only 会话 Cookie）。除 `GET/HEAD` 外的所有 `/api` 请求必须带 `X-CSRF-Token: <af_csrf>`，并满足 `Origin` 为 `https://app.example.com` / 本机；`ai` 源不再作为 app 写请求的受信 Origin。例外：公开 Bot Webhook `POST /api/bot/webhook/:botId` 不挂会话/CSRF，只按平台签名（及时间戳/去重）鉴权（见 §14）；既有公开分享 `POST /api/public/shares/:token/unlock` 也只校验 Origin 与限流。
 - AI 主机 SSO：app 登录/已登录后访问 `GET /api/auth/ai-ticket?next=<ai 完整 URL>`，服务端校验 `next` 必须属于配置的 `AI_ORIGIN`，签发 60 秒一次性 ticket 并 302 到 `https://ai.example.com/__af/sso/<ticket>?next=<ai 相对路径>`；代理校验/消费 ticket 后设置 ai 主机 host-only `af_session` 并 302 到目标路径。ticket 一次性、绑定 aiOrigin、不落库。
 - Bot 功能开关：`BOT_ENABLED=false` 或缺少 `BOT_SECRET_KEY` 时，Webhook 一律 `404 not_found`，`/api/bots*` 写操作返回 `503 bot_disabled`/`bot_key_missing`；`GET /api/bots/status` 仍可读。
+- Lofii 功能开关（v0.8.0）：`LOFII_ENABLED=false` 时 `/api/lofii/status` 仍返回 `enabled:false` 的空壳快照，其余 `/api/lofii/*` 返回 `503 lofii_disabled`；`LOFII_CONTROL_TOKEN` 为空时 `/tasks*`、`/move` 返回 `503 lofii_control_disabled`（`/status`、`/history`、`/say` 仍可用）。上游未启用/网络不可达返回 `503 lofii_unavailable`，鉴权失败/上游异常返回 `502 lofii_auth_failed`/`lofii_upstream_error`。响应与错误文本不包含 Lofii URL/Token。
 - 安全响应头：`Cache-Control: no-store`（静态 hash 资源除外）、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、CSP（见 docs/SECURITY.md）。
 - 登录限制：每 IP 5 次失败/15 分钟；全局 60 次/小时（密码）、120 次/小时（TOTP），loopback 来源不占全局桶。`429` 响应包含 `retryAfterSec`。
 - 单文件上限：普通 multipart **100 MiB**（`MAX_UPLOAD_BYTES=104857600`，匹配 Cloudflare 代理）；更大文件走分片上传。超过返回 `413 file_too_large`，磁盘不足返回 `507 insufficient_storage`。
@@ -30,7 +31,7 @@
 `GET /healthz`（无需认证）
 
 ```json
-{ "ok": true, "version": "0.7.1", "schemaVersion": 16, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
+{ "ok": true, "version": "0.8.0", "schemaVersion": 17, "uptimeSec": 1234, "db": "ok", "pendingBackups": 0 }
 ```
 
 - `db`：轻量就绪标记（DB 可读为 `ok`）；`pendingBackups`：未 ack 且未删除的备份归档数（只读聚合，不含敏感信息）。
@@ -393,8 +394,9 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ## 7. 其它
 
-- `GET /api/version`（需要会话）：`{ "version": "0.7.3", "schemaVersion": 17, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
+- `GET /api/version`（需要会话）：`{ "version": "0.8.0", "schemaVersion": 17, "appOrigin": "https://app.example.com", "aiOrigin": "https://ai.example.com", "trashRetentionDays": 30, "maxUploadBytes": 104857600, "sharesEnabled": true, "alertsEnabled": true, "backupRestoreEnabled": false, "backupImportMaxBytes": 104857600, "backupRestoreMaxEntries": 5000, "backupArchiveEncryption": false, "backupAgeRecipientConfigured": false, "backupOffsiteStatusConfigured": false, "chunkedUploadEnabled": true, "chunkSizeBytes": 8388608, "chunkMaxFileBytes": 5368709120, "noteAttachmentMaxBytes": 26214400, "noteMaxAttachments": 100, "noteVersionsKeep": 20, "shareMaxItems": 50, "metricsEnabled": true, "metricsSampleSeconds": 60, "metricsRetentionDays": 30, "botsEnabled": false, "botPlatforms": ["qq"], "lofiiEnabled": false, "lofiiControlEnabled": false, "audit": { "failureCount": 0, "lastError": null, "lastFailureAt": null, "persisted": true } }`。
   - `schemaVersion`（程序支持的 schema，前端用于演练一致性提示）、`backupArchiveEncryption`/`backupAgeRecipientConfigured`/`backupOffsiteStatusConfigured`（只读状态，不含密钥/路径）、`audit`（审计写入失败计数/最近错误/时间，不含明细）。旧服务端不下发时前端按关闭/未配置/null 降级。
+  - `lofiiEnabled`/`lofiiControlEnabled`（v0.8.0）：Lofii 集成是否启用、控制接口是否可用（`LOFII_ENABLED=true` 且 `LOFII_CONTROL_TOKEN` 非空）；前端据此决定 `/minecraft` 是否显示 Lofii 标签与控制操作。两者都不含 Lofii 地址/Token。
   - schema **17**；`audit.persisted` 表示诊断是否来自 DB 持久化行（DB 不可用时 false，回退内存计数）。
   - `backupRestoreEnabled` 与 `deploy/env.example` 默认一致（默认 `false`；Web 文件级恢复需显式开启）。
 - `GET /api/storage`（需要会话；轻量端点，供文件页取配额，避免触发 Dashboard 的 MC/opencode/systemctl 聚合）：`{ "quotaBytes": 10737418240, "usedBytes": 1234, "trashBytes": 0, "fileCount": 3, "freeBytes": 1 }`。字段与 `/api/dashboard.storage` 一致；`usedBytes` 含笔记附件与回收站，`fileCount` 只统计普通文件（`origin='user'`）。
@@ -452,6 +454,7 @@ RCON 不可用：`502 rcon_unavailable`。
 - Webhook 请求体 `{source,version,event,severity,status,title,message,details,at}`；可选 HMAC 头 `x-antifieldcloud-signature: sha256=<hex>`；10s 超时、最多 3 次尝试。
 - 告警条件：磁盘、温度、内存（默认 90%）、服务、备份超期、pending 备份、备份密钥包、MC、欠压（health probe JSON）、世界备份/世界拉取/恢复演练超期与异地副本超期（`offsite_overdue`）；同状态去重/冷却，恢复时发 resolved。`status` 可能为 `unknown`（连续 3 次数据源不可用后降级并产生一次事件）；`alert_events` 保留 90 天。
   `config` 含 `offsiteMaxAgeHours`（小时，0 表示关闭；状态文件缺失/未配置时该条件不进入列表，不误报）；`status` 字段另含世界备份/拉取/演练阈值。
+- 外部事件告警（v0.8.0，Lofii）：上游 `alert` 事件由服务端映射为 `status='event'` 写入 `alert_events`，**不写 `alert_state`、不参与 firing/resolved 状态机、不产生恢复通知**；`severity`：已知类型（low_health/chest_full/defense_retreat → warning，task_failed/disconnected → critical），未知类型上游 `severity='error'` 为 critical，否则 warning；`event` 名为 `lofii_low_health`/`lofii_task_failed`/`lofii_disconnected`/`lofii_chest_full`/`lofii_defense_retreat`/`lofii_alert`（未知），`details` 含 `source:"lofii"`、`lofiiEventId`、`lofiiType` 与清洗后的上游 details（深度≤2、键≤20、数组≤20、字符串≤300）。写入后异步复用 webhook 投递与 Bot 通知，不阻塞请求；`ALERTS_ENABLED=false` 时不写库/不投递。
 
 ## 11. 备份管理 / 文件级恢复
 
@@ -504,7 +507,7 @@ RCON 不可用：`502 rcon_unavailable`。
 
 ### 告警与审计筛选
 
-- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown`，`event` 为条件名，全部参数可选。
+- `GET /api/alerts?limit=20&offset=0&event=&status=&severity=` → `{items,total,state,config}`；`status` 取值 `firing|resolved|unknown|event`（`event` 为 Lofii 等外部服务的事件记录），`event` 为条件名，全部参数可选。
 - `GET /api/audit?limit=50&offset=0&action=&q=&from=&to=` → `{items,total}`；`q` 对 action/target/ip 做转义 LIKE 搜索；`from/to` 为 ISO 时间；参数可选。
 
 ### 备份状态对象
@@ -730,3 +733,110 @@ BotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|project|t
 ### 错误码汇总
 
 `bot_disabled`（503）、`bot_key_missing`（503）、`bot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`bot_key_invalid`（500，仅启动/配置阶段）、`invalid_bot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`bot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `bot_ai_image_unsupported`/`bot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
+
+## 15. Lofii Bot 对接（v0.8.0，默认关闭）
+
+Lofii 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 Lofii、服务端不下发 Lofii Token/URL**。上游契约为 lofii-bot **v0.6.0**、`contractVersion=1`；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/SECURITY.md`。
+
+### 通用语义
+
+- 启用：`LOFII_ENABLED=true` 且配置 `LOFII_READ_TOKEN`（启动校验：`LOFII_URL` 必须 loopback + http(s)）；控制：`LOFII_CONTROL_TOKEN` 非空。
+- 关闭：`LOFII_ENABLED=false` 时除 `GET /api/lofii/status`（返回 `enabled:false` 空壳）外均返回 `503 lofii_disabled`。
+- 只读：控制 Token 为空时 `/tasks*`、`/move` 返回 `503 lofii_control_disabled`；`/status`、`/history`、`/say` 仍可用（`/say` 使用读 Token）。
+- 轮询：服务端每 `LOFII_POLL_MS`（默认 5000，2000–60000）拉一次 `/status` + `/events/recent?limit=100`；单飞（不并发/不堆积）；失败只更新 `reachable/stale/error` 并保留上次成功数据。
+- 限流：控制类（tasks/stop/resume/move 共用）**20 次/分钟/IP**，`/say` **10 次/分钟/IP**；超限 `429 rate_limited` 并带 `Retry-After`。
+- 审计：`lofii.task.start`（target=任务名）、`lofii.task.stop`、`lofii.task.resume`（target=taskId 或 `task`）、`lofii.move`（target=action）、`lofii.say`（只记 `chars`）、失败 `lofii.control_failed`（只记稳定错误码）；不记录聊天正文、Token、URL。
+- 错误映射：上游 400/409 保留状态码，`error.code=lofii_<上游稳定码>`；上游 401/403 → `502 lofii_auth_failed`；上游 429 → `429 lofii_rate_limited`；其它上游错误/非 JSON/超限 → `502 lofii_upstream_error`；禁用/不可达/控制未启用 → `503 lofii_disabled`/`lofii_unavailable`/`lofii_control_disabled`。`message` 为固定中文兜底，不含上游原文/地址/Token。
+
+### GET /api/lofii/status
+
+需要会话。返回聚合快照（禁用时为空壳）：
+
+```json
+{
+  "enabled": true,
+  "reachable": true,
+  "stale": false,
+  "controlEnabled": true,
+  "alertsEnabled": true,
+  "eventsSupported": true,
+  "version": "0.6.0",
+  "contractVersion": 1,
+  "lastPollAt": "2026-10-27T09:00:00.000Z",
+  "error": null,
+  "status": { "version": "0.6.0", "uptimeSec": 123, "state": "connected", "minecraft": { "connected": true, "username": "lofii" }, "player": { "health": 20, "food": 20 }, "server": { "reachable": true, "online": 1, "max": 6 }, "task": { "enabled": true, "active": false, "name": null, "state": "idle", "pendingResume": null, "queue": [] }, "admin": { "rcon": true, "tps": { "one": 19.9, "five": 19.8, "fifteen": 19.7 } } },
+  "events": [ { "id": "036e732d-10", "type": "presence", "ts": "2026-10-27T08:59:58.000Z", "data": {} } ]
+}
+```
+
+- `status`：上游 `/status` 快照（完整字段以 lofii-bot v0.6.0 契约为准），不含 Token/记忆正文；不承诺固定字段，前端只读取已知字段并容忍缺失。
+- `stale`：连续 3 个轮询周期无成功或距上次成功超过 3 个周期；`reachable=false` 时保留最后一次成功快照。
+- `eventsSupported`：上游是否提供 `/events/recent`（旧版 404 时 false）；`contractVersion` 来自该接口。
+- `events`：内存环最近事件，**newest-first，最多 100 条**；服务端重启清空；不写入 DB/日志。
+- `error`：稳定错误码（如 `lofii_unavailable`/`lofii_auth_failed`/`lofii_cursor_failed`/`lofii_upstream_error`），不是上游原文。
+
+### GET /api/lofii/history
+
+需要会话。查询参数：`kind=samples|alerts`（默认 `samples`，其它值 `400 invalid_request`）、`from`/`to`（ISO 时间，非法 `400 invalid_request`）、`limit`（默认 100，范围 1–200）。响应透传上游 `/history`：
+
+```json
+{
+  "kind": "alerts",
+  "from": "2026-10-26T09:00:00.000Z",
+  "to": "2026-10-27T09:00:00.000Z",
+  "count": 1,
+  "alerts": [ { "id": 1, "ts": "2026-10-27T08:00:00.000Z", "type": "low_health", "severity": "warning", "message": "Lofii 血量偏低", "details": {} } ]
+}
+```
+
+`samples` 时返回 `samples` 数组（每 60s 一条，上游保留 30 天）；字段以上游契约为准，不含聊天正文/Token/密码。只读，不写审计。
+
+### POST /api/lofii/tasks
+
+需要会话 + CSRF。body：
+
+```json
+{ "name": "fishing" }
+```
+
+`name` 必须是 `fishing|farming|woodcutting|mining|forest|sleep|patrol` 之一（否则 `400 invalid_request`）。成功 `200 { "ok": true, ...上游响应 }`；上游已 active 时入队（`queued:true`、`position:1..3`）；有 pending → `409 lofii_resume_pending`；队列满 → `409 lofii_queue_full`；任务功能关闭 → `503 lofii_task_disabled`。
+
+### POST /api/lofii/tasks/stop
+
+需要会话 + CSRF，body 可为空。成功 `200 { "ok": true, ... }`（中断当前任务并清空队列；只有 pending 时取消 pending 与队列）。无任务 → `409 lofii_no_active_task`。
+
+### POST /api/lofii/tasks/resume
+
+需要会话 + CSRF。body 可选：
+
+```json
+{ "taskId": "46451943-eae1-41c0-8df3-beef3c7b60f4" }
+```
+
+`taskId` 省略时恢复唯一 pending；提供时必须是 1–64 字符（否则 `400 invalid_request`）。成功 `200 { "ok": true, ... }`；无 pending → `409 lofii_no_pending_task`；过期/不匹配 → `409 lofii_resume_failed`。上游 pending 10 分钟未确认会自动中断。
+
+### POST /api/lofii/move
+
+需要会话 + CSRF。body：
+
+```json
+{ "action": "come", "target": "Steve" }
+```
+
+`action` 必须是 `home|come|follow|stop`；`target` 可选（trim 后 ≤32 字符，`home`/`stop` 忽略）。成功 `200 { "ok": true, ... }`；任务进行中 → `409 lofii_task_active`；目标不在线 → `409 lofii_target_not_online`；Lofii 未连接 Minecraft → `409 lofii_not_connected`；上游 202 只表示接受，结果通过事件流反映。
+
+### POST /api/lofii/say
+
+需要会话 + CSRF。body：
+
+```json
+{ "message": "来自 AntifieldCloud 的问候" }
+```
+
+成功 `200 { "ok": true, "lines": 1 }`。约束：trim 后非空、≤**720** 字符、不能以 `/` 开头（`400 invalid_request` / `400 message_must_not_start_with_slash`）；Lofii 未连接 → `409 lofii_not_connected`；上游限流 → `429 lofii_rate_limited`。**只聊天、不执行命令；内容不落库、不写日志，审计只记字符数**。
+
+### 事件与告警
+
+- `/events/recent` 事件 envelope `{id,type,ts,data}`；`type` 已知 `presence|task|chat|movement|alert`，`data` 形状随类型变化且视为不可信输入，前端只读取白名单字段并纯文本渲染。
+- `alert` 事件映射为本应用告警事件（`status='event'`），映射与字段见 §10；告警游标保存在 `meta.lofii.event_cursor={bootId,lastEventId,lastTs}`，首次/重启/`bootId` 变化只建基线不重放；`LOFII_ALERTS_ENABLED=false` 仍推进游标但不写告警。
+- 聊天事件只进服务端内存事件缓存（≤100 条），不提供历史查询、不持久化、不写日志/审计正文；应用重启或 Lofii 重启即丢失。
