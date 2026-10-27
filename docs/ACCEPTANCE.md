@@ -342,7 +342,8 @@
 
 ### 8.8 最终 release
 
-- 最终 release：[待部署后填写]。
+- 最终 release：`/opt/lofii-bot/releases/20261027T084117Z`。
+- 运行时代码/soak release：`20261027T080045Z`（最终 docs release `20261027T084117Z`）。
 - v0.5.0 验收通过：只读管理、SQLite 历史、SSE 告警、安全区表层矿/天然林、Vote2Sleep、四角巡逻、60 分钟队列、约 28.6 分钟混合 soak；75 个测试全绿。
 
 
