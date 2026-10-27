@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+# Generate /etc/lofii-bot/env for Lofii. Run as root on the Raspberry Pi.
+set -euo pipefail
+
+ENV_FILE="/etc/lofii-bot/env"
+OPENCODE_ENV="/etc/opencode/opencode.env"
+ROTATE_TOKEN=0
+ROTATE_CONTROL_TOKEN=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --rotate-token) ROTATE_TOKEN=1 ;;
+    --rotate-control-token) ROTATE_CONTROL_TOKEN=1 ;;
+    *) echo "unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "bootstrap-env.sh must run as root" >&2
+  exit 1
+fi
+
+if ! getent group lofiibot >/dev/null 2>&1; then
+  echo "group lofiibot is missing; run provision.sh first" >&2
+  exit 1
+fi
+
+install -d -m 0755 /etc/lofii-bot
+
+existing() {
+  local key="$1"
+  if [ -f "$ENV_FILE" ]; then
+    sed -n "s/^${key}=//p" "$ENV_FILE" | head -n 1
+  fi
+}
+
+choose() {
+  local key="$1" fallback="$2" current
+  current="$(existing "$key")"
+  if [ -n "$current" ]; then
+    printf '%s' "$current"
+  else
+    printf '%s' "$fallback"
+  fi
+}
+
+read_rcon_password() {
+  local current
+  current="$(existing RCON_PASSWORD)"
+  if [ -n "$current" ]; then
+    printf '%s' "$current"
+    return 0
+  fi
+  local properties="/home/antifield/minecraft-server/server.properties"
+  if [ -f "$properties" ]; then
+    sed -n 's/^rcon.password=//p' "$properties" | head -n 1
+  fi
+}
+
+read_opencode_password() {
+  local current
+  current="$(existing OPENCODE_PASSWORD)"
+  if [ -n "$current" ]; then
+    printf '%s' "$current"
+    return 0
+  fi
+  if [ -f "$OPENCODE_ENV" ]; then
+    sed -n 's/^OPENCODE_PASSWORD=//p' "$OPENCODE_ENV" | head -n 1
+    return 0
+  fi
+  printf ''
+}
+
+OPENCODE_PASSWORD="$(read_opencode_password)"
+if [ -z "$OPENCODE_PASSWORD" ]; then
+  echo "warning: OPENCODE_PASSWORD is empty; AI chat will fail until it is set" >&2
+fi
+
+HTTP_TOKEN="$(existing HTTP_TOKEN)"
+if [ -z "$HTTP_TOKEN" ] || [ "$ROTATE_TOKEN" -eq 1 ]; then
+  HTTP_TOKEN="$(openssl rand -hex 32)"
+fi
+
+HTTP_CONTROL_TOKEN="$(existing HTTP_CONTROL_TOKEN)"
+if [ -z "$HTTP_CONTROL_TOKEN" ] || [ "$ROTATE_CONTROL_TOKEN" -eq 1 ]; then
+  HTTP_CONTROL_TOKEN="$(openssl rand -hex 32)"
+fi
+
+RCON_PASSWORD="$(read_rcon_password)"
+if [ -n "$RCON_PASSWORD" ]; then
+  RCON_ENABLED="$(choose RCON_ENABLED true)"
+else
+  RCON_ENABLED="$(choose RCON_ENABLED false)"
+  echo "warning: RCON_PASSWORD not found; admin read-only disabled" >&2
+fi
+RCON_HOST="$(choose RCON_HOST 127.0.0.1)"
+RCON_PORT="$(choose RCON_PORT 25575)"
+RCON_TIMEOUT_MS="$(choose RCON_TIMEOUT_MS 4000)"
+ADMIN_POLL_MS="$(choose ADMIN_POLL_MS 60000)"
+HISTORY_ENABLED="$(choose HISTORY_ENABLED true)"
+HISTORY_DB="$(choose HISTORY_DB "/var/lib/lofii-bot/history.db")"
+HISTORY_SAMPLE_MS="$(choose HISTORY_SAMPLE_MS 60000)"
+HISTORY_RETENTION_DAYS="$(choose HISTORY_RETENTION_DAYS 30)"
+ALERTS_ENABLED="$(choose ALERTS_ENABLED true)"
+ALERT_COOLDOWN_MS="$(choose ALERT_COOLDOWN_MS 300000)"
+ALERT_HEALTH_THRESHOLD="$(choose ALERT_HEALTH_THRESHOLD 12)"
+MINE_MIN_Y="$(choose MINE_MIN_Y 60)"
+MINE_MAX_Y="$(choose MINE_MAX_Y 120)"
+MINE_MAX_ORES="$(choose MINE_MAX_ORES 64)"
+MINE_MAX_MINUTES="$(choose MINE_MAX_MINUTES 30)"
+MINE_PROTECT_RADIUS="$(choose MINE_PROTECT_RADIUS 16)"
+MINE_ORES="$(choose MINE_ORES coal_ore,deepslate_coal_ore,iron_ore,deepslate_iron_ore,copper_ore,deepslate_copper_ore)"
+FOREST_SPECIES="$(choose FOREST_SPECIES oak,spruce,birch)"
+FOREST_PROTECT_RADIUS="$(choose FOREST_PROTECT_RADIUS 16)"
+FOREST_MAX_LOGS="$(choose FOREST_MAX_LOGS 128)"
+FOREST_DEPOSIT_EVERY_MS="$(choose FOREST_DEPOSIT_EVERY_MS 300000)"
+BED_SEARCH_RADIUS="$(choose BED_SEARCH_RADIUS 16)"
+SLEEP_VOTE_WAIT_MS="$(choose SLEEP_VOTE_WAIT_MS 45000)"
+PATROL_MAX_MINUTES="$(choose PATROL_MAX_MINUTES 15)"
+HTTP_CONTROL_ENABLED="$(choose HTTP_CONTROL_ENABLED true)"
+HTTP_ONLY_HIGH_RISK="$(choose HTTP_ONLY_HIGH_RISK false)"
+SSE_MAX_CLIENTS="$(choose SSE_MAX_CLIENTS 8)"
+SSE_HEARTBEAT_MS="$(choose SSE_HEARTBEAT_MS 15000)"
+SSE_BUFFER_EVENTS="$(choose SSE_BUFFER_EVENTS 500)"
+CONTROL_RATE_LIMIT="$(choose CONTROL_RATE_LIMIT 30)"
+TASK_PENDING_TTL_MS="$(choose TASK_PENDING_TTL_MS 600000)"
+TASK_MAX_MINUTES="$(choose TASK_MAX_MINUTES 60)"
+SAFE_MIN_X="$(choose SAFE_MIN_X 111)"
+SAFE_MAX_X="$(choose SAFE_MAX_X 239)"
+SAFE_MIN_Z="$(choose SAFE_MIN_Z 410)"
+SAFE_MAX_Z="$(choose SAFE_MAX_Z 474)"
+QUEUE_MAX="$(choose QUEUE_MAX 3)"
+TREE_FARM_MIN_X="$(choose TREE_FARM_MIN_X 180)"
+TREE_FARM_MAX_X="$(choose TREE_FARM_MAX_X 193)"
+TREE_FARM_MIN_Z="$(choose TREE_FARM_MIN_Z 455)"
+TREE_FARM_MAX_Z="$(choose TREE_FARM_MAX_Z 464)"
+TREE_FARM_GROUND_Y="$(choose TREE_FARM_GROUND_Y 63)"
+TREE_FARM_LOG_MIN_Y="$(choose TREE_FARM_LOG_MIN_Y 64)"
+TREE_FARM_MAX_Y="$(choose TREE_FARM_MAX_Y 96)"
+TREE_LOG_TYPE="$(choose TREE_LOG_TYPE oak_log)"
+TREE_SAPLING_TYPE="$(choose TREE_SAPLING_TYPE oak_sapling)"
+TREE_MAX_LOGS="$(choose TREE_MAX_LOGS 128)"
+TREE_DEPOSIT_EVERY_MS="$(choose TREE_DEPOSIT_EVERY_MS 300000)"
+DEFENSE_ENABLED="$(choose DEFENSE_ENABLED true)"
+DEFENSE_RADIUS="$(choose DEFENSE_RADIUS 12)"
+DEFENSE_HEALTH_THRESHOLD="$(choose DEFENSE_HEALTH_THRESHOLD 12)"
+DEFENSE_FOOD_THRESHOLD="$(choose DEFENSE_FOOD_THRESHOLD 6)"
+DEFENSE_MAX_HOSTILES="$(choose DEFENSE_MAX_HOSTILES 2)"
+DEFENSE_TARGETS="$(choose DEFENSE_TARGETS zombie,husk,drowned,skeleton,stray,spider,cave_spider)"
+CHUNK_WAIT_MS="$(choose CHUNK_WAIT_MS 5000)"
+MEMORY_SUMMARY_ENABLED="$(choose MEMORY_SUMMARY_ENABLED true)"
+MEMORY_SUMMARY_TURNS="$(choose MEMORY_SUMMARY_TURNS 40)"
+MEMORY_SUMMARY_MAX_CHARS="$(choose MEMORY_SUMMARY_MAX_CHARS 1000)"
+AUDIT_MAX_BYTES="$(choose AUDIT_MAX_BYTES 5242880)"
+AUDIT_RETENTION_DAYS="$(choose AUDIT_RETENTION_DAYS 30)"
+
+BOT_USERNAME="$(choose BOT_USERNAME lofii)"
+MC_HOST="$(choose MC_HOST 127.0.0.1)"
+MC_PORT="$(choose MC_PORT 25565)"
+MC_VERSION="$(choose MC_VERSION 26.1)"
+DATA_DIR="$(choose DATA_DIR /var/lib/lofii-bot)"
+TASK_STATE_FILE="$(choose TASK_STATE_FILE "$DATA_DIR/task-state.json")"
+AUDIT_FILE="$(choose AUDIT_FILE "$DATA_DIR/audit.jsonl")"
+MEMORY_DIR="$(choose MEMORY_DIR "$DATA_DIR/memory")"
+HTTP_HOST="$(choose HTTP_HOST 127.0.0.1)"
+HTTP_PORT="$(choose HTTP_PORT 3010)"
+COMMAND_ALLOWLIST="$(choose COMMAND_ALLOWLIST Antifield)"
+PRESENCE_ENABLED="$(choose PRESENCE_ENABLED true)"
+FORCE_ONLINE="$(choose FORCE_ONLINE false)"
+PRESENCE_POLL_MS="$(choose PRESENCE_POLL_MS 15000)"
+PRESENCE_GRACE_MS="$(choose PRESENCE_GRACE_MS 60000)"
+PRESENCE_QUIT_COOLDOWN_MS="$(choose PRESENCE_QUIT_COOLDOWN_MS 10000)"
+PRESENCE_CHECK_MS="$(choose PRESENCE_CHECK_MS 5000)"
+RECONNECT_MIN_MS="$(choose RECONNECT_MIN_MS 5000)"
+RECONNECT_MAX_MS="$(choose RECONNECT_MAX_MS 60000)"
+LOGIN_TIMEOUT_MS="$(choose LOGIN_TIMEOUT_MS 45000)"
+AI_ENABLED="$(choose AI_ENABLED true)"
+OPENCODE_URL="$(choose OPENCODE_URL http://127.0.0.1:4096)"
+OPENCODE_USERNAME="$(choose OPENCODE_USERNAME opencode)"
+AI_MODEL_PROVIDER="$(choose AI_MODEL_PROVIDER opencode-go)"
+AI_MODEL_ID="$(choose AI_MODEL_ID deepseek-v4.1-flash)"
+AI_TIMEOUT_MS="$(choose AI_TIMEOUT_MS 45000)"
+AI_MAX_PROMPT_CHARS="$(choose AI_MAX_PROMPT_CHARS 6000)"
+AI_MAX_LINES="$(choose AI_MAX_LINES 3)"
+AI_MAX_LINE_CHARS="$(choose AI_MAX_LINE_CHARS 240)"
+AI_COOLDOWN_MS="$(choose AI_COOLDOWN_MS 10000)"
+AI_QUEUE_MAX="$(choose AI_QUEUE_MAX 4)"
+AI_RATE_PER_HOUR="$(choose AI_RATE_PER_HOUR 60)"
+CHAT_MAX_INPUT_CHARS="$(choose CHAT_MAX_INPUT_CHARS 500)"
+MEMORY_MAX_TURNS="$(choose MEMORY_MAX_TURNS 20)"
+MEMORY_RETENTION_DAYS="$(choose MEMORY_RETENTION_DAYS 30)"
+LOG_LEVEL="$(choose LOG_LEVEL info)"
+LOG_AI_PROMPT="$(choose LOG_AI_PROMPT false)"
+
+TMP_FILE="$(mktemp)"
+trap 'rm -f "$TMP_FILE"' EXIT
+umask 027
+{
+  echo "# Generated by deploy/bootstrap-env.sh; do not commit."
+  echo "BOT_USERNAME=$BOT_USERNAME"
+  echo "MC_HOST=$MC_HOST"
+  echo "MC_PORT=$MC_PORT"
+  echo "MC_VERSION=$MC_VERSION"
+  echo "DATA_DIR=$DATA_DIR"
+  echo "MEMORY_DIR=$MEMORY_DIR"
+  echo "HTTP_HOST=$HTTP_HOST"
+  echo "HTTP_PORT=$HTTP_PORT"
+  echo "HTTP_TOKEN=$HTTP_TOKEN"
+  echo "HTTP_CONTROL_TOKEN=$HTTP_CONTROL_TOKEN"
+  echo "HTTP_CONTROL_ENABLED=$HTTP_CONTROL_ENABLED"
+  echo "HTTP_ONLY_HIGH_RISK=$HTTP_ONLY_HIGH_RISK"
+  echo "SSE_MAX_CLIENTS=$SSE_MAX_CLIENTS"
+  echo "SSE_HEARTBEAT_MS=$SSE_HEARTBEAT_MS"
+  echo "SSE_BUFFER_EVENTS=$SSE_BUFFER_EVENTS"
+  echo "CONTROL_RATE_LIMIT=$CONTROL_RATE_LIMIT"
+  echo "TASK_PENDING_TTL_MS=$TASK_PENDING_TTL_MS"
+  echo "TASK_MAX_MINUTES=$TASK_MAX_MINUTES"
+  echo "SAFE_MIN_X=$SAFE_MIN_X"
+  echo "SAFE_MAX_X=$SAFE_MAX_X"
+  echo "SAFE_MIN_Z=$SAFE_MIN_Z"
+  echo "SAFE_MAX_Z=$SAFE_MAX_Z"
+  echo "RCON_ENABLED=$RCON_ENABLED"
+  echo "RCON_HOST=$RCON_HOST"
+  echo "RCON_PORT=$RCON_PORT"
+  echo "RCON_PASSWORD=$RCON_PASSWORD"
+  echo "RCON_TIMEOUT_MS=$RCON_TIMEOUT_MS"
+  echo "ADMIN_POLL_MS=$ADMIN_POLL_MS"
+  echo "HISTORY_ENABLED=$HISTORY_ENABLED"
+  echo "HISTORY_DB=$HISTORY_DB"
+  echo "HISTORY_SAMPLE_MS=$HISTORY_SAMPLE_MS"
+  echo "HISTORY_RETENTION_DAYS=$HISTORY_RETENTION_DAYS"
+  echo "ALERTS_ENABLED=$ALERTS_ENABLED"
+  echo "ALERT_COOLDOWN_MS=$ALERT_COOLDOWN_MS"
+  echo "ALERT_HEALTH_THRESHOLD=$ALERT_HEALTH_THRESHOLD"
+  echo "MINE_MIN_Y=$MINE_MIN_Y"
+  echo "MINE_MAX_Y=$MINE_MAX_Y"
+  echo "MINE_MAX_ORES=$MINE_MAX_ORES"
+  echo "MINE_MAX_MINUTES=$MINE_MAX_MINUTES"
+  echo "MINE_PROTECT_RADIUS=$MINE_PROTECT_RADIUS"
+  echo "MINE_ORES=$MINE_ORES"
+  echo "FOREST_SPECIES=$FOREST_SPECIES"
+  echo "FOREST_PROTECT_RADIUS=$FOREST_PROTECT_RADIUS"
+  echo "FOREST_MAX_LOGS=$FOREST_MAX_LOGS"
+  echo "FOREST_DEPOSIT_EVERY_MS=$FOREST_DEPOSIT_EVERY_MS"
+  echo "BED_SEARCH_RADIUS=$BED_SEARCH_RADIUS"
+  echo "SLEEP_VOTE_WAIT_MS=$SLEEP_VOTE_WAIT_MS"
+  echo "PATROL_MAX_MINUTES=$PATROL_MAX_MINUTES"
+  echo "TASK_STATE_FILE=$TASK_STATE_FILE"
+  echo "QUEUE_MAX=$QUEUE_MAX"
+  echo "TREE_FARM_MIN_X=$TREE_FARM_MIN_X"
+  echo "TREE_FARM_MAX_X=$TREE_FARM_MAX_X"
+  echo "TREE_FARM_MIN_Z=$TREE_FARM_MIN_Z"
+  echo "TREE_FARM_MAX_Z=$TREE_FARM_MAX_Z"
+  echo "TREE_FARM_GROUND_Y=$TREE_FARM_GROUND_Y"
+  echo "TREE_FARM_LOG_MIN_Y=$TREE_FARM_LOG_MIN_Y"
+  echo "TREE_FARM_MAX_Y=$TREE_FARM_MAX_Y"
+  echo "TREE_LOG_TYPE=$TREE_LOG_TYPE"
+  echo "TREE_SAPLING_TYPE=$TREE_SAPLING_TYPE"
+  echo "TREE_MAX_LOGS=$TREE_MAX_LOGS"
+  echo "TREE_DEPOSIT_EVERY_MS=$TREE_DEPOSIT_EVERY_MS"
+  echo "DEFENSE_ENABLED=$DEFENSE_ENABLED"
+  echo "DEFENSE_RADIUS=$DEFENSE_RADIUS"
+  echo "DEFENSE_HEALTH_THRESHOLD=$DEFENSE_HEALTH_THRESHOLD"
+  echo "DEFENSE_FOOD_THRESHOLD=$DEFENSE_FOOD_THRESHOLD"
+  echo "DEFENSE_MAX_HOSTILES=$DEFENSE_MAX_HOSTILES"
+  echo "DEFENSE_TARGETS=$DEFENSE_TARGETS"
+  echo "CHUNK_WAIT_MS=$CHUNK_WAIT_MS"
+  echo "MEMORY_SUMMARY_ENABLED=$MEMORY_SUMMARY_ENABLED"
+  echo "MEMORY_SUMMARY_TURNS=$MEMORY_SUMMARY_TURNS"
+  echo "MEMORY_SUMMARY_MAX_CHARS=$MEMORY_SUMMARY_MAX_CHARS"
+  echo "AUDIT_FILE=$AUDIT_FILE"
+  echo "AUDIT_MAX_BYTES=$AUDIT_MAX_BYTES"
+  echo "AUDIT_RETENTION_DAYS=$AUDIT_RETENTION_DAYS"
+  echo "COMMAND_ALLOWLIST=$COMMAND_ALLOWLIST"
+  echo "PRESENCE_ENABLED=$PRESENCE_ENABLED"
+  echo "FORCE_ONLINE=$FORCE_ONLINE"
+  echo "PRESENCE_POLL_MS=$PRESENCE_POLL_MS"
+  echo "PRESENCE_GRACE_MS=$PRESENCE_GRACE_MS"
+  echo "PRESENCE_QUIT_COOLDOWN_MS=$PRESENCE_QUIT_COOLDOWN_MS"
+  echo "PRESENCE_CHECK_MS=$PRESENCE_CHECK_MS"
+  echo "RECONNECT_MIN_MS=$RECONNECT_MIN_MS"
+  echo "RECONNECT_MAX_MS=$RECONNECT_MAX_MS"
+  echo "LOGIN_TIMEOUT_MS=$LOGIN_TIMEOUT_MS"
+  echo "AI_ENABLED=$AI_ENABLED"
+  echo "OPENCODE_URL=$OPENCODE_URL"
+  echo "OPENCODE_USERNAME=$OPENCODE_USERNAME"
+  echo "OPENCODE_PASSWORD=$OPENCODE_PASSWORD"
+  echo "AI_MODEL_PROVIDER=$AI_MODEL_PROVIDER"
+  echo "AI_MODEL_ID=$AI_MODEL_ID"
+  echo "AI_TIMEOUT_MS=$AI_TIMEOUT_MS"
+  echo "AI_MAX_PROMPT_CHARS=$AI_MAX_PROMPT_CHARS"
+  echo "AI_MAX_LINES=$AI_MAX_LINES"
+  echo "AI_MAX_LINE_CHARS=$AI_MAX_LINE_CHARS"
+  echo "AI_COOLDOWN_MS=$AI_COOLDOWN_MS"
+  echo "AI_QUEUE_MAX=$AI_QUEUE_MAX"
+  echo "AI_RATE_PER_HOUR=$AI_RATE_PER_HOUR"
+  echo "CHAT_MAX_INPUT_CHARS=$CHAT_MAX_INPUT_CHARS"
+  echo "MEMORY_MAX_TURNS=$MEMORY_MAX_TURNS"
+  echo "MEMORY_RETENTION_DAYS=$MEMORY_RETENTION_DAYS"
+  echo "LOG_LEVEL=$LOG_LEVEL"
+  echo "LOG_AI_PROMPT=$LOG_AI_PROMPT"
+} > "$TMP_FILE"
+
+install -m 0640 -o root -g lofiibot "$TMP_FILE" "$ENV_FILE"
+rm -f "$TMP_FILE"
+trap - EXIT
+
+echo "wrote $ENV_FILE (mode 0640 root:lofiibot)"
+echo "http=http://$HTTP_HOST:$HTTP_PORT token_length=${#HTTP_TOKEN} control_token_length=${#HTTP_CONTROL_TOKEN}"
+echo "opencode=$OPENCODE_URL user=$OPENCODE_USERNAME model=$AI_MODEL_PROVIDER/$AI_MODEL_ID"
+
+if [ -n "$OPENCODE_PASSWORD" ] && command -v curl >/dev/null 2>&1; then
+  code="$(curl -s -o /dev/null -w '%{http_code}' -m 5 -u "$OPENCODE_USERNAME:$OPENCODE_PASSWORD" "$OPENCODE_URL/api/info" || true)"
+  if [ "$code" = "200" ]; then
+    echo "opencode auth check: ok"
+  else
+    echo "warning: opencode auth check returned HTTP $code (AI may be unavailable)" >&2
+  fi
+fi
