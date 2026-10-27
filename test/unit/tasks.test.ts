@@ -16,11 +16,11 @@ test('v0.2 config defaults match the prepared base', () => {
   const config = loadConfig(baseEnv(), '0.2.0')
   assert.equal(config.home.x, 175.5)
   assert.equal(config.home.z, 410.5)
-  assert.deepEqual(config.safeZone, { minX: 175, maxX: 239, minZ: 410, maxZ: 474 })
+  assert.deepEqual(config.safeZone, { minX: 111, maxX: 239, minZ: 410, maxZ: 474 })
   assert.deepEqual(config.farm, { minX: 177, maxX: 183, minZ: 432, maxZ: 439, groundY: 63, cropY: 64 })
   assert.deepEqual(config.chest, { x: 184, y: 64, z: 435 })
   assert.deepEqual(config.fishStand, { x: 204.5, y: 63, z: 469.5 })
-  assert.equal(config.taskMaxMinutes, 30)
+  assert.equal(config.taskMaxMinutes, 60)
   assert.equal(config.taskRecoveryMax, 3)
 })
 
@@ -38,14 +38,18 @@ test('v0.2 task phrases parse before movement commands', () => {
   assert.deepEqual(parseCommand('停止任务'), { name: 'stopTask' })
   assert.deepEqual(parseCommand('回家'), { name: 'home' })
   assert.deepEqual(parseCommand('存东西'), { name: 'deposit' })
+  assert.deepEqual(parseCommand('挖矿'), { name: 'mining' })
+  assert.deepEqual(parseCommand('砍天然林'), { name: 'forest' })
+  assert.deepEqual(parseCommand('睡觉'), { name: 'sleep' })
+  assert.deepEqual(parseCommand('巡逻'), { name: 'patrol' })
   assert.deepEqual(parseCommand('停下'), { name: 'stop' })
   assert.equal(parseCommand('你好呀'), null)
 })
 
 test('task bounds and mature wheat detection', () => {
   const config = makeConfig()
-  assert.equal(insideSafeZone(config, 175, 410), true)
-  assert.equal(insideSafeZone(config, 174, 410), false)
+  assert.equal(insideSafeZone(config, 111, 410), true)
+  assert.equal(insideSafeZone(config, 110, 410), false)
   assert.equal(insideFarm(config, 177, 432), true)
   assert.equal(insideFarm(config, 184, 435), false)
   assert.equal(isMatureWheat({ name: 'wheat', getProperties: () => ({ age: 7 }) } as never), true)
@@ -103,7 +107,18 @@ test('status lines include the active task progress', () => {
       treesChopped: 0,
       logsChopped: 0,
       saplingsPlanted: 0,
-      mobsKilled: 0
+      mobsKilled: 0,
+      oresMined: 0,
+      coalMined: 0,
+      ironMined: 0,
+      copperMined: 0,
+      forestTreesChopped: 0,
+      naturalLogsChopped: 0,
+      naturalSaplingsPlanted: 0,
+      sleepVotes: 0,
+      nightSkipped: 0,
+      patrolWaypoints: 0,
+      patrolDistance: 0
     },
     failures: 0,
     lastError: null,

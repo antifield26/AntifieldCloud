@@ -63,7 +63,7 @@ export interface MemorySnapshot {
   turns: number
 }
 
-export type TaskName = 'fishing' | 'farming' | 'woodcutting'
+export type TaskName = 'fishing' | 'farming' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol'
 export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping' | 'defending' | 'pending_resume'
 
 export interface TaskProgress {
@@ -75,6 +75,28 @@ export interface TaskProgress {
   logsChopped: number
   saplingsPlanted: number
   mobsKilled: number
+  oresMined: number
+  coalMined: number
+  ironMined: number
+  copperMined: number
+  forestTreesChopped: number
+  naturalLogsChopped: number
+  naturalSaplingsPlanted: number
+  sleepVotes: number
+  nightSkipped: number
+  patrolWaypoints: number
+  patrolDistance: number
+}
+
+export interface AdminSnapshot {
+  enabled: boolean
+  rcon: boolean
+  updatedAt: string | null
+  lastError: string | null
+  tps: { one: number | null, five: number | null, fifteen: number | null }
+  online: { count: number | null, max: number | null, players: string[] }
+  whitelist: { count: number | null, names: string[] }
+  backup: { status: 'unknown' }
 }
 
 export interface QueuedTask {
@@ -118,6 +140,7 @@ export interface StatusSnapshot {
   ai: AiSnapshot
   memory: MemorySnapshot
   task: TaskSnapshot
+  admin: AdminSnapshot
 }
 
 function roundPosition (position: Position | null): Position | null {
@@ -150,6 +173,7 @@ export class RuntimeState {
   ai: AiSnapshot
   memory: MemorySnapshot = { players: 0, turns: 0 }
   task: TaskSnapshot
+  admin: AdminSnapshot
   lastDecision = 'startup'
 
   constructor (options: {
@@ -210,12 +234,33 @@ export class RuntimeState {
         treesChopped: 0,
         logsChopped: 0,
         saplingsPlanted: 0,
-        mobsKilled: 0
+        mobsKilled: 0,
+        oresMined: 0,
+        coalMined: 0,
+        ironMined: 0,
+        copperMined: 0,
+        forestTreesChopped: 0,
+        naturalLogsChopped: 0,
+        naturalSaplingsPlanted: 0,
+        sleepVotes: 0,
+        nightSkipped: 0,
+        patrolWaypoints: 0,
+        patrolDistance: 0
       },
       failures: 0,
       lastError: null,
       pendingResume: null,
       queue: []
+    }
+    this.admin = {
+      enabled: false,
+      rcon: false,
+      updatedAt: null,
+      lastError: null,
+      tps: { one: null, five: null, fifteen: null },
+      online: { count: null, max: null, players: [] },
+      whitelist: { count: null, names: [] },
+      backup: { status: 'unknown' }
     }
   }
 
@@ -269,6 +314,15 @@ export class RuntimeState {
     this.memory = memory
   }
 
+  setAdmin (admin: AdminSnapshot): void {
+    this.admin = {
+      ...admin,
+      tps: { ...admin.tps },
+      online: { ...admin.online, players: [...admin.online.players] },
+      whitelist: { ...admin.whitelist, names: [...admin.whitelist.names] }
+    }
+  }
+
   setTask (patch: Partial<TaskSnapshot>): void {
     this.task = {
       ...this.task,
@@ -316,7 +370,13 @@ export class RuntimeState {
       presence: { ...this.presence },
       ai: { ...this.ai },
       memory: { ...this.memory },
-      task
+      task,
+      admin: {
+        ...this.admin,
+        tps: { ...this.admin.tps },
+        online: { ...this.admin.online, players: [...this.admin.online.players] },
+        whitelist: { ...this.admin.whitelist, names: [...this.admin.whitelist.names] }
+      }
     }
   }
 }

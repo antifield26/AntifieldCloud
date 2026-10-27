@@ -44,19 +44,42 @@ function normalizeProgress (value: unknown): TaskProgress {
     treesChopped: typeof record.treesChopped === 'number' && Number.isFinite(record.treesChopped) ? record.treesChopped : 0,
     logsChopped: typeof record.logsChopped === 'number' && Number.isFinite(record.logsChopped) ? record.logsChopped : 0,
     saplingsPlanted: typeof record.saplingsPlanted === 'number' && Number.isFinite(record.saplingsPlanted) ? record.saplingsPlanted : 0,
-    mobsKilled: typeof record.mobsKilled === 'number' && Number.isFinite(record.mobsKilled) ? record.mobsKilled : 0
+    mobsKilled: typeof record.mobsKilled === 'number' && Number.isFinite(record.mobsKilled) ? record.mobsKilled : 0,
+    oresMined: normalizeNumber(record.oresMined),
+    coalMined: normalizeNumber(record.coalMined),
+    ironMined: normalizeNumber(record.ironMined),
+    copperMined: normalizeNumber(record.copperMined),
+    forestTreesChopped: normalizeNumber(record.forestTreesChopped),
+    naturalLogsChopped: normalizeNumber(record.naturalLogsChopped),
+    naturalSaplingsPlanted: normalizeNumber(record.naturalSaplingsPlanted),
+    sleepVotes: normalizeNumber(record.sleepVotes),
+    nightSkipped: normalizeNumber(record.nightSkipped),
+    patrolWaypoints: normalizeNumber(record.patrolWaypoints),
+    patrolDistance: normalizeNumber(record.patrolDistance)
   }
 }
+
+function normalizeNumber (value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+const NEW_PROGRESS_KEYS = [
+  'treesChopped', 'logsChopped', 'saplingsPlanted', 'mobsKilled',
+  'oresMined', 'coalMined', 'ironMined', 'copperMined',
+  'forestTreesChopped', 'naturalLogsChopped', 'naturalSaplingsPlanted',
+  'sleepVotes', 'nightSkipped', 'patrolWaypoints', 'patrolDistance'
+]
 
 function isProgress (value: unknown): value is TaskProgress {
   if (!isBaseProgress(value)) return false
   const record = value as unknown as Record<string, unknown>
-  return ['treesChopped', 'logsChopped', 'saplingsPlanted', 'mobsKilled']
-    .every(key => typeof record[key] === 'number' && Number.isFinite(record[key]))
+  return NEW_PROGRESS_KEYS.every(key => typeof record[key] === 'number' && Number.isFinite(record[key]))
 }
 
+const TASK_NAMES = new Set<TaskName>(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol'])
+
 function isName (value: unknown): value is TaskName {
-  return value === 'fishing' || value === 'farming' || value === 'woodcutting'
+  return typeof value === 'string' && TASK_NAMES.has(value as TaskName)
 }
 
 function isActive (value: unknown): value is PersistedTask {

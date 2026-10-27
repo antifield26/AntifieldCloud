@@ -8,10 +8,16 @@ import type { PendingResume, QueuedTask, RuntimeState, TaskName, TaskProgress, T
 import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
 import type { TaskDefender } from '../combat/types.ts'
+import type { AlertManager } from '../alerts/manager.ts'
 import { depositProduce, oneShotDeposit, withdrawSupplies } from './deposit.ts'
 import { runFarming } from './farming.ts'
 import { runFishing } from './fishing.ts'
 import { runWoodcutting } from './woodcutting.ts'
+import { runMining } from './mining.ts'
+import { runForest } from './forest.ts'
+import { runSleep } from './sleep.ts'
+import { runPatrol } from './patrol.ts'
+import { FOREST_SPECIES } from './resources.ts'
 import { countItem, countFood, findItem, isKeptItem } from './inventory.ts'
 import { TaskStore, type PersistedQueueTask, type PersistedTask } from './store.ts'
 import {
@@ -64,6 +70,7 @@ export interface TaskManagerDeps {
   store: TaskStore
   getBot: () => Bot | null
   defender?: TaskDefender
+  alerts?: AlertManager
 }
 
 const EMPTY_PROGRESS: TaskProgress = {
@@ -74,19 +81,42 @@ const EMPTY_PROGRESS: TaskProgress = {
   treesChopped: 0,
   logsChopped: 0,
   saplingsPlanted: 0,
-  mobsKilled: 0
+  mobsKilled: 0,
+  oresMined: 0,
+  coalMined: 0,
+  ironMined: 0,
+  copperMined: 0,
+  forestTreesChopped: 0,
+  naturalLogsChopped: 0,
+  naturalSaplingsPlanted: 0,
+  sleepVotes: 0,
+  nightSkipped: 0,
+  patrolWaypoints: 0,
+  patrolDistance: 0
 }
 
 function label (name: TaskName): string {
-  if (name === 'fishing') return '钓鱼'
-  if (name === 'farming') return '种田'
-  return '砍树'
+  switch (name) {
+    case 'fishing': return '钓鱼'
+    case 'farming': return '种田'
+    case 'woodcutting': return '砍树'
+    case 'mining': return '挖矿'
+    case 'forest': return '砍天然林'
+    case 'sleep': return '睡觉'
+    case 'patrol': return '巡逻'
+  }
 }
 
 function startMessage (name: TaskName): string {
-  if (name === 'fishing') return '好，我去钓鱼啦。'
-  if (name === 'farming') return '好，我去种田啦。'
-  return '好，我去砍树啦。'
+  switch (name) {
+    case 'fishing': return '好，我去钓鱼啦。'
+    case 'farming': return '好，我去种田啦。'
+    case 'woodcutting': return '好，我去砍树啦。'
+    case 'mining': return '好，我去找表层矿啦。'
+    case 'forest': return '好，我去天然林看看。'
+    case 'sleep': return '好，我去看看能不能睡觉。'
+    case 'patrol': return '好，我沿安全区巡逻一圈。'
+  }
 }
 
 function stateAction (state: TaskState): string {
@@ -421,7 +451,11 @@ export class TaskManager implements TaskController {
         const ctx = this.context(active)
         if (active.name === 'fishing') await runFishing(ctx)
         else if (active.name === 'farming') await runFarming(ctx)
-        else await runWoodcutting(ctx)
+        else if (active.name === 'woodcutting') await runWoodcutting(ctx)
+        else if (active.name === 'mining') await runMining(ctx)
+        else if (active.name === 'forest') await runForest(ctx)
+        else if (active.name === 'sleep') await runSleep(ctx)
+        else await runPatrol(ctx)
         break
       } catch (error) {
         if (this.shutdownPending) break
@@ -490,6 +524,20 @@ export class TaskManager implements TaskController {
       }
       return
     }
+    if (active.name === 'mining' || active.name === 'forest' || active.name === 'sleep' || active.name === 'patrol') {
+      const bot = requireBot(this.context(active))
+      if (bot.entity && Math.hypot(
+        bot.entity.position.x - config.home.x,
+        bot.entity.position.y - config.home.y,
+        bot.entity.position.z - config.home.z
+      ) <= 8) return
+      if (config.taskAnchorTeleport) {
+        await movement.teleportNearPoint(config.home.x, config.home.y, config.home.z, 4)
+      } else {
+        await movement.goNearPoint(config.home.x, config.home.y, config.home.z, 3, 15000, true)
+      }
+      return
+    }
     const bot = requireBot(this.context(active))
     if (bot.entity) {
       const nearChest = Math.hypot(bot.entity.position.x - config.chest.x, bot.entity.position.z - config.chest.z) <= 5
@@ -518,6 +566,31 @@ export class TaskManager implements TaskController {
         countItem(bot, 'wheat_seeds') < 64 ||
         countFood(bot) < 4
       if (missing) await this.withdraw(ctx, requests)
+    } else if (active.name === 'mining') {
+      const pickaxes = bot.inventory.items().filter(item => item.name === 'iron_pickaxe')
+      const hasFreshPickaxe = pickaxes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)
+      requests = [{ name: 'iron_pickaxe', count: Math.max(2, pickaxes.length + 1) }, { name: 'food', count: 4 }]
+      if (!hasFreshPickaxe || countFood(bot) < 4) await this.withdraw(ctx, requests)
+    } else if (active.name === 'forest') {
+      const axes = bot.inventory.items().filter(item => item.name === 'iron_axe')
+      const hasFreshAxe = axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)
+      const saplings = this.deps.config.forest.species
+        .map(species => countItem(bot, FOREST_SPECIES[species]?.sapling ?? ''))
+        .reduce((sum, value) => sum + value, 0)
+      requests = [
+        { name: 'iron_axe', count: Math.max(2, axes.length + 1) },
+        ...this.deps.config.forest.species.map(species => ({
+          name: FOREST_SPECIES[species]?.sapling ?? '',
+          count: 8
+        })),
+        { name: 'food', count: 4 }
+      ]
+      if (!hasFreshAxe || saplings < 8 || countFood(bot) < 4) await this.withdraw(ctx, requests)
+    } else if (active.name === 'patrol') {
+      requests = [{ name: 'food', count: 4 }]
+      if (countFood(bot) < 4) await this.withdraw(ctx, requests)
+    } else if (active.name === 'sleep') {
+      requests = []
     } else {
       const axes = bot.inventory.items().filter(item => item.name === 'iron_axe')
       const hasFreshAxe = axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)
@@ -539,6 +612,24 @@ export class TaskManager implements TaskController {
     } else if (active.name === 'farming') {
       if (!findItem(fresh, 'iron_hoe')) throw new TaskError('箱子里没有锄头')
       if (countItem(fresh, 'wheat_seeds') === 0) throw new TaskError('箱子里没有小麦种子')
+    } else if (active.name === 'mining') {
+      const pickaxes = fresh.inventory.items().filter(item => item.name === 'iron_pickaxe')
+      if (!pickaxes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)) {
+        throw new TaskError('铁镐快坏了，箱子里没有备用镐')
+      }
+    } else if (active.name === 'forest') {
+      const axes = fresh.inventory.items().filter(item => item.name === 'iron_axe')
+      if (!axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)) {
+        throw new TaskError('铁斧快坏了，箱子里没有备用斧')
+      }
+      const saplings = this.deps.config.forest.species
+        .map(species => countItem(fresh, FOREST_SPECIES[species]?.sapling ?? ''))
+        .reduce((sum, value) => sum + value, 0)
+      if (saplings === 0) throw new TaskError('箱子里没有天然林树苗')
+    } else if (active.name === 'sleep') {
+      // Sleep has no supplies.
+    } else if (active.name === 'patrol') {
+      // Patrol only needs food.
     } else {
       const axes = fresh.inventory.items().filter(item => item.name === 'iron_axe')
       if (!axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)) {
@@ -548,7 +639,7 @@ export class TaskManager implements TaskController {
         throw new TaskError('箱子里没有橡树树苗')
       }
     }
-    if (countFood(fresh) === 0) throw new TaskError('箱子里没有食物，先放点吃的')
+    if (active.name !== 'sleep' && countFood(fresh) === 0) throw new TaskError('箱子里没有食物，先放点吃的')
     this.logger.info('task supplies ready', { name: active.name, food: fresh.food })
   }
 
@@ -617,9 +708,12 @@ export class TaskManager implements TaskController {
     const { config } = this.deps
     const bot = this.deps.getBot()
     let depositError: string | null = null
-    const produced = active.progress.fishCaught + active.progress.wheatHarvested + active.progress.logsChopped
+    const resourceTask = active.name === 'fishing' || active.name === 'farming' ||
+      active.name === 'woodcutting' || active.name === 'mining' || active.name === 'forest'
+    const produced = active.progress.fishCaught + active.progress.wheatHarvested +
+      active.progress.logsChopped + active.progress.oresMined + active.progress.naturalLogsChopped
     const hasLeftover = Boolean(bot?.entity && bot.inventory.items().some(item => !isKeptItem(bot, item)))
-    if (config.autoDeposit && bot?.entity && (produced > 0 || hasLeftover)) {
+    if (config.autoDeposit && resourceTask && bot?.entity && (produced > 0 || hasLeftover)) {
       try {
         await depositProduce(this.context(active))
       } catch (error) {
@@ -627,26 +721,57 @@ export class TaskManager implements TaskController {
         this.logger.warn('task: final deposit failed', { error: depositError })
       }
     }
-    if (active.name === 'fishing') {
-      const count = active.progress.fishCaught
-      await this.say(count > 0
-        ? `收工啦，钓了 ${count} 条鱼，已经存好了。`
-        : '这次没钓到鱼，我先停下了。')
-    } else if (active.name === 'farming') {
-      const harvested = active.progress.wheatHarvested
-      const planted = active.progress.planted
-      await this.say(harvested + planted > 0
-        ? `收工啦，收了 ${harvested} 格小麦，补种 ${planted} 格。`
-        : '这次农田没什么可做的，我先停下了。')
-    } else {
-      const logs = active.progress.logsChopped
-      const trees = active.progress.treesChopped
-      const planted = active.progress.saplingsPlanted
-      await this.say(logs > 0
-        ? `收工啦，砍了 ${trees} 棵树、${logs} 个原木，补种 ${planted} 棵。`
-        : '树场没有可砍的橡木了，我先停下了。')
+    switch (active.name) {
+      case 'fishing': {
+        const count = active.progress.fishCaught
+        await this.say(count > 0
+          ? `收工啦，钓了 ${count} 条鱼，已经存好了。`
+          : '这次没钓到鱼，我先停下了。')
+        break
+      }
+      case 'farming': {
+        const harvested = active.progress.wheatHarvested
+        const planted = active.progress.planted
+        await this.say(harvested + planted > 0
+          ? `收工啦，收了 ${harvested} 格小麦，补种 ${planted} 格。`
+          : '这次农田没什么可做的，我先停下了。')
+        break
+      }
+      case 'mining': {
+        const ores = active.progress.oresMined
+        await this.say(ores > 0
+          ? `收工啦，挖到 ${ores} 个表层矿（煤 ${active.progress.coalMined} / 铁 ${active.progress.ironMined} / 铜 ${active.progress.copperMined}）。`
+          : '这次没找到裸露的表层矿，我先停下了。')
+        break
+      }
+      case 'forest': {
+        const logs = active.progress.naturalLogsChopped
+        await this.say(logs > 0
+          ? `收工啦，在天然林砍了 ${logs} 个原木、补种 ${active.progress.naturalSaplingsPlanted} 棵。`
+          : '这次天然林没找到可砍的树，我先停下了。')
+        break
+      }
+      case 'sleep': {
+        await this.say(active.progress.nightSkipped > 0 ? '睡吧，晚上过去啦。' : '现在不用睡，或者床/vote 没成功，我先停下。')
+        break
+      }
+      case 'patrol': {
+        await this.say(`巡逻结束，走过 ${active.progress.patrolWaypoints} 个边界点。`)
+        break
+      }
+      default: {
+        const logs = active.progress.logsChopped
+        const trees = active.progress.treesChopped
+        const planted = active.progress.saplingsPlanted
+        await this.say(logs > 0
+          ? `收工啦，砍了 ${trees} 棵树、${logs} 个原木，补种 ${planted} 棵。`
+          : '树场没有可砍的橡木了，我先停下了。')
+      }
     }
     if (depositError) await this.say(`存箱时出了点问题：${depositError}`)
+    if (depositError && /箱子满/.test(depositError)) {
+      this.deps.alerts?.raise('chest_full', depositError, { task: active.name })
+    }
 
     const failed = active.defenseFailed || attempts >= config.taskRecoveryMax
     const stopped = active.stopRequested
@@ -656,6 +781,14 @@ export class TaskManager implements TaskController {
     this.pending = null
 
     if (failed) {
+      if (active.defenseFailed) {
+        this.deps.alerts?.raise('defense_retreat', active.lastError ?? '防御撤退', { task: active.name })
+      }
+      this.deps.alerts?.raise('task_failed', active.lastError ?? `${label(active.name)}任务失败`, {
+        task: active.name,
+        attempts,
+        depositError
+      }, 'error')
       await this.deps.store.clear()
       this.publishIdle(active)
       this.emitTask('failed')

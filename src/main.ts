@@ -4,6 +4,10 @@ import { readPackageInfo } from './version.ts'
 import { RuntimeState } from './state.ts'
 import { AuditLogger } from './audit.ts'
 import { Defender } from './combat/defender.ts'
+import { AdminService } from './admin/service.ts'
+import { AlertManager } from './alerts/manager.ts'
+import { HistoryService } from './history/service.ts'
+import { HistoryStore } from './history/store.ts'
 import { EventBus } from './events/bus.ts'
 import { StatePublisher } from './events/state-publisher.ts'
 import { MemoryStore } from './memory/store.ts'
@@ -51,6 +55,25 @@ async function main (): Promise<void> {
   state.setMemory(memory.stats())
 
   const events = new EventBus(config.sseBufferEvents)
+  const historyStore = config.history.enabled
+    ? new HistoryStore(config.history.file, config.history.retentionDays, logger.withScope('history'))
+    : null
+  if (historyStore) {
+    try {
+      await historyStore.init()
+    } catch (error) {
+      logger.error('history init failed; history/alert storage disabled', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+    }
+  }
+  const history = new HistoryService({
+    store: historyStore,
+    state,
+    logger: logger.withScope('history'),
+    sampleMs: config.history.sampleMs,
+    enabled: config.history.enabled && historyStore !== null
+  })
   const audit = new AuditLogger({
     file: config.auditFile,
     maxBytes: config.auditMaxBytes,
@@ -99,6 +122,27 @@ async function main (): Promise<void> {
     getBot: () => client.getBot()
   })
 
+  const alerts = new AlertManager({
+    config,
+    logger: logger.withScope('alerts'),
+    state,
+    events,
+    store: historyStore,
+    getBot: () => client.getBot()
+  })
+  alerts.start()
+  client.setDisconnectHandler(reason => {
+    alerts.raise('disconnected', `Lofii 断线：${reason}`, { reason }, 'error')
+  })
+
+  const admin = new AdminService({
+    config,
+    logger: logger.withScope('admin'),
+    state
+  })
+  admin.start()
+  history.start()
+
   const tasks = new TaskManager({
     config,
     logger: logger.withScope('tasks'),
@@ -109,7 +153,8 @@ async function main (): Promise<void> {
     audit,
     store: new TaskStore(config.taskStateFile, logger.withScope('tasks.store')),
     getBot: () => client.getBot(),
-    defender: config.defenseEnabled ? defender : undefined
+    defender: config.defenseEnabled ? defender : undefined,
+    alerts
   })
   await tasks.init()
 
@@ -162,6 +207,7 @@ async function main (): Promise<void> {
     tasks,
     events,
     audit,
+    history: historyStore ?? undefined,
     getBot: () => client.getBot()
   })
   await http.start()
@@ -188,7 +234,10 @@ async function main (): Promise<void> {
     model: `${config.aiModelProvider}/${config.aiModelId}`,
     http: `${config.httpHost}:${config.httpPort}`,
     controlEnabled: config.httpControlEnabled && config.httpControlToken !== '',
-    sseMaxClients: config.sseMaxClients
+    sseMaxClients: config.sseMaxClients,
+    rconEnabled: config.rcon.enabled,
+    historyEnabled: config.history.enabled,
+    alertsEnabled: config.alerts.enabled
   })
 
   let shuttingDown = false
@@ -204,12 +253,16 @@ async function main (): Promise<void> {
     try {
       ai.stop()
       statePublisher.stop()
+      alerts.stop()
+      admin.stop()
+      history.stop()
       await tasks.shutdown()
       proactive.detach()
       await presence.stop()
       await client.stop('shutdown')
       await http.stop()
       await audit.close()
+      historyStore?.close()
       await memory.stop()
     } catch (error) {
       logger.warn('shutdown error', { error: error instanceof Error ? error.message : String(error) })

@@ -37,10 +37,16 @@ export function minecraftClock (timeOfDay: number): string {
 }
 
 function taskLabel (name: TaskSnapshot['name']): string {
-  if (name === 'fishing') return '钓鱼'
-  if (name === 'farming') return '种田'
-  if (name === 'woodcutting') return '砍树'
-  return '任务'
+  switch (name) {
+    case 'fishing': return '钓鱼'
+    case 'farming': return '种田'
+    case 'woodcutting': return '砍树'
+    case 'mining': return '挖矿'
+    case 'forest': return '天然林'
+    case 'sleep': return '睡觉'
+    case 'patrol': return '巡逻'
+    default: return '任务'
+  }
 }
 
 export function buildStatusLines (bot: Bot, movement: MovementManager, task?: TaskSnapshot): string[] {
@@ -54,10 +60,23 @@ export function buildStatusLines (bot: Bot, movement: MovementManager, task?: Ta
   const visible = players.slice(0, 6).join('、')
   const playersText = players.length > 6 ? `${visible} 等${players.length}人` : visible
   const queueText = task?.queue.length ? ` · 排队 ${task.queue.length}` : ''
+  const progressText = (() => {
+    if (!task) return ''
+    if (task.name === 'woodcutting') {
+      return `树 ${task.progress.treesChopped} · 原木 ${task.progress.logsChopped} · 补种 ${task.progress.saplingsPlanted}`
+    }
+    if (task.name === 'mining') {
+      return `矿 ${task.progress.oresMined}（煤 ${task.progress.coalMined}/铁 ${task.progress.ironMined}/铜 ${task.progress.copperMined}）`
+    }
+    if (task.name === 'forest') {
+      return `原木 ${task.progress.naturalLogsChopped} · 补种 ${task.progress.naturalSaplingsPlanted}`
+    }
+    if (task.name === 'sleep') return task.progress.nightSkipped > 0 ? '已跳夜' : '等待投票'
+    if (task.name === 'patrol') return `边界点 ${task.progress.patrolWaypoints}`
+    return `鱼 ${task.progress.fishCaught} · 收 ${task.progress.wheatHarvested} · 种 ${task.progress.planted}`
+  })()
   const taskText = task?.active
-    ? task.name === 'woodcutting'
-      ? `任务: 砍树 ${task.state} · 树 ${task.progress.treesChopped} · 原木 ${task.progress.logsChopped} · 补种 ${task.progress.saplingsPlanted} · 存 ${task.progress.deposited}${queueText}`
-      : `任务: ${taskLabel(task.name)} ${task.state} · 鱼 ${task.progress.fishCaught} · 收 ${task.progress.wheatHarvested} · 种 ${task.progress.planted} · 存 ${task.progress.deposited}${queueText}`
+    ? `任务: ${taskLabel(task.name)} ${task.state} · ${progressText} · 存 ${task.progress.deposited}${queueText}`
     : task?.pendingResume
       ? `任务: 等待恢复 ${taskLabel(task.pendingResume.name)} · 10 分钟内面板确认${queueText}`
       : `任务: 待机${queueText}`

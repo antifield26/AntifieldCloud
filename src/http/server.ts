@@ -5,8 +5,9 @@ import type { AuditLogger } from '../audit.ts'
 import type { Config } from '../config.ts'
 import type { EventBus } from '../events/bus.ts'
 import { SseHub } from '../events/sse.ts'
+import type { HistoryStore } from '../history/store.ts'
 import type { Logger } from '../logger.ts'
-import type { RuntimeState } from '../state.ts'
+import type { RuntimeState, TaskName } from '../state.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
 import { InvalidMessageError, NotConnectedError } from '../errors.ts'
@@ -22,6 +23,7 @@ export interface HttpDeps {
   tasks: TaskController
   events: EventBus
   audit: AuditLogger
+  history?: HistoryStore
   getBot: () => Bot | null
 }
 
@@ -166,6 +168,50 @@ export class HttpApi {
       sendJson(res, { status: 200, body: this.deps.state.snapshot() })
       return
     }
+    if (pathname === '/admin/status') {
+      if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
+      if (!this.authorizeRead(req, res)) return
+      sendJson(res, { status: 200, body: { admin: this.deps.state.snapshot().admin } })
+      return
+    }
+    if (pathname === '/history') {
+      if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
+      if (!this.authorizeRead(req, res)) return
+      if (!this.deps.config.history.enabled || !this.deps.history) {
+        return sendError(res, 503, 'history_disabled', 'history is disabled')
+      }
+      try {
+        const kind = url.searchParams.get('kind') ?? 'samples'
+        if (kind !== 'samples' && kind !== 'alerts') throw new InvalidMessageError('kind must be samples or alerts')
+        const limitRaw = url.searchParams.get('limit')
+        let limit: number | undefined
+        if (limitRaw !== null) {
+          limit = Number(limitRaw)
+          if (!Number.isInteger(limit) || limit < 1 || limit > 1000) throw new InvalidMessageError('limit must be 1..1000')
+        }
+        const from = url.searchParams.get('from') ?? undefined
+        const to = url.searchParams.get('to') ?? undefined
+        const query = { from, to, limit }
+        const rows = kind === 'samples'
+          ? this.deps.history.querySamples(query)
+          : this.deps.history.queryAlerts(query)
+        sendJson(res, {
+          status: 200,
+          body: {
+            kind,
+            from: from ?? null,
+            to: to ?? null,
+            count: rows.length,
+            [kind]: rows
+          }
+        })
+      } catch (error) {
+        if (error instanceof InvalidMessageError) return sendError(res, 400, 'invalid_request', error.message)
+        if (error instanceof Error && /ISO-8601/.test(error.message)) return sendError(res, 400, 'invalid_request', error.message)
+        throw error
+      }
+      return
+    }
     if (pathname === '/task') {
       if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
       if (!this.authorizeRead(req, res)) return
@@ -231,14 +277,15 @@ export class HttpApi {
     if (!config.taskEnabled) return sendError(res, 503, 'task_disabled', 'tasks are disabled')
     try {
       const body = await readJsonBody(req)
-      if (!isObject(body) || (body.name !== 'fishing' && body.name !== 'farming' && body.name !== 'woodcutting')) {
-        throw new InvalidMessageError('name must be fishing, farming or woodcutting')
+      const taskNames = new Set(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol'])
+      if (!isObject(body) || typeof body.name !== 'string' || !taskNames.has(body.name)) {
+        throw new InvalidMessageError('name must be fishing, farming, woodcutting, mining, forest, sleep or patrol')
       }
       if (state.task.pendingResume) {
         this.auditDenied('task.start', 'resume_pending', requestId, body.name)
         return sendError(res, 409, 'resume_pending', 'a pending task must be resumed or discarded first')
       }
-      const result = await tasks.start(body.name, 'panel')
+      const result = await tasks.start(body.name as TaskName, 'panel')
       if (result.status === 'rejected') {
         this.auditDenied('task.start', result.reason ?? 'rejected', requestId, body.name)
         if (result.reason === 'queue_full') return sendError(res, 409, 'queue_full', 'task queue is full')

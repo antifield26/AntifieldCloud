@@ -57,6 +57,46 @@ export interface Config {
   }
   treeMaxLogs: number
   treeDepositEveryMs: number
+  mining: {
+    minY: number
+    maxY: number
+    maxOres: number
+    maxMinutes: number
+    protectRadius: number
+    ores: string[]
+  }
+  forest: {
+    species: string[]
+    protectRadius: number
+    maxLogs: number
+    depositEveryMs: number
+  }
+  sleep: {
+    bedSearchRadius: number
+    voteWaitMs: number
+  }
+  patrol: {
+    maxMinutes: number
+  }
+  rcon: {
+    enabled: boolean
+    host: string
+    port: number
+    password: string
+    timeoutMs: number
+  }
+  adminPollMs: number
+  history: {
+    enabled: boolean
+    file: string
+    sampleMs: number
+    retentionDays: number
+  }
+  alerts: {
+    enabled: boolean
+    cooldownMs: number
+    healthThreshold: number
+  }
   defenseEnabled: boolean
   defenseRadius: number
   defenseHealthThreshold: number
@@ -221,7 +261,7 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
   if (httpToken.length < 16) throw new ConfigError('HTTP_TOKEN must be at least 16 characters')
 
   const safeZone = {
-    minX: readNumber(env, 'SAFE_MIN_X', 175, -30000000, 30000000),
+    minX: readNumber(env, 'SAFE_MIN_X', 111, -30000000, 30000000),
     maxX: readNumber(env, 'SAFE_MAX_X', 239, -30000000, 30000000),
     minZ: readNumber(env, 'SAFE_MIN_Z', 410, -30000000, 30000000),
     maxZ: readNumber(env, 'SAFE_MAX_Z', 474, -30000000, 30000000)
@@ -286,6 +326,57 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
   assertInSafeZone('TREE_FARM', { x: treeFarm.minX, z: treeFarm.minZ }, safeZone)
   assertInSafeZone('TREE_FARM', { x: treeFarm.maxX, z: treeFarm.maxZ }, safeZone)
 
+  const mining = {
+    minY: readNumber(env, 'MINE_MIN_Y', 60, -256, 512),
+    maxY: readNumber(env, 'MINE_MAX_Y', 120, -256, 512),
+    maxOres: readInt(env, 'MINE_MAX_ORES', 64, 1, 2048),
+    maxMinutes: readInt(env, 'MINE_MAX_MINUTES', 30, 1, 120),
+    protectRadius: readNumber(env, 'MINE_PROTECT_RADIUS', 16, 0, 64),
+    ores: readNameList(env, 'MINE_ORES',
+      'coal_ore,deepslate_coal_ore,iron_ore,deepslate_iron_ore,copper_ore,deepslate_copper_ore')
+  }
+  if (mining.minY > mining.maxY) throw new ConfigError('MINE_MIN_Y must be <= MINE_MAX_Y')
+  const forest = {
+    species: readNameList(env, 'FOREST_SPECIES', 'oak,spruce,birch'),
+    protectRadius: readNumber(env, 'FOREST_PROTECT_RADIUS', 16, 0, 64),
+    maxLogs: readInt(env, 'FOREST_MAX_LOGS', 128, 1, 2048),
+    depositEveryMs: readInt(env, 'FOREST_DEPOSIT_EVERY_MS', 300000, 60000, 3600000)
+  }
+  const allowedForest = new Set(['oak', 'spruce', 'birch'])
+  if (forest.species.some(species => !allowedForest.has(species))) {
+    throw new ConfigError('FOREST_SPECIES only supports oak, spruce, birch')
+  }
+  const sleepConfig = {
+    bedSearchRadius: readNumber(env, 'BED_SEARCH_RADIUS', 16, 2, 64),
+    voteWaitMs: readInt(env, 'SLEEP_VOTE_WAIT_MS', 45000, 5000, 180000)
+  }
+  const patrol = {
+    maxMinutes: readInt(env, 'PATROL_MAX_MINUTES', 15, 1, 60)
+  }
+  const rconEnabled = readBool(env, 'RCON_ENABLED', false)
+  const rconPassword = readString(env, 'RCON_PASSWORD', '')
+  if (rconEnabled && rconPassword === '') {
+    throw new ConfigError('RCON_PASSWORD is required when RCON_ENABLED=true')
+  }
+  const rcon = {
+    enabled: rconEnabled,
+    host: readString(env, 'RCON_HOST', '127.0.0.1'),
+    port: readInt(env, 'RCON_PORT', 25575, 1, 65535),
+    password: rconPassword,
+    timeoutMs: readInt(env, 'RCON_TIMEOUT_MS', 4000, 500, 30000)
+  }
+  const history = {
+    enabled: readBool(env, 'HISTORY_ENABLED', true),
+    file: readString(env, 'HISTORY_DB', `${dataDir}/history.db`),
+    sampleMs: readInt(env, 'HISTORY_SAMPLE_MS', 60000, 5000, 3600000),
+    retentionDays: readInt(env, 'HISTORY_RETENTION_DAYS', 30, 1, 3650)
+  }
+  const alerts = {
+    enabled: readBool(env, 'ALERTS_ENABLED', true),
+    cooldownMs: readInt(env, 'ALERT_COOLDOWN_MS', 300000, 10000, 3600000),
+    healthThreshold: readNumber(env, 'ALERT_HEALTH_THRESHOLD', 12, 1, 20)
+  }
+
   return Object.freeze({
     version,
     botUsername: readString(env, 'BOT_USERNAME', 'lofii'),
@@ -337,6 +428,14 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     treeFarm,
     treeMaxLogs: readInt(env, 'TREE_MAX_LOGS', 128, 1, 2048),
     treeDepositEveryMs: readInt(env, 'TREE_DEPOSIT_EVERY_MS', 300000, 60000, 3600000),
+    mining,
+    forest,
+    sleep: sleepConfig,
+    patrol,
+    rcon,
+    adminPollMs: readInt(env, 'ADMIN_POLL_MS', 60000, 5000, 3600000),
+    history,
+    alerts,
     defenseEnabled: readBool(env, 'DEFENSE_ENABLED', true),
     defenseRadius: readNumber(env, 'DEFENSE_RADIUS', 12, 4, 32),
     defenseHealthThreshold: readNumber(env, 'DEFENSE_HEALTH_THRESHOLD', 12, 1, 20),
@@ -354,7 +453,7 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     chest,
     fishStand,
     fishWater,
-    taskMaxMinutes: readInt(env, 'TASK_MAX_MINUTES', 30, 1, 120),
+    taskMaxMinutes: readInt(env, 'TASK_MAX_MINUTES', 60, 1, 180),
     taskRecoveryMax: readInt(env, 'TASK_RECOVERY_MAX', 3, 1, 5),
     teleportDistance: readNumber(env, 'TELEPORT_DISTANCE', 64, 8, 512),
     taskAnchorTeleport: readBool(env, 'TASK_ANCHOR_TELEPORT', true),

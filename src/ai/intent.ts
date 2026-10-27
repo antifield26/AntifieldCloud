@@ -2,15 +2,15 @@ import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
 import { OpenCodeClient } from './opencode.ts'
 
-export type IntentAction = 'fish' | 'farm' | 'woodcutting' | 'stopTask' | 'home' | 'deposit' | 'status' | 'chat'
+export type IntentAction = 'fish' | 'farm' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol' | 'stopTask' | 'home' | 'deposit' | 'status' | 'chat'
 
 export interface IntentResult {
   action: IntentAction
   confidence: number
 }
 
-const ACTIONS = new Set<IntentAction>(['fish', 'farm', 'woodcutting', 'stopTask', 'home', 'deposit', 'status', 'chat'])
-const TASK_HINT = /(钓鱼|鱼|种田|农田|田里|收菜|砍树|砍木头|橡木|收工|停止任务|回家|回基地|存箱|存东西|箱子|fishing|farm|fish|woodcutting|chop|home|deposit|stop)/i
+const ACTIONS = new Set<IntentAction>(['fish', 'farm', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'stopTask', 'home', 'deposit', 'status', 'chat'])
+const TASK_HINT = /(钓鱼|鱼|种田|农田|田里|收菜|砍树|砍木头|橡木|挖矿|找矿|天然林|森林|睡觉|跳夜|巡逻|巡视|收工|停止任务|回家|回基地|存箱|存东西|箱子|fishing|farm|fish|woodcutting|chop|mining|mine|forest|sleep|patrol|home|deposit|stop)/i
 
 function parseJson (text: string): unknown {
   const cleaned = text.replace(/```(?:json)?/gi, '').trim()
@@ -46,7 +46,7 @@ export class IntentClassifier {
     if (!this.shouldClassify(text)) return null
     const prompt = [
       '你是一个 Minecraft 机器人意图分类器，只输出 JSON，不要解释。',
-      '可选 intent: fish(去钓鱼), farm(去种田/收菜), woodcutting(去砍树/砍橡木), stopTask(收工/停止任务), home(回家), deposit(存东西/存箱), status(查任务状态), chat(普通聊天)。',
+      '可选 intent: fish(去钓鱼), farm(去种田/收菜), woodcutting(去砍树/砍橡木), mining(去挖表层矿), forest(砍天然林), sleep(睡觉/跳夜), patrol(巡逻), stopTask(收工/停止任务), home(回家), deposit(存东西/存箱), status(查任务状态), chat(普通聊天)。',
       '只允许这些值；不确定就输出 chat。',
       '输出格式: {"intent":"fish","confidence":0.0}',
       `玩家消息: ${text}`

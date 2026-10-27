@@ -15,7 +15,9 @@ const TOOL_NAMES = new Set([
   'iron_leggings',
   'iron_boots',
   'wheat_seeds',
-  'oak_sapling'
+  'oak_sapling',
+  'spruce_sapling',
+  'birch_sapling'
 ])
 
 const FISH_NAMES = new Set(['cod', 'salmon', 'tropical_fish', 'pufferfish'])
