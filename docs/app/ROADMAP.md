@@ -6,7 +6,7 @@
 - **状态**：app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z`；完整 Access smoke 36/0/1/2；实机 Agentic observe/task_status/finish 通过；Windows 备份任务标记 1.0.3。
 - **边界**：不新增任意命令/采集/战斗动作；容器只读、不传送、不破块。
 
-## v1.0.2（**已部署生产（2026-10-28）；未打 Tag/Release**；mcbot AI 自主会话 + 应用自主控制 + Agentic 验收；schema v18/OpenCode 2.2.0 不变）
+## v1.0.2（**已部署生产（2026-10-28）；已补发 Tag/Release**；mcbot AI 自主会话 + 应用自主控制 + Agentic 验收；schema v18/OpenCode 2.2.0 不变）
 
 - **范围**：mcbot 显式启动的 AI 自主会话（OpenCode 原生 MCP 工具循环、10 种任务白名单、预算/失败/急停/审计、任务/MCP/session 清理）；应用自主状态/启动/急停代理与面板、10 任务同步；mcbot 服务监控、轮询停止收口、GET 限流；Agentic 离线 harness + 可选实机 conductor。
 - **状态**：已部署生产；app 591/web 273/mcbot 108；OpenCode 2.2.0 原生 MCP Phase 0 + 实机 Agentic `task_status`/`finish` 通过；app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；自主模式已启用（仅主人显式启动），Windows 备份任务已重装到 1.0.2。

@@ -23,9 +23,9 @@ v1.0.3 是 mcbot 环境感知/自主决策增强与文档-实现一致性审计�
 - 无 schema/DB 迁移；部署前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261028T144601033Z.sqlite`；人工备份 `/var/backups/antifieldcomplexx/v1.0.3-predeploy-20261028T144245Z`。
 - 回滚：切回 app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`，并恢复部署前 env；自主模式仍默认关闭，生产 `AUTONOMY_ENABLED=true` 保持不变。未打 Tag/Release。
 
-## [v1.0.2] - 2026-10-28（已部署生产；未打 Tag/Release）
+## [v1.0.2] - 2026-10-28（已部署生产；已补发 Tag/Release）
 
-v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`）；生产已启用自主模式（仅主人显式启动），Windows 备份任务已重装到 1.0.2；未打 Tag/Release。
+v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`）；生产已启用自主模式（仅主人显式启动），Windows 备份任务已重装到 1.0.2；已补发 [GitHub Release v1.0.2](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.0.2)。
 
 ### Added
 
@@ -38,11 +38,11 @@ v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode
 
 - 本地：root `npm run check` 通过；app 591（590 pass、1 skip）、web 273、mcbot 108；服务端覆盖率 93.10/78.89/88.86，前端 56.27/51.88/49.16；build/check-version（1.0.2）/check-naming 通过。
 - OpenCode 2.2.0 原生 MCP Phase 0：运行时注册/工具调用/权限前缀/Authorization/清理通过。
-- 未部署、未打 Tag/Release；生产仍 v1.0.1。
+- 已部署生产；生产 app/mcbot 1.0.2；已补发 Tag `v1.0.2` + GitHub Release（补充发布，部署时间仍为 2026-10-28）。
 
 ### Migration / Rollback
 
-- 无 schema/DB 迁移；生产回滚使用部署前 DB 快照或切回上一 release；自主模式代码默认关闭（生产当前已启用，可随时设 `AUTONOMY_ENABLED=false` 重启）。未打 Tag/Release。
+- 无 schema/DB 迁移；生产回滚使用部署前 DB 快照或切回上一 release；自主模式代码默认关闭（生产当前已启用，可随时设 `AUTONOMY_ENABLED=false` 重启）。已补发 Tag/Release `v1.0.2`。
 ## [v1.0.1] - 2026-10-28
 
 v1.0.1 是定位同步与 OpenCode 升级版本：运行时 UI/元数据切换为“个人综合交互平台”，OpenCode 从 2.1.4 升级到 2.2.0，无 schema 迁移。

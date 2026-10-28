@@ -4,7 +4,7 @@
 - **状态**：release `/opt/mcbot/releases/20261028T144253Z`；完整 Access smoke 36/0/1/2；实机 Agentic observe/task_status/finish 通过；生产 `AUTONOMY_ENABLED=true`（仅主人显式启动）。
 - **边界**：容器只读、不传送、不破块；非空闲不允许动作工具；不新增任意命令/采集/战斗动作。
 
-## v1.0.2（**已部署生产（2026-10-28）；未打 Tag/Release**；AI 自主会话 + Agentic 验收）
+## v1.0.2（**已部署生产（2026-10-28）；已补发 Tag/Release**；AI 自主会话 + Agentic 验收）
 
 - **范围**：OpenCode 原生 MCP 工具循环驱动现有 10 种任务/回家/存箱；显式启动、白名单、预算/失败/急停/审计、任务/MCP/session 清理；应用面板自主控制；mcbot 服务监控/轮询停止收口/GET 限流；Agentic 离线 harness + 可选实机 conductor。
 - **状态**：已部署生产；mcbot 108 测试、app 591/web 273 全绿；OpenCode 2.2.0 Phase 0 + 实机 Agentic 工具调用通过；release `/opt/mcbot/releases/20261028T091246Z`，自主模式已启用（仅主人显式启动）。

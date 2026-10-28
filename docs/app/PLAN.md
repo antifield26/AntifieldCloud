@@ -15,7 +15,7 @@
 ## v1.0.2 已部署状态（历史）
 
 - **版本**：**v1.0.2**（统一版本轴，生产已部署）；schema **v18**；OpenCode **v2.2.0**；Node.js **v26.12.1**；mcbot **v1.0.2**（契约 v1）。
-- **状态**：v1.0.2 **已部署生产（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0）、mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，自主模式已启用，仅主人显式启动）；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=恢复演练 schema17）；未打 Tag/Release。
+- **状态**：v1.0.2 **已部署生产（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0）、mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，自主模式已启用，仅主人显式启动）；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=恢复演练 schema17）；已补发 Tag/Release `v1.0.2`。
 - **测试基线**：`npm run check` 通过；app 591（590 pass）+ web 273 + mcbot 108；服务端覆盖率 93.10/78.89/88.86、前端 56.27/51.88/49.16；`build`/`check-version`（严格 1.0.2）/`check-naming` 通过。
 - **迁移**：旧 env 前缀已迁移为 `CHATBOT_*`/`MCBOT_*`；上下文目录 → `/var/lib/antifieldcloud-chatbot-context`；`WEB_DIST_DIR` → `current/apps/workbench/web/dist`；DB schema v18 迁移不可逆（用快照回滚）。
 
