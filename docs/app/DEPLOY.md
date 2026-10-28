@@ -19,7 +19,8 @@
 
 ### v1.0.0 生产部署记录（2026-10-28，已执行）
 
-- app：release `/opt/antifieldcloud/releases/20261028T000905Z`，`/healthz` = 1.0.0/schema18；迁移前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261028T000918146Z.sqlite`。
+- app：release `/opt/antifieldcloud/releases/20261028T002517Z`，`/healthz` = 1.0.0/schema18；迁移前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261028T000918146Z.sqlite`。
+- 二次部署（同版本最终 current）：release `/opt/antifieldcloud/releases/20261028T002517Z`（commit `8752b63`，部署时间 2026-10-28T00:25Z），二次快照 `db-predeploy-20261028T002526894Z.sqlite`；仅脚本/文档修复，运行代码与首次部署一致。
 - mcbot：release `/opt/mcbot/releases/20261028T000632Z`（1.0.0），`mcbot.service` active；旧 `lofii-bot.service` 已停止/禁用（release/data 保留）。
 - env：`BOT_*`/`LOFII_*` 已迁移为 `CHATBOT_*`/`MCBOT_*`（旧键 0）；上下文目录迁移到 `/var/lib/antifieldcloud-chatbot-context`；`WEB_DIST_DIR=/opt/antifieldcloud/current/apps/workbench/web/dist`。
 - 验收：部署内只读 smoke **27 PASS / 0 FAIL / 1 WARN / 2 SKIP**；全量 Access smoke **35 PASS / 0 FAIL / 1 WARN / 2 SKIP**（WARN=恢复演练仍为 schema17，待下一次备份后重跑；本地任务标记检查本次跳过，需重装 Windows 任务后补跑）。

@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v1.0.0（2026-10-28 已部署生产）**：npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；QQ Bot 子系统更名 chatbot（schema **v18**）；原 lofii-bot 合并为 `apps/mcbot` 并硬切换（服务/路径/env/API/审计）；OpenCode v2.1.4；生产 app release `/opt/antifieldcloud/releases/20261028T000905Z`、mcbot release `/opt/mcbot/releases/20261028T000632Z`；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+**当前版本 v1.0.0（2026-10-28 已部署生产）**：npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；QQ Bot 子系统更名 chatbot（schema **v18**）；原 lofii-bot 合并为 `apps/mcbot` 并硬切换（服务/路径/env/API/审计）；OpenCode v2.1.4；生产 app release `/opt/antifieldcloud/releases/20261028T002517Z`、mcbot release `/opt/mcbot/releases/20261028T000632Z`；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
@@ -166,7 +166,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 8. 已知环境事实（不要重复踩坑）
 
-- **v1.0.0 生产已部署（2026-10-28）**：app `1.0.0`/schema `18`（release `/opt/antifieldcloud/releases/20261028T000905Z`，迁移前快照 `db-predeploy-20261028T000918146Z.sqlite`）；mcbot `1.0.0`（release `/opt/mcbot/releases/20261028T000632Z`，服务 `mcbot.service` active）；旧 `lofii-bot` 已停止/禁用但旧 release `/opt/lofii-bot/releases/20261027T111640Z` 与数据保留用于回滚。生产 env 已迁移为 `CHATBOT_*`/`MCBOT_*`（旧键 0 个），上下文目录 `/var/lib/antifieldcloud-chatbot-context`，`WEB_DIST_DIR=/opt/antifieldcloud/current/apps/workbench/web/dist`；botmsg MCP 已更新为 `/opt/botmsg-mcp/chatbot-tool-mcp.mjs`。备份：`/var/backups/antifieldcomplexx/v1.0.0-predeploy-20261028T000149Z`（DB+env+bot data）、`v1.0.0-20261028T000645Z`（Apply 备份）、`v1.0.0-webdist-20261028T001809Z`、`v1.0.0-unit-sync-20261028T001113Z`。待人工：QQ 回调/Cloudflare Access 新路径、Windows 每日备份任务重装、下一次备份后按 schema 18 重跑 recovery drill。
+- **v1.0.0 生产已部署（2026-10-28）**：app `1.0.0`/schema `18`（release `/opt/antifieldcloud/releases/20261028T002517Z`，迁移前快照 `db-predeploy-20261028T000918146Z.sqlite`）；mcbot `1.0.0`（release `/opt/mcbot/releases/20261028T000632Z`，服务 `mcbot.service` active）；旧 `lofii-bot` 已停止/禁用但旧 release `/opt/lofii-bot/releases/20261027T111640Z` 与数据保留用于回滚。生产 env 已迁移为 `CHATBOT_*`/`MCBOT_*`（旧键 0 个），上下文目录 `/var/lib/antifieldcloud-chatbot-context`，`WEB_DIST_DIR=/opt/antifieldcloud/current/apps/workbench/web/dist`；botmsg MCP 已更新为 `/opt/botmsg-mcp/chatbot-tool-mcp.mjs`。备份：`/var/backups/antifieldcomplexx/v1.0.0-predeploy-20261028T000149Z`（DB+env+bot data）、`v1.0.0-20261028T000645Z`（Apply 备份）、`v1.0.0-webdist-20261028T001809Z`、`v1.0.0-unit-sync-20261028T001113Z`。待人工：QQ 回调/Cloudflare Access 新路径、Windows 每日备份任务重装、下一次备份后按 schema 18 重跑 recovery drill。
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
@@ -207,7 +207,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 1. Cloudflare 后台添加 `app`/`ai` CNAME（已由用户完成）。
 2. 交互式运行 provisioning，设置密码、扫描 TOTP、保存恢复码。
-3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。**当前现状（已完成，2026-10-27）**：任务已重装并验证——`backup-task.json` appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、`scriptSha256` 与仓库/已安装 `backup-pull.ps1` 一致（`7febb768…636d`）、任务 Ready；完整 Access smoke 的任务标记检查 PASS（不再用 `-SkipLocalTaskCheck`）。
+3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。**当前现状（v1.0.0 待重装）**：任务仍为 appVersion=0.8.1/`backup-pull.ps1` 旧 sha；v1.0.0 发布后需用管理员 PowerShell 重跑 `install-backup-task.ps1`，刷新复制脚本、脚本 SHA 与 appVersion=1.0.0，再不带 `-SkipLocalTaskCheck` 跑一次 smoke。
 4. 离线保存 age 私钥（密钥包与备份整包加密各一套，互不复用）；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
 5. Windows 周度世界拉取任务（`scripts/world-pull.ps1`）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证；恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本按用户决定保持关闭。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在允许网段内（模板为 TEST-NET 占位，先替换为实际网段，否则会锁死）；保留物理键鼠/已建立 SSH 作为回滚通道。
