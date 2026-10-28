@@ -172,7 +172,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
-- OpenCode **v2.2.0**（v1.0.1 目标；升级/回滚/兼容矩阵见 `docs/app/DEPLOY.md` §3.2；升级前必须备份 v2.1.4 二进制/data/env/unit/MCP 配置）：`127.0.0.1:4096`，Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 OpenCode 与 antifieldcloud）。
+- OpenCode **v2.2.0**（v1.0.1 目标；升级/回滚/兼容矩阵见 `docs/app/DEPLOY.md` §3.2；升级前必须备份 v2.1.4 二进制/data/env/unit/MCP 配置）：`127.0.0.1:4096`，Basic 用户名 `opencode`，密码来自 `/etc/opencode/opencode.env` 的 `OPENCODE_PASSWORD`（应用 env 同名键必须同步；轮换后重启 OpenCode 与 antifieldcloud）。**版本以运行中 `/api/info` 为准，不以 CLI `--version` 为准**：`opencode upgrade` 只替换磁盘二进制，不重启服务；v2.2.0 升级曾出现 CLI 2.2.0、Web/API 仍 2.1.4（`/proc/<pid>/exe` 标记 deleted），`systemctl restart opencode` 后修正；`smoke.ps1` 已校验 `/api/info` 版本与进程 exe 非 deleted。
 - Minecraft：Paper 26.1.2，RCON `127.0.0.1:25575`，密码在 `server.properties`（32 位随机），服务器语言中文，输出含 `§` 颜色码需剥离；RCON 仍监听所有接口，nftables 仅放行 loopback。
 - Pi 已启用 memory cgroup；`antifieldcloud-health.timer` 每 60s 写 `/run/antifieldcloud/pi-health.json`；`age` 与（启用异地副本时）`rclone` 已安装；`unattended-upgrades` 已安装。
 - 备份：应用归档为两阶段 pending/ack（未确认不删）；PC 任务参数为实际 `-PiHost/-BackupRoot`，ACL 收紧；密钥包 Pi 端 `KEEP=2` 滚动保留，PC 不再立即删除远端密钥包。

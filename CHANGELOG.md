@@ -12,6 +12,10 @@ v1.0.1 是定位同步与 OpenCode 升级版本：运行时 UI/元数据切换�
 - **mcbot 1.0.1**：版本随统一版本轴发布，功能无变更。
 - **文档**：README/AGENTS/PLAN/ROADMAP/UI-SPEC/ACCEPTANCE/DEPLOY/SECURITY/CHATBOT/mcbot 文档与版本/OpenCode 事实对齐；修复历史生产 facts 漂移。
 
+### Fixed
+
+- OpenCode 升级后运行进程未重启，导致 CLI 已 2.2.0 而 OpenCode Web/`/api/info` 仍显示 2.1.4；重启服务并在运行中的 2.2.0 上重跑兼容矩阵，smoke 增加 `/api/info` 运行版本与进程 exe 校验。
+
 ### Verification
 
 - 本地：`npm run check`、`npm run build`、`check-naming` 通过；app 574/573 pass、web 256、mcbot 94。

@@ -7,7 +7,9 @@
 
 - app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode v2.2.0，commit `228ed62`）；mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1/contract1）。
 - 运行时文案：HTML title/meta、PWA manifest/离线页、Logo/登录页/设置页/页面标题与 systemd Description 已切换“个人综合交互平台”；部署后 JS bundle 新文案 4 处、旧文案 0 处。
-- OpenCode：2.1.4→2.2.0（备份 `/var/backups/opencode` timestamp `20261028T020723Z`）；Basic/session list、permissions deny/allow、prompt/wait/assistant 形状、图片 prompt files（模型不支持图片但 API 接受）、`/api/mcp`、MCP 进程各 1 个、资源余量通过；未使用且不受影响的 OpenCode archive 端点未纳入矩阵，V10–V13 真实 QQ 证据沿用 v1.0.0。
+- OpenCode：2.1.4→2.2.0（备份 `/var/backups/opencode` timestamp `20261028T020723Z`）；首次部署后复核发现 CLI 已是 2.2.0，但服务进程仍持有升级前二进制（`/proc/<pid>/exe` 标记 `(deleted)`、`/api/info=2.1.4`）；10:40 重启 `opencode` 后 `/api/info=2.2.0`。
+- 运行中的 2.2.0 上重跑兼容矩阵 8/8：Basic/session list、permissions deny/allow、prompt/wait/assistant 形状、`/api/mcp` 通过；图片 prompt files 在 2.2.0 上返回 200（模型不支持图片，返回固定说明）；MCP 进程各 1 个、资源余量通过；archive 端点非应用调用面，V10–V13 真实 QQ 证据沿用 v1.0.0。
+- 根因与预防：`opencode upgrade` 只替换磁盘二进制，未重启运行进程；此前 smoke 只校验 CLI `--version`，未发现运行中版本滞后。已将 smoke 改为校验运行中 `/api/info.version` 并断言进程 exe 不含 `(deleted)`；升级手册 §3.2 增加同样门禁。
 - 部署内 smoke **26/0/1/2**；完整 Access smoke **36/0/1/2**（含 Windows 任务标记 version=1.0.1；WARN=drill schema17）。
 - 无 schema 变更；回滚 = app/mcbot 上一 release + OpenCode 2.1.4 备份。
 ### v1.0.0 生产迁移验收（2026-10-28，已执行）

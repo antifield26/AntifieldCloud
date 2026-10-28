@@ -352,19 +352,23 @@ Check "healthz db/pendingBackups 字段" {
   "db=ok pendingBackups=$($health.pendingBackups)"
 }
 
-# OpenCode 版本（v2.1.4 升级门禁；可 -SkipOpenCode）：路径固定为生产安装位置。
+# OpenCode 运行中版本（/api/info；仅 CLI --version 不足以证明服务进程已切换；可 -SkipOpenCode）。
 if (-not $SkipOpenCode -and $ExpectedOpenCodeVersion) {
-  Check "OpenCode 版本与预期一致（$ExpectedOpenCodeVersion）" {
-    $out = (Invoke-PiSsh "sudo -u opencode env HOME=/var/lib/opencode /var/lib/opencode/.opencode/bin/opencode --version 2>&1" -TimeoutSeconds 30 | Out-String).Trim()
-    $match = [regex]::Match($out, 'v?(\d+\.\d+\.\d+)')
-    if (-not $match.Success) { throw "无法解析 opencode --version：$out" }
+  Check "OpenCode 运行中版本与预期一致（$ExpectedOpenCodeVersion）" {
+    $command = @'
+sudo sh -c 'P=$(grep -E "^OPENCODE_PASSWORD=" /etc/opencode/opencode.env | head -n1 | cut -d= -f2-); AUTH=$(printf "%s" "opencode:$P" | base64 -w0); PID=$(systemctl show opencode -p MainPID --value); EXE=$(readlink -f /proc/$PID/exe); INFO=$(curl -fsS --max-time 5 -H "Authorization: Basic $AUTH" http://127.0.0.1:4096/api/info); printf "%s\nEXE=%s\n" "$INFO" "$EXE"'
+'@
+    $out = (Invoke-PiSsh $command.Trim() -TimeoutSeconds 30 | Out-String).Trim()
+    $match = [regex]::Match($out, '"version"\s*:\s*"(\d+\.\d+\.\d+)"')
+    if (-not $match.Success) { throw "无法解析 OpenCode /api/info version：$out" }
+    if ($out -match '\(deleted\)') { throw "OpenCode 进程仍指向已删除的旧二进制：$out" }
     $actual = $match.Groups[1].Value
-    if ($actual -ne $ExpectedOpenCodeVersion) { throw "opencode=$actual，期望 $ExpectedOpenCodeVersion（升级/回滚未完成？）" }
-    "v$actual"
+    if ($actual -ne $ExpectedOpenCodeVersion) { throw "OpenCode /api/info=$actual，期望 $ExpectedOpenCodeVersion（服务进程未重启？）" }
+    "v$actual（/api/info 运行中）"
   }
 }
 
-# MCP 服务状态（v2.1.4 lifecycle 升级重点；可 -SkipMcp）：只读 /api/mcp，密码只在远端 shell 变量中使用。
+# MCP 服务状态（OpenCode 2.2 lifecycle；可 -SkipMcp）：只读 /api/mcp，密码只在远端 shell 变量中使用。
 if (-not $SkipMcp) {
   Check "OpenCode MCP 服务状态" {
     $command = @'

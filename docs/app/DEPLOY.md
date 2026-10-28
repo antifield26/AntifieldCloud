@@ -20,6 +20,7 @@
 ### v1.0.1 生产部署记录（2026-10-28，已执行）
 
 - OpenCode：2.1.4→2.2.0；升级前备份 `/var/backups/opencode/20261028T020723Z`（binary/data/env/unit/MCP）；矩阵与回滚见 §3.2。
+- 运行中版本复核（2026-10-28 10:40）：升级后 CLI 已 2.2.0，但服务进程仍持有升级前 inode（`/proc/<pid>/exe` 标记 `(deleted)`、`/api/info=2.1.4`）；重启 `opencode` 后 `/api/info=2.2.0`，并在运行中的 2.2.0 上重跑兼容矩阵 8/8。根因是 `opencode upgrade` 只替换二进制、未重启进程；smoke 已改为硬校验 `/api/info` 版本与进程 exe 非 deleted。
 - mcbot：release `/opt/mcbot/releases/20261028T021116Z`（1.0.1/contract1）；app：release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode 2.2.0，commit `228ed62`）；部署快照 `db-predeploy-20261028T021322569Z.sqlite`（sha256 `f917d7d78a58a05d513ea0dccd9ec089ddc30ce9322ead69645ea2bf8b9d1597`）。
 - 运行时 UI：HTML title/meta、PWA manifest/离线页、Logo/登录/设置/页面标题、systemd Description 已切换“个人综合交互平台”；部署后 JS bundle 新文案 4 处、旧文案 0 处。
 - 验收：部署内 smoke **26/0/1/2**；完整 Access smoke **36/0/1/2**（含 Windows 任务标记 version=1.0.1；WARN=drill schema17）；本版无 schema 变更。
@@ -225,17 +226,25 @@ sudo cp -a /etc/systemd/system/opencode.service "$BK/opencode.service.$TS"
 sudo cp -a /var/lib/opencode/.config/opencode "$BK/opencode-config-$TS" 2>/dev/null || true
 sudo cp -a /opt/antifieldcloud/current/scripts/*-mcp.mjs "$BK/" 2>/dev/null || true
 
-# 1) 升级并重启；--method curl 与现有安装方式一致
+# 1) 升级并重启；--method curl 与现有安装方式一致。
+#    upgrade 只替换二进制，不会重启运行中的服务；必须显式 restart。
 sudo -u opencode env HOME=/var/lib/opencode /var/lib/opencode/.opencode/bin/opencode upgrade 2.2.0 --method curl
-sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # opencode v2.2.0
+sudo -u opencode /var/lib/opencode/.opencode/bin/opencode --version   # 仅代表磁盘二进制
 sudo systemctl restart opencode && systemctl is-active opencode
+
+# 2) 必须校验“运行中”服务版本；CLI --version 不能证明进程已切换
+#    /api/info 的 version 是 OpenCode Web/应用实际看到的版本。
+PID=$(systemctl show opencode -p MainPID --value)
+sudo readlink -f /proc/$PID/exe   # 不得包含 (deleted)
+curl -fsS -u "opencode:$(sudo grep -E '^OPENCODE_PASSWORD=' /etc/opencode/opencode.env | head -n1 | cut -d= -f2-)" \
+  http://127.0.0.1:4096/api/info   # 期望 "version":"2.2.0"
 ```
 
 ### 兼容矩阵（2026-10-28 生产实测）
 
 | 编号 | 检查 | 结果 |
 |---|---|---|
-| V1 | 版本/服务/Basic `/api/session` | PASS（v2.2.0 active，HTTP 200） |
+| V1 | 运行中版本/服务/Basic `/api/session` | PASS（`/api/info=2.2.0`，进程 exe 非 deleted，HTTP 200） |
 | V2 | 会话列表 | PASS（200，data 数组） |
 | V3 | deny-all / allow-tool `permissions` 创建会话 | PASS（200） |
 | V4 | prompt → assistant content/finish | PASS（text + `finish=stop`） |
@@ -245,6 +254,8 @@ sudo systemctl restart opencode && systemctl is-active opencode
 | V8 | MCP：botmsg/searxng 进程与 `/api/mcp` | PASS（各 1 进程，connected） |
 | V9 | 会话删除/清理 | PASS（204） |
 | V14 | 资源余量 | PASS（OpenCode RSS≈288 MB，可用内存≈4.5 GB，/var 余量≈25 GB） |
+
+> **版本显示滞后排查**：OpenCode Web 与 `/api/info` 读取的是**运行中服务**的版本；`opencode upgrade` 只替换磁盘二进制，不重启服务。若 CLI `--version` 已是新版本而 Web 仍显示旧版，检查 `readlink -f /proc/$(systemctl show opencode -p MainPID --value)/exe` 是否带 `(deleted)`，执行 `systemctl restart opencode`，再确认 `/api/info.version`。smoke 已强制校验 `/api/info` 运行版本，不能再只信 CLI。
 
 V10–V13（真实 QQ 私聊/群聊/图片端到端）沿用 v1.0.0 用户验收证据，本次升级未重跑；Bot 默认关闭、Webhook 路径与验签未变化。
 
