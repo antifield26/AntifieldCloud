@@ -1,8 +1,15 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.0（开发线 `release/v1.0.0`；生产仍为 v0.8.1，生产迁移与发布待 Phase 7 授权）。
+> 当前版本 v1.0.1（`release/v1.0.0` 已合并 `main`；生产已部署 2026-10-28：app 1.0.1/schema18/OpenCode 2.2.0、mcbot 1.0.1）。
 >
 
+### v1.0.1 运行时文案与 OpenCode 2.2.0 验收（2026-10-28，已执行）
+
+- app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode v2.2.0，commit `228ed62`）；mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1/contract1）。
+- 运行时文案：HTML title/meta、PWA manifest/离线页、Logo/登录页/设置页/页面标题与 systemd Description 已切换“个人综合交互平台”；部署后 JS bundle 新文案 4 处、旧文案 0 处。
+- OpenCode：2.1.4→2.2.0（备份 `/var/backups/opencode` timestamp `20261028T020723Z`）；Basic/session list、permissions deny/allow、prompt/wait/assistant 形状、图片 prompt files（模型不支持图片但 API 接受）、`/api/mcp`、MCP 进程各 1 个、资源余量通过；未使用且不受影响的 OpenCode archive 端点未纳入矩阵，V10–V13 真实 QQ 证据沿用 v1.0.0。
+- 部署内 smoke **26/0/1/2**；完整 Access smoke **36/0/1/2**（含 Windows 任务标记 version=1.0.1；WARN=drill schema17）。
+- 无 schema 变更；回滚 = app/mcbot 上一 release + OpenCode 2.1.4 备份。
 ### v1.0.0 生产迁移验收（2026-10-28，已执行）
 
 - app release `/opt/antifieldcloud/releases/20261028T002517Z`（1.0.0/schema18）；mcbot release `/opt/mcbot/releases/20261028T000632Z`（1.0.0/contract1）；旧 lofii-bot 停止/禁用。

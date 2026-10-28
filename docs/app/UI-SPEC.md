@@ -1,6 +1,6 @@
 # AntifieldComplexx UI 规范
 
-> 项目定位：**个人综合交互平台**。产品名与登录页标题按新定位定义；当前生产 UI 实际标题仍为旧文案，随后续前端 release 同步（本次仅文档）。
+> 项目定位：**个人综合交互平台**。v1.0.1 起运行时 UI/标题/登录/设置/manifest 已同步；systemd Description 同步为 `AntifieldComplexx comprehensive interaction platform`。
 
 ## 1. 定位与基调
 

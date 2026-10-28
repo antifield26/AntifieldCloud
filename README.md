@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v1.0.0 已上线（2026-10-28）：app release `/opt/antifieldcloud/releases/20261028T002517Z`（schema **v18**，commit `8752b63`），mcbot release `/opt/mcbot/releases/20261028T000632Z`（v1.0.0，服务 `mcbot.service`）；全量 Access smoke **36 PASS / 0 FAIL / 1 WARN / 2 SKIP**（WARN=恢复演练 schema 待重跑）；旧 lofii-bot 已停止/禁用，回滚保留旧 release + DB 快照。OpenCode **v2.1.4**。文档入口 [docs/INDEX.md](docs/INDEX.md)。
-> 测试基线（v1.0.0）：root `npm run check` 通过；app 574（573 pass）+ web 256 + mcbot 94（94 pass）；服务端覆盖率 93.04/78.74/88.73，前端 55.83/51.29/48.66；`build`、`check-version`（严格 1.0.0）、`check-naming` 通过。生产已部署 v1.0.0/schema18（2026-10-28）。
+> 状态：v1.0.1 已上线（2026-10-28）：app release `/opt/antifieldcloud/releases/20261028T021311Z`（schema **v18**，commit `228ed62`），mcbot release `/opt/mcbot/releases/20261028T021116Z`（v1.0.1，服务 `mcbot.service`），OpenCode **v2.2.0**；全量 Access smoke **36 PASS / 0 FAIL / 1 WARN / 2 SKIP**（WARN=恢复演练 schema 待重跑）；运行时 UI/manifest/systemd 文案已切换为“个人综合交互平台”。文档入口 [docs/INDEX.md](docs/INDEX.md)。
+> 测试基线（v1.0.1）：root `npm run check` 通过；app 574（573 pass）+ web 256 + mcbot 94（94 pass）；服务端覆盖率 93.04/78.74/88.73，前端 55.83/51.29/48.66；`build`、`check-version`（严格 1.0.1）、`check-naming` 通过。生产已部署 v1.0.1/schema18/OpenCode 2.2.0（2026-10-28）。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
 

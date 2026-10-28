@@ -1,3 +1,7 @@
+## v1.0.1（2026-10-28 已部署；版本随 AntifieldComplexx 统一版本轴升至 1.0.1，功能无变更）
+
+- 生产 release `/opt/mcbot/releases/20261028T021116Z`（1.0.1/contract1），随 v1.0.1 应用发布；无 schema/协议变更。
+
 # Roadmap
 
 ## v0.1.0（已完成）

@@ -1,5 +1,12 @@
 # 路线图
 
+## v1.0.1（**已发布：Tag `v1.0.1` + GitHub Release（2026-10-28）**；运行时 UI 定位同步；OpenCode 2.2.0；schema v18）
+
+- **项目定位**：个人综合交互平台（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
+- **范围**：运行时 UI/HTML/manifest/离线页/登录/设置/systemd Description 切换新定位；workspace 版本 1.0.1；OpenCode 2.1.4→2.2.0；mcbot 1.0.1；文档漂移修正。
+- **状态**：生产 app `1.0.1`/schema18/OpenCode2.2.0（release `/opt/antifieldcloud/releases/20261028T021311Z`）、mcbot `1.0.1`（release `/opt/mcbot/releases/20261028T021116Z`）；完整 Access smoke **36/0/1/2**（WARN=drill schema17）；运行时 UI 文案核验通过。
+- **OpenCode 兼容**：2.2.0 breaking 仅 SDK/AI 包根 API、GitHub Action、TUI OpenTUI 0.7；应用为原生 HTTP + MCP，无需业务改动；矩阵 V1–V9/V14 通过，MCP botmsg/searxng connected。
+- **迁移/回滚**：无 schema 迁移；OpenCode 回滚到 2.1.4 备份（binary/data/env/unit/MCP），app/mcbot 回退上一 release。
 ## v1.0.0（**已发布：Tag `v1.0.0` + GitHub Release（2026-10-28）**；生产已迁移；原 lofii-bot 合并为 `apps/mcbot`；chatbot 更名 + schema v18；统一版本 1.0.0）
 
 - **项目定位**：个人综合交互平台（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。

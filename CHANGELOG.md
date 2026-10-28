@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.0.1] - 2026-10-28
+
+v1.0.1 是定位同步与 OpenCode 升级版本：运行时 UI/元数据切换为“个人综合交互平台”，OpenCode 从 2.1.4 升级到 2.2.0，无 schema 迁移。
+
+### Changed
+
+- **运行时定位文案**：HTML title/meta、PWA manifest/离线页、Logo/登录页/设置页/页面标题与 systemd Description 从“个人工作台”切换为“个人综合交互平台”。
+- **版本**：根/workbench/mcbot 统一 1.0.1；`APP_VERSION=1.0.1`。
+- **OpenCode 2.2.0**：2.2.0 的 breaking changes 仅涉及 `@opencode/ai` Promise API、GitHub Action 移除、TUI 插件 OpenTUI 0.7；应用使用原生 HTTP API + MCP，无需业务改动。升级前备份 v2.1.4 binary/data/env/unit/MCP；生产兼容矩阵与 /api/mcp 通过。
+- **mcbot 1.0.1**：版本随统一版本轴发布，功能无变更。
+- **文档**：README/AGENTS/PLAN/ROADMAP/UI-SPEC/ACCEPTANCE/DEPLOY/SECURITY/CHATBOT/mcbot 文档与版本/OpenCode 事实对齐；修复历史生产 facts 漂移。
+
+### Verification
+
+- 本地：`npm run check`、`npm run build`、`check-naming` 通过；app 574/573 pass、web 256、mcbot 94。
+- 生产：app `20261028T021311Z`（1.0.1/schema18/OpenCode 2.2.0）、mcbot `20261028T021116Z`（1.0.1）；部署内 smoke 26/0/1/2、完整 Access smoke **36/0/1/2**（WARN=drill schema17）。
+- OpenCode 兼容：Basic/session list、permissions deny/allow、prompt/wait/assistant 形状、图片 prompt files、/api/mcp、MCP 进程唯一性、资源余量通过；模型不支持图片的回复不影响 API 兼容。
+
+### Migration / Rollback
+
+- 无 DB/schema 变更；应用回退上一 release；mcbot 回退上一 release；OpenCode 用 `/var/backups/opencode/20261028T020723Z` 备份回滚到 2.1.4。
 ## [v1.0.0] - 2026-10-28
 
 v1.0.0 是 AntifieldComplexx 的架构收敛版本：工作台与 Minecraft bot 合并为 npm workspaces 单仓库，QQ Bot 子系统更名 chatbot（DB schema v18），原 lofii-bot 以全历史导入 `apps/mcbot` 并硬切换。

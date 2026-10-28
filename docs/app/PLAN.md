@@ -1,32 +1,34 @@
-# AntifieldComplexx v1.0.0 实施计划（当前状态）
+# AntifieldComplexx v1.0.1 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.0 当前状态
+## v1.0.1 当前状态
 
-- **版本**：**v1.0.0**（统一版本轴）；schema **v18**；OpenCode **v2.1.4**；Node.js **v26.12.1**；mcbot **v1.0.0**（契约 v1）。
-- **状态**：生产已部署（2026-10-28）：app release `/opt/antifieldcloud/releases/20261028T002517Z`（1.0.0/schema18），mcbot release `/opt/mcbot/releases/20261028T000632Z`（1.0.0，服务 `mcbot.service`），旧 `lofii-bot` 已停止/禁用；Tag/Release `v1.0.0` 已发布；完整 Access smoke **36/0/1/2**（WARN=恢复演练仍为 schema17，待下次备份后按 v18 重跑）。
+- **版本**：**v1.0.1**（统一版本轴）；schema **v18**；OpenCode **v2.2.0**；Node.js **v26.12.1**；mcbot **v1.0.1**（契约 v1）。
+- **状态**：生产已部署（2026-10-28）：app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode 2.2.0），mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1，服务 `mcbot.service`）；Tag/Release `v1.0.1` 已发布；完整 Access smoke **36/0/1/2**（WARN=恢复演练仍为 schema17，待下次备份后按 v18 重跑）。
 - **测试基线**：`npm run check` 通过；app 574（573 pass）+ web 256 + mcbot 94（94 pass）；服务端覆盖率 93.04/78.74/88.73、前端 55.83/51.29/48.66；`build`/`check-version`/`check-naming` 通过。
 - **迁移**：旧 env 前缀已迁移为 `CHATBOT_*`/`MCBOT_*`；上下文目录 → `/var/lib/antifieldcloud-chatbot-context`；`WEB_DIST_DIR` → `current/apps/workbench/web/dist`；DB schema v18 迁移不可逆（用快照回滚）。
 
-## v1.0.0 范围
+## v1.0.1 范围
 
-- 项目定位重定义为“个人综合交互平台”，同步 README/AGENTS/docs。
+- 项目定位同步到运行时 UI/HTML/manifest/登录/设置/systemd 文案（“个人综合交互平台”）。
 - npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`），根包统一门禁与版本。
 - chatbot 全量更名（模块/表/列/env/API/审计/meta）与 schema v18 迁移。
 - 原 lofii-bot 全历史导入 `apps/mcbot` 并硬切换（服务/用户/路径/env/API）。
 - mcbot 稳定性/AI 只读工具/守卫/护送/探索/深矿/分类存箱/自动补货与故障注入。
 - 文档分区（app/mcbot/legacy）、迁移脚本、CI/命名/版本门禁。
+- OpenCode 2.1.4→2.2.0 升级与兼容矩阵；版本/文档漂移修正。
 
-## v1.0.0 关键决策
+## v1.0.1 关键决策
 
 | 项 | 决策 |
 |---|---|
 | 定位 | 个人综合交互平台；`workbench` 仅 Web 端技术名 |
 | 架构 | npm workspaces 单仓库；双进程 workbench + mcbot，loopback HTTP 契约 v1 |
 | 数据 | schema v18 一次性改名；历史迁移只追加；旧应用不可读，回滚用快照 |
+| OpenCode | 2.2.0；应用使用原生 HTTP API + MCP，不使用 2.2.0 breaking 的 SDK/Action/TUI 插件面 |
 | 命名 | chatbot/mcbot 硬切换，不做旧 API/env 别名 |
 | 部署 | mcbot → 迁移 Apply → app → Verify/smoke；保留旧 release/env/DB 快照 |
 

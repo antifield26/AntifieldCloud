@@ -215,7 +215,7 @@
    密钥包 use age 加密，私钥丢失将无法恢复密钥包。
 8. **世界备份依赖 RCON 与 Minecraft 运行**：服务器未运行时备份失败（状态 JSON 可见）；`save-off` 期间若进程崩溃，
    `save-on` 会重试/需人工恢复保存。`minecraft-backups` legacy 归档已清理，旧 cron 保持停用。
-9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.1.4**（2026-10-25 已按 `docs/app/DEPLOY.md` §3.2 备份 v2.1.3 二进制/data/env/unit/MCP 配置后升级并验收 V1–V9/V14），通过注入 Basic 实现 SSO；
+9. **opencode 自身认证/UI 行为随版本变化**：当前生产 **v2.2.0**（2026-10-28 已按 `docs/app/DEPLOY.md` §3.2 备份 v2.1.4 二进制/data/env/unit/MCP 配置后升级并验收兼容矩阵），通过注入 Basic 实现 SSO；
    升级后按 `docs/app/DEPLOY.md` §3.2 复验 Basic/session/垫片注入/公开入口/MCP 进程/compaction。原生新建按钮在部分版本仍有缺陷，
    失败时保留最小隐藏点击接管（无可见 UI）；UI/WS 实时事件需浏览器复测。
 10. **无 WAF/DDoS 防护**：Cloudflare 默认防护有限；大文件上传/登录仍可能消耗资源（有配额/限流）。
@@ -234,7 +234,7 @@
 20. **`CHATBOT_SECRET_KEY` 丢失/轮换**：DB 中已有 QQ AppSecret 将不可解密，必须重新录入；轮换需先备份 DB + 旧密钥并接受一次性重录，
     不做在线密钥版本迁移。`bootstrap-env.sh --force` 会复用旧 key，不会自动轮换。
 21. **AI 工具隔离依赖 OpenCode 版本**：Chat 新建会话传 deny-all 的 `permissions`；启用消息发送工具时仅额外放行 `botmsg_*`（搜索启用时放行 `searxng_*`）；文档模式再放行当前作用域 `external_directory` 与精确 `read` 两份文档。若 OpenCode 明确以 400 拒绝该字段，进入 10 分钟重试窗口并记录状态/审计，启用发送工具或文档模式时**拒绝新 Chat**（503 `chatbot_ai_tool_isolation_unavailable` + 固定提示），不再以默认权限继续；窗口到点放行一次重试，上游恢复后自动恢复。
-    当前生产 OpenCode **v2.1.4** 的 OpenAPI 声明支持该字段（升级矩阵已验证创建会话 200、模型 assistant text 正常与 deny-all 负路径无 tool）；仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
+    当前生产 OpenCode **v2.2.0** 的 OpenAPI 声明支持该字段（升级矩阵已验证创建会话 200、模型 assistant text 正常与 deny-all 负路径无 tool）；仍不把 Chat 当作强隔离沙箱，模型行为非强保证。
     **文档模式残余**：read 范围依赖 OpenCode 对 session `permissions` 资源的实际匹配语义；生产已于 2026-10-27 用真实 OpenCode 完成作用域内/外负路径矩阵 **7/7 通过**（作用域外/env/DB/其他作用域/shell/注入全部拒绝），随后才启用；首轮角色卡仍存在于 OpenCode 会话历史，后续请求不再发送正文；OpenCode 进程本身仍是信任边界（其可读全部上下文作用域）。
     产品代价：隔离不可用期间 Bot Chat 暂停，属明确取舍（可用性让位于安全）。
 22. **fail2ban 持久化依赖 drop-in**：dbfile 已持久化，`nftables.service` drop-in 会在启动后异步重启 fail2ban 恢复 set；手工 `systemctl reload nftables` 不触发，仍需手动 restart。
@@ -351,5 +351,6 @@
   - 审计：DB 关闭/写入失败不抛错、业务不回滚、诊断计数可见（`audit_write_failures` 持久化）。
   - 配置：`NODE_ENV`/`OPENCODE_URL`/`APP_ORIGIN==AI_ORIGIN`/`CHATBOT_SEARCH_MODE` 非法值拒绝启动；Webhook 未验签/已验签分桶。
   - mcbot（v0.8.0 引入，v0.8.1 加固）：`MCBOT_URL` 非 loopback/非法协议/含 userinfo/路径/查询/片段拒绝启动；`MCBOT_ENABLED=true` 缺读 Token 拒绝启动；控制 Token 为空时控制接口与 `/say` 均 503 且不发请求；`/say` 拒绝任意 ASCII `/` 与 C0 控制字符（含上游按 240 字符切行后的第二行）；`taskId` 拒绝内部空白/控制字符；`/history` 校验 kind/数组并只透传对象行；上游 401/403→502、4xx 稳定码透传、429→429、5xx 的 `task_disabled`/`control_disabled`/`history_disabled` 保留为 `lofii_*`、其它 5xx/非 JSON→502、网络/超时/重定向→503，错误文本大小写不敏感脱敏且不含 URL/Token；响应体流式 2 MiB 上限；未认证 401、缺 CSRF 403；控制 20/min、`/say` 10/min 超限 429；`/say` 正文不写审计（只记 chars）；`/events/recent` 404 只降级 `eventsSupported=false`；告警 `status='event'` 不写 `alert_state`、游标基线不重放、写入失败停游标重试；事件缓存 ≤100 条且 ≤512 KiB、轮询 200 条且仅内存；`sync-mcbot-tokens.sh` 同目录临时文件 + `mv` 原子替换。
-  - 当前基线（v0.8.1，2026-10-27 本地）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（Lines/Branches/Functions）；`npm run build` 通过；`check-version` 严格 `0.8.1`、`check-prod-deps` 通过。生产已部署 v0.8.1（2026-10-27）并完成只读/API/安全回归验收。
-  - 生产（v0.8.1，2026-10-27 部署）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`（sha256 `d16e15c3…1bd991a`）；部署内只读 smoke **26/0/0/2**、完整 Access smoke **36/0/0/2**（含本地任务标记检查，无 `-SkipLocalTaskCheck`；期望 0.8.1/schema17/OpenCode 2.1.4/mcbot 0.6.1）；mcbot v0.6.1（release `20261027T111640Z`/commit `a0a28da`）仅 loopback，Token `--check` read/control 均 match、`MCBOT_ENABLED=true`、`meta.lofii.event_cursor` 已更新；已认证 `/api/version`/`/api/mcbot/status` 200；`/say` 240 填充+`/op` 400 `message_must_not_start_with_slash`、C0 400 `invalid_request`；审计仅 `lofii.task.start/stop`、无 `lofii.say`；`alert_events` `lofii_*` 仍 0；journal 无 error/0 条 64hex、env 0640、`systemctl --failed` 空；临时会话已删（0）。**Windows 备份任务已重装并验证**（appVersion=0.8.1、installedAt `2026-10-27T12:11:23Z`、scriptSha256 一致 `7febb768…636d`、任务 Ready）。**v0.8.1 已发布 Tag+Release（2026-10-27）**；v0.8.1 未重新做生产 UI 截图（v0.8.0 视觉确认仍有效）；只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）；真实 mcbot 告警联动未触发（单元/集成覆盖）。OpenCode v2.1.4，V1–V9/V14 通过，用户真实 QQ 正向验收通过；v0.7.3 文档模式生产已启用。
+  - v1.0.1 当前基线（2026-10-28）：`npm run check` 通过；app **574**（573 pass、1 skip）、web **256**（48 文件）、mcbot **94**（94 pass）；服务端覆盖率 **93.04/78.74/88.73**、前端 **55.83/51.29/48.66**；`npm run build`、`check-version` 严格 `1.0.1`、`check-naming` 通过。生产已部署 app `1.0.1`/schema18/OpenCode `2.2.0`（release `/opt/antifieldcloud/releases/20261028T021311Z`）、mcbot `1.0.1`（release `/opt/mcbot/releases/20261028T021116Z`）；完整 Access smoke **36/0/1/2**（WARN=drill schema17）。
+  - 历史基线（v0.8.1，2026-10-27 本地）：`npm run check` 通过；`npm test` **572**（571 pass、1 skip）、`test:web` **256**（48 文件）；服务端覆盖率 **93.04/78.77/88.67**、前端 **55.83/51.29/48.66**（Lines/Branches/Functions）；`npm run build` 通过；`check-version` 严格 `0.8.1`、`check-prod-deps` 通过。生产曾部署 v0.8.1（2026-10-27）。
+  - 历史生产（v0.8.1，2026-10-27 部署）：release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；部署内只读 smoke 26/0/0/2、完整 Access smoke 36/0/0/2；mcbot v0.6.1（release `20261027T111640Z`/commit `a0a28da`）仅 loopback，Token `--check` match。OpenCode v2.1.4，V1–V9/V14 通过；详见历史记录。
