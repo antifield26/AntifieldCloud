@@ -1,16 +1,20 @@
 /**
  * mcbot 服务：轮询 mcbot Bot（仅 loopback）的 /status 与 /events/recent，缓存最新状态与事件，
- * 把上游 `alert` 事件映射为本应用告警（status=event，不写 alert_state），并提供控制代理。
+ * 把上游 `alert` 事件映射为本应用告警（status=event，不写 alert_state），并提供控制代理
+ * （任务/移动/聊天/AI 自主模式）。
  *
  * 安全与行为约束：
  * - 轮询单飞（single-flight）：上一轮未结束时复用同一 Promise，绝不并发/堆积请求。
  * - 轮询失败只更新 reachable/stale/error，保留上一次成功的状态快照与事件缓存。
  * - /events/recent 返回 404（旧版 mcbot 无事件流）只把 eventsSupported 置 false，/status 仍可用。
+ * - /status 可选 autonomy 段：旧版缺失时快照 autonomy=null，前端隐藏自主控制；不伪造状态。
  * - 告警游标持久化在 meta `mcbot.event_cursor`（{bootId,lastEventId,lastTs}）：
  *   首次/无游标/bootId 变化只建立基线，不重放 ring 内旧告警；之后只处理游标之后的 alert，
  *   并按游标去重。MCBOT_ALERTS_ENABLED=false 时仍推进游标但不写告警。
  * - 聊天事件只进内存缓存（最多 100 条，newest-first），不落库、不写日志。
  * - 控制成功后立即刷新一次；start()/stop() 的定时器 unref，不阻止进程退出。
+ * - stop() 为异步收口：置停止标记 → 中止在途请求 → await 在途轮询；停止后不再写状态/事件/
+ *   告警游标，避免进程关闭过程中留下半截游标。
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { AlertService, AlertSeverity, ExternalAlertInput } from '../alerts/service.ts'
@@ -19,6 +23,8 @@ import { getMeta, setMeta } from '../db.ts'
 import {
   McbotClient,
   McbotError,
+  normalizeAutonomy,
+  type McbotAutonomySnapshot,
   type McbotEvent,
   type McbotHistoryKind,
   type McbotHistoryQuery,
@@ -66,6 +72,8 @@ export interface McbotSnapshot {
   lastPollAt: string | null
   error: string | null
   status: Record<string, unknown> | null
+  /** AI 自主模式快照；旧版 mcbot 或尚未启用时 null（前端隐藏/降级）。 */
+  autonomy: McbotAutonomySnapshot | null
   /** newest-first，最多 100 条。 */
   events: McbotEvent[]
 }
@@ -212,8 +220,13 @@ export class McbotService {
   private readonly now: () => Date
   private timer: NodeJS.Timeout | null = null
   private inFlight: Promise<McbotPollResult> | null = null
+  /** 当前在途轮询的 AbortController：stop() 用它中止 status/recent 请求。 */
+  private abortController: AbortController | null = null
+  /** 停止标记：置位后不再发起轮询、不写状态/告警游标（异步 stop 收口）。 */
+  private stopped = false
   private events: McbotEvent[] = []
   private statusSnapshot: Record<string, unknown> | null = null
+  private autonomySnapshot: McbotAutonomySnapshot | null = null
   private version: string | null = null
   private contractVersion: number | null = null
   private lastPollAt: string | null = null
@@ -254,6 +267,7 @@ export class McbotService {
   /** 由进程入口在 listen 后调用；关闭状态下为空操作，重复调用幂等。 */
   start(): void {
     if (!this.config.mcbotEnabled || this.timer) return
+    this.stopped = false
     this.timer = setInterval(() => {
       void this.pollOnce().catch((error: unknown) => {
         this.log('error', 'mcbot 轮询异常', { error: errorCodeOf(error) })
@@ -265,10 +279,30 @@ export class McbotService {
     })
   }
 
-  stop(): void {
-    if (!this.timer) return
-    clearInterval(this.timer)
-    this.timer = null
+  /**
+   * 异步停止轮询：置停止标记 → 清除定时器 → 中止在途请求 → await 在途轮询结束。
+   * 幂等；未启动时调用也会中止可能存在的单次 pollOnce（测试/控制刷新场景）。
+   */
+  async stop(): Promise<void> {
+    this.stopped = true
+    if (this.timer) {
+      clearInterval(this.timer)
+      this.timer = null
+    }
+    this.abortController?.abort()
+    const pending = this.inFlight
+    if (pending) {
+      try {
+        await pending
+      } catch {
+        // runPoll 自身不抛错；这里只防御注入实现的异常，停止流程不因轮询错误失败。
+      }
+    }
+  }
+
+  /** 是否已停止（诊断/测试用）。 */
+  get isStopped(): boolean {
+    return this.stopped
   }
 
   // ---------- 轮询 ----------
@@ -278,6 +312,8 @@ export class McbotService {
     if (!this.config.mcbotEnabled) {
       return Promise.resolve({ skipped: true, ok: false, error: 'mcbot_disabled', alerts: 0 })
     }
+    // 已停止（进程关闭中）：不再发起任何上游请求/写库。
+    if (this.stopped) return Promise.resolve({ skipped: true, ok: false, error: 'mcbot_stopped', alerts: 0 })
     if (this.inFlight) return this.inFlight
     const run = this.runPoll()
     this.inFlight = run
@@ -294,6 +330,7 @@ export class McbotService {
     if (!this.config.mcbotEnabled) {
       return { skipped: true, ok: false, error: 'mcbot_disabled', alerts: 0 }
     }
+    if (this.stopped) return { skipped: true, ok: false, error: 'mcbot_stopped', alerts: 0 }
     if (this.inFlight) {
       try {
         await this.inFlight
@@ -306,57 +343,66 @@ export class McbotService {
 
   private async runPoll(): Promise<McbotPollResult> {
     const startedAt = this.now()
-    const [statusResult, recentResult] = await Promise.allSettled([
-      this.client.status(),
-      this.client.recentEvents(MCBOT_EVENT_POLL_LIMIT),
-    ])
-    this.lastPollAt = startedAt.toISOString()
-    let error: string | null = null
-    let alertCount = 0
+    const controller = new AbortController()
+    this.abortController = controller
+    try {
+      const [statusResult, recentResult] = await Promise.allSettled([
+        this.client.status(controller.signal),
+        this.client.recentEvents(MCBOT_EVENT_POLL_LIMIT, controller.signal),
+      ])
+      // stop() 已置停止标记：丢弃本轮结果，不更新缓存/不写告警游标（进程关闭收口）。
+      if (this.stopped) return { skipped: true, ok: false, error: 'mcbot_stopped', alerts: 0 }
+      this.lastPollAt = startedAt.toISOString()
+      let error: string | null = null
+      let alertCount = 0
 
-    if (statusResult.status === 'fulfilled') {
-      this.reachable = true
-      this.statusSnapshot = statusResult.value
-      const version = statusResult.value.version
-      if (typeof version === 'string' && version.trim()) this.version = version.trim()
-      this.lastSuccessAt = startedAt.getTime()
-      this.failedPolls = 0
-    } else {
-      this.reachable = false
-      this.failedPolls += 1
-      error = errorCodeOf(statusResult.reason)
-    }
-
-    if (recentResult.status === 'fulfilled') {
-      this.eventsSupported = true
-      this.contractVersion = recentResult.value.contractVersion
-      this.mergeEvents(recentResult.value.events)
-      try {
-        alertCount = this.advanceCursor(recentResult.value)
-      } catch (cause) {
-        // 游标/告警写库失败不影响状态轮询；本轮 error 暴露给前端但不回滚已有缓存。
-        this.log('warn', 'mcbot 告警游标处理失败', { error: errorCodeOf(cause) })
-        if (!error) error = 'mcbot_cursor_failed'
+      if (statusResult.status === 'fulfilled') {
+        this.reachable = true
+        this.statusSnapshot = statusResult.value
+        this.autonomySnapshot = normalizeAutonomy(statusResult.value.autonomy)
+        const version = statusResult.value.version
+        if (typeof version === 'string' && version.trim()) this.version = version.trim()
+        this.lastSuccessAt = startedAt.getTime()
+        this.failedPolls = 0
+      } else {
+        this.reachable = false
+        this.failedPolls += 1
+        error = errorCodeOf(statusResult.reason)
       }
-    } else if (recentResult.reason instanceof McbotError && recentResult.reason.statusCode === 404) {
-      // 旧版 mcbot 没有 /events/recent：明确降级，状态仍可用。
-      this.eventsSupported = false
-      this.contractVersion = null
-    } else if (!error) {
-      error = errorCodeOf(recentResult.reason)
-    }
 
-    this.error = error
-    // 只在错误状态变化时写一条日志：轮询失败期间不重复刷屏，恢复时记录一次。
-    if (this.error !== this.lastLoggedError) {
-      if (this.error) {
-        this.log('warn', 'mcbot 上游不可用', { error: this.error, reachable: this.reachable })
-      } else if (this.lastLoggedError) {
-        this.log('info', 'mcbot 上游已恢复', { reachable: this.reachable, eventsSupported: this.eventsSupported })
+      if (recentResult.status === 'fulfilled') {
+        this.eventsSupported = true
+        this.contractVersion = recentResult.value.contractVersion
+        this.mergeEvents(recentResult.value.events)
+        try {
+          alertCount = this.advanceCursor(recentResult.value)
+        } catch (cause) {
+          // 游标/告警写库失败不影响状态轮询；本轮 error 暴露给前端但不回滚已有缓存。
+          this.log('warn', 'mcbot 告警游标处理失败', { error: errorCodeOf(cause) })
+          if (!error) error = 'mcbot_cursor_failed'
+        }
+      } else if (recentResult.reason instanceof McbotError && recentResult.reason.statusCode === 404) {
+        // 旧版 mcbot 没有 /events/recent：明确降级，状态仍可用。
+        this.eventsSupported = false
+        this.contractVersion = null
+      } else if (!error) {
+        error = errorCodeOf(recentResult.reason)
       }
-      this.lastLoggedError = this.error
+
+      this.error = error
+      // 只在错误状态变化时写一条日志：轮询失败期间不重复刷屏，恢复时记录一次。
+      if (this.error !== this.lastLoggedError) {
+        if (this.error) {
+          this.log('warn', 'mcbot 上游不可用', { error: this.error, reachable: this.reachable })
+        } else if (this.lastLoggedError) {
+          this.log('info', 'mcbot 上游已恢复', { reachable: this.reachable, eventsSupported: this.eventsSupported })
+        }
+        this.lastLoggedError = this.error
+      }
+      return { skipped: false, ok: this.reachable && error === null, error, alerts: alertCount }
+    } finally {
+      if (this.abortController === controller) this.abortController = null
     }
-    return { skipped: false, ok: this.reachable && error === null, error, alerts: alertCount }
   }
 
   /** 合并事件到内存缓存：按 id 去重、newest-first、最多 100 条且总字节有界。 */
@@ -410,6 +456,8 @@ export class McbotService {
   }
 
   private writeCursor(cursor: McbotAlertCursor): void {
+    // 停止后不得再写告警游标：进程关闭过程中的半截游标会让下次启动漏告警/重放。
+    if (this.stopped) return
     const current = this.readCursor()
     if (
       current &&
@@ -429,7 +477,7 @@ export class McbotService {
    * - 返回本轮写入的告警事件数。
    */
   private advanceCursor(recent: McbotRecentResult): number {
-    if (!this.eventsSupported) return 0
+    if (this.stopped || !this.eventsSupported) return 0
     const lastEvent = recent.events.at(-1)
     const lastId = recent.lastEventId ?? lastEvent?.id ?? null
     const lastTs = lastEvent?.ts ?? null
@@ -511,6 +559,7 @@ export class McbotService {
         lastPollAt: null,
         error: null,
         status: null,
+        autonomy: null,
         events: [],
       }
     }
@@ -526,6 +575,7 @@ export class McbotService {
       lastPollAt: this.lastPollAt,
       error: this.error,
       status: this.statusSnapshot,
+      autonomy: this.autonomySnapshot,
       events: [...this.events],
     }
   }
@@ -566,6 +616,43 @@ export class McbotService {
   async history(kind: McbotHistoryKind, query: McbotHistoryQuery = {}): Promise<Record<string, unknown>> {
     if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
     return this.client.history(kind, query)
+  }
+
+  /** 读取 /autonomy 实时快照；成功即更新缓存（旧版 mcbot 无该接口时由路由映射错误）。 */
+  async autonomy(): Promise<McbotAutonomySnapshot> {
+    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
+    if (this.stopped) throw new McbotError('mcbot_unavailable', 'mcbot 服务不可用')
+    const snapshot = await this.client.autonomy()
+    this.autonomySnapshot = snapshot
+    return snapshot
+  }
+
+  /** 启动自主模式；返回上游快照（响应缺少 autonomy 时回落为最近一次状态轮询结果）。 */
+  async startAutonomy(goal?: string): Promise<{ ok: true; autonomy: McbotAutonomySnapshot | null }> {
+    return this.controlAutonomy(() => this.client.startAutonomy(goal))
+  }
+
+  /** 停止自主模式；上游幂等，无活动会话也返回成功快照。 */
+  async stopAutonomy(reason?: string): Promise<{ ok: true; autonomy: McbotAutonomySnapshot | null }> {
+    return this.controlAutonomy(() => this.client.stopAutonomy(reason))
+  }
+
+  private async controlAutonomy(
+    run: () => Promise<Record<string, unknown>>,
+  ): Promise<{ ok: true; autonomy: McbotAutonomySnapshot | null }> {
+    // 控制响应中的快照是本次动作的权威结果；control() 随后刷新 /status 可能短暂滞后，
+    // 因此返回动作响应里的快照（缺失时回落为最近一次轮询缓存）。
+    let responded: McbotAutonomySnapshot | null = null
+    await this.control(async () => {
+      const body = await run()
+      const autonomy = normalizeAutonomy(body.autonomy)
+      if (autonomy) {
+        responded = autonomy
+        this.autonomySnapshot = autonomy
+      }
+      return body
+    })
+    return { ok: true, autonomy: responded ?? this.autonomySnapshot }
   }
 
   private async control<T>(run: () => Promise<T>): Promise<T> {

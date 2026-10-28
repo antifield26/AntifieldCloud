@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.1**（2026-10-28 已部署生产：release `/opt/mcbot/releases/20261028T021116Z`，服务 `mcbot.service`；游戏内人格名 Lofii，服务/仓库名 mcbot）。
+> 当前版本：**v1.0.2 开发线**（未部署；生产仍 v1.0.1，release `/opt/mcbot/releases/20261028T021116Z`，服务 `mcbot.service`；游戏内人格名 Lofii，服务/仓库名 mcbot）。
 
 ## 能做什么
 
@@ -28,9 +28,17 @@
 - **主动行为**：Antifield 加入问候；夜晚/雷雨/死亡固定短文；可关闭。
 - **AI 意图兜底**：固定短语优先；Antifield 的任务类模糊语句才调用 AI 分类，AI 不能直接执行任意动作。
 - **按玩家记忆**：最近 20 轮、保留 30 天；每 20 个来回后台生成 ≤1000 字聊天摘要，落盘到 `/var/lib/mcbot/memory`，重启后仍能记住。
-- **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；仅监听 `127.0.0.1:3010`。
+- **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；v1.0.2 增加 `/autonomy` 状态/启动/急停与内部 MCP 工具端点；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
+## v1.0.2 新增能力
+
+- **AI 自主会话（默认关闭）**：主人通过游戏聊天 `Lofii 自主行动 [目标]` 或面板显式启动一次；OpenCode 通过运行时注册的原生 MCP 工具循环驱动现有任务/回家/存箱，不能执行任意命令。
+- **原生 MCP 工具**：`start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `finish`；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 权限；每次会话随机 run_id + Bearer token。
+- **预算/安全**：`AUTONOMY_MAX_MINUTES`、`AUTONOMY_MAX_TOOL_CALLS`、`AUTONOMY_MAX_FAILURES`、任务白名单、手动指令抢占、聊天/面板急停；会话结束停止任务并清理 OpenCode session/MCP。
+- **应用面板**：自主状态、目标、时间、工具调用数、最近决策/原因/错误，启动/急停二次确认；任务下拉同步 10 种任务（含 guard/escort/explore）。
+- **Agentic 验收**：`test/agentic` 离线 scenario harness（CI），`scripts/agentic-acceptance.mjs` 可选实机 conductor；流程见 [AGENTIC-ACCEPTANCE.md](AGENTIC-ACCEPTANCE.md)。
+- **运维残余**：mcbot 纳入应用 `service_down` 监控；应用轮询停止时中止/等待在途请求，停止后不写告警游标；`/api/mcbot/status|history` GET 限流。
 ## v1.0.0 新增能力
 
 - **运行稳定性**：systemd `Type=notify` 看门狗（`WATCHDOG_ENABLED`/`WATCHDOG_HEARTBEAT_MS`）、RSS 内存治理告警（`RSS_LIMIT_MB`）、断线重连恢复不消耗任务重试次数。

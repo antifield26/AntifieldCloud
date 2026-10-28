@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.1）
+# AntifieldComplexx 对接契约（mcbot v1.0.2 开发线）
 
 > 本文只描述 `mcbot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -8,11 +8,12 @@
 |---|---|
 | Base URL | `http://127.0.0.1:3010`（仅回环，不对外） |
 | 读 Token | `HTTP_TOKEN`，用于 `/status`、`/task`、`/events`、`/events/recent`、`/say` |
-| 控制 Token | `HTTP_CONTROL_TOKEN`，仅用于 `/task/*` 与 `POST /move` |
+| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`/autonomy/start|stop` |
 | 契约版本 | `CONTRACT_VERSION=1`，由 `/healthz` 与 `/events/recent` 的 `contractVersion` 返回 |
 | Token 位置 | Pi：`/etc/mcbot/env`（root:lofiibot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
 | 请求体上限 | 8 KiB |
+| 自主 MCP | `/autonomy/mcp` 仅接受当前会话随机 Bearer；由 OpenCode 运行时调用，不暴露给应用/浏览器 |
 | `/say` 限流 | 10 次/分钟（进程内） |
 | 控制接口限流 | 30 次/分钟（`CONTROL_RATE_LIMIT`） |
 | 鉴权头 | `Authorization: Bearer <token>`；不支持 URL query token |
@@ -293,7 +294,7 @@ Authorization: Bearer <HTTP_TOKEN>
 需要控制 Token + `Content-Type: application/json`。
 
 ```json
-{ "name": "fishing|farming|woodcutting|mining|forest|sleep|patrol" }
+{ "name": "fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore" }
 ```
 
 - 空闲：202 `{"ok":true,"queued":false,"position":null,"task":{...}}`，任务立即 active。
@@ -464,6 +465,53 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - v0.5 仍默认保留游戏内/AI 意图直接触发；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
 - 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
 
+## 12. v1.0.2 AI 自主会话（OpenCode 原生 MCP 工具）
+
+自主会话默认关闭（`AUTONOMY_ENABLED=false`），仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+
+### 12.1 GET /autonomy
+
+需要读 Token。返回：
+
+```json
+{"autonomy":{"enabled":true,"active":true,"state":"running","goal":"准备食物","startedAt":"...","elapsedSec":12,"remainingSec":1188,"toolCalls":2,"maxToolCalls":12,"lastAction":"start_task","lastReason":"目标需要鱼","lastError":null,"lastDecisionAt":"..."}}
+```
+
+`/status` 同时包含同一 `autonomy` 对象（可选字段；旧版 mcbot 缺失时应用按 null 降级）。
+
+### 12.2 POST /autonomy/start
+
+需要控制 Token + `Content-Type: application/json`。body 可为 `{}` 或 `{ "goal": "准备一些食物" }`；goal trim 后 ≤200 字符、无控制字符。
+
+- 202 `{ "ok": true, "autonomy": {...} }`；
+- 409 `autonomy_busy`（已有 active/排队/pending 任务或会话）；
+- 400 `invalid_request` / `invalid_goal`；
+- 503 `autonomy_disabled` / `autonomy_unavailable`。
+
+启动条件：`AUTONOMY_ENABLED=true`、AI 已启用、Minecraft 已连接、无 active/queue/pending 任务。
+
+### 12.3 POST /autonomy/stop
+
+需要控制 Token。body 可为空或 `{ "reason": "..." }`（≤200 字符、无控制字符）；幂等。返回 202 `{ "ok": true, "autonomy": {...} }`。会中断 OpenCode 会话、停止活动任务并清理 MCP/session。
+
+### 12.4 原生 MCP 工具
+
+工具名以 OpenCode 运行时 server 名 `mcbot_autonomy` 为前缀；权限规则为 deny-all + `mcbot_autonomy_*` allow：
+
+| 工具 | 参数 | 约束 |
+|---|---|---|
+| `start_task` | `run_id, task, reason` | task ∈ `AUTONOMY_TASKS`；无 active/queue/pending；健康/食物过低拒绝 |
+| `stop_task` | `run_id, reason` | 有 active 任务 |
+| `go_home` | `run_id, reason` | 无 active/pending 任务 |
+| `deposit` | `run_id, reason` | 无 active/pending 任务 |
+| `task_status` | `run_id` | 只读 |
+| `finish` | `run_id, summary` | 结束会话；会话结束会清理活动任务 |
+
+每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码，不记录 prompt/Token。
+
+### 12.5 `autonomy` 事件
+
+SSE `/events` 与 `/events/recent` 新增 `type:"autonomy"`，data 形如 `{action,state,reason,error}`；应用用于展示自主状态变化，`contractVersion` 仍为 1（仅追加）。
 ## 11. 对接建议
 
 - 面板后端用 `fetch` + `Authorization` 消费 `/events`，不要用浏览器 EventSource 直连。

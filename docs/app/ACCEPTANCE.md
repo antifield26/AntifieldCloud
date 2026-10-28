@@ -1,8 +1,14 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.1（`release/v1.0.0` 已合并 `main`；生产已部署 2026-10-28：app 1.0.1/schema18/OpenCode 2.2.0、mcbot 1.0.1）。
+> 当前版本 v1.0.2 开发线（生产仍 v1.0.1，2026-10-28；本轮未部署/Tag/Release）：生产 app 1.0.1/schema18/OpenCode 2.2.0、mcbot 1.0.1。
 >
 
+### v1.0.2 开发线验收（2026-10-28，本地；未部署）
+
+- 范围：mcbot AI 自主会话（OpenCode 原生 MCP 工具循环、显式启动、10 种任务白名单、run_id/Bearer、预算/失败/急停/审计、任务清理）；应用自主状态/启动/急停代理与面板、10 任务同步；mcbot 服务监控/轮询停止收口/GET 限流；Agentic 离线 scenario harness + 可选实机 runner。
+- OpenCode 原生 MCP Phase 0（生产 OpenCode v2.2.0）：运行时 `PUT /api/experimental/mcp/<name>` 204；initialize/tools/list/tools/call 正常；`deny-all + <server>_* allow` 可执行；Authorization 头透传；临时 session/MCP 清理成功。
+- 本地门禁：`npm run check` 通过；app **591**（590 pass、1 skip）+ web **273**（49 文件）+ mcbot **108**；服务端覆盖率 93.10/78.89/88.86，前端 56.27/51.88/49.16；build/check-version（严格 1.0.2）/check-naming 通过。
+- 边界：v1.0.2 生产部署、Tag/Release、真实模型自主运行与实机 Agent 验收均未执行；生产仍为 v1.0.1。部署与实机验收需单独授权。
 ### v1.0.1 运行时文案与 OpenCode 2.2.0 验收（2026-10-28，已执行）
 
 - app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode v2.2.0，commit `228ed62`）；mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1/contract1）。

@@ -1,5 +1,10 @@
 # 路线图
 
+## v1.0.2（**开发线，未部署/未打 Tag/Release（2026-10-28）**；mcbot AI 自主会话 + 应用自主控制 + Agentic 验收；schema v18/OpenCode 2.2.0 不变）
+
+- **范围**：mcbot 显式启动的 AI 自主会话（OpenCode 原生 MCP 工具循环、10 种任务白名单、预算/失败/急停/审计、任务/MCP/session 清理）；应用自主状态/启动/急停代理与面板、10 任务同步；mcbot 服务监控、轮询停止收口、GET 限流；Agentic 离线 harness + 可选实机 conductor。
+- **状态**：本地完成并通过门禁；app 591/web 273/mcbot 108；OpenCode 2.2.0 原生 MCP Phase 0 通过。生产仍为 v1.0.1，未部署。
+- **边界**：自主模式默认关闭；不新增任意命令/采集/战斗动作；不建议直接在生产启用；部署与实机验收需单独授权。
 ## v1.0.1（**已发布：Tag `v1.0.1` + GitHub Release（2026-10-28）**；运行时 UI 定位同步；OpenCode 2.2.0；schema v18）
 
 - **项目定位**：个人综合交互平台（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。

@@ -1,14 +1,14 @@
-# AntifieldComplexx v1.0.1 实施计划（当前状态）
+# AntifieldComplexx v1.0.2 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.1 当前状态
+## v1.0.2 当前状态
 
-- **版本**：**v1.0.1**（统一版本轴）；schema **v18**；OpenCode **v2.2.0**；Node.js **v26.12.1**；mcbot **v1.0.1**（契约 v1）。
-- **状态**：生产已部署（2026-10-28）：app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode 2.2.0），mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1，服务 `mcbot.service`）；Tag/Release `v1.0.1` 已发布；完整 Access smoke **36/0/1/2**（WARN=恢复演练仍为 schema17，待下次备份后按 v18 重跑）。
-- **测试基线**：`npm run check` 通过；app 574（573 pass）+ web 256 + mcbot 94（94 pass）；服务端覆盖率 93.04/78.74/88.73、前端 55.83/51.29/48.66；`build`/`check-version`/`check-naming` 通过。
+- **版本**：**v1.0.2 开发线**（统一版本轴；生产仍 v1.0.1）；schema **v18**；OpenCode **v2.2.0**；Node.js **v26.12.1**；mcbot **v1.0.2**（契约 v1）。
+- **状态**：v1.0.2 **本地开发线完成，未部署/未打 Tag/Release**；生产仍为 app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode 2.2.0）、mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1）；生产完整 Access smoke 36/0/1/2（WARN=恢复演练 schema17）。
+- **测试基线**：`npm run check` 通过；app 591（590 pass）+ web 273 + mcbot 108；服务端覆盖率 93.10/78.89/88.86、前端 56.27/51.88/49.16；`build`/`check-version`（严格 1.0.2）/`check-naming` 通过。
 - **迁移**：旧 env 前缀已迁移为 `CHATBOT_*`/`MCBOT_*`；上下文目录 → `/var/lib/antifieldcloud-chatbot-context`；`WEB_DIST_DIR` → `current/apps/workbench/web/dist`；DB schema v18 迁移不可逆（用快照回滚）。
 
 ## v1.0.1 范围
@@ -20,6 +20,7 @@
 - mcbot 稳定性/AI 只读工具/守卫/护送/探索/深矿/分类存箱/自动补货与故障注入。
 - 文档分区（app/mcbot/legacy）、迁移脚本、CI/命名/版本门禁。
 - OpenCode 2.1.4→2.2.0 升级与兼容矩阵；版本/文档漂移修正。
+- v1.0.2：mcbot AI 自主会话（OpenCode 原生 MCP 工具循环）、应用自主控制、mcbot 运维残余、Agentic 验收。
 
 ## v1.0.1 关键决策
 

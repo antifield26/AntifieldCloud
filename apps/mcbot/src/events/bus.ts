@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 
-export type BotEventType = 'hello' | 'presence' | 'task' | 'chat' | 'movement' | 'alert'
+export type BotEventType = 'hello' | 'presence' | 'task' | 'chat' | 'movement' | 'alert' | 'autonomy'
 
 export interface BotEvent {
   id: string

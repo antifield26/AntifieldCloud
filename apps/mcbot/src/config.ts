@@ -1,4 +1,5 @@
 import type { LogLevel } from './logger.ts'
+import type { TaskName } from './state.ts'
 
 export interface ConfigPoint {
   x: number
@@ -165,6 +166,14 @@ export interface Config {
   aiToolsEnabled: boolean
   aiToolAllowlist: string[]
   aiMaxToolCalls: number
+  /** 显式启动的 AI 自主会话；默认关闭。 */
+  autonomyEnabled: boolean
+  autonomyMaxMinutes: number
+  autonomyMaxToolCalls: number
+  autonomyMaxFailures: number
+  autonomyGoalMaxChars: number
+  autonomyDecisionTimeoutMs: number
+  autonomyTasks: TaskName[]
   /** 库存/补货告警与自动补货。 */
   inventoryAlertFreeSlots: number
   foodAlertThreshold: number
@@ -334,6 +343,23 @@ function readExploreWaypoints (
 }
 
 const AI_TOOL_NAMES = new Set(['status', 'inventory', 'task_status'])
+const AUTONOMY_TASK_NAMES = new Set<TaskName>([
+  'fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore'
+])
+
+function readAutonomyTasks (env: Env): TaskName[] {
+  const raw = readString(
+    env,
+    'AUTONOMY_TASKS',
+    'fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore'
+  )
+  const names = raw.split(',').map(item => item.trim()).filter(Boolean) as TaskName[]
+  if (names.length === 0) throw new ConfigError('AUTONOMY_TASKS must contain at least one task')
+  for (const name of names) {
+    if (!AUTONOMY_TASK_NAMES.has(name)) throw new ConfigError(`AUTONOMY_TASKS has unknown task: ${name}`)
+  }
+  return [...new Set(names)]
+}
 
 function readAiToolAllowlist (env: Env): string[] {
   const names = readNameList(env, 'AI_TOOL_ALLOWLIST', 'status,inventory,task_status')
@@ -496,6 +522,16 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     cooldownMs: readInt(env, 'ALERT_COOLDOWN_MS', 300000, 10000, 3600000),
     healthThreshold: readNumber(env, 'ALERT_HEALTH_THRESHOLD', 12, 1, 20)
   }
+  const autonomyEnabled = readBool(env, 'AUTONOMY_ENABLED', false)
+  const autonomyTasks = readAutonomyTasks(env)
+  const httpControlEnabled = readBool(env, 'HTTP_CONTROL_ENABLED', true)
+  if (autonomyEnabled && !aiEnabled) throw new ConfigError('AUTONOMY_ENABLED=true requires AI_ENABLED=true')
+  if (autonomyEnabled && !readBool(env, 'TASK_ENABLED', true)) {
+    throw new ConfigError('AUTONOMY_ENABLED=true requires TASK_ENABLED=true')
+  }
+  if (autonomyEnabled && !httpControlEnabled) {
+    throw new ConfigError('AUTONOMY_ENABLED=true requires HTTP_CONTROL_ENABLED=true')
+  }
 
   return Object.freeze({
     version,
@@ -590,7 +626,7 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
       if (token !== '' && token.length < 16) throw new ConfigError('HTTP_CONTROL_TOKEN must be at least 16 characters')
       return token
     })(),
-    httpControlEnabled: readBool(env, 'HTTP_CONTROL_ENABLED', true),
+    httpControlEnabled,
     httpOnlyHighRisk: readBool(env, 'HTTP_ONLY_HIGH_RISK', false),
     sseMaxClients: readInt(env, 'SSE_MAX_CLIENTS', 8, 1, 64),
     sseHeartbeatMs: readInt(env, 'SSE_HEARTBEAT_MS', 15000, 1000, 600000),
@@ -610,6 +646,13 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     aiToolsEnabled: readBool(env, 'AI_TOOLS_ENABLED', false),
     aiToolAllowlist: readAiToolAllowlist(env),
     aiMaxToolCalls: readInt(env, 'AI_MAX_TOOL_CALLS', 2, 1, 4),
+    autonomyEnabled,
+    autonomyMaxMinutes: readInt(env, 'AUTONOMY_MAX_MINUTES', 20, 1, 60),
+    autonomyMaxToolCalls: readInt(env, 'AUTONOMY_MAX_TOOL_CALLS', 12, 1, 30),
+    autonomyMaxFailures: readInt(env, 'AUTONOMY_MAX_FAILURES', 2, 1, 5),
+    autonomyGoalMaxChars: readInt(env, 'AUTONOMY_GOAL_MAX_CHARS', 200, 20, 500),
+    autonomyDecisionTimeoutMs: readInt(env, 'AUTONOMY_DECISION_TIMEOUT_MS', 180000, 30000, 900000),
+    autonomyTasks,
     inventoryAlertFreeSlots: readInt(env, 'INVENTORY_ALERT_FREE_SLOTS', 2, 0, 9),
     foodAlertThreshold: readInt(env, 'FOOD_ALERT_THRESHOLD', 4, 0, 20),
     autoRestock: readBool(env, 'AUTO_RESTOCK', false),

@@ -1,6 +1,6 @@
 {
   "name": "@antifieldcomplexx/mcbot",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,9 @@
   "scripts": {
     "start": "node src/main.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/unit",
+    "test": "node --test test/unit test/agentic",
+    "test:agentic": "node --test test/agentic",
+    "acceptance:agentic": "node scripts/agentic-acceptance.mjs",
     "check": "npm run typecheck && npm test",
     "smoke": "node test/smoke/live.ts"
   },

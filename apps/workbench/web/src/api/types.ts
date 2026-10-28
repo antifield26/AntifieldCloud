@@ -1254,10 +1254,20 @@ export interface ChatbotMemoryItemSummary {  id: string
   expiresAt: string | null
 }
 
-/* ---------- mcbot 集成（v0.8.0，GET /api/mcbot/status 等） ---------- */
+/* ---------- mcbot 集成（v0.8.0，GET /api/mcbot/status 等；v1.0.2 自主模式） ---------- */
 
-/** mcbot 支持的 7 种任务（与 mcbot Bot 的 TaskName 一致）。 */
-export type McbotTaskName = 'fishing' | 'farming' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol'
+/** mcbot 支持的 10 种任务（与 mcbot Bot 的 TaskName 一致）。 */
+export type McbotTaskName =
+  | 'fishing'
+  | 'farming'
+  | 'woodcutting'
+  | 'mining'
+  | 'forest'
+  | 'sleep'
+  | 'patrol'
+  | 'guard'
+  | 'escort'
+  | 'explore'
 
 /** 任务状态；pending_resume 表示有可恢复的暂停任务。 */
 export type McbotTaskState =
@@ -1297,6 +1307,10 @@ export interface McbotTaskProgress {
   nightSkipped: number
   patrolWaypoints: number
   patrolDistance: number
+  /** v1.0.2 新增任务的进度计数（旧服务端缺失时按 0 处理）。 */
+  guardKills?: number
+  escortDistance?: number
+  exploreWaypoints?: number
 }
 
 /** 排队中的任务；requestedBy 是发起方标识（如 panel），不是敏感信息。 */
@@ -1416,6 +1430,32 @@ export interface McbotStatus {
 /** 事件类型；hello 只出现在 SSE 首帧，/status 的事件环通常为其余类型。 */
 export type McbotEventType = string
 
+/** AI 自主模式状态（与上游 mcbot 一致）；未知状态按字符串兜底展示。 */
+export type McbotAutonomyState = 'idle' | 'starting' | 'running' | 'stopping' | 'finished' | 'failed'
+
+/** GET /api/mcbot/status 与 /autonomy 的自主模式快照；不含 run id/提示词正文/Token。 */
+export interface McbotAutonomySnapshot {
+  enabled: boolean
+  active: boolean
+  state: McbotAutonomyState
+  goal: string | null
+  startedAt: string | null
+  elapsedSec: number
+  remainingSec: number
+  toolCalls: number
+  maxToolCalls: number
+  lastAction: string | null
+  lastReason: string | null
+  lastError: string | null
+  lastDecisionAt: string | null
+}
+
+/** POST /api/mcbot/autonomy/start|stop 的响应：始终带可控的自主快照。 */
+export interface McbotAutonomyResult {
+  ok?: boolean
+  autonomy: McbotAutonomySnapshot | null
+}
+
 /** mcbot 内存事件环中的一条事件；data 形状随 type 变化，渲染层只读取已知字段。 */
 export interface McbotEvent {
   id: string
@@ -1438,6 +1478,8 @@ export interface McbotSnapshot {
   lastPollAt: string | null
   error: string | null
   status: McbotStatus | null
+  /** 旧版 mcbot 不返回该字段（可选）；缺失时为 null/undefined，UI 隐藏自主控制。 */
+  autonomy?: McbotAutonomySnapshot | null
   events: McbotEvent[]
 }
 

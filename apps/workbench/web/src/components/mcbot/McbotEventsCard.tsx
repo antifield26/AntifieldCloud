@@ -28,6 +28,7 @@ const EVENT_TONES: Record<string, BadgeTone> = {
   presence: 'muted',
   movement: 'info',
   alert: 'warning',
+  autonomy: 'accent',
 }
 
 function EventRow({ event }: { event: McbotEvent }) {

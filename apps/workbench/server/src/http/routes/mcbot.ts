@@ -1,13 +1,14 @@
 /**
- * mcbot 对接 HTTP 路由（v0.8.0）。
+ * mcbot 对接 HTTP 路由（v0.8.0；v1.0.2 增加 AI 自主模式代理）。
  *
  * 边界：
- * - 全部需要登录；控制接口额外校验 CSRF，并按 IP 限流（控制 20/min，聊天 10/min）。
+ * - 全部需要登录；GET 按 IP 限流 60/min；控制接口额外校验 CSRF，并按 IP 限流（控制 20/min，聊天 10/min）。
  * - 上游错误统一映射为 AppError：禁用/不可用 503、鉴权/上游异常 502、上游 400/409
  *   保留状态码并透传稳定码 `mcbot_<上游 code>`；message 不含内部 URL/Token。
+ * - 自主目标/停止原因只做长度与控制字符校验；审计只记字符数，不记录目标/原因正文。
  * - 审计记录控制动作元数据；/say 只记录字符数，绝不记录聊天正文。
  */
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../../config.ts'
 import { McbotError } from '../../mcbot/client.ts'
@@ -18,13 +19,28 @@ import { audit } from '../../auth/audit.ts'
 import { asRecord, clientIp, parsePositiveInt } from '../util.ts'
 import { csrfGuard, requireAuth } from '../guards.ts'
 
-/** mcbot 支持的 7 种任务名（与上游 /task/start 一致）。 */
-export const MCBOT_TASK_NAMES = ['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol'] as const
+/** mcbot 支持的 10 种任务名（与上游 /task/start 一致）。 */
+export const MCBOT_TASK_NAMES = [
+  'fishing',
+  'farming',
+  'woodcutting',
+  'mining',
+  'forest',
+  'sleep',
+  'patrol',
+  'guard',
+  'escort',
+  'explore',
+] as const
 export type McbotTaskName = (typeof MCBOT_TASK_NAMES)[number]
 export const MCBOT_MOVE_ACTIONS = ['home', 'come', 'follow', 'stop'] as const
 export type McbotMoveAction = (typeof MCBOT_MOVE_ACTIONS)[number]
 /** 与上游 /say 一致：trim 后 1..720 字符。 */
 export const MCBOT_SAY_MAX_CHARS = 720
+/** 自主目标上限（与上游 AUTONOMY_GOAL_MAX_CHARS 默认值一致）。 */
+export const MCBOT_AUTONOMY_GOAL_MAX_CHARS = 200
+/** 自主停止原因上限。 */
+export const MCBOT_AUTONOMY_REASON_MAX_CHARS = 200
 
 const TASK_NAMES = new Set<string>(MCBOT_TASK_NAMES)
 const MOVE_ACTIONS = new Set<string>(MCBOT_MOVE_ACTIONS)
@@ -36,6 +52,17 @@ function hasControlChars(value: string): boolean {
     if (code <= 0x1f || code === 0x7f) return true
   }
   return false
+}
+
+/** 可选文本参数：缺省/null/纯空白视为未提供；非字符串、超长、含控制字符返回 400。 */
+function optionalBoundedText(value: unknown, field: string, max: number): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value !== 'string') throw badRequest(`${field} 不合法`, 'invalid_request')
+  const trimmed = value.trim()
+  if (!trimmed) return undefined
+  if (trimmed.length > max) throw badRequest(`${field} 最多 ${max} 字符`, 'invalid_request')
+  if (hasControlChars(trimmed)) throw badRequest(`${field} 不能包含控制字符`, 'invalid_request')
+  return trimmed
 }
 
 /** 上游稳定错误码的中文兜底文案；不含上游 message，避免英文/内部细节外泄。 */
@@ -57,6 +84,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   mcbot_task_disabled: 'mcbot 任务功能已关闭',
   mcbot_history_disabled: 'mcbot 历史功能已关闭',
   mcbot_invalid_request: 'mcbot 拒绝了请求参数',
+  mcbot_autonomy_disabled: 'mcbot 自主模式未启用',
+  mcbot_autonomy_busy: 'mcbot 自主模式正在运行，请先停止',
+  mcbot_autonomy_unavailable: 'mcbot 自主模式不可用',
+  mcbot_autonomy_failed: 'mcbot 自主模式启动失败',
 }
 
 function errorMessageFor(code: string, fallback: string): string {
@@ -105,6 +136,14 @@ export function registerLofiiRoutes(
   const csrf = csrfGuard(config)
   const controlLimiter = new SlidingWindowLimiter(60_000, 20)
   const sayLimiter = new SlidingWindowLimiter(60_000, 10)
+  // 只读 GET 限流：覆盖 /status、/history、/autonomy，UI 5 秒轮询（12/min）不受影响。
+  const getLimiter = new SlidingWindowLimiter(60_000, 60)
+
+  /** GET 限流：超限返回 429 + Retry-After。 */
+  function limitGet(request: FastifyRequest): void {
+    const retry = getLimiter.hit(clientIp(request))
+    if (retry > 0) throw rateLimited(retry)
+  }
 
   /** 控制失败审计：只记稳定错误码，不记 Token/URL/上游原文。 */
   function auditFailure(actor: { username: string; ip: string | null }, action: string, error: unknown): void {
@@ -112,9 +151,13 @@ export function registerLofiiRoutes(
     audit(db, actor.username, 'mcbot.control_failed', action, { code }, actor.ip)
   }
 
-  app.get('/api/mcbot/status', { preHandler: [requireAuth] }, async () => mcbot.snapshot())
+  app.get('/api/mcbot/status', { preHandler: [requireAuth] }, async (request) => {
+    limitGet(request)
+    return mcbot.snapshot()
+  })
 
   app.get('/api/mcbot/history', { preHandler: [requireAuth] }, async (request) => {
+    limitGet(request)
     requireEnabled(mcbot)
     const query = asRecord(request.query)
     const rawKind = query.kind === undefined || query.kind === '' ? 'samples' : query.kind
@@ -129,6 +172,51 @@ export function registerLofiiRoutes(
         limit,
       })
     } catch (error) {
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.get('/api/mcbot/autonomy', { preHandler: [requireAuth] }, async (request) => {
+    limitGet(request)
+    requireEnabled(mcbot)
+    try {
+      return { autonomy: await mcbot.autonomy() }
+    } catch (error) {
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.post('/api/mcbot/autonomy/start', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
+    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
+    const retry = controlLimiter.hit(clientIp(request))
+    if (retry > 0) throw rateLimited(retry)
+    const body = asRecord(request.body)
+    const goal = optionalBoundedText(body.goal, 'goal', MCBOT_AUTONOMY_GOAL_MAX_CHARS)
+    try {
+      const result = await mcbot.startAutonomy(goal)
+      // 自主目标可能包含用户描述：审计只记录字符数，不记录正文。
+      audit(db, actor.username, 'mcbot.autonomy.start', null, { goalChars: goal?.length ?? 0 }, actor.ip)
+      return { ok: true, autonomy: result.autonomy }
+    } catch (error) {
+      auditFailure(actor, 'mcbot.autonomy.start', error)
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.post('/api/mcbot/autonomy/stop', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
+    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
+    const retry = controlLimiter.hit(clientIp(request))
+    if (retry > 0) throw rateLimited(retry)
+    const body = asRecord(request.body)
+    const reason = optionalBoundedText(body.reason, 'reason', MCBOT_AUTONOMY_REASON_MAX_CHARS)
+    try {
+      const result = await mcbot.stopAutonomy(reason)
+      audit(db, actor.username, 'mcbot.autonomy.stop', null, { reasonChars: reason?.length ?? 0 }, actor.ip)
+      return { ok: true, autonomy: result.autonomy }
+    } catch (error) {
+      auditFailure(actor, 'mcbot.autonomy.stop', error)
       throw toLofiiAppError(error)
     }
   })

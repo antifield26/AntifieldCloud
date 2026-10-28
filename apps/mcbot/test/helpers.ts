@@ -32,7 +32,9 @@ export function makeState (config: Config): RuntimeState {
     aiEnabled: config.aiEnabled,
     aiProvider: config.aiModelProvider,
     aiModel: config.aiModelId,
-    taskEnabled: config.taskEnabled
+    taskEnabled: config.taskEnabled,
+    autonomyEnabled: config.autonomyEnabled,
+    autonomyMaxToolCalls: config.autonomyMaxToolCalls
   })
 }
 

@@ -247,7 +247,7 @@ export class TaskManager implements TaskController {
     return this.active !== null
   }
 
-  async start (name: TaskName, username: string): Promise<TaskStartResult> {
+  async start (name: TaskName, username: string, source: 'chat' | 'http_control' | 'autonomy' = username === 'panel' ? 'http_control' : 'chat'): Promise<TaskStartResult> {
     const { config } = this.deps
     if (this.stopped) return { status: 'rejected', reason: 'stopped' }
     if (!config.taskEnabled) {
@@ -274,7 +274,7 @@ export class TaskManager implements TaskController {
       await this.persistState(this.active)
       this.deps.audit.append({
         event: 'task.queued',
-        source: username === 'panel' ? 'http_control' : 'chat',
+        source,
         actor: username,
         action: name,
         result: 'accepted',
@@ -287,7 +287,7 @@ export class TaskManager implements TaskController {
     const active = this.createActive(name, randomUUID(), Date.now())
     this.deps.audit.append({
       event: 'task.start',
-      source: username === 'panel' ? 'http_control' : 'chat',
+      source,
       actor: username,
       action: name,
       result: 'accepted',

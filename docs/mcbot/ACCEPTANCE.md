@@ -402,3 +402,27 @@
 - 未对真实 Minecraft 执行 `/op` 等验证（审计/修复均避免生产命令注入）；以单元级切分函数和 mineflayer `isCommand` 语义为证据。
 
 
+
+## 11. v1.0.2 开发线验收（2026-10-28，本地；未部署）
+
+### 11.1 范围
+
+AI 自主会话（OpenCode 原生 MCP 工具循环、10 种任务白名单、run_id/Bearer、预算/失败/急停/审计、任务清理）；应用面板自主控制与 10 任务同步；mcbot 服务监控/轮询停止收口/GET 限流；Agentic 离线 scenario harness + 可选实机 conductor。
+
+### 11.2 结果
+
+| 检查 | 结果 |
+|---|---|
+| `npm run check` | 通过 |
+| app server | 591（590 pass、1 skip） |
+| app web | 273（49 文件） |
+| mcbot | 107（含 5 个 agentic scenarios） |
+| 覆盖率 | 服务端 93.10/78.89/88.86；前端 Lines/Branches/Functions 56.27/51.88/49.16 |
+| OpenCode 2.2.0 原生 MCP Phase 0 | 运行时注册 204；initialize/tools/list/tools/call 正常；deny-all + `<server>_*` allow；Authorization 头透传；session/MCP 清理成功 |
+| 生产 | **未部署**；仍 v1.0.1/schema18/OpenCode 2.2.0 |
+
+### 11.3 证据边界
+
+- 离线 harness 证明策略/协议/状态机，不证明模型行为；真实模型自主运行与实机 Agent 验收未执行。
+- 未向生产玩家/外部通知通道发送测试消息；未修改生产 mcbot/应用/DB。
+过程与命令见 [AGENTIC-ACCEPTANCE.md](AGENTIC-ACCEPTANCE.md)。

@@ -63,6 +63,25 @@ export interface MemorySnapshot {
   turns: number
 }
 
+export type AutonomyState = 'idle' | 'starting' | 'running' | 'stopping' | 'finished' | 'failed'
+
+/** AI 自主会话的只读快照；不包含 run_id、Token 或提示词正文。 */
+export interface AutonomySnapshot {
+  enabled: boolean
+  active: boolean
+  state: AutonomyState
+  goal: string | null
+  startedAt: string | null
+  elapsedSec: number
+  remainingSec: number
+  toolCalls: number
+  maxToolCalls: number
+  lastAction: string | null
+  lastReason: string | null
+  lastError: string | null
+  lastDecisionAt: string | null
+}
+
 export type TaskName =
   | 'fishing'
   | 'farming'
@@ -154,6 +173,7 @@ export interface StatusSnapshot {
   ai: AiSnapshot
   memory: MemorySnapshot
   task: TaskSnapshot
+  autonomy: AutonomySnapshot
   admin: AdminSnapshot
 }
 
@@ -187,6 +207,7 @@ export class RuntimeState {
   ai: AiSnapshot
   memory: MemorySnapshot = { players: 0, turns: 0 }
   task: TaskSnapshot
+  autonomy: AutonomySnapshot
   admin: AdminSnapshot
   lastDecision = 'startup'
 
@@ -204,6 +225,8 @@ export class RuntimeState {
     aiProvider: string
     aiModel: string
     taskEnabled: boolean
+    autonomyEnabled?: boolean
+    autonomyMaxToolCalls?: number
   }) {
     this.version = options.version
     this.minecraft = {
@@ -268,6 +291,21 @@ export class RuntimeState {
       lastError: null,
       pendingResume: null,
       queue: []
+    }
+    this.autonomy = {
+      enabled: options.autonomyEnabled === true,
+      active: false,
+      state: 'idle',
+      goal: null,
+      startedAt: null,
+      elapsedSec: 0,
+      remainingSec: 0,
+      toolCalls: 0,
+      maxToolCalls: options.autonomyMaxToolCalls ?? 0,
+      lastAction: null,
+      lastReason: null,
+      lastError: null,
+      lastDecisionAt: null
     }
     this.admin = {
       enabled: false,
@@ -342,6 +380,10 @@ export class RuntimeState {
     }
   }
 
+  setAutonomy (patch: Partial<AutonomySnapshot>): void {
+    this.autonomy = { ...this.autonomy, ...patch }
+  }
+
   setTask (patch: Partial<TaskSnapshot>): void {
     this.task = {
       ...this.task,
@@ -390,6 +432,7 @@ export class RuntimeState {
       ai: { ...this.ai },
       memory: { ...this.memory },
       task,
+      autonomy: { ...this.autonomy },
       admin: {
         ...this.admin,
         tps: { ...this.admin.tps },

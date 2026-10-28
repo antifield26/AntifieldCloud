@@ -54,6 +54,8 @@ import type {
   FileSearchResult,
   KnowledgeQuery,
   McbotActionResult,
+  McbotAutonomyResult,
+  McbotAutonomySnapshot,
   McbotHistory,
   McbotHistoryQuery,
   McbotMoveAction,
@@ -213,6 +215,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   mcbot_not_connected: 'mcbot 尚未连接 Minecraft',
   mcbot_rate_limited: 'mcbot 操作过于频繁，请稍后再试',
   mcbot_invalid_request: 'mcbot 请求参数不合法',
+  mcbot_autonomy_disabled: 'mcbot 自主模式未启用（MCBOT_AUTONOMY_ENABLED=false）',
+  mcbot_autonomy_busy: 'mcbot 自主模式正在运行，请先停止',
+  mcbot_autonomy_unavailable: 'mcbot 自主模式不可用，请检查 mcbot 状态',
+  mcbot_autonomy_failed: 'mcbot 自主模式启动失败',
   message_must_not_start_with_slash: '聊天内容不能以 / 开头（不会执行任何命令）',
 }
 
@@ -1270,6 +1276,18 @@ export const api = {
         })}`,
         { signal },
       )
+    },
+    /** AI 自主模式实时快照；服务端包装为 {autonomy}，缺失时返回 null。 */
+    autonomy(signal?: AbortSignal): Promise<McbotAutonomySnapshot | null> {
+      return get<McbotAutonomyResult>('/api/mcbot/autonomy', { signal }).then((result) => result.autonomy ?? null)
+    },
+    /** 启动自主模式：goal 为空时由 mcbot 使用默认目标。 */
+    startAutonomy(goal?: string): Promise<McbotAutonomyResult> {
+      return post<McbotAutonomyResult>('/api/mcbot/autonomy/start', goal ? { goal } : {})
+    },
+    /** 停止自主模式：上游幂等；reason 仅作运行记录，不上送到 UI。 */
+    stopAutonomy(reason?: string): Promise<McbotAutonomyResult> {
+      return post<McbotAutonomyResult>('/api/mcbot/autonomy/stop', reason ? { reason } : {})
     },
     startTask(name: McbotTaskName): Promise<McbotActionResult> {
       return post<McbotActionResult>('/api/mcbot/tasks', { name })

@@ -396,7 +396,8 @@ export async function buildApp(config: Config, db: DatabaseSync): Promise<AppCon
   })
 
   app.addHook('onClose', async () => {
-    mcbot.stop()
+    // mcbot.stop() 为异步收口：中止在途轮询并 await 结束，停止后不再写告警游标。
+    await mcbot.stop()
     alerts.stop()
     metricsSampler.stop()
     // ARCH-04：关闭前有限等待 Chatbot 在途回复/工具缓冲/投递排空，避免部署/重启丢回复或重复投递。

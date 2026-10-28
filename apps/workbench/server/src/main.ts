@@ -26,7 +26,8 @@ async function main(): Promise<void> {
     stopping = true
     context.app.log.info({ signal }, '正在关闭')
     clearInterval(maintenance)
-    context.mcbot.stop()
+    // 先停止 mcbot 轮询（异步：中止在途请求并 await），再关闭 Fastify，避免关闭过程中写游标。
+    await context.mcbot.stop()
     context.alerts.stop()
     // http-proxy 的 WS 隧道不会随 server.close() 自动断开；先关闭再 app.close()，
     // 否则存在活动隧道时 Fastify 会等到 Node 的 120s keep-alive 超时。

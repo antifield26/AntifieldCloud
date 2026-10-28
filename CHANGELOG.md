@@ -1,5 +1,25 @@
 # Changelog
 
+## [v1.0.2] - 2026-10-28（开发线；未部署）
+
+v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。生产仍为 v1.0.1。
+
+### Added
+
+- **mcbot AI 自主会话**：仅主人显式启动；OpenCode 运行时注册 MCP server，模型原生调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`finish`；每次会话随机 run_id + Bearer；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 白名单；预算/失败/超时/断线/急停/任务清理；审计与 `autonomy` 事件。
+- **应用**：mcbot 面板新增自主模式卡（状态/目标/时间/工具调用/最近决策，启动/急停二次确认）；任务下拉同步 10 种任务（guard/escort/explore）；`GET /api/mcbot/autonomy`、`POST /api/mcbot/autonomy/start|stop`，CSRF/限流/审计。
+- **运维**：mcbot 纳入服务监控与 `service_down` 告警；`McbotService.stop()` 中止并等待在途轮询、停止后不写告警游标；`/api/mcbot/status|history` GET 60/min 限流。
+- **Agentic 验收**：`test/agentic` 离线 scenario harness（CI）；`scripts/agentic-acceptance.mjs` 可选实机 conductor（默认 dry-run，需显式 `--allow-writes`）；`docs/mcbot/AGENTIC-ACCEPTANCE.md` 三角色流程。
+
+### Verification
+
+- 本地：root `npm run check` 通过；app 591（590 pass、1 skip）、web 273、mcbot 108；服务端覆盖率 93.10/78.89/88.86，前端 56.27/51.88/49.16；build/check-version（1.0.2）/check-naming 通过。
+- OpenCode 2.2.0 原生 MCP Phase 0：运行时注册/工具调用/权限前缀/Authorization/清理通过。
+- 未部署、未打 Tag/Release；生产仍 v1.0.1。
+
+### Migration / Rollback
+
+- 无 schema/DB 迁移；v1.0.2 未部署，无生产回滚动作。部署前需单独授权并按 DEPLOY 流程验证；自主模式默认关闭。
 ## [v1.0.1] - 2026-10-28
 
 v1.0.1 是定位同步与 OpenCode 升级版本：运行时 UI/元数据切换为“个人综合交互平台”，OpenCode 从 2.1.4 升级到 2.2.0，无 schema 迁移。

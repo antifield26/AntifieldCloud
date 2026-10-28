@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v1.0.1 已上线（2026-10-28）：app release `/opt/antifieldcloud/releases/20261028T021311Z`（schema **v18**，commit `228ed62`），mcbot release `/opt/mcbot/releases/20261028T021116Z`（v1.0.1，服务 `mcbot.service`），OpenCode **v2.2.0**；全量 Access smoke **36 PASS / 0 FAIL / 1 WARN / 2 SKIP**（WARN=恢复演练 schema 待重跑）；运行时 UI/manifest/systemd 文案已切换为“个人综合交互平台”。文档入口 [docs/INDEX.md](docs/INDEX.md)。
-> 测试基线（v1.0.1）：root `npm run check` 通过；app 574（573 pass）+ web 256 + mcbot 94（94 pass）；服务端覆盖率 93.04/78.74/88.73，前端 55.83/51.29/48.66；`build`、`check-version`（严格 1.0.1）、`check-naming` 通过。生产已部署 v1.0.1/schema18/OpenCode 2.2.0（2026-10-28）。
+> 状态：v1.0.2 开发线（生产仍 v1.0.1；2026-10-28）：本轮完成 mcbot AI 自主会话（OpenCode 原生 MCP 工具循环、白名单任务、预算/急停/审计）、应用面板自主控制与 10 种任务同步、mcbot 运维残余修复、Agentic 验收 harness；未部署、未打 Tag/Release。生产 app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18，commit `228ed62`）、mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1），OpenCode **v2.2.0**；完整 Access smoke **36/0/1/2**（WARN=恢复演练 schema 待重跑）。文档入口 [docs/INDEX.md](docs/INDEX.md)。
+> 测试基线（v1.0.2 开发线）：root `npm run check` 通过；app 591（590 pass、1 skip）+ web 273（49 文件）+ mcbot 108；服务端覆盖率 93.10/78.89/88.86，前端 Lines/Branches/Functions 56.27/51.88/49.16；`build`、`check-version`（严格 1.0.2）、`check-naming` 通过。生产仍为 v1.0.1，未部署 v1.0.2。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
 

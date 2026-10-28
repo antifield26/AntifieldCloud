@@ -135,6 +135,13 @@
   （首条 + 每 50 条），未认证流量不能通过洪泛饿死合法事件或写满审计表。
 - **审计策略**：非安全审计事务外 best-effort，失败不阻断已完成的业务；失败计数/最近错误/时间在 best-effort 写入 `audit_write_failures` 并经 `GET /api/version.audit` 暴露（含 `persisted`），跨重启可见；安全关键审计（登录/再认证/发布/工具隔离/Webhook 拒绝）保持逐条记录；公开下载计数仍在事务内。
 
+### AI 自主模式（v1.0.2，默认关闭）
+
+- 仅主人显式启动；应用侧 `/api/mcbot/autonomy/*` 需会话 + CSRF + 控制 20/min，GET 60/min；沿用 `MCBOT_CONTROL_TOKEN`，不下发浏览器。
+- mcbot 只会注册 loopback MCP server，工具白名单固定；OpenCode session deny-all + `mcbot_autonomy_*` allow；每次会话随机 run_id + 短期 Bearer。
+- 模型不能执行任意命令/坐标/玩家名；任务白名单、预算、失败上限、断线/手动指令/急停由 mcbot 策略层 fail-closed。
+- 目标/停止原因只做长度/控制字符校验；审计只记字符数，不记录正文；不记录 prompt/Token。
+- 端点 `/autonomy/mcp` 不得经应用/Cloudflare/nftables 暴露；仅 OpenCode 运行时 loopback 调用。
 ### mcbot（v0.8.0 引入，v0.8.1 安全加固；默认关闭）
 
 - **网络/上游**：mcbot 是独立服务（推荐 v0.6.1，最低 v0.6.0，契约 v1），仅监听 `127.0.0.1:3010`，不进入 Cloudflare ingress；应用 `MCBOT_URL` 启用时必须 loopback + http(s) 且为根地址（拒绝 userinfo/路径/查询/片段，启动校验失败即拒绝启动）；客户端 `redirect:'error'`、`AbortSignal.timeout(MCBOT_TIMEOUT_MS 默认 2500)`、响应体**流式** ≤2 MiB（边读边计数，不先整包缓冲），网络/超时/重定向统一 `lofii_unavailable` 且不暴露底层 message。

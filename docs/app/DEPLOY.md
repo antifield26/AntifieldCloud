@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.1）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.2）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -14,6 +14,8 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
+
+> **v1.0.2 开发线提示**：本轮 mcbot AI 自主会话/应用面板/Agentic 验收已完成本地门禁，但**未部署**；生产仍为 v1.0.1。部署前需单独授权，并新增 mcbot `AUTONOMY_*` env、默认 `AUTONOMY_ENABLED=false`，部署后运行离线 harness 与可选实机 conductor。`
 
 > **v1.0.0 迁移提示**：本版本包含 DB schema v18（chatbot 全量更名）与 mcbot 服务/路径硬切换。生产升级前必须做 DB 快照；按 `scripts/migrate-v1.0.0.ps1`（Plan→Apply→`scripts/deploy.ps1`→Verify）执行，旧应用无法读取 v18，回滚必须使用快照 + 旧 release/env。QQ 回调与 Cloudflare Access 需同步改为 `/api/chatbot/webhook/*`。
 

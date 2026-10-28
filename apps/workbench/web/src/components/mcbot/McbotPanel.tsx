@@ -1,7 +1,10 @@
-// mcbot 面板（/minecraft 的 mcbot 标签页）：状态、任务控制、移动、游戏内聊天、事件流与历史。
+// mcbot 面板（/minecraft 的 mcbot 标签页）：状态、任务控制、移动、游戏内聊天、事件流与历史；
+// v1.0.2 增加 AI 自主模式（自主状态卡 + 带目标启动 + 二次确认急停）。
 // 数据来自 GET /api/mcbot/status（5 秒轮询）与 GET /api/mcbot/history；写操作走 /api/mcbot/*。
-// 安全边界：不展示 mcbot Token/地址/内部路径，聊天与事件一律纯文本渲染；开始/停止/恢复/发送均需二次确认。
-// 降级：禁用显示说明；不可达/过期显示缓存数据与警告；控制未启用时禁用全部写操作。
+// 安全边界：不展示 mcbot Token/地址/内部路径，聊天与事件一律纯文本渲染；开始/停止/恢复/发送、
+// 自主启动/停止均需二次确认。
+// 降级：禁用显示说明；不可达/过期显示缓存数据与警告；控制未启用时禁用全部写操作；
+// 旧版 mcbot 无 autonomy 段时隐藏自主模式卡，不渲染不可用控制。
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent, ReactNode } from 'react'
@@ -14,12 +17,13 @@ import {
   RefreshCw,
   RotateCcw,
   Send,
+  Sparkles,
   Square,
   Users,
 } from 'lucide-react'
 import { api, isAbortError, isApiError, toErrorMessage } from '../../api/client'
 import type {
-  McbotActionResult,
+  McbotAutonomySnapshot,
   McbotMoveAction,
   McbotPendingResume,
   McbotSnapshot,
@@ -29,6 +33,7 @@ import type {
 } from '../../api/types'
 import { usePolling } from '../../hooks/usePolling'
 import { Badge } from '../Badge'
+import type { BadgeTone } from '../Badge'
 import { Button } from '../Button'
 import { Card } from '../Card'
 import { ConfirmDialog } from '../ConfirmDialog'
@@ -43,6 +48,7 @@ import { formatDuration } from '../../lib/format'
 import {
   MCBOT_MOVE_ACTION_LABELS,
   MCBOT_TASK_NAMES,
+  mcbotAutonomyStateLabel,
   mcbotBotStateLabel,
   mcbotErrorLabel,
   mcbotOnlinePlayers,
@@ -50,12 +56,25 @@ import {
   mcbotTaskProgressRows,
   mcbotTaskStateLabel,
   safeLofiiStatus,
+  safeMcbotAutonomy,
 } from '../../lib/mcbot'
 
 /** /api/mcbot/status 轮询间隔。 */
 const STATUS_POLL_MS = 5000
 /** /say 内容上限（mcbot 契约）。 */
 const SAY_MAX_CHARS = 720
+/** 自主目标上限（服务端/上游契约）。 */
+const AUTONOMY_GOAL_MAX_CHARS = 200
+
+/** 自主状态徽章色调：运行中绿色、失败红色、其余按中性/过渡处理。 */
+const AUTONOMY_STATE_TONES: Record<string, BadgeTone> = {
+  idle: 'muted',
+  starting: 'warning',
+  running: 'success',
+  stopping: 'warning',
+  finished: 'info',
+  failed: 'danger',
+}
 
 /** 聊天内容不允许 C0 控制字符与 DEL。 */
 function hasControlChars(value: string): boolean {
@@ -71,6 +90,8 @@ type ConfirmState =
   | { type: 'stop' }
   | { type: 'resume' }
   | { type: 'say'; message: string }
+  | { type: 'autonomy-start'; goal: string }
+  | { type: 'autonomy-stop' }
   | null
 
 function dashNumber(value: number | null | undefined, digits = 0): string {
@@ -406,6 +427,112 @@ function McbotTaskCard({
   )
 }
 
+/* ---------- AI 自主模式 ---------- */
+
+function McbotAutonomyCard({
+  autonomy,
+  controlReady,
+  goal,
+  goalError,
+  onGoalChange,
+  onStart,
+  onStop,
+}: {
+  autonomy: McbotAutonomySnapshot
+  controlReady: boolean
+  goal: string
+  goalError: string | null
+  onGoalChange: (value: string) => void
+  onStart: () => void
+  onStop: () => void
+}) {
+  const stateTone = AUTONOMY_STATE_TONES[autonomy.state] ?? 'muted'
+  const startDisabled =
+    !controlReady || !autonomy.enabled || autonomy.active || autonomy.state === 'starting'
+  const stopDisabled = !controlReady || !autonomy.enabled
+  const hint = !autonomy.enabled
+    ? 'mcbot 自主模式未启用（AUTONOMY_ENABLED=false）。'
+    : !controlReady
+      ? '控制未启用或 mcbot 不可达，自主模式操作不可用。'
+      : autonomy.active
+        ? '自主模式运行中：AI 会在时间/工具调用限制内自动决策；可随时急停。'
+        : '启动后由 mcbot AI 在目标与限制内自动决策；需二次确认，失败/超限后自动结束。'
+
+  return (
+    <Card
+      title="AI 自主模式"
+      description="mcbot 在时间、工具调用与失败次数限制内自主决策并执行；启动与急停都需要二次确认。"
+      actions={
+        <Badge tone={stateTone} dot={autonomy.active}>
+          {mcbotAutonomyStateLabel(autonomy.state)}
+        </Badge>
+      }
+    >
+      <div className="mcbot-task-facts">
+        <Fact label="自主目标">{autonomy.goal ?? '默认目标'}</Fact>
+        <Fact label="已运行">
+          {autonomy.active || autonomy.startedAt ? formatDuration(autonomy.elapsedSec) : '—'}
+        </Fact>
+        <Fact label="剩余时间">{autonomy.active ? formatDuration(autonomy.remainingSec) : '—'}</Fact>
+        <Fact label="工具调用">
+          {autonomy.maxToolCalls > 0 ? `${autonomy.toolCalls} / ${autonomy.maxToolCalls}` : autonomy.toolCalls}
+        </Fact>
+        <Fact label="最近动作">{autonomy.lastAction ?? '—'}</Fact>
+        <Fact label="最近决策">
+          <RelativeTime ts={autonomy.lastDecisionAt} fallback="—" />
+        </Fact>
+        <Fact label="最近原因">{autonomy.lastReason ?? '—'}</Fact>
+      </div>
+
+      {autonomy.lastError ? <div className="notice notice-warning">自主模式最近错误：{autonomy.lastError}</div> : null}
+
+      <div className="mcbot-task-controls">
+        <div className="mcbot-task-select">
+          <label className="field-label" htmlFor="mcbot-autonomy-goal">
+            自主目标（可选）
+          </label>
+          <input
+            id="mcbot-autonomy-goal"
+            className="input"
+            type="text"
+            value={goal}
+            maxLength={AUTONOMY_GOAL_MAX_CHARS}
+            placeholder="例如：在基地附近收集 64 个小麦并存入箱子"
+            disabled={!controlReady || !autonomy.enabled || autonomy.active}
+            onChange={(event) => onGoalChange(event.target.value)}
+          />
+        </div>
+        <Button
+          variant="primary"
+          icon={<Sparkles size={16} aria-hidden="true" />}
+          disabled={startDisabled}
+          title={hint}
+          onClick={onStart}
+        >
+          启动自主模式
+        </Button>
+        <Button
+          variant="danger"
+          icon={<Square size={15} aria-hidden="true" />}
+          disabled={stopDisabled}
+          onClick={onStop}
+        >
+          停止自主模式
+        </Button>
+      </div>
+      {goalError ? (
+        <p className="field-error" role="alert">
+          {goalError}
+        </p>
+      ) : null}
+      <p className="field-hint">{hint}</p>
+      <p className="field-hint">
+        目标最多 {AUTONOMY_GOAL_MAX_CHARS} 字符；停止会中断当前自主行动，并清空自主会话。
+      </p>
+    </Card>
+  )
+}
+
 /* ---------- 移动 / 聊天 ---------- */
 
 function McbotMoveCard({
@@ -574,6 +701,8 @@ export function McbotPanel() {
   const [taskName, setTaskName] = useState<McbotTaskName>('fishing')
   const [sayText, setSayText] = useState('')
   const [sayError, setSayError] = useState<string | null>(null)
+  const [autonomyGoal, setAutonomyGoal] = useState('')
+  const [autonomyError, setAutonomyError] = useState<string | null>(null)
   const [moveBusy, setMoveBusy] = useState<McbotMoveAction | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState>(null)
   const [actionBusy, setActionBusy] = useState(false)
@@ -617,9 +746,9 @@ export function McbotPanel() {
     setRefreshing(false)
   }
 
-  const runAction = async (
-    action: () => Promise<McbotActionResult>,
-    successText: (result: McbotActionResult) => string,
+  const runAction = async <T,>(
+    action: () => Promise<T>,
+    successText: (result: T) => string,
   ): Promise<boolean> => {
     setActionBusy(true)
     try {
@@ -637,6 +766,8 @@ export function McbotPanel() {
   }
 
   const status = snapshot ? safeLofiiStatus(snapshot.status) : null
+  // 旧版 mcbot 无 autonomy 段：safeMcbotAutonomy 返回 null，隐藏自主模式卡与控制（不误报不可用）。
+  const autonomy = snapshot ? safeMcbotAutonomy(snapshot.autonomy) : null
   const controlReady = snapshot?.enabled === true && snapshot.reachable && snapshot.controlEnabled
   // /say 是写操作：只读模式（未配置控制 Token）必须禁用，避免成为绕过权限的写通道。
   const sayReady = controlReady
@@ -716,6 +847,19 @@ export function McbotPanel() {
     confirmMessage = `确定向游戏内发送这条消息（${confirm.message.length} 个字符）？`
     confirmDetails = <p className="mcbot-say-preview">{confirm.message}</p>
     confirmText = '发送'
+  } else if (confirm?.type === 'autonomy-start') {
+    confirmTitle = '启动自主模式'
+    confirmMessage = confirm.goal
+      ? `确定让 mcbot 以目标「${confirm.goal}」进入 AI 自主模式？`
+      : '确定让 mcbot 进入 AI 自主模式（使用默认目标）？'
+    confirmDetails = '自主模式由 mcbot AI 在时间、工具调用与失败次数限制内自动决策并执行；可在本页随时急停。'
+    confirmText = '启动'
+  } else if (confirm?.type === 'autonomy-stop') {
+    confirmTitle = '停止自主模式'
+    confirmMessage = '确定停止 mcbot 的 AI 自主模式？'
+    confirmDetails = '急停会中断当前自主决策/行动并清空自主会话；已执行的操作不会回滚。'
+    confirmText = '停止'
+    confirmTone = 'danger'
   }
 
   const handleConfirm = (): void => {
@@ -745,9 +889,32 @@ export function McbotPanel() {
           setSayError(null)
         })
         break
+      case 'autonomy-start':
+        void runAction(
+          () => api.mcbot.startAutonomy(confirm.goal || undefined),
+          () => '已请求 mcbot 启动自主模式',
+        )
+        break
+      case 'autonomy-stop':
+        void runAction(() => api.mcbot.stopAutonomy(), () => '已请求 mcbot 停止自主模式')
+        break
       default:
         setConfirm(null)
     }
+  }
+
+  const handleAutonomyStart = (): void => {
+    const goal = autonomyGoal.trim()
+    if (goal.length > AUTONOMY_GOAL_MAX_CHARS) {
+      setAutonomyError(`自主目标最多 ${AUTONOMY_GOAL_MAX_CHARS} 个字符`)
+      return
+    }
+    if (hasControlChars(goal)) {
+      setAutonomyError('自主目标不能包含控制字符')
+      return
+    }
+    setAutonomyError(null)
+    setConfirm({ type: 'autonomy-start', goal })
   }
 
   const handleSaySubmit = (): void => {
@@ -830,6 +997,27 @@ export function McbotPanel() {
         refreshing={refreshing}
         onRefresh={() => void refresh()}
       />
+
+      {snapshot.reachable && !autonomy ? (
+        <div className="notice notice-muted">
+          当前 mcbot 未提供自主模式状态（旧版本或未启用）：自主模式控制已隐藏，任务/移动操作不受影响。
+        </div>
+      ) : null}
+
+      {autonomy ? (
+        <McbotAutonomyCard
+          autonomy={autonomy}
+          controlReady={controlReady}
+          goal={autonomyGoal}
+          goalError={autonomyError}
+          onGoalChange={(value) => {
+            setAutonomyGoal(value)
+            setAutonomyError(null)
+          }}
+          onStart={handleAutonomyStart}
+          onStop={() => setConfirm({ type: 'autonomy-stop' })}
+        />
+      ) : null}
 
       {status ? (
         <>

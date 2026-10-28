@@ -164,6 +164,67 @@ describe('v0.8.0 mcbot API 客户端', () => {
     expect((error as ApiError).message).toBe('mcbot 正在巡逻，请先停止任务')
   })
 
+  it('自主模式：GET 解包 autonomy、start/stop POST 目标与原因、错误码中文兜底', async () => {
+    const snapshot = {
+      enabled: true,
+      active: true,
+      state: 'running',
+      goal: '收集小麦',
+      startedAt: '2026-10-28T00:00:00.000Z',
+      elapsedSec: 42,
+      remainingSec: 600,
+      toolCalls: 3,
+      maxToolCalls: 12,
+      lastAction: 'gather_wheat',
+      lastReason: '需要食物',
+      lastError: null,
+      lastDecisionAt: '2026-10-28T00:00:00.000Z',
+    }
+    fetchMock.mockResolvedValue(mockResponse({ body: { autonomy: snapshot } }))
+    const autonomy = await api.mcbot.autonomy()
+    expect(lastCall().url).toBe('/api/mcbot/autonomy')
+    expect(lastCall().init.method).toBe('GET')
+    expect(autonomy?.state).toBe('running')
+    expect(autonomy?.toolCalls).toBe(3)
+
+    fetchMock.mockResolvedValue(mockResponse({ body: { ok: true, autonomy: snapshot } }))
+    const started = await api.mcbot.startAutonomy('收集木材')
+    expect(lastCall().url).toBe('/api/mcbot/autonomy/start')
+    expect(lastCall().init.method).toBe('POST')
+    expect(lastBody()).toEqual({ goal: '收集木材' })
+    expect((lastCall().init.headers as Record<string, string>)['X-CSRF-Token']).toBe('csrf-test-token')
+    expect(started.autonomy?.state).toBe('running')
+
+    await api.mcbot.startAutonomy()
+    expect(lastBody()).toEqual({})
+
+    const stopped = await api.mcbot.stopAutonomy('用户急停')
+    expect(lastCall().url).toBe('/api/mcbot/autonomy/stop')
+    expect(lastBody()).toEqual({ reason: '用户急停' })
+    expect(stopped.ok).toBe(true)
+
+    await api.mcbot.stopAutonomy()
+    expect(lastBody()).toEqual({})
+  })
+
+  it('自主模式错误码使用中文兜底文案并保留状态码', async () => {
+    const cases: Array<{ code: string; status: number; contains: string }> = [
+      { code: 'mcbot_autonomy_disabled', status: 503, contains: '自主模式未启用' },
+      { code: 'mcbot_autonomy_busy', status: 409, contains: '正在运行' },
+      { code: 'mcbot_autonomy_unavailable', status: 503, contains: '自主模式不可用' },
+    ]
+    for (const testCase of cases) {
+      fetchMock.mockResolvedValue(
+        mockResponse({ status: testCase.status, body: { error: { code: testCase.code } } }),
+      )
+      const error = await api.mcbot.startAutonomy().catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(ApiError)
+      expect((error as ApiError).status).toBe(testCase.status)
+      expect((error as ApiError).code).toBe(testCase.code)
+      expect((error as ApiError).message).toContain(testCase.contains)
+    }
+  })
+
   it('/api/version 透传 mcbot 功能开关（旧服务端缺失时保持 undefined）', async () => {
     fetchMock.mockResolvedValue(
       mockResponse({ body: { version: '0.8.0', mcbotEnabled: true, mcbotControlEnabled: false } }),

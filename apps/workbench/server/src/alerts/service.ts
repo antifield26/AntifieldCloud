@@ -39,6 +39,19 @@ export type AlertSeverity = 'info' | 'warning' | 'critical'
 export type AlertStatus = 'firing' | 'ok' | 'unknown'
 export type ServiceState = 'active' | 'inactive' | 'unknown'
 
+/**
+ * 默认受监控的 systemd 服务单元。
+ * mcbot 仅在集成启用时加入：未启用时不执行 systemctl 检查，也不会因单元不存在误报服务未运行。
+ */
+export function defaultServiceUnits(config: Config): Record<string, string> {
+  return {
+    minecraft: config.mcSystemdUnit,
+    cloudflared: 'cloudflared',
+    opencode: 'opencode',
+    ...(config.mcbotEnabled ? { mcbot: 'mcbot' } : {}),
+  }
+}
+
 export interface AlertCondition {
   event: string
   severity: AlertSeverity
@@ -60,7 +73,7 @@ export interface AlertDeps {
   log?: (level: 'info' | 'warn' | 'error', message: string, detail?: Record<string, unknown>) => void
   /** 内存告警阈值（已用百分比），默认 90。 */
   memoryUsedPct?: number
-  /** 需要监控的 systemd unit；默认 minecraft/cloudflared/opencode（nginx 已作为旧入口移除）。 */
+  /** 需要监控的 systemd unit；默认 minecraft/cloudflared/opencode（mcbot 启用时追加）。 */
   serviceUnits?: Record<string, string>
   /** unknown 连续评估阈值（默认 3，测试可调小）。 */
   unknownThreshold?: number
@@ -297,11 +310,7 @@ export class AlertService {
     }
     this.memoryUsedPct = deps.memoryUsedPct ?? DEFAULT_MEMORY_USED_PCT
     this.unknownThreshold = Math.max(1, deps.unknownThreshold ?? UNKNOWN_DEGRADE_THRESHOLD)
-    this.serviceUnits = deps.serviceUnits ?? {
-      minecraft: config.mcSystemdUnit,
-      cloudflared: 'cloudflared',
-      opencode: 'opencode',
-    }
+    this.serviceUnits = deps.serviceUnits ?? defaultServiceUnits(config)
   }
 
   // ---------- 生命周期 ----------

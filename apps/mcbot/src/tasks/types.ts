@@ -85,8 +85,10 @@ export interface TaskStartResult {
   reason?: string
 }
 
+export type TaskStartSource = 'chat' | 'http_control' | 'autonomy'
+
 export interface TaskController {
-  start: (name: TaskName, username: string) => Promise<TaskStartResult>
+  start: (name: TaskName, username: string, source?: TaskStartSource) => Promise<TaskStartResult>
   requestStop: (reason: string) => void
   stopAndWait: (reason: string) => Promise<void>
   depositNow: () => Promise<void>

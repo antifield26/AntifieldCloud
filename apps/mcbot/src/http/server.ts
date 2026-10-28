@@ -10,10 +10,11 @@ import type { Logger } from '../logger.ts'
 import type { RuntimeState, TaskName } from '../state.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
+import type { AutonomyService } from '../autonomy/service.ts'
 import { CONTRACT_VERSION } from '../contract.ts'
 import { InvalidMessageError, NotConnectedError } from '../errors.ts'
 import { TaskError, type TaskController } from '../tasks/types.ts'
-import { isAuthorized } from './auth.ts'
+import { extractBearer, isAuthorized } from './auth.ts'
 
 export interface HttpDeps {
   config: Config
@@ -26,6 +27,8 @@ export interface HttpDeps {
   audit: AuditLogger
   history?: HistoryStore
   getBot: () => Bot | null
+  /** AI 自主会话；未装配时 /autonomy* 返回 503。 */
+  autonomy?: AutonomyService
 }
 
 interface JsonResponse {
@@ -144,6 +147,25 @@ export class HttpApi {
   private async handle (req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1')
     const pathname = url.pathname
+    if (pathname === '/autonomy/mcp') {
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
+      if (!this.deps.autonomy) return sendError(res, 503, 'autonomy_disabled', 'autonomy is disabled')
+      try {
+        const body = await readJsonBody(req)
+        const result = await this.deps.autonomy.handleMcpHttp(extractBearer(req) ?? '', body)
+        if (result.status === 202) {
+          res.writeHead(202, { 'Cache-Control': 'no-store' })
+          res.end()
+          return
+        }
+        sendJson(res, { status: result.status, body: result.body })
+      } catch (error) {
+        if (error instanceof BodyTooLargeError) return sendError(res, 413, 'payload_too_large', 'request body is too large')
+        if (error instanceof InvalidMessageError) return sendError(res, 400, 'invalid_request', error.message)
+        throw error
+      }
+      return
+    }
     if (pathname === '/healthz') {
       if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
       const snapshot = this.deps.state.snapshot()
@@ -245,6 +267,25 @@ export class HttpApi {
       sendJson(res, { status: 200, body: { task: this.deps.state.snapshot().task } })
       return
     }
+    if (pathname === '/autonomy') {
+      if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
+      if (!this.authorizeRead(req, res)) return
+      if (!this.deps.autonomy) return sendError(res, 503, 'autonomy_disabled', 'autonomy is disabled')
+      sendJson(res, { status: 200, body: { autonomy: this.deps.autonomy.snapshot() } })
+      return
+    }
+    if (pathname === '/autonomy/start') {
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
+      if (!this.authorizeControl(req, res)) return
+      if (!this.takeControlSlot()) return this.rateLimited(res, 'control')
+      return this.handleAutonomyStart(req, res)
+    }
+    if (pathname === '/autonomy/stop') {
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
+      if (!this.authorizeControl(req, res)) return
+      if (!this.takeControlSlot()) return this.rateLimited(res, 'control')
+      return this.handleAutonomyStop(req, res)
+    }
     if (pathname === '/task/start') {
       if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
       if (!this.authorizeControl(req, res)) return
@@ -297,9 +338,69 @@ export class HttpApi {
     sendError(res, 404, 'not_found', 'not found')
   }
 
+  private async handleAutonomyStart (req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const autonomy = this.deps.autonomy
+    if (!autonomy) return sendError(res, 503, 'autonomy_disabled', 'autonomy is disabled')
+    if (!isJsonRequest(req)) return sendError(res, 415, 'unsupported_media_type', 'Content-Type must be application/json')
+    try {
+      const body = await readJsonBody(req)
+      if (!isObject(body)) throw new InvalidMessageError('body must be an object')
+      let goal: string | null = null
+      if (body.goal !== undefined && body.goal !== null) {
+        if (typeof body.goal !== 'string') throw new InvalidMessageError('goal must be a string')
+        const trimmed = body.goal.trim()
+        if (trimmed === '') throw new InvalidMessageError('goal must not be empty')
+        if (trimmed.length > this.deps.config.autonomyGoalMaxChars) {
+          throw new InvalidMessageError(`goal must be at most ${this.deps.config.autonomyGoalMaxChars} characters`)
+        }
+        if (/[\u0000-\u001f\u007f]/.test(trimmed)) throw new InvalidMessageError('goal contains control characters')
+        goal = trimmed
+      }
+      const result = await autonomy.start(goal, 'panel_http')
+      if (!result.ok) {
+        const status = result.code === 'invalid_goal' ? 400
+          : result.code === 'autonomy_busy' ? 409
+            : 503
+        return sendError(res, status, result.code ?? 'autonomy_failed', 'autonomy cannot be started')
+      }
+      sendJson(res, { status: 202, body: { ok: true, autonomy: result.autonomy } })
+    } catch (error) {
+      if (error instanceof BodyTooLargeError) return sendError(res, 413, 'payload_too_large', 'request body is too large')
+      if (error instanceof InvalidMessageError) return sendError(res, 400, 'invalid_request', error.message)
+      throw error
+    }
+  }
+
+  private async handleAutonomyStop (req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const autonomy = this.deps.autonomy
+    if (!autonomy) return sendError(res, 503, 'autonomy_disabled', 'autonomy is disabled')
+    let reason = 'manual_http'
+    const contentLength = Number(req.headers['content-length'] ?? '0')
+    if (contentLength > 0) {
+      if (!isJsonRequest(req)) return sendError(res, 415, 'unsupported_media_type', 'Content-Type must be application/json')
+      try {
+        const body = await readJsonBody(req)
+        if (isObject(body) && body.reason !== undefined && body.reason !== null) {
+          if (typeof body.reason !== 'string') throw new InvalidMessageError('reason must be a string')
+          const trimmed = body.reason.trim()
+          if (trimmed.length > 200) throw new InvalidMessageError('reason is too long (max 200)')
+          if (/[\u0000-\u001f\u007f]/.test(trimmed)) throw new InvalidMessageError('reason contains control characters')
+          if (trimmed) reason = trimmed
+        }
+      } catch (error) {
+        if (error instanceof BodyTooLargeError) return sendError(res, 413, 'payload_too_large', 'request body is too large')
+        if (error instanceof InvalidMessageError) return sendError(res, 400, 'invalid_request', error.message)
+        throw error
+      }
+    }
+    await autonomy.stop(reason)
+    sendJson(res, { status: 202, body: { ok: true, autonomy: autonomy.snapshot() } })
+  }
+
   private async handleTaskStart (req: IncomingMessage, res: ServerResponse): Promise<void> {
     const { config, state, tasks } = this.deps
     const requestId = this.requestId(req)
+    this.deps.autonomy?.interrupt('manual_task')
     if (!isJsonRequest(req)) return sendError(res, 415, 'unsupported_media_type', 'Content-Type must be application/json')
     if (!config.taskEnabled) return sendError(res, 503, 'task_disabled', 'tasks are disabled')
     try {
@@ -348,6 +449,7 @@ export class HttpApi {
 
   private async handleTaskStop (req: IncomingMessage, res: ServerResponse): Promise<void> {
     const { state, tasks } = this.deps
+    this.deps.autonomy?.interrupt('manual_task')
     const requestId = this.requestId(req)
     if (state.task.active || state.task.queue.length > 0) {
       tasks.requestStop('http')
@@ -421,6 +523,7 @@ export class HttpApi {
 
   private async handleMove (req: IncomingMessage, res: ServerResponse): Promise<void> {
     const { state, tasks, movement, config } = this.deps
+    this.deps.autonomy?.interrupt('manual_move')
     const requestId = this.requestId(req)
     if (!isJsonRequest(req)) return sendError(res, 415, 'unsupported_media_type', 'Content-Type must be application/json')
     if (state.task.active) {

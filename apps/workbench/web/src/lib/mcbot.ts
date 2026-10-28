@@ -3,6 +3,8 @@
 // 不拼接 HTML、不展示 Token/密码/URL/内部路径，未知字段不渲染。
 
 import type {
+  McbotAutonomySnapshot,
+  McbotAutonomyState,
   McbotBotState,
   McbotEvent,
   McbotEventType,
@@ -17,7 +19,7 @@ import type {
   McbotTaskState,
 } from '../api/types'
 
-/** 7 种可启动任务的中文名与固定顺序（下拉框顺序）。 */
+/** 10 种可启动任务的中文名与固定顺序（下拉框顺序）。 */
 export const MCBOT_TASK_NAME_LABELS: Record<McbotTaskName, string> = {
   fishing: '钓鱼',
   farming: '种田',
@@ -26,6 +28,9 @@ export const MCBOT_TASK_NAME_LABELS: Record<McbotTaskName, string> = {
   forest: '砍天然林',
   sleep: '睡觉',
   patrol: '巡逻',
+  guard: '守卫',
+  escort: '护送',
+  explore: '探索',
 }
 
 export const MCBOT_TASK_NAMES: readonly McbotTaskName[] = [
@@ -36,6 +41,9 @@ export const MCBOT_TASK_NAMES: readonly McbotTaskName[] = [
   'forest',
   'sleep',
   'patrol',
+  'guard',
+  'escort',
+  'explore',
 ]
 
 export const MCBOT_TASK_STATE_LABELS: Record<McbotTaskState, string> = {
@@ -71,6 +79,17 @@ export const MCBOT_EVENT_TYPE_LABELS: Record<string, string> = {
   chat: '聊天',
   movement: '移动',
   alert: '告警',
+  autonomy: '自主',
+}
+
+/** AI 自主模式状态的中文名（未知状态由调用方兜底显示原值）。 */
+export const MCBOT_AUTONOMY_STATE_LABELS: Record<McbotAutonomyState, string> = {
+  idle: '空闲',
+  starting: '启动中',
+  running: '运行中',
+  stopping: '停止中',
+  finished: '已结束',
+  failed: '失败',
 }
 
 /** 只读属性查表：避免 `__proto__`/`constructor` 等键命中原型链。 */
@@ -80,7 +99,12 @@ function ownLabel(map: object, key: string): string | null {
   return typeof value === 'string' ? value : null
 }
 
-/** 事件流筛选：全部 / 聊天 / 任务 / 状态 / 移动 / 告警。 */
+export function mcbotAutonomyStateLabel(state: string | null | undefined): string {
+  if (!state) return '—'
+  return ownLabel(MCBOT_AUTONOMY_STATE_LABELS, state) ?? state
+}
+
+/** 事件流筛选：全部 / 聊天 / 任务 / 状态 / 移动 / 告警 / 自主。 */
 export const MCBOT_EVENT_FILTERS: readonly { id: string; label: string }[] = [
   { id: 'all', label: '全部' },
   { id: 'chat', label: '聊天' },
@@ -88,6 +112,7 @@ export const MCBOT_EVENT_FILTERS: readonly { id: string; label: string }[] = [
   { id: 'presence', label: '状态' },
   { id: 'movement', label: '移动' },
   { id: 'alert', label: '告警' },
+  { id: 'autonomy', label: '自主' },
 ]
 
 /** 任务事件 action 的中文名（只映射已知值，未知值按原样展示）。 */
@@ -148,6 +173,10 @@ const MCBOT_ERROR_LABELS: Record<string, string> = {
   mcbot_invalid_request: 'mcbot 请求参数不合法',
   mcbot_cursor_failed: 'mcbot 告警游标写入失败',
   mcbot_not_found: 'mcbot 接口不可用',
+  mcbot_autonomy_disabled: 'mcbot 自主模式未启用',
+  mcbot_autonomy_busy: 'mcbot 自主模式正在运行',
+  mcbot_autonomy_unavailable: 'mcbot 自主模式不可用',
+  mcbot_autonomy_failed: 'mcbot 自主模式启动失败',
 }
 
 /** 把状态快照里的稳定错误码转成中文文案（未知码原样展示）。 */
@@ -200,6 +229,9 @@ const TASK_PROGRESS_LABELS: Record<McbotTaskName, readonly { key: keyof McbotTas
     { key: 'patrolWaypoints', label: '巡逻点' },
     { key: 'patrolDistance', label: '巡逻距离' },
   ],
+  guard: [{ key: 'guardKills', label: '击杀怪物' }],
+  escort: [{ key: 'escortDistance', label: '护送距离' }],
+  explore: [{ key: 'exploreWaypoints', label: '探索点' }],
 }
 
 export function mcbotTaskNameLabel(name: string | null | undefined): string {
@@ -322,6 +354,16 @@ function describeStructuredEvent(type: string, data: Record<string, unknown> | n
     if (error) parts.push(`错误：${error}`)
     return parts.join(' · ')
   }
+  if (type === 'autonomy') {
+    const state = asText(data?.state)
+    const action = asText(data?.action)
+    const reason = asText(data?.reason)
+    const parts = ['自主模式']
+    if (state) parts.push(mcbotAutonomyStateLabel(state))
+    if (action) parts.push(action)
+    if (reason) parts.push(reason)
+    return parts.join(' · ')
+  }
   if (type === 'alert') {
     const alertType = asText(data?.type)
     const severity = asText(data?.severity)
@@ -348,6 +390,38 @@ export function describeLofiiEvent(event: McbotEvent): McbotEventView {
 
 /* ---------- 状态快照容错 ---------- */
 
+/**
+ * 自主模式快照容错：旧服务端缺失（undefined/null）返回 null；字段类型漂移时补安全默认值，
+ * 未知 state 保留原字符串供 label 兜底。数值只接受有限非负数。
+ */
+export function safeMcbotAutonomy(value: unknown): McbotAutonomySnapshot | null {
+  const raw = asRecord(value)
+  if (!raw) return null
+  const text = (field: unknown): string | null => {
+    const parsed = asText(field)
+    return parsed ? parsed.slice(0, 300) : null
+  }
+  const count = (field: unknown): number => {
+    const parsed = asCount(field)
+    return parsed !== null && parsed >= 0 ? Math.floor(parsed) : 0
+  }
+  return {
+    enabled: raw.enabled === true,
+    active: raw.active === true,
+    state: (asText(raw.state) ?? 'idle') as McbotAutonomyState,
+    goal: text(raw.goal)?.slice(0, 200) ?? null,
+    startedAt: text(raw.startedAt),
+    elapsedSec: count(raw.elapsedSec),
+    remainingSec: count(raw.remainingSec),
+    toolCalls: count(raw.toolCalls),
+    maxToolCalls: count(raw.maxToolCalls),
+    lastAction: text(raw.lastAction),
+    lastReason: text(raw.lastReason),
+    lastError: text(raw.lastError),
+    lastDecisionAt: text(raw.lastDecisionAt),
+  }
+}
+
 /** 空任务进度：快照缺段时用于稳定渲染，不伪造实际进度。 */
 const EMPTY_TASK_PROGRESS: McbotTaskProgress = {
   fishCaught: 0,
@@ -369,6 +443,9 @@ const EMPTY_TASK_PROGRESS: McbotTaskProgress = {
   nightSkipped: 0,
   patrolWaypoints: 0,
   patrolDistance: 0,
+  guardKills: 0,
+  escortDistance: 0,
+  exploreWaypoints: 0,
 }
 
 /**
@@ -554,7 +631,7 @@ export function mcbotTaskProgressRows(task: McbotTask | null | undefined): Mcbot
     if (value <= 0) continue
     rows.push({
       label: field.label,
-      value: field.key === 'patrolDistance' ? `${value} 格` : String(value),
+      value: field.key === 'patrolDistance' || field.key === 'escortDistance' ? `${value} 格` : String(value),
     })
   }
   if (task.progress.mobsKilled > 0 && !rows.some((row) => row.label === '击杀怪物')) {

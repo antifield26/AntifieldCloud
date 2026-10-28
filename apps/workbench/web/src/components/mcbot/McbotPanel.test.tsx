@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
+  McbotAutonomySnapshot,
   McbotHistory,
   McbotHistoryAlert,
   McbotHistoryQuery,
@@ -22,6 +23,9 @@ const mocks = vi.hoisted(() => ({
   resumeTask: vi.fn(),
   move: vi.fn(),
   say: vi.fn(),
+  autonomy: vi.fn(),
+  startAutonomy: vi.fn(),
+  stopAutonomy: vi.fn(),
 }))
 
 vi.mock('../../api/client', () => ({
@@ -34,6 +38,9 @@ vi.mock('../../api/client', () => ({
       resumeTask: mocks.resumeTask,
       move: mocks.move,
       say: mocks.say,
+      autonomy: mocks.autonomy,
+      startAutonomy: mocks.startAutonomy,
+      stopAutonomy: mocks.stopAutonomy,
     },
   },
   // 测试只需按 code 判断降级；非 ApiError 返回 false。
@@ -171,13 +178,32 @@ function snapshot(overrides: Partial<McbotSnapshot> = {}): McbotSnapshot {
     stale: false,
     controlEnabled: true,
     alertsEnabled: true,
-    version: '0.6.0',
+    version: '1.0.2',
     contractVersion: 1,
     eventsSupported: true,
     lastPollAt: '2026-10-27T08:00:00.000Z',
     error: null,
     status: mcbotStatus(),
     events: [],
+    ...overrides,
+  }
+}
+
+function autonomySnapshot(overrides: Partial<McbotAutonomySnapshot> = {}): McbotAutonomySnapshot {
+  return {
+    enabled: true,
+    active: true,
+    state: 'running',
+    goal: '收集小麦并存入箱子',
+    startedAt: '2026-10-28T00:01:00.000Z',
+    elapsedSec: 42,
+    remainingSec: 600,
+    toolCalls: 3,
+    maxToolCalls: 12,
+    lastAction: 'gather_wheat',
+    lastReason: '需要食物',
+    lastError: null,
+    lastDecisionAt: '2026-10-28T00:01:30.000Z',
     ...overrides,
   }
 }
@@ -235,6 +261,12 @@ beforeEach(() => {
   mocks.resumeTask.mockResolvedValue({ ok: true })
   mocks.move.mockResolvedValue({ ok: true })
   mocks.say.mockResolvedValue({ ok: true })
+  mocks.autonomy.mockResolvedValue(autonomySnapshot())
+  mocks.startAutonomy.mockResolvedValue({ ok: true, autonomy: autonomySnapshot({ state: 'starting' }) })
+  mocks.stopAutonomy.mockResolvedValue({
+    ok: true,
+    autonomy: autonomySnapshot({ state: 'finished', active: false }),
+  })
 })
 
 afterEach(cleanup)
@@ -456,6 +488,111 @@ describe('McbotPanel 事件流', () => {
     )
     renderPanel()
     expect(await screen.findByText(/需升级到 v0.6.0 才能显示事件流/)).toBeTruthy()
+  })
+})
+
+describe('McbotPanel AI 自主模式', () => {
+  it('展示自主状态/目标/工具调用，并用目标启动（二次确认）', async () => {
+    mocks.status.mockResolvedValue(
+      snapshot({ autonomy: autonomySnapshot({ active: false, state: 'idle' }) }),
+    )
+    renderPanel()
+    expect(await screen.findByText('AI 自主模式')).toBeTruthy()
+    const card = screen.getByText('AI 自主模式').closest('section')
+    expect(card).not.toBeNull()
+    expect(within(card as HTMLElement).getByText('空闲')).toBeTruthy()
+    expect(within(card as HTMLElement).getByText('收集小麦并存入箱子')).toBeTruthy()
+    expect(within(card as HTMLElement).getByText('3 / 12')).toBeTruthy()
+    expect(within(card as HTMLElement).getByText('gather_wheat')).toBeTruthy()
+
+    const input = await screen.findByLabelText('自主目标（可选）')
+    expect(input).toBeEnabled()
+    await userEvent.type(input, '收集木材')
+    await userEvent.click(screen.getByRole('button', { name: '启动自主模式' }))
+
+    const dialog = await screen.findByRole('dialog', { name: '启动自主模式' })
+    expect(within(dialog).getByText(/以目标「收集木材」/)).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '启动' }))
+    await waitFor(() => expect(mocks.startAutonomy).toHaveBeenCalledWith('收集木材'))
+    expect(await screen.findByText('已请求 mcbot 启动自主模式')).toBeTruthy()
+  })
+
+  it('停止自主模式需要二次确认', async () => {
+    mocks.status.mockResolvedValue(snapshot({ autonomy: autonomySnapshot() }))
+    renderPanel()
+    await userEvent.click(await screen.findByRole('button', { name: '停止自主模式' }))
+    const dialog = await screen.findByRole('dialog', { name: '停止自主模式' })
+    expect(within(dialog).getByText(/确定停止 mcbot 的 AI 自主模式/)).toBeTruthy()
+    await userEvent.click(within(dialog).getByRole('button', { name: '停止' }))
+    await waitFor(() => expect(mocks.stopAutonomy).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText('已请求 mcbot 停止自主模式')).toBeTruthy()
+  })
+
+  it('控制未启用或自主模式未启用时禁用启动/停止并给出说明', async () => {
+    mocks.status.mockResolvedValue(
+      snapshot({ controlEnabled: false, autonomy: autonomySnapshot({ active: false, state: 'idle' }) }),
+    )
+    const { unmount } = renderPanel()
+    expect(await screen.findByText(/控制未启用或 mcbot 不可达，自主模式操作不可用/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '启动自主模式' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '停止自主模式' })).toBeDisabled()
+    unmount()
+
+    mocks.status.mockResolvedValue(
+      snapshot({ autonomy: autonomySnapshot({ enabled: false, active: false, state: 'idle' }) }),
+    )
+    renderPanel()
+    expect(await screen.findByText(/mcbot 自主模式未启用/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '启动自主模式' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '停止自主模式' })).toBeDisabled()
+    expect(mocks.startAutonomy).not.toHaveBeenCalled()
+  })
+
+  it('旧版 mcbot 无 autonomy 段：显示降级说明且不渲染自主控制', async () => {
+    mocks.status.mockResolvedValue(snapshot({ autonomy: undefined }))
+    renderPanel()
+    expect(await screen.findByText(/未提供自主模式状态/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '启动自主模式' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '停止自主模式' })).toBeNull()
+  })
+
+  it('自主模式失败时展示最近错误与失败徽章', async () => {
+    mocks.status.mockResolvedValue(
+      snapshot({
+        autonomy: autonomySnapshot({ active: false, state: 'failed', lastError: '决策超时' }),
+      }),
+    )
+    renderPanel()
+    expect(await screen.findByText(/自主模式最近错误：决策超时/)).toBeTruthy()
+    expect(screen.getByText('失败')).toBeTruthy()
+  })
+
+  it('任务下拉包含 10 种任务（含守卫/护送/探索）', async () => {
+    renderPanel()
+    const select = (await screen.findByLabelText('任务')) as HTMLSelectElement
+    expect(within(select).getAllByRole('option')).toHaveLength(10)
+    expect(within(select).getByRole('option', { name: '守卫' })).toBeTruthy()
+    expect(within(select).getByRole('option', { name: '护送' })).toBeTruthy()
+    expect(within(select).getByRole('option', { name: '探索' })).toBeTruthy()
+  })
+
+  it('事件流包含 autonomy 事件与「自主」筛选', async () => {
+    mocks.status.mockResolvedValue(
+      snapshot({
+        events: [
+          {
+            id: 'boot-auto-1',
+            type: 'autonomy',
+            ts: '2026-10-28T00:02:00.000Z',
+            data: { state: 'running', action: 'gather_wheat' },
+          },
+        ],
+      }),
+    )
+    renderPanel()
+    expect(await screen.findByText(/自主模式 · 运行中 · gather_wheat/)).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '自主' }))
+    expect(screen.getByText(/自主模式 · 运行中 · gather_wheat/)).toBeTruthy()
   })
 })
 

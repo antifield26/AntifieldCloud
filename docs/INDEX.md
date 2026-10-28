@@ -1,7 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.1（`release/v1.0.0` 已合并 `main`；生产已部署 2026-10-28：app 1.0.1/schema18/OpenCode 2.2.0、mcbot 1.0.1；Tag/Release `v1.0.1`）。
-> 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
+> 版本：v1.0.2 开发线（生产仍 v1.0.1，2026-10-28；未部署/Tag/Release）：v1.0.2 = mcbot AI 自主会话（OpenCode 原生 MCP 工具循环）+ 应用面板自主控制 + Agentic 验收；生产 app 1.0.1/schema18/OpenCode 2.2.0、mcbot 1.0.1；Tag/Release `v1.0.1`。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）
@@ -28,7 +27,7 @@
 | [API](mcbot/API.md) | 本机 HTTP/SSE 契约（读/控制 Token、contract v1） |
 | [DEPLOY](mcbot/DEPLOY.md) | 部署、bootstrap、回滚 |
 | [ROADMAP](mcbot/ROADMAP.md) | mcbot 版本边界与后续规划 |
-| [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录 |
+| [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录 |\n| [AGENTIC-ACCEPTANCE](mcbot/AGENTIC-ACCEPTANCE.md) | AI 自主会话的离线/实机 Agentic 验收流程 |
 
 ## 历史归档（Legacy）
 

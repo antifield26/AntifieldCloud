@@ -89,6 +89,8 @@ export class DashboardService {
       minecraft: config.mcSystemdUnit,
       cloudflared: 'cloudflared',
       opencode: 'opencode',
+      // mcbot 仅在集成启用时才纳入监控：未启用不探测、不产生 false alarm。
+      ...(config.mcbotEnabled ? { mcbot: 'mcbot' } : {}),
     })
   }
 
