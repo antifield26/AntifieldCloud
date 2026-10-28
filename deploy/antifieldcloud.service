@@ -1,5 +1,5 @@
 [Unit]
-Description=AntifieldComplexx personal workbench
+Description=AntifieldComplexx comprehensive interaction platform
 Documentation=file:///opt/antifieldcloud/current/docs/app/DEPLOY.md
 After=network-online.target
 Wants=network-online.target

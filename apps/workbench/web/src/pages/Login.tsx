@@ -160,7 +160,7 @@ export function Login({ next }: LoginPageProps) {
         <div className="login-brand">
           <Logo size={48} />
           <h1 className="login-title">AntifieldComplexx</h1>
-          <p className="login-subtitle">个人工作台</p>
+          <p className="login-subtitle">个人综合交互平台</p>
         </div>
 
         {bootstrapError ? (

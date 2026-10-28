@@ -521,7 +521,7 @@ export function Settings() {
           <BackupManager backupStatus={backupStatus} />
         </Card>
 
-        <Card title="关于" description="AntifieldComplexx · 个人工作台" className="settings-card">
+        <Card title="关于" description="AntifieldComplexx · 个人综合交互平台" className="settings-card">
           <dl className="settings-list">
             <div className="settings-list-row">
               <dt>版本</dt>

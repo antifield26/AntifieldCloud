@@ -1,7 +1,7 @@
 {
-  "name": "AntifieldComplexx · 个人工作台",
+  "name": "AntifieldComplexx · 个人综合交互平台",
   "short_name": "AntifieldComplexx",
-  "description": "自托管个人工作台：云盘、知识库、Minecraft 状态与白名单、主机概览。",
+  "description": "个人综合交互平台：云盘、知识库、文件分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 与主机监控。",
   "lang": "zh-CN",
   "dir": "ltr",
   "start_url": "/",
@@ -46,8 +46,8 @@
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     },
     {
-      "name": "工作台",
-      "short_name": "工作台",
+      "name": "首页",
+      "short_name": "首页",
       "url": "/",
       "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
     }

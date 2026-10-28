@@ -1,9 +1,9 @@
 {
   "name": "@antifieldcomplexx/workbench",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "license": "MIT",
-  "description": "AntifieldComplexx 工作台应用（server + web；含 chatbot 与 mcbot 对接）",
+  "description": "AntifieldComplexx 个人综合交互平台 Web 端（server + web；含 chatbot 与 mcbot 对接）",
   "type": "module",
   "engines": {
     "node": ">=26"
