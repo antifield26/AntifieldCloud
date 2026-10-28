@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.0.3] - 2026-10-28（开发线；生产仍 v1.0.2；未部署/未打 Tag/Release）
+
+v1.0.3 是 mcbot 环境感知/自主决策增强与文档-实现一致性审计版本：新增有界环境快照、附近方块/容器扫描、只读容器读取、进食/装备工具与事件驱动重决策；未变更 schema，生产保持 v1.0.2。
+
+### Added
+
+- **mcbot 环境感知**：`observe` 提供基础状态 + 安全区 allowlist 方块/容器扫描（默认半径 16、最多 48，只读已加载区块）；普通聊天仍使用轻量上下文。
+- **只读容器**：`inspect_chest` 仅安全区、allowlist 容器、无 active/queue/pending 时短距寻路打开；不传送、不破块、不取物，读取摘要后立即关闭。
+- **生存动作**：`eat` / `equip` 仅空闲时对背包内食物/护甲/工具生效，固定冷却、策略校验与审计。
+- **事件驱动自主决策**：任务生命周期与安全告警触发重决策；同原因 30s 去重、最多 6 次，无周期空转；任务存在才保持会话。
+- **文档审计**：新增 `docs/mcbot/CONSISTENCY-AUDIT.md` 声明/实现矩阵与 `scripts/check-mcbot-claims.mjs` 自动检查；修正 v1.0.2 生产状态、AI 能力、工具语义等陈旧声明。
+
+### Verification（开发线）
+
+- 本地：`npm run check`、`npm run build`、`check-version`（1.0.3）、`check-naming`、`check:docs` 全绿；mcbot 测试与覆盖率更新。
+- 不部署、不迁移 DB、不重启生产；生产仍 app/mcbot v1.0.2、schema 18、OpenCode 2.2.0。
+
+### Migration / Rollback
+
+- 无 schema/DB 迁移；生产未变更，回滚为本地丢弃 v1.0.3 开发线即可。自主新模式仍默认关闭，生产 v1.0.2 的 `AUTONOMY_ENABLED=true` 不受影响。
+
 ## [v1.0.2] - 2026-10-28（已部署生产；未打 Tag/Release）
 
 v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`）；生产已启用自主模式（仅主人显式启动），Windows 备份任务已重装到 1.0.2；未打 Tag/Release。

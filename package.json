@@ -1,6 +1,6 @@
 {
   "name": "antifieldcomplexx",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "license": "MIT",
   "description": "AntifieldComplexx monorepo（apps/workbench + apps/mcbot）",
@@ -23,10 +23,11 @@
     "test:web": "npm run test:web -w @antifieldcomplexx/workbench",
     "test:web:coverage": "npm run test:web:coverage -w @antifieldcomplexx/workbench",
     "test:web:watch": "npm run test:web:watch -w @antifieldcomplexx/workbench",
-    "check": "npm run check:app && npm run check:mcbot && npm run check:naming",
+    "check": "npm run check:app && npm run check:mcbot && npm run check:naming && npm run check:docs",
     "check:app": "npm run typecheck && npm run lint && npm run test && npm run test:web",
     "check:mcbot": "npm run check -w @antifieldcomplexx/mcbot",
     "check:naming": "node scripts/check-naming.mjs",
+    "check:docs": "node scripts/check-mcbot-claims.mjs",
     "provision": "node scripts/provision.mjs",
     "backup": "node scripts/backup.mjs",
     "cleanup:legacy-memory": "node scripts/cleanup-legacy-memory.mjs"

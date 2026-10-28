@@ -1,6 +1,6 @@
 # 部署与运维（mcbot）
 
-> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。v1.0.2 已于 2026-10-28 部署生产（release `/opt/mcbot/releases/20261028T091246Z`）；自主模式已启用（仅主人显式启动）。
+> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。生产 v1.0.2 已于 2026-10-28 部署（release `/opt/mcbot/releases/20261028T091246Z`）；自主模式已启用（仅主人显式启动）。v1.0.3 为开发线，新增环境/动作 env（`AUTONOMY_SCAN_*`、`AUTONOMY_CHEST_*`、`AUTONOMY_EAT_BELOW`、`AUTONOMY_ACTION_COOLDOWN_MS`、`AUTONOMY_EVENT_DEBOUNCE_MS`、`AUTONOMY_MAX_REPROMPTS`），未部署；部署前需按 env 模板补齐并重跑 check/smoke。
 > 服务器：Paper 26.1.2，`~/minecraft-server`，RCON 已启用。
 > 所有操作从 Windows 工作区通过 SSH/SCP 执行；不使用 Docker。
 

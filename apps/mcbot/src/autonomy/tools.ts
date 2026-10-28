@@ -29,6 +29,10 @@ export const AUTONOMY_RAW_TOOLS = [
   'go_home',
   'deposit',
   'task_status',
+  'observe',
+  'inspect_chest',
+  'eat',
+  'equip',
   'finish'
 ] as const
 
@@ -116,6 +120,61 @@ export function buildToolDefinitions (): McpToolDefinition[] {
         type: 'object',
         properties: { run_id: runIdSchema },
         required: ['run_id'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'observe',
+      description: '只读刷新环境：坐标/血量/饥饿/时间/天气、玩家/敌对生物、背包/护甲、任务状态，以及附近方块和容器。不改变世界。',
+      inputSchema: {
+        type: 'object',
+        properties: { run_id: runIdSchema },
+        required: ['run_id'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'inspect_chest',
+      description: '只读打开附近一个安全区内、allowlist 容器并返回物品摘要；不取物。只在没有活动任务时可用。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          run_id: runIdSchema,
+          target: {
+            type: 'string',
+            description: 'observe 返回的容器坐标，格式 x,y,z。'
+          },
+          reason: reasonSchema
+        },
+        required: ['run_id', 'target', 'reason'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'eat',
+      description: '从背包选择一个指定食物吃掉；只在饥饿低于阈值且没有活动任务时可用。item 必须是背包中存在的食物名。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          run_id: runIdSchema,
+          item: { type: 'string', description: '背包中的食物物品名。' },
+          reason: reasonSchema
+        },
+        required: ['run_id', 'item', 'reason'],
+        additionalProperties: false
+      }
+    },
+    {
+      name: 'equip',
+      description: '把背包中的指定护甲/工具/武器装备到对应槽位；只在没有活动任务时可用。item 必须是背包中存在的装备名。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          run_id: runIdSchema,
+          item: { type: 'string', description: '背包中的护甲/工具/武器物品名。' },
+          reason: reasonSchema
+        },
+        required: ['run_id', 'item', 'reason'],
         additionalProperties: false
       }
     },

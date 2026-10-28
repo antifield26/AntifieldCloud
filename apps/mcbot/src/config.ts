@@ -174,6 +174,15 @@ export interface Config {
   autonomyGoalMaxChars: number
   autonomyDecisionTimeoutMs: number
   autonomyMcpWarmupMs: number
+  autonomyScanRadius: number
+  autonomyScanMaxBlocks: number
+  autonomyScanBlocks: string[]
+  autonomyChestReadEnabled: boolean
+  autonomyChestPathTimeoutMs: number
+  autonomyEatBelow: number
+  autonomyActionCooldownMs: number
+  autonomyEventDebounceMs: number
+  autonomyMaxReprompts: number
   autonomyTasks: TaskName[]
   /** 库存/补货告警与自动补货。 */
   inventoryAlertFreeSlots: number
@@ -254,6 +263,20 @@ function readNameList (env: Env, key: string, fallback: string): string[] {
   const names = raw.split(',').map(item => item.trim().toLowerCase()).filter(Boolean)
   if (names.length === 0) throw new ConfigError(`${key} must contain at least one name`)
   return [...new Set(names)]
+}
+
+/** 方块 allowlist：精确名或以 * 结尾的前缀模式；限制数量与长度。 */
+function readBlockPatterns (env: Env, key: string, fallback: string): string[] {
+  const raw = readString(env, key, fallback)
+  const patterns = raw.split(',').map(item => item.trim().toLowerCase()).filter(Boolean)
+  if (patterns.length === 0) throw new ConfigError(`${key} must contain at least one block name`)
+  if (patterns.length > 32) throw new ConfigError(`${key} must contain at most 32 patterns`)
+  for (const pattern of patterns) {
+    if (!/^[*]?[a-z0-9_]+[*]?$/.test(pattern) || pattern === '*' || pattern.length > 32) {
+      throw new ConfigError(`${key} has an invalid block pattern: ${pattern}`)
+    }
+  }
+  return [...new Set(patterns)]
 }
 
 function isLoopbackHost (host: string): boolean {
@@ -654,6 +677,15 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     autonomyGoalMaxChars: readInt(env, 'AUTONOMY_GOAL_MAX_CHARS', 200, 20, 500),
     autonomyDecisionTimeoutMs: readInt(env, 'AUTONOMY_DECISION_TIMEOUT_MS', 180000, 30000, 900000),
     autonomyMcpWarmupMs: readInt(env, 'AUTONOMY_MCP_WARMUP_MS', 3000, 0, 15000),
+    autonomyScanRadius: readInt(env, 'AUTONOMY_SCAN_RADIUS', 16, 4, 32),
+    autonomyScanMaxBlocks: readInt(env, 'AUTONOMY_SCAN_MAX_BLOCKS', 48, 8, 128),
+    autonomyScanBlocks: readBlockPatterns(env, 'AUTONOMY_SCAN_BLOCKS', 'chest,trapped_chest,barrel,ender_chest,*_bed,water,crafting_table,furnace,blast_furnace,smoker,wheat,carrots,potatoes,beetroots,*_log,*_ore'),
+    autonomyChestReadEnabled: readBool(env, 'AUTONOMY_CHEST_READ_ENABLED', true),
+    autonomyChestPathTimeoutMs: readInt(env, 'AUTONOMY_CHEST_PATH_TIMEOUT_MS', 12000, 2000, 30000),
+    autonomyEatBelow: readInt(env, 'AUTONOMY_EAT_BELOW', 18, 1, 20),
+    autonomyActionCooldownMs: readInt(env, 'AUTONOMY_ACTION_COOLDOWN_MS', 5000, 0, 60000),
+    autonomyEventDebounceMs: readInt(env, 'AUTONOMY_EVENT_DEBOUNCE_MS', 30000, 0, 300000),
+    autonomyMaxReprompts: readInt(env, 'AUTONOMY_MAX_REPROMPTS', 6, 1, 20),
     autonomyTasks,
     inventoryAlertFreeSlots: readInt(env, 'INVENTORY_ALERT_FREE_SLOTS', 2, 0, 9),
     foodAlertThreshold: readInt(env, 'FOOD_ALERT_THRESHOLD', 4, 0, 20),

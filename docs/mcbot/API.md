@@ -466,19 +466,21 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 - v0.5 仍默认保留游戏内/AI 意图直接触发；`HTTP_ONLY_HIGH_RISK=true` 可关闭高风险触发。
 - 任务期间即使 Antifield 下线，Lofii 保持在线；任务结束恢复动态下线。
 
-## 12. v1.0.2 AI 自主会话（OpenCode 原生 MCP 工具）
+## 12. v1.0.2/v1.0.3 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产当前已启用（`AUTONOMY_ENABLED=true`），仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产当前为 v1.0.2 已启用（`AUTONOMY_ENABLED=true`），仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+
+v1.0.3 开发线增加有界环境观察、只读容器读取、进食/装备与事件驱动重决策；生产 v1.0.2 不包含这些新增工具（应用对缺失字段/工具保持兼容）。
 
 ### 12.1 GET /autonomy
 
 需要读 Token。返回：
 
 ```json
-{"autonomy":{"enabled":true,"active":true,"state":"running","goal":"准备食物","startedAt":"...","elapsedSec":12,"remainingSec":1188,"toolCalls":2,"maxToolCalls":12,"lastAction":"start_task","lastReason":"目标需要鱼","lastError":null,"lastDecisionAt":"..."}}
+{"autonomy":{"enabled":true,"active":true,"state":"running","goal":"准备食物","startedAt":"...","elapsedSec":12,"remainingSec":1188,"toolCalls":2,"maxToolCalls":12,"lastAction":"start_task","lastReason":"目标需要鱼","lastError":null,"lastDecisionAt":"...","decisionCycles":0,"lastEvent":null,"lastObservedAt":"...","blockers":[]}}
 ```
 
-`/status` 同时包含同一 `autonomy` 对象（可选字段；旧版 mcbot 缺失时应用按 null 降级）。
+`/status` 同时包含同一 `autonomy` 对象（可选字段；旧版 mcbot 缺失时应用按 null 降级；v1.0.3 新增字段为追加）。
 
 ### 12.2 POST /autonomy/start
 
@@ -493,7 +495,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ### 12.3 POST /autonomy/stop
 
-需要控制 Token。body 可为空或 `{ "reason": "..." }`（≤200 字符、无控制字符）；幂等。返回 202 `{ "ok": true, "autonomy": {...} }`。会中断 OpenCode 会话、停止活动任务并清理 MCP/session。
+需要控制 Token。body 可为空或 `{ "reason": "..." }`（≤200 字符、无控制字符）；幂等。返回 202 `{ "ok": true, "autonomy": {...} }`。会中断 OpenCode 会话、停止活动任务并清理 MCP/session；v1.0.3 同时关闭容器窗口并停止自主寻路。
 
 ### 12.4 原生 MCP 工具
 
@@ -506,11 +508,44 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 | `go_home` | `run_id, reason` | 无 active/pending 任务 |
 | `deposit` | `run_id, reason` | 无 active/pending 任务 |
 | `task_status` | `run_id` | 只读 |
+| `observe` | `run_id` | v1.0.3；只读环境快照 + 安全区 allowlist 方块/容器；计入工具预算 |
+| `inspect_chest` | `run_id, target, reason` | v1.0.3；target 为 `x,y,z`；仅安全区、allowlist 容器、无 active/queue/pending；短距寻路不传送、不破块；只读不取物并立即关闭 |
+| `eat` | `run_id, item, reason` | v1.0.3；item 必须是背包内食物；仅 `food < AUTONOMY_EAT_BELOW` 且空闲 |
+| `equip` | `run_id, item, reason` | v1.0.3；item 必须是背包内护甲/工具/武器；仅空闲；目标槽位由类型决定 |
 | `finish` | `run_id, summary` | 结束会话；会话结束会清理活动任务 |
 
-每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码，不记录 prompt/Token。
+每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。
 
-### 12.5 `autonomy` 事件
+### 12.5 v1.0.3 事件驱动重决策
+
+- 触发：`task` 事件的 `queued/queue_started/completed/failed/stopped/interrupted/queue_cleared/resume_required`，以及 `alert` 事件的 `low_health/low_food/inventory_full/defense_retreat/task_failed/chest_full`。
+- 同原因 `AUTONOMY_EVENT_DEBOUNCE_MS`（默认 30000）去重；最多 `AUTONOMY_MAX_REPROMPTS`（默认 6）次；无周期定时器。
+- 只有存在 active/queue/pending 任务时保持会话；否则首轮后结束。
+- 安全事件依赖 `ALERTS_ENABLED=true`；关闭时不会产生安全阈值重提示。
+
+### 12.6 v1.0.3 环境/动作配置
+
+```text
+AUTONOMY_ENABLED=false
+AUTONOMY_MAX_MINUTES=20
+AUTONOMY_MAX_TOOL_CALLS=12
+AUTONOMY_MAX_FAILURES=2
+AUTONOMY_GOAL_MAX_CHARS=200
+AUTONOMY_DECISION_TIMEOUT_MS=180000
+AUTONOMY_MCP_WARMUP_MS=3000
+AUTONOMY_SCAN_RADIUS=16
+AUTONOMY_SCAN_MAX_BLOCKS=48
+AUTONOMY_SCAN_BLOCKS=chest,trapped_chest,barrel,ender_chest,*_bed,water,crafting_table,furnace,blast_furnace,smoker,wheat,carrots,potatoes,beetroots,*_log,*_ore
+AUTONOMY_CHEST_READ_ENABLED=true
+AUTONOMY_CHEST_PATH_TIMEOUT_MS=12000
+AUTONOMY_EAT_BELOW=18
+AUTONOMY_ACTION_COOLDOWN_MS=5000
+AUTONOMY_EVENT_DEBOUNCE_MS=30000
+AUTONOMY_MAX_REPROMPTS=6
+AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore
+```
+
+### 12.7 `autonomy` 事件
 
 SSE `/events` 与 `/events/recent` 新增 `type:"autonomy"`，data 形如 `{action,state,reason,error}`；应用用于展示自主状态变化，`contractVersion` 仍为 1（仅追加）。
 ## 11. 对接建议

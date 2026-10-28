@@ -1,4 +1,4 @@
-# mcbot Agentic 测试验收流程（v1.0.2）
+# mcbot Agentic 测试验收流程（v1.0.2/v1.0.3）
 
 本文定义 mcbot AI 自主会话的离线与可选实机验收方式。它验证的是“模型通过原生 MCP 工具驱动受控动作”这条链路，而不是让模型自证成功。
 
@@ -7,8 +7,9 @@
 验收必须证明：
 
 - 主人显式启动/停止；默认关闭，非主人不能触发。
-- 模型只能调用 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `finish`。
+- 模型只能调用 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `observe` / `inspect_chest` / `eat` / `equip` / `finish`（v1.0.2 为前 6 个；后 4 个为 v1.0.3 开发线）。
 - 任务名只能是现有 10 种任务；不能出现任意命令、坐标、玩家名或未注册工具。
+- v1.0.3 额外验证：`observe` 只读、`inspect_chest` 不取物/不传送/不破块、`eat`/`equip` 仅空闲且仅背包物品、事件驱动重决策有去重/上限、会话结束清理容器/寻路。
 - 每次会话随机 `run_id` + Bearer token；跨会话/错误 token 被拒绝。
 - 工具预算、时间预算、连续失败上限、断线、pending resume、手动指令抢占均能安全收敛。
 - 会话结束时清理 OpenCode session、MCP server、活动任务；不跨重启恢复。

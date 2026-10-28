@@ -80,6 +80,10 @@ export interface AutonomySnapshot {
   lastReason: string | null
   lastError: string | null
   lastDecisionAt: string | null
+  decisionCycles: number
+  lastEvent: string | null
+  lastObservedAt: string | null
+  blockers: string[]
 }
 
 export type TaskName =
@@ -305,7 +309,11 @@ export class RuntimeState {
       lastAction: null,
       lastReason: null,
       lastError: null,
-      lastDecisionAt: null
+      lastDecisionAt: null,
+      decisionCycles: 0,
+      lastEvent: null,
+      lastObservedAt: null,
+      blockers: []
     }
     this.admin = {
       enabled: false,

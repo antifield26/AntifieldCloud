@@ -32,14 +32,34 @@ const HOSTILE_NAMES = new Set([
 ])
 
 export function nearbyHostile (bot: Bot, radius = 8): string | null {
+  return nearbyHostiles(bot, radius, 1)[0]?.name ?? null
+}
+
+export interface NearbyHostile {
+  name: string
+  distance: number
+}
+
+/** 按距离返回有界敌对生物列表；只读，不改变任务/防御状态。 */
+export function nearbyHostiles (bot: Bot, radius = 8, max = 8): NearbyHostile[] {
   const self = bot.entity
-  if (!self) return null
-  for (const entity of Object.values(bot.entities)) {
+  if (!self) return []
+  const entities = (bot as unknown as { entities?: Record<string, unknown> }).entities ?? {}
+  const found: NearbyHostile[] = []
+  for (const entity of Object.values(entities)) {
     if (!entity || entity === self) continue
-    if (entity.type === 'player') continue
-    const name = (entity as { name?: string }).name
-    if (!name || !HOSTILE_NAMES.has(name)) continue
-    if (self.position.distanceTo(entity.position) <= radius) return name
+    const candidate = entity as { type?: string, name?: string, position?: { distanceTo?: (p: unknown) => number } }
+    if (candidate.type === 'player') continue
+    if (!candidate.name || !HOSTILE_NAMES.has(candidate.name)) continue
+    const candidatePosition = candidate.position as unknown as { x?: number, y?: number, z?: number } | undefined
+    const px = candidatePosition?.x ?? 0
+    const py = candidatePosition?.y ?? 0
+    const pz = candidatePosition?.z ?? 0
+    const distance = typeof candidate.position?.distanceTo === 'function'
+      ? candidate.position.distanceTo(self.position)
+      : Math.hypot(px - self.position.x, py - self.position.y, pz - self.position.z)
+    if (distance <= radius) found.push({ name: candidate.name, distance: Math.round(distance * 10) / 10 })
   }
-  return null
+  found.sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name))
+  return found.slice(0, Math.max(0, max))
 }

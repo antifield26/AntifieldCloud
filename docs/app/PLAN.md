@@ -1,10 +1,17 @@
-# AntifieldComplexx v1.0.2 实施计划（当前状态）
+# AntifieldComplexx v1.0.3 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.2 当前状态
+## v1.0.3 当前状态（开发线）
+
+- **版本**：**v1.0.3**（统一版本轴，未部署）；生产仍 v1.0.2；schema **v18**；OpenCode **v2.2.0**；mcbot v1.0.3 开发线（契约 v1）。
+- **范围**：mcbot 有界环境快照/附近方块与容器扫描、只读容器读取、`eat`/`equip`、任务生命周期+安全阈值事件驱动重决策；文档声明与代码实现一致性审计及自动检查。
+- **边界**：不部署、不迁移 DB、不打 Tag/Release；容器只读、不传送、不破块；动作工具仅空闲时；生产 v1.0.2 不变。
+- **测试基线**：`npm run check`（含 `check:docs`）通过；app 591（590 pass、1 skip）+ web 273 + mcbot 122；`build`/`check-version`（严格 1.0.3）/`check-naming` 通过。
+
+## v1.0.2 已部署状态（历史）
 
 - **版本**：**v1.0.2**（统一版本轴，生产已部署）；schema **v18**；OpenCode **v2.2.0**；Node.js **v26.12.1**；mcbot **v1.0.2**（契约 v1）。
 - **状态**：v1.0.2 **已部署生产（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0）、mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，自主模式已启用，仅主人显式启动）；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=恢复演练 schema17）；未打 Tag/Release。

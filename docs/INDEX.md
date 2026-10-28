@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.2（2026-10-28 已部署生产；未打 Tag/Release）：app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；schema18/OpenCode 2.2.0；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=drill schema17）；自主模式已启用（仅主人显式启动）。
+> 版本：v1.0.3 开发线（2026-10-28；生产仍 v1.0.2；未部署/未打 Tag/Release）：生产 app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；schema18/OpenCode 2.2.0；自主模式已启用（仅主人显式启动）；v1.0.3 聚焦 mcbot 环境感知/自主决策与文档-实现一致性审计。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）
@@ -27,7 +27,9 @@
 | [API](mcbot/API.md) | 本机 HTTP/SSE 契约（读/控制 Token、contract v1） |
 | [DEPLOY](mcbot/DEPLOY.md) | 部署、bootstrap、回滚 |
 | [ROADMAP](mcbot/ROADMAP.md) | mcbot 版本边界与后续规划 |
-| [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录 |\n| [AGENTIC-ACCEPTANCE](mcbot/AGENTIC-ACCEPTANCE.md) | AI 自主会话的离线/实机 Agentic 验收流程 |
+| [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录 |
+| [AGENTIC-ACCEPTANCE](mcbot/AGENTIC-ACCEPTANCE.md) | AI 自主会话的离线/实机 Agentic 验收流程 |
+| [CONSISTENCY-AUDIT](mcbot/CONSISTENCY-AUDIT.md) | v1.0.3 文档声明与代码实现一致性审计矩阵 |
 
 ## 历史归档（Legacy）
 

@@ -3,14 +3,16 @@
  *
  * 边界：
  * - 只有主人/面板显式启动；默认关闭。
- * - 模型只能调用 {start_task, stop_task, go_home, deposit, task_status, finish}。
+ * - 模型只能调用 {start_task, stop_task, go_home, deposit, task_status, observe, inspect_chest, eat, equip, finish}。
  * - 所有工具参数、任务白名单、并发/预算/连接状态由本模块校验；模型不能执行任意命令。
  * - 不持久化；服务重启或会话结束即清理，不会自动恢复。
  */
 import { randomBytes, randomUUID } from 'node:crypto'
-import type { Bot } from 'mineflayer'
+import type { Bot, Chest } from 'mineflayer'
+import { Vec3 } from 'vec3'
 import type { AuditLogger } from '../audit.ts'
 import type { Config } from '../config.ts'
+import { buildEnvironment, CHEST_BLOCK_NAMES, formatEnvironment } from '../ai/environment.ts'
 import type { AutonomySessionClient, SessionPermission } from '../ai/session.ts'
 import { OpenCodeSessionError } from '../ai/session.ts'
 import type { EventBus } from '../events/bus.ts'
@@ -19,6 +21,8 @@ import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
 import type { AutonomySnapshot, AutonomyState, TaskName } from '../state.ts'
 import type { RuntimeState } from '../state.ts'
+import { insideSafeZone } from '../tasks/navigation.ts'
+import { findItem, isFood } from '../tasks/inventory.ts'
 import type { TaskController } from '../tasks/types.ts'
 import { safeEqual } from '../http/auth.ts'
 import {
@@ -34,6 +38,17 @@ import {
 const FINISH_GRACE_MS = 5000
 const MAX_REASON_CHARS = 120
 const MAX_SUMMARY_CHARS = 200
+const MAX_CHEST_ITEMS = 27
+const CHEST_OPEN_TIMEOUT_MS = 10000
+
+class AutonomyToolError extends Error {
+  readonly code: string
+  constructor (code: string, message: string) {
+    super(message)
+    this.name = 'AutonomyToolError'
+    this.code = code
+  }
+}
 
 export interface AutonomyStartResult {
   ok: boolean
@@ -58,11 +73,28 @@ interface ActiveRun {
   lastReason: string | null
   lastError: string | null
   lastDecisionAt: string | null
+  decisionCycles: number
+  reprompts: number
+  lastEvent: string | null
+  lastObservedAt: string | null
+  blockers: string[]
   finishRequested: boolean
   stopRequested: boolean
   abort: AbortController
   loop: Promise<void> | null
   finalizing: Promise<void> | null
+  unsubscribe: (() => void) | null
+  pendingReason: string | null
+  decisionWaiter: { resolve: (reason: string | null) => void, timer: NodeJS.Timeout } | null
+  eventSeen: Map<string, number>
+  actionInFlight: boolean
+  actionCooldownUntil: number
+}
+
+/** 事件驱动重提示可接受的原因；任务生命周期与安全阈值。 */
+const EVENT_TRIGGERS = {
+  task: new Set(['queued', 'queue_started', 'completed', 'failed', 'stopped', 'interrupted', 'queue_cleared', 'resume_required']),
+  alert: new Set(['low_health', 'low_food', 'inventory_full', 'defense_retreat', 'task_failed', 'chest_full'])
 }
 
 export interface AutonomyServiceDeps {
@@ -161,7 +193,11 @@ export class AutonomyService {
         lastAction: null,
         lastReason: null,
         lastError: null,
-        lastDecisionAt: null
+        lastDecisionAt: null,
+        decisionCycles: 0,
+        lastEvent: null,
+        lastObservedAt: null,
+        blockers: []
       }
     }
     const now = Date.now()
@@ -178,7 +214,11 @@ export class AutonomyService {
       lastAction: run.lastAction,
       lastReason: run.lastReason,
       lastError: run.lastError,
-      lastDecisionAt: run.lastDecisionAt
+      lastDecisionAt: run.lastDecisionAt,
+      decisionCycles: run.decisionCycles,
+      lastEvent: run.lastEvent,
+      lastObservedAt: run.lastObservedAt,
+      blockers: [...run.blockers]
     }
   }
 
@@ -228,11 +268,22 @@ export class AutonomyService {
       lastReason: null,
       lastError: null,
       lastDecisionAt: null,
+      decisionCycles: 0,
+      reprompts: 0,
+      lastEvent: null,
+      lastObservedAt: null,
+      blockers: [],
       finishRequested: false,
       stopRequested: false,
       abort: new AbortController(),
       loop: null,
-      finalizing: null
+      finalizing: null,
+      unsubscribe: null,
+      pendingReason: null,
+      decisionWaiter: null,
+      eventSeen: new Map(),
+      actionInFlight: false,
+      actionCooldownUntil: 0
     }
     this.run = run
     this.publish()
@@ -261,9 +312,10 @@ export class AutonomyService {
       if (run.stopRequested) return this.stoppedDuringStart(run)
       run.state = 'running'
       this.publish()
+      this.subscribeEvents(run)
       await this.deps.opencode.prompt(run.sessionId, this.buildPrompt(run))
       if (run.stopRequested) return this.stoppedDuringStart(run)
-      run.loop = this.waitLoop(run)
+      run.loop = this.decisionLoop(run)
       return { ok: true, autonomy: this.snapshot() }
     } catch (error) {
       await this.finalize(run, 'failed', this.errorCode(error))
@@ -311,29 +363,125 @@ export class AutonomyService {
     return `http://${host}:${this.deps.config.httpPort}/autonomy/mcp`
   }
 
-  private buildPrompt (run: ActiveRun): string {
+  private buildPrompt (run: ActiveRun, cause: string | null = null): string {
     // 模型实际看到的是 MCP 原始工具名（服务名前缀由 OpenCode 内部映射，权限层才使用前缀）。
     const tools = AUTONOMY_RAW_TOOLS.join(', ')
+    const environment = buildEnvironment(this.deps.getBot(), this.deps.state.task, this.deps.config)
+    run.blockers = [...environment.blockers]
+    run.lastObservedAt = environment.observedAt
+    const eventLine = cause ? `本次触发：${cause}。请结合最新环境重新判断；任务未变化就不要重复动作。` : ''
     return [
       '你正在执行一次受限的 Minecraft 自主会话。你会看到一个工具列表；只能使用这些工具，不能调用其他工具。',
       `当前 run_id：${run.runId}`,
       `目标：${run.goal}`,
-      `本次最多 ${run.maxToolCalls} 次工具调用，最多 ${this.deps.config.autonomyMaxMinutes} 分钟。`,
+      `本次最多 ${run.maxToolCalls} 次工具调用，最多 ${this.deps.config.autonomyMaxMinutes} 分钟，最多 ${this.deps.config.autonomyMaxReprompts} 次事件重决策。`,
+      eventLine,
       '规则：',
       '1. 先判断当前状态；只有没有活动任务/排队任务时才能 start_task。',
       '2. 每次只调用一个工具，并把当前 run_id 原样放进 run_id 参数。',
-      '3. 任务开始后，等待/查询 task_status，不要重复启动同一任务；失败时最多调整一次。',
-      '4. 目标完成、无法继续或需要结束会话时调用 finish。',
-      '5. 不要尝试聊天、执行命令、生成坐标/玩家名，或使用未列出的工具。',
+      '3. 任务开始后等待任务生命周期事件；不要重复启动同一任务，失败时最多调整一次。',
+      '4. 生存优先：低血/低饥饿/敌对生物时先 stop_task、go_home、eat 或 finish；不要强行开始任务。',
+      '5. 需要更多环境信息时调用 observe；需要看附近容器时先 observe，再按坐标调用 inspect_chest（只读，不取物）。',
+      '6. 目标完成、无法继续或需要结束会话时调用 finish。',
+      '7. 不要尝试聊天、执行命令、生成坐标/玩家名，或使用未列出的工具。',
+      formatEnvironment(environment),
       `可用工具（以工具列表名称为准）：${tools}`
-    ].join('\n')
+    ].filter(Boolean).join('\n')
   }
 
-  private async waitLoop (run: ActiveRun): Promise<void> {
+  private subscribeEvents (run: ActiveRun): void {
+    run.unsubscribe = this.deps.events.subscribe(event => {
+      if (run !== this.run || !run.active || run.stopRequested || run.finishRequested) return
+      if (event.type === 'task') {
+        const action = asRecord(event.data)?.action
+        if (typeof action === 'string' && EVENT_TRIGGERS.task.has(action)) {
+          this.queueDecision(run, `task:${action}`)
+        }
+      } else if (event.type === 'alert') {
+        const type = asRecord(event.data)?.type
+        if (typeof type === 'string' && EVENT_TRIGGERS.alert.has(type)) {
+          this.queueDecision(run, `alert:${type}`)
+        }
+      }
+    })
+  }
+
+  private queueDecision (run: ActiveRun, cause: string): void {
+    if (!run.active || run.stopRequested || run.finishRequested) return
+    const now = Date.now()
+    const last = run.eventSeen.get(cause) ?? 0
+    if (now - last < this.deps.config.autonomyEventDebounceMs) return
+    run.eventSeen.set(cause, now)
+    run.lastEvent = cause
+    this.publish()
+    if (run.pendingReason) return
+    if (run.reprompts >= this.deps.config.autonomyMaxReprompts) {
+      run.stopRequested = true
+      setImmediate(() => { void this.stop('max_reprompts') })
+      return
+    }
+    run.pendingReason = cause
+    run.decisionWaiter?.resolve(cause)
+  }
+
+  private hasTask (): boolean {
+    const task = this.deps.state.task
+    return task.active || task.queue.length > 0 || task.pendingResume !== null
+  }
+
+  private async waitForAssistant (run: ActiveRun): Promise<void> {
+    await this.deps.opencode.wait(run.sessionId ?? '', run.abort.signal)
+    if (run.finishRequested) await this.sleep(200)
+  }
+
+  private async waitForDecision (run: ActiveRun): Promise<string | null> {
+    if (run.pendingReason) {
+      const reason = run.pendingReason
+      run.pendingReason = null
+      return reason
+    }
+    if (!this.hasTask()) return null
+    const remaining = run.deadline - Date.now()
+    if (remaining <= 0) return null
+    return new Promise(resolve => {
+      let settled = false
+      const finish = (reason: string | null): void => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        if (run.decisionWaiter?.resolve === finish) run.decisionWaiter = null
+        resolve(reason)
+      }
+      const timer = setTimeout(() => finish(null), remaining)
+      run.decisionWaiter = { resolve: finish, timer }
+      run.abort.signal.addEventListener('abort', () => finish(null), { once: true })
+    })
+  }
+
+  private async decisionLoop (run: ActiveRun): Promise<void> {
     try {
-      await this.deps.opencode.wait(run.sessionId ?? '', run.abort.signal)
-      if (run.finishRequested) {
-        await this.sleep(200)
+      await this.waitForAssistant(run)
+      while (run.active && !run.stopRequested && !run.finishRequested) {
+        if (!this.hasTask() && !run.pendingReason) break
+        const cause = await this.waitForDecision(run)
+        if (cause === null || !run.active || run.stopRequested || run.finishRequested) break
+        if (run.reprompts >= this.deps.config.autonomyMaxReprompts) {
+          await this.finalize(run, 'finished', null, 'max_reprompts')
+          return
+        }
+        if (Date.now() >= run.deadline) {
+          await this.finalize(run, 'finished', null, 'deadline')
+          return
+        }
+        run.pendingReason = null
+        run.reprompts += 1
+        run.decisionCycles += 1
+        run.lastDecisionAt = nowIso()
+        run.state = 'running'
+        this.publish()
+        await this.deps.opencode.prompt(run.sessionId ?? '', this.buildPrompt(run, cause))
+        if (run.stopRequested || run.finishRequested) break
+        await this.waitForAssistant(run)
       }
       await this.finalize(run, 'finished', null)
     } catch (error) {
@@ -354,8 +502,20 @@ export class AutonomyService {
     if (run.finalizing) return run.finalizing
     run.finalizing = (async () => {
       run.state = 'stopping'
+      run.stopRequested = true
+      run.unsubscribe?.()
+      run.unsubscribe = null
+      run.decisionWaiter?.resolve(null)
+      run.decisionWaiter = null
       run.abort.abort()
       this.publish()
+      try {
+        this.deps.movement.stop('autonomy')
+      } catch { /* best effort */ }
+      try {
+        const bot = this.deps.getBot()
+        if (bot?.currentWindow) await bot.closeWindow(bot.currentWindow).catch(() => undefined)
+      } catch { /* best effort */ }
       try {
         if (run.sessionId) {
           await this.deps.opencode.interrupt(run.sessionId).catch(() => undefined)
@@ -375,7 +535,6 @@ export class AutonomyService {
         run.state = outcome
         run.active = false
         run.lastError = errorCode
-        run.stopRequested = true
         this.publish()
         this.deps.audit.append({
           event: 'autonomy.end',
@@ -388,6 +547,8 @@ export class AutonomyService {
             error: errorCode,
             toolCalls: run.toolCalls,
             failures: run.failures,
+            decisionCycles: run.decisionCycles,
+            lastEvent: run.lastEvent,
             elapsedSec: Math.max(0, Math.floor((Date.now() - run.startedAt) / 1000))
           }
         })
@@ -499,7 +660,7 @@ export class AutonomyService {
       return fail('run_id_mismatch', 'run_id does not match this session')
     }
     const reason = typeof args.reason === 'string' ? sanitizeText(args.reason, MAX_REASON_CHARS) : ''
-    if (name !== 'task_status' && name !== 'finish' && reason.length === 0) {
+    if (name !== 'task_status' && name !== 'observe' && name !== 'finish' && reason.length === 0) {
       return fail('reason_required', 'reason is required')
     }
     run.toolCalls += 1
@@ -563,6 +724,44 @@ export class AutonomyService {
             isError: false
           }
         }
+        case 'observe': {
+          const snapshot = buildEnvironment(this.deps.getBot(), this.deps.state.task, this.deps.config, { scan: true })
+          run.blockers = [...snapshot.blockers]
+          run.lastObservedAt = snapshot.observedAt
+          this.publish()
+          this.auditTool(name, 'environment', reason || 'observe')
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: true, environment: snapshot }) }],
+            isError: false
+          }
+        }
+        case 'inspect_chest': {
+          const target = typeof args.target === 'string' ? args.target.trim() : ''
+          const result = await this.inspectChest(run, target)
+          this.auditTool(name, result.type, reason)
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: true, chest: result }) }],
+            isError: false
+          }
+        }
+        case 'eat': {
+          const item = typeof args.item === 'string' ? args.item.trim() : ''
+          const result = await this.eat(run, item)
+          this.auditTool(name, result.item, reason)
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: true, ...result }) }],
+            isError: false
+          }
+        }
+        case 'equip': {
+          const item = typeof args.item === 'string' ? args.item.trim() : ''
+          const result = await this.equip(run, item)
+          this.auditTool(name, result.item, reason)
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ok: true, ...result }) }],
+            isError: false
+          }
+        }
         case 'finish': {
           const summary = sanitizeText(String(args.summary ?? ''), MAX_SUMMARY_CHARS)
           run.finishRequested = true
@@ -575,10 +774,150 @@ export class AutonomyService {
         }
       }
     } catch (error) {
+      if (error instanceof AutonomyToolError) return fail(error.code, error.message)
       const message = error instanceof Error ? error.message : String(error)
       return fail('tool_execution_failed', sanitizeText(message, 160))
     }
     return fail('tool_not_allowed', 'tool is not allowed')
+  }
+
+  private assertIdle (): void {
+    const task = this.deps.state.task
+    if (task.pendingResume) throw new AutonomyToolError('resume_pending', 'a pending task blocks this action')
+    if (task.active || task.queue.length > 0) throw new AutonomyToolError('task_active', 'stop the active/queued task first')
+  }
+
+  private async withAction<T> (run: ActiveRun, action: () => Promise<T>): Promise<T> {
+    if (run.actionInFlight) throw new AutonomyToolError('tool_busy', 'another action is running')
+    const now = Date.now()
+    if (now < run.actionCooldownUntil) throw new AutonomyToolError('action_cooldown', 'action cooldown is active')
+    run.actionInFlight = true
+    run.actionCooldownUntil = now + this.deps.config.autonomyActionCooldownMs
+    try {
+      return await action()
+    } finally {
+      run.actionInFlight = false
+    }
+  }
+
+  private async withTimeout<T> (promise: Promise<T>, ms: number, code: string): Promise<T> {
+    return await new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new AutonomyToolError(code, 'action timed out')), ms)
+      promise.then(
+        value => { clearTimeout(timer); resolve(value) },
+        error => { clearTimeout(timer); reject(error) }
+      )
+    })
+  }
+
+  private async inspectChest (
+    run: ActiveRun,
+    target: string
+  ): Promise<{ type: string, x: number, y: number, z: number, distance: number, items: Array<{ name: string, count: number }>, slotsUsed: number }> {
+    if (!this.deps.config.autonomyChestReadEnabled) {
+      throw new AutonomyToolError('chest_disabled', 'chest reading is disabled')
+    }
+    this.assertIdle()
+    const match = /^(-?\d{1,9}),(-?\d{1,3}),(-?\d{1,9})$/.exec(target)
+    if (!match) throw new AutonomyToolError('chest_target_invalid', 'target must be x,y,z')
+    const x = Number(match[1])
+    const y = Number(match[2])
+    const z = Number(match[3])
+    const bot = this.deps.getBot()
+    if (!bot?.entity || !bot.inventory) throw new AutonomyToolError('not_connected', 'bot is not connected')
+    if (!insideSafeZone(this.deps.config, x, z)) throw new AutonomyToolError('chest_out_of_range', 'target is outside the safe zone')
+    const position = new Vec3(x, y, z)
+    const distance = bot.entity.position.distanceTo(position)
+    if (distance > this.deps.config.autonomyScanRadius) {
+      throw new AutonomyToolError('chest_out_of_range', 'target is outside the scan radius')
+    }
+    const block = bot.blockAt(position, false)
+    if (!block || !CHEST_BLOCK_NAMES.has(block.name)) {
+      throw new AutonomyToolError('chest_not_allowed', 'target is not an allowed container')
+    }
+    return await this.withAction(run, async () => {
+      if (run.stopRequested || !run.active) throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
+      if (bot.currentWindow) await bot.closeWindow(bot.currentWindow).catch(() => undefined)
+      if (distance > 4) {
+        try {
+          await this.deps.movement.goNearPoint(x, y, z, 2, this.deps.config.autonomyChestPathTimeoutMs, false)
+        } catch (error) {
+          throw new AutonomyToolError('chest_unreachable', error instanceof Error ? error.message : 'chest is unreachable')
+        }
+      }
+      if (run.stopRequested || !run.active) throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
+      const current = bot.blockAt(position, false)
+      if (!current || !CHEST_BLOCK_NAMES.has(current.name)) {
+        throw new AutonomyToolError('chest_not_allowed', 'target is not an allowed container')
+      }
+      const chest = await this.withTimeout(
+        bot.openContainer(current) as Promise<Chest>,
+        CHEST_OPEN_TIMEOUT_MS,
+        'chest_open_timeout'
+      )
+      try {
+        const items = chest.containerItems()
+        const counts = new Map<string, number>()
+        for (const item of items) counts.set(item.name, (counts.get(item.name) ?? 0) + item.count)
+        return {
+          type: current.name,
+          x,
+          y,
+          z,
+          distance: Math.round(distance * 10) / 10,
+          items: [...counts.entries()]
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .slice(0, MAX_CHEST_ITEMS),
+          slotsUsed: items.length
+        }
+      } finally {
+        await chest.close().catch(() => undefined)
+      }
+    })
+  }
+
+  private equipDestination (name: string): 'head' | 'torso' | 'legs' | 'feet' | 'hand' | null {
+    if (name.endsWith('_helmet')) return 'head'
+    if (name.endsWith('_chestplate')) return 'torso'
+    if (name.endsWith('_leggings')) return 'legs'
+    if (name.endsWith('_boots')) return 'feet'
+    if (name === 'shield' || name === 'fishing_rod') return 'hand'
+    if (/(_sword|_pickaxe|_axe|_shovel|_hoe|_trident|_bow|_crossbow)$/.test(name)) return 'hand'
+    return null
+  }
+
+  private async eat (run: ActiveRun, itemName: string): Promise<{ item: string, food: number }> {
+    this.assertIdle()
+    const bot = this.deps.getBot()
+    if (!bot?.entity || !bot.inventory) throw new AutonomyToolError('not_connected', 'bot is not connected')
+    if (bot.food >= this.deps.config.autonomyEatBelow) {
+      throw new AutonomyToolError('food_not_needed', 'food is above the eat threshold')
+    }
+    const item = findItem(bot, itemName)
+    if (!item) throw new AutonomyToolError('item_not_found', 'item is not in inventory')
+    if (!isFood(bot, item)) throw new AutonomyToolError('not_food', 'item is not food')
+    return await this.withAction(run, async () => {
+      if (run.stopRequested || !run.active) throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
+      await bot.equip(item, 'hand')
+      await bot.consume()
+      return { item: item.name, food: Math.round(bot.food) }
+    })
+  }
+
+  private async equip (run: ActiveRun, itemName: string): Promise<{ item: string, slot: string }> {
+    this.assertIdle()
+    const bot = this.deps.getBot()
+    if (!bot?.entity || !bot.inventory) throw new AutonomyToolError('not_connected', 'bot is not connected')
+    const item = findItem(bot, itemName)
+    if (!item) throw new AutonomyToolError('item_not_found', 'item is not in inventory')
+    const destination = this.equipDestination(item.name)
+    if (!destination) throw new AutonomyToolError('not_equippable', 'item is not equippable by autonomy')
+    return await this.withAction(run, async () => {
+      if (run.stopRequested || !run.active) throw new AutonomyToolError('autonomy_stopped', 'autonomy session is not active')
+      await bot.equip(item, destination)
+      return { item: item.name, slot: destination }
+    })
   }
 
   private auditTool (name: string, action: string, reason: string): void {

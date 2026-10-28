@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.2（2026-10-28 已部署生产；未打 Tag/Release）**：npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；mcbot 新增 AI 自主会话（OpenCode 原生 MCP 工具循环、10 种任务白名单、预算/急停/审计；生产已启用，仅主人显式启动）、应用面板自主控制、mcbot 服务监控/轮询停止收口/GET 限流、Agentic 验收 harness；OpenCode **v2.2.0**；生产 app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+**当前版本 v1.0.3 开发线（2026-10-28；生产仍 v1.0.2；未部署/未打 Tag/Release）**：npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；mcbot 在 v1.0.2 AI 自主会话基础上增强环境感知（有界快照、附近方块/容器扫描、只读容器读取）与自主决策（新增 observe/inspect_chest/eat/equip 工具、任务生命周期+安全阈值事件驱动重决策），并完成文档声明与代码实现一致性审计；生产 app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
@@ -55,10 +55,11 @@ npm run test:web:coverage # 前端测试 + 覆盖率门禁
 npm run check          # app + mcbot + 命名门禁，提交前必须全绿
 npm run check:mcbot    # mcbot typecheck + unit tests
 npm run check:naming   # 旧标识符扫描（历史归档/迁移数据豁免）
+npm run check:docs     # mcbot 文档声明/代码实现一致性检查
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v1.0.2，2026-10-28）：`npm run check` 通过；app `npm test` **591**（590 pass、1 skip）+ web **273**（49 文件）+ mcbot **108**；服务端覆盖率 Lines 93.10% / Branches 78.89% / Functions 88.86%，前端 Lines 56.27% / Branches 51.88% / Functions 49.16%；`npm run build`、`check-version`（严格 1.0.2）、`check-naming` 通过。生产已部署 v1.0.2/schema18/OpenCode 2.2.0；未打 Tag。
+当前基线（v1.0.3 开发线，2026-10-28）：`npm run check` 通过；app `npm test` **591**（590 pass、1 skip）+ web **273**（49 文件）+ mcbot **122**；`npm run build`、`check-version`（严格 1.0.3）、`check-naming`、`check:docs` 通过。生产已部署 v1.0.2/schema18/OpenCode 2.2.0；未打 Tag。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -110,7 +111,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
                      cloudflared ingress、env 模板、host/ 主机配置模板、tool-versions.json
 ```
 
-`apps/mcbot/src/autonomy/`：v1.0.2 AI 自主会话（OpenCode 原生 MCP 工具循环、策略/预算/急停/审计、Agentic harness）。
+`apps/mcbot/src/autonomy/`：v1.0.2 引入、v1.0.3 增强的 AI 自主会话（OpenCode 原生 MCP 工具循环、环境快照/只读容器/进食/装备、事件驱动重决策、策略/预算/急停/审计、Agentic harness）。
 
 写作用域约定：服务端改动在 `server/`，前端在 `web/`，脚本/部署在 `scripts/`、`deploy/`，文档在 `docs/` 与根 README/AGENTS/CHANGELOG；跨域改动先在本文件或任务中说明。
 
@@ -136,7 +137,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 14. Bot AI 工具隔离 fail-closed：OpenCode 拒绝 `permissions` 时不得以默认权限继续对话；启用发送工具或文档/read 模式且隔离不可用时新 Chat 返回 `503 chatbot_ai_tool_isolation_unavailable` 并回固定提示、写审计/状态；10 分钟重试窗口到点放行重试，上游恢复后自动恢复。
     文档模式只允许 `read` 当前作用域 `role.md`/`memory.md`（deny-all + 精确 read 规则）；不得放行 shell/edit/glob/grep；上下文目录不得包含密钥，文件 0640、目录 0750，不进入备份。
 15. 审计写入不得静默失败也不得回滚已完成的业务状态：非安全审计事务外 best-effort，失败计数 + 最近错误暴露到 `/api/version.audit`；安全关键审计逐条记录；公开下载计数保持在事务内。
-16. **AI 自主会话（v1.0.2，默认关闭）**：仅主人显式启动；模型只能通过 OpenCode 原生 MCP 工具调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`finish`，任务名受 `AUTONOMY_TASKS` 白名单约束；会话使用随机 run_id + 短期 Bearer，OpenCode session 必须 deny-all + `mcbot_autonomy_*` allow；工具预算/时间/连续失败/断线/手动指令/急停均需 fail-closed，结束必须停止任务并清理 session/MCP；不得把 `/autonomy/mcp` 暴露给应用/浏览器/公网，不得在日志/审计记录 prompt/Token。
+16. **AI 自主会话（v1.0.2 引入，v1.0.3 增强；代码默认关闭）**：仅主人显式启动；模型只能通过 OpenCode 原生 MCP 工具调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`observe`/`inspect_chest`/`eat`/`equip`/`finish`，任务名受 `AUTONOMY_TASKS` 白名单约束；`observe` 只读环境（基础状态+安全区 allowlist 方块/容器），`inspect_chest` 仅安全区内、无 active/queue/pending 时短距寻路只读容器且不取物、不传送、不破块，`eat`/`equip` 仅空闲时对背包内食物/护甲/工具生效；任务生命周期与安全阈值事件驱动重决策（30s 去重、最多 6 次），无周期空转；会话使用随机 run_id + 短期 Bearer，OpenCode session 必须 deny-all + `mcbot_autonomy_*` allow；预算/时间/连续失败/断线/手动指令/急停均需 fail-closed，结束必须停止任务并清理 session/MCP；不得把 `/autonomy/mcp` 暴露给应用/浏览器/公网，不得在日志/审计记录 prompt/Token/完整容器内容。
 17. mcbot 对接（v0.8.0 引入，v0.8.1 安全加固）读/控制 Token 必须分离且只走 loopback：`MCBOT_URL` 非 loopback/非 http(s)/含 userinfo/路径/查询/片段拒绝启动，客户端禁止跟随重定向；Token 不得进入浏览器/bundle/API 响应/日志/审计正文；控制/任务/移动/聊天必须登录 + CSRF + 控制 Token + IP 限流并二次确认（`/say` 自 v0.8.1 起也需控制 Token，只读模式 503）；`/say` 只聊天（**任意 ASCII `/` 与 C0 控制字符一律拒绝**，防切行后的命令注入）且审计只记字符数；`taskId` 拒绝空白/控制字符；事件缓存 ≤100 条且 ≤512 KiB、响应体流式 ≤2 MiB；聊天/事件只存内存不落库；上游告警只能以 `status='event'` 记录，不得写入 `alert_state` 或伪装 firing/resolved。
 
 ## 6. 数据库与数据
@@ -200,7 +201,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   搜索：`CHATBOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`CHATBOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`CHATBOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。
 - mcbot 环境变量（v0.8.0 引入，v0.8.1 加固；默认关闭）：`MCBOT_ENABLED=false`、`MCBOT_URL=http://127.0.0.1:3010`（启用时必须 loopback + http(s) 且仅根地址，拒绝 userinfo/路径/查询/片段）、`MCBOT_READ_TOKEN=`、`MCBOT_CONTROL_TOKEN=`（root 执行 `scripts/sync-mcbot-tokens.sh` 从 `/etc/mcbot/env` 的 `HTTP_TOKEN`/`HTTP_CONTROL_TOKEN` 同步，`--check` 只比较；同目录临时文件 + `mv` 原子替换；控制为空 = 只读，`/say` 也 503）、`MCBOT_TIMEOUT_MS=2500`（500–10000）、`MCBOT_POLL_MS=5000`（2000–60000）、`MCBOT_ALERTS_ENABLED=true`；上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS。mcbot **v1.0.2**（最低 v0.6.0，契约 v1，独立 systemd 服务，仅 `127.0.0.1:3010`，不经 Cloudflare/nftables 对外；v0.6.1 逐行中和行首 `/`）；`smoke.ps1 -ExpectedMcbotVersion 1.0.2`（最低兼容 0.6.0）校验服务 active + `/healthz.version` + `contractVersion=1`，未启用用 `-SkipMcbot`。
-- v1.0.2 AI 自主环境变量（默认关闭）：`AUTONOMY_ENABLED=false`、`AUTONOMY_MAX_MINUTES=20`、`AUTONOMY_MAX_TOOL_CALLS=12`、`AUTONOMY_MAX_FAILURES=2`、`AUTONOMY_GOAL_MAX_CHARS=200`、`AUTONOMY_DECISION_TIMEOUT_MS=180000`、`AUTONOMY_MCP_WARMUP_MS=3000`、`AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore`；生产当前已启用（仅主人显式启动；代码默认仍为 false）。
+- v1.0.2/v1.0.3 AI 自主环境变量（默认关闭）：`AUTONOMY_ENABLED=false`、`AUTONOMY_MAX_MINUTES=20`、`AUTONOMY_MAX_TOOL_CALLS=12`、`AUTONOMY_MAX_FAILURES=2`、`AUTONOMY_GOAL_MAX_CHARS=200`、`AUTONOMY_DECISION_TIMEOUT_MS=180000`、`AUTONOMY_MCP_WARMUP_MS=3000`、`AUTONOMY_SCAN_RADIUS=16`、`AUTONOMY_SCAN_MAX_BLOCKS=48`、`AUTONOMY_SCAN_BLOCKS=chest,trapped_chest,barrel,ender_chest,*_bed,water,crafting_table,furnace,blast_furnace,smoker,wheat,carrots,potatoes,beetroots,*_log,*_ore`、`AUTONOMY_CHEST_READ_ENABLED=true`、`AUTONOMY_CHEST_PATH_TIMEOUT_MS=12000`、`AUTONOMY_EAT_BELOW=18`、`AUTONOMY_ACTION_COOLDOWN_MS=5000`、`AUTONOMY_EVENT_DEBOUNCE_MS=30000`、`AUTONOMY_MAX_REPROMPTS=6`、`AUTONOMY_TASKS=fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore`；生产当前为 v1.0.2 已启用（仅主人显式启动；代码默认仍为 false）。
 - 备份/灾备 env：`BACKUP_IMPORT_RETENTION_DAYS=90`（0=永久）、`ALERT_REPEAT_HOURS=24`（0=关闭；兼容键 `ALERT_COOLDOWN_MINUTES` 仍可解析）。
 - Bot 公开入口：`POST /api/chatbot/webhook/:botId`（无 session/CSRF，按平台签名鉴权）；Cloudflare Access 必须对 `/api/chatbot/webhook/*`、`/healthz`、`/s/*`、`/api/public/shares/*` 做 bypass，否则平台回调/健康检查/公开分享会被边缘拦截。`CHATBOT_ENABLED=false` 时该路径返回 404。
 - Bot 平台注册（QQ 开放平台）与 Cloudflare Access 策略均由用户在各自后台完成，Agent 不代替；仅 QQ 官方 Bot。

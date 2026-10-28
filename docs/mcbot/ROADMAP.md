@@ -1,3 +1,8 @@
+## v1.0.3（**开发线（2026-10-28）；未部署/未打 Tag/Release**；环境感知 + 自主决策增强 + 文档-实现一致性审计）
+
+- **范围**：`observe` 有界环境快照（基础状态 + 安全区 allowlist 方块/容器扫描）、`inspect_chest` 只读容器、`eat`/`equip`、任务生命周期+安全阈值事件驱动重决策；新增 `docs/mcbot/CONSISTENCY-AUDIT.md` 与 `scripts/check-mcbot-claims.mjs`。
+- **边界**：容器只读、不传送、不破块；非空闲不允许动作工具；不新增任意命令/采集/战斗动作；生产保持 v1.0.2。
+
 ## v1.0.2（**已部署生产（2026-10-28）；未打 Tag/Release**；AI 自主会话 + Agentic 验收）
 
 - **范围**：OpenCode 原生 MCP 工具循环驱动现有 10 种任务/回家/存箱；显式启动、白名单、预算/失败/急停/审计、任务/MCP/session 清理；应用面板自主控制；mcbot 服务监控/轮询停止收口/GET 限流；Agentic 离线 harness + 可选实机 conductor。

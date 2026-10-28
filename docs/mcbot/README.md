@@ -1,13 +1,13 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.2**（2026-10-28 已部署生产：release `/opt/mcbot/releases/20261028T091246Z`，服务 `mcbot.service`；自主模式已启用（仅主人显式启动）；游戏内人格名 Lofii，服务/仓库名 mcbot）。
+> 当前版本：**v1.0.3 开发线**（生产仍 v1.0.2：release `/opt/mcbot/releases/20261028T091246Z`，服务 `mcbot.service`；自主模式已启用，仅主人显式启动；本开发线未部署、未打 Tag/Release）。
 
 ## 能做什么
 
 - **AI 陪伴聊天**：只有被 `Lofii` / `@Lofii` 点名时回复；中文、温柔助手人设；复用 Pi 本机 OpenCode 的 `opencode-go/deepseek-v4.1-flash`。
 - **按玩家动态上线**：SLP 每 15 秒探测；有玩家在线时上线；最后一名玩家离开 60 秒后下线，让服务器在空服时正常 pause。
-- **自动化任务**：`Lofii 去钓鱼` / `去种田` / `去砍树` / `去挖矿` / `砍天然林` / `睡觉` / `巡逻` / `收工` / `回家` / `存东西`。
+- **自动化任务**：`Lofii 去钓鱼` / `去种田` / `去砍树` / `去挖矿` / `砍天然林` / `睡觉` / `巡逻` / `守卫` / `护送` / `探索` / `收工` / `回家` / `存东西`。
   - 钓鱼/种田/固定 oak 树场保持 v0.4 行为。
   - 挖矿只找安全区内 `y≥60` 的煤/铁/铜裸露矿，不挖石头隧道。
   - 天然林只砍 oak/spruce/birch，保护盒 16 格，逐棵补种。
@@ -31,10 +31,18 @@
 - **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；v1.0.2 增加 `/autonomy` 状态/启动/急停与内部 MCP 工具端点；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
+## v1.0.3 新增能力（开发线）
+
+- **环境感知**：`observe` 返回有界环境快照（坐标/血量/饥饿/时间/天气、玩家/敌对生物、背包/护甲、任务/阻塞）；可按可配置 allowlist、半径（默认 16）和上限（48）扫描安全区内附近方块/容器，只读已加载区块，不加载新区块。
+- **只读容器**：`inspect_chest` 仅对安全区内 allowlist 容器、在无 active/queue/pending 任务时短距寻路打开，返回物品摘要后立即关闭；不取物、不传送、不破块，失败不重试。
+- **生存动作**：`eat` / `equip` 仅空闲时对背包内食物/护甲/工具生效，固定冷却与审计；不接受任意物品名或槽位。
+- **事件驱动决策**：任务生命周期（queued/queue_started/completed/failed/stopped/interrupted/queue_cleared/resume_required）与安全告警（low_health/low_food/inventory_full/defense_retreat/task_failed/chest_full）触发重决策；同原因 30s 去重、最多 6 次；无周期空转，无任务时结束会话。
+- **任务白名单**：`fishing` / `farming` / `woodcutting` / `mining` / `forest` / `sleep` / `patrol` / `guard` / `escort` / `explore`（10 种，仍受 `AUTONOMY_TASKS` 限制）。
+
 ## v1.0.2 新增能力
 
-- **AI 自主会话（默认关闭）**：主人通过游戏聊天 `Lofii 自主行动 [目标]` 或面板显式启动一次；OpenCode 通过运行时注册的原生 MCP 工具循环驱动现有任务/回家/存箱，不能执行任意命令。
-- **原生 MCP 工具**：`start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `finish`；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 权限；每次会话随机 run_id + Bearer token。
+- **AI 自主会话（代码默认关闭，生产 v1.0.2 已启用）**：主人通过游戏聊天 `Lofii 自主行动 [目标]` 或面板显式启动一次；OpenCode 通过运行时注册的原生 MCP 工具循环驱动现有任务/回家/存箱，不能执行任意命令。
+- **原生 MCP 工具**：v1.0.2 提供 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `finish`；v1.0.3 开发线增加 `observe` / `inspect_chest` / `eat` / `equip`（共 10 个）；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 权限；每次会话随机 run_id + Bearer token。
 - **预算/安全**：`AUTONOMY_MAX_MINUTES`、`AUTONOMY_MAX_TOOL_CALLS`、`AUTONOMY_MAX_FAILURES`、任务白名单、手动指令抢占、聊天/面板急停；会话结束停止任务并清理 OpenCode session/MCP。
 - **应用面板**：自主状态、目标、时间、工具调用数、最近决策/原因/错误，启动/急停二次确认；任务下拉同步 10 种任务（含 guard/escort/explore）。
 - **Agentic 验收**：`test/agentic` 离线 scenario harness（CI），`scripts/agentic-acceptance.mjs` 可选实机 conductor；流程见 [AGENTIC-ACCEPTANCE.md](AGENTIC-ACCEPTANCE.md)。
@@ -50,7 +58,7 @@
 - **运行稳定性**：systemd `Type=notify` 看门狗（`WATCHDOG_ENABLED`/`WATCHDOG_HEARTBEAT_MS`）、RSS 内存治理告警（`RSS_LIMIT_MB`）、断线重连恢复不消耗任务重试次数。
 - **任务**：基地守卫 `guard`、玩家护送 `escort`、航点探索 `explore`；深层裸露矿（`MINE_DEEP_ENABLED`，安全区内 y<60、有空气面、无液体邻接）；分类存箱（`CHEST_ORES/FOOD/SAPLINGS/MISC`，缺失回退主箱）。
 - **库存/补货**：背包剩余格/食物告警；`AUTO_RESTOCK=true` 时空闲自动从分类箱补食物与铁镐/铁斧（默认关闭）。
-- **AI**：只读受控工具 `status/inventory/task_status`（`AI_TOOLS_ENABLED`，默认关闭；未知工具启动失败），AI 仍不能执行任意动作。
+- **AI**：`AI_TOOLS_ENABLED` 控制的是**提示词只读上下文段** `status/inventory/task_status`（默认关闭；未知名称启动失败），不是 OpenCode 可执行工具；普通聊天不触发游戏操作，只有主人显式启动的自主会话可通过受控工具执行动作。
 - **运维**：`migrate-v1.0.0.ps1` 覆盖 mcbot 服务/路径/env 迁移；故障注入/soak 单测覆盖 SLP 抖动、连续断线、EventBus ring。
 ## 不做什么
 
@@ -111,7 +119,7 @@ systemd restart ─► task-state.json ─► pending_resume ─► 面板确认
 ### 关键安全约束
 
 - 所有外发聊天统一经过 `sanitizeOutgoing`：**首字符 `/` 会被替换为全角 `／`**，防止 AI 或 HTTP 输入变成 OP 命令。
-- AI 没有任何工具/命令执行能力；指令只由确定性解析器执行，且仅 `Antifield`（`COMMAND_ALLOWLIST`）有效。
+- 普通聊天 AI 不执行游戏动作；只有主人显式启动的 v1.0.2/v1.0.3 自主会话可通过 MCP 工具执行受控任务/移动/存箱/观察/只读容器/进食/装备；指令仍只由确定性解析器执行，且仅 `Antifield`（`COMMAND_ALLOWLIST`）有效。
 - 内部 `/tp` 只由移动/任务代码用固定坐标或在线玩家名生成，AI/HTTP 无法触发；传送目标必须在安全区内。
 - 自动化只修改农田 `x177–183, z432–439`、固定 oak 树场 `x180–193, z455–464`、安全区 `x111–239, z410–474` 内的天然林/裸露矿；保护盒 16 格；越界即停止。
 - 挖矿只挖煤/铁/铜裸露矿，不挖石头隧道；天然林只砍 oak/spruce/birch，逐棵补种；睡觉只右键已有床，不放置新床。
@@ -252,7 +260,7 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 - 本仓库未修改 AntifieldCloud；面板侧 SSE/近期事件/控制接入由用户实施。
 - 农田实际为 48 格（6 列 × 8 行，中间水渠）；首次任务会自动播种，验收用 `/setblock` 催熟。
 - 钓鱼掉落物可能落在浅水；拾取会走向岸边/浅水，深水或危险区域会放弃。
-- AI 输出只用于聊天；不会触发任何游戏操作。
+- 普通聊天 AI 输出只用于对话；自主会话的工具动作仅在主人显式启动、预算/急停/权限约束内执行。
 
 ## License
 

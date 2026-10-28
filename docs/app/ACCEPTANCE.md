@@ -1,7 +1,13 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.2（2026-10-28 已部署生产；未打 Tag/Release）：app 1.0.2/schema18/OpenCode 2.2.0、mcbot 1.0.2（自主模式已启用）。
+> 当前版本 v1.0.3 开发线（2026-10-28；生产仍 v1.0.2；未部署/未打 Tag/Release）：生产 app 1.0.2/schema18/OpenCode 2.2.0、mcbot 1.0.2（自主模式已启用）。
 >
+
+### v1.0.3 开发线验收（2026-10-28，未部署）
+
+- 范围：mcbot 环境感知（有界快照、附近方块/容器扫描、只读容器读取）、eat/equip、任务生命周期+安全阈值事件驱动重决策；文档声明与代码实现一致性审计（含自动检查）。
+- 门禁：`npm run check`（含 `check:docs`）、`npm run build`、`check-version`（严格 1.0.3）、`check-naming`；mcbot 测试与覆盖率更新。
+- 边界：生产未部署/未变更 DB/未重启服务；真实 Minecraft/OpenCode 新工具路径未做生产联调，留待后续授权；v1.0.2 生产验收记录保留如下。
 
 ### v1.0.2 生产部署与验收（2026-10-28，已执行）
 
