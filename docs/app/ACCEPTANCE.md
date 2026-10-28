@@ -2,6 +2,14 @@
 
 > 当前版本 v1.0.0（开发线 `release/v1.0.0`；生产仍为 v0.8.1，生产迁移与发布待 Phase 7 授权）。
 >
+
+### v1.0.0 生产迁移验收（2026-10-28，已执行）
+
+- app release `/opt/antifieldcloud/releases/20261028T000905Z`（1.0.0/schema18）；mcbot release `/opt/mcbot/releases/20261028T000632Z`（1.0.0/contract1）；旧 lofii-bot 停止/禁用。
+- 部署内只读 smoke **27/0/1/2**；全量 Access smoke **35/0/1/2**（本次 `-SkipLocalTaskCheck`，待 Windows 任务重装后补跑；WARN=drill schema17）。
+- 已修复迁移中发现项：Node `dgram` 不支持 unix_dgram → 改用 `/usr/bin/systemd-notify`；迁移 Apply 幂等性；`WEB_DIST_DIR` 新 workspace 路径；botmsg MCP 重命名安装；主机 unit 文案漂移同步。
+- 迁移前完整备份与回滚快照见 `docs/app/DEPLOY.md` v1.0.0 生产部署记录。
+
 > v0.5.1 已于 2026-10-21 部署到生产 Pi（release `20261021T091001Z`，schema v8，smoke 24/24）；QQ 真实回调与 `/help`、AI DeepSeek V4.1 Flash 真实回复、Cloudflare Access 主策略 + 4 个 bypass + service token 均已配置并验证。
 >
 > **v0.5.2 已部署**：2026-10-21 部署到生产 Pi（release `20261021T114908Z`，commit `abeabc7`，schema v9）；带 Cloudflare Access service token 的完整 smoke **24/24**。生产已开启 `CHATBOT_DISCORD_GATEWAY_ENABLED=true`（日志 `Discord Gateway 已连接`）；Discord DM、Discord #general @Bot、QQ C2C 的普通消息 Chat 已由用户实发确认收到 AI 回复，`chatbot_ai_sessions`/`chatbot_ai_memories` 已写入；其他目标仍默认关闭。

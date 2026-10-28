@@ -420,6 +420,18 @@ fi
   $appVersion = (Invoke-Remote "sudo grep '^APP_VERSION=' $envFile | cut -d= -f2-" -Attempts 2 | Out-String).Trim()
   if ($appVersion -ne $expectedVersion) { throw "APP_VERSION 注入失败：期望 $expectedVersion，实际 $appVersion" }
 
+  # WEB_DIST_DIR 注入 env（v1.0.0 workspaces）：指向 current/apps/workbench/web/dist，避免沿用旧根布局路径。
+  $webDistPath = "$currentLink/apps/workbench/web/dist"
+  $webDistScript = @"
+set -e
+if grep -q '^WEB_DIST_DIR=' '$envFile'; then
+  sudo sed -i 's#^WEB_DIST_DIR=.*#WEB_DIST_DIR=$webDistPath#' '$envFile'
+else
+  printf 'WEB_DIST_DIR=%s\n' '$webDistPath' | sudo tee -a '$envFile' >/dev/null
+fi
+"@
+  Invoke-RemoteScript $webDistScript | Out-Null
+
   Write-Host "== 切换 current 并重启 =="
   # ln 与 restart 分开执行：只要 current 已切换就标记 switched，失败清理不会误删 current 目标。
   Invoke-Remote "sudo ln -sfn $releaseDir $currentLink" | Out-Null

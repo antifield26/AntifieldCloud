@@ -40,6 +40,7 @@ v1.0.0 是 AntifieldComplexx 的架构收敛版本：工作台与 Minecraft bot 
 
 - root `npm run check`：app 574（573 pass）+ web 256 + mcbot 94（93 pass/1 skip）；typecheck/lint/build 通过。
 - app 覆盖率：Lines 93.04% / Branches 78.74% / Functions 88.73%；前端 55.83% / 51.29% / 48.66%。
-- schema v18 迁移测试覆盖 v6/v9/v11/v12/v13/v17→v18；生产未变更（待 Phase 7 授权）。
+- schema v18 迁移测试覆盖 v6/v9/v11/v12/v13/v17→v18。
+- **生产已部署（2026-10-28）**：app `20261028T000905Z`（1.0.0/schema18）、mcbot `20261028T000632Z`（1.0.0）；迁移前 DB 快照 `db-predeploy-20261028T000918146Z.sqlite`；smoke 27/0/1/2（部署内）与 35/0/1/2（完整 Access）。
 
 历史版本请见 [docs/legacy/CHANGELOG.md](docs/legacy/CHANGELOG.md)。

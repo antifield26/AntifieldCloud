@@ -126,7 +126,7 @@ chmod 600 "$TMP_FILE"
   grep -E '^BOT_' "$APP_ENV" | sed 's/^BOT_/CHATBOT_/' || true
   grep -E '^LOFII_' "$APP_ENV" | sed 's/^LOFII_/MCBOT_/' || true
   grep -vE '^(BOT_|LOFII_)' "$APP_ENV" || true
-} | sed 's#/var/lib/antifieldcloud-context#/var/lib/antifieldcloud-chatbot-context#g' | awk -F= '!seen[$1]++' > "$TMP_FILE"
+} | sed -e 's#/var/lib/antifieldcloud-context#/var/lib/antifieldcloud-chatbot-context#g' -e 's#^WEB_DIST_DIR=.*#WEB_DIST_DIR=/opt/antifieldcloud/current/apps/workbench/web/dist#' | awk -F= '!seen[$1]++' > "$TMP_FILE"
 install -m 0640 -o root -g antifieldcloud "$TMP_FILE" "$APP_ENV"
 rm -f "$TMP_FILE"
 echo "app_env_migrated=yes"

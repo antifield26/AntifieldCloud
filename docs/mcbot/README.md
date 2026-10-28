@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.0**（随 AntifieldComplexx 统一版本轴；游戏内人格名 Lofii，服务/仓库名 mcbot）。完整文档见 [docs/mcbot](https://github.com/antifield26/AntifieldComplexx/tree/main/docs/mcbot) 与 [docs/INDEX.md](../INDEX.md)。
+> 当前版本：**v1.0.0**（2026-10-28 已部署生产：release `/opt/mcbot/releases/20261028T000632Z`，服务 `mcbot.service`；游戏内人格名 Lofii，服务/仓库名 mcbot）。完整文档见 [docs/mcbot](https://github.com/antifield26/AntifieldComplexx/tree/main/docs/mcbot) 与 [docs/INDEX.md](../INDEX.md)。
 
 ## 能做什么
 

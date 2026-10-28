@@ -2,7 +2,7 @@
 
 ## 0. 项目一句话
 
-**当前版本 v1.0.0（开发线 `release/v1.0.0`；生产仍为 v0.8.1，迁移与发布待 Phase 7 授权）**：npm workspaces 单仓库（`apps/workbench` 工作台 + `apps/mcbot` Minecraft bot）；QQ Bot 子系统更名 chatbot（DB schema **v18**）；原 lofii-bot 合并为 `apps/mcbot` 并硬切换（服务/路径/env/API/审计）；OpenCode v2.1.4；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+**当前版本 v1.0.0（2026-10-28 已部署生产）**：npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；QQ Bot 子系统更名 chatbot（schema **v18**）；原 lofii-bot 合并为 `apps/mcbot` 并硬切换（服务/路径/env/API/审计）；OpenCode v2.1.4；生产 app release `/opt/antifieldcloud/releases/20261028T000905Z`、mcbot release `/opt/mcbot/releases/20261028T000632Z`；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
@@ -56,7 +56,7 @@ npm run check:naming   # 旧标识符扫描（历史归档/迁移数据豁免）
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v1.0.0，2026-10-28 本地）：`npm run check` 通过；app `npm test` **574**（573 pass、1 skip）+ web **256**（48 文件）+ mcbot **94**（93 pass、1 skip）；服务端覆盖率 Lines 93.04% / Branches 78.74% / Functions 88.73%，前端 Lines 55.83% / Branches 51.29% / Functions 48.66%（门禁通过）；`npm run build`、`check-version`（严格 1.0.0）、`check-naming` 通过。生产仍为 v0.8.1（迁移待 Phase 7 授权）。
+当前基线（v1.0.0，2026-10-28 本地/生产已部署）：`npm run check` 通过；app `npm test` **574**（573 pass、1 skip）+ web **256**（48 文件）+ mcbot **94**（93 pass、1 skip）；服务端覆盖率 Lines 93.04% / Branches 78.74% / Functions 88.73%，前端 Lines 55.83% / Branches 51.29% / Functions 48.66%（门禁通过）；`npm run build`、`check-version`（严格 1.0.0）、`check-naming` 通过。生产已部署 v1.0.0/schema18（2026-10-28），待人工完成 QQ/Cloudflare 回调切换与 Windows 备份任务重装。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -166,6 +166,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 8. 已知环境事实（不要重复踩坑）
 
+- **v1.0.0 生产已部署（2026-10-28）**：app `1.0.0`/schema `18`（release `/opt/antifieldcloud/releases/20261028T000905Z`，迁移前快照 `db-predeploy-20261028T000918146Z.sqlite`）；mcbot `1.0.0`（release `/opt/mcbot/releases/20261028T000632Z`，服务 `mcbot.service` active）；旧 `lofii-bot` 已停止/禁用但旧 release `/opt/lofii-bot/releases/20261027T111640Z` 与数据保留用于回滚。生产 env 已迁移为 `CHATBOT_*`/`MCBOT_*`（旧键 0 个），上下文目录 `/var/lib/antifieldcloud-chatbot-context`，`WEB_DIST_DIR=/opt/antifieldcloud/current/apps/workbench/web/dist`；botmsg MCP 已更新为 `/opt/botmsg-mcp/chatbot-tool-mcp.mjs`。备份：`/var/backups/antifieldcomplexx/v1.0.0-predeploy-20261028T000149Z`（DB+env+bot data）、`v1.0.0-20261028T000645Z`（Apply 备份）、`v1.0.0-webdist-20261028T001809Z`、`v1.0.0-unit-sync-20261028T001113Z`。待人工：QQ 回调/Cloudflare Access 新路径、Windows 每日备份任务重装、下一次备份后按 schema 18 重跑 recovery drill。
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
@@ -179,7 +180,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 - 世界备份：`antifieldcloud-world.timer` 每周日 12:00（显式 Asia/Shanghai，`Persistent=true`）以 root 执行 `scripts/backup-world.mjs`，归档到 `/var/lib/antifieldcloud/world-backups`、保留 4 份；Minecraft 世界约 4.1 GiB，周备份耗时与磁盘余量按 1.5× 世界体积预留。
 - 定时策略：仅项目世界备份 timer 统一到周日 12:00；健康探针保持 60s；系统维护 timer（apt/logrotate/fstrim 等）保持发行版默认。
 - 备份/灾备状态文件由脚本写入、应用只读：`/var/lib/antifieldcloud/world-backup-status.json`、`world-pull-status.json`、`drill-status.json`、`backup-offsite-status.json`（0644）；Dashboard/Settings 与告警读取。
-- Bot 上下文文档目录（v0.7.3；默认关闭，生产已显式启用）：`/var/lib/antifieldcloud-context`（`install -d -o antifieldcloud -g opencode -m 2750`；文件 0640，不跟随符号链接，不进入备份）；应用 unit 的 `ReadWritePaths` 已包含该目录。
+- Bot 上下文文档目录（v0.7.3；默认关闭，生产已显式启用）：`/var/lib/antifieldcloud-chatbot-context`（`install -d -o antifieldcloud -g opencode -m 2750`；文件 0640，不跟随符号链接，不进入备份）；应用 unit 的 `ReadWritePaths` 已包含该目录。
 - systemd 加固：`antifieldcloud.service` 已加 `CapabilityBoundingSet=`（空）、`RestrictAddressFamilies`、`PrivateDevices`、`ProtectClock/Hostname/KernelLogs`、`RestrictSUIDSGID/Realtime` 等；`antifieldcloud-world.service` 同样加固并有 `flock`、4h 超时。
 - nftables：默认拒绝入站；22 仅 `192.0.2.0/24` + `198.51.100.0/24`（TEST-NET 占位，安装前替换为实际直连/校园网段）且新建连接限速 20/min；25565 仅同网段；25575 仅 loopback；DHCP 仅 `eth0`/`wlan0`。**改 22 网段前先确认当前 SSH 来源在允许集合内**。
 - SSH 仅公钥：`/etc/ssh/sshd_config.d/00-` drop-in 先于其它配置生效（禁用密码/键盘交互，保留公钥）；旧回滚备份归档在 `/var/backups/antifieldcloud/`（0600 root），`/root` 无残留，活动配置未改；`fail2ban` 已安装并启用 `sshd` jail（nftables 后端，24h ban），dbfile 持久化；`deploy/systemd/nftables.service.d/10-fail2ban-restore.conf` 在 nftables 启动后异步重启 fail2ban 恢复封禁 set。**手工 `systemctl reload nftables` 不触发该 drop-in，仍需 `systemctl restart fail2ban`**。主机级配置模板见 `deploy/host/`（sshd/fail2ban/cloudflared/journald/log2ram），`backup-secrets.sh --include-host-config` 可纳入密钥包。
@@ -188,7 +189,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
   Chat/记忆：`CHATBOT_CHAT_RATE_PER_MINUTE=30`、`CHATBOT_MEMORY_MAX_ITEMS=200`、`CHATBOT_MEMORY_PROMPT_MAX_CHARS=3000`、`CHATBOT_MEMORY_PROMPT_MAX_ITEMS=12`、`CHATBOT_MEMORY_TTL_EPISODE_DAYS=90`、`CHATBOT_MEMORY_TTL_TASK_DAYS=30`；
   连通性：`CHATBOT_CONNECTIVITY_ENABLED=true`、`CHATBOT_CONNECTIVITY_INTERVAL_SECONDS=60`、`CHATBOT_CONNECTIVITY_TIMEOUT_SECONDS=8`；
   群聊：`CHATBOT_CHAT_BURST_GROUP_ALL_WINDOW_MS=8000`、`CHATBOT_CHAT_BURST_GROUP_ALL_MAX_WAIT_MS=20000`、`CHATBOT_AI_SEND_TOOL_ENABLED=false`（启用前安装 `botmsg` MCP）；
-  上下文文档：`CHATBOT_AI_CONTEXT_READ_ENABLED=false`（默认；生产已显式 true，读范围矩阵 7/7 通过）、`CHATBOT_CONTEXT_DIR=/var/lib/antifieldcloud-context`（生产显式、OpenCode 组可读、不得位于 DATA_DIR 内）；
+  上下文文档：`CHATBOT_AI_CONTEXT_READ_ENABLED=false`（默认；生产已显式 true，读范围矩阵 7/7 通过）、`CHATBOT_CONTEXT_DIR=/var/lib/antifieldcloud-chatbot-context`（生产显式、OpenCode 组可读、不得位于 DATA_DIR 内）；
   **连续外发：生产固定 1000ms 最小间隔（按 Bot/AppID 串行，代码内 `DEFAULT_SEND_INTERVAL_MS`；无 env 开关；测试注入 0）。**
   搜索：`CHATBOT_SEARCH_ENABLED/URL/AUTO/MODE/MAX_RESULTS/TIMEOUT_SECONDS/MAX_SNIPPET_CHARS/LANGUAGE/SAFESEARCH/ENGINES/RATE_PER_HOUR`（`CHATBOT_SEARCH_MODE` 仅 mcp/prefetch，非法值拒绝启动）。
   上述键均纳入 `bootstrap-env.sh` MANAGED_KEYS；生产 env 的废弃键清理用 `--force --prune-unknown`（先 `cp -a` 备份）。`CHATBOT_SECRET_KEY` 与 DB 必须一起备份；丢失后已存 QQ AppSecret 只能重新录入。

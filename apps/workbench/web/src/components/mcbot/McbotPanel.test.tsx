@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type {
   McbotHistory,
@@ -394,7 +394,8 @@ describe('McbotPanel 游戏内聊天', () => {
   it('拒绝切分边界后的 / 命令行（上游按 240 字符切行）', async () => {
     renderPanel()
     const input = await screen.findByLabelText('游戏内聊天内容')
-    await userEvent.type(input, `${'a'.repeat(240)}/op mcbot`)
+    // 250+ 字符逐字输入在 jsdom/覆盖率插桩下偶发超过 5s 用例超时；用 change 直接构造边界值。
+    fireEvent.change(input, { target: { value: `${'a'.repeat(240)}/op mcbot` } })
     await userEvent.click(screen.getByRole('button', { name: '发送' }))
     expect(await screen.findByText(/聊天内容不能包含 \//)).toBeTruthy()
     expect(screen.queryByRole('dialog')).toBeNull()

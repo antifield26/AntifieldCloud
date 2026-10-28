@@ -42,6 +42,9 @@ const LINE_EXEMPT = [
   /path="\/bots"/, // 旧前端路由重定向
   /LEGACY_MEMORY_DIR|bot-memory/, // 一次性数据迁移目录名
   /原 lofii-bot|历史名 lofii-bot|（原 lofii-bot）|mcbot（原 lofii-bot）/, // 迁移说明中的历史名称
+  /旧[^。\\n]*lofii-bot/, // 生产迁移记录中的旧服务名
+  /已迁移为/, // env 迁移说明
+  /lofii-bot\.service/, // 生产回滚说明中的旧 unit
 ]
 
 function isExempt(file) {
