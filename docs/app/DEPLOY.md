@@ -15,7 +15,7 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
 
-> **v1.0.2 开发线提示**：本轮 mcbot AI 自主会话/应用面板/Agentic 验收已完成本地门禁，但**未部署**；生产仍为 v1.0.1。部署前需单独授权，并新增 mcbot `AUTONOMY_*` env、默认 `AUTONOMY_ENABLED=false`，部署后运行离线 harness 与可选实机 conductor。`
+> **v1.0.2 生产记录（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0，commit `7cca0ad`），mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，含 MCP 工具发现等待修复）；部署内只读 smoke 26/0/1/2、完整 Access smoke 35/0/1/2（`-SkipLocalTaskCheck`；WARN=drill schema17）。自主模式默认关闭；部署前 DB 快照 `db-predeploy-20261028T085516744Z.sqlite`。未打 Tag/Release。`
 
 > **v1.0.0 迁移提示**：本版本包含 DB schema v18（chatbot 全量更名）与 mcbot 服务/路径硬切换。生产升级前必须做 DB 快照；按 `scripts/migrate-v1.0.0.ps1`（Plan→Apply→`scripts/deploy.ps1`→Verify）执行，旧应用无法读取 v18，回滚必须使用快照 + 旧 release/env。QQ 回调与 Cloudflare Access 需同步改为 `/api/chatbot/webhook/*`。
 
@@ -192,7 +192,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.0 应用部署步骤（当前版本 v1.0.1；schema v18）
+### 3.0 应用部署步骤（当前版本 v1.0.2；schema v18）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
    `node scripts/check-prod-deps.mjs`；2026-10-28 v1.0.1 本地实测：`npm test` **574**（573 pass、1 skip）、`test:web` **256**（48 文件）、mcbot **94**、服务端覆盖率 **93.04/78.74/88.73**、前端 **55.83/51.29/48.66**、check-version 期望 `1.0.1`、check-prod-deps 通过。工作树干净后记录 commit。
@@ -204,7 +204,7 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
    `APP_VERSION=1.0.1` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
    **4.1 mcbot（可选，默认关闭）**：如需启用，先确认 mcbot v1.0.1（最低 v0.6.0）已运行且仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），按 §3.8 同步 Token、设 `MCBOT_ENABLED=true` 并重启，再验证 `/api/mcbot/status`。**v1.0.1 已于 2026-10-28 按“OpenCode 2.2.0 → mcbot 1.0.1 → app 1.0.1”执行**（旧版 v0.6.0 仍兼容，但缺逐行 `/` 中和的纵深防御）。
 5. **验证**：预期 `/healthz` = `{"ok":true,"version":"1.0.1","schemaVersion":18,...}`；smoke 使用
-   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.1 -ExpectedSchemaVersion 18 -ExpectedOpenCodeVersion 2.2.0 -ExpectedMcbotVersion 1.0.1`
+   `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.2 -ExpectedSchemaVersion 18 -ExpectedOpenCodeVersion 2.2.0 -ExpectedMcbotVersion 1.0.2`
    （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/mcbot 服务与版本/本地任务安装标记；
    缺状态文件返回 `SKIP:` 不计入 PASS。
 6. **加密/异地（默认关闭，按需）**：按 §9.10 启用备份整包加密（先私钥解密演练）、§9.11 启用异地副本；默认不启用时状态卡显示“未启用/未配置”。

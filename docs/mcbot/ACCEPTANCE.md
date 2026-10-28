@@ -403,7 +403,7 @@
 
 
 
-## 11. v1.0.2 开发线验收（2026-10-28，本地；未部署）
+## 11. v1.0.2 生产部署与验收（2026-10-28，已执行）
 
 ### 11.1 范围
 
@@ -419,10 +419,13 @@ AI 自主会话（OpenCode 原生 MCP 工具循环、10 种任务白名单、run
 | mcbot | 107（含 5 个 agentic scenarios） |
 | 覆盖率 | 服务端 93.10/78.89/88.86；前端 Lines/Branches/Functions 56.27/51.88/49.16 |
 | OpenCode 2.2.0 原生 MCP Phase 0 | 运行时注册 204；initialize/tools/list/tools/call 正常；deny-all + `<server>_*` allow；Authorization 头透传；session/MCP 清理成功 |
-| 生产 | **未部署**；仍 v1.0.1/schema18/OpenCode 2.2.0 |
+| 生产 | **已部署 v1.0.2**：app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；schema18/OpenCode 2.2.0；自主模式默认关闭 |
+| 实机 Agentic | `task_status` + `finish` 真实调用（toolCalls=2），任务 idle，session/MCP 清理；kill switch 503 |
+| 部署 smoke | 部署内 26/0/1/2；完整 Access 35/0/1/2（`-SkipLocalTaskCheck`，WARN=drill schema17） |
 
 ### 11.3 证据边界
 
-- 离线 harness 证明策略/协议/状态机，不证明模型行为；真实模型自主运行与实机 Agent 验收未执行。
-- 未向生产玩家/外部通知通道发送测试消息；未修改生产 mcbot/应用/DB。
+- 离线 harness 证明策略/协议/状态机；实机 Agentic 已执行只读 `task_status`+`finish`，未在生产演练实际任务启动；模型行为仍按 fail-closed/人工复核。
+- 未向生产玩家/外部通知通道发送测试消息；实机验收临时恢复 FORCE_ONLINE 并已恢复 false；未执行 DB 迁移。
+- 原生 MCP 工具发现需要 warmup；首次无等待会话表现为空回复/无工具调用，已由 `AUTONOMY_MCP_WARMUP_MS=3000` 修复并复验。
 过程与命令见 [AGENTIC-ACCEPTANCE.md](AGENTIC-ACCEPTANCE.md)。

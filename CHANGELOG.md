@@ -1,8 +1,8 @@
 # Changelog
 
-## [v1.0.2] - 2026-10-28（开发线；未部署）
+## [v1.0.2] - 2026-10-28（已部署生产；未打 Tag/Release）
 
-v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。生产仍为 v1.0.1。
+v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`）；自主模式默认关闭，未打 Tag/Release。
 
 ### Added
 

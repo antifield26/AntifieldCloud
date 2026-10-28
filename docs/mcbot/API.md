@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.2 开发线）
+# AntifieldComplexx 对接契约（mcbot v1.0.2）
 
 > 本文只描述 `mcbot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -14,6 +14,7 @@
 | 数据格式 | JSON / SSE，UTF-8 |
 | 请求体上限 | 8 KiB |
 | 自主 MCP | `/autonomy/mcp` 仅接受当前会话随机 Bearer；由 OpenCode 运行时调用，不暴露给应用/浏览器 |
+| MCP 工具发现 | `AUTONOMY_MCP_WARMUP_MS=3000`：运行时注册后等待 OpenCode 刷新工具列表再创建 session |
 | `/say` 限流 | 10 次/分钟（进程内） |
 | 控制接口限流 | 30 次/分钟（`CONTROL_RATE_LIMIT`） |
 | 鉴权头 | `Authorization: Bearer <token>`；不支持 URL query token |
