@@ -5,6 +5,7 @@
   [switch]$AllowDirty,
   [switch]$Provision,
   [switch]$ServerConfig,
+  [switch]$SkipServiceSwitch,
   [int]$HealthTimeoutSec = 90
 )
 
@@ -12,6 +13,8 @@
 # 失败自动回滚上一 release。v1.0.0 起为 workspace 感知布局：release 根 = 根 package/lock + apps/mcbot，
 # systemd WorkingDirectory = /opt/mcbot/current/apps/mcbot。
 # 首次部署：.\apps\mcbot\scripts\deploy.ps1 -Provision -ServerConfig -AllowDirty
+# v1.0.0 生产切换：先 -SkipServiceSwitch 安装 release（不启动 mcbot），再执行
+# .\scripts\migrate-v1.0.0.ps1 -Mode Apply 完成用户/环境/服务/数据切换。
 
 $ErrorActionPreference = "Stop"
 try { $PSNativeCommandUseErrorActionPreference = $false } catch { }
@@ -127,6 +130,12 @@ try {
   Write-Host "== switching current and restarting =="
   Must-Remote -Command "sudo ln -sfn $releaseDir $currentLink" -Label "switch current" | Out-Null
   $switched = $true
+  if ($SkipServiceSwitch) {
+    Write-Host "SkipServiceSwitch: release installed and current switched; mcbot.service not started."
+    Write-Host "next: .\scripts\migrate-v1.0.0.ps1 -Mode Plan, then -Mode Apply"
+    Write-Host "release: $releaseDir"
+    return
+  }
   Must-Remote -Command "sudo systemctl restart mcbot.service" -Label "restart mcbot" | Out-Null
 
   Write-Host "== health check =="
