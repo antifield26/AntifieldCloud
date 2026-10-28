@@ -778,7 +778,10 @@ test('DashboardService：mcbot 启用时监控 mcbot 服务，禁用时不检查
     const mc = new MinecraftService(enabled.db, { ...enabled.config, mcPort: 1, rconPort: 1 })
     const dashboard = new DashboardService(enabled.db, enabled.config, enabled.files, mc)
     const data = await dashboard.get()
-    assert.equal(data.services.mcbot, 'unknown', '启用时包含 mcbot 服务键（Windows 下为 unknown）')
+    assert.ok(
+      data.services.mcbot === 'unknown' || data.services.mcbot === 'inactive',
+      '启用时包含 mcbot 服务键（非 Linux 主机为 unknown，Linux 无该单元为 inactive）',
+    )
     assert.equal(Object.keys(data.services).length, 4)
   } finally {
     enabled.close()
