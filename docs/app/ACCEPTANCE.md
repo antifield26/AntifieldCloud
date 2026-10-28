@@ -1,6 +1,6 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.3（2026-10-28 已部署生产；未打 Tag/Release）：app 1.0.3/schema18/OpenCode 2.2.0、mcbot 1.0.3（自主模式已启用）。
+> 当前版本 v1.0.3（2026-10-28 已部署生产；已补发 Tag/Release）：app 1.0.3/schema18/OpenCode 2.2.0、mcbot 1.0.3（自主模式已启用）。
 
 ### v1.0.3 生产部署与验收（2026-10-28，已执行）
 

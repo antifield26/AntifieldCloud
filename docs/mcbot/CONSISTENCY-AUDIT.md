@@ -17,7 +17,7 @@
 | eat/equip 仅空闲、背包内食物/护甲/工具、固定冷却 | docs/mcbot/README/API/AGENTS | `eat()`/`equip()`、`withAction`、单元测试 | consistent | 不接受任意物品/槽位 |
 | 事件驱动重决策：任务生命周期 + 安全告警、30s 去重、最多 6 次、无周期空转 | docs/mcbot/README/API、AGENTS | `EVENT_TRIGGERS`、`queueDecision`、`decisionLoop`、事件测试 | consistent | 自动检查 env key |
 | 环境/动作 env 键进入 env 模板与 bootstrap | AGENTS、docs/mcbot/API、env.example | `config.ts` 解析、`env.example`、`bootstrap-env.sh` | consistent | 自动检查 17 个 key |
-| 生产 v1.0.3 已部署、未打 Tag/Release | 根 README、CHANGELOG、AGENTS、ACCEPTANCE | 生产 `/healthz`、release 记录、完整 smoke | consistent | 生产保持 v1.0.3；不打 Tag |
+| 生产 v1.0.3 已部署、已补发 Tag/Release | 根 README、CHANGELOG、AGENTS、ACCEPTANCE | 生产 `/healthz`、release 记录、完整 smoke | consistent | 生产保持 v1.0.3；已打 Tag |
 | v1.0.2 验收记录（smoke 36/0/1/2、实机 Agentic） | docs/mcbot/README、docs/app/ACCEPTANCE | 历史部署记录 | historical | 保留并标注 v1.0.2 |
 | 普通聊天 AI 没有任何工具/命令能力（旧绝对声明） | docs/mcbot/README 旧文本 | 与 v1.0.2 自主 MCP 工具冲突 | fixed | 限定为普通聊天，自主会话另述 |
 

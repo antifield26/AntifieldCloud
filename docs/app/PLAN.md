@@ -8,7 +8,7 @@
 
 - **版本**：**v1.0.3**（统一版本轴，生产已部署）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.3**（契约 v1）。
 - **范围**：mcbot 有界环境快照/附近方块与容器扫描、只读容器读取、`eat`/`equip`、任务生命周期+安全阈值事件驱动重决策；文档声明与代码实现一致性审计及自动检查。
-- **状态**：app release `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot release `/opt/mcbot/releases/20261028T144253Z`；完整 Access smoke 36/0/1/2（WARN=drill schema17）；实机 Agentic observe/task_status/finish 通过；Windows 备份任务标记 1.0.3；未打 Tag/Release。
+- **状态**：app release `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot release `/opt/mcbot/releases/20261028T144253Z`；完整 Access smoke 36/0/1/2（WARN=drill schema17）；实机 Agentic observe/task_status/finish 通过；Windows 备份任务标记 1.0.3；已补发 Tag/Release `v1.0.3`。
 - **边界**：容器只读、不传送、不破块；动作工具仅空闲时；未新增任意命令/采集/战斗动作。
 - **测试基线**：`npm run check`（含 `check:docs`）通过；app 591（590 pass、1 skip）+ web 273 + mcbot 122；`build`/`check-version`（严格 1.0.3）/`check-naming` 通过。
 
