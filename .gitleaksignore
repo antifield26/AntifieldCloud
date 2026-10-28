@@ -1,0 +1,8 @@
+# gitleaks 历史误报：以下测试夹具使用占位 Token/API key，不是真实凭据，仅忽略固定指纹。
+5405a8d129e3881386517f31c22bf3565e26d00d:server/test/lofii-client.test.ts:generic-api-key:261
+5405a8d129e3881386517f31c22bf3565e26d00d:server/test/lofii-client.test.ts:generic-api-key:272
+6d26cbd5651e9473fe2f8d0a12ba31626420a080:server/test/bot-memory.test.ts:gitlab-pat:249
+81be6e50a26c75495ab2d7df19d7c48f651ae849:server/test/bot-qq.test.ts:generic-api-key:213
+81be6e50a26c75495ab2d7df19d7c48f651ae849:server/test/bot-qq.test.ts:generic-api-key:219
+9ae58099bb911d960b566bee2f4a1055c055c294:server/test/lofii-client.test.ts:generic-api-key:209
+b15d2ff6bced1b7e7805af14503cd9f0cc24d1a0:server/test/proxy-upgrade.test.ts:generic-api-key:68
