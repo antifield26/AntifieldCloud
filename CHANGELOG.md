@@ -1,8 +1,8 @@
 # Changelog
 
-## [v1.0.3] - 2026-10-28（开发线；生产仍 v1.0.2；未部署/未打 Tag/Release）
+## [v1.0.3] - 2026-10-28（已部署生产；未打 Tag/Release）
 
-v1.0.3 是 mcbot 环境感知/自主决策增强与文档-实现一致性审计版本：新增有界环境快照、附近方块/容器扫描、只读容器读取、进食/装备工具与事件驱动重决策；未变更 schema，生产保持 v1.0.2。
+v1.0.3 是 mcbot 环境感知/自主决策增强与文档-实现一致性审计版本：新增有界环境快照、附近方块/容器扫描、只读容器读取、进食/装备工具与事件驱动重决策；未变更 schema。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z`），完整 Access smoke 36/0/1/2；未打 Tag/Release。
 
 ### Added
 
@@ -12,14 +12,16 @@ v1.0.3 是 mcbot 环境感知/自主决策增强与文档-实现一致性审计�
 - **事件驱动自主决策**：任务生命周期与安全告警触发重决策；同原因 30s 去重、最多 6 次，无周期空转；任务存在才保持会话。
 - **文档审计**：新增 `docs/mcbot/CONSISTENCY-AUDIT.md` 声明/实现矩阵与 `scripts/check-mcbot-claims.mjs` 自动检查；修正 v1.0.2 生产状态、AI 能力、工具语义等陈旧声明。
 
-### Verification（开发线）
+### Verification
 
-- 本地：`npm run check`、`npm run build`、`check-version`（1.0.3）、`check-naming`、`check:docs` 全绿；mcbot 测试与覆盖率更新。
-- 不部署、不迁移 DB、不重启生产；生产仍 app/mcbot v1.0.2、schema 18、OpenCode 2.2.0。
+- 本地：`npm run check`、`npm run build`、`check-version`（1.0.3）、`check-naming`、`check:docs` 全绿；app 591（590 pass、1 skip）+ web 273 + mcbot 122；服务端覆盖率 93.10/78.88/88.86，前端 56.27/51.88/49.16。
+- 生产：mcbot 1.0.3、app 1.0.3/schema18/OpenCode2.2.0；部署内只读 smoke 26/0/1/2，完整 Access smoke 36/0/1/2（WARN=drill schema17；2 SKIP=加密/异地默认关闭）；Windows 备份任务标记 1.0.3。
+- 实机 Agentic：`observe` + `task_status` + `finish`（toolCalls=3），`low_health` 安全告警触发事件驱动重决策，任务未启动，session/MCP 清理；`FORCE_ONLINE` 恢复 false。
 
 ### Migration / Rollback
 
-- 无 schema/DB 迁移；生产未变更，回滚为本地丢弃 v1.0.3 开发线即可。自主新模式仍默认关闭，生产 v1.0.2 的 `AUTONOMY_ENABLED=true` 不受影响。
+- 无 schema/DB 迁移；部署前快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261028T144601033Z.sqlite`；人工备份 `/var/backups/antifieldcomplexx/v1.0.3-predeploy-20261028T144245Z`。
+- 回滚：切回 app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`，并恢复部署前 env；自主模式仍默认关闭，生产 `AUTONOMY_ENABLED=true` 保持不变。未打 Tag/Release。
 
 ## [v1.0.2] - 2026-10-28（已部署生产；未打 Tag/Release）
 

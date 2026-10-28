@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.3 开发线**（生产仍 v1.0.2：release `/opt/mcbot/releases/20261028T091246Z`，服务 `mcbot.service`；自主模式已启用，仅主人显式启动；本开发线未部署、未打 Tag/Release）。
+> 当前版本：**v1.0.3**（2026-10-28 已部署生产：release `/opt/mcbot/releases/20261028T144253Z`，服务 `mcbot.service`；自主模式已启用，仅主人显式启动；未打 Tag/Release）。
 
 ## 能做什么
 
@@ -31,18 +31,19 @@
 - **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；v1.0.2 增加 `/autonomy` 状态/启动/急停与内部 MCP 工具端点；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
 
-## v1.0.3 新增能力（开发线）
+## v1.0.3 新增能力（已部署）
 
 - **环境感知**：`observe` 返回有界环境快照（坐标/血量/饥饿/时间/天气、玩家/敌对生物、背包/护甲、任务/阻塞）；可按可配置 allowlist、半径（默认 16）和上限（48）扫描安全区内附近方块/容器，只读已加载区块，不加载新区块。
 - **只读容器**：`inspect_chest` 仅对安全区内 allowlist 容器、在无 active/queue/pending 任务时短距寻路打开，返回物品摘要后立即关闭；不取物、不传送、不破块，失败不重试。
 - **生存动作**：`eat` / `equip` 仅空闲时对背包内食物/护甲/工具生效，固定冷却与审计；不接受任意物品名或槽位。
 - **事件驱动决策**：任务生命周期（queued/queue_started/completed/failed/stopped/interrupted/queue_cleared/resume_required）与安全告警（low_health/low_food/inventory_full/defense_retreat/task_failed/chest_full）触发重决策；同原因 30s 去重、最多 6 次；无周期空转，无任务时结束会话。
 - **任务白名单**：`fishing` / `farming` / `woodcutting` / `mining` / `forest` / `sleep` / `patrol` / `guard` / `escort` / `explore`（10 种，仍受 `AUTONOMY_TASKS` 限制）。
+- **v1.0.3 生产验收**：完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.3；WARN=drill schema17）；实机 Agentic 调用 `observe`+`task_status`+`finish`（toolCalls=3），低血告警触发事件驱动重决策，任务未启动，session/MCP 清理；`FORCE_ONLINE=false` 已恢复。inspect_chest 实机路径未单独触发，由离线测试覆盖。
 
 ## v1.0.2 新增能力
 
-- **AI 自主会话（代码默认关闭，生产 v1.0.2 已启用）**：主人通过游戏聊天 `Lofii 自主行动 [目标]` 或面板显式启动一次；OpenCode 通过运行时注册的原生 MCP 工具循环驱动现有任务/回家/存箱，不能执行任意命令。
-- **原生 MCP 工具**：v1.0.2 提供 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `finish`；v1.0.3 开发线增加 `observe` / `inspect_chest` / `eat` / `equip`（共 10 个）；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 权限；每次会话随机 run_id + Bearer token。
+- **AI 自主会话（代码默认关闭，生产 v1.0.2/v1.0.3 已启用）**：主人通过游戏聊天 `Lofii 自主行动 [目标]` 或面板显式启动一次；OpenCode 通过运行时注册的原生 MCP 工具循环驱动现有任务/回家/存箱，不能执行任意命令。
+- **原生 MCP 工具**：v1.0.2 提供 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `finish`；v1.0.3 增加 `observe` / `inspect_chest` / `eat` / `equip`（共 10 个）；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 权限；每次会话随机 run_id + Bearer token。
 - **预算/安全**：`AUTONOMY_MAX_MINUTES`、`AUTONOMY_MAX_TOOL_CALLS`、`AUTONOMY_MAX_FAILURES`、任务白名单、手动指令抢占、聊天/面板急停；会话结束停止任务并清理 OpenCode session/MCP。
 - **应用面板**：自主状态、目标、时间、工具调用数、最近决策/原因/错误，启动/急停二次确认；任务下拉同步 10 种任务（含 guard/escort/explore）。
 - **Agentic 验收**：`test/agentic` 离线 scenario harness（CI），`scripts/agentic-acceptance.mjs` 可选实机 conductor；流程见 [AGENTIC-ACCEPTANCE.md](AGENTIC-ACCEPTANCE.md)。

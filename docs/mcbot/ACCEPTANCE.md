@@ -1,6 +1,6 @@
 # 验收记录（mcbot v0.2.0 / v0.3.0 / v0.4.0 / v0.5.0 / v0.6.0 本地）
 
-> v1.0.3 开发线（2026-10-28，未部署）：环境感知/自主决策与文档一致性审计见 [CONSISTENCY-AUDIT.md](CONSISTENCY-AUDIT.md) 与 `docs/app/ACCEPTANCE.md`；本文保留历史实机验收记录。
+> v1.0.3（2026-10-28 已部署生产）：环境感知/自主决策与文档一致性审计见 [CONSISTENCY-AUDIT.md](CONSISTENCY-AUDIT.md) 与 `docs/app/ACCEPTANCE.md`；本文保留历史实机验收记录。
 
 ## 1. 环境
 

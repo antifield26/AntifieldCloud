@@ -1,9 +1,10 @@
 # 路线图
 
-## v1.0.3（**开发线（2026-10-28）；未部署/未打 Tag/Release**；mcbot 环境感知与自主决策增强 + 文档-实现一致性审计；schema v18/OpenCode 2.2.0 不变）
+## v1.0.3（**已部署生产（2026-10-28）；未打 Tag/Release**；mcbot 环境感知与自主决策增强 + 文档-实现一致性审计；schema v18/OpenCode 2.2.0 不变）
 
 - **范围**：mcbot 有界环境快照与附近方块/容器扫描、只读容器读取、eat/equip、任务生命周期+安全阈值事件驱动重决策；文档声明/代码实现一致性审计与自动检查。
-- **边界**：不新增任意命令/采集/战斗动作；容器只读、不传送、不破块；生产保持 v1.0.2，未部署。
+- **状态**：app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z`；完整 Access smoke 36/0/1/2；实机 Agentic observe/task_status/finish 通过；Windows 备份任务标记 1.0.3。
+- **边界**：不新增任意命令/采集/战斗动作；容器只读、不传送、不破块。
 
 ## v1.0.2（**已部署生产（2026-10-28）；未打 Tag/Release**；mcbot AI 自主会话 + 应用自主控制 + Agentic 验收；schema v18/OpenCode 2.2.0 不变）
 

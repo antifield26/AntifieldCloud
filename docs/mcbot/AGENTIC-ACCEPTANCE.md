@@ -7,7 +7,7 @@
 验收必须证明：
 
 - 主人显式启动/停止；默认关闭，非主人不能触发。
-- 模型只能调用 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `observe` / `inspect_chest` / `eat` / `equip` / `finish`（v1.0.2 为前 6 个；后 4 个为 v1.0.3 开发线）。
+- 模型只能调用 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `observe` / `inspect_chest` / `eat` / `equip` / `finish`（v1.0.2 为前 6 个；后 4 个为 v1.0.3）。
 - 任务名只能是现有 10 种任务；不能出现任意命令、坐标、玩家名或未注册工具。
 - v1.0.3 额外验证：`observe` 只读、`inspect_chest` 不取物/不传送/不破块、`eat`/`equip` 仅空闲且仅背包物品、事件驱动重决策有去重/上限、会话结束清理容器/寻路。
 - 每次会话随机 `run_id` + Bearer token；跨会话/错误 token 被拒绝。

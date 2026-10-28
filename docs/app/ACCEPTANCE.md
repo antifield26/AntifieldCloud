@@ -1,13 +1,14 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.3 开发线（2026-10-28；生产仍 v1.0.2；未部署/未打 Tag/Release）：生产 app 1.0.2/schema18/OpenCode 2.2.0、mcbot 1.0.2（自主模式已启用）。
->
+> 当前版本 v1.0.3（2026-10-28 已部署生产；未打 Tag/Release）：app 1.0.3/schema18/OpenCode 2.2.0、mcbot 1.0.3（自主模式已启用）。
 
-### v1.0.3 开发线验收（2026-10-28，未部署）
+### v1.0.3 生产部署与验收（2026-10-28，已执行）
 
 - 范围：mcbot 环境感知（有界快照、附近方块/容器扫描、只读容器读取）、eat/equip、任务生命周期+安全阈值事件驱动重决策；文档声明与代码实现一致性审计（含自动检查）。
-- 门禁：`npm run check`（含 `check:docs`）、`npm run build`、`check-version`（严格 1.0.3）、`check-naming`；mcbot 测试与覆盖率更新。
-- 边界：生产未部署/未变更 DB/未重启服务；真实 Minecraft/OpenCode 新工具路径未做生产联调，留待后续授权；v1.0.2 生产验收记录保留如下。
+- 发布：app release `/opt/antifieldcloud/releases/20261028T144416Z`（1.0.3/schema18/OpenCode2.2.0/commit `b385d02`）、mcbot release `/opt/mcbot/releases/20261028T144253Z`（1.0.3/contract1）；部署前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261028T144601033Z.sqlite`（sha256 `5404571089b19fed15c1be1ad7f2577460b2c0dcacdc2af6539aefd0a3cfb00a`），手工备份 `/var/backups/antifieldcomplexx/v1.0.3-predeploy-20261028T144245Z`。
+- 门禁：`npm run check`（含 `check:docs`）、`npm run build`、`check-version`（严格 1.0.3）、`check-naming` 全绿；app 591（590 pass、1 skip）+ web 273 + mcbot 122；服务端覆盖率 93.10/78.88/88.86，前端 56.27/51.88/49.16。
+- 生产验收：部署内只读 smoke 26/0/1/2；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.3；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；实机 Agentic 调用 `observe`+`task_status`+`finish`（toolCalls=3），低血安全告警触发重决策，任务未启动，session/MCP 清理；`FORCE_ONLINE` 已恢复 false。
+- 环境说明：PC 直连 Cloudflare app 边缘偶发 TLS/连接超时；完整 smoke 经 SSH SOCKS 由 Pi 出口执行并全绿；Pi 本机与公网健康均正常。inspect_chest 实机路径未单独触发（低血/附近敌对生物时模型选择安全结束），由离线测试覆盖。
 
 ### v1.0.2 生产部署与验收（2026-10-28，已执行）
 
