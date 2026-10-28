@@ -26,7 +26,6 @@ import {
   AUTONOMY_PERMISSION_PREFIX,
   AUTONOMY_RAW_TOOLS,
   AUTONOMY_TASK_NAMES,
-  AUTONOMY_TOOL_NAME_PREFIX,
   buildToolDefinitions,
   type AutonomyToolName,
   toolDisplayName
@@ -250,6 +249,9 @@ export class AutonomyService {
       await this.deps.opencode.removeMcp(AUTONOMY_MCP_SERVER).catch(() => undefined)
       await this.deps.opencode.registerMcp(AUTONOMY_MCP_SERVER, this.mcpUrl(), run.token)
       run.mcpRegistered = true
+      // OpenCode 运行时注册 MCP 后，工具列表刷新是异步的；过早创建 session 会让模型
+      // 看不到工具（表现为空回复/直接结束）。等待工具发现完成后再 prompt。
+      await this.sleep(this.deps.config.autonomyMcpWarmupMs)
       if (run.stopRequested) return this.stoppedDuringStart(run)
       const permissions: SessionPermission[] = [
         { action: '*', resource: '*', effect: 'deny' },
@@ -310,7 +312,8 @@ export class AutonomyService {
   }
 
   private buildPrompt (run: ActiveRun): string {
-    const tools = AUTONOMY_RAW_TOOLS.map(name => `${AUTONOMY_TOOL_NAME_PREFIX}${name}`).join(', ')
+    // 模型实际看到的是 MCP 原始工具名（服务名前缀由 OpenCode 内部映射，权限层才使用前缀）。
+    const tools = AUTONOMY_RAW_TOOLS.join(', ')
     return [
       '你正在执行一次受限的 Minecraft 自主会话。你会看到一个工具列表；只能使用这些工具，不能调用其他工具。',
       `当前 run_id：${run.runId}`,
@@ -322,7 +325,7 @@ export class AutonomyService {
       '3. 任务开始后，等待/查询 task_status，不要重复启动同一任务；失败时最多调整一次。',
       '4. 目标完成、无法继续或需要结束会话时调用 finish。',
       '5. 不要尝试聊天、执行命令、生成坐标/玩家名，或使用未列出的工具。',
-      `可用工具（完整名称以工具列表为准）：${tools}`
+      `可用工具（以工具列表名称为准）：${tools}`
     ].join('\n')
   }
 

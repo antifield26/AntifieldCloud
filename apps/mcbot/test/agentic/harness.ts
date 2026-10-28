@@ -65,6 +65,7 @@ export function autonomyFixture (env: Record<string, string | undefined> = {}) {
     OPENCODE_PASSWORD: 'test-password',
     AUTONOMY_ENABLED: 'true',
     AUTONOMY_MAX_TOOL_CALLS: '6',
+    AUTONOMY_MCP_WARMUP_MS: '0',
     TASK_ENABLED: 'true',
     HTTP_CONTROL_ENABLED: 'true',
     ...env

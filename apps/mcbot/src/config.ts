@@ -173,6 +173,7 @@ export interface Config {
   autonomyMaxFailures: number
   autonomyGoalMaxChars: number
   autonomyDecisionTimeoutMs: number
+  autonomyMcpWarmupMs: number
   autonomyTasks: TaskName[]
   /** 库存/补货告警与自动补货。 */
   inventoryAlertFreeSlots: number
@@ -652,6 +653,7 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     autonomyMaxFailures: readInt(env, 'AUTONOMY_MAX_FAILURES', 2, 1, 5),
     autonomyGoalMaxChars: readInt(env, 'AUTONOMY_GOAL_MAX_CHARS', 200, 20, 500),
     autonomyDecisionTimeoutMs: readInt(env, 'AUTONOMY_DECISION_TIMEOUT_MS', 180000, 30000, 900000),
+    autonomyMcpWarmupMs: readInt(env, 'AUTONOMY_MCP_WARMUP_MS', 3000, 0, 15000),
     autonomyTasks,
     inventoryAlertFreeSlots: readInt(env, 'INVENTORY_ALERT_FREE_SLOTS', 2, 0, 9),
     foodAlertThreshold: readInt(env, 'FOOD_ALERT_THRESHOLD', 4, 0, 20),

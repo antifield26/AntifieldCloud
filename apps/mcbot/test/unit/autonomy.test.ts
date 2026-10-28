@@ -20,6 +20,7 @@ function autonomyConfig (env: Record<string, string | undefined> = {}) {
     OPENCODE_PASSWORD: 'test-password',
     AUTONOMY_ENABLED: 'true',
     AUTONOMY_MAX_TOOL_CALLS: '3',
+    AUTONOMY_MCP_WARMUP_MS: '0',
     TASK_ENABLED: 'true',
     HTTP_CONTROL_ENABLED: 'true',
     ...env
@@ -169,6 +170,8 @@ test('autonomy start registers native MCP, creates permissions and exposes tools
   const { result, runId, token } = await startAndGet(s)
   assert.equal(result.autonomy.state, 'running')
   assert.equal(s.session.registered, 1)
+  assert.match(s.session.promptText, /task_status/)
+  assert.doesNotMatch(s.session.promptText, /mcbot_autonomy_task_status/)
   assert.deepEqual(s.session.permissions[0], { action: '*', resource: '*', effect: 'deny' })
   assert.deepEqual(s.session.permissions[1], { action: 'mcbot_autonomy_*', resource: '*', effect: 'allow' })
   assert.equal(runId.length, 36)
