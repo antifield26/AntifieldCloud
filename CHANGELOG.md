@@ -2,7 +2,7 @@
 
 ## [v1.0.2] - 2026-10-28（已部署生产；未打 Tag/Release）
 
-v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`）；自主模式默认关闭，未打 Tag/Release。
+v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode 原生 MCP 工具循环驱动现有 10 种任务与回家/存箱，确定性策略层负责权限、预算、急停和审计；应用面板增加自主控制，并补 mcbot 运维残余。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot `/opt/mcbot/releases/20261028T091246Z`）；生产已启用自主模式（仅主人显式启动），Windows 备份任务已重装到 1.0.2；未打 Tag/Release。
 
 ### Added
 
@@ -19,7 +19,7 @@ v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode
 
 ### Migration / Rollback
 
-- 无 schema/DB 迁移；v1.0.2 未部署，无生产回滚动作。部署前需单独授权并按 DEPLOY 流程验证；自主模式默认关闭。
+- 无 schema/DB 迁移；生产回滚使用部署前 DB 快照或切回上一 release；自主模式代码默认关闭（生产当前已启用，可随时设 `AUTONOMY_ENABLED=false` 重启）。未打 Tag/Release。
 ## [v1.0.1] - 2026-10-28
 
 v1.0.1 是定位同步与 OpenCode 升级版本：运行时 UI/元数据切换为“个人综合交互平台”，OpenCode 从 2.1.4 升级到 2.2.0，无 schema 迁移。

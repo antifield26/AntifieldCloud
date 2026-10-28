@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.2**（2026-10-28 已部署生产：release `/opt/mcbot/releases/20261028T091246Z`，服务 `mcbot.service`；自主模式默认关闭；游戏内人格名 Lofii，服务/仓库名 mcbot）。
+> 当前版本：**v1.0.2**（2026-10-28 已部署生产：release `/opt/mcbot/releases/20261028T091246Z`，服务 `mcbot.service`；自主模式已启用（仅主人显式启动）；游戏内人格名 Lofii，服务/仓库名 mcbot）。
 
 ## 能做什么
 
@@ -41,8 +41,8 @@
 - **运维残余**：mcbot 纳入应用 `service_down` 监控；应用轮询停止时中止/等待在途请求，停止后不写告警游标；`/api/mcbot/status|history` GET 限流。
 ### v1.0.2 生产验收
 
-- app/mcbot v1.0.2 已部署；完整 Access smoke 35/0/1/2（跳过 Windows 任务标记，WARN=drill schema17）。
-- 实机 Agentic：真实模型通过 MCP 调用 `task_status` + `finish`（toolCalls=2），任务保持 idle，session/MCP 清理；随后恢复 `AUTONOMY_ENABLED=false`。
+- app/mcbot v1.0.2 已部署；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=drill schema17）。
+- 实机 Agentic：真实模型通过 MCP 调用 `task_status` + `finish`（toolCalls=2），任务保持 idle，session/MCP 清理；验收后曾恢复关闭，2026-10-28 按用户要求启用 `AUTONOMY_ENABLED=true`。
 - 原生 MCP 的运行时工具发现存在异步窗口，`AUTONOMY_MCP_WARMUP_MS=3000` 用于等待工具列表刷新；提示词使用原始工具名。
 
 ## v1.0.0 新增能力

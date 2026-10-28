@@ -15,7 +15,7 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
 
-> **v1.0.2 生产记录（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0，commit `7cca0ad`），mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，含 MCP 工具发现等待修复）；部署内只读 smoke 26/0/1/2、完整 Access smoke 35/0/1/2（`-SkipLocalTaskCheck`；WARN=drill schema17）。自主模式默认关闭；部署前 DB 快照 `db-predeploy-20261028T085516744Z.sqlite`。未打 Tag/Release。`
+> **v1.0.2 生产记录（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0，commit `7cca0ad`），mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，含 MCP 工具发现等待修复）；部署内只读 smoke 26/0/1/2、完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=drill schema17）。自主模式已启用（仅主人显式启动）；部署前 DB 快照 `db-predeploy-20261028T085516744Z.sqlite`。未打 Tag/Release。`
 
 > **v1.0.0 迁移提示**：本版本包含 DB schema v18（chatbot 全量更名）与 mcbot 服务/路径硬切换。生产升级前必须做 DB 快照；按 `scripts/migrate-v1.0.0.ps1`（Plan→Apply→`scripts/deploy.ps1`→Verify）执行，旧应用无法读取 v18，回滚必须使用快照 + 旧 release/env。QQ 回调与 Cloudflare Access 需同步改为 `/api/chatbot/webhook/*`。
 

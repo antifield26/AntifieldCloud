@@ -468,7 +468,7 @@ GET /history?kind=alerts&from=<ISO>&to=<ISO>&limit=100
 
 ## 12. v1.0.2 AI 自主会话（OpenCode 原生 MCP 工具）
 
-自主会话默认关闭（`AUTONOMY_ENABLED=false`），仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
+自主会话代码默认关闭（`AUTONOMY_ENABLED=false`）；生产当前已启用（`AUTONOMY_ENABLED=true`），仍仅主人通过游戏聊天或应用面板显式启动。OpenCode 在运行时注册一个 loopback MCP server，模型原生调用受控工具；mcbot 策略层校验并执行。**不要为普通面板/第三方开放 `/autonomy/mcp`**。
 
 ### 12.1 GET /autonomy
 

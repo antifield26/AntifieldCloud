@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.2（2026-10-28 已部署生产；未打 Tag/Release）：app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；schema18/OpenCode 2.2.0；完整 Access smoke 35/0/1/2（WARN=drill schema17）；自主模式默认关闭。
+> 版本：v1.0.2（2026-10-28 已部署生产；未打 Tag/Release）：app release `/opt/antifieldcloud/releases/20261028T085429Z`、mcbot release `/opt/mcbot/releases/20261028T091246Z`；schema18/OpenCode 2.2.0；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=drill schema17）；自主模式已启用（仅主人显式启动）。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）

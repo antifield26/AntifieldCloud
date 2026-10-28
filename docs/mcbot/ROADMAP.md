@@ -1,8 +1,8 @@
 ## v1.0.2（**已部署生产（2026-10-28）；未打 Tag/Release**；AI 自主会话 + Agentic 验收）
 
 - **范围**：OpenCode 原生 MCP 工具循环驱动现有 10 种任务/回家/存箱；显式启动、白名单、预算/失败/急停/审计、任务/MCP/session 清理；应用面板自主控制；mcbot 服务监控/轮询停止收口/GET 限流；Agentic 离线 harness + 可选实机 conductor。
-- **状态**：已部署生产；mcbot 108 测试、app 591/web 273 全绿；OpenCode 2.2.0 Phase 0 + 实机 Agentic 工具调用通过；release `/opt/mcbot/releases/20261028T091246Z`，自主模式已恢复默认关闭。
-- **边界**：默认关闭；不新增任意命令/采集/战斗动作；实机 AI 自主运行需单独授权。
+- **状态**：已部署生产；mcbot 108 测试、app 591/web 273 全绿；OpenCode 2.2.0 Phase 0 + 实机 Agentic 工具调用通过；release `/opt/mcbot/releases/20261028T091246Z`，自主模式已启用（仅主人显式启动）。
+- **边界**：仅主人显式启动；不新增任意命令/采集/战斗动作；实机 AI 自主运行已完成受控验收。
 ## v1.0.1（2026-10-28 已部署；版本随 AntifieldComplexx 统一版本轴升至 1.0.1，功能无变更）
 
 - 生产 release `/opt/mcbot/releases/20261028T021116Z`（1.0.1/contract1），随 v1.0.1 应用发布；无 schema/协议变更。

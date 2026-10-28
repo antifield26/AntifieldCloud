@@ -1,6 +1,6 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.2（2026-10-28 已部署生产；未打 Tag/Release）：app 1.0.2/schema18/OpenCode 2.2.0、mcbot 1.0.2（自主模式默认关闭）。
+> 当前版本 v1.0.2（2026-10-28 已部署生产；未打 Tag/Release）：app 1.0.2/schema18/OpenCode 2.2.0、mcbot 1.0.2（自主模式已启用）。
 >
 
 ### v1.0.2 生产部署与验收（2026-10-28，已执行）
@@ -9,8 +9,8 @@
 - OpenCode 原生 MCP Phase 0（生产 OpenCode v2.2.0）：运行时 `PUT /api/experimental/mcp/<name>` 204；initialize/tools/list/tools/call 正常；`deny-all + <server>_* allow` 可执行；Authorization 头透传；临时 session/MCP 清理成功。
 - 本地门禁：`npm run check` 通过；app **591**（590 pass、1 skip）+ web **273**（49 文件）+ mcbot **108**；服务端覆盖率 93.10/78.89/88.86，前端 56.27/51.88/49.16；build/check-version（严格 1.0.2）/check-naming 通过。
 - 部署：mcbot release `/opt/mcbot/releases/20261028T091246Z`（含 MCP 工具发现等待修复）；app release `/opt/antifieldcloud/releases/20261028T085429Z`（commit `7cca0ad`，schema18/OpenCode 2.2.0）；部署前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261028T085516744Z.sqlite`（sha256 `d93953e4...b96`），手工回滚点 `/var/backups/antifieldcomplexx/v1.0.2-predeploy-20261028T085231Z`。
-- 验收：部署内只读 smoke **26/0/1/2**；完整 Access smoke **35/0/1/2**（`-SkipLocalTaskCheck`；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；实机 Agentic 会话真实调用 `task_status`+`finish`（toolCalls=2，任务保持 idle，session/MCP 清理）；随后 kill switch 返回 503 `autonomy_disabled`。
-- 边界：自主模式与 FORCE_ONLINE 已恢复默认关闭；未打 Tag/Release；Windows 每日备份任务安装标记仍为 1.0.1（本次 `-SkipLocalTaskCheck`，待用户管理员重装）；drill schema17 待重跑。
+- 验收：部署内只读 smoke **26/0/1/2**；完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.2；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；实机 Agentic 会话真实调用 `task_status`+`finish`（toolCalls=2，任务保持 idle，session/MCP 清理）；随后 kill switch 返回 503 `autonomy_disabled`。
+- 后续配置：2026-10-28 按用户要求启用 `AUTONOMY_ENABLED=true`（仍仅主人显式启动，`FORCE_ONLINE=false`）；Windows 备份任务已通过 UAC 重装到 1.0.2，完整 smoke 36/0/1/2（无跳过）。未打 Tag/Release；drill schema17 待重跑。
 ### v1.0.1 运行时文案与 OpenCode 2.2.0 验收（2026-10-28，已执行）
 
 - app release `/opt/antifieldcloud/releases/20261028T021311Z`（1.0.1/schema18/OpenCode v2.2.0，commit `228ed62`）；mcbot release `/opt/mcbot/releases/20261028T021116Z`（1.0.1/contract1）。

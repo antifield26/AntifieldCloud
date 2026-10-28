@@ -61,7 +61,7 @@ node apps/mcbot/scripts/agentic-acceptance.mjs `
 ### v1.0.2 实机结果（2026-10-28）
 
 - 生产已部署；受控开启自主模式与 FORCE_ONLINE，限制 4 次工具/3 分钟。
-- 真实模型通过 MCP 调用 `task_status` + `finish`（toolCalls=2），任务保持 idle，OpenCode session/MCP 清理；随后恢复 `AUTONOMY_ENABLED=false`、`FORCE_ONLINE=false`，禁用启动返回 503 `autonomy_disabled`。
+- 真实模型通过 MCP 调用 `task_status` + `finish`（toolCalls=2），任务保持 idle，OpenCode session/MCP 清理；随后恢复 `AUTONOMY_ENABLED=false`、`FORCE_ONLINE=false`，禁用启动返回 503 `autonomy_disabled`；2026-10-28 按用户要求最终启用 `AUTONOMY_ENABLED=true`，Windows 任务重装到 1.0.2。
 - 发现并修复：OpenCode 运行时 MCP 工具列表异步刷新，注册后立即建 session 会导致模型看不到工具；`AUTONOMY_MCP_WARMUP_MS=3000` 等待后再 prompt，提示词使用原始工具名（服务前缀由权限层处理）。
 
 ## 5. 手动三角色流程
