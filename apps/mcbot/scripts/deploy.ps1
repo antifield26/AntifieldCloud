@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$PiHost = "169.254.77.10",
   [string]$PiUser = "antifield",
   [switch]$SkipChecks,
@@ -74,8 +74,14 @@ try {
 
   if (-not $SkipChecks) {
     Write-Host "== local checks =="
-    & npm.cmd run check:mcbot
-    if ($LASTEXITCODE -ne 0) {
+    # Windows PowerShell 5.1 会把 npm 的 stderr（npm notice）当作 NativeCommandError；
+    # 局部切到 Continue，仅以退出码判断，避免误判本地门禁失败。
+    $oldErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & npm.cmd run check:mcbot 2>&1 | Write-Host
+    $checkCode = $LASTEXITCODE
+    $ErrorActionPreference = $oldErrorActionPreference
+    if ($checkCode -ne 0) {
       throw "npm run check:mcbot failed"
     }
   }
