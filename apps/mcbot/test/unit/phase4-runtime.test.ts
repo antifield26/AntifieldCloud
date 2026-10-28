@@ -1,7 +1,5 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createSocket, type Socket } from 'node:dgram'
-import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Bot } from 'mineflayer'
@@ -39,31 +37,36 @@ test('sd_notify：文本格式/换行拒绝/未设置 socket 时 no-op', () => {
   assert.equal(notify.watchdog(), false)
 })
 
-test('sd_notify：unix datagram 实际发送（非 Windows）', { skip: process.platform === 'win32' }, async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'mcbot-sdnotify-'))
-  const socketPath = join(dir, 'notify.sock')
-  const server = (createSocket as unknown as (type: string) => Socket)('unix_dgram')
-  const received = new Promise<string>((resolve, reject) => {
-    server.on('message', message => resolve(message.toString()))
-    server.on('error', reject)
+test('sd_notify：通过 systemd-notify 发送 READY/WATCHDOG/STOPPING/STATUS', () => {
+  const calls: Array<{ file: string, args: readonly string[] }> = []
+  const notify = new SdNotify({
+    env: { NOTIFY_SOCKET: '/run/systemd/notify' },
+    execFileImpl: (file, args, _options, callback) => {
+      calls.push({ file, args })
+      callback(null, '', '')
+    }
   })
-  await new Promise<void>((resolve, reject) => {
-    ;(server as unknown as { bind: (path: string, callback: () => void) => void }).bind(socketPath, () => resolve())
-    server.on('error', reject)
+  assert.equal(notify.enabled, true)
+  assert.equal(notify.ready(), true)
+  assert.equal(notify.watchdog(), true)
+  assert.equal(notify.stopping(), true)
+  assert.equal(notify.status('busy\nstate'), true)
+  assert.deepEqual(calls.map(call => call.args), [
+    ['--ready'],
+    ['WATCHDOG=1'],
+    ['--stopping'],
+    ['--status=busy state']
+  ])
+  assert.ok(calls.every(call => call.file === '/usr/bin/systemd-notify'))
+
+  const errors: string[] = []
+  const failing = new SdNotify({
+    env: { NOTIFY_SOCKET: '/run/systemd/notify' },
+    logger: { debug: (_message, details) => { errors.push(String(details?.error ?? '')) } },
+    execFileImpl: (_file, _args, _options, callback) => callback(new Error('ENOENT'), '', '')
   })
-  try {
-    const notify = new SdNotify({ env: { NOTIFY_SOCKET: socketPath } })
-    assert.equal(notify.enabled, true)
-    assert.equal(notify.watchdog(), true)
-    const message = await Promise.race([
-      received,
-      new Promise<string>((_resolve, reject) => setTimeout(() => reject(new Error('timeout')), 2000))
-    ])
-    assert.equal(message, 'WATCHDOG=1')
-  } finally {
-    await new Promise<void>(resolve => server.close(() => resolve()))
-    rmSync(dir, { recursive: true, force: true })
-  }
+  assert.equal(failing.ready(), true)
+  assert.match(errors.join(','), /ENOENT/)
 })
 
 test('内存治理：阈值/冷却/未启用时不告警', () => {
