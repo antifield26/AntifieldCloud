@@ -236,7 +236,8 @@ sudo systemctl restart opencode && systemctl is-active opencode
 #    /api/info 的 version 是 OpenCode Web/应用实际看到的版本。
 PID=$(systemctl show opencode -p MainPID --value)
 sudo readlink -f /proc/$PID/exe   # 不得包含 (deleted)
-curl -fsS -u "opencode:$(sudo grep -E '^OPENCODE_PASSWORD=' /etc/opencode/opencode.env | head -n1 | cut -d= -f2-)" \
+AUTH=$(printf '%s' "opencode:$(sudo grep -E '^OPENCODE_PASSWORD=' /etc/opencode/opencode.env | head -n1 | cut -d= -f2-)" | base64 -w0)
+curl -fsS -H "Authorization: Basic $AUTH" \
   http://127.0.0.1:4096/api/info   # 期望 "version":"2.2.0"
 ```
 
