@@ -2,6 +2,8 @@
 
 ## 0. 项目一句话
 
+**项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
+
 **当前版本 v1.0.0（2026-10-28 已部署生产）**：npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；QQ Bot 子系统更名 chatbot（schema **v18**）；原 lofii-bot 合并为 `apps/mcbot` 并硬切换（服务/路径/env/API/审计）；OpenCode v2.1.4；生产 app release `/opt/antifieldcloud/releases/20261028T002517Z`、mcbot release `/opt/mcbot/releases/20261028T000632Z`；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
@@ -56,7 +58,7 @@ npm run check:naming   # 旧标识符扫描（历史归档/迁移数据豁免）
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v1.0.0，2026-10-28 本地/生产已部署）：`npm run check` 通过；app `npm test` **574**（573 pass、1 skip）+ web **256**（48 文件）+ mcbot **94**（93 pass、1 skip）；服务端覆盖率 Lines 93.04% / Branches 78.74% / Functions 88.73%，前端 Lines 55.83% / Branches 51.29% / Functions 48.66%（门禁通过）；`npm run build`、`check-version`（严格 1.0.0）、`check-naming` 通过。生产已部署 v1.0.0/schema18（2026-10-28），待人工完成 QQ/Cloudflare 回调切换与 Windows 备份任务重装。
+当前基线（v1.0.0，2026-10-28 本地/生产已部署）：`npm run check` 通过；app `npm test` **574**（573 pass、1 skip）+ web **256**（48 文件）+ mcbot **94**（94 pass）；服务端覆盖率 Lines 93.04% / Branches 78.74% / Functions 88.73%，前端 Lines 55.83% / Branches 51.29% / Functions 48.66%（门禁通过）；`npm run build`、`check-version`（严格 1.0.0）、`check-naming` 通过。生产已部署 v1.0.0/schema18（2026-10-28）；Cloudflare Access 新回调 bypass 与 Windows 备份任务已完成，待 QQ 平台回调重新校验与下一次备份后的 schema18 drill。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 
@@ -166,7 +168,7 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 ## 8. 已知环境事实（不要重复踩坑）
 
-- **v1.0.0 生产已部署（2026-10-28）**：app `1.0.0`/schema `18`（release `/opt/antifieldcloud/releases/20261028T002517Z`，迁移前快照 `db-predeploy-20261028T000918146Z.sqlite`）；mcbot `1.0.0`（release `/opt/mcbot/releases/20261028T000632Z`，服务 `mcbot.service` active）；旧 `lofii-bot` 已停止/禁用但旧 release `/opt/lofii-bot/releases/20261027T111640Z` 与数据保留用于回滚。生产 env 已迁移为 `CHATBOT_*`/`MCBOT_*`（旧键 0 个），上下文目录 `/var/lib/antifieldcloud-chatbot-context`，`WEB_DIST_DIR=/opt/antifieldcloud/current/apps/workbench/web/dist`；botmsg MCP 已更新为 `/opt/botmsg-mcp/chatbot-tool-mcp.mjs`。备份：`/var/backups/antifieldcomplexx/v1.0.0-predeploy-20261028T000149Z`（DB+env+bot data）、`v1.0.0-20261028T000645Z`（Apply 备份）、`v1.0.0-webdist-20261028T001809Z`、`v1.0.0-unit-sync-20261028T001113Z`。待人工：QQ 回调/Cloudflare Access 新路径、Windows 每日备份任务重装、下一次备份后按 schema 18 重跑 recovery drill。
+- **v1.0.0 生产已部署（2026-10-28）**：app `1.0.0`/schema `18`（release `/opt/antifieldcloud/releases/20261028T002517Z`，迁移前快照 `db-predeploy-20261028T000918146Z.sqlite`）；mcbot `1.0.0`（release `/opt/mcbot/releases/20261028T000632Z`，服务 `mcbot.service` active）；旧 `lofii-bot` 已停止/禁用但旧 release `/opt/lofii-bot/releases/20261027T111640Z` 与数据保留用于回滚。生产 env 已迁移为 `CHATBOT_*`/`MCBOT_*`（旧键 0 个），上下文目录 `/var/lib/antifieldcloud-chatbot-context`，`WEB_DIST_DIR=/opt/antifieldcloud/current/apps/workbench/web/dist`；botmsg MCP 已更新为 `/opt/botmsg-mcp/chatbot-tool-mcp.mjs`。备份：`/var/backups/antifieldcomplexx/v1.0.0-predeploy-20261028T000149Z`（DB+env+bot data）、`v1.0.0-20261028T000645Z`（Apply 备份）、`v1.0.0-webdist-20261028T001809Z`、`v1.0.0-unit-sync-20261028T001113Z`。Cloudflare Access `/api/chatbot/webhook` bypass 已更新（2026-10-28）、Windows 备份任务已重装 appVersion=1.0.0；待人工：QQ 平台回调重新校验、下一次备份后按 schema 18 重跑 recovery drill。
 - Pi：`antifield@192.0.2.10` 直连（TEST-NET 占位；实际值见 `.local/DEPLOYMENT.md`）；WiFi 示例 `198.51.100.10` 与 PC 不通（AP 隔离）；直连 SSH 偶发超时，脚本需重试。
 - 校园网有 Portal 认证（占位 `https://portal.<domain>`；实际端点见 `.local`）；树莓派重启后认证可能失效，表现为 Cloudflare 7844 出站阻断、tunnel 1033/公网 530；需从 Pi 出口重新完成认证，再 `systemctl reset-failed cloudflared && systemctl restart cloudflared`。
 - Pi 上 Node 为 `/usr/local/bin/node`（v26.12.1，世界可执行；旧二进制保留 `/usr/local/bin/node.v26.11.1`）；npm 指向 `/home/antifield/.nvm`（12.2.0），部署时以 root 使用。
@@ -207,13 +209,13 @@ deploy/              systemd（应用/健康探针/世界备份 timer）、nftab
 
 1. Cloudflare 后台添加 `app`/`ai` CNAME（已由用户完成）。
 2. 交互式运行 provisioning，设置密码、扫描 TOTP、保存恢复码。
-3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。**当前现状（v1.0.0 待重装）**：任务仍为 appVersion=0.8.1/`backup-pull.ps1` 旧 sha；v1.0.0 发布后需用管理员 PowerShell 重跑 `install-backup-task.ps1`，刷新复制脚本、脚本 SHA 与 appVersion=1.0.0，再不带 `-SkipLocalTaskCheck` 跑一次 smoke。
+3. 安装/重装 Windows 每日应用归档计划任务（`install-backup-task.ps1`，需管理员 PowerShell）；仓库更新后必须重装一次，刷新复制的 `backup-pull.ps1`、脚本 SHA 与安装标记。**当前现状（已完成，2026-10-28）**：已通过 UAC 提权重装——`backup-task.json` appVersion=1.0.0、installedAt `2026-10-28T00:47:17Z`、scriptSha256 与仓库一致、任务 Ready；完整 Access smoke 36/0/1/2（含任务标记检查）。
 4. 离线保存 age 私钥（密钥包与备份整包加密各一套，互不复用）；把 `ALERT_WEBHOOK_URL` 写入 env 后重启应用。
 5. Windows 周度世界拉取任务（`scripts/world-pull.ps1`）已安装 `AntifieldCloud-World-Pull`（周日 12:00）并手动验证；恢复演练仍按 `scripts/drill.ps1` 手动/季度执行（schema 期望值默认来自 `deploy/tool-versions.json`）；异地副本按用户决定保持关闭。
 6. 应用新 nftables 规则前，确认当前 SSH 来源在允许网段内（模板为 TEST-NET 占位，先替换为实际网段，否则会锁死）；保留物理键鼠/已建立 SSH 作为回滚通道。
 7. 备份整包加密启用（默认关闭）：离线生成独立 age 密钥 → Pi 写公钥（root、组/其他不可写）→ 用私钥完成一次 `age -d` 解密与 `drill.ps1 -AgeIdentityPath` 演练 → 设 `BACKUP_ARCHIVE_ENCRYPTION=true` 并重启 → 下一次 prepare 生成 `.age` → PC 拉取/ack → 再演练。回滚：关开关恢复明文，已生成 `.age` 保留（仅 PC 可解密）。
 8. 异地副本启用（默认关闭）：PC 安装配置 rclone remote/凭据 → `install-backup-task.ps1 -InstallOffsiteTask -OffsiteRemote …` → 手跑一次确认状态 JSON 回写与 `plaintextSkipped=0` → 确认告警阈值 `ALERT_OFFSITE_MAX_AGE_HOURS`。
-9. Cloudflare Access：已通过 API 配置主应用（One-time PIN + Owner allow + Service Auth）与 4 个 bypass；`ai` 主机另有 Access 应用（Owner allow + Smoke service token；Free 无自定义 WAF）。service token 存放在 PC `.local/cf-access.env`（gitignored）。轮换 service token 后同步该文件，并用 `smoke.ps1 -AccessClientId/-AccessClientSecret` 重跑；配置用高权限 API Token 完成后应 Revoke。
+9. Cloudflare Access：已通过 API 配置主应用（One-time PIN + Owner allow + Service Auth）与 4 个 bypass；`ai` 主机另有 Access 应用（Owner allow + Smoke service token；Free 无自定义 WAF）。service token 存放在 PC `.local/cf-access.env`（gitignored）。Bot webhook bypass 已更新为 `/api/chatbot/webhook`（2026-10-28，旧路径不再使用）。轮换 service token 后同步该文件，并用 `smoke.ps1 -AccessClientId/-AccessClientSecret` 重跑；配置用高权限 API Token 完成后应 Revoke。
 10. Bot 平台后台注册（QQ 官方 Bot，用户在 q.qq.com 完成，Agent 不代替）：创建机器人取得 AppID/AppSecret → 在 `/chatbots` 新建 QQ Bot 录入 → 回调地址填 `https://app.<domain>/api/chatbot/webhook/<botId>` 并处理 `op=13` 校验 → 订阅 `C2C_MESSAGE_CREATE`/`GROUP_AT_MESSAGE_CREATE`/`AT_MESSAGE_CREATE` → 登记目标 → 开启 `CHATBOT_ENABLED=true` 并重启。图片理解需 `CHATBOT_AI_ENABLED=true` 且模型支持 image。
 11. 最终公网/手机/PWA 验收；完成正式恢复演练并记录到 `docs/app/BACKUP.md` §7 与 `docs/app/ACCEPTANCE.md`。
 12. SSH 仅公钥的回滚窗口当前已关闭：旧备份归档到 `/var/backups/antifieldcloud/`（0600 root），活动配置未改；后续如再次变更仍按 `docs/app/DEPLOY.md` §9.7 保留 24h 回滚窗口。

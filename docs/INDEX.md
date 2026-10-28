@@ -1,8 +1,9 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.0（开发线 `release/v1.0.0`；生产仍为 v0.8.1，生产迁移与发布待 Phase 7 授权）。
+> 版本：v1.0.0（`release/v1.0.0`；生产已部署 2026-10-28：app 1.0.0/schema18、mcbot 1.0.0；Tag/Release `v1.0.0`）。
+> 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
-## 应用（apps/workbench）
+## 应用（apps/workbench，Web 端）
 
 | 文档 | 内容 |
 |---|---|

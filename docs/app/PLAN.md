@@ -1,15 +1,39 @@
-# AntifieldComplexx v0.8.1 实施计划（当前状态）
+# AntifieldComplexx v1.0.0 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`。
 
-## 当前版本
+> 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-- **版本**：**v0.8.1**（v0.8.0 的 Minor 安全补丁）；schema 保持 **v17**（无迁移）；OpenCode **v2.1.4**；Node.js **v26.12.1**；上游 mcbot **v0.6.1**（最低 v0.6.0，契约 v1）。
-- **状态**：**生产部署与只读/API/安全回归验收完成（2026-10-27 CST）；v0.8.1 已发布：annotated Tag `v0.8.1` + GitHub Release（2026-10-27）**。生产应用 **v0.8.1**（release `/opt/antifieldcloud/releases/20261027T113055Z`/commit `5405a8d`，`/healthz` v0.8.1/schema17；迁移前快照 `db-predeploy-20261027T113130633Z.sqlite`；部署内只读 smoke 26/0/0/2、完整 Access smoke **36/0/0/2**（含本地任务标记检查，无 `-SkipLocalTaskCheck`）；mcbot v0.6.1 release `20261027T111640Z`/commit `a0a28da`，Token `--check` read/control 均 match）；上一生产 v0.8.0 保留为回滚点。生产 UI 沿用 v0.8.0 视觉确认（v0.8.1 未重新截图）。
-- **发布**：v0.8.1 **已发布**——annotated Tag `v0.8.1` + GitHub Release [AntifieldComplexx v0.8.1：mcbot 安全补丁与稳定性修复](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.1)（2026-10-27）；v0.8.0 **已发布**——annotated Tag `v0.8.0`（commit `c5ec851`）+ GitHub Release [AntifieldComplexx v0.8.0：mcbot Minecraft Bot 对接](https://github.com/antifield26/AntifieldComplexx/releases/tag/v0.8.0)（publishedAt `2026-10-27T12:02:45Z`）；部署与验收证据已回填 `docs/app/ACCEPTANCE.md` v0.8.1 节。
-- **测试基线（v0.8.1 本地，2026-10-27 实测）**：`npm run check` 通过；`npm test` **572**（571 pass、1 skip，server=87 + scripts=4 共 91 文件）、`npm run test:web` **256**（48 文件）；服务端覆盖率 **Lines 93.04% / Branches 78.77% / Functions 88.67%**、前端 **Lines 55.83% / Branches 51.29% / Functions 48.66%**（门禁通过）；`npm run build` 通过；`node scripts/check-version.mjs` 严格模式 `0.8.1` 通过（`deploy/env.example APP_VERSION=0.8.1`）。
+## v1.0.0 当前状态
 
-## 范围（v0.8.1 安全补丁）
+- **版本**：**v1.0.0**（统一版本轴）；schema **v18**；OpenCode **v2.1.4**；Node.js **v26.12.1**；mcbot **v1.0.0**（契约 v1）。
+- **状态**：生产已部署（2026-10-28）：app release `/opt/antifieldcloud/releases/20261028T002517Z`（1.0.0/schema18），mcbot release `/opt/mcbot/releases/20261028T000632Z`（1.0.0，服务 `mcbot.service`），旧 `lofii-bot` 已停止/禁用；Tag/Release `v1.0.0` 已发布；完整 Access smoke **36/0/1/2**（WARN=恢复演练仍为 schema17，待下次备份后按 v18 重跑）。
+- **测试基线**：`npm run check` 通过；app 574（573 pass）+ web 256 + mcbot 94（94 pass）；服务端覆盖率 93.04/78.74/88.73、前端 55.83/51.29/48.66；`build`/`check-version`/`check-naming` 通过。
+- **迁移**：旧 env 前缀已迁移为 `CHATBOT_*`/`MCBOT_*`；上下文目录 → `/var/lib/antifieldcloud-chatbot-context`；`WEB_DIST_DIR` → `current/apps/workbench/web/dist`；DB schema v18 迁移不可逆（用快照回滚）。
+
+## v1.0.0 范围
+
+- 项目定位重定义为“个人综合交互平台”，同步 README/AGENTS/docs。
+- npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`），根包统一门禁与版本。
+- chatbot 全量更名（模块/表/列/env/API/审计/meta）与 schema v18 迁移。
+- 原 lofii-bot 全历史导入 `apps/mcbot` 并硬切换（服务/用户/路径/env/API）。
+- mcbot 稳定性/AI 只读工具/守卫/护送/探索/深矿/分类存箱/自动补货与故障注入。
+- 文档分区（app/mcbot/legacy）、迁移脚本、CI/命名/版本门禁。
+
+## v1.0.0 关键决策
+
+| 项 | 决策 |
+|---|---|
+| 定位 | 个人综合交互平台；`workbench` 仅 Web 端技术名 |
+| 架构 | npm workspaces 单仓库；双进程 workbench + mcbot，loopback HTTP 契约 v1 |
+| 数据 | schema v18 一次性改名；历史迁移只追加；旧应用不可读，回滚用快照 |
+| 命名 | chatbot/mcbot 硬切换，不做旧 API/env 别名 |
+| 部署 | mcbot → 迁移 Apply → app → Verify/smoke；保留旧 release/env/DB 快照 |
+
+## v0.8.1 历史范围（保留）
+
+> 以下自“v0.8.1 历史内容”起均为 v0.8.1 及更早的计划与验收记录，不再代表当前版本；v1.0.0 当前事实以 README/AGENTS/ROADMAP/CHANGELOG/DEPLOY/ACCEPTANCE 为准。
+### v0.8.1 历史内容
 
 - **修复 SEC6-01（P1）/say 分块命令注入**：`POST /api/mcbot/say` 现在**必须启用控制 Token**（只读模式 `503 lofii_control_disabled`）；拒绝**任意位置 ASCII `/`**（含填充 240 字符后放在切分第二行的命令）与 C0 控制字符/DEL；上游 mcbot v0.6.1 的 `splitOutgoing` 逐行把行首 `/` 中和为全角 `／`（防御纵深，新增 239/240/255/480 边界测试）。
 - **修复 SEC6-02/03/04（P2/P3）**：`mapmcbotAlert` 与前端标签查表改为 own-property（避免 `__proto__`/`constructor` 命中原型链）；`sanitizeDetails` 跳过原型键；`/history` 校验 `kind`/数组/行形状并只透传对象行；`mcbotClient` 响应改为**流式** 2 MiB 上限（不再先 `arrayBuffer()` 后检查）；Token 脱敏大小写不敏感；事件缓存增加 512 KiB 总字节上限；上游轮询 `recent` 改为 200 条。
@@ -17,7 +41,7 @@
 - **版本/文档**：AntifieldComplexx 0.8.1（`package.json`/lock/`deploy/env.example`）；README/AGENTS/CHANGELOG/PLAN/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT 同步；schema/OpenCode 工具版本不变。
 - **明确残余（本轮不修）**：告警事件无幂等键（schema v18 下一 minor）；告警风暴并发 webhook/Bot 上限；mcbot 进程未纳入 `service_down` 监控/metrics；`/status`/`history` 的 `lastError` 原样透传（admin-only）；`MCBOT_URL` 允许任意 loopback 端口；`stop()` 不取消在途轮询；真实 mcbot 告警未触发；**v0.8.1 已发布 Tag+Release**。详见 `docs/app/AUDIT.md` v0.8.0 Minor 补审计节。
 
-## 关键决策
+### v0.8.1 关键决策
 
 | 项 | 当前决策 |
 |---|---|
@@ -35,7 +59,7 @@
 | 部署顺序 | 先升级 mcbot 到 v0.6.1（仅 loopback）→ root 同步 Token、核对 `--check` → 部署 AntifieldComplexx 0.8.1 → `MCBOT_ENABLED=true` 重启 → `/api/mcbot/status`、`/say` 只读 503、任意 `/` 400 与 smoke（`-ExpectedMcbotVersion 0.6.1`）验证 |
 | 回滚 | `MCBOT_ENABLED=false` + 重启即停用 mcbot；版本回退上一 release；schema 不变、无 DB 回滚 |
 
-## 架构与数据流
+### v0.8.1 架构与数据流
 
 ```text
 浏览器 /minecraft?tab=lofii
@@ -52,7 +76,7 @@
 - 告警：`advanceCursor` 过滤 `type='alert'` → `mapmcbotAlert`（own-property 查表，清洗 details 深度/键数/数组/字符串长度并跳过原型键）→ `recordExternal`（异步 webhook + Bot 通知）；写入失败停在上一条已处理事件并在下一轮重试。
 - 控制：成功即 `refresh()` 拉一次最新状态；`/say` 使用控制 Token，只读模式 503。
 
-## 阶段
+### v0.8.1 阶段
 
 1. **安全审计与修复**（完成）：三轨审计（架构对抗/安全/Debug）发现 P0=0；P1=1（`/say` 分块命令注入）已修复；P2=2（原型链/形状 + 面板崩溃）已修复；P3 多数加固已修复，残余见 AUDIT。
 2. **服务端加固**（完成）：`client.ts`（流式 2 MiB、5xx 稳定码、大小写不敏感脱敏、history 形状）、`service.ts`（512 KiB 缓存、poll 200、游标失败重试、原型键清洗）、`routes/lofii.ts`（`/say` 控制 Token + 任意 `/` + C0、taskId 校验）、`config.ts`（`MCBOT_URL` 根地址限制）、`sync-mcbot-tokens.sh`（同目录临时文件 + `mv`）。
@@ -61,7 +85,7 @@
 5. **测试/门禁**（完成）：`npm run check`、`test:coverage`、`test:web:coverage`、`build`、`check-version`（0.8.1）通过；新增/扩展 mcbot 回归测试。
 6. **文档与验收**（完成）：本文件、README/AGENTS/CHANGELOG/ROADMAP/API/UI-SPEC/ARCHITECTURE/SECURITY/DEPLOY/ACCEPTANCE/AUDIT；生产部署、smoke、已认证 API 与安全回归已由 Lead 在 0.8.1 上执行并回填。
 
-## 验收
+### v0.8.1 验收
 
 - **本地（v0.8.1 已完成）**：`npm run check` 通过；`npm test` 572（571 pass、1 skip）、`npm run test:web` 256（48 文件）；服务端覆盖率 93.04/78.77/88.67、前端 55.83/51.29/48.66（门禁通过）；`npm run build` 通过；`check-version` 严格模式通过；`/say` 回归覆盖只读 503、任意 `/`、C0、240 字符切分边界（见 `docs/app/ACCEPTANCE.md` v0.8.1 节）。
 - **生产（v0.8.1 已实测，2026-10-27）**：
@@ -72,7 +96,7 @@
   5. **UI 未在 v0.8.1 重新截图**（v0.8.0 视觉确认仍有效）；只读 `/say` 503 仅单测/集成覆盖（生产控制 Token 已配置，未改配置实测）。
 - **生产边界（不得写成已完成）**：真实 mcbot 告警未触发（单元/集成覆盖，`alert_events` 暂无 `lofii_*`）；**v0.8.0 已发布 Tag+Release**（Tag `v0.8.0`→commit `c5ec851`，publishedAt `2026-10-27T12:02:45Z`）；**v0.8.1 已发布 Tag+Release**（Tag `v0.8.1`，GitHub Release 2026-10-27）。
 
-## 非目标（本版不做）
+### v0.8.1 非目标
 
 - 不消费 mcbot SSE `/events`，不做浏览器直连/长连接面板。
 - 不通过 `/say` 执行任何命令（任意 ASCII `/` 一律拒绝）。
@@ -82,7 +106,7 @@
 - 不支持多 mcbot 实例、多 Minecraft 服务器或多用户权限分离。
 - 不把 mcbot 暴露到公网或 Cloudflare；不修改 nftables 对 3010 的 loopback 约束。
 
-## 回滚
+### v0.8.1 回滚
 
 - **功能级**：`MCBOT_ENABLED=false`（可选清空读/控制 Token）+ 重启；应用回到仅 v0.8.1 其它行为，`meta.lofii.event_cursor` 可保留（再次启用时按现存游标续接，或删除该 meta 键重建基线）；无 schema/DB 变更。
 - **控制面回滚**：清空 `MCBOT_CONTROL_TOKEN` + 重启即变只读（`/say` 也随之为 503）；如需完全停止对 mcbot 的调用，设 `MCBOT_ENABLED=false`。

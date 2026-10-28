@@ -1,8 +1,10 @@
 # AntifieldComplexx UI 规范
 
+> 项目定位：**个人综合交互平台**。产品名与登录页标题按新定位定义；当前生产 UI 实际标题仍为旧文案，随后续前端 release 同步（本次仅文档）。
+
 ## 1. 定位与基调
 
-- 产品名：**AntifieldComplexx · 个人工作台**；中文界面；暗色科技感。
+- 产品名：**AntifieldComplexx · 个人综合交互平台**；中文界面；暗色科技感。
 - 关键词：安静、克制、信息密度适中、像可靠的个人基础设施，而不是花哨仪表盘。
 - 参考感觉：Linear / Vercel 的暗色面板 + 家用 NAS 的亲和力；不使用外部字体、图片或 CDN。
 - 目标设备：PC 浏览器（主）、手机（390 px 宽可用）、Pi 本机 Chromium。
@@ -59,7 +61,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 4.1 登录 `/login`
 
-- 居中卡片（最大 420 px），暗色，顶部 Logo + “AntifieldComplexx · 个人工作台”。
+- 居中卡片（最大 420 px），暗色，顶部 Logo + “AntifieldComplexx · 个人综合交互平台”。
 - 两步：
   1. 用户名（默认预填 `antifield`，可改）+ 密码；主按钮“下一步”。
   2. 6 位 TOTP 输入（大号等宽、自动聚焦）；主按钮“登录”；次链接“使用恢复码”。

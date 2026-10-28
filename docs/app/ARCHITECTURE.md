@@ -1,5 +1,7 @@
 # 架构
 
+> 项目定位：**个人综合交互平台**。`apps/workbench` 只是 Web 端技术名；平台统一承载个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
+
 ## 1. 总览
 
 ```text

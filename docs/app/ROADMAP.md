@@ -1,5 +1,12 @@
 # 路线图
 
+## v1.0.0（**已发布：Tag `v1.0.0` + GitHub Release（2026-10-28）**；生产已迁移；原 lofii-bot 合并为 `apps/mcbot`；chatbot 更名 + schema v18；统一版本 1.0.0）
+
+- **项目定位**：个人综合交互平台（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
+- **范围**：npm workspaces（`apps/workbench` + `apps/mcbot`）；chatbot 全量更名（模块/表/列/env/API/审计）；原 lofii-bot 硬切换为 mcbot 1.0.0；schema v18；mcbot 稳定性/AI 只读工具/守卫/护送/探索/深矿/分类存箱/补货；文档分区与 CI 门禁。
+- **状态**：生产 app `1.0.0`/schema18（release `/opt/antifieldcloud/releases/20261028T002517Z`，迁移前快照 `db-predeploy-20261028T000918146Z.sqlite`）、mcbot `1.0.0`（release `/opt/mcbot/releases/20261028T000632Z`，`mcbot.service` active）；旧 `lofii-bot` 已停止/禁用；完整 Access smoke **36/0/1/2**（2026-10-28，WARN=恢复演练仍为 schema17）。
+- **迁移/回滚**：DB schema v18 不可被旧应用读取；升级必须快照；回滚 = DB 快照 + 旧 release/env（详见 `docs/app/DEPLOY.md`）。
+
 ## v0.8.1（**已发布：Tag `v0.8.1` + GitHub Release（2026-10-27）**；生产部署与只读/API/安全回归验收完成；v0.8.0 的 Minor 安全补丁；schema 保持 v17；OpenCode v2.1.4）
 
 - **范围**：修复 v0.8.0 Minor 补审计发现——`/say` 分块命令注入（SEC6-01 P1：控制 Token 必需、任意 ASCII `/` 与 C0 拒绝）、上游数据原型链/形状（SEC6-02 P2：own-property 查表、history 形状校验、原型键清洗）、流式 2 MiB 响应上限、Token 脱敏大小写不敏感、事件缓存 ≤512 KiB、轮询 200 条、游标失败重试、前端状态归一化/部分失败警告/防竞态；上游 mcbot **v0.6.1**（最低 v0.6.0，契约 v1）逐行中和行首 `/`。

@@ -6,7 +6,7 @@
 ### v1.0.0 生产迁移验收（2026-10-28，已执行）
 
 - app release `/opt/antifieldcloud/releases/20261028T002517Z`（1.0.0/schema18）；mcbot release `/opt/mcbot/releases/20261028T000632Z`（1.0.0/contract1）；旧 lofii-bot 停止/禁用。
-- 部署内只读 smoke **27/0/1/2**；全量 Access smoke **35/0/1/2**（本次 `-SkipLocalTaskCheck`，待 Windows 任务重装后补跑；WARN=drill schema17）。
+- 部署内只读 smoke **27/0/1/2**；完整 Access smoke **36/0/1/2**（2026-10-28；已含 Windows 备份任务标记检查，WARN=drill schema17）。Cloudflare Access `/api/chatbot/webhook` bypass 已更新、Windows 备份任务已重装。
 - 已修复迁移中发现项：Node `dgram` 不支持 unix_dgram → 改用 `/usr/bin/systemd-notify`；迁移 Apply 幂等性；`WEB_DIST_DIR` 新 workspace 路径；botmsg MCP 重命名安装；主机 unit 文案漂移同步。
 - 迁移前完整备份与回滚快照见 `docs/app/DEPLOY.md` v1.0.0 生产部署记录。
 
