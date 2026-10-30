@@ -395,7 +395,10 @@ export class MovementManager {
    */
   private refreshGround (bot: Bot): void {
     const position = bot.entity?.position
-    if (!position || bot.entity.onGround) return
+    if (!position) return
+    const entity = bot.entity as { jumpTicks?: number }
+    if (typeof entity.jumpTicks === 'number') entity.jumpTicks = 0
+    if (bot.entity.onGround) return
     const x = Math.floor(position.x)
     const y = Math.floor(position.y)
     const z = Math.floor(position.z)
