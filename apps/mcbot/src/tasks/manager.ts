@@ -626,7 +626,8 @@ export class TaskManager implements TaskController {
         { name: 'food', count: 4 }
       ]
       if (!hasFreshAxe || saplings < 8 || countFood(bot) < 4) await this.withdraw(ctx, requests)
-    } else if (active.name === 'patrol' || active.name === 'guard' || active.name === 'escort' || active.name === 'explore') {
+    } else if (active.name === 'patrol' || active.name === 'guard' || active.name === 'escort' ||
+      active.name === 'explore' || active.name === 'clearing') {
       requests = [{ name: 'food', count: 4 }]
       if (countFood(bot) < 4) await this.withdraw(ctx, requests)
     } else if (active.name === 'sleep') {
@@ -668,8 +669,9 @@ export class TaskManager implements TaskController {
       if (saplings === 0) throw new TaskError('箱子里没有天然林树苗')
     } else if (active.name === 'sleep') {
       // Sleep has no supplies.
-    } else if (active.name === 'patrol' || active.name === 'guard' || active.name === 'escort' || active.name === 'explore') {
-      // Patrol/guard/escort/explore only need food.
+    } else if (active.name === 'patrol' || active.name === 'guard' || active.name === 'escort' ||
+      active.name === 'explore' || active.name === 'clearing') {
+      // Patrol/guard/escort/explore/clearing only need food.
     } else {
       const axes = fresh.inventory.items().filter(item => item.name === 'iron_axe')
       if (!axes.some(item => ((item.maxDurability ?? 0) - (item.durabilityUsed ?? 0)) > 10)) {
