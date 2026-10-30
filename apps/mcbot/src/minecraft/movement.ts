@@ -456,31 +456,36 @@ export class MovementManager {
       target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }
     })
     let lastExecutorLogAt = 0
-    // 用 pathfinder 执行规划器给出的相邻路点：它的物理循环在实机上已被验证能处理
-    // 1 格台阶；规划器只负责选择“允许的现有地形”，执行器仍不挖不放。
-    for (const waypoint of plan.waypoints.slice(1)) {
-      if (this.cancelled) return { ok: false, failure: 'stopped', reason: 'cancelled' }
-      try {
-        await this.runPathWithWatchdog(new goals.GoalNear(waypoint.x, waypoint.y, waypoint.z, 0), 6000)
-        const now = Date.now()
-        if (now - lastExecutorLogAt >= 800) {
+    const result = await this.executor.run(
+      this.executorBot(bot),
+      plan.waypoints.map(point => ({ x: point.x, y: point.y, z: point.z })),
+      {
+        isCancelled: () => this.cancelled,
+        totalMs: Math.max(6000, plan.waypoints.length * 1800),
+        debug: data => {
+          const now = Date.now()
+          if (now - lastExecutorLogAt < 800) return
           lastExecutorLogAt = now
-          const current = bot.entity?.position
-          this.logger.info('movement planner waypoint reached', {
-            waypoint: `${waypoint.x},${waypoint.y},${waypoint.z}`,
-            position: current ? `${Math.round(current.x * 10) / 10},${Math.round(current.y * 10) / 10},${Math.round(current.z * 10) / 10}` : null
+          this.logger.info('movement executor step', {
+            waypoint: `${data.waypoint.x},${data.waypoint.y},${data.waypoint.z}`,
+            position: `${Math.round(data.position.x * 10) / 10},${Math.round(data.position.y * 10) / 10},${Math.round(data.position.z * 10) / 10}`,
+            horizontal: Math.round(data.horizontal * 10) / 10,
+            vertical: Math.round(data.vertical * 10) / 10,
+            controls: data.controls,
+            controlState: data.controlState,
+            onGround: data.onGround,
+            velocity: data.velocity,
+            physicsEnabled: data.physicsEnabled,
+            blockAtFeet: data.blockAtFeet
           })
         }
-      } catch (error) {
-        if (this.cancelled) return { ok: false, failure: 'stopped', reason: 'cancelled' }
-        const failure = this.classifyPathFailure(error)
-        this.recordFailure('planner', failure, error instanceof Error ? error.message : String(error))
-        this.logger.warn('movement planner waypoint failed', {
-          waypoint: `${waypoint.x},${waypoint.y},${waypoint.z}`,
-          reason: error instanceof Error ? error.message : String(error)
-        })
-        return { ok: false, failure, reason: error instanceof Error ? error.message : String(error) }
       }
+    )
+    if (result.status !== 'arrived') {
+      const failure: RouteFailureKind = result.status === 'timeout' ? 'timeout' : 'path_stuck'
+      this.recordFailure('planner', failure, result.reason)
+      this.logger.warn('movement planner executor failed', { status: result.status, reason: result.reason })
+      return { ok: false, failure, reason: result.reason ?? result.status }
     }
     const reached = this.reachedTarget(bot, target, tolerance)
     if (!reached) {
