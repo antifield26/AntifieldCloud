@@ -1,6 +1,6 @@
 # v1.0.6 寻路重构与验收报告
 
-> 状态：**2026-10-30 已部署 v1.0.6，实机核心矩阵通过**；按用户流程，验收通过后创建 Tag/Release。  
+> 状态：**2026-10-30 已部署 v1.0.6，实机核心矩阵通过，已发布 Tag/Release**。  
 > 范围：`apps/mcbot` 导航层、`navigation` 状态、AI 路点建议、app 面板；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`。
 
 ## 1. 本次改动
@@ -47,6 +47,7 @@
 - `npm run check`：app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**；命名检查通过。
 - `npm run build`、`check-version`（严格 1.0.6）、`check:docs` 通过。
 - 新增回归断言：逐级台阶的每一级路点都必须保留，防止压缩回归。
+- 发布后运维：Windows 每日备份任务 1.0.6 / backupRoot `D:\Backups` / Ready；手动拉取成功；恢复演练 `20261030T145445Z` 通过（full + 14 inc、schema 18、世界归档校验通过）；本机 smoke **29 通过 / 0 失败 / 0 警告 / 2 跳过**。
 
 ## 5. 回滚
 

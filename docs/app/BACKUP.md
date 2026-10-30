@@ -295,7 +295,7 @@ sudo rm -rf /home/antifield/minecraft-backups
 
 ## 7. 恢复演练（自动化 + 记录）
 
-演练校验 PC 上已拉取的真实归档，只读、不修改/删除归档；建议每季度或升级前执行一次。
+演练校验 PC 上已拉取的真实归档，只读、不修改/删除归档；建议每季度或升级前执行一次。本机实际备份根为 **`D:\Backups`**（2026-10-30 任务重装后），执行 drill/smoke 时显式传 `-BackupRoot "D:\Backups"`。
 
 ```powershell
 # 应用归档链 + DB + manifest + 可选世界归档
@@ -321,6 +321,7 @@ cd "$env:USERPROFILE\projects\AntifieldComplexx"
 |---|---|---|---|---|---|---|---|
 | 2026-10-25 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 0 | 17 | 通过 | 通过 | drill 报告 `20261025T133743Z`；链连续性/SHA/解包/DB integrity/FK/schema |
 | 2026-10-27 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 5 | 17 | 通过 | 通过 | drill 报告 `20261027T061319Z`；首次 `20261027T061021Z` 因 drill-verify 未返回 `details.since` 误报断链，修复后本报告通过；链连续性/SHA/解包/DB integrity/FK/schema/世界归档 |
+| 2026-10-30 | 自动演练 | snapshot-20261025T133725908Z-full.tar.gz | 14 | 18 | 通过 | 通过 | drill 报告 `20261030T145445Z`；BackupRoot=`D:\Backups`；链连续性/SHA/解包/DB integrity/FK/schema18/世界归档；最新 DB `db-20261030T145409822Z.sqlite`；已回写 Pi `drill-status.json` |
 |  |  |  |  |  |  |  | （下一次演练填写） |
 
 - 未填写记录的“演练通过”声明无效；报告文件与 `.local/DR-DRILL.md` 作为证据保存。
