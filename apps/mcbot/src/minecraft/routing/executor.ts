@@ -74,6 +74,7 @@ export class RouteExecutor {
       for (const waypoint of waypoints) {
         const target = new Vec3(waypoint.x + 0.5, waypoint.y, waypoint.z + 0.5)
         const waypointDeadline = Math.min(deadline, Date.now() + perWaypointMs)
+        let recovered = false
         while (true) {
           if (options.isCancelled()) return { status: 'cancelled', reason: 'cancelled' }
           if (Date.now() > deadline || Date.now() > waypointDeadline) {
@@ -97,6 +98,17 @@ export class RouteExecutor {
           } else if (!lastPosition) {
             lastPosition = position.clone()
           } else if (Date.now() - lastMovedAt > 1000) {
+            // 贴墙/卡角时先退半步再重试一次，避免把可绕行的窄口判成失败。
+            if (!recovered) {
+              recovered = true
+              bot.setControlState('forward', false)
+              bot.setControlState('back', true)
+              await sleep(250)
+              bot.setControlState('back', false)
+              lastPosition = position.clone()
+              lastMovedAt = Date.now()
+              continue
+            }
             return { status: 'stuck', reason: 'no_progress' }
           }
 
