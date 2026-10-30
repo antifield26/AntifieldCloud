@@ -13,6 +13,8 @@ export interface ExecutorBot {
   controlState?: () => Record<string, boolean>
   onGround?: () => boolean
   velocity?: () => { x: number, y: number, z: number }
+  physicsEnabled?: () => boolean
+  blockAtFeet?: () => string | null
 }
 
 export interface ExecutorOptions {
@@ -31,6 +33,8 @@ export interface ExecutorOptions {
     controlState?: Record<string, boolean>
     onGround?: boolean
     velocity?: { x: number, y: number, z: number }
+    physicsEnabled?: boolean
+    blockAtFeet?: string | null
   }) => void
 }
 
@@ -114,6 +118,18 @@ export class RouteExecutor {
           } else {
             await sleep(140)
           }
+          options.debug?.({
+            waypoint,
+            position: { x: position.x, y: position.y, z: position.z },
+            horizontal,
+            vertical,
+            controls,
+            controlState: bot.controlState?.(),
+            onGround: bot.onGround?.(),
+            velocity: bot.velocity?.(),
+            physicsEnabled: bot.physicsEnabled?.(),
+            blockAtFeet: bot.blockAtFeet?.()
+          })
         }
       }
       return { status: 'arrived', reason: null }

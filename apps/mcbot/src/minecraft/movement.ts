@@ -378,7 +378,13 @@ export class MovementManager {
       clearControlStates: () => bot.clearControlStates(),
       controlState: () => ({ ...bot.controlState }),
       onGround: () => bot.entity?.onGround === true,
-      velocity: () => bot.entity ? { x: bot.entity.velocity.x, y: bot.entity.velocity.y, z: bot.entity.velocity.z } : { x: 0, y: 0, z: 0 }
+      velocity: () => bot.entity ? { x: bot.entity.velocity.x, y: bot.entity.velocity.y, z: bot.entity.velocity.z } : { x: 0, y: 0, z: 0 },
+      physicsEnabled: () => bot.physicsEnabled,
+      blockAtFeet: () => {
+        if (!bot.entity) return null
+        const block = bot.blockAt(bot.entity.position)
+        return block ? block.name : null
+      }
     }
   }
 
@@ -453,7 +459,9 @@ export class MovementManager {
             controls: data.controls,
             controlState: data.controlState,
             onGround: data.onGround,
-            velocity: data.velocity
+            velocity: data.velocity,
+            physicsEnabled: data.physicsEnabled,
+            blockAtFeet: data.blockAtFeet
           })
         }
       }
