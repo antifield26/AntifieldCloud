@@ -375,7 +375,10 @@ export class MovementManager {
       },
       lookAt: (point, force) => bot.lookAt(point, force),
       setControlState: (control, state) => bot.setControlState(control, state),
-      clearControlStates: () => bot.clearControlStates()
+      clearControlStates: () => bot.clearControlStates(),
+      controlState: () => ({ ...bot.controlState }),
+      onGround: () => bot.entity?.onGround === true,
+      velocity: () => bot.entity ? { x: bot.entity.velocity.x, y: bot.entity.velocity.y, z: bot.entity.velocity.z } : { x: 0, y: 0, z: 0 }
     }
   }
 
@@ -447,7 +450,10 @@ export class MovementManager {
             position: `${Math.round(data.position.x * 10) / 10},${Math.round(data.position.y * 10) / 10},${Math.round(data.position.z * 10) / 10}`,
             horizontal: Math.round(data.horizontal * 10) / 10,
             vertical: Math.round(data.vertical * 10) / 10,
-            controls: data.controls
+            controls: data.controls,
+            controlState: data.controlState,
+            onGround: data.onGround,
+            velocity: data.velocity
           })
         }
       }

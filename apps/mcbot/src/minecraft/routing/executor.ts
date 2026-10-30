@@ -10,6 +10,9 @@ export interface ExecutorBot {
   lookAt: (point: Vec3, force?: boolean) => Promise<void>
   setControlState: (control: 'forward' | 'jump' | 'sprint' | 'sneak', state: boolean) => void
   clearControlStates: () => void
+  controlState?: () => Record<string, boolean>
+  onGround?: () => boolean
+  velocity?: () => { x: number, y: number, z: number }
 }
 
 export interface ExecutorOptions {
@@ -25,6 +28,9 @@ export interface ExecutorOptions {
     horizontal: number
     vertical: number
     controls: StepControls
+    controlState?: Record<string, boolean>
+    onGround?: boolean
+    velocity?: { x: number, y: number, z: number }
   }) => void
 }
 
@@ -92,7 +98,10 @@ export class RouteExecutor {
             position: { x: position.x, y: position.y, z: position.z },
             horizontal,
             vertical,
-            controls
+            controls,
+            controlState: bot.controlState?.(),
+            onGround: bot.onGround?.(),
+            velocity: bot.velocity?.()
           })
           await bot.lookAt(new Vec3(target.x, target.y + 1.6, target.z), true)
           bot.setControlState('forward', controls.forward)
