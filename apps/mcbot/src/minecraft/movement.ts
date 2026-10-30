@@ -388,6 +388,13 @@ export class MovementManager {
     }
   }
 
+  private reachedTarget (bot: Bot, target: NavVector, tolerance: number): boolean {
+    const position = bot.entity?.position
+    if (!position) return false
+    return Math.hypot(position.x - target.x, position.z - target.z) <= Math.max(1.2, tolerance + 0.8) &&
+      Math.abs(position.y - target.y) <= 0.7
+  }
+
   private classifyPathFailure (error: unknown): RouteFailureKind {
     const message = error instanceof Error ? error.message : String(error)
     if (/NoPath|no path/i.test(message)) return 'no_path'
@@ -475,10 +482,7 @@ export class MovementManager {
         return { ok: false, failure, reason: error instanceof Error ? error.message : String(error) }
       }
     }
-    const current = bot.entity?.position
-    const reached = current !== null && current !== undefined &&
-      Math.hypot(current.x - target.x, current.z - target.z) <= Math.max(2, tolerance + 1.2) &&
-      Math.abs(current.y - target.y) <= 2.5
+    const reached = this.reachedTarget(bot, target, tolerance)
     if (!reached) {
       this.recordFailure('planner', 'unreachable', 'final_position_mismatch')
       return { ok: false, failure: 'unreachable', reason: 'final_position_mismatch' }
@@ -558,11 +562,7 @@ export class MovementManager {
         this.recordFailure('ai', result.status === 'timeout' ? 'ai_timeout' : 'path_stuck', result.reason)
         return false
       }
-      const current = bot.entity?.position
-      const reached = current !== null && current !== undefined &&
-        Math.hypot(current.x - target.x, current.z - target.z) <= Math.max(2, tolerance + 1.2) &&
-        Math.abs(current.y - target.y) <= 2.5
-      if (!reached) {
+      if (!this.reachedTarget(bot, target, tolerance)) {
         this.recordFailure('ai', 'unreachable', 'final_position_mismatch')
         return false
       }
@@ -608,6 +608,10 @@ export class MovementManager {
         Math.min(timeoutMs, 30000)
       )
       if (this.cancelled) throw new MovementError('移动已取消')
+      if (!this.reachedTarget(bot, target, tolerance)) {
+        // pathfinder 在 3D GoalNear 的半径内可能停在一格下方；交给确定性规划器补齐高度。
+        throw new MovementError('到达位置高度不精确')
+      }
       this.updateNavigation({ state: 'idle', source: 'pathfinder', lastFailureKind: null })
       return
     } catch (error) {
