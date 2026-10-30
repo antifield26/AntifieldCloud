@@ -263,34 +263,51 @@ export class MovementManager {
    * 路径停滞后的受控步行恢复：朝目标前进并跳跃，只用于安全区内的短距离台阶/坡道。
    * 不挖掘、不放置、不进入未知区域；失败后仍由调用方安全点/传送兜底。
    */
-  private async manualStepToward (x: number, y: number, z: number, attempts = 4): Promise<boolean> {
+  private async manualStepToward (x: number, y: number, z: number, attempts = 6): Promise<boolean> {
     const bot = this.requireBot()
     const config = this.requireConfig()
     if (!insideSafeZone(config, x, z)) return false
-    const target = new Vec3(x, y, z)
     try {
       bot.pathfinder.stop()
       bot.pathfinder.setGoal(null)
     } catch {
       // ignore
     }
+    this.logger.info('movement manual step start', {
+      x: Math.round(x),
+      y: Math.round(y),
+      z: Math.round(z),
+      attempts
+    })
     try {
       for (let attempt = 0; attempt < attempts; attempt += 1) {
         if (this.cancelled || !bot.entity) return false
         const position = bot.entity.position
         const horizontal = Math.hypot(position.x - x, position.z - z)
         const vertical = Math.abs(position.y - y)
-        if (horizontal <= 2 && vertical <= 2) return true
+        if (horizontal <= 2 && vertical <= 2) {
+          this.logger.info('movement manual step reached', { attempt, x: Math.round(position.x), y: Math.round(position.y), z: Math.round(position.z) })
+          return true
+        }
         await bot.lookAt(new Vec3(x, y + 1.6, z), true)
-        bot.setControlState('forward', true)
+        // 先原地起跳，再向前；矮墙/台阶需要完整的跳跃窗口，不能只按几帧。
         bot.setControlState('jump', true)
-        await new Promise(resolve => setTimeout(resolve, 380))
-        bot.setControlState('jump', false)
-        await new Promise(resolve => setTimeout(resolve, 320))
+        await new Promise(resolve => setTimeout(resolve, 260))
+        bot.setControlState('forward', true)
+        await new Promise(resolve => setTimeout(resolve, 480))
         bot.setControlState('forward', false)
+        bot.setControlState('jump', false)
+        await new Promise(resolve => setTimeout(resolve, 260))
       }
       const position = bot.entity.position
-      return Math.hypot(position.x - x, position.z - z) <= 3 && Math.abs(position.y - y) <= 2
+      const reached = Math.hypot(position.x - x, position.z - z) <= 3 && Math.abs(position.y - y) <= 2
+      this.logger.info('movement manual step finished', {
+        reached,
+        x: Math.round(position.x),
+        y: Math.round(position.y),
+        z: Math.round(position.z)
+      })
+      return reached
     } finally {
       try {
         bot.clearControlStates()
