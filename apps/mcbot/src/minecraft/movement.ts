@@ -79,6 +79,7 @@ export class MovementManager {
 
   attach (bot: Bot): void {
     this.bot = bot
+    this.installPlayerInputBridge(bot)
     const movements = new Movements(bot)
     movements.canDig = false
     movements.canOpenDoors = false
@@ -393,6 +394,32 @@ export class MovementManager {
    * 传送/重连后 mineflayer 可能保留 onGround=false，导致跳跃键被物理层忽略。
    * 只在脚下确实有完整方块且脚底贴近方块顶面时纠正；不改变真实空中状态。
    */
+  /**
+   * Minecraft 1.21.6+ 用 player_input 位图表达移动/跳跃；mineflayer 只对 sneak 自动发该包。
+   * 这里把当前控制状态逐 tick 同步给服务器，避免服务端把客户端跳跃/移动纠正回原位。
+   */
+  private installPlayerInputBridge (bot: Bot): void {
+    if (!bot.supportFeature('newPlayerInputPacket')) return
+    const client = bot._client as unknown as { write: (name: string, data: unknown) => void }
+    bot.on('physicsTick', () => {
+      try {
+        client.write('player_input', {
+          inputs: {
+            forward: bot.getControlState('forward'),
+            backward: bot.getControlState('back'),
+            left: bot.getControlState('left'),
+            right: bot.getControlState('right'),
+            jump: bot.getControlState('jump'),
+            shift: bot.getControlState('sneak'),
+            sprint: bot.getControlState('sprint')
+          }
+        })
+      } catch {
+        // 连接切换期间忽略；下一次 physicsTick 继续同步。
+      }
+    })
+  }
+
   private refreshGround (bot: Bot): void {
     const position = bot.entity?.position
     if (!position) return
