@@ -4,6 +4,7 @@
  */
 import type { DatabaseSync } from 'node:sqlite'
 import type { Config } from '../config.ts'
+import type { ChatbotOutboundHealth } from './outbound.ts'
 
 export const CHATBOT_PLATFORMS = ['qq'] as const
 export type ChatbotPlatform = (typeof CHATBOT_PLATFORMS)[number]
@@ -488,6 +489,8 @@ export interface ChatbotStatus {
   queuedDeliveries: number
   queuedPublishes: number
   lastError: string | null
+  /** 出站可用性快照：只含计数/时间/脱敏提示，不含消息正文或凭据。 */
+  outbound: ChatbotOutboundHealth
   /** AI 工具隔离状态；未配置 AI 时为 null。supported=false 表示 400 降级后未隔离。 */
   aiToolIsolation: ChatbotToolIsolationStatus | null
 }

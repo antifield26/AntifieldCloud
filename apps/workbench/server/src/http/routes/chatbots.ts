@@ -62,6 +62,7 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, chatbots
   const testLimiter = new SlidingWindowLimiter(60 * 60_000, 20)
   const connectivityLimiter = new SlidingWindowLimiter(60_000, 30)
   const checkLimiter = new SlidingWindowLimiter(60_000, 30)
+  const retryFailedLimiter = new SlidingWindowLimiter(60_000, 10)
 
   app.get('/api/chatbots/status', { preHandler: [requireAuth] }, async () => chatbots.status())
 
@@ -322,6 +323,14 @@ export function registerBotRoutes(app: FastifyInstance, config: Config, chatbots
     return {
       items: chatbots.listDeliveries(requiredId(params.id, 'id'), parsePositiveInt(query.limit, 50, 1, 200)),
     }
+  })
+
+  app.post('/api/chatbots/:id/deliveries/retry-failed', { preHandler: [requireAuth, csrf] }, async (request) => {
+    const params = request.params as Record<string, string>
+    const context = authOf(request)
+    const retry = retryFailedLimiter.hit(context.user.username)
+    if (retry > 0) throw rateLimited(retry)
+    return { retried: chatbots.retryFailedDeliveries(requiredId(params.id, 'id')) }
   })
 
   app.post('/api/chatbots/:id/deliveries/:deliveryId/retry', { preHandler: [requireAuth, csrf] }, async (request) => {

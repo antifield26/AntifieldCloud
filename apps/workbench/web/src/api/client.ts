@@ -1506,6 +1506,10 @@ export const api = {
       retry(chatbotId: string, deliveryId: string): Promise<OkResult> {
         return post<OkResult>(`/api/chatbots/${encodeId(chatbotId)}/deliveries/${encodeId(deliveryId)}/retry`)
       },
+      /** 批量重试 failed/dead（最多 20 条，排除部分已发送文本）。 */
+      retryFailed(chatbotId: string): Promise<{ retried: number }> {
+        return post<{ retried: number }>(`/api/chatbots/${encodeId(chatbotId)}/deliveries/retry-failed`)
+      },
     },
     publish: {
       async list(chatbotId: string, limit = 50, signal?: AbortSignal): Promise<ChatbotPublishJob[]> {

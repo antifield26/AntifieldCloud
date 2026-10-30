@@ -320,6 +320,24 @@ export class ChatbotQueue {
     }
   }
 
+  /** 管理端批量重投：只允许 failed/dead，最多 20 条；排除部分已发送的文本，避免重复外发。 */
+  retryFailed(chatbotId: string, limit = 20): number {
+    const max = Math.max(1, Math.min(20, Math.floor(limit)))
+    const result = this.db
+      .prepare(
+        `UPDATE chatbot_deliveries
+         SET status = 'queued', attempts = 0, next_attempt_at = NULL, last_error = NULL, updated_at = ?
+         WHERE id IN (
+           SELECT id FROM chatbot_deliveries
+           WHERE chatbot_id = ? AND status IN ('failed','dead')
+             AND (last_error IS NULL OR last_error NOT LIKE 'partial_text_sent%')
+           ORDER BY updated_at ASC LIMIT ?
+         )`,
+      )
+      .run(nowIso(), chatbotId, max)
+    return Number(result.changes)
+  }
+
   /** 管理端手动重投：只允许 failed/dead。 */
   retryDelivery(chatbotId: string, deliveryId: string): boolean {
     const result = this.db

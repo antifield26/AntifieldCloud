@@ -55,6 +55,8 @@ export function ChatbotDeliveryPanel({ chatbot, refreshToken, onChanged }: Chatb
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryingId, setRetryingId] = useState<string | null>(null)
+  const [retryingAll, setRetryingAll] = useState(false)
+  const [confirmRetryAll, setConfirmRetryAll] = useState(false)
   const [publishTargetId, setPublishTargetId] = useState('')
   const [text, setText] = useState('')
   const [scheduledAt, setScheduledAt] = useState('')
@@ -122,6 +124,22 @@ export function ChatbotDeliveryPanel({ chatbot, refreshToken, onChanged }: Chatb
       toast.error(toErrorMessage(retryError, '重试投递失败，可能已不可重试'))
     } finally {
       setRetryingId(null)
+    }
+  }
+
+  const handleRetryFailed = async (): Promise<void> => {
+    if (!chatbot || retryingAll) return
+    setRetryingAll(true)
+    try {
+      const result = await api.chatbots.deliveries.retryFailed(chatbot.id)
+      toast.success(result.retried > 0 ? `已重新排队 ${result.retried} 条失败投递` : '没有可重试的失败投递')
+      setConfirmRetryAll(false)
+      await load(true)
+      onChanged()
+    } catch (retryError) {
+      toast.error(toErrorMessage(retryError, '批量重试失败，可能已不可重试'))
+    } finally {
+      setRetryingAll(false)
     }
   }
 
@@ -255,7 +273,22 @@ export function ChatbotDeliveryPanel({ chatbot, refreshToken, onChanged }: Chatb
       <Card
         title="投递记录"
         description="通知、命令回复、发布与测试消息的发送状态；失败任务可重新排队。"
-        actions={<Badge tone="muted"><Inbox size={13} aria-hidden="true" /> 最近 {deliveries.length} 条</Badge>}
+        actions={
+          <div className="chatbot-queue-actions">
+            <Badge tone="muted"><Inbox size={13} aria-hidden="true" /> 最近 {deliveries.length} 条</Badge>
+            {deliveries.some((item) => item.status === 'failed' || item.status === 'dead') ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                icon={<RotateCcw size={14} aria-hidden="true" />}
+                loading={retryingAll}
+                onClick={() => setConfirmRetryAll(true)}
+              >
+                重试失败/死信
+              </Button>
+            ) : null}
+          </div>
+        }
         loading={loading}
         error={error}
         onRetry={() => void load()}
@@ -492,6 +525,19 @@ export function ChatbotDeliveryPanel({ chatbot, refreshToken, onChanged }: Chatb
           </ul>
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmRetryAll}
+        title="重试失败/死信投递"
+        message="将最多 20 条失败或死信投递重新排队，可能重发历史通知。"
+        details="部分已发送的长文本会被排除；请确认不是重复敏感内容。"
+        confirmText="重新排队"
+        loading={retryingAll}
+        onConfirm={() => void handleRetryFailed()}
+        onClose={() => {
+          if (!retryingAll) setConfirmRetryAll(false)
+        }}
+      />
 
       <ConfirmDialog
         open={cancelTarget !== null}

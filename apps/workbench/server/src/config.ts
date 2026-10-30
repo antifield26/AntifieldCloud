@@ -110,6 +110,12 @@ export interface Config {
   chatbotDeliveryIntervalSeconds: number
   /** 单条投递最大尝试次数。 */
   chatbotDeliveryMaxAttempts: number
+  /** 出站可用性告警开关；关闭后不参与告警条件（管理状态仍可见）。 */
+  chatbotOutboundAlertEnabled: boolean
+  /** 出站失败告警窗口（分钟）；只统计该窗口内的失败。 */
+  chatbotOutboundFailureWindowMinutes: number
+  /** 窗口内失败达到该数量才触发告警。 */
+  chatbotOutboundFailureThreshold: number
   /** 入站事件去重/投递记录保留天数。 */
   chatbotEventRetentionDays: number
   /** 每个用户/目标每分钟命令上限。 */
@@ -383,6 +389,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     chatbotWebhookMaxBodyBytes: int(merged, 'CHATBOT_WEBHOOK_MAX_BODY_BYTES', 256 * 1024, 16 * 1024, 1024 * 1024),
     chatbotDeliveryIntervalSeconds: int(merged, 'CHATBOT_DELIVERY_INTERVAL_SECONDS', 30, 5, 300),
     chatbotDeliveryMaxAttempts: int(merged, 'CHATBOT_DELIVERY_MAX_ATTEMPTS', 5, 1, 20),
+    chatbotOutboundAlertEnabled: bool(merged, 'CHATBOT_OUTBOUND_ALERT_ENABLED', true),
+    chatbotOutboundFailureWindowMinutes: int(merged, 'CHATBOT_OUTBOUND_FAILURE_WINDOW_MINUTES', 60, 5, 1440),
+    chatbotOutboundFailureThreshold: int(merged, 'CHATBOT_OUTBOUND_FAILURE_THRESHOLD', 1, 1, 100),
     chatbotEventRetentionDays: int(merged, 'CHATBOT_EVENT_RETENTION_DAYS', 7, 1, 90),
     chatbotCommandRatePerMinute: int(merged, 'CHATBOT_COMMAND_RATE_PER_MINUTE', 120, 1, 600),
     chatbotPublishMaxScheduledDays: int(merged, 'CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS', 30, 1, 365),

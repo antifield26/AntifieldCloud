@@ -57,6 +57,10 @@ export function ChatbotOverview({
     }
   }, [status.lastError, selectedId])
 
+  const outbound = status.outbound
+  const outboundTone = outbound?.degraded === true ? 'danger' : outbound?.active ? 'success' : 'muted'
+  const outboundLabel = outbound?.degraded === true ? '异常' : outbound?.active ? '正常' : '未启用'
+
   return (
     <div className="chatbots-overview">
       <Card
@@ -90,6 +94,20 @@ export function ChatbotOverview({
             <span className="chatbot-status-value">{status.queuedPublishes}</span>
           </div>
           <div className="chatbot-status-item">
+            <span className="chatbot-status-label">出站可用性</span>
+            <span className="chatbot-status-value">
+              <Badge tone={outboundTone} dot>
+                {outboundLabel}
+              </Badge>
+            </span>
+          </div>
+          <div className="chatbot-status-item">
+            <span className="chatbot-status-label">最近成功发送</span>
+            <span className="chatbot-status-value">
+              {outbound?.lastSuccessAt ? <RelativeTime ts={outbound.lastSuccessAt} /> : '—'}
+            </span>
+          </div>
+          <div className="chatbot-status-item">
             <span className="chatbot-status-label">加密密钥</span>
             <span className="chatbot-status-value">
               <Badge tone={status.keyConfigured ? 'success' : 'warning'}>
@@ -98,6 +116,22 @@ export function ChatbotOverview({
             </span>
           </div>
         </div>
+        {outbound?.degraded === true ? (
+          <div className="notice notice-danger" role="alert">
+            Bot 出站异常：近 {outbound.windowMinutes} 分钟有 {outbound.recentFailures} 条失败/死信
+            （历史失败 {outbound.failedDeliveries}、死信 {outbound.deadDeliveries}）。
+            {outbound.lastErrorHint ? ` ${outbound.lastErrorHint}。` : ''}
+            {selectedId ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onSelect(selectedId, 'queue')}
+              >
+                查看投递与发布
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
         {status.lastError ? (
           <div className="notice notice-danger" role="alert">
             最近一次 Chatbot 错误：{status.lastError}

@@ -593,6 +593,8 @@ Bot 功能默认关闭：`CHATBOT_ENABLED=false` 或缺少有效 `CHATBOT_SECRET
 
 出站连通性：服务端每 `CHATBOT_CONNECTIVITY_INTERVAL_SECONDS`（默认 60）探测外网与 QQ 平台 API；`GET /api/chatbots/connectivity` 返回 `{checkedAt,checking,internet,platforms}`（无 `deviceOnline`/`proxy`），`POST /api/chatbots/connectivity/check` 手动复检（需 CSRF，30 次/分钟）。探测只发无凭据只读 GET，不返回 AppSecret 或平台响应正文；网络恢复后触发投递/发布队列扫描。
 
+出站可用性：`ChatbotStatus.outbound`（及前端的出站状态卡）聚合 enabled Bot 的投递/发布队列。`degraded=true` 的条件是：最近 `CHATBOT_OUTBOUND_FAILURE_WINDOW_MINUTES`（默认 60）内失败/死信数达到 `CHATBOT_OUTBOUND_FAILURE_THRESHOLD`（默认 1），且最近失败晚于最近成功；新成功发送后自动恢复。历史死信只计入 `deadDeliveries`，不会让状态永久异常。`CHATBOT_OUTBOUND_ALERT_ENABLED=true` 时，告警服务新增 `chatbot_outbound_down`（firing/resolved），凭据类错误为 critical；关闭该开关或 `CHATBOT_ENABLED=false` 时不会注册告警条件。快照不包含消息正文、目标外部 ID 或 Token/AppSecret。
+
 角色卡：`/role` 仅私聊，个人卡可覆盖默认 lofii，群聊使用管理员配置的共享卡；角色设定不通过 HTTP API/UI 暴露。`/role show` 对用户自定义卡返回完整设定文本，默认角色卡只返回名称、不展示内置详情。默认内联提示词为「角色卡 + 固定安全边界 + 长期记忆 + 用户」；v0.7.3 文档模式（`CHATBOT_AI_CONTEXT_READ_ENABLED=true`，默认关闭）首轮发送角色卡、后续轮只发送角色名/记忆条数/文档路径，模型按需 `read`；`chatbot_ai_sessions.mode` 只写 `chat`；`/reset` 与角色卡变更清理该范围全部会话映射；审计 `chatbot.ai.chat` 不记录 `mode`/正文/路径。
 
 群聊目标共享唯一 OpenCode Chat 会话（`chatbot_ai_sessions.user_id=__group__`），群内 Chat 按目标串行，模型可见多用户历史；私聊仍按真实用户独立会话。真实用户仍用于限流/记忆/审计/发送工具 turn token；群聊/频道不执行 `/reset` 等斜杠命令，`/reset` 仅私聊生效。
@@ -605,7 +607,8 @@ Bot 功能默认关闭：`CHATBOT_ENABLED=false` 或缺少有效 `CHATBOT_SECRET
 ### 对象
 
 ```json
-ChatbotStatus:  { "enabled": true, "keyConfigured": true, "chatbots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null, "aiToolIsolation": { "supported": true, "fallbackCount": 0, "fallbackAt": null, "retryAt": null } }
+ChatbotStatus:  { "enabled": true, "keyConfigured": true, "chatbots": 1, "enabledBots": 1, "targets": 2, "queuedDeliveries": 0, "queuedPublishes": 0, "lastError": null, "outbound": { "active": true, "degraded": false, "lastSuccessAt": "…", "lastFailureAt": null, "lastError": null, "lastErrorHint": null, "queuedDeliveries": 0, "failedDeliveries": 0, "deadDeliveries": 0, "queuedPublishes": 0, "failedPublishes": 0, "recentFailures": 0, "windowMinutes": 60 }, "aiToolIsolation": { "supported": true, "fallbackCount": 0, "fallbackAt": null, "retryAt": null } }
+ChatbotOutboundHealth: { "active": true, "degraded": false, "lastSuccessAt": "…|null", "lastFailureAt": "…|null", "lastError": "短码|null", "lastErrorHint": "中文提示|null", "queuedDeliveries": 0, "failedDeliveries": 0, "deadDeliveries": 0, "queuedPublishes": 0, "failedPublishes": 0, "recentFailures": 0, "windowMinutes": 60 }
 ChatbotSummary: { "id": "uuid", "platform": "qq", "name": "运维通知", "enabled": true, "config": { "appId": "1029…" }, "webhookUrl": "https://app.example.com/api/chatbot/webhook/<id>", "setupSteps": ["…"], "targetsCount": 2, "lastError": null, "lastCheckedAt": null, "createdAt": "…", "updatedAt": "…", "keyVersion": 1 }
 ChatbotTarget:  { "id": "uuid", "botId": "uuid", "externalId": "user_openid/group_openid/channel_id", "label": "运维告警群", "kind": "channel|user|group", "allowCommands": false, "allowNotifications": true, "allowChat": false, "groupReplyMode": "mention|all", "quietStartMinute": null, "quietEndMinute": null, "createdAt": "…" }
 ChatbotInboundTarget: { "botId": "uuid", "targetExternalId": "QQ 目标 ID", "targetKind": "channel|user|group", "userId": "QQ 用户 openid", "userName": "…|null", "isDirect": false, "lastSeenAt": "…" }
@@ -641,7 +644,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 ### 管理端点
 
 - `POST /api/chatbot/ai/tool/send`（内部工具回调，无 session/CSRF）：body `{turn_id,turn_token,text}`；只接受当前活跃回合的 HMAC token，单轮最多 5 条、单条 ≤1800 字；返回 `{ok:true,index}`，非法/过期/超限分别 `400/403/404/410/429`；文本只进入缓冲，不立即外发。该路由不在 Cloudflare Access bypass 中，生产由本机 MCP 访问 `127.0.0.1`。
-- `GET /api/chatbots/status` → `ChatbotStatus`（功能关闭时也可读；用于前端判断是否展示配置指引）。
+- `GET /api/chatbots/status` → `ChatbotStatus`（功能关闭时也可读；用于前端判断是否展示配置指引）；`outbound` 为只读出站健康快照，不含正文/凭据。
 - `GET /api/chatbots/connectivity` → `ChatbotConnectivitySnapshot`；需要会话，功能关闭时仍返回当前快照/未检测状态。
 - `POST /api/chatbots/connectivity/check` → `ChatbotConnectivitySnapshot`；需要会话 + CSRF，30 次/分钟；手动复检外网/QQ 平台。
 - `GET /api/chatbots` → `{ "items": [ChatbotSummary] }`；`GET /api/chatbots/:id` → `{ "bot": ChatbotSummary }`；不存在/已删除 `404 not_found`。
@@ -688,6 +691,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 - 投递：
   - `GET /api/chatbots/:id/deliveries?limit=50`（1–200）→ `{ "items": [ChatbotDelivery] }`，按创建时间倒序。
   - `POST /api/chatbots/:id/deliveries/:deliveryId/retry` → `{ "ok": true }`；仅 `failed|dead` 可重投，其它 `404`。
+  - `POST /api/chatbots/:id/deliveries/retry-failed` → `{ "retried": n }`；需要会话 + CSRF，10 次/分钟；批量重排最多 20 条 failed/dead，排除 `partial_text_sent`（避免长文本部分发送后重复外发），审计 `chatbot.delivery.retry_all` 只记数量。
 - 发布（仅文本）：
   - `GET /api/chatbots/:id/publish?limit=50`（1–200）→ `{ "items": [ChatbotPublishJob] }`。
   - `POST /api/chatbots/:id/publish` body `{targetId,text,scheduledAt?,totpCode,confirmText}` → `200 { "job": ChatbotPublishJob }`。
@@ -699,7 +703,7 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
     - 发布文本不再分段：单条 ≤2000 字符；已发送后失败时任务标记 `failed` 且 `last_error` 含 `partial_text_sent`，**不自动重试**（避免重复外发），需人工确认后重建任务。
     - 限流 20 次/小时；队列每 `CHATBOT_DELIVERY_INTERVAL_SECONDS`（30）扫描，失败按指数退避（30s 起，≤1h），达到 `CHATBOT_DELIVERY_MAX_ATTEMPTS`（5）标记 `failed`/死信。
   - `DELETE /api/chatbots/:id/publish/:jobId` → `{ "ok": true }`；仅 `queued|draft` 可取消，其它 `404`。
-- 审计动作：`chatbot.create/update/delete`、`chatbot.target.create/update/delete`、`chatbot.delivery.retry/partial`、`chatbot.publish.create/sent/cancel/partial`、`chatbot.command`、`chatbot.command.denied`、`chatbot.chat`、`chatbot.chat.denied`、`chatbot.ai.chat`（detail 含 `context: docs|inline`/`docBytes`/`memoryItems`）、`chatbot.ai.context_failed`、`chatbot.ai.memory`（legacy）、`chatbot.ai.permissions_fallback`、`chatbot.memory.extract`、`chatbot.memory.toggle`、`chatbot.memory.delete_item`、`chatbot.memory.delete_user`、`chatbot.memory.legacy_cleanup`、`chatbot.ai.image`、`chatbot.webhook.challenge`、`chatbot.webhook.rejected/rate_limited`、`chatbot.event.ignored`、`chatbot.test`、`chatbot.check`、`chatbot.reset`、`chatbot.memory.forget`、`chatbot.role.admin`、`chatbot.memory.admin`、`reauth_chatbot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。备份危险操作用 `backup_reauth_failed` 记录 TOTP 再认证失败（route/错误摘要/IP，不含 TOTP）。
+- 审计动作：`chatbot.create/update/delete`、`chatbot.target.create/update/delete`、`chatbot.delivery.retry/retry_all/partial`、`chatbot.publish.create/sent/cancel/partial`、`chatbot.command`、`chatbot.command.denied`、`chatbot.chat`、`chatbot.chat.denied`、`chatbot.ai.chat`（detail 含 `context: docs|inline`/`docBytes`/`memoryItems`）、`chatbot.ai.context_failed`、`chatbot.ai.memory`（legacy）、`chatbot.ai.permissions_fallback`、`chatbot.memory.extract`、`chatbot.memory.toggle`、`chatbot.memory.delete_item`、`chatbot.memory.delete_user`、`chatbot.memory.legacy_cleanup`、`chatbot.ai.image`、`chatbot.webhook.challenge`、`chatbot.webhook.rejected/rate_limited`、`chatbot.event.ignored`、`chatbot.test`、`chatbot.check`、`chatbot.reset`、`chatbot.memory.forget`、`chatbot.role.admin`、`chatbot.memory.admin`、`reauth_chatbot_publish`。诊断/自助/管理动作只记录动作、数量/长度与截断 ID，不记录正文。备份危险操作用 `backup_reauth_failed` 记录 TOTP 再认证失败（route/错误摘要/IP，不含 TOTP）。
 
 ### 公开 Webhook
 

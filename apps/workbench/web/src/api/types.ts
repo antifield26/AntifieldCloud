@@ -1004,6 +1004,23 @@ export interface ChatbotToolIsolationStatus {
   fallbackAt: string | null
 }
 
+/** 出站可用性快照：只含计数/时间/脱敏提示，不含消息正文或凭据。 */
+export interface ChatbotOutboundHealth {
+  active: boolean
+  degraded: boolean | null
+  lastSuccessAt: string | null
+  lastFailureAt: string | null
+  lastError: string | null
+  lastErrorHint: string | null
+  queuedDeliveries: number
+  failedDeliveries: number
+  deadDeliveries: number
+  queuedPublishes: number
+  failedPublishes: number
+  recentFailures: number
+  windowMinutes: number
+}
+
 /** 运行状态：即使 Chatbot 功能未启用，status 接口仍可用于判断具体原因。 */
 export interface ChatbotStatus {
   enabled: boolean
@@ -1014,6 +1031,8 @@ export interface ChatbotStatus {
   queuedDeliveries: number
   queuedPublishes: number
   lastError: string | null
+  /** 出站可用性快照；旧服务端可能不返回。 */
+  outbound?: ChatbotOutboundHealth
   /** AI 工具隔离状态；未配置 AI 时为 null。 */
   aiToolIsolation?: ChatbotToolIsolationStatus | null
 }

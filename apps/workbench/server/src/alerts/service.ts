@@ -19,6 +19,7 @@ import os from 'node:os'
 import { promisify } from 'node:util'
 import type { Config } from '../config.ts'
 import { transaction } from '../db.ts'
+import { readOutboundHealth } from '../chatbot/outbound.ts'
 import { nowIso } from '../util/time.ts'
 
 const execFileAsync = promisify(execFile)
@@ -345,6 +346,7 @@ export class AlertService {
   private async collectConditions(): Promise<AlertCondition[]> {
     const health = this.readPiHealth()
     const offsite = this.offsiteCondition()
+    const chatbotOutbound = this.chatbotOutboundCondition()
     const conditions: AlertCondition[] = [
       this.diskCondition(),
       this.tempCondition(health),
@@ -357,6 +359,7 @@ export class AlertService {
       this.worldPullCondition(),
       this.drillCondition(),
       ...(offsite ? [offsite] : []),
+      ...(chatbotOutbound ? [chatbotOutbound] : []),
       await this.minecraftCondition(),
       this.underVoltageCondition(health),
     ]
@@ -712,6 +715,41 @@ export class AlertService {
       title: 'Minecraft 服务器离线',
       message: status.online ? 'Minecraft 服务器在线' : `Minecraft 服务器未响应${status.error ? `：${status.error}` : ''}`,
       details: { online: status.online, error: status.error ?? null },
+    }
+  }
+
+  /**
+   * Bot 出站异常：仅统计当前窗口内、晚于最近成功发送的失败，避免历史死信长期误报。
+   * 无 enabled bot 或关闭开关时不注册条件，不影响现有告警条件数量。
+   */
+  private chatbotOutboundCondition(): AlertCondition | null {
+    if (!this.config.chatbotEnabled || !this.config.chatbotOutboundAlertEnabled) return null
+    const health = readOutboundHealth(this.db, this.config, this.deps.now())
+    if (!health.active) return null
+    const firing = health.degraded === true
+    const tokenIssue = health.lastError !== null && /qq_(access_token|credentials|secret)|appsecret/i.test(health.lastError)
+    const hint = health.lastErrorHint ?? '无'
+    return {
+      event: 'chatbot_outbound_down',
+      severity: tokenIssue ? 'critical' : 'warning',
+      status: firing ? 'firing' : 'ok',
+      title: 'Bot 出站异常',
+      message: firing
+        ? `近 ${health.windowMinutes} 分钟有 ${health.recentFailures} 条失败/死信；最近成功 ${health.lastSuccessAt ?? '无'}；${hint}`
+        : `近 ${health.windowMinutes} 分钟无新增失败；最近成功 ${health.lastSuccessAt ?? '无'}`,
+      details: {
+        queuedDeliveries: health.queuedDeliveries,
+        failedDeliveries: health.failedDeliveries,
+        deadDeliveries: health.deadDeliveries,
+        queuedPublishes: health.queuedPublishes,
+        failedPublishes: health.failedPublishes,
+        recentFailures: health.recentFailures,
+        windowMinutes: health.windowMinutes,
+        threshold: this.config.chatbotOutboundFailureThreshold,
+        lastSuccessAt: health.lastSuccessAt,
+        lastFailureAt: health.lastFailureAt,
+        lastErrorHint: health.lastErrorHint,
+      },
     }
   }
 

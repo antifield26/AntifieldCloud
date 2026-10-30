@@ -324,7 +324,8 @@ CSS 变量（`web/src/styles/tokens.css`）：
 
 ### 概览
 
-- 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）；AI 工具隔离状态（`aiToolIsolation`）降级时显示 warning 与降级次数/时间。
+- 状态卡：功能开关、密钥已配置、Bot 数/启用数、目标数、待投递/待发布计数、出站可用性（`outbound.degraded` 为异常/正常/未启用，显示最近成功发送时间）、最近错误（`lastError` 脱敏展示，有 `lastErrorHint` 时追加中文提示）；AI 工具隔离状态（`aiToolIsolation`）降级时显示 warning 与降级次数/时间。
+  `outbound.degraded=true` 时显示红色“Bot 出站异常”提示，包含窗口内失败数、历史失败/死信数与中文错误提示，并提供“查看投递与发布”入口；历史死信不单独视为当前异常。
 - 概览提示：命令与 Chat 均为只读，发布需 TOTP + `PUBLISH` 双确认；`/help`、`/memory`、`/role`（私聊）、`/reset`、`/forget confirm` 为全用户自助命令；QQ 仅文本，入站图片默认交 AI 理解。
 - Bot 列表/选择：名称、平台（QQ 官方）、启用徽章、目标数、密钥版本、最近检查时间；点击切换到该 Bot（并进入配置分区）。
 - “出站网络”卡片：外网可达/延迟、QQ 平台探测状态与延迟（不再显示设备在线/代理主机端口）；“检测”按钮调用 `POST /api/chatbots/connectivity/check`，
@@ -398,7 +399,7 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 顶部“近 24 小时指标”卡：投递成功数、成功率（sent/(sent+failed)）、失败/死信、发布 sent/失败、最近发送时间、事件数；
   有 `lastError` 时显示脱敏错误条，有 `lastErrorHint` 时追加中文提示；数据来自 `GET /api/chatbots/:id/metrics?hours=24`。
 - 投递列表：类型（通知/回复/发布/测试）、状态徽章（queued/sending/sent/failed/dead）、尝试次数、时间、错误摘要（错误原文 + 中文提示）；
-  `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）。
+  `failed/dead` 行提供“重新投递”（20 次/小时限流，成功 Toast）；列表上方另有“重试失败/死信”批量按钮（最多 20 条，确认弹窗提示可能重发历史通知，排除部分已发送文本）。
 - 发布表单（仅文本）：目标（仅频道/群组）、文本（显示 QQ 单条上限 2000 字符；超过提示错误 `publish_text_too_long`，不静默截断）、
   定时时间（可空；≤30 天）、**TOTP 验证码**（6 位、`autocomplete=one-time-code`，必填）、
   **二次确认输入**（必须输入 `PUBLISH`，与 TOTP 共同构成双确认）；提交后进入列表。不提供媒体选择器与多附件。

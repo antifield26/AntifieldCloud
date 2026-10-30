@@ -22,6 +22,7 @@ import {
 } from './inbound.ts'
 import { ChatbotDiagnostics } from './diagnostics.ts'
 import { ChatbotQueue } from './queue.ts'
+import { readOutboundHealth } from './outbound.ts'
 import { ChatbotChatPipeline } from './chat.ts'
 import {
   CHATBOT_COMMANDS,
@@ -383,6 +384,7 @@ export class ChatbotService {
       queuedDeliveries: deliveries.c,
       queuedPublishes: publishes.c,
       lastError: this.latestBotError(null),
+      outbound: readOutboundHealth(this.db, this.config, this.deps.now?.() ?? new Date()),
       aiToolIsolation: this.aiToolIsolationStatus(),
     }
   }
@@ -805,6 +807,15 @@ export class ChatbotService {
       .prepare('SELECT * FROM chatbot_deliveries WHERE chatbot_id = ? ORDER BY created_at DESC LIMIT ?')
       .all(chatbotId, Math.max(1, Math.min(200, limit))) as unknown as ChatbotDeliveryRow[]
     return rows.map(toDelivery)
+  }
+
+  /** 批量重试 failed/dead；仅审计数量，不记录投递内容。 */
+  retryFailedDeliveries(chatbotId: string, limit = 20): number {
+    this.requireEnabled()
+    this.chatbotRow(chatbotId)
+    const retried = this.queue.retryFailed(chatbotId, limit)
+    this.deps.audit('chatbot.delivery.retry_all', chatbotId, { retried })
+    return retried
   }
 
   retryDelivery(chatbotId: string, deliveryId: string): void {

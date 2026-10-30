@@ -137,6 +137,7 @@ sudo ls -l /etc/antifieldcloud/env                  # 应为 -rw-r----- root ant
     丢失后已存 AppSecret 只能重新录入。`bootstrap-env.sh --force` 复用旧值，**不要手工替换**。
   - `CHATBOT_WEBHOOK_MAX_BODY_BYTES=262144`：Webhook 原始 body 上限（16 KiB–1 MiB）。
   - `CHATBOT_DELIVERY_INTERVAL_SECONDS=30`（5–300）、`CHATBOT_DELIVERY_MAX_ATTEMPTS=5`（1–20）：队列扫描与最大尝试次数。
+  - `CHATBOT_OUTBOUND_ALERT_ENABLED=true`、`CHATBOT_OUTBOUND_FAILURE_WINDOW_MINUTES=60`（5–1440）、`CHATBOT_OUTBOUND_FAILURE_THRESHOLD=1`（1–100）：出站可用性告警。
   - `CHATBOT_EVENT_RETENTION_DAYS=7`（1–90）：事件去重记录保留；已发送投递/发布固定 30 天清理。
   - `CHATBOT_COMMAND_RATE_PER_MINUTE=120`（1–600，）：每 Bot × 用户命令限流。
   - `CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS=30`（1–365）、`CHATBOT_MAX_BOTS=10`（1–50）。

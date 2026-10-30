@@ -114,6 +114,9 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/chatbot/webhook/:botId
   `ok`/`denied`/`rate_limited`/`ignored`/`error`，`detail` 只放短码（如 `command_denied`/`chat_rate_limited`/`partial_reply`），不写消息正文。
 - 指标：`GET /api/chatbots/:id/metrics?hours=24`（1–720 小时）返回投递/发布/事件统计、成功率、最近错误（含 `lastErrorHint` 中文提示）与最近发送；
   `/chatbots` 页面展示近 24 小时卡与诊断分区。
+- 出站可用性：`ChatbotStatus.outbound` 聚合 enabled Bot 的投递/发布队列；最近窗口（默认 60 分钟）内的失败/死信达到阈值（默认 1）且晚于最近成功时标记 `degraded`，
+  新成功发送后恢复。`chatbot_outbound_down` 告警复用现有告警状态机（firing/resolved）；历史死信只计数、不永久触发。管理端可单条或批量重试 failed/dead，
+  批量最多 20 条并排除 `partial_text_sent`。
 
 ## 5. 配置
 
@@ -126,6 +129,9 @@ QQ 开放平台 ──签名 Webhook──▶ POST /api/chatbot/webhook/:botId
 | `CHATBOT_WEBHOOK_MAX_BODY_BYTES` | `262144` | Webhook body 上限 |
 | `CHATBOT_DELIVERY_INTERVAL_SECONDS` | `30` | 队列轮询间隔 |
 | `CHATBOT_DELIVERY_MAX_ATTEMPTS` | `5` | 最大尝试次数 |
+| `CHATBOT_OUTBOUND_ALERT_ENABLED` | `true` | 出站可用性告警开关；关闭只关闭告警，不隐藏状态 |
+| `CHATBOT_OUTBOUND_FAILURE_WINDOW_MINUTES` | `60` | 出站失败统计窗口（5–1440 分钟） |
+| `CHATBOT_OUTBOUND_FAILURE_THRESHOLD` | `1` | 窗口内失败/死信达到该数量触发告警（1–100） |
 | `CHATBOT_EVENT_RETENTION_DAYS` | `7` | 入站事件/入站目标保留 |
 | `CHATBOT_COMMAND_RATE_PER_MINUTE` | `120` | 每用户命令限流（1–600，当前范围） |
 | `CHATBOT_PUBLISH_MAX_SCHEDULED_DAYS` | `30` | 定时发布最远天数 |

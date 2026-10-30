@@ -578,6 +578,13 @@
   border-bottom: none;
 }
 
+.chatbot-queue-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
 .chatbot-queue-head {
   display: flex;
   flex-wrap: wrap;

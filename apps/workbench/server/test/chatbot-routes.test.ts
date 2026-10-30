@@ -474,3 +474,75 @@ test('v0.5.8 Chatbot 管理路由：QQ Chatbot CRUD、目标、检查连接、�
     rmSync(dir, { recursive: true, force: true })
   }
 })
+
+test('出站健康路由：status 暴露快照，retry-failed 批量重排且排除部分发送', async () => {
+  const dir = tempDataDir()
+  const config = testConfig(dir, { chatbotEnabled: true, chatbotSecretKey: randomBytes(32).toString('base64') })
+  const db = testDb(dir)
+  const seeded = await seedAdmin(db)
+  const context = await buildApp(config, db)
+  try {
+    const { cookie, csrf } = await loginAdmin(context.app, seeded)
+    const chatbot = context.chatbots.createBot({
+      platform: 'qq',
+      name: 'outbound-health',
+      token: APP_SECRET,
+      config: { appId: APP_ID },
+    })
+    context.chatbots.updateBot(chatbot.id, { enabled: true })
+    const now = new Date().toISOString()
+    const insert = (id: string, status: string, lastError: string | null): void => {
+      db.prepare(
+        `INSERT INTO chatbot_deliveries
+         (id, chatbot_id, target_id, kind, payload_json, status, attempts, last_error, created_at, updated_at)
+         VALUES (?, ?, NULL, 'notification', '{}', ?, 1, ?, ?, ?)`,
+      ).run(id, chatbot.id, status, lastError, now, now)
+    }
+    insert('failed-1', 'failed', 'network_timeout')
+    insert('dead-1', 'dead', 'qq_access_token_failed')
+    insert('partial-1', 'failed', 'partial_text_sent: 第一段已发送')
+
+    const statusResponse = await context.app.inject({
+      method: 'GET',
+      url: '/api/chatbots/status',
+      headers: { cookie },
+    })
+    assert.equal(statusResponse.statusCode, 200)
+    const outbound = statusResponse.json().outbound as {
+      active: boolean
+      degraded: boolean | null
+      recentFailures: number
+      failedDeliveries: number
+      deadDeliveries: number
+    }
+    assert.equal(outbound.active, true)
+    assert.equal(outbound.degraded, true)
+    assert.equal(outbound.recentFailures, 3)
+    assert.equal(outbound.failedDeliveries, 2)
+    assert.equal(outbound.deadDeliveries, 1)
+
+    const withoutCsrf = await context.app.inject({
+      method: 'POST',
+      url: `/api/chatbots/${chatbot.id}/deliveries/retry-failed`,
+      headers: { cookie },
+    })
+    assert.equal(withoutCsrf.statusCode, 403)
+
+    const retried = await context.app.inject({
+      method: 'POST',
+      url: `/api/chatbots/${chatbot.id}/deliveries/retry-failed`,
+      headers: { cookie, 'x-csrf-token': csrf },
+    })
+    assert.equal(retried.statusCode, 200)
+    assert.equal(retried.json().retried, 2, 'partial_text_sent 不得批量重试')
+    const partial = db.prepare("SELECT status FROM chatbot_deliveries WHERE id = 'partial-1'").get() as unknown as {
+      status: string
+    }
+    assert.equal(partial.status, 'failed')
+  } finally {
+    context.chatbots.stop()
+    await context.app.close()
+    db.close()
+    rmSync(dir, { recursive: true, force: true })
+  }
+})

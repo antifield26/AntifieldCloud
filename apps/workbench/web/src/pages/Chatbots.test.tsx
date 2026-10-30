@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   targetRemove: vi.fn(),
   deliveryList: vi.fn(),
   deliveryRetry: vi.fn(),
+  deliveryRetryFailed: vi.fn(),
   metrics: vi.fn(),
   publishList: vi.fn(),
   publishCreate: vi.fn(),
@@ -86,6 +87,7 @@ vi.mock('../api/client', () => ({
       deliveries: {
         list: mocks.deliveryList,
         retry: mocks.deliveryRetry,
+        retryFailed: mocks.deliveryRetryFailed,
       },
       publish: {
         list: mocks.publishList,
@@ -117,6 +119,21 @@ function chatbotStatus(overrides: Partial<ChatbotStatus> = {}): ChatbotStatus {
     queuedDeliveries: 0,
     queuedPublishes: 0,
     lastError: null,
+    outbound: {
+      active: true,
+      degraded: false,
+      lastSuccessAt: '2026-10-22T00:00:00.000Z',
+      lastFailureAt: null,
+      lastError: null,
+      lastErrorHint: null,
+      queuedDeliveries: 0,
+      failedDeliveries: 0,
+      deadDeliveries: 0,
+      queuedPublishes: 0,
+      failedPublishes: 0,
+      recentFailures: 0,
+      windowMinutes: 60,
+    },
     aiToolIsolation: null,
     ...overrides,
   }
@@ -255,6 +272,7 @@ beforeEach(() => {
     lastSentAt: null,
   })
   mocks.deliveryRetry.mockResolvedValue({ ok: true })
+  mocks.deliveryRetryFailed.mockResolvedValue({ retried: 1 })
   mocks.publishList.mockResolvedValue([])
   mocks.publishCreate.mockResolvedValue(job())
   mocks.publishCancel.mockResolvedValue({ ok: true })
@@ -314,6 +332,31 @@ describe('Chatbots 机器人管理', () => {
     renderPage()
     expect(await screen.findByText(/AI 工具隔离已降级/)).toBeTruthy()
     expect(await screen.findByText(/降级 2 次/)).toBeTruthy()
+  })
+
+  it('Bot 出站异常时概览显示告警与投递入口', async () => {
+    mocks.status.mockResolvedValue(
+      chatbotStatus({
+        outbound: {
+          active: true,
+          degraded: true,
+          lastSuccessAt: '2026-10-22T00:00:00.000Z',
+          lastFailureAt: '2026-10-23T00:00:00.000Z',
+          lastError: 'qq_access_token_failed',
+          lastErrorHint: 'QQ access_token 获取失败',
+          queuedDeliveries: 0,
+          failedDeliveries: 2,
+          deadDeliveries: 1,
+          queuedPublishes: 0,
+          failedPublishes: 0,
+          recentFailures: 2,
+          windowMinutes: 60,
+        },
+      }),
+    )
+    renderPage()
+    expect(await screen.findByText(/Bot 出站异常/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '查看投递与发布' })).toBeTruthy()
   })
 
   it('创建表单校验 QQ 必填项，填写后提交 AppID 与配置', async () => {
@@ -450,6 +493,17 @@ describe('Chatbots 机器人管理', () => {
 
     await userEvent.click(screen.getByRole('button', { name: '重试' }))
     await waitFor(() => expect(mocks.deliveryRetry).toHaveBeenCalledWith('chatbot-1', 'delivery-1'))
+  })
+
+  it('投递失败可批量重试/死信', async () => {
+    mocks.deliveryList.mockResolvedValue([delivery()])
+    renderPage()
+    await screen.findByRole('heading', { level: 3, name: '告警 Chatbot' })
+    await userEvent.click(screen.getByRole('tab', { name: '投递与发布' }))
+    await userEvent.click(await screen.findByRole('button', { name: '重试失败/死信' }))
+    expect(await screen.findByText('重试失败/死信投递')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: '重新排队' }))
+    await waitFor(() => expect(mocks.deliveryRetryFailed).toHaveBeenCalledWith('chatbot-1'))
   })
 
   it('标签扩展为六个分区，角色与记忆分区展示元数据', async () => {
