@@ -58,6 +58,7 @@ export class MovementManager {
   private readonly executor = new RouteExecutor()
   private readonly trace = new NavigationTrace()
   private lastAiAt = 0
+  private lastPlannerLogAt = 0
   private navigation: NavigationSnapshot = {
     state: 'idle',
     source: null,
@@ -273,12 +274,12 @@ export class MovementManager {
     const watchdog = setInterval(() => {
       if (settled || !bot.entity) return
       const position = bot.entity.position
-      if (position.distanceTo(last) >= 0.25) {
+      if (position.distanceTo(last) >= 0.05) {
         last = position.clone()
         lastMovedAt = Date.now()
         return
       }
-      if (Date.now() - lastMovedAt >= 1800) {
+      if (Date.now() - lastMovedAt >= 3500) {
         settled = true
         this.logger.warn('movement path stuck; aborting to fallback', {
           x: Math.round(position.x),
@@ -477,39 +478,30 @@ export class MovementManager {
       } : null,
       target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }
     })
-    let lastExecutorLogAt = 0
-    const result = await this.executor.run(
-      this.executorBot(bot),
-      plan.waypoints.map(point => ({ x: point.x, y: point.y, z: point.z })),
-      {
-        isCancelled: () => this.cancelled,
-        totalMs: Math.max(6000, plan.waypoints.length * 1800),
-        debug: data => {
-          const now = Date.now()
-          if (now - lastExecutorLogAt < 800) return
-          lastExecutorLogAt = now
-          this.logger.info('movement executor step', {
-            waypoint: `${data.waypoint.x},${data.waypoint.y},${data.waypoint.z}`,
-            position: `${Math.round(data.position.x * 10) / 10},${Math.round(data.position.y * 10) / 10},${Math.round(data.position.z * 10) / 10}`,
-            horizontal: Math.round(data.horizontal * 10) / 10,
-            vertical: Math.round(data.vertical * 10) / 10,
-            controls: data.controls,
-            controlState: data.controlState,
-            onGround: data.onGround,
-            velocity: data.velocity,
-            physicsEnabled: data.physicsEnabled,
-            blockAtFeet: data.blockAtFeet,
-            jumpControl: data.jumpControl,
-            forwardControl: data.forwardControl
+    // 逐路点交给 pathfinder 执行：它负责跳跃/贴边物理，规划器只限制走现有地形。
+    for (const waypoint of plan.waypoints.slice(1)) {
+      if (this.cancelled) return { ok: false, failure: 'stopped', reason: 'cancelled' }
+      try {
+        await this.runPathWithWatchdog(new goals.GoalNear(waypoint.x, waypoint.y, waypoint.z, 0), 6000)
+        const now = Date.now()
+        if (now - this.lastPlannerLogAt >= 800) {
+          this.lastPlannerLogAt = now
+          const current = bot.entity?.position
+          this.logger.info('movement planner waypoint reached', {
+            waypoint: `${waypoint.x},${waypoint.y},${waypoint.z}`,
+            position: current ? `${Math.round(current.x * 10) / 10},${Math.round(current.y * 10) / 10},${Math.round(current.z * 10) / 10}` : null
           })
         }
+      } catch (error) {
+        if (this.cancelled) return { ok: false, failure: 'stopped', reason: 'cancelled' }
+        const failure = this.classifyPathFailure(error)
+        this.recordFailure('planner', failure, error instanceof Error ? error.message : String(error))
+        this.logger.warn('movement planner waypoint failed', {
+          waypoint: `${waypoint.x},${waypoint.y},${waypoint.z}`,
+          reason: error instanceof Error ? error.message : String(error)
+        })
+        return { ok: false, failure, reason: error instanceof Error ? error.message : String(error) }
       }
-    )
-    if (result.status !== 'arrived') {
-      const failure: RouteFailureKind = result.status === 'timeout' ? 'timeout' : 'path_stuck'
-      this.recordFailure('planner', failure, result.reason)
-      this.logger.warn('movement planner executor failed', { status: result.status, reason: result.reason })
-      return { ok: false, failure, reason: result.reason ?? result.status }
     }
     const reached = this.reachedTarget(bot, target, tolerance)
     if (!reached) {
