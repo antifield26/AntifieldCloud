@@ -27,7 +27,7 @@
 
 ## 2. 本次（v1.0.6）修正的漂移
 
-1. 根 README、AGENTS、docs/INDEX、PLAN、ROADMAP 的 mcbot/生产版本、测试基线与发布状态统一到 v1.0.6（生产仍 v1.0.5，矩阵通过后发布）。
+1. 根 README、AGENTS、docs/INDEX、PLAN、ROADMAP 的 mcbot/生产版本、测试基线与发布状态统一到 v1.0.6（已部署，核心矩阵通过）。
 2. `docs/mcbot/README.md`、`ROADMAP`、`DEPLOY` 增加统一寻路层、`navigation`、`PATH_*` 九键与实机矩阵说明。
 3. `docs/app/API.md`、`UI-SPEC.md` 增加可选 `navigation` 状态/面板 Fact，旧版缺失时降级。
 4. 新增 [DEBUG-AUDIT-v1.0.6](../app/DEBUG-AUDIT-v1.0.6.md)；AUDIT/INDEX/ROADMAP 只保留摘要并链接。

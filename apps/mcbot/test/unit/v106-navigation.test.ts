@@ -56,6 +56,13 @@ test('v1.0.6 规划器：1–5 级逐级台阶可达', () => {
     const result = plan(world, { x: 0.5, y: 64, z: 0.5 }, target, 1)
     assert.equal(result.status, 'success', `steps=${steps}`)
     assert.equal(result.waypoints.at(-1)?.y, 64 + steps)
+    // 压缩不能吃掉逐级台阶；每一级都必须保留独立路点，否则执行器会尝试一次跳多格。
+    for (let level = 1; level <= steps; level += 1) {
+      assert.ok(
+        result.waypoints.some(point => point.x === level + 1 && point.y === 64 + level),
+        `steps=${steps} missing level=${level}`
+      )
+    }
   }
 })
 
