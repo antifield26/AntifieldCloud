@@ -119,6 +119,7 @@ export class RouteExecutor {
             await sleep(220)
             bot.setControlState('back', false)
           }
+          await bot.lookAt(new Vec3(target.x, target.y, target.z), true)
           bot.setControlState('forward', controls.forward)
           bot.setControlState('sprint', controls.sprint)
           if (controls.jump) {
