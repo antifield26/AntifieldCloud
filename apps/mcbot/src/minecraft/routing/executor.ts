@@ -8,7 +8,7 @@ import type { NavVector, RouteExecutionResult } from './types.ts'
 export interface ExecutorBot {
   entity: { position: Vec3 } | null
   lookAt: (point: Vec3, force?: boolean) => Promise<void>
-  setControlState: (control: 'forward' | 'jump' | 'sprint' | 'sneak', state: boolean) => void
+  setControlState: (control: 'forward' | 'back' | 'jump' | 'sprint' | 'sneak', state: boolean) => void
   clearControlStates: () => void
   controlState?: () => Record<string, boolean>
   onGround?: () => boolean
@@ -112,6 +112,13 @@ export class RouteExecutor {
             onGround: bot.onGround?.(),
             velocity: bot.velocity?.()
           })
+          // 贴住台阶时先退半步，给起跳留出碰撞空间；直接顶着方块跳会被服务端纠正。
+          if (controls.jump && horizontal < 1.0) {
+            bot.setControlState('forward', false)
+            bot.setControlState('back', true)
+            await sleep(220)
+            bot.setControlState('back', false)
+          }
           await bot.lookAt(new Vec3(target.x, target.y, target.z), true)
           bot.setControlState('forward', controls.forward)
           bot.setControlState('sprint', controls.sprint)
