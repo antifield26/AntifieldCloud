@@ -80,7 +80,8 @@ export class RouteExecutor {
           const position = entity.position
           const horizontal = Math.hypot(position.x - target.x, position.z - target.z)
           const vertical = Math.abs(position.y - target.y)
-          if (horizontal <= 0.85 && vertical <= 1.3) {
+          // 只有真正站上该路点的高度才算到达；否则会跳过一级台阶后横向顶墙。
+          if (horizontal <= 0.85 && vertical <= 0.6) {
             bot.setControlState('forward', false)
             bot.setControlState('jump', false)
             bot.setControlState('sprint', false)
