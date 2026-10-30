@@ -384,7 +384,24 @@ export class MovementManager {
         if (!bot.entity) return null
         const block = bot.blockAt(bot.entity.position)
         return block ? block.name : null
-      }
+      },
+      forceGround: () => this.refreshGround(bot)
+    }
+  }
+
+  /**
+   * 传送/重连后 mineflayer 可能保留 onGround=false，导致跳跃键被物理层忽略。
+   * 只在脚下确实有完整方块且脚底贴近方块顶面时纠正；不改变真实空中状态。
+   */
+  private refreshGround (bot: Bot): void {
+    const position = bot.entity?.position
+    if (!position || bot.entity.onGround) return
+    const x = Math.floor(position.x)
+    const y = Math.floor(position.y)
+    const z = Math.floor(position.z)
+    const below = bot.blockAt(new Vec3(x, y - 1, z))
+    if (below && below.boundingBox === 'block' && position.y - y <= 0.25) {
+      bot.entity.onGround = true
     }
   }
 
@@ -421,6 +438,7 @@ export class MovementManager {
     } catch {
       // ignore
     }
+    this.refreshGround(bot)
     const world = this.navWorld(bot)
     const area = this.navArea(bot, target, allowOutsideSafeZone)
     const position = bot.entity?.position
@@ -608,6 +626,7 @@ export class MovementManager {
     let failure: RouteFailureKind = 'path_stuck'
     let reason = ''
     try {
+      this.refreshGround(bot)
       await this.runPathWithWatchdog(
         new goals.GoalNear(target.x, target.y, target.z, Math.max(1, tolerance)),
         Math.min(timeoutMs, 30000)

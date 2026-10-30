@@ -15,6 +15,7 @@ export interface ExecutorBot {
   velocity?: () => { x: number, y: number, z: number }
   physicsEnabled?: () => boolean
   blockAtFeet?: () => string | null
+  forceGround?: () => void
 }
 
 export interface ExecutorOptions {
@@ -112,6 +113,7 @@ export class RouteExecutor {
           bot.setControlState('forward', controls.forward)
           bot.setControlState('sprint', controls.sprint)
           if (controls.jump) {
+            bot.forceGround?.()
             bot.setControlState('jump', true)
             await sleep(190)
             bot.setControlState('jump', false)
