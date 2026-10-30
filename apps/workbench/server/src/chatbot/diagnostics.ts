@@ -262,27 +262,30 @@ export class ChatbotDiagnostics {
    * 最近一次投递/发布失败（CHATBOT-07）：`chatbots.last_error` 没有写入点，直接派生自队列，
    * 避免 `/api/chatbots/status` 与 Chatbot 列表的 lastError 永远是 null（与 metrics.lastError 语义一致）。
    */
-  findLatestError(chatbotId: string | null, fallback: string | null = null): string | null {
+  findLatestError(chatbotId: string | null, fallback: string | null = null, since: string | null = null): string | null {
+    const sinceClause = since ? ' AND updated_at >= ?' : ''
     const row =
       chatbotId === null
         ? (this.db
             .prepare(
               `SELECT last_error FROM (
-                 SELECT last_error, updated_at FROM chatbot_deliveries WHERE last_error IS NOT NULL
+                 SELECT last_error, updated_at FROM chatbot_deliveries WHERE last_error IS NOT NULL${sinceClause}
                  UNION ALL
-                 SELECT last_error, updated_at FROM chatbot_publish_jobs WHERE last_error IS NOT NULL
+                 SELECT last_error, updated_at FROM chatbot_publish_jobs WHERE last_error IS NOT NULL${sinceClause}
                ) ORDER BY updated_at DESC LIMIT 1`,
             )
-            .get() as { last_error: string } | undefined)
+            .get(...(since ? [since, since] : [])) as { last_error: string } | undefined)
         : (this.db
             .prepare(
               `SELECT last_error FROM (
-                 SELECT last_error, updated_at FROM chatbot_deliveries WHERE chatbot_id = ? AND last_error IS NOT NULL
+                 SELECT last_error, updated_at FROM chatbot_deliveries WHERE chatbot_id = ? AND last_error IS NOT NULL${sinceClause}
                  UNION ALL
-                 SELECT last_error, updated_at FROM chatbot_publish_jobs WHERE chatbot_id = ? AND last_error IS NOT NULL
+                 SELECT last_error, updated_at FROM chatbot_publish_jobs WHERE chatbot_id = ? AND last_error IS NOT NULL${sinceClause}
                ) ORDER BY updated_at DESC LIMIT 1`,
             )
-            .get(chatbotId, chatbotId) as { last_error: string } | undefined)
+            .get(...(since ? [chatbotId, since, chatbotId, since] : [chatbotId, chatbotId])) as
+            | { last_error: string }
+            | undefined)
     return row?.last_error ?? fallback
   }
 }

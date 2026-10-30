@@ -437,7 +437,9 @@ export class ChatbotService {
 
   /** 最近一次投递/发布失败（CHATBOT-07）：派生自队列，避免 chatbots.last_error 死字段。 */
   private latestBotError(chatbotId: string | null, fallback: string | null = null): string | null {
-    return this.diagnostics.findLatestError(chatbotId, fallback)
+    const now = this.deps.now?.() ?? new Date()
+    const since = new Date(now.getTime() - this.config.chatbotOutboundFailureWindowMinutes * 60_000).toISOString()
+    return this.diagnostics.findLatestError(chatbotId, fallback, since)
   }
 
   /**

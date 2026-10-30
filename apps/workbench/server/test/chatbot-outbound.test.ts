@@ -160,6 +160,23 @@ test('出站健康：阈值可配置，关闭 Chatbot 时 active=false', () => {
   }
 })
 
+test('ChatbotStatus.lastError 不返回窗口外历史错误', () => {
+  const fixture = createQqServiceFixture()
+  try {
+    insertDelivery(fixture, {
+      id: 'stale-error',
+      status: 'dead',
+      updatedAt: '2026-10-20T00:00:00.000Z',
+      lastError: 'qq_access_token_failed',
+    })
+    const status = fixture.service.status()
+    assert.equal(status.outbound.degraded, false)
+    assert.equal(status.lastError, null)
+  } finally {
+    fixture.cleanup()
+  }
+})
+
 test('ChatbotStatus 暴露 outbound 快照', () => {
   const fixture = createQqServiceFixture()
   try {
