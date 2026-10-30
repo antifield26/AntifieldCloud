@@ -11,7 +11,7 @@ import type { ChatbotAiImage, ChatbotMemoryItemPrompt, ChatbotMemoryOperation } 
 import type { WebSearchResult } from '../src/chatbot/search.ts'
 import { tempDataDir, testConfig, testDb } from './helpers.ts'
 
-export const QQ_TOKEN_URL = 'https://chatbots.qq.com/app/getAppAccessToken'
+export const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 /** 固定测试时间：签名时间戳与服务端 deps.now 必须一致。 */
 export const QQ_NOW = new Date('2026-10-22T04:00:00.000Z')
 export const QQ_TIMESTAMP = String(Math.floor(QQ_NOW.getTime() / 1000))

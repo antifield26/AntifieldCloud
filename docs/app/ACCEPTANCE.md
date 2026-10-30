@@ -1,6 +1,12 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.3（2026-10-28 已部署生产；已补发 Tag/Release）：app 1.0.3/schema18/OpenCode 2.2.0、mcbot 1.0.3（自主模式已启用）。
+> 当前版本 v1.0.4（2026-10-30 热修复，待部署）：修复 QQ Bot access_token 端点与备份面板历史错误误报；生产仍 v1.0.3。
+
+### v1.0.4 热修复（2026-10-30，待部署）
+
+- 范围：QQ Bot access_token 端点 `chatbots.qq.com` → `bots.qq.com`（连通性探针与测试同步）；备份 ack 清除历史 `last_error`，Dashboard/列表忽略已 ack/已删除归档错误。
+- 本地门禁：`npm run check`、`npm run build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 通过；app **593**（592 pass、1 skip）+ web 273 + mcbot 122；生产加密凭据实测 token 端点 200。
+- 生产部署、完整 smoke 与 QQ 出站恢复证据待执行后补充在这里。
 
 ### v1.0.3 生产部署与验收（2026-10-28，已执行）
 

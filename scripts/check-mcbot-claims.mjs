@@ -78,17 +78,17 @@ for (const key of envKeys) {
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '文档声明', 'audit-matrix')
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '代码', 'audit-code-column')
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '状态', 'audit-status-column')
-requireText('README.md', 'v1.0.3', 'readme-version')
-requireText('docs/mcbot/README.md', 'v1.0.3', 'mcbot-readme-version')
-requireText('docs/app/API.md', 'mcbot **v1.0.3**', 'app-api-upstream-version')
-requireText('CHANGELOG.md', '## [v1.0.3]', 'changelog-version')
-requireText('docs/app/ACCEPTANCE.md', 'v1.0.3', 'acceptance-version')
-requireText('docs/app/DEPLOY.md', 'v1.0.3', 'deploy-title')
-requireText('deploy/tool-versions.json', '"mcbotVersion": "1.0.3"', 'tool-version')
-requireText('deploy/env.example', 'APP_VERSION=1.0.3', 'app-version')
+requireText('README.md', 'v1.0.4', 'readme-version')
+requireText('docs/mcbot/README.md', 'v1.0.4', 'mcbot-readme-version')
+requireText('docs/app/API.md', 'mcbot **v1.0.4**', 'app-api-upstream-version')
+requireText('CHANGELOG.md', '## [v1.0.4]', 'changelog-version')
+requireText('docs/app/ACCEPTANCE.md', 'v1.0.4', 'acceptance-version')
+requireText('docs/app/DEPLOY.md', 'v1.0.4', 'deploy-title')
+requireText('deploy/tool-versions.json', '"mcbotVersion": "1.0.4"', 'tool-version')
+requireText('deploy/env.example', 'APP_VERSION=1.0.4', 'app-version')
 
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
-if (rootPackage.version !== '1.0.3') errors.push(`package.json version 应为 1.0.3，实际 ${rootPackage.version}`)
+if (rootPackage.version !== '1.0.4') errors.push(`package.json version 应为 1.0.4，实际 ${rootPackage.version}`)
 
 const stalePatterns = [
   ['docs/app/API.md', '生产当前 v1.0.1', '旧生产版本'],

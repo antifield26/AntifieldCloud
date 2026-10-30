@@ -25,6 +25,22 @@ function backupRow(db: ReturnType<typeof phase2Fixture>['db'], name: string, ori
   ).run(name, T0, 'a'.repeat(64), size, ackedAt, origin)
 }
 
+test('dashboard.backup：已 ack 归档的历史 last_error 不作为最近错误', async () => {
+  const fx = phase2Fixture()
+  const mc = new MinecraftService(fx.db, { ...fx.config, mcPort: 1, rconPort: 1 } as Config)
+  const dashboard = new DashboardService(fx.db, fx.config, fx.files, mc)
+  try {
+    backupRow(fx.db, 'snapshot-20260606-full.tar.gz', 'pi', T0, 100)
+    fx.db
+      .prepare("UPDATE backup_archives SET last_error = '归档文件不存在' WHERE name = 'snapshot-20260606-full.tar.gz'")
+      .run()
+    const data = await dashboard.get()
+    assert.equal(data.backup?.lastError, null, '已 ack 归档的历史错误不应标记备份异常')
+  } finally {
+    fx.close()
+  }
+})
+
 test('BackupService.list：世界备份/拉取/演练状态文件读取，缺失返回 null', () => {
   const fx = backupsFixture()
   try {

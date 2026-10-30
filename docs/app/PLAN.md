@@ -1,18 +1,18 @@
-# AntifieldComplexx v1.0.3 实施计划（当前状态）
+# AntifieldComplexx v1.0.4 实施计划（当前状态）
 
 本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.3 当前状态（已部署生产）
+## v1.0.4 当前状态（热修复，待部署）
 
-- **版本**：**v1.0.3**（统一版本轴，生产已部署）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.3**（契约 v1）。
-- **范围**：mcbot 有界环境快照/附近方块与容器扫描、只读容器读取、`eat`/`equip`、任务生命周期+安全阈值事件驱动重决策；文档声明与代码实现一致性审计及自动检查。
-- **状态**：app release `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot release `/opt/mcbot/releases/20261028T144253Z`；完整 Access smoke 36/0/1/2（WARN=drill schema17）；实机 Agentic observe/task_status/finish 通过；Windows 备份任务标记 1.0.3；已补发 Tag/Release `v1.0.3`。
-- **边界**：容器只读、不传送、不破块；动作工具仅空闲时；未新增任意命令/采集/战斗动作。
-- **测试基线**：`npm run check`（含 `check:docs`）通过；app 591（590 pass、1 skip）+ web 273 + mcbot 122；`build`/`check-version`（严格 1.0.3）/`check-naming` 通过。
+- **版本**：**v1.0.4**（统一版本轴，待部署）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.4**（仅版本对齐，契约 v1）。
+- **范围**：QQ Bot access_token 端点修正为 `bots.qq.com`；备份 ack 清除历史错误，Dashboard/列表忽略已 ack/已删除归档错误。
+- **状态**：生产当前 v1.0.3；本地门禁通过，部署与 smoke 待执行。
+- **边界**：无 schema/API/安全边界变更；不修改 Minecraft/OpenCode/frpc/SSH 配置。
+- **测试基线**：`npm run check`（含 `check:docs`）通过；app **593**（592 pass、1 skip）+ web 273 + mcbot 122；`build`/`check-version`（严格 1.0.4）/`check:naming` 通过。
 
-## v1.0.2 已部署状态（历史）
+## v1.0.3 已部署状态（历史）
 
 - **版本**：**v1.0.2**（统一版本轴，生产已部署）；schema **v18**；OpenCode **v2.2.0**；Node.js **v26.12.1**；mcbot **v1.0.2**（契约 v1）。
 - **状态**：v1.0.2 **已部署生产（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0）、mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，自主模式已启用，仅主人显式启动）；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=恢复演练 schema17）；已补发 Tag/Release `v1.0.2`。

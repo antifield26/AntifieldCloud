@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.3）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.4）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -14,6 +14,8 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
+
+> **v1.0.4 生产记录（2026-10-30，热修复）**：QQ Bot access_token 端点修正为 `https://bots.qq.com/app/getAppAccessToken`；备份 ack/展示忽略已确认归档历史错误；无 schema 迁移。生产 release、smoke 与 QQ 出站恢复证据待部署后补充。
 
 > **v1.0.3 生产记录（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T144416Z`（1.0.3/schema18/OpenCode 2.2.0/commit `b385d02`），mcbot release `/opt/mcbot/releases/20261028T144253Z`（1.0.3/contract1）；部署内只读 smoke 26/0/1/2、完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.3；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；部署前 DB 快照 `db-predeploy-20261028T144601033Z.sqlite`（sha256 `540457…b00a`）；实机 Agentic `observe`+`task_status`+`finish`（toolCalls=3，低血告警触发重决策，session/MCP 清理）；自主模式已启用（仅主人显式启动），`FORCE_ONLINE=false`；已补发 Tag `v1.0.3` + [GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.0.3)。
 

@@ -133,12 +133,28 @@ test('prepare/pending 不推进游标，ack 校验后推进并清空 pending', (
     const entry = (pending.json.pending as Array<Record<string, unknown>>)[0]!
     assert.equal(entry.exists, true)
 
+    const rw = new DatabaseSync(join(dir, 'db.sqlite'))
+    try {
+      rw.prepare("UPDATE backup_archives SET last_error = '旧校验错误' WHERE name = ?").run(String(entry.name))
+    } finally {
+      rw.close()
+    }
+
     const acked = runBackup(dir, ['--ack', String(entry.name), '--sha256', String(entry.sha256)])
     assert.equal(acked.status, 0)
     assert.equal(acked.json.ok, true)
     assert.equal(acked.json.alreadyAcked, false)
     assert.equal(countPending(dir), 0)
     assert.equal(readBackupState(dir)?.last_backup_at, String(prepared.json.createdAt))
+    const ackedDb = openReadOnly(dir)
+    try {
+      const row = ackedDb.prepare('SELECT last_error FROM backup_archives WHERE name = ?').get(String(entry.name)) as {
+        last_error: string | null
+      }
+      assert.equal(row.last_error, null, 'ack 成功后必须清除历史校验错误')
+    } finally {
+      ackedDb.close()
+    }
 
     // 重复 ack 幂等。
     const again = runBackup(dir, ['--ack', String(entry.name), '--sha256', String(entry.sha256)])

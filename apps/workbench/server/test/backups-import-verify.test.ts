@@ -241,6 +241,30 @@ test('verify 不存在归档返回 404', async () => {
   }
 })
 
+test('已 ack 归档的历史 last_error 不再作为全局最近错误', () => {
+  const fx = backupsFixture()
+  try {
+    fx.db
+      .prepare(
+        `INSERT INTO backup_archives (name, mode, created_at, sha256, size, file_count, pulled_at, acked_at, origin, last_error)
+         VALUES (?, 'inc', ?, ?, 16, 0, ?, ?, 'pi', ?)`,
+      )
+      .run(
+        'snapshot-20260606T000000Z-inc.tar.gz',
+        '2026-06-06T00:00:00.000Z',
+        'e'.repeat(64),
+        '2026-06-06T00:00:01.000Z',
+        '2026-06-06T00:00:01.000Z',
+        '归档文件不存在',
+      )
+    const list = fx.service.list()
+    assert.equal(list.state.lastError, null, '已 ack 归档的历史错误不应出现在全局状态')
+    assert.equal(list.items[0]?.lastError, '归档文件不存在', '单条归档仍保留错误详情')
+  } finally {
+    fx.close()
+  }
+})
+
 test('DR-7：导入归档超过保留期清理，活动恢复计划引用时保留', async () => {
   const fx = backupsFixture({ serviceConfig: { backupImportRetentionDays: 90 } })
   try {

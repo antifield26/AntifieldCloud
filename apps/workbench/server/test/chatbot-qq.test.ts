@@ -10,7 +10,7 @@ import { QqAdapter } from '../src/chatbot/adapters/qq.ts'
 import { ChatbotPlatformError } from '../src/chatbot/adapters/http.ts'
 import type { ChatbotHealthCheck, ChatbotSecret, ChatbotTargetRow, InboundVerification } from '../src/chatbot/types.ts'
 
-const TOKEN_URL = 'https://chatbots.qq.com/app/getAppAccessToken'
+const TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 const PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex')
 const VALIDATION_SECRET = 'qq-validation-app-secret-fixed-0001'
 const FIXED_TIME = new Date('2026-10-22T08:00:00.000Z')

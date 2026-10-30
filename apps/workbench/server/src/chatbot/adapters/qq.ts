@@ -27,7 +27,7 @@ import {
   parseJsonBody,
 } from './http.ts'
 
-const QQ_TOKEN_URL = 'https://chatbots.qq.com/app/getAppAccessToken'
+const QQ_TOKEN_URL = 'https://bots.qq.com/app/getAppAccessToken'
 const QQ_API_BASE = 'https://api.sgroup.qq.com'
 const TEXT_LIMIT = 2000
 const CLOCK_SKEW_SECONDS = 300

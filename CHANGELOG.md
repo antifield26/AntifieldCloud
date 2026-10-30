@@ -1,5 +1,23 @@
 # Changelog
 
+## [v1.0.4] - 2026-10-30（热修复；待部署）
+
+v1.0.4 修复 QQ Bot 出站 token 端点错误与备份面板历史错误误报；不改变 schema/API/安全边界，mcbot 仅版本对齐。
+
+### Fixed
+
+- **QQ Bot 出站**：access_token 端点从不可解析/证书不匹配的 `https://chatbots.qq.com/app/getAppAccessToken` 修正为官方 `https://bots.qq.com/app/getAppAccessToken`；连通性探针同步改为 `https://bots.qq.com/`，测试常量同步并增加旧域名不得回归断言。
+- **备份面板误报**：`backup.mjs --ack` 成功后清除该归档的 `last_error`；Dashboard 与备份列表的全局最近错误只考虑未 ack、未删除归档，已确认归档的文件缺失不再长期标记“备份异常”。
+
+### Verification
+
+- 本地：`npm run check`（含 docs/naming）、`npm run build`、`check-version`（严格 1.0.4）通过；app **593**（592 pass、1 skip）+ web **273** + mcbot **122**；QQ token 端点用生产加密凭据实测返回 200（不打印 Token）。
+- 生产部署与 smoke 待执行；执行后在本节补充 release、smoke 与 QQ 出站恢复证据。
+
+### Migration / Rollback
+
+- 无 schema/DB 迁移；回滚切回上一 app/mcbot release 并恢复部署前 env；QQ 修复与备份错误展示均为应用侧变更。
+
 ## [v1.0.3] - 2026-10-28（已部署生产；已补发 Tag/Release）
 
 v1.0.3 是 mcbot 环境感知/自主决策增强与文档-实现一致性审计版本：新增有界环境快照、附近方块/容器扫描、只读容器读取、进食/装备工具与事件驱动重决策；未变更 schema。2026-10-28 已部署生产（app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z`），完整 Access smoke 36/0/1/2；已补发 [GitHub Release v1.0.3](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.0.3)。

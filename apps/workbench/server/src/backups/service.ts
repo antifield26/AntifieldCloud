@@ -617,7 +617,7 @@ export class BackupService {
     const lastError = rows
       .slice()
       .reverse()
-      .find((row) => row.last_error)?.last_error ?? null
+      .find((row) => row.last_error && row.acked_at === null && row.deleted_at === null)?.last_error ?? null
     const pendingCount = items.filter((item) => item.status === 'pending').length
     const ackedCount = items.filter((item) => item.status === 'acked').length
     const importCount = items.filter((item) => item.origin === 'import').length

@@ -46,7 +46,8 @@ test('v0.5.10 连通性：外网与 QQ 平台可达，4xx 仍视为网络可达'
   assert.equal(snapshot.internet.status, 401)
   assert.equal(snapshot.platforms.qq?.reachable, true)
   assert.equal(urls.length, 2)
-  assert.ok(urls.some((url) => url.includes('chatbots.qq.com')))
+  assert.ok(urls.some((url) => url.includes('bots.qq.com')))
+  assert.ok(!urls.some((url) => url.includes('chatbots.qq.com')))
   assert.ok(urls.some((url) => url.includes('www.qq.com')))
 })
 

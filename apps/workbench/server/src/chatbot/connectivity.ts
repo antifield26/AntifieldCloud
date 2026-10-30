@@ -19,7 +19,7 @@ export interface ConnectivitySnapshot {
 }
 
 const PLATFORM_PROBE_URLS: Record<ChatbotPlatform, string> = {
-  qq: 'https://chatbots.qq.com/',
+  qq: 'https://bots.qq.com/',
 }
 
 const EMPTY_PROBE: ProbeResult = { reachable: false, latencyMs: null, status: null, error: null }

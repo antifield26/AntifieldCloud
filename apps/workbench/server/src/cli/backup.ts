@@ -833,7 +833,7 @@ async function ackArchive(
     // 归档行、游标、缺失文件状态与审计在同一事务内提交，避免只推进一部分导致漏备/重复通知。
     transaction(db, () => {
       const now = new Date().toISOString()
-      db.prepare('UPDATE backup_archives SET pulled_at = ?, acked_at = ? WHERE name = ?').run(now, now, name)
+      db.prepare('UPDATE backup_archives SET pulled_at = ?, acked_at = ?, last_error = NULL WHERE name = ?').run(now, now, name)
       advanceCursor(db, row)
       // 合并历史缺失与本归档 skippedMissing：多 pending 顺序 ack 时不能丢掉“恢复后补入下一次增量”的
       // 强制重查集合（后 ack 的 inc 未选中早期缺失文件，旧实现会用空列表覆盖历史缺失集合）。

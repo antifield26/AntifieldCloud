@@ -182,7 +182,7 @@ export class DashboardService {
         this.db
           .prepare(
             `SELECT last_error FROM backup_archives
-             WHERE deleted_at IS NULL AND last_error IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
+             WHERE deleted_at IS NULL AND acked_at IS NULL AND last_error IS NOT NULL ORDER BY created_at DESC LIMIT 1`,
           )
           .get() as { last_error: string | null } | undefined
       )?.last_error ?? null
