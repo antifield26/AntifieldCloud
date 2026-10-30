@@ -15,6 +15,7 @@ import type {
   NavVector,
   NavWorld,
   RouteAdvisor,
+  RouteExecutionResult,
   RouteFailureKind
 } from './routing/types.ts'
 
@@ -58,7 +59,7 @@ export class MovementManager {
   private readonly executor = new RouteExecutor()
   private readonly trace = new NavigationTrace()
   private lastAiAt = 0
-  private lastPlannerLogAt = 0
+  private savedPathfinderMonitors: Array<() => void> = []
   private navigation: NavigationSnapshot = {
     state: 'idle',
     source: null,
@@ -425,6 +426,21 @@ export class MovementManager {
     return 'unreachable'
   }
 
+  /**
+   * 受控执行期间临时摘掉 pathfinder 的 physicsTick 监控，避免它每 tick 覆写手动控制键。
+   * 仅在同一次导航调用内挂起，finally 恢复；失败路径也不会留下状态。
+   */
+  private suspendPathfinderMonitor (bot: Bot): void {
+    const listeners = bot.listeners('physicsTick') as Array<() => void>
+    this.savedPathfinderMonitors = listeners.filter(listener => listener.name === 'monitorMovement')
+    for (const listener of this.savedPathfinderMonitors) bot.removeListener('physicsTick', listener)
+  }
+
+  private resumePathfinderMonitor (bot: Bot): void {
+    for (const listener of this.savedPathfinderMonitors) bot.on('physicsTick', listener)
+    this.savedPathfinderMonitors = []
+  }
+
   private async tryPlannerRoute (
     bot: Bot,
     target: NavVector,
@@ -476,14 +492,20 @@ export class MovementManager {
       } : null,
       target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }
     })
-    const result = await this.executor.run(
-      this.executorBot(bot),
-      plan.waypoints.map(point => ({ x: point.x, y: point.y, z: point.z })),
-      {
-        isCancelled: () => this.cancelled,
-        totalMs: Math.max(8000, plan.waypoints.length * 2500)
-      }
-    )
+    this.suspendPathfinderMonitor(bot)
+    let result: RouteExecutionResult
+    try {
+      result = await this.executor.run(
+        this.executorBot(bot),
+        plan.waypoints.map(point => ({ x: point.x, y: point.y, z: point.z })),
+        {
+          isCancelled: () => this.cancelled,
+          totalMs: Math.max(8000, plan.waypoints.length * 2500)
+        }
+      )
+    } finally {
+      this.resumePathfinderMonitor(bot)
+    }
     if (result.status !== 'arrived') {
       const failure: RouteFailureKind = result.status === 'timeout' ? 'timeout' : 'path_stuck'
       this.recordFailure('planner', failure, result.reason)
