@@ -393,7 +393,7 @@ export class MovementManager {
         bot.entity.velocity.x = 0
         bot.entity.velocity.z = 0
         bot.entity.onGround = false
-        bot.jumpQueued = true
+        ;(bot as Bot & { jumpQueued?: boolean }).jumpQueued = true
       },
       getControlState: control => bot.getControlState(control)
     }
