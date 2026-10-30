@@ -259,6 +259,47 @@ export class MovementManager {
     }
   }
 
+  /**
+   * 路径停滞后的受控步行恢复：朝目标前进并跳跃，只用于安全区内的短距离台阶/坡道。
+   * 不挖掘、不放置、不进入未知区域；失败后仍由调用方安全点/传送兜底。
+   */
+  private async manualStepToward (x: number, y: number, z: number, attempts = 4): Promise<boolean> {
+    const bot = this.requireBot()
+    const config = this.requireConfig()
+    if (!insideSafeZone(config, x, z)) return false
+    const target = new Vec3(x, y, z)
+    try {
+      bot.pathfinder.stop()
+      bot.pathfinder.setGoal(null)
+    } catch {
+      // ignore
+    }
+    try {
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        if (this.cancelled || !bot.entity) return false
+        const position = bot.entity.position
+        const horizontal = Math.hypot(position.x - x, position.z - z)
+        const vertical = Math.abs(position.y - y)
+        if (horizontal <= 2 && vertical <= 2) return true
+        await bot.lookAt(new Vec3(x, y + 1.6, z), true)
+        bot.setControlState('forward', true)
+        bot.setControlState('jump', true)
+        await new Promise(resolve => setTimeout(resolve, 380))
+        bot.setControlState('jump', false)
+        await new Promise(resolve => setTimeout(resolve, 320))
+        bot.setControlState('forward', false)
+      }
+      const position = bot.entity.position
+      return Math.hypot(position.x - x, position.z - z) <= 3 && Math.abs(position.y - y) <= 2
+    } finally {
+      try {
+        bot.clearControlStates()
+      } catch {
+        // ignore
+      }
+    }
+  }
+
   async goNearPoint (
     x: number,
     y: number,
@@ -284,7 +325,15 @@ export class MovementManager {
           error: firstError instanceof Error ? firstError.message : String(firstError)
         })
         await this.waitForChunks()
-        // 高差场景：先水平接近，再尝试安全中间点；两者都失败才传送。
+        // 高差场景：先尝试受控步行上/下台阶，再水平接近/安全中间点，最后才传送。
+        if (await this.manualStepToward(x, y, z)) {
+          this.logger.info('movement manual step reached target', {
+            x: Math.round(x),
+            y: Math.round(y),
+            z: Math.round(z)
+          })
+          return
+        }
         try {
           await tryGoto(new goals.GoalNearXZ(x, z, Math.max(2, radius + 1)))
           const reached = bot.entity
@@ -375,6 +424,10 @@ export class MovementManager {
     } catch (error) {
       if (this.cancelled) return 'cancelled'
       if (config && bot.entity) {
+        if (await this.manualStepToward(entity.position.x, entity.position.y, entity.position.z)) {
+          this.logger.info('movement come manual step reached target', { target: username })
+          return 'arrived'
+        }
         const spot = safeSpotNear(bot, config, entity.position, 4)
         if (spot) {
           try {

@@ -1013,10 +1013,14 @@ export class TaskManager implements TaskController {
         this.logger.info('auto restock done', { items: succeeded })
         await this.say('补给好了。')
       }
-      if (failures.length > 0 && succeeded.length === 0) {
-        const message = failures.join('；')
-        this.logger.warn('auto restock failed', { error: message })
+      const criticalFailures = failures.filter(failure => failure.startsWith('food:'))
+      if (criticalFailures.length > 0) {
+        const message = criticalFailures.join('；')
+        this.logger.warn('auto restock food failed', { error: message })
         this.deps.alerts?.raise('auto_restock_failed', `自动补货失败：${message}`, { error: message }, 'warning')
+      } else if (failures.length > 0) {
+        // 铁镐/铁斧是可选项；缺失只记录，不把吃饱的 Bot 误报成整体补货失败。
+        this.logger.info('auto restock optional items missing', { failures })
       }
     } catch (error) {
       if (error instanceof TaskStopError) return
@@ -1029,8 +1033,8 @@ export class TaskManager implements TaskController {
   }
 
   /**
-   * 空闲自动生存：进食与更换更好的护甲。只在无任务/队列/待恢复时执行，
-   * 不抢占任务、不移动容器物品；补货仍由 autoRestock 独立周期处理。
+   * 空闲自动生存：有敌对生物时先使用 Defender 白名单自保，然后进食/换装。
+   * 只在无任务/队列/待恢复时执行，不抢占任务、不移动容器物品；补货仍由 autoRestock 独立周期处理。
    */
   async autoSurvival (): Promise<void> {
     const { config } = this.deps
@@ -1041,6 +1045,19 @@ export class TaskManager implements TaskController {
     this.survivalBusy = true
     try {
       this.deps.state.setSurvival({ enabled: true, lastRunAt: new Date().toISOString(), lastError: null })
+      const defender = this.deps.defender
+      if (config.defenseEnabled && defender?.hasThreat()) {
+        this.deps.state.setSurvival({ lastAction: 'defend' })
+        const fake = this.createActive('guard', randomUUID(), Date.now())
+        try {
+          await defender.defend(this.context(fake, false))
+        } catch (error) {
+          this.logger.warn('auto survival defense failed', {
+            error: error instanceof Error ? error.message : String(error)
+          })
+        }
+        return
+      }
       if (bot.food < config.autoEatBelow) {
         const food = bot.inventory.items().find(item => isFood(bot, item))
         if (food) {
