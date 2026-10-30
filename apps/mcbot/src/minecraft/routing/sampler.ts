@@ -154,7 +154,11 @@ export function neighbors (world: NavWorld, area: NavArea, node: NavVector): Nav
     const sideB = findStanding(world, area, node.x, node.z + direction.dz, node.y)
     if (!sideA || !sideB) continue
     const next = findStanding(world, area, node.x + direction.dx, node.z + direction.dz, node.y)
-    if (next) found.push(next)
+    if (!next) continue
+    // 对角踏步需要同时跳上两侧墙角，Minecraft 物理与 pathfinder 都容易卡死；
+    // 抬升/下落统一走四向，对角只允许同层平坦移动。
+    if (sideA.y !== node.y || sideB.y !== node.y || next.y !== node.y) continue
+    found.push(next)
   }
   return found
 }
