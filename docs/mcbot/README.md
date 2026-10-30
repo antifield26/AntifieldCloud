@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.5**（2026-10-30 开发中/待部署；v1.0.4 生产 release `/opt/mcbot/releases/20261030T005014Z` 与服务 `mcbot.service` 保持不变，验收后切换）。本版修复高低差寻路、增加在线模式持久化、自动生存/补货、`clearing` 安全区清怪与多步目标；自主模式仍仅主人显式启动。
+> 当前版本：**v1.0.5**（2026-10-30 已部署：release `/opt/mcbot/releases/20261030T120449Z`，服务 `mcbot.service`）。本版增加高低差路径停滞看门狗/起跳重试/安全传送、在线模式持久化、自动生存/补货、`clearing` 安全区清怪与多步目标；自主模式仍仅主人显式启动。复杂高差/连续墙体可能仍回退安全传送，详见 [DEBUG-AUDIT-v1.0.5](../app/DEBUG-AUDIT-v1.0.5.md)。
 
 ## 能做什么
 

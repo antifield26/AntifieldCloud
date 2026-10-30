@@ -1,6 +1,6 @@
 # 部署与运维（mcbot）
 
-> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。生产 v1.0.4 已于 2026-10-30 部署：release `/opt/mcbot/releases/20261030T005014Z`（仅版本对齐，行为与 v1.0.3 相同）；自主模式已启用（仅主人显式启动）。生产 env 已通过 `bootstrap-env.sh` 补齐 `AUTONOMY_SCAN_*`、`AUTONOMY_CHEST_*`、`AUTONOMY_EAT_BELOW`、`AUTONOMY_ACTION_COOLDOWN_MS`、`AUTONOMY_EVENT_DEBOUNCE_MS`、`AUTONOMY_MAX_REPROMPTS`；`FORCE_ONLINE=false`，完整 Access smoke 36/0/1/2。
+> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。生产 v1.0.5 已于 2026-10-30 部署：release `/opt/mcbot/releases/20261030T120449Z`（在线模式/自动生存/清怪/目标/寻路回退；自主模式仍仅主人显式启动）；v1.0.4 回滚 release `/opt/mcbot/releases/20261030T005014Z`。生产 env 保留 `AUTONOMY_*`；`FORCE_ONLINE=false`；Windows 任务标记 1.0.5。完整 Access smoke 因收尾时 PC 边缘网络超时未稳定复跑，Pi 本机/部署内 smoke 正常。
 > 服务器：Paper 26.1.2，`~/minecraft-server`，RCON 已启用。
 > 所有操作从 Windows 工作区通过 SSH/SCP 执行；不使用 Docker。
 

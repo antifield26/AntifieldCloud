@@ -1,6 +1,6 @@
 # Changelog
 
-## [v1.0.5] - 2026-10-30（开发中；计划只部署，Tag/Release 待确认）
+## [v1.0.5] - 2026-10-30（已部署；用户选择不创建 Tag/Release）
 
 v1.0.5 为 MC Bot 修复与新特性版本，并包含一次全仓 Debug：修复安全区高低差寻路、增加可持久化 `auto/always/off` 在线模式、空闲自动进食/换装/补货、安全区清怪任务、多步目标/长期记忆与失败分类；app 新增在线模式/目标代理与面板卡片。app schema 保持 v18（mcbot 本地 `goals.db`/`presence.json` 为 additive，无 app DB 迁移）。
 
@@ -20,7 +20,7 @@ v1.0.5 为 MC Bot 修复与新特性版本，并包含一次全仓 Debug：修�
 ### Verification
 
 - 门禁：app 603（602 pass、1 skip）+ web 275（49 文件）+ mcbot 127；`npm run check`/`build`/`check-version`（严格 1.0.5）/`check-naming`/`check:docs` 通过。
-- 生产部署与实机验收待执行；本次按用户选择不创建 Tag/Release。
+- 生产：app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`；部署内 smoke 26/0/1/2，最终 `-SkipPublic` 本机 smoke 29/0/1/2，Windows 任务标记 1.0.5；实机验证在线模式/目标/清怪/自动生存；高低差路径仍会安全传送，残余见 `docs/app/DEBUG-AUDIT-v1.0.5.md`。本次按用户选择不创建 Tag/Release。
 
 ## [v1.0.4] - 2026-10-30（已部署生产（最终构建）；已发布 Tag/Release）
 
