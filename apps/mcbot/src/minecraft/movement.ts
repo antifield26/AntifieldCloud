@@ -387,6 +387,14 @@ export class MovementManager {
         return block ? block.name : null
       },
       forceGround: () => this.refreshGround(bot),
+      forceJump: () => {
+        if (!bot.entity) return
+        bot.entity.velocity.y = 0.42
+        bot.entity.velocity.x = 0
+        bot.entity.velocity.z = 0
+        bot.entity.onGround = false
+        bot.jumpQueued = true
+      },
       getControlState: control => bot.getControlState(control)
     }
   }
