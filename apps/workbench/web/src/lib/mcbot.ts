@@ -31,6 +31,7 @@ export const MCBOT_TASK_NAME_LABELS: Record<McbotTaskName, string> = {
   guard: '守卫',
   escort: '护送',
   explore: '探索',
+  clearing: '清理安全区',
 }
 
 export const MCBOT_TASK_NAMES: readonly McbotTaskName[] = [
@@ -44,6 +45,7 @@ export const MCBOT_TASK_NAMES: readonly McbotTaskName[] = [
   'guard',
   'escort',
   'explore',
+  'clearing',
 ]
 
 export const MCBOT_TASK_STATE_LABELS: Record<McbotTaskState, string> = {
@@ -232,6 +234,7 @@ const TASK_PROGRESS_LABELS: Record<McbotTaskName, readonly { key: keyof McbotTas
   guard: [{ key: 'guardKills', label: '击杀怪物' }],
   escort: [{ key: 'escortDistance', label: '护送距离' }],
   explore: [{ key: 'exploreWaypoints', label: '探索点' }],
+  clearing: [{ key: 'mobsKilled', label: '清理怪物' }],
 }
 
 export function mcbotTaskNameLabel(name: string | null | undefined): string {
@@ -462,6 +465,7 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
   const ai = asRecord(raw.ai) ?? {}
   const memory = asRecord(raw.memory) ?? {}
   const task = asRecord(raw.task) ?? {}
+  const survival = asRecord(raw.survival) ?? {}
   const admin = asRecord(raw.admin) ?? {}
   const position = asRecord(player.position)
   const lastDisconnect = asRecord(minecraft.lastDisconnect)
@@ -520,6 +524,15 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
     },
     presence: {
       enabled: presence.enabled === true,
+      mode:
+        presence.mode === 'always' || presence.mode === 'off'
+          ? presence.mode
+          : 'auto',
+      modeSource:
+        presence.modeSource === 'env' || presence.modeSource === 'persisted'
+          ? presence.modeSource
+          : 'default',
+      modeUpdatedAt: asText(presence.modeUpdatedAt),
       pollMs: asCount(presence.pollMs) ?? 0,
       graceMs: asCount(presence.graceMs) ?? 0,
       checkMs: asCount(presence.checkMs) ?? 0,
@@ -576,6 +589,12 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
             })
             .filter((item): item is McbotQueuedTask => item !== null)
         : [],
+    },
+    survival: {
+      enabled: survival.enabled === true,
+      lastRunAt: asText(survival.lastRunAt),
+      lastAction: asText(survival.lastAction),
+      lastError: asText(survival.lastError),
     },
     admin: {
       enabled: admin.enabled === true,

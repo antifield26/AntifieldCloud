@@ -31,6 +31,7 @@ export const MCBOT_TASK_NAMES = [
   'guard',
   'escort',
   'explore',
+  'clearing',
 ] as const
 export type McbotTaskName = (typeof MCBOT_TASK_NAMES)[number]
 export const MCBOT_MOVE_ACTIONS = ['home', 'come', 'follow', 'stop'] as const
@@ -88,7 +89,19 @@ const ERROR_MESSAGES: Record<string, string> = {
   mcbot_autonomy_busy: 'mcbot 自主模式正在运行，请先停止',
   mcbot_autonomy_unavailable: 'mcbot 自主模式不可用',
   mcbot_autonomy_failed: 'mcbot 自主模式启动失败',
+  mcbot_presence_busy: '有任务或自主会话运行中，无法关闭在线模式',
+  mcbot_presence_disabled: 'mcbot 在线模式不可用',
+  mcbot_goals_disabled: 'mcbot 长期目标不可用',
+  mcbot_goal_busy: '目标当前不可启动或正忙',
 }
+
+/** 在线模式白名单。 */
+export const MCBOT_PRESENCE_MODES = ['auto', 'always', 'off'] as const
+export type McbotPresenceMode = (typeof MCBOT_PRESENCE_MODES)[number]
+
+/** 长期目标步骤上限（与上游 GOALS_MAX_STEPS 默认值一致）。 */
+export const MCBOT_GOAL_MAX_STEPS = 5
+const GOAL_KINDS = new Set(['task', 'deposit', 'home'])
 
 function errorMessageFor(code: string, fallback: string): string {
   return ERROR_MESSAGES[code] ?? fallback
@@ -217,6 +230,105 @@ export function registerLofiiRoutes(
       return { ok: true, autonomy: result.autonomy }
     } catch (error) {
       auditFailure(actor, 'mcbot.autonomy.stop', error)
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.get('/api/mcbot/presence', { preHandler: [requireAuth] }, async (request) => {
+    limitGet(request)
+    requireEnabled(mcbot)
+    try {
+      return { presence: await mcbot.presence() }
+    } catch (error) {
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.post('/api/mcbot/presence', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
+    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
+    const retry = controlLimiter.hit(clientIp(request))
+    if (retry > 0) throw rateLimited(retry)
+    const body = asRecord(request.body)
+    const mode = typeof body.mode === 'string' ? body.mode.trim() : ''
+    if (!(MCBOT_PRESENCE_MODES as readonly string[]).includes(mode)) {
+      throw badRequest(`mode 必须是 ${MCBOT_PRESENCE_MODES.join('/')} 之一`, 'invalid_request')
+    }
+    try {
+      const result = await mcbot.setPresence(mode)
+      audit(db, actor.username, 'mcbot.presence.set', mode, { mode }, actor.ip)
+      return { ok: true, presence: result }
+    } catch (error) {
+      auditFailure(actor, 'mcbot.presence.set', error)
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.get('/api/mcbot/goals', { preHandler: [requireAuth] }, async (request) => {
+    limitGet(request)
+    requireEnabled(mcbot)
+    const query = asRecord(request.query)
+    const limit = parsePositiveInt(query.limit, 20, 1, 50)
+    try {
+      return await mcbot.goals(limit)
+    } catch (error) {
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.post('/api/mcbot/goals', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
+    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
+    const retry = controlLimiter.hit(clientIp(request))
+    if (retry > 0) throw rateLimited(retry)
+    const body = asRecord(request.body)
+    const objective = typeof body.objective === 'string' ? body.objective.trim() : ''
+    if (objective.length === 0 || objective.length > 200 || hasControlChars(objective)) {
+      throw badRequest('objective 必须是 1..200 字符且不能包含控制字符', 'invalid_request')
+    }
+    const rawSteps = body.steps
+    if (!Array.isArray(rawSteps) || rawSteps.length === 0 || rawSteps.length > MCBOT_GOAL_MAX_STEPS) {
+      throw badRequest(`steps 必须是 1..${MCBOT_GOAL_MAX_STEPS} 步`, 'invalid_request')
+    }
+    const steps = rawSteps.map((value) => {
+      const record = asRecord(value)
+      const kind = typeof record.kind === 'string' ? record.kind : ''
+      if (!GOAL_KINDS.has(kind)) throw badRequest('步骤 kind 必须是 task/deposit/home', 'invalid_request')
+      if (kind === 'task') {
+        const taskName = typeof record.taskName === 'string' ? record.taskName : ''
+        if (!TASK_NAMES.has(taskName)) throw badRequest('步骤 taskName 不合法', 'invalid_request')
+        return { kind, taskName }
+      }
+      return { kind }
+    })
+    try {
+      const result = await mcbot.createGoal(objective, steps)
+      audit(db, actor.username, 'mcbot.goal.create', null, { objectiveChars: objective.length, steps: steps.length }, actor.ip)
+      return result
+    } catch (error) {
+      auditFailure(actor, 'mcbot.goal.create', error)
+      throw toLofiiAppError(error)
+    }
+  })
+
+  app.post('/api/mcbot/goals/:goalId/:action', { preHandler: [requireAuth, csrf] }, async (request) => {
+    requireEnabled(mcbot)
+    const actor = { username: request.auth?.user.username ?? '', ip: clientIp(request) }
+    const retry = controlLimiter.hit(clientIp(request))
+    if (retry > 0) throw rateLimited(retry)
+    const params = asRecord(request.params)
+    const goalId = typeof params.goalId === 'string' ? params.goalId : ''
+    const action = typeof params.action === 'string' ? params.action : ''
+    if (!/^[A-Za-z0-9-]{1,80}$/.test(goalId)) throw badRequest('goalId 不合法', 'invalid_request')
+    if (action !== 'start' && action !== 'pause' && action !== 'resume' && action !== 'cancel') {
+      throw badRequest('目标动作必须是 start/pause/resume/cancel', 'invalid_request')
+    }
+    try {
+      const result = await mcbot.goalAction(goalId, action)
+      audit(db, actor.username, `mcbot.goal.${action}`, goalId, null, actor.ip)
+      return result
+    } catch (error) {
+      auditFailure(actor, `mcbot.goal.${action}`, error)
       throw toLofiiAppError(error)
     }
   })

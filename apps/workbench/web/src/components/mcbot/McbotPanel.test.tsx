@@ -138,6 +138,9 @@ function mcbotStatus(overrides: Partial<McbotStatus> = {}): McbotStatus {
     },
     presence: {
       enabled: true,
+      mode: 'auto',
+      modeSource: 'default',
+      modeUpdatedAt: null,
       pollMs: 15000,
       graceMs: 60000,
       checkMs: 5000,
@@ -156,6 +159,7 @@ function mcbotStatus(overrides: Partial<McbotStatus> = {}): McbotStatus {
     },
     memory: { players: 1, turns: 4 },
     task: idleTask(),
+    survival: { enabled: true, lastRunAt: null, lastAction: null, lastError: null },
     admin: {
       enabled: true,
       rcon: true,
@@ -567,10 +571,10 @@ describe('McbotPanel AI 自主模式', () => {
     expect(screen.getByText('失败')).toBeTruthy()
   })
 
-  it('任务下拉包含 10 种任务（含守卫/护送/探索）', async () => {
+  it('任务下拉包含 11 种任务（含守卫/护送/探索/清理）', async () => {
     renderPanel()
     const select = (await screen.findByLabelText('任务')) as HTMLSelectElement
-    expect(within(select).getAllByRole('option')).toHaveLength(10)
+    expect(within(select).getAllByRole('option')).toHaveLength(11)
     expect(within(select).getByRole('option', { name: '守卫' })).toBeTruthy()
     expect(within(select).getByRole('option', { name: '护送' })).toBeTruthy()
     expect(within(select).getByRole('option', { name: '探索' })).toBeTruthy()

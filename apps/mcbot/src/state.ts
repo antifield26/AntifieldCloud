@@ -1,4 +1,7 @@
+import type { PresenceMode } from './config.ts'
+
 export type BotState = 'idle' | 'connecting' | 'connected' | 'backoff' | 'cooldown'
+export type PresenceModeSource = 'default' | 'env' | 'persisted'
 
 export interface Position {
   x: number
@@ -40,6 +43,9 @@ export interface ServerSnapshot {
 
 export interface PresenceSnapshot {
   enabled: boolean
+  mode: PresenceMode
+  modeSource: PresenceModeSource
+  modeUpdatedAt: string | null
   pollMs: number
   graceMs: number
   checkMs: number
@@ -97,6 +103,7 @@ export type TaskName =
   | 'guard'
   | 'escort'
   | 'explore'
+  | 'clearing'
 export type TaskState = 'idle' | 'starting' | 'running' | 'depositing' | 'recovering' | 'stopping' | 'defending' | 'pending_resume'
 
 export interface TaskProgress {
@@ -166,6 +173,13 @@ export interface TaskSnapshot {
   queue: QueuedTask[]
 }
 
+export interface SurvivalSnapshot {
+  enabled: boolean
+  lastRunAt: string | null
+  lastAction: string | null
+  lastError: string | null
+}
+
 export interface StatusSnapshot {
   version: string
   uptimeSec: number
@@ -177,6 +191,7 @@ export interface StatusSnapshot {
   ai: AiSnapshot
   memory: MemorySnapshot
   task: TaskSnapshot
+  survival: SurvivalSnapshot
   autonomy: AutonomySnapshot
   admin: AdminSnapshot
 }
@@ -211,6 +226,7 @@ export class RuntimeState {
   ai: AiSnapshot
   memory: MemorySnapshot = { players: 0, turns: 0 }
   task: TaskSnapshot
+  survival: SurvivalSnapshot
   autonomy: AutonomySnapshot
   admin: AdminSnapshot
   lastDecision = 'startup'
@@ -222,6 +238,9 @@ export class RuntimeState {
     port: number
     minecraftVersion: string
     presenceEnabled: boolean
+    presenceMode?: PresenceMode
+    presenceModeSource?: PresenceModeSource
+    presenceModeUpdatedAt?: string | null
     presencePollMs: number
     presenceGraceMs: number
     presenceCheckMs: number
@@ -229,6 +248,7 @@ export class RuntimeState {
     aiProvider: string
     aiModel: string
     taskEnabled: boolean
+    survivalEnabled?: boolean
     autonomyEnabled?: boolean
     autonomyMaxToolCalls?: number
   }) {
@@ -244,6 +264,9 @@ export class RuntimeState {
     }
     this.presence = {
       enabled: options.presenceEnabled,
+      mode: options.presenceMode ?? 'auto',
+      modeSource: options.presenceModeSource ?? 'default',
+      modeUpdatedAt: options.presenceModeUpdatedAt ?? null,
       pollMs: options.presencePollMs,
       graceMs: options.presenceGraceMs,
       checkMs: options.presenceCheckMs,
@@ -258,6 +281,12 @@ export class RuntimeState {
       queued: 0,
       failures: 0,
       lastLatencyMs: null,
+      lastError: null
+    }
+    this.survival = {
+      enabled: options.survivalEnabled ?? false,
+      lastRunAt: null,
+      lastAction: null,
       lastError: null
     }
     this.task = {
@@ -365,6 +394,12 @@ export class RuntimeState {
     this.lastDecision = decision
   }
 
+  setPresenceMode (mode: PresenceMode, source: PresenceModeSource, updatedAt: string | null): void {
+    this.presence.mode = mode
+    this.presence.modeSource = source
+    this.presence.modeUpdatedAt = updatedAt
+  }
+
   setAi (patch: Partial<AiSnapshot>): void {
     this.ai = { ...this.ai, ...patch }
   }
@@ -390,6 +425,10 @@ export class RuntimeState {
 
   setAutonomy (patch: Partial<AutonomySnapshot>): void {
     this.autonomy = { ...this.autonomy, ...patch }
+  }
+
+  setSurvival (patch: Partial<SurvivalSnapshot>): void {
+    this.survival = { ...this.survival, ...patch }
   }
 
   setTask (patch: Partial<TaskSnapshot>): void {
@@ -440,6 +479,7 @@ export class RuntimeState {
       ai: { ...this.ai },
       memory: { ...this.memory },
       task,
+      survival: { ...this.survival },
       autonomy: { ...this.autonomy },
       admin: {
         ...this.admin,

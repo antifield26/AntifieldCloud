@@ -637,6 +637,28 @@ export class McbotService {
     return this.controlAutonomy(() => this.client.stopAutonomy(reason))
   }
 
+  async presence(): Promise<Record<string, unknown>> {
+    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
+    return this.client.presence()
+  }
+
+  async setPresence(mode: string): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.setPresence(mode))
+  }
+
+  async goals(limit = 20): Promise<Record<string, unknown>> {
+    if (!this.config.mcbotEnabled) throw new McbotError('mcbot_disabled', 'mcbot 对接未启用')
+    return this.client.goals(limit)
+  }
+
+  async createGoal(objective: string, steps: Array<Record<string, unknown>>): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.createGoal(objective, steps))
+  }
+
+  async goalAction(goalId: string, action: 'start' | 'pause' | 'resume' | 'cancel'): Promise<Record<string, unknown>> {
+    return this.control(() => this.client.goalAction(goalId, action))
+  }
+
   private async controlAutonomy(
     run: () => Promise<Record<string, unknown>>,
   ): Promise<{ ok: true; autonomy: McbotAutonomySnapshot | null }> {

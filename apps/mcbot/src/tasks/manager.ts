@@ -20,8 +20,9 @@ import { runPatrol } from './patrol.ts'
 import { runGuard } from './guard.ts'
 import { runEscort } from './escort.ts'
 import { runExplore } from './explore.ts'
+import { runClearing } from './clearing.ts'
 import { FOREST_SPECIES } from './resources.ts'
-import { countItem, countFood, findItem, isKeptItem } from './inventory.ts'
+import { countItem, countFood, findItem, isFood, isKeptItem } from './inventory.ts'
 import { TaskStore, type PersistedQueueTask, type PersistedTask } from './store.ts'
 import {
   requireBot,
@@ -118,6 +119,7 @@ function label (name: TaskName): string {
     case 'guard': return '守卫'
     case 'escort': return '护送'
     case 'explore': return '航点探索'
+    case 'clearing': return '清理安全区'
   }
 }
 
@@ -133,6 +135,7 @@ function startMessage (name: TaskName): string {
     case 'guard': return '好，我守着基地。'
     case 'escort': return '好，我跟着你护卫。'
     case 'explore': return '好，我去航点看看。'
+    case 'clearing': return '好，我沿安全区清理怪物。'
   }
 }
 
@@ -167,6 +170,7 @@ export class TaskManager implements TaskController {
   private pendingTimer: NodeJS.Timeout | null = null
   private persistTimer: NodeJS.Timeout | null = null
   private restocking = false
+  private survivalBusy = false
 
   constructor (deps: TaskManagerDeps) {
     this.deps = deps
@@ -476,6 +480,7 @@ export class TaskManager implements TaskController {
         else if (active.name === 'patrol') await runPatrol(ctx)
         else if (active.name === 'guard') await runGuard(ctx)
         else if (active.name === 'escort') await runEscort(ctx)
+        else if (active.name === 'clearing') await runClearing(ctx)
         else await runExplore(ctx)
         break
       } catch (error) {
@@ -1001,6 +1006,85 @@ export class TaskManager implements TaskController {
     } finally {
       this.restocking = false
     }
+  }
+
+  /**
+   * 空闲自动生存：进食与更换更好的护甲。只在无任务/队列/待恢复时执行，
+   * 不抢占任务、不移动容器物品；补货仍由 autoRestock 独立周期处理。
+   */
+  async autoSurvival (): Promise<void> {
+    const { config } = this.deps
+    if (!config.autoSurvival || this.survivalBusy || this.stopped ||
+      this.active || this.pending || this.queue.length > 0) return
+    const bot = this.deps.getBot()
+    if (!bot?.entity || !bot.inventory) return
+    this.survivalBusy = true
+    try {
+      this.deps.state.setSurvival({ enabled: true, lastRunAt: new Date().toISOString(), lastError: null })
+      if (bot.food < config.autoEatBelow) {
+        const food = bot.inventory.items().find(item => isFood(bot, item))
+        if (food) {
+          await bot.equip(food, 'hand')
+          await bot.consume()
+          this.deps.state.setSurvival({ lastAction: `eat:${food.name}` })
+          this.deps.audit.append({
+            event: 'auto_survival',
+            source: 'task',
+            actor: 'lofii',
+            action: 'eat',
+            result: 'accepted',
+            details: { item: food.name }
+          })
+          return
+        }
+        this.deps.state.setSurvival({ lastAction: 'eat:none', lastError: 'no food in inventory' })
+      }
+      const armor = this.bestArmorUpgrade(bot)
+      if (armor) {
+        await bot.equip(armor.item, armor.destination)
+        this.deps.state.setSurvival({ lastAction: `equip:${armor.item.name}` })
+        this.deps.audit.append({
+          event: 'auto_survival',
+          source: 'task',
+          actor: 'lofii',
+          action: 'equip',
+          result: 'accepted',
+          details: { item: armor.item.name, slot: armor.destination }
+        })
+        return
+      }
+      this.deps.state.setSurvival({ lastAction: 'idle' })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.deps.state.setSurvival({ lastError: message })
+      this.logger.warn('auto survival failed', { error: message })
+      this.deps.alerts?.raise('auto_restock_failed', `自动生存失败：${message}`, { error: message }, 'warning')
+    } finally {
+      this.survivalBusy = false
+    }
+  }
+
+  private bestArmorUpgrade (bot: Bot): { item: import('prismarine-item').Item, destination: 'head' | 'torso' | 'legs' | 'feet' } | null {
+    const armorSlots: Array<{ destination: 'head' | 'torso' | 'legs' | 'feet', suffix: string, slot: number }> = [
+      { destination: 'head', suffix: '_helmet', slot: 5 },
+      { destination: 'torso', suffix: '_chestplate', slot: 6 },
+      { destination: 'legs', suffix: '_leggings', slot: 7 },
+      { destination: 'feet', suffix: '_boots', slot: 8 }
+    ]
+    const score = (item: import('prismarine-item').Item | null | undefined): number => {
+      if (!item) return -1
+      const points = (item as unknown as { armorPoints?: number }).armorPoints
+      return typeof points === 'number' ? points : 0
+    }
+    for (const armorSlot of armorSlots) {
+      const candidates = bot.inventory.items()
+        .filter(item => item.name.endsWith(armorSlot.suffix))
+        .sort((left, right) => score(right) - score(left))
+      const best = candidates[0]
+      const current = bot.inventory.slots[armorSlot.slot]
+      if (best && score(best) > score(current)) return { item: best, destination: armorSlot.destination }
+    }
+    return null
   }
 
   async depositNow (): Promise<void> {    if (this.active) {

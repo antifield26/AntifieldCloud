@@ -113,7 +113,7 @@ test('配置 v1.0.0 新字段默认值与校验', () => {
   assert.equal(config.rssLimitMb, 0)
   assert.equal(config.aiToolsEnabled, false)
   assert.deepEqual(config.aiToolAllowlist, ['status', 'inventory', 'task_status'])
-  assert.equal(config.autoRestock, false)
+  assert.equal(config.autoRestock, true)
   assert.equal(config.mining.deepEnabled, false)
   assert.deepEqual(config.mining.ores.length > 0, true)
   assert.equal(config.storageChests.ores, null)

@@ -57,12 +57,14 @@ export class MovementManager {
     movements.canOpenDoors = false
     movements.allowParkour = false
     movements.allowSprinting = true
-    movements.maxDropDown = 1
+    // PaperMC 高低差地形：允许安全的两格下落，避免一格台阶/坡道边缘被判定为不可达。
+    // 仍禁止挖掘、开门、跑酷、搭建与跨维度。
+    movements.maxDropDown = 2
     movements.scafoldingBlocks = []
     bot.pathfinder.setMovements(movements)
     bot.pathfinder.thinkTimeout = 3000
     bot.pathfinder.tickTimeout = 40
-    this.logger.info('pathfinder configured', { canDig: false, allowParkour: false, maxDropDown: 1 })
+    this.logger.info('pathfinder configured', { canDig: false, allowParkour: false, maxDropDown: 2 })
   }
 
   detach (): void {
@@ -204,9 +206,10 @@ export class MovementManager {
     const previous = this.current
     this.current = 'task'
     let timeout: NodeJS.Timeout | null = null
-    const tryGoto = async (): Promise<void> => {
+    const tryGoto = async (goal: unknown): Promise<void> => {
+      timeout = null
       await Promise.race([
-        bot.pathfinder.goto(new goals.GoalNear(x, y, z, radius)),
+        bot.pathfinder.goto(goal),
         new Promise<never>((_resolve, reject) => {
           timeout = setTimeout(() => {
             try {
@@ -220,7 +223,7 @@ export class MovementManager {
       ])
     }
     try {
-      await tryGoto()
+      await tryGoto(new goals.GoalNear(x, y, z, radius))
     } catch (firstError) {
       if (allowTeleport) {
         this.logger.warn('movement path failed, retrying after chunks', {
@@ -228,15 +231,37 @@ export class MovementManager {
           error: firstError instanceof Error ? firstError.message : String(firstError)
         })
         await this.waitForChunks()
+        // 高差场景：先水平接近，再尝试安全中间点；两者都失败才传送。
         try {
-          await tryGoto()
-        } catch (error) {
-          this.logger.warn('movement path failed, trying teleport', {
+          await tryGoto(new goals.GoalNearXZ(x, z, Math.max(2, radius + 1)))
+          const reached = bot.entity
+            ? Math.abs(bot.entity.position.y - y) <= 3 &&
+              Math.hypot(bot.entity.position.x - x, bot.entity.position.z - z) <= Math.max(3, radius + 2)
+            : false
+          if (reached) return
+        } catch (horizontalError) {
+          this.logger.debug('movement horizontal fallback failed', {
             x, y, z,
-            error: error instanceof Error ? error.message : String(error)
+            error: horizontalError instanceof Error ? horizontalError.message : String(horizontalError)
           })
-          await this.teleportNearPoint(x, y, z, Math.max(3, radius + 2))
         }
+        try {
+          const anchor = safeSpotNear(bot, config, { x, y, z }, Math.max(4, radius + 3))
+          if (anchor) {
+            await tryGoto(new goals.GoalNear(anchor.x, anchor.y, anchor.z, 2))
+            return
+          }
+        } catch (anchorError) {
+          this.logger.warn('movement safe-anchor fallback failed', {
+            x, y, z,
+            error: anchorError instanceof Error ? anchorError.message : String(anchorError)
+          })
+        }
+        this.logger.warn('movement path failed, trying teleport', {
+          x, y, z,
+          error: firstError instanceof Error ? firstError.message : String(firstError)
+        })
+        await this.teleportNearPoint(x, y, z, Math.max(3, radius + 2))
         return
       }
       throw new MovementError(`走不过去：${firstError instanceof Error ? firstError.message : String(firstError)}`)

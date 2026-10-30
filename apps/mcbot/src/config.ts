@@ -7,6 +7,9 @@ export interface ConfigPoint {
   z: number
 }
 
+/** 在线模式：auto=有玩家/任务时上线；always=常驻；off=不主动上线。 */
+export type PresenceMode = 'auto' | 'always' | 'off'
+
 export interface Config {
   version: string
   botUsername: string
@@ -22,6 +25,13 @@ export interface Config {
   commandAllowlist: string[]
   presenceEnabled: boolean
   forceOnline: boolean
+  /** 持久化在线模式的默认值；presence.json 存在时以文件为准。 */
+  presenceMode: PresenceMode
+  /** 在线模式持久化文件；只保存模式/时间/操作者。 */
+  presenceFile: string
+  /** 长期目标/多步计划 SQLite；只保存目标元数据与步骤状态。 */
+  goalsFile: string
+  goalsMaxSteps: number
   presencePollMs: number
   presenceGraceMs: number
   presenceQuitCooldownMs: number
@@ -189,6 +199,11 @@ export interface Config {
   foodAlertThreshold: number
   autoRestock: boolean
   autoRestockIntervalMs: number
+  /** 空闲自动进食/换装；默认开启，可由面板/环境变量关闭。 */
+  autoSurvival: boolean
+  autoSurvivalIntervalMs: number
+  /** 自动进食阈值（饥饿值低于该值）。 */
+  autoEatBelow: number
   /** 基地守卫/玩家护送/航点探索任务参数。 */
   guardRadius: number
   escortDistance: number
@@ -368,14 +383,14 @@ function readExploreWaypoints (
 
 const AI_TOOL_NAMES = new Set(['status', 'inventory', 'task_status'])
 const AUTONOMY_TASK_NAMES = new Set<TaskName>([
-  'fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore'
+  'fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore', 'clearing'
 ])
 
 function readAutonomyTasks (env: Env): TaskName[] {
   const raw = readString(
     env,
     'AUTONOMY_TASKS',
-    'fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore'
+    'fishing,farming,woodcutting,mining,forest,sleep,patrol,guard,escort,explore,clearing'
   )
   const names = raw.split(',').map(item => item.trim()).filter(Boolean) as TaskName[]
   if (names.length === 0) throw new ConfigError('AUTONOMY_TASKS must contain at least one task')
@@ -557,6 +572,19 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     throw new ConfigError('AUTONOMY_ENABLED=true requires HTTP_CONTROL_ENABLED=true')
   }
 
+  const presenceEnabled = readBool(env, 'PRESENCE_ENABLED', true)
+  const forceOnline = readBool(env, 'FORCE_ONLINE', false)
+  const rawPresenceMode = readString(env, 'PRESENCE_MODE', '')
+  if (rawPresenceMode && rawPresenceMode !== 'auto' && rawPresenceMode !== 'always' && rawPresenceMode !== 'off') {
+    throw new ConfigError('PRESENCE_MODE must be auto, always or off')
+  }
+  const presenceMode: PresenceMode = rawPresenceMode === ''
+    ? (!presenceEnabled || forceOnline ? 'always' : 'auto')
+    : (rawPresenceMode as PresenceMode)
+  const presenceFile = readString(env, 'PRESENCE_FILE', `${dataDir}/presence.json`)
+  const goalsFile = readString(env, 'GOALS_FILE', `${dataDir}/goals.db`)
+  const goalsMaxSteps = readInt(env, 'GOALS_MAX_STEPS', 5, 1, 10)
+
   return Object.freeze({
     version,
     botUsername: readString(env, 'BOT_USERNAME', 'lofii'),
@@ -570,8 +598,12 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     httpToken,
     httpAllowNonLoopback,
     commandAllowlist: readAllowlist(env),
-    presenceEnabled: readBool(env, 'PRESENCE_ENABLED', true),
-    forceOnline: readBool(env, 'FORCE_ONLINE', false),
+    presenceEnabled,
+    forceOnline,
+    presenceMode,
+    presenceFile,
+    goalsFile,
+    goalsMaxSteps,
     presencePollMs: readInt(env, 'PRESENCE_POLL_MS', 15000, 1000, 300000),
     presenceGraceMs: readInt(env, 'PRESENCE_GRACE_MS', 60000, 1000, 3600000),
     presenceQuitCooldownMs: readInt(env, 'PRESENCE_QUIT_COOLDOWN_MS', 10000, 1000, 300000),
@@ -689,8 +721,11 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     autonomyTasks,
     inventoryAlertFreeSlots: readInt(env, 'INVENTORY_ALERT_FREE_SLOTS', 2, 0, 9),
     foodAlertThreshold: readInt(env, 'FOOD_ALERT_THRESHOLD', 4, 0, 20),
-    autoRestock: readBool(env, 'AUTO_RESTOCK', false),
+    autoRestock: readBool(env, 'AUTO_RESTOCK', true),
     autoRestockIntervalMs: readInt(env, 'AUTO_RESTOCK_INTERVAL_MS', 300000, 60000, 3600000),
+    autoSurvival: readBool(env, 'AUTO_SURVIVAL', true),
+    autoSurvivalIntervalMs: readInt(env, 'AUTO_SURVIVAL_INTERVAL_MS', 5000, 1000, 60000),
+    autoEatBelow: readInt(env, 'AUTO_EAT_BELOW', 16, 1, 20),
     guardRadius: readNumber(env, 'GUARD_RADIUS', 16, 4, 32),
     escortDistance: readNumber(env, 'ESCORT_DISTANCE', 12, 4, 32),
     exploreWaypoints: readExploreWaypoints(env, safeZone),

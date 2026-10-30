@@ -497,10 +497,10 @@ function lastUpstreamCall(calls: FetchCall[], path: string): FetchCall | undefin
   return [...calls].reverse().find((call) => new URL(call.url).pathname === path)
 }
 
-test('MCBOT_TASK_NAMES：10 种任务全部可启动，未知任务 400', async () => {
+test('MCBOT_TASK_NAMES：11 种任务全部可启动，未知任务 400', async () => {
   const fx = await makeRouteApp()
   try {
-    assert.equal(MCBOT_TASK_NAMES.length, 10)
+    assert.equal(MCBOT_TASK_NAMES.length, 11)
     for (const name of MCBOT_TASK_NAMES) {
       const response = await fx.app.inject({
         method: 'POST',

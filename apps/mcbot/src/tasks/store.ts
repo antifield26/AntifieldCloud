@@ -80,7 +80,7 @@ function isProgress (value: unknown): value is TaskProgress {
   return NEW_PROGRESS_KEYS.every(key => typeof record[key] === 'number' && Number.isFinite(record[key]))
 }
 
-const TASK_NAMES = new Set<TaskName>(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore'])
+const TASK_NAMES = new Set<TaskName>(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore', 'clearing'])
 
 function isName (value: unknown): value is TaskName {
   return typeof value === 'string' && TASK_NAMES.has(value as TaskName)

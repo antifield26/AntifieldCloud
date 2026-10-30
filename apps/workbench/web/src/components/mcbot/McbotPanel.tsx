@@ -44,6 +44,7 @@ import { SkeletonText } from '../Skeleton'
 import { useToast } from '../Toast'
 import { McbotEventsCard } from './McbotEventsCard'
 import { McbotHistoryCard } from './McbotHistoryCard'
+import { McbotPresenceGoalsCard } from './McbotPresenceGoalsCard'
 import { formatDuration } from '../../lib/format'
 import {
   MCBOT_MOVE_ACTION_LABELS,
@@ -1018,6 +1019,8 @@ export function McbotPanel() {
           onStop={() => setConfirm({ type: 'autonomy-stop' })}
         />
       ) : null}
+
+      <McbotPresenceGoalsCard controlReady={controlReady} onChanged={() => { void load() }} />
 
       {status ? (
         <>

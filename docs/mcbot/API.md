@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.2）
+# AntifieldComplexx 对接契约（mcbot v1.0.5）
 
 > 本文只描述 `mcbot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -7,8 +7,8 @@
 | 项目 | 值 |
 |---|---|
 | Base URL | `http://127.0.0.1:3010`（仅回环，不对外） |
-| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/task`、`/events`、`/events/recent`、`/say` |
-| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`/autonomy/start|stop` |
+| 读 Token | `HTTP_TOKEN`，用于 `/status`、`/presence`、`/goals`、`/task`、`/events`、`/events/recent`、`/say` |
+| 控制 Token | `HTTP_CONTROL_TOKEN`，用于 `/task/*`、`POST /move`、`/presence`、`/goals*`、`/autonomy/start|stop` |
 | 契约版本 | `CONTRACT_VERSION=1`，由 `/healthz` 与 `/events/recent` 的 `contractVersion` 返回 |
 | Token 位置 | Pi：`/etc/mcbot/env`（root:lofiibot 0640） |
 | 数据格式 | JSON / SSE，UTF-8 |
@@ -80,12 +80,16 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
   },
   "presence": {
     "enabled": true,
+    "mode": "auto",
+    "modeSource": "default",
+    "modeUpdatedAt": null,
     "pollMs": 15000,
     "graceMs": 60000,
     "checkMs": 5000,
     "otherPlayers": 0,
     "lastDecision": "connected"
   },
+  "survival": { "enabled": true, "lastRunAt": "2026-10-26T13:25:00.000Z", "lastAction": "idle", "lastError": null },
   "ai": { "enabled": true, "provider": "opencode-go", "model": "deepseek-v4.1-flash", "inFlight": 0, "queued": 0, "failures": 0, "lastLatencyMs": 2359, "lastError": null },
   "memory": { "players": 1, "turns": 2 },
   "task": {
@@ -295,7 +299,7 @@ Authorization: Bearer <HTTP_TOKEN>
 需要控制 Token + `Content-Type: application/json`。
 
 ```json
-{ "name": "fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore" }
+{ "name": "fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore|clearing" }
 ```
 
 - 空闲：202 `{"ok":true,"queued":false,"position":null,"task":{...}}`，任务立即 active。
@@ -515,6 +519,20 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 | `finish` | `run_id, summary` | 结束会话；会话结束会清理活动任务 |
 
 每次会话 `run_id` 随机；MCP Bearer token 每次随机且仅在会话期间有效。工具调用审计 `autonomy.tool`/`autonomy.reject`，只记任务名、理由截断、错误码、容器类型/摘要计数，不记录 prompt/Token/完整容器内容。
+
+### 12.8 v1.0.5 在线模式、长期目标与自动生存
+
+**GET /presence（读 Token）**：返回 `{ mode, source, updatedAt, connected, lastDecision }`；`mode ∈ auto|always|off`，`source ∈ default|env|persisted`。
+
+**POST /presence（控制 Token）**：body `{ "mode": "auto|always|off" }`；成功 200 `{ mode }`；任务/队列/待恢复/自主会话运行中切 `off` 返回 409 `presence_busy`；持久化失败 500 `presence_persist_failed`；非法模式 400 `invalid_request`。
+
+**GET /goals?limit=20（读 Token）**：返回 `{ goals: [...] }`，目标含 `id/objective/status/currentStep/steps`；默认最多 20，范围 1–50。
+
+**POST /goals（控制 Token）**：body `{ "objective": "1..200 字符", "steps": [{"kind":"task","taskName":"woodcutting"},{"kind":"deposit"},{"kind":"home"}] }`；任务名受白名单限制，最多 5 步；创建后为 `pending`，**不会自动开始**。目标动作：`POST /goals/:id/start|pause|resume|cancel`。
+
+**持久化与安全**：`presence.json` 与 `goals.db` 位于 `/var/lib/mcbot`，权限 `0640`，不保存 Token/聊天正文；目标重启后为 `paused`，必须主人显式恢复；`path` 失败最多安全重试一次，生存中断恢复且无威胁后最多自动恢复一次。
+
+**v1.0.5 环境变量**：`PRESENCE_MODE`、`PRESENCE_FILE`、`AUTO_SURVIVAL`、`AUTO_SURVIVAL_INTERVAL_MS`、`AUTO_EAT_BELOW`、`AUTO_RESTOCK`、`AUTO_RESTOCK_INTERVAL_MS`、`GOALS_FILE`、`GOALS_MAX_STEPS`；`AUTONOMY_TASKS` 默认追加 `clearing`。
 
 ### 12.5 v1.0.3 事件驱动重决策
 

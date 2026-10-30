@@ -1,4 +1,4 @@
-# mcbot 文档声明与代码实现一致性审计（v1.0.3）
+# mcbot 文档声明与代码实现一致性审计（v1.0.5）
 
 本审计以**代码/实际安全行为为真相**，覆盖根 README、AGENTS、docs/mcbot、docs/app/API 与 mcbot 环境模板。自动检查脚本：`scripts/check-mcbot-claims.mjs`（根 `npm run check:docs`，纳入 `npm run check`）。历史发布记录、`docs/legacy` 与已冻结的验收文本标为 `historical`，不回写历史，但会标注当前事实。
 
@@ -8,7 +8,10 @@
 |---|---|---|---|---|
 | 自主会话工具为 6 个（start_task/stop_task/go_home/deposit/task_status/finish） | v1.0.2 README/API/AGENTS 历史描述 | `apps/mcbot/src/autonomy/tools.ts` v1.0.2 版本 | historical | v1.0.3 文档改为 10 个工具并标注版本差异 |
 | v1.0.3 工具为 10 个：上述 6 个 + observe/inspect_chest/eat/equip | v1.0.3 docs/mcbot/README、API | `AUTONOMY_RAW_TOOLS`、`buildToolDefinitions()`、`test/unit/autonomy-v103.test.ts` | fixed | 自动检查工具名齐全 |
-| 任务白名单 10 种 | README、AGENTS、mcbot README | `AUTONOMY_TASK_NAMES`、`AUTONOMY_TASKS` 校验、config 测试 | consistent | 自动检查任务名齐全 |
+| 任务白名单 11 种（v1.0.5 增加 `clearing`） | README、AGENTS、mcbot README | `AUTONOMY_TASK_NAMES`、`AUTONOMY_TASKS` 校验、config/任务测试 | fixed | 自动检查任务名齐全 |
+| v1.0.5 在线模式 `auto/always/off`、`presence.json` | mcbot README/API、app API | `presence/manager.ts`、`presence/store.ts`、HTTP 集成测试 | fixed | 模式/off 冲突/持久化测试 |
+| v1.0.5 多步目标 `goals.db`、重启 paused | mcbot README/API、app API | `goals/store.ts`、`goals/runner.ts`、app 代理与面板 | fixed | store 重启测试；不自动执行 |
+| v1.0.5 `AUTO_SURVIVAL`/`AUTO_RESTOCK` 默认开启 | mcbot README/API、env 模板 | `config.ts`、`tasks/manager.ts` `autoSurvival()`、main 定时器 | fixed | 默认值与单元测试 |
 | 自主会话代码默认关闭、生产 v1.0.2/v1.0.3 已启用 | README、AGENTS、mcbot README、API | `config.ts` 默认 `AUTONOMY_ENABLED=false`；生产部署记录 | fixed | 明确区分代码默认与生产配置 |
 | 普通聊天 AI 不执行动作；`AI_TOOLS_ENABLED` 是只读上下文段而非 OpenCode 工具 | 根 README、docs/mcbot/README、AGENTS | `ai/tools.ts` 的 `buildAiToolContext` 只拼提示词；`READ_ONLY_AI_TOOL_NAMES` 仅 allowlist | fixed | 删除“AI 没有任何工具”的绝对声明，限定普通聊天 |
 | v1.0.2 生产版本为 1.0.2，而不是 1.0.1 | docs/app/API | 生产 `/healthz`、release 记录 | fixed | 改为 v1.0.3 生产 |
@@ -33,8 +36,8 @@
 
 `scripts/check-mcbot-claims.mjs` 检查：
 
-- 10 个 MCP 工具名、10 个任务名、`mcbot_autonomy_*` 权限前缀；
-- 17 个 `AUTONOMY_*` 环境键同时出现在 `apps/mcbot/deploy/env.example`、`bootstrap-env.sh`、docs/mcbot/API；
+- 10 个 MCP 工具名、11 个任务名、`mcbot_autonomy_*` 权限前缀；
+- `AUTONOMY_*` 与 v1.0.5 的 `PRESENCE_MODE`/`PRESENCE_FILE`/`AUTO_SURVIVAL`/`AUTO_EAT_BELOW`/`AUTO_RESTOCK`/`GOALS_*` 环境键同时出现在 `apps/mcbot/deploy/env.example`、`bootstrap-env.sh`、docs/mcbot/API；
 - 根/开发线/生产版本声明（1.0.3 生产）；
 - 已知陈旧声明（旧生产版本、旧 mcbot 版本、AI 无工具/只聊天绝对声明）；
 - 审计矩阵存在“文档声明/代码/状态”列。

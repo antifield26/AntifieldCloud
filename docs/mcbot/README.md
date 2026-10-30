@@ -1,13 +1,13 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.4**（2026-10-30 已部署生产：release `/opt/mcbot/releases/20261030T005014Z`，服务 `mcbot.service`；仅版本对齐，QQ Bot 出站修复属于应用侧；自主模式已启用，仅主人显式启动）。
+> 当前版本：**v1.0.5**（2026-10-30 开发中/待部署；v1.0.4 生产 release `/opt/mcbot/releases/20261030T005014Z` 与服务 `mcbot.service` 保持不变，验收后切换）。本版修复高低差寻路、增加在线模式持久化、自动生存/补货、`clearing` 安全区清怪与多步目标；自主模式仍仅主人显式启动。
 
 ## 能做什么
 
 - **AI 陪伴聊天**：只有被 `Lofii` / `@Lofii` 点名时回复；中文、温柔助手人设；复用 Pi 本机 OpenCode 的 `opencode-go/deepseek-v4.1-flash`。
-- **按玩家动态上线**：SLP 每 15 秒探测；有玩家在线时上线；最后一名玩家离开 60 秒后下线，让服务器在空服时正常 pause。
-- **自动化任务**：`Lofii 去钓鱼` / `去种田` / `去砍树` / `去挖矿` / `砍天然林` / `睡觉` / `巡逻` / `守卫` / `护送` / `探索` / `收工` / `回家` / `存东西`。
+- **在线模式**：SLP 每 15 秒探测；默认 `auto` 有玩家时上线、最后一名玩家离开 60 秒后下线，让服务器在空服时正常 pause；`always` 常驻、`off` 不主动上线。模式持久化到 `/var/lib/mcbot/presence.json`，任务/自主会话运行中不能切到 `off`。
+- **自动化任务**：`Lofii 去钓鱼` / `去种田` / `去砍树` / `去挖矿` / `砍天然林` / `睡觉` / `巡逻` / `守卫` / `护送` / `探索` / `清理安全区` / `收工` / `回家` / `存东西`。
   - 钓鱼/种田/固定 oak 树场保持 v0.4 行为。
   - 挖矿只找安全区内 `y≥60` 的煤/铁/铜裸露矿，不挖石头隧道。
   - 天然林只砍 oak/spruce/birch，保护盒 16 格，逐棵补种。
@@ -30,6 +30,14 @@
 - **按玩家记忆**：最近 20 轮、保留 30 天；每 20 个来回后台生成 ≤1000 字聊天摘要，落盘到 `/var/lib/mcbot/memory`，重启后仍能记住。
 - **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；v1.0.2 增加 `/autonomy` 状态/启动/急停与内部 MCP 工具端点；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
+
+## v1.0.5 修复与新特性（待部署）
+
+- **高低差寻路**：`Movements.maxDropDown=2`；`NoPath`/停滞时先水平接近，再尝试安全中间点，最后才在安全区内传送；仍禁止挖掘、放置、跑酷、开门、跨维度。安全区外目标直接拒绝。
+- **在线模式持久化**：`GET/POST /presence`（读/控制 Token 分离）；`auto/always/off` 切换写入 `presence.json`；`off` 在任务/队列/待恢复/自主会话运行时返回 409 `presence_busy`；重启保留。
+- **自动生存/补货**：空闲且无任务/队列/pending 时每 5 秒检查，自动进食（饥饿 < `AUTO_EAT_BELOW`）与升级护甲；`AUTO_RESTOCK` 周期补食物/铁镐/铁斧。默认开启，可在 env 关闭。
+- **安全区清怪 `clearing`**：沿安全区巡逻点移动，只对现有敌对生物白名单接战（僵尸/尸壳/溺尸/骷髅/流浪者/蜘蛛/洞穴蜘蛛）；不攻击玩家、苦力怕、末影人、女巫；不追出安全区、不破块/放置、不跨维度；低血/低食物按 Defender 撤退。
+- **多步目标/长期记忆**：本地 `goals.db` 保存 goals/goal_steps；步骤类型 `task`（任务白名单）/`deposit`/`home`，最多 5 步；主人显式 start/resume；失败分类 `path/survival/supplies/interrupted/unknown`；`path` 最多安全重试一次，生存中断恢复且无威胁后最多自动恢复一次；服务重启后目标保持 paused，不自动执行。
 
 ## v1.0.3 新增能力（已部署）
 
@@ -58,16 +66,16 @@
 
 - **运行稳定性**：systemd `Type=notify` 看门狗（`WATCHDOG_ENABLED`/`WATCHDOG_HEARTBEAT_MS`）、RSS 内存治理告警（`RSS_LIMIT_MB`）、断线重连恢复不消耗任务重试次数。
 - **任务**：基地守卫 `guard`、玩家护送 `escort`、航点探索 `explore`；深层裸露矿（`MINE_DEEP_ENABLED`，安全区内 y<60、有空气面、无液体邻接）；分类存箱（`CHEST_ORES/FOOD/SAPLINGS/MISC`，缺失回退主箱）。
-- **库存/补货**：背包剩余格/食物告警；`AUTO_RESTOCK=true` 时空闲自动从分类箱补食物与铁镐/铁斧（默认关闭）。
+- **库存/补货**：背包剩余格/食物告警；v1.0.5 起 `AUTO_RESTOCK=true` 默认开启，空闲自动从分类箱补食物与铁镐/铁斧；`AUTO_SURVIVAL` 默认开启空闲进食/换装。
 - **AI**：`AI_TOOLS_ENABLED` 控制的是**提示词只读上下文段** `status/inventory/task_status`（默认关闭；未知名称启动失败），不是 OpenCode 可执行工具；普通聊天不触发游戏操作，只有主人显式启动的自主会话可通过受控工具执行动作。
 - **运维**：`migrate-v1.0.0.ps1` 覆盖 mcbot 服务/路径/env 迁移；故障注入/soak 单测覆盖 SLP 抖动、连续断线、EventBus ring。
 ## 不做什么
 
 - 不修改 AntifieldCloud 仓库、数据库或服务；本仓库只提供接口契约。
 - 不做 PvP、建筑、踢人/封禁/备份触发；挖矿/天然林/睡觉/巡逻只做固定安全区内的被动/资源行为。
-- 不做独立 combat 主动攻击；巡逻不追怪，战斗仍只在任务中被动防御。
+- 不做无边界 PvP 主动攻击；`clearing` 只在安全区内按既有敌对生物白名单清怪，不攻击玩家/苦力怕/末影人/女巫，不追出安全区。
 - 不做跨维度、多 Bot/多人设、语音、Discord/QQ、Prometheus `/metrics`、webhook。
-- 不默认 24/7 保活；空服时服务器会 pause。需要常驻时把 `FORCE_ONLINE=true`。
+- 默认 `auto`：空服时服务器会 pause；需要常驻时切换 `always`（面板/`POST /presence`）或显式设置 `FORCE_ONLINE=true`；`off` 不主动上线。
 - 不把 HTTP 接口暴露到内网/公网；不改 nftables、FRP、Cloudflare。
 
 ## 架构
@@ -184,8 +192,17 @@ sudo systemctl restart mcbot
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `COMMAND_ALLOWLIST` | `Antifield` | 可执行指令/任务的玩家名，逗号分隔 |
-| `PRESENCE_ENABLED` | `true` | 动态上下线开关 |
-| `FORCE_ONLINE` | `false` | 强制常驻（不因空服下线） |
+| `PRESENCE_ENABLED` | `true` | 动态上下线开关（旧兼容） |
+| `FORCE_ONLINE` | `false` | 旧兼容强制常驻；`presence.json` 优先 |
+| `PRESENCE_MODE` | `auto` | `auto`/`always`/`off` 默认模式；文件优先 |
+| `PRESENCE_FILE` | `/var/lib/mcbot/presence.json` | 在线模式持久化文件（原子写、0640） |
+| `AUTO_SURVIVAL` | `true` | 空闲自动进食/换装 |
+| `AUTO_SURVIVAL_INTERVAL_MS` | `5000` | 自动生存检查间隔 |
+| `AUTO_EAT_BELOW` | `16` | 自动进食饥饿阈值 |
+| `AUTO_RESTOCK` | `true` | 空闲自动补食物/铁镐/铁斧 |
+| `AUTO_RESTOCK_INTERVAL_MS` | `300000` | 自动补货间隔 |
+| `GOALS_FILE` | `/var/lib/mcbot/goals.db` | 多步目标 SQLite |
+| `GOALS_MAX_STEPS` | `5` | 单目标最大步骤数 |
 | `TASK_ENABLED` | `true` | 自动化任务总开关 |
 | `TASK_MAX_MINUTES` | `60` | 单任务时长上限 |
 | `TASK_RECOVERY_MAX` | `3` | 死亡/重启连续恢复上限 |

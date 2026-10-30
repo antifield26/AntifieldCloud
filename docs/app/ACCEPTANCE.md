@@ -1,6 +1,13 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.4（2026-10-30 已部署生产；已发布 Tag/Release）：app 1.0.4/schema18/OpenCode 2.2.0、mcbot 1.0.4（自主模式已启用）。
+> 当前版本 v1.0.5（2026-10-30 开发中；按用户选择只部署、不创建 Tag/Release）：app 1.0.5/schema18/OpenCode 2.2.0、mcbot 1.0.5；v1.0.4 仍为生产版本。
+
+### v1.0.5 开发与部署验收（2026-10-30，执行中）
+
+- 范围：MC Bot 高低差寻路受控回退、在线模式 `auto/always/off` 持久化、自动生存/补货默认开启、安全区清怪 `clearing`、多步目标/长期记忆；全仓 Debug。
+- 代码：app schema 保持 v18；mcbot 本地 `presence.json`/`goals.db` additive；app 新增 `/api/mcbot/presence`、`/api/mcbot/goals` 代理与面板卡片。
+- 测试：`npm run check`、`npm run build`、`check-version`（严格 1.0.5）、`check-naming`、`check:docs` 通过；app **603**（602 pass、1 skip）+ web **275**（49 文件）+ mcbot **127**（新增 presence/goal store/goal runner 测试）。生产 smoke 与实机验收（路径/常驻/清怪/自动生存/多步目标）在部署后记录。
+- 发布：按用户选择只部署，不创建 Tag/Release。
 
 ### v1.0.4 主更新与生产验收（2026-10-30，已执行）
 

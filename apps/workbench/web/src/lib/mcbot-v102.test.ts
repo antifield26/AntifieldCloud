@@ -49,8 +49,8 @@ const emptySnapshot = (overrides: Partial<McbotSnapshot> = {}): McbotSnapshot =>
 })
 
 describe('mcbot v1.0.2 任务与自主模式展示', () => {
-  it('10 种任务全部有中文标签且顺序稳定', () => {
-    expect(MCBOT_TASK_NAMES).toHaveLength(10)
+  it('11 种任务全部有中文标签且顺序稳定', () => {
+    expect(MCBOT_TASK_NAMES).toHaveLength(11)
     expect(MCBOT_TASK_NAMES).toEqual([
       'fishing',
       'farming',
@@ -62,11 +62,12 @@ describe('mcbot v1.0.2 任务与自主模式展示', () => {
       'guard',
       'escort',
       'explore',
+      'clearing',
     ])
     expect(mcbotTaskNameLabel('guard')).toBe('守卫')
     expect(mcbotTaskNameLabel('escort')).toBe('护送')
     expect(mcbotTaskNameLabel('explore')).toBe('探索')
-    expect(Object.keys(MCBOT_TASK_NAME_LABELS)).toHaveLength(10)
+    expect(Object.keys(MCBOT_TASK_NAME_LABELS)).toHaveLength(11)
   })
 
   it('新任务的进度计数可渲染，旧服务端缺字段不伪造非零进度', () => {

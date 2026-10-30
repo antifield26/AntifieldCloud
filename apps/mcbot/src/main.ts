@@ -23,6 +23,9 @@ import { AutonomyService } from './autonomy/service.ts'
 import { ChatRouter } from './chat/router.ts'
 import { HttpApi } from './http/server.ts'
 import { PresenceManager } from './presence/manager.ts'
+import { PresenceStore } from './presence/store.ts'
+import { GoalRunner } from './goals/runner.ts'
+import { GoalStore } from './goals/store.ts'
 import { TaskManager } from './tasks/manager.ts'
 import { TaskStore } from './tasks/store.ts'
 import { ProactiveManager } from './proactive.ts'
@@ -35,6 +38,11 @@ async function main (): Promise<void> {
   const logger = createLogger(config.logLevel)
   const sdnotify = new SdNotify({ logger: logger.withScope('watchdog') })
   if (sdnotify.enabled) logger.info('systemd notify socket detected', { watchdogEnabled: config.watchdog.enabled })
+  const presenceStore = new PresenceStore(config.presenceFile)
+  const savedPresence = presenceStore.load()
+  if (savedPresence) {
+    logger.info('presence mode restored', { mode: savedPresence.mode, updatedAt: savedPresence.updatedAt })
+  }
   const state = new RuntimeState({
     version: config.version,
     username: config.botUsername,
@@ -42,6 +50,9 @@ async function main (): Promise<void> {
     port: config.mcPort,
     minecraftVersion: config.mcVersion === false ? 'auto' : config.mcVersion,
     presenceEnabled: config.presenceEnabled,
+    presenceMode: savedPresence?.mode ?? config.presenceMode,
+    presenceModeSource: savedPresence ? 'persisted' : 'default',
+    presenceModeUpdatedAt: savedPresence?.updatedAt ?? null,
     presencePollMs: config.presencePollMs,
     presenceGraceMs: config.presenceGraceMs,
     presenceCheckMs: config.presenceCheckMs,
@@ -49,6 +60,7 @@ async function main (): Promise<void> {
     aiProvider: config.aiModelProvider,
     aiModel: config.aiModelId,
     taskEnabled: config.taskEnabled,
+    survivalEnabled: config.autoSurvival,
     autonomyEnabled: config.autonomyEnabled,
     autonomyMaxToolCalls: config.autonomyMaxToolCalls
   })
@@ -179,6 +191,31 @@ async function main (): Promise<void> {
     restockTimer = setInterval(() => { void tasks.autoRestock() }, config.autoRestockIntervalMs)
     restockTimer.unref?.()
   }
+  let survivalTimer: NodeJS.Timeout | null = null
+  if (config.autoSurvival) {
+    survivalTimer = setInterval(() => { void tasks.autoSurvival() }, config.autoSurvivalIntervalMs)
+    survivalTimer.unref?.()
+  }
+  const goalStore = new GoalStore(config.goalsFile)
+  let goals: GoalRunner | null = null
+  try {
+    goalStore.init()
+    goals = new GoalRunner({
+      config,
+      logger: logger.withScope('goals'),
+      state,
+      tasks,
+      movement,
+      events,
+      audit,
+      store: goalStore
+    })
+  } catch (error) {
+    logger.error('goal store init failed; goals disabled', {
+      error: error instanceof Error ? error.message : String(error)
+    })
+    goalStore.close()
+  }
 
   const commands = new CommandExecutor({
     config,
@@ -245,7 +282,10 @@ async function main (): Promise<void> {
     audit,
     history: historyStore ?? undefined,
     getBot: () => client.getBot(),
-    autonomy
+    autonomy,
+    goals: goals ?? undefined,
+    getPresenceMode: () => presence.presenceInfo(),
+    setPresenceMode: (mode, actor) => presence.setMode(mode, actor)
   })
   await http.start()
   // systemd Type=notify：启动完成后必须发送 READY=1；未由 systemd 启动时自动 no-op。
@@ -262,7 +302,11 @@ async function main (): Promise<void> {
     logger: logger.withScope('presence'),
     state,
     controller: client,
-    keepOnline: () => tasks.keepOnline() || autonomy.isActive()
+    keepOnline: () => tasks.keepOnline() || autonomy.isActive(),
+    store: presenceStore,
+    ...(savedPresence
+      ? { initialMode: savedPresence.mode, initialSource: 'persisted' as const, initialUpdatedAt: savedPresence.updatedAt }
+      : { initialMode: config.presenceMode, initialSource: 'default' as const })
   })
   tasks.setTaskEndedHandler(() => presence.notifyTaskEnded())
   presence.start()
@@ -300,6 +344,7 @@ async function main (): Promise<void> {
       sdnotify.stopping()
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (restockTimer) clearInterval(restockTimer)
+      if (survivalTimer) clearInterval(survivalTimer)
       memoryGuard.stop()
       ai.stop()
       await autonomy.shutdown()
@@ -308,6 +353,8 @@ async function main (): Promise<void> {
       admin.stop()
       history.stop()
       await tasks.shutdown()
+      goals?.stop()
+      goalStore.close()
       proactive.detach()
       await presence.stop()
       await client.stop('shutdown')

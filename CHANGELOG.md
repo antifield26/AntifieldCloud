@@ -1,5 +1,27 @@
 # Changelog
 
+## [v1.0.5] - 2026-10-30（开发中；计划只部署，Tag/Release 待确认）
+
+v1.0.5 为 MC Bot 修复与新特性版本，并包含一次全仓 Debug：修复安全区高低差寻路、增加可持久化 `auto/always/off` 在线模式、空闲自动进食/换装/补货、安全区清怪任务、多步目标/长期记忆与失败分类；app 新增在线模式/目标代理与面板卡片。app schema 保持 v18（mcbot 本地 `goals.db`/`presence.json` 为 additive，无 app DB 迁移）。
+
+### Added
+
+- **在线模式**：mcbot `GET/POST /presence` 与 app `GET/POST /api/mcbot/presence`；`auto/always/off` 持久化到 `presence.json`，`off` 在任务/自主会话运行时拒绝（409）。
+- **安全区清怪**：新增 `clearing` 任务与中文命令「清理安全区」，仅攻击现有敌对生物白名单，不追出安全区、不攻击玩家。
+- **自动生存/补货**：新增 `AUTO_SURVIVAL`/`AUTO_EAT_BELOW`，默认开启空闲进食与护甲升级；`AUTO_RESTOCK` 默认改为开启。
+- **多步目标**：mcbot 本地 SQLite `goals.db`（goals/goal_steps），支持 task/deposit/home 串行、失败分类、path 一次重试、生存中断一次自动恢复；重启后 paused 不自动执行。app 代理与面板卡片支持预设计划/开始/暂停/取消。
+- **寻路回退**：`maxDropDown=2`、水平目标/安全中间点/安全区传送三层兜底，降低 PaperMC 高低差卡死。
+
+### Fixed
+
+- 修复 mineflayer 在 PaperMC 高低差地形普遍无法寻路的问题（受控回退，不开放挖掘/建造/跑酷/跨维度）。
+- 修复自动补货只有代码路径、默认关闭且缺少空闲生存循环的问题。
+
+### Verification
+
+- 门禁：app 603（602 pass、1 skip）+ web 275（49 文件）+ mcbot 127；`npm run check`/`build`/`check-version`（严格 1.0.5）/`check-naming`/`check:docs` 通过。
+- 生产部署与实机验收待执行；本次按用户选择不创建 Tag/Release。
+
 ## [v1.0.4] - 2026-10-30（已部署生产（最终构建）；已发布 Tag/Release）
 
 v1.0.4 主更新为 **Bot 出站可用性中心**：管理页可见出站健康快照、连续失败触发 `chatbot_outbound_down` 告警、失败/死信可受控批量重试；同时修复 QQ Bot 出站 token 端点与备份面板历史错误误报。不改变 schema/API 破坏性契约，mcbot 仅版本对齐。2026-10-30 已部署生产（app `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`），已发布 [GitHub Release v1.0.4](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.0.4)。

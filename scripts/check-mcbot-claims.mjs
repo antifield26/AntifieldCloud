@@ -40,7 +40,7 @@ const readOnlyContextSections = [...aiToolsModule.READ_ONLY_AI_TOOL_NAMES]
 const permissionPrefix = toolsModule.AUTONOMY_PERMISSION_PREFIX
 
 if (autonomyTools.length !== 10) errors.push(`工具数量应为 10，实际 ${autonomyTools.length}`)
-if (taskNames.length !== 10) errors.push(`任务数量应为 10，实际 ${taskNames.length}`)
+if (taskNames.length !== 11) errors.push(`任务数量应为 11，实际 ${taskNames.length}`)
 
 const toolDocs = ['docs/mcbot/README.md', 'docs/mcbot/API.md']
 for (const file of toolDocs) {
@@ -67,7 +67,16 @@ const envKeys = [
   'AUTONOMY_ACTION_COOLDOWN_MS',
   'AUTONOMY_EVENT_DEBOUNCE_MS',
   'AUTONOMY_MAX_REPROMPTS',
-  'AUTONOMY_TASKS'
+  'AUTONOMY_TASKS',
+  'AUTO_RESTOCK',
+  'AUTO_RESTOCK_INTERVAL_MS',
+  'AUTO_SURVIVAL',
+  'AUTO_SURVIVAL_INTERVAL_MS',
+  'AUTO_EAT_BELOW',
+  'PRESENCE_MODE',
+  'PRESENCE_FILE',
+  'GOALS_FILE',
+  'GOALS_MAX_STEPS'
 ]
 for (const key of envKeys) {
   requireText('apps/mcbot/deploy/env.example', key, `env:${key}`)
@@ -78,17 +87,17 @@ for (const key of envKeys) {
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '文档声明', 'audit-matrix')
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '代码', 'audit-code-column')
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '状态', 'audit-status-column')
-requireText('README.md', 'v1.0.4', 'readme-version')
-requireText('docs/mcbot/README.md', 'v1.0.4', 'mcbot-readme-version')
-requireText('docs/app/API.md', 'mcbot **v1.0.4**', 'app-api-upstream-version')
-requireText('CHANGELOG.md', '## [v1.0.4]', 'changelog-version')
-requireText('docs/app/ACCEPTANCE.md', 'v1.0.4', 'acceptance-version')
-requireText('docs/app/DEPLOY.md', 'v1.0.4', 'deploy-title')
-requireText('deploy/tool-versions.json', '"mcbotVersion": "1.0.4"', 'tool-version')
-requireText('deploy/env.example', 'APP_VERSION=1.0.4', 'app-version')
+requireText('README.md', 'v1.0.5', 'readme-version')
+requireText('docs/mcbot/README.md', 'v1.0.5', 'mcbot-readme-version')
+requireText('docs/app/API.md', 'mcbot **v1.0.5**', 'app-api-upstream-version')
+requireText('CHANGELOG.md', '## [v1.0.5]', 'changelog-version')
+requireText('docs/app/ACCEPTANCE.md', 'v1.0.5', 'acceptance-version')
+requireText('docs/app/DEPLOY.md', 'v1.0.5', 'deploy-title')
+requireText('deploy/tool-versions.json', '"mcbotVersion": "1.0.5"', 'tool-version')
+requireText('deploy/env.example', 'APP_VERSION=1.0.5', 'app-version')
 
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
-if (rootPackage.version !== '1.0.4') errors.push(`package.json version 应为 1.0.4，实际 ${rootPackage.version}`)
+if (rootPackage.version !== '1.0.5') errors.push(`package.json version 应为 1.0.5，实际 ${rootPackage.version}`)
 
 const stalePatterns = [
   ['docs/app/API.md', '生产当前 v1.0.1', '旧生产版本'],

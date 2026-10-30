@@ -453,13 +453,14 @@ CSS 变量（`web/src/styles/tokens.css`）：
 - 样式集中在 `web/src/styles/v07.css`（在 `main.tsx` 引入），不引入第三方组件库；测试覆盖长任务超时、恢复持久化、
   加密/异地状态卡、prepare 警告、断点 `fileId`、`archive_encrypted` 文案与 MetaContext 降级。
 
-## 17. mcbot 面板（`/minecraft?tab=lofii`，v0.8.0 引入；v0.8.1 安全/健壮性；v1.0.2 自主模式）
+## 17. mcbot 面板（`/minecraft?tab=lofii`，v0.8.0 引入；v0.8.1 安全/健壮性；v1.0.2 自主模式；v1.0.5 在线模式/目标）
 
 mcbot 面板是 `/minecraft` 的第二个标签页，数据来自 `GET /api/mcbot/status`（5s 轮询，页面隐藏时暂停）与 `GET /api/mcbot/history`；写操作走 `POST /api/mcbot/*`。仅当 `/api/version.lofiiEnabled=true` 时显示入口；`lofiiControlEnabled=false` 时只读（**聊天输入同样禁用**）。状态快照先经 `safemcbotStatus` 归一化，缺失嵌套段显示“—”而不是整页崩溃；面板轮询使用请求序号 + AbortController，旧响应不会覆盖新响应。
 
 ### 入口与布局
 
-- 标签栏与深链见 §4.5；mcbot 标签页内容自上而下：全局状态提示条 → 状态卡 → 自主模式卡（v1.0.2，旧版上游时隐藏/降级）→ 任务卡 → 双列（移动控制 / 游戏内聊天）→ 事件流卡 → 历史记录卡。
+- 标签栏与深链见 §4.5；mcbot 标签页内容自上而下：全局状态提示条 → 状态卡 → 自主模式卡（v1.0.2，旧版上游时隐藏/降级）→ **在线模式与长期目标卡（v1.0.5）** → 任务卡 → 双列（移动控制 / 游戏内聊天）→ 事件流卡 → 历史记录卡。
+- 在线模式与长期目标卡：展示 `auto/always/off` 分段控制、来源/持久化时间；`always` 标注资源占用，`off` 在任务/自主会话运行时禁用并显示原因；提供 2 个预设计划（采集→存箱→补种、清理安全区→存箱），创建后显示步骤与状态，开始/暂停/取消均二次确认；灰色只读态禁用全部写操作。旧版 mcbot 无 `/presence`/`/goals` 时显示降级说明，不渲染不可用控制。
 - 全局提示条（按优先级，只显示最相关的一条）：
   - 等待首次轮询：`notice-muted`“正在等待 mcbot 首次轮询结果；轮询完成前状态可能为空，控制操作暂不可用。”
   - 不可达：`notice-warning`“无法连接 mcbot：<中文错误>。当前显示上次成功轮询的缓存数据，控制操作不可用。”

@@ -1287,6 +1287,7 @@ export type McbotTaskName =
   | 'guard'
   | 'escort'
   | 'explore'
+  | 'clearing'
 
 /** 任务状态；pending_resume 表示有可恢复的暂停任务。 */
 export type McbotTaskState =
@@ -1406,13 +1407,76 @@ export interface McbotServer {
   lastPingAt: string | null
 }
 
+export type McbotPresenceMode = 'auto' | 'always' | 'off'
+
 export interface McbotPresence {
   enabled: boolean
+  mode: McbotPresenceMode
+  modeSource: 'default' | 'env' | 'persisted'
+  modeUpdatedAt: string | null
   pollMs: number
   graceMs: number
   checkMs: number
   otherPlayers: number
   lastDecision: string
+}
+
+export interface McbotSurvival {
+  enabled: boolean
+  lastRunAt: string | null
+  lastAction: string | null
+  lastError: string | null
+}
+
+export type McbotGoalKind = 'task' | 'deposit' | 'home'
+export type McbotGoalStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'canceled'
+export type McbotGoalStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+
+export interface McbotGoalStep {
+  index: number
+  kind: McbotGoalKind
+  taskName: McbotTaskName | null
+  status: McbotGoalStepStatus
+  attempts: number
+  lastError: string | null
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface McbotGoal {
+  id: string
+  owner: string
+  objective: string
+  status: McbotGoalStatus
+  currentStep: number
+  attempts: number
+  lastFailureKind: string | null
+  lastError: string | null
+  createdAt: string
+  updatedAt: string
+  startedAt: string | null
+  finishedAt: string | null
+  steps: McbotGoalStep[]
+}
+
+export interface McbotPresenceInfo {
+  mode: McbotPresenceMode
+  source: 'default' | 'env' | 'persisted'
+  updatedAt: string | null
+  connected: boolean
+  lastDecision: string
+}
+
+export interface McbotPresenceResult {
+  presence?: McbotPresenceInfo
+}
+
+export interface McbotGoalsResult {
+  goals: McbotGoal[]
+}
+
+export interface McbotGoalResult {
+  goal: McbotGoal
 }
 
 export interface McbotAi {
@@ -1443,6 +1507,7 @@ export interface McbotStatus {
   ai: McbotAi
   memory: McbotMemory
   task: McbotTask
+  survival: McbotSurvival
   admin: McbotAdmin
 }
 

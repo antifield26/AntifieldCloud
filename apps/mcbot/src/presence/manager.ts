@@ -1,8 +1,9 @@
-import type { Config } from '../config.ts'
+import type { Config, PresenceMode } from '../config.ts'
 import type { Logger } from '../logger.ts'
-import type { RuntimeState } from '../state.ts'
+import type { PresenceModeSource, RuntimeState } from '../state.ts'
 import type { BotController } from '../minecraft/bot.ts'
 import { pingServer, type SlpResult } from './slp.ts'
+import type { PresenceStore } from './store.ts'
 
 export interface PresenceDeps {
   config: Config
@@ -11,6 +12,17 @@ export interface PresenceDeps {
   controller: BotController
   keepOnline?: () => boolean
   ping?: () => Promise<SlpResult>
+  /** 持久化存储；未提供时只在内存中切换模式。 */
+  store?: PresenceStore
+  initialMode?: PresenceMode
+  initialSource?: PresenceModeSource
+  initialUpdatedAt?: string | null
+}
+
+export interface PresenceModeChange {
+  ok: boolean
+  code?: 'presence_busy' | 'invalid_mode' | 'presence_persist_failed'
+  mode: PresenceMode
 }
 
 type PingFn = () => Promise<SlpResult>
@@ -24,7 +36,10 @@ function isFatalLoginReason (reason: string): boolean {
 export class PresenceManager {
   private readonly deps: PresenceDeps
   private readonly ping: PingFn
-  private readonly alwaysOnline: boolean
+  private mode: PresenceMode
+  private modeSource: PresenceModeSource
+  private modeUpdatedAt: string | null
+  private started = false
   private timer: NodeJS.Timeout | null = null
   private stopped = false
   private connecting = false
@@ -42,21 +57,62 @@ export class PresenceManager {
       port: deps.config.mcPort,
       timeoutMs: 3000
     }))
-    this.alwaysOnline = !deps.config.presenceEnabled || deps.config.forceOnline
+    this.mode = deps.initialMode ??
+      (!deps.config.presenceEnabled || deps.config.forceOnline ? 'always' : deps.config.presenceMode)
+    this.modeSource = deps.initialSource ?? (deps.initialMode ? 'persisted' : 'default')
+    this.modeUpdatedAt = deps.initialUpdatedAt ?? null
     this.backoffMs = deps.config.reconnectMinMs
     this.probeBackoffMs = deps.config.presencePollMs
+    this.deps.state.setPresenceMode(this.mode, this.modeSource, this.modeUpdatedAt)
+  }
+
+  /** 当前模式与来源，供 /status 与 /presence 使用。 */
+  presenceInfo (): { mode: PresenceMode, source: PresenceModeSource, updatedAt: string | null } {
+    return { mode: this.mode, source: this.modeSource, updatedAt: this.modeUpdatedAt }
+  }
+
+  /**
+   * 切换在线模式。off 在任务/自主会话保持在线时拒绝，避免把正在执行的任务直接断线。
+   * 持久化成功后才更新内存状态；切换后立即唤醒 presence loop。
+   */
+  setMode (mode: PresenceMode, actor: string): PresenceModeChange {
+    if (mode !== 'auto' && mode !== 'always' && mode !== 'off') {
+      return { ok: false, code: 'invalid_mode', mode: this.mode }
+    }
+    if (mode === 'off' && this.keepOnline()) {
+      return { ok: false, code: 'presence_busy', mode: this.mode }
+    }
+    const updatedAt = new Date().toISOString()
+    try {
+      this.deps.store?.save({ mode, updatedAt, updatedBy: actor.slice(0, 64) })
+    } catch (error) {
+      this.deps.logger.warn('presence: mode persist failed', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return { ok: false, code: 'presence_persist_failed', mode: this.mode }
+    }
+    this.mode = mode
+    this.modeSource = 'persisted'
+    this.modeUpdatedAt = updatedAt
+    this.deps.state.setPresenceMode(mode, 'persisted', updatedAt)
+    this.deps.logger.info('presence: mode changed', { mode, actor })
+    this.clearTimer()
+    if (this.started && !this.stopped) this.schedule(0)
+    return { ok: true, mode }
   }
 
   start (): void {
     this.stopped = false
+    this.started = true
     this.lastOthersAt = Date.now()
     this.deps.controller.setDisconnectHandler(reason => this.onUnexpectedDisconnect(reason))
     this.deps.logger.info('presence started', {
-      alwaysOnline: this.alwaysOnline,
+      mode: this.mode,
+      modeSource: this.modeSource,
       pollMs: this.deps.config.presencePollMs,
       graceMs: this.deps.config.presenceGraceMs
     })
-    if (this.alwaysOnline) {
+    if (this.mode === 'always') {
       void this.connectNow()
     }
     this.schedule(0)
@@ -93,6 +149,10 @@ export class PresenceManager {
 
   notifyTaskEnded (): void {
     this.lastOthersAt = Date.now()
+    if (this.mode === 'off' && this.started && !this.stopped) {
+      this.clearTimer()
+      this.schedule(0)
+    }
   }
 
   private keepOnline (): boolean {
@@ -131,7 +191,13 @@ export class PresenceManager {
       this.schedule(500)
       return
     }
-    if (this.alwaysOnline) {
+    if (this.mode === 'off') {
+      state.setState('idle', 'presence off')
+      state.setPresence(0, 'presence off')
+      this.schedule(this.deps.config.presencePollMs)
+      return
+    }
+    if (this.mode === 'always') {
       if (!this.deps.controller.isConnected()) void this.connectNow()
       this.schedule(1000)
       return
@@ -210,7 +276,15 @@ export class PresenceManager {
     if (Date.now() - this.connectedAt > 60000) {
       this.backoffMs = this.deps.config.reconnectMinMs
     }
-    if (this.alwaysOnline) return true
+    if (this.mode === 'always') return true
+    if (this.mode === 'off') {
+      if (this.keepOnline()) {
+        state.setPresence(0, 'presence off: task active')
+        return true
+      }
+      await this.quitForPresence('presence off')
+      return false
+    }
     if (others.length > 0) {
       this.lastOthersAt = Date.now()
       return true
@@ -220,15 +294,15 @@ export class PresenceManager {
       return true
     }
     if (Date.now() - this.lastOthersAt < this.deps.config.presenceGraceMs) return true
-    await this.quitForPresence()
+    await this.quitForPresence('no other players')
     return false
   }
 
-  private async quitForPresence (): Promise<void> {
+  private async quitForPresence (reason: string): Promise<void> {
     const { state, controller, logger, config } = this.deps
-    logger.info('presence: leaving because no other players', { graceMs: config.presenceGraceMs })
-    state.setState('cooldown', 'no other players; leaving')
-    state.setPresence(0, 'no other players; leaving')
+    logger.info('presence: leaving', { reason, graceMs: config.presenceGraceMs })
+    state.setState('cooldown', `${reason}; leaving`)
+    state.setPresence(0, `${reason}; leaving`)
     state.setServer({ ...state.server, online: 0 })
     this.lastQuitAt = Date.now()
     try {

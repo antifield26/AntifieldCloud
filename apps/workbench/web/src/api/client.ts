@@ -56,9 +56,14 @@ import type {
   McbotActionResult,
   McbotAutonomyResult,
   McbotAutonomySnapshot,
+  McbotGoalKind,
+  McbotGoalResult,
+  McbotGoalsResult,
   McbotHistory,
   McbotHistoryQuery,
   McbotMoveAction,
+  McbotPresenceMode,
+  McbotPresenceResult,
   McbotSnapshot,
   McbotTaskName,
   LoginResult,
@@ -1288,6 +1293,32 @@ export const api = {
     /** 停止自主模式：上游幂等；reason 仅作运行记录，不上送到 UI。 */
     stopAutonomy(reason?: string): Promise<McbotAutonomyResult> {
       return post<McbotAutonomyResult>('/api/mcbot/autonomy/stop', reason ? { reason } : {})
+    },
+    /** 在线模式快照（读操作）。 */
+    presence(signal?: AbortSignal): Promise<McbotPresenceResult> {
+      return get<McbotPresenceResult>('/api/mcbot/presence', { signal })
+    },
+    /** 切换 auto/always/off；off 在任务/自主会话运行时会返回 409。 */
+    setPresence(mode: McbotPresenceMode): Promise<McbotPresenceResult> {
+      return post<McbotPresenceResult>('/api/mcbot/presence', { mode })
+    },
+    /** 长期目标列表（只读）。 */
+    goals(limit = 20, signal?: AbortSignal): Promise<McbotGoalsResult> {
+      return get<McbotGoalsResult>(`/api/mcbot/goals?limit=${encodeURIComponent(String(limit))}`, { signal })
+    },
+    /** 创建长期目标：默认 pending，必须再显式 start。 */
+    createGoal(
+      objective: string,
+      steps: Array<{ kind: McbotGoalKind; taskName?: McbotTaskName }>,
+    ): Promise<McbotGoalResult> {
+      return post<McbotGoalResult>('/api/mcbot/goals', { objective, steps })
+    },
+    /** 目标动作；pause 与 cancel 也需二次确认后调用。 */
+    goalAction(
+      goalId: string,
+      action: 'start' | 'pause' | 'resume' | 'cancel',
+    ): Promise<McbotGoalResult> {
+      return post<McbotGoalResult>(`/api/mcbot/goals/${encodeURIComponent(goalId)}/${action}`, {})
     },
     startTask(name: McbotTaskName): Promise<McbotActionResult> {
       return post<McbotActionResult>('/api/mcbot/tasks', { name })

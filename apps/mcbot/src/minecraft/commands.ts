@@ -8,7 +8,7 @@ import { ChatSender } from './chat.ts'
 import { MovementError, MovementManager } from './movement.ts'
 import { buildStatusLines } from './status.ts'
 
-export type CommandName = 'status' | 'come' | 'follow' | 'stop' | 'look' | 'wave' | 'help' | 'fish' | 'farm' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol' | 'guard' | 'escort' | 'explore' | 'stopTask' | 'home' | 'deposit'
+export type CommandName = 'status' | 'come' | 'follow' | 'stop' | 'look' | 'wave' | 'help' | 'fish' | 'farm' | 'woodcutting' | 'mining' | 'forest' | 'sleep' | 'patrol' | 'guard' | 'escort' | 'explore' | 'clearing' | 'stopTask' | 'home' | 'deposit'
 
 export interface ParsedCommand {
   name: CommandName
@@ -30,6 +30,7 @@ const COMMAND_PATTERNS: Array<{ name: CommandName, pattern: RegExp }> = [
   { name: 'guard', pattern: /^(去守卫|去守家|守卫|守家|基地守卫|guard)/i },
   { name: 'escort', pattern: /^(护送|护卫我|护送我|escort)/i },
   { name: 'explore', pattern: /^(去探索|探索|航点探索|explore)/i },
+  { name: 'clearing', pattern: /^(去清怪|清怪|清理安全区|清理怪物|clearing)/i },
   { name: 'follow', pattern: /^(跟随|跟着我|跟着|跟好|follow|跟)\s*(我|[A-Za-z0-9_]{1,16})?/i },
   { name: 'come', pattern: /^(过来|来我身边|来我这|来这边|到这里|come)\s*([A-Za-z0-9_]{1,16})?/i },
   { name: 'look', pattern: /^(看我|看过来|看向我|look)/i },
@@ -56,7 +57,7 @@ export function parseCommand (text: string): ParsedCommand | null {
     if (entry.name === 'stop' || entry.name === 'status' || entry.name === 'help' || entry.name === 'look' || entry.name === 'wave' ||
       entry.name === 'fish' || entry.name === 'farm' || entry.name === 'woodcutting' ||
       entry.name === 'mining' || entry.name === 'forest' || entry.name === 'sleep' || entry.name === 'patrol' ||
-      entry.name === 'guard' || entry.name === 'escort' || entry.name === 'explore' ||
+      entry.name === 'guard' || entry.name === 'escort' || entry.name === 'explore' || entry.name === 'clearing' ||
       entry.name === 'stopTask' || entry.name === 'home' || entry.name === 'deposit') {
       return { name: entry.name }
     }
@@ -80,7 +81,7 @@ export interface CommandDeps {
 }
 
 const HIGH_RISK_COMMANDS = new Set<CommandName>([
-  'fish', 'farm', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore',
+  'fish', 'farm', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore', 'clearing',
   'stopTask', 'home', 'deposit', 'come', 'follow', 'stop'
 ])
 
@@ -164,6 +165,9 @@ export class CommandExecutor {
         case 'explore':
           await this.deps.tasks.start('explore', username)
           return
+        case 'clearing':
+          await this.deps.tasks.start('clearing', username)
+          return
         case 'stopTask':
           this.deps.tasks.requestStop('user')
           return
@@ -203,7 +207,7 @@ export class CommandExecutor {
           await this.safeSay('嗨～')
           return
         case 'help':
-          await this.safeSay('你可以说：Lofii 状态 / 去钓鱼 / 去种田 / 去砍树 / 去挖矿 / 砍天然林 / 睡觉 / 巡逻 / 守卫 / 护送 / 探索 / 收工 / 回家 / 存东西 / 过来 / 跟随我 / 停下 / 看我 / 挥手 / 帮助')
+          await this.safeSay('你可以说：Lofii 状态 / 去钓鱼 / 去种田 / 去砍树 / 去挖矿 / 砍天然林 / 睡觉 / 巡逻 / 守卫 / 护送 / 探索 / 清理安全区 / 收工 / 回家 / 存东西 / 过来 / 跟随我 / 停下 / 看我 / 挥手 / 帮助')
           return
       }
     } catch (error) {

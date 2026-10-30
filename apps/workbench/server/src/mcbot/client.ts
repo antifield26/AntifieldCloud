@@ -293,6 +293,42 @@ export class McbotClient {
     return this.control('/autonomy/stop', reason ? { reason } : {}, signal)
   }
 
+  /** 在线模式快照（读 Token）。 */
+  async presence(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const body = await this.request('/presence', { method: 'GET', token: this.readToken, signal })
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 在线模式响应格式不合法')
+    return body
+  }
+
+  /** 切换在线模式（控制 Token）。 */
+  async setPresence(mode: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.control('/presence', { mode }, signal)
+  }
+
+  /** 长期目标列表（读 Token）。 */
+  async goals(limit = 20, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const body = await this.request(`/goals?limit=${encodeURIComponent(String(limit))}`, {
+      method: 'GET',
+      token: this.readToken,
+      signal,
+    })
+    if (!isRecord(body)) throw new McbotError('mcbot_upstream_error', 'mcbot 目标响应格式不合法')
+    if (body.goals !== undefined && !Array.isArray(body.goals)) {
+      throw new McbotError('mcbot_upstream_error', 'mcbot 目标响应格式不合法')
+    }
+    return body
+  }
+
+  /** 创建长期目标（控制 Token，默认 paused）。 */
+  async createGoal(objective: string, steps: Array<Record<string, unknown>>, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.control('/goals', { objective, steps }, signal)
+  }
+
+  /** 目标动作：start/pause/resume/cancel（控制 Token）。 */
+  async goalAction(goalId: string, action: 'start' | 'pause' | 'resume' | 'cancel', signal?: AbortSignal): Promise<Record<string, unknown>> {
+    return this.control(`/goals/${encodeURIComponent(goalId)}/${action}`, {}, signal)
+  }
+
   private async control(
     path: string,
     payload: Record<string, unknown>,

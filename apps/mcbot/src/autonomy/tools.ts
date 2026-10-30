@@ -20,7 +20,8 @@ export const AUTONOMY_TASK_NAMES: TaskName[] = [
   'patrol',
   'guard',
   'escort',
-  'explore'
+  'explore',
+  'clearing'
 ]
 
 export const AUTONOMY_RAW_TOOLS = [

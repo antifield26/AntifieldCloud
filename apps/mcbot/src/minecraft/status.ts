@@ -48,6 +48,7 @@ function taskLabel (name: TaskSnapshot['name']): string {
     case 'guard': return '守卫'
     case 'escort': return '护送'
     case 'explore': return '探索'
+    case 'clearing': return '清理'
     default: return '任务'
   }
 }

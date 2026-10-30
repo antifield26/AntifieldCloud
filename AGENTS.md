@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.4（2026-10-30 已部署生产最终构建；已发布 Tag v1.0.4 + GitHub Release）**：主更新 Bot 出站可用性中心（健康快照/告警/批量重试/管理页状态）；修复 QQ Bot access_token 端点与备份面板历史错误误报；npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；mcbot 保持 v1.0.3 环境感知/自主决策能力并仅做版本对齐；OpenCode **v2.2.0**；生产 app release `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot release `/opt/mcbot/releases/20261030T005014Z`；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+**当前版本 v1.0.5（开发中；按用户选择只部署、不创建 Tag/Release）**：MC Bot 高低差寻路受控回退、在线模式 `auto/always/off` 持久化、空闲自动进食/换装/补货（默认开启）、安全区清怪 `clearing`、多步目标/长期记忆与失败分类；app 增加对应代理与面板卡片；全仓 Debug。app schema 保持 v18，mcbot 本地 `presence.json`/`goals.db` 为 additive。生产仍为 v1.0.4：app `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`；OpenCode **v2.2.0**；npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
@@ -59,7 +59,7 @@ npm run check:docs     # mcbot 文档声明/代码实现一致性检查
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v1.0.4，2026-10-30）：`npm run check` 通过；app `npm test` **603**（602 pass、1 skip）+ web **274**（49 文件）+ mcbot **122**；`npm run build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 通过。生产已部署 v1.0.4/schema18/OpenCode 2.2.0；已发布 Tag v1.0.4 + GitHub Release。完整 Access smoke 36/0/1/2（WARN=drill schema17）。
+当前基线（v1.0.5，2026-10-30 开发中）：`npm run check` 通过；app **603**（602 pass、1 skip）+ web **275**（49 文件）+ mcbot **127**；`npm run build`、`check-version`（严格 1.0.5）、`check-naming`、`check:docs` 通过。生产仍是 v1.0.4/schema18/OpenCode 2.2.0；v1.0.5 按计划只部署，不创建 Tag/Release。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 

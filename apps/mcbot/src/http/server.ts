@@ -2,15 +2,17 @@ import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { Bot } from 'mineflayer'
 import type { AuditLogger } from '../audit.ts'
-import type { Config } from '../config.ts'
+import type { Config, PresenceMode } from '../config.ts'
 import type { EventBus } from '../events/bus.ts'
 import { SseHub } from '../events/sse.ts'
 import type { HistoryStore } from '../history/store.ts'
 import type { Logger } from '../logger.ts'
-import type { RuntimeState, TaskName } from '../state.ts'
+import type { PresenceModeSource, RuntimeState, TaskName } from '../state.ts'
 import type { ChatSender } from '../minecraft/chat.ts'
 import type { MovementManager } from '../minecraft/movement.ts'
 import type { AutonomyService } from '../autonomy/service.ts'
+import type { GoalRunner } from '../goals/runner.ts'
+import { validateGoalSteps } from '../goals/store.ts'
 import { CONTRACT_VERSION } from '../contract.ts'
 import { InvalidMessageError, NotConnectedError } from '../errors.ts'
 import { TaskError, type TaskController } from '../tasks/types.ts'
@@ -29,6 +31,11 @@ export interface HttpDeps {
   getBot: () => Bot | null
   /** AI 自主会话；未装配时 /autonomy* 返回 503。 */
   autonomy?: AutonomyService
+  /** 在线模式读/写；未装配时 /presence* 返回 503。 */
+  getPresenceMode?: () => { mode: PresenceMode, source: PresenceModeSource, updatedAt: string | null }
+  setPresenceMode?: (mode: PresenceMode, actor: string) => { ok: boolean, code?: string, mode: PresenceMode }
+  /** 长期目标执行器；未装配时 /goals* 返回 503。 */
+  goals?: GoalRunner
 }
 
 interface JsonResponse {
@@ -209,6 +216,106 @@ export class HttpApi {
       if (req.method !== 'GET') return this.methodNotAllowed(res, 'GET')
       if (!this.authorizeRead(req, res)) return
       this.sse.handle(req, res)
+      return
+    }
+    if (pathname === '/presence') {
+      if (req.method === 'GET') {
+        if (!this.authorizeRead(req, res)) return
+        if (!this.deps.getPresenceMode) return sendError(res, 503, 'presence_disabled', 'presence mode is unavailable')
+        const mode = this.deps.getPresenceMode()
+        const snapshot = this.deps.state.snapshot()
+        sendJson(res, {
+          status: 200,
+          body: {
+            mode: mode.mode,
+            source: mode.source,
+            updatedAt: mode.updatedAt,
+            connected: snapshot.minecraft.connected,
+            lastDecision: snapshot.presence.lastDecision
+          }
+        })
+        return
+      }
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'GET, POST')
+      if (!this.authorizeControl(req, res)) return
+      if (!this.takeControlSlot()) return this.rateLimited(res, 'control')
+      if (!this.deps.setPresenceMode) return sendError(res, 503, 'presence_disabled', 'presence mode is unavailable')
+      try {
+        const body = await readJsonBody(req)
+        const record = isObject(body) ? body : null
+        const raw = record?.mode
+        if (raw !== 'auto' && raw !== 'always' && raw !== 'off') {
+          return sendError(res, 400, 'invalid_request', 'mode must be auto, always or off')
+        }
+        const result = this.deps.setPresenceMode(raw, 'http_control')
+        if (!result.ok) {
+          const status = result.code === 'presence_busy' ? 409 : result.code === 'presence_persist_failed' ? 500 : 400
+          return sendError(res, status, result.code ?? 'invalid_request', 'presence mode rejected')
+        }
+        this.deps.audit.append({
+          event: 'presence.mode',
+          source: 'http_control',
+          actor: 'http_control',
+          action: raw,
+          result: 'accepted',
+          details: {}
+        })
+        sendJson(res, { status: 200, body: { mode: result.mode } })
+      } catch (error) {
+        if (error instanceof BodyTooLargeError) return sendError(res, 413, 'payload_too_large', 'request body is too large')
+        throw error
+      }
+      return
+    }
+    if (pathname === '/goals' || pathname === '/goals/') {
+      if (req.method === 'GET') {
+        if (!this.authorizeRead(req, res)) return
+        if (!this.deps.goals) return sendError(res, 503, 'goals_disabled', 'goals are disabled')
+        const limit = Number(url.searchParams.get('limit') ?? '20')
+        if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+          return sendError(res, 400, 'invalid_request', 'limit must be an integer 1..50')
+        }
+        sendJson(res, { status: 200, body: { goals: this.deps.goals.list(limit) } })
+        return
+      }
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'GET, POST')
+      if (!this.authorizeControl(req, res)) return
+      if (!this.takeControlSlot()) return this.rateLimited(res, 'control')
+      if (!this.deps.goals) return sendError(res, 503, 'goals_disabled', 'goals are disabled')
+      try {
+        const body = await readJsonBody(req)
+        const record = isObject(body) ? body : null
+        const objective = typeof record?.objective === 'string' ? record.objective : ''
+        const steps = validateGoalSteps(record?.steps, this.deps.config.goalsMaxSteps)
+        const goal = this.deps.goals.create('panel', objective, steps)
+        sendJson(res, { status: 201, body: { goal } })
+      } catch (error) {
+        if (error instanceof BodyTooLargeError) return sendError(res, 413, 'payload_too_large', 'request body is too large')
+        if (error instanceof Error) return sendError(res, 400, 'invalid_request', error.message)
+        throw error
+      }
+      return
+    }
+    const goalAction = pathname.match(/^\/goals\/([A-Za-z0-9-]{1,80})\/(start|pause|resume|cancel)$/)
+    if (goalAction) {
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST')
+      if (!this.authorizeControl(req, res)) return
+      if (!this.takeControlSlot()) return this.rateLimited(res, 'control')
+      if (!this.deps.goals) return sendError(res, 503, 'goals_disabled', 'goals are disabled')
+      const [, id, action] = goalAction
+      try {
+        const goal = action === 'pause'
+          ? await this.deps.goals.pause(id as string, 'panel')
+          : action === 'cancel'
+            ? await this.deps.goals.cancel(id as string, 'panel')
+            : await this.deps.goals.start(id as string, 'panel')
+        sendJson(res, { status: 200, body: { goal } })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (/not_found/.test(message)) return sendError(res, 404, 'not_found', 'goal not found')
+        if (/not_startable|not_running|goal_busy/.test(message)) return sendError(res, 409, 'goal_busy', 'goal is busy or not in a valid state')
+        return sendError(res, 400, 'invalid_request', 'goal action rejected')
+      }
       return
     }
     if (pathname === '/status') {
@@ -405,9 +512,9 @@ export class HttpApi {
     if (!config.taskEnabled) return sendError(res, 503, 'task_disabled', 'tasks are disabled')
     try {
       const body = await readJsonBody(req)
-      const taskNames = new Set(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore'])
+      const taskNames = new Set(['fishing', 'farming', 'woodcutting', 'mining', 'forest', 'sleep', 'patrol', 'guard', 'escort', 'explore', 'clearing'])
       if (!isObject(body) || typeof body.name !== 'string' || !taskNames.has(body.name)) {
-        throw new InvalidMessageError('name must be fishing, farming, woodcutting, mining, forest, sleep, patrol, guard, escort or explore')
+        throw new InvalidMessageError('name must be fishing, farming, woodcutting, mining, forest, sleep, patrol, guard, escort, explore or clearing')
       }
       if (state.task.pendingResume) {
         this.auditDenied('task.start', 'resume_pending', requestId, body.name)

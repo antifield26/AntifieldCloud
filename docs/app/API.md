@@ -738,9 +738,9 @@ ChatbotMemoryItemSummary: { "id": "uuid", "kind": "profile|preference|fact|proje
 
 `chatbot_disabled`（503）、`chatbot_key_missing`（503）、`chatbot_ai_tool_isolation_unavailable`（503，AI 工具隔离不可用且发送工具启用时新 Chat 被拒绝，10 分钟窗口后重试）、`chatbot_key_invalid`（500，仅启动/配置阶段）、`invalid_chatbot_config`（400，含非 QQ 平台/字段校验失败）、`publish_confirm_required`（400）、`publish_text_too_long`（400，发布文本超过 2000 字符）、`totp_required`（400）、`invalid_code`（401）、`conflict`（409，目标重复）、`rate_limited`（429）、`not_found`（404）、`invalid_request`（400，静默时段/事件结果非法）、`chatbot_health_unsupported`（400，适配器不支持连接自检）。AI 图片内部错误码 `chatbot_ai_image_unsupported`/`chatbot_ai_image_invalid` 只用于日志/降级，不作为管理端点响应。Webhook 额外使用 `invalid_signature`、`stale_signature`、`invalid_payload`、`missing_fields`。删除 `chat_trigger_unsupported` 与媒体相关错误码（`too_many_media`/`media_too_large`/`media_total_too_large`/`qq_media_unsupported`）。
 
-## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.4 版本对齐；默认关闭）
+## 15. mcbot Bot 对接（v0.8.0 引入；v1.0.2 自主模式；v1.0.3 环境/动作工具；v1.0.5 在线模式/目标/自动生存；默认关闭）
 
-mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。上游契约为 mcbot **v1.0.4**（最低兼容 v0.6.0，`contractVersion=1`）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.4 仅版本对齐，旧版缺失时应用降级为无自主卡；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
+mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）；应用服务端轮询其只读接口并代理少量控制操作，**浏览器不直连 mcbot、服务端不下发 mcbot Token/URL**。上游契约为 mcbot **v1.0.5**（最低兼容 v0.6.0，`contractVersion=1`）；v1.0.2 自主模式为可选字段/端点，v1.0.3 环境/动作工具为追加字段，v1.0.5 增加在线模式/目标/自动生存，旧版缺失时应用降级为无自主卡/无目标卡；旧版无 `/events/recent`（404）时只降级 `eventsSupported=false`，`/status` 仍可用。全部端点需要会话；写操作需要 CSRF；凭据与响应边界见 `docs/app/SECURITY.md`。
 
 ### 通用语义
 
@@ -809,6 +809,26 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 
 需要会话 + CSRF + 控制 20/min。body 可为 `{}` 或 `{ "reason": "..." }`（≤200、无控制字符）；幂等。成功 **200** `{ "ok": true, "autonomy": { ... } }`。
 
+### GET /api/mcbot/presence（v1.0.5）
+
+需要会话 + GET 60/min 限流；返回 `{ "presence": { "mode": "auto|always|off", "source": "default|env|persisted", "updatedAt": "...", "connected": true, "lastDecision": "..." } }`。
+
+### POST /api/mcbot/presence（v1.0.5）
+
+需要会话 + CSRF + 控制 20/min；body `{ "mode": "auto|always|off" }`。成功 200 `{ "ok": true, "presence": ... }`；任务/自主会话运行中切 `off` 返回 `409 mcbot_presence_busy`；控制未启用 503；审计只记模式。
+
+### GET /api/mcbot/goals（v1.0.5）
+
+需要会话 + GET 60/min；query `limit=1..50`（默认 20）；返回上游 `{ goals: [...] }`，目标含 objective/status/currentStep/steps；不包含 Token。
+
+### POST /api/mcbot/goals（v1.0.5）
+
+需要会话 + CSRF + 控制 20/min；body `{ "objective": "1..200 字符", "steps": [{"kind":"task","taskName":"woodcutting"},{"kind":"deposit"},{"kind":"home"}] }`；步骤最多 5 个；taskName 受 11 种任务白名单限制；创建后为 `pending`，必须再显式开始。审计只记 objective 字符数与步骤数。
+
+### POST /api/mcbot/goals/:goalId/:action（v1.0.5）
+
+需要会话 + CSRF + 控制 20/min；`action=start|pause|resume|cancel`；`goalId` 为 1–80 字母数字/连字符；成功返回 `{ goal }`；404/409 由上游映射，消息不含目标正文。
+
 ### GET /api/mcbot/status（v1.0.2 增量）
 
 新增可选 `autonomy` 字段（`normalizeAutonomy` 归一化；旧版缺失为 `null`）；`status.autonomy` 与上游 `/status.autonomy` 一致。前端对未知 state 保留字符串并 label 兜底，不丢弃。
@@ -820,7 +840,7 @@ mcbot 是独立的 Minecraft 附属 Bot 服务（仅监听 `127.0.0.1:3010`）�
 { "name": "fishing" }
 ```
 
-`name` 必须是 `fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore` 之一（v1.0.2 同步 10 种；否则 `400 invalid_request`）。成功 `200 { "ok": true, ...上游响应 }`；上游已 active 时入队（`queued:true`、`position:1..3`）；有 pending → `409 lofii_resume_pending`；队列满 → `409 lofii_queue_full`；任务功能关闭 → `503 lofii_task_disabled`。
+`name` 必须是 `fishing|farming|woodcutting|mining|forest|sleep|patrol|guard|escort|explore|clearing` 之一（v1.0.5 同步 11 种；否则 `400 invalid_request`）。成功 `200 { "ok": true, ...上游响应 }`；上游已 active 时入队（`queued:true`、`position:1..3`）；有 pending → `409 lofii_resume_pending`；队列满 → `409 lofii_queue_full`；任务功能关闭 → `503 lofii_task_disabled`。
 
 ### POST /api/mcbot/tasks/stop
 
