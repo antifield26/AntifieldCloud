@@ -18,6 +18,14 @@ export interface ExecutorOptions {
   perWaypointMs?: number
   /** 整体上限，默认 25s。 */
   totalMs?: number
+  /** 有界调试：每步只记录路点/位置/控制状态，不记录聊天。 */
+  debug?: (data: {
+    waypoint: NavVector
+    position: { x: number, y: number, z: number }
+    horizontal: number
+    vertical: number
+    controls: StepControls
+  }) => void
 }
 
 export interface StepControls {
@@ -79,6 +87,13 @@ export class RouteExecutor {
 
           const current: NavVector = { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) }
           const controls = stepControls(current, waypoint)
+          options.debug?.({
+            waypoint,
+            position: { x: position.x, y: position.y, z: position.z },
+            horizontal,
+            vertical,
+            controls
+          })
           await bot.lookAt(new Vec3(target.x, target.y + 1.6, target.z), true)
           bot.setControlState('forward', controls.forward)
           bot.setControlState('sprint', controls.sprint)

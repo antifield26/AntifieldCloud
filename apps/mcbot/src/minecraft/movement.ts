@@ -422,14 +422,35 @@ export class MovementManager {
     }
     this.updateNavigation({ state: 'executing', source: 'planner', attempts: this.navigation.attempts + 1 })
     this.logger.info('movement planner route', {
-      waypoints: plan.waypoints.length,
+      waypoints: plan.waypoints.map(point => `${point.x},${point.y},${point.z}`).slice(0, 12),
       nodes: plan.nodesVisited,
+      start: bot.entity ? {
+        x: Math.round(bot.entity.position.x * 10) / 10,
+        y: Math.round(bot.entity.position.y * 10) / 10,
+        z: Math.round(bot.entity.position.z * 10) / 10
+      } : null,
       target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }
     })
+    let lastExecutorLogAt = 0
     const result = await this.executor.run(
       this.executorBot(bot),
       plan.waypoints.map(point => ({ x: point.x, y: point.y, z: point.z })),
-      { isCancelled: () => this.cancelled, totalMs: Math.max(6000, plan.waypoints.length * 1800) }
+      {
+        isCancelled: () => this.cancelled,
+        totalMs: Math.max(6000, plan.waypoints.length * 1800),
+        debug: data => {
+          const now = Date.now()
+          if (now - lastExecutorLogAt < 800) return
+          lastExecutorLogAt = now
+          this.logger.info('movement executor step', {
+            waypoint: `${data.waypoint.x},${data.waypoint.y},${data.waypoint.z}`,
+            position: `${Math.round(data.position.x * 10) / 10},${Math.round(data.position.y * 10) / 10},${Math.round(data.position.z * 10) / 10}`,
+            horizontal: Math.round(data.horizontal * 10) / 10,
+            vertical: Math.round(data.vertical * 10) / 10,
+            controls: data.controls
+          })
+        }
+      }
     )
     if (result.status !== 'arrived') {
       const failure: RouteFailureKind = result.status === 'timeout' ? 'timeout' : 'path_stuck'
