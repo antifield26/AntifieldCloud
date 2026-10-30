@@ -406,6 +406,14 @@ export class MovementManager {
     if (!config.pathPlannerEnabled) {
       return { ok: false, failure: 'no_path', reason: 'planner_disabled' }
     }
+    // 进入受控执行前彻底释放 pathfinder，避免其物理循环继续覆盖控制键。
+    try {
+      bot.pathfinder.stop()
+      bot.pathfinder.setGoal(null)
+      bot.clearControlStates()
+    } catch {
+      // ignore
+    }
     const world = this.navWorld(bot)
     const area = this.navArea(bot, target, allowOutsideSafeZone)
     const position = bot.entity?.position
