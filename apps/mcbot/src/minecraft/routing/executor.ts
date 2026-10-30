@@ -112,23 +112,24 @@ export class RouteExecutor {
             onGround: bot.onGround?.(),
             velocity: bot.velocity?.()
           })
-          await bot.lookAt(new Vec3(target.x, target.y + 1.6, target.z), true)
+          await bot.lookAt(new Vec3(target.x, target.y, target.z), true)
           bot.setControlState('forward', controls.forward)
           bot.setControlState('sprint', controls.sprint)
           if (controls.jump) {
             bot.forceGround?.()
             bot.setControlState('jump', true)
-            await sleep(190)
+            await sleep(300)
             bot.setControlState('jump', false)
-            await sleep(240)
+            await sleep(200)
           } else {
             await sleep(140)
           }
+          const latest = bot.entity?.position ?? position
           options.debug?.({
             waypoint,
-            position: { x: position.x, y: position.y, z: position.z },
-            horizontal,
-            vertical,
+            position: { x: latest.x, y: latest.y, z: latest.z },
+            horizontal: Math.hypot(latest.x - target.x, latest.z - target.z),
+            vertical: Math.abs(latest.y - target.y),
             controls,
             controlState: bot.controlState?.(),
             onGround: bot.onGround?.(),
