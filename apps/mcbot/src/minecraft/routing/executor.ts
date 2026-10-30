@@ -16,6 +16,7 @@ export interface ExecutorBot {
   physicsEnabled?: () => boolean
   blockAtFeet?: () => string | null
   forceGround?: () => void
+  getControlState?: (control: 'forward' | 'jump' | 'sprint' | 'sneak') => boolean
 }
 
 export interface ExecutorOptions {
@@ -36,6 +37,8 @@ export interface ExecutorOptions {
     velocity?: { x: number, y: number, z: number }
     physicsEnabled?: boolean
     blockAtFeet?: string | null
+    jumpControl?: boolean
+    forwardControl?: boolean
   }) => void
 }
 
@@ -131,7 +134,9 @@ export class RouteExecutor {
             onGround: bot.onGround?.(),
             velocity: bot.velocity?.(),
             physicsEnabled: bot.physicsEnabled?.(),
-            blockAtFeet: bot.blockAtFeet?.()
+            blockAtFeet: bot.blockAtFeet?.(),
+            jumpControl: bot.getControlState?.('jump'),
+            forwardControl: bot.getControlState?.('forward')
           })
         }
       }

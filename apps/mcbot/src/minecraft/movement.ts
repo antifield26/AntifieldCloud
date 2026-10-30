@@ -386,7 +386,8 @@ export class MovementManager {
         const block = bot.blockAt(bot.entity.position)
         return block ? block.name : null
       },
-      forceGround: () => this.refreshGround(bot)
+      forceGround: () => this.refreshGround(bot),
+      getControlState: control => bot.getControlState(control)
     }
   }
 
@@ -399,7 +400,9 @@ export class MovementManager {
    * 这里把当前控制状态逐 tick 同步给服务器，避免服务端把客户端跳跃/移动纠正回原位。
    */
   private installPlayerInputBridge (bot: Bot): void {
-    if (!bot.supportFeature('newPlayerInputPacket')) return
+    const supported = bot.supportFeature('newPlayerInputPacket')
+    this.logger.info('player input bridge', { supported })
+    if (!supported) return
     const client = bot._client as unknown as { write: (name: string, data: unknown) => void }
     bot.on('physicsTick', () => {
       try {
@@ -524,7 +527,9 @@ export class MovementManager {
             onGround: data.onGround,
             velocity: data.velocity,
             physicsEnabled: data.physicsEnabled,
-            blockAtFeet: data.blockAtFeet
+            blockAtFeet: data.blockAtFeet,
+            jumpControl: data.jumpControl,
+            forwardControl: data.forwardControl
           })
         }
       }
