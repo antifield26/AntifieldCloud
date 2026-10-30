@@ -482,7 +482,7 @@ export class MovementManager {
     for (const waypoint of plan.waypoints.slice(1)) {
       if (this.cancelled) return { ok: false, failure: 'stopped', reason: 'cancelled' }
       try {
-        await this.runPathWithWatchdog(new goals.GoalNear(waypoint.x, waypoint.y, waypoint.z, 0), 6000)
+        await this.runPathWithWatchdog(new goals.GoalNear(waypoint.x, waypoint.y, waypoint.z, 0), 12000)
         const now = Date.now()
         if (now - this.lastPlannerLogAt >= 800) {
           this.lastPlannerLogAt = now
