@@ -88,6 +88,11 @@ function compress (path: NavVector[]): NavVector[] {
     const previous = path[index - 1] as NavVector
     const current = path[index] as NavVector
     const next = path[index + 1] as NavVector
+    // 含高度变化的相邻路点不能折叠：折叠后会把“两级台阶”变成一次两格跳。
+    if (previous.y !== current.y || current.y !== next.y) {
+      result.push(current)
+      continue
+    }
     const directionA = `${current.x - previous.x},${current.y - previous.y},${current.z - previous.z}`
     const directionB = `${next.x - current.x},${next.y - current.y},${next.z - current.z}`
     if (directionA !== directionB) result.push(current)
