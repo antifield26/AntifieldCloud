@@ -4,7 +4,7 @@
 
 **项目定位：个人综合交互平台**——面向个人使用，以统一账号与单一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI 工作区，以及主机监控与备份灾备；`apps/workbench` 是 Web 端技术名。
 
-**当前版本 v1.0.6（2026-10-30 开发中，待部署）**：MC Bot 统一寻路层（pathfinder 快速路径 → 确定性 A* → 受控路点执行 → AI 路点建议 → 安全兜底），覆盖 1–5 级台阶、1 格矮墙、2 格墙绕行与 5 格垂直墙的明确失败；`navigation` 状态/事件/面板可见；不挖掘/不放置/不跑酷。v1.0.5 的在线模式/自动生存/清怪/多步目标已发布。app schema 保持 v18，mcbot 本地 `presence.json`/`goals.db` 为 additive；生产仍为 v1.0.5（app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`）；OpenCode **v2.2.0**；npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
+**当前版本 v1.0.6（2026-10-30 已部署开发构建，未发布；实机矩阵未通过）**：MC Bot 统一寻路层（pathfinder 快速路径 → 确定性 A* → 受控路点执行 → AI 路点建议 → 安全兜底），覆盖 1–5 级台阶、1 格矮墙、2 格墙绕行与 5 格垂直墙的明确失败；`navigation` 状态/事件/面板可见；不挖掘/不放置/不跑酷。v1.0.5 的在线模式/自动生存/清怪/多步目标已发布。整格台阶起跳在 mineflayer 4.39.0 + Paper 26.1 上失败并安全传送，未 Tag/Release。app schema 保持 v18，mcbot 本地 `presence.json`/`goals.db` 为 additive；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T140626Z`；OpenCode **v2.2.0**；npm workspaces 单仓库（`apps/workbench` + `apps/mcbot`）；文档入口 [docs/INDEX.md](docs/INDEX.md)。
 
 权威文档：
 - `docs/app/PLAN.md`：范围、决策、阶段与验收
@@ -59,7 +59,7 @@ npm run check:docs     # mcbot 文档声明/代码实现一致性检查
 node scripts/check-version.mjs # 校验 package.json 与 README/CHANGELOG/ACCEPTANCE/AGENTS/env.example/DEPLOY、lock 根版本，并交叉校验 deploy/tool-versions.json ↔ db.ts ↔ 文档当前事实
 ```
 
-当前基线（v1.0.6，2026-10-30 开发中）：`npm run check` 通过；app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**；`npm run build`、`check-version`（严格 1.0.6）、`check-naming`、`check:docs` 通过。生产仍为 v1.0.5（app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`），待实机矩阵通过后发布 v1.0.6。
+当前基线（v1.0.6，2026-10-30 已部署开发构建）：`npm run check` 通过；app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**；`npm run build`、`check-version`（严格 1.0.6）、`check-naming`、`check:docs` 通过。生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T140626Z`；实机矩阵卡在整格台阶起跳，未发布 Tag/Release。
 
 测试边界：禁止依赖真实 Minecraft、真实 OpenCode、真实 network；Bot 适配器（QQ 官方 Bot、Chat、图片下载、分段/格式化/自检/诊断）、备份 tar/age、告警投递等只使用进程内假平台/夹具（不访问真实平台或模型）。Windows 上无法测试的 systemd 相关用例用 `t.skip` 并在 Linux 上跑；`scripts/test/` 覆盖世界备份、恢复演练与异地副本规划等纯函数/夹具，不触碰真实 Pi。真实 QQ/Cloudflare/模型负路径需部署后联调，不把 mock 全绿等同于线上通过。
 

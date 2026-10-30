@@ -2,7 +2,7 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v1.0.6 开发中（2026-10-30，待部署）：MC Bot 统一寻路层（pathfinder → 确定性 A* → 受控执行 → 受控 AI 路点 → 安全兜底），覆盖 1–5 级台阶/矮墙/绕行，任务仍限安全区；在线模式/自动生存/清怪/多步目标为 v1.0.5 已发布能力。app/mcbot 当前生产仍为 v1.0.5（app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`）；schema 保持 18/OpenCode **v2.2.0**。v1.0.6 实机矩阵通过后再发布。详见 [v1.0.5 Debug](docs/app/DEBUG-AUDIT-v1.0.5.md)。
+> 状态：v1.0.6 **已部署开发构建，未发布**（2026-10-30）：MC Bot 统一寻路层（pathfinder → 确定性 A* → 受控执行 → 受控 AI 路点 → 安全兜底），任务仍限安全区；在线模式/自动生存/清怪/多步目标为 v1.0.5 已发布能力。app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T140626Z`；schema 保持 18/OpenCode **v2.2.0**。实机矩阵卡在整格台阶起跳（安全传送兜底），未 Tag/Release；详见 [v1.0.6 Debug](docs/app/DEBUG-AUDIT-v1.0.6.md)。
 > 测试基线（v1.0.6 开发中）：root `npm run check` 通过；app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**；`build`、`check-version`（严格 1.0.6）、`check-naming`、`check:docs` 通过；实机矩阵待执行。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
@@ -64,7 +64,7 @@
 
 ### mcbot Minecraft Bot（v0.8.0 引入；v1.0.5 常驻/生存/目标；v1.0.6 统一寻路）
 
-- 独立附属服务 `mcbot`（生产 **v1.0.5**，v1.0.6 待部署；最低 v0.6.0，契约 `contractVersion=1`，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。
+- 独立附属服务 `mcbot`（生产 **v1.0.6 开发构建，未发布**；最低 v0.6.0，契约 `contractVersion=1`，仅监听 `127.0.0.1:3010`）；应用通过服务端轮询 `GET /status` 与 `GET /events/recent?limit=200`（默认 5s）获取状态与最近事件，**浏览器不直连 mcbot**。
 - v1.0.5：在线模式 `auto/always/off` 持久化、空闲自动进食/换装、自动补货默认开启、安全区清怪任务、多步目标（task/deposit/home）与失败分类；目标重启后保持 paused，不自动执行。
 - v1.0.6：确定性 A*（只读现有地形，支持 1 格抬高/2 格下落/台阶半砖）、受控路点执行、AI 路点建议（OpenCode 可用时默认启用）、安全传送兜底与 `navigation` 状态；不挖掘/不放置/不跑酷。
 - 只读状态：运行状态、Minecraft 连接、服务器在线/TPS、mcbot 血量/饥饿、AI 队列、记忆、版本/契约、白名单数量、运行时长、断线记录；不可达/数据过期/部分轮询失败/旧版无事件流时显示缓存与可见降级说明。
