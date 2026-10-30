@@ -192,6 +192,73 @@ export class MovementManager {
     return spot
   }
 
+  /**
+   * 带停滞看门狗的路径执行：pathfinder 在高低差/地形边缘可能一直“原地跳”而不 reject。
+   * 位置 1.8 秒没有有效位移就停止路径并抛错，交给上层水平/安全点/传送兜底。
+   */
+  private async runPathWithWatchdog (goal: unknown, timeoutMs: number): Promise<void> {
+    const bot = this.requireBot()
+    if (!bot.entity) throw new MovementError('还没加载好位置')
+    const start = bot.entity.position.clone()
+    let last = start.clone()
+    let lastMovedAt = Date.now()
+    let settled = false
+    const watchdog = setInterval(() => {
+      if (settled || !bot.entity) return
+      const position = bot.entity.position
+      if (position.distanceTo(last) >= 0.25) {
+        last = position.clone()
+        lastMovedAt = Date.now()
+        return
+      }
+      if (Date.now() - lastMovedAt >= 1800) {
+        settled = true
+        this.logger.warn('movement path stuck; aborting to fallback', {
+          x: Math.round(position.x),
+          y: Math.round(position.y),
+          z: Math.round(position.z),
+          goal: start.distanceTo(position) > 0.1 ? 'progressing' : 'blocked'
+        })
+        try {
+          bot.pathfinder.stop()
+          bot.pathfinder.setGoal(null)
+        } catch {
+          // ignore
+        }
+      }
+    }, 250)
+    let timeout: NodeJS.Timeout | null = null
+    try {
+      await Promise.race([
+        bot.pathfinder.goto(goal),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            try {
+              bot.pathfinder.stop()
+              bot.pathfinder.setGoal(null)
+            } catch {
+              // ignore
+            }
+            reject(new MovementError('走不过去'))
+          }, timeoutMs)
+        }),
+        new Promise<never>((_resolve, reject) => {
+          const poll = setInterval(() => {
+            if (!settled) return
+            clearInterval(poll)
+            reject(new MovementError('卡住了'))
+          }, 200)
+          // 确保 settle 后即使路径 Promise 因 stop 静默，也能结束等待。
+          setTimeout(() => clearInterval(poll), timeoutMs + 1000).unref?.()
+        })
+      ])
+    } finally {
+      settled = true
+      clearInterval(watchdog)
+      if (timeout) clearTimeout(timeout)
+    }
+  }
+
   async goNearPoint (
     x: number,
     y: number,
@@ -205,22 +272,8 @@ export class MovementManager {
     if (!insideSafeZone(config, x, z)) throw new MovementError('目标在安全区外')
     const previous = this.current
     this.current = 'task'
-    let timeout: NodeJS.Timeout | null = null
     const tryGoto = async (goal: unknown): Promise<void> => {
-      timeout = null
-      await Promise.race([
-        bot.pathfinder.goto(goal),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(() => {
-            try {
-              bot.pathfinder.stop()
-            } catch {
-              // ignore
-            }
-            reject(new MovementError('走不过去'))
-          }, timeoutMs)
-        })
-      ])
+      await this.runPathWithWatchdog(goal, timeoutMs)
     }
     try {
       await tryGoto(new goals.GoalNear(x, y, z, radius))
@@ -266,7 +319,6 @@ export class MovementManager {
       }
       throw new MovementError(`走不过去：${firstError instanceof Error ? firstError.message : String(firstError)}`)
     } finally {
-      if (timeout) clearTimeout(timeout)
       this.current = previous
     }
   }
@@ -315,32 +367,10 @@ export class MovementManager {
       }
     }
     const goal = new goals.GoalNear(entity.position.x, entity.position.y, entity.position.z, 2)
-    let timeout: NodeJS.Timeout | null = null
     try {
-      await Promise.race([
-        bot.pathfinder.goto(goal).then(() => {
-          this.logger.debug('movement goto resolved', { target: username })
-        }, (error: unknown) => {
-          this.logger.debug('movement goto rejected', {
-            target: username,
-            name: error instanceof Error ? error.name : 'unknown',
-            message: error instanceof Error ? error.message : String(error)
-          })
-          throw error
-        }),
-        new Promise<never>((_resolve, reject) => {
-          timeout = setTimeout(() => {
-            this.logger.warn('movement come timeout', { target: username, timeoutMs })
-            try {
-              bot.pathfinder.stop()
-            } catch {
-              // ignore
-            }
-            reject(new MovementError('timeout'))
-          }, timeoutMs)
-        })
-      ])
+      await this.runPathWithWatchdog(goal, timeoutMs)
       if (this.cancelled) return 'cancelled'
+      this.logger.debug('movement goto resolved', { target: username })
       return 'arrived'
     } catch (error) {
       if (this.cancelled) return 'cancelled'
@@ -365,7 +395,6 @@ export class MovementManager {
       if (/Timeout|timeout|long to decide/i.test(message)) throw new MovementError('走太久了，我先停下')
       throw new MovementError(`移动失败：${message}`)
     } finally {
-      if (timeout) clearTimeout(timeout)
       if (this.current === 'come') this.current = null
     }
   }

@@ -269,6 +269,11 @@ async function main (): Promise<void> {
   const proactive = new ProactiveManager(config, logger.withScope('proactive'), chatSender)
   client.setSpawnHandler(() => {
     proactive.attach(client.getBot())
+    // 上线后先做一次生存/补货检查，避免空手/低饥饿状态下直接进入长路径任务。
+    setTimeout(() => {
+      void tasks.autoSurvival()
+      void tasks.autoRestock()
+    }, 3000).unref?.()
   })
 
   const http = new HttpApi({

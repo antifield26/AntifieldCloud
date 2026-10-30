@@ -993,11 +993,31 @@ export class TaskManager implements TaskController {
     if (!freshTool('iron_axe')) requests.push({ name: 'iron_axe', count: 1 })
     if (requests.length === 0) return
     this.restocking = true
-    const fake = this.createActive('fishing', randomUUID(), Date.now())
+    // 逐项补货：分类箱缺少铁镐不应阻断食物补给（否则 Bot 可能因饥饿死亡）。
+    const succeeded: string[] = []
+    const failures: string[] = []
     try {
-      await withdrawSupplies(this.context(fake, false), requests)
-      this.logger.info('auto restock done', { items: requests.map(request => request.name) })
-      await this.say('补给好了。')
+      for (const request of requests) {
+        const fake = this.createActive('fishing', randomUUID(), Date.now())
+        try {
+          await withdrawSupplies(this.context(fake, false), [request])
+          succeeded.push(request.name)
+        } catch (error) {
+          if (error instanceof TaskStopError) throw error
+          const message = error instanceof Error ? error.message : String(error)
+          failures.push(`${request.name}: ${message}`)
+          this.logger.warn('auto restock item failed', { item: request.name, error: message })
+        }
+      }
+      if (succeeded.length > 0) {
+        this.logger.info('auto restock done', { items: succeeded })
+        await this.say('补给好了。')
+      }
+      if (failures.length > 0 && succeeded.length === 0) {
+        const message = failures.join('；')
+        this.logger.warn('auto restock failed', { error: message })
+        this.deps.alerts?.raise('auto_restock_failed', `自动补货失败：${message}`, { error: message }, 'warning')
+      }
     } catch (error) {
       if (error instanceof TaskStopError) return
       const message = error instanceof Error ? error.message : String(error)
