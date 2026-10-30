@@ -1,12 +1,14 @@
 # AntifieldComplexx 验收记录
 
-> 当前版本 v1.0.4（2026-10-30 热修复，待部署）：修复 QQ Bot access_token 端点与备份面板历史错误误报；生产仍 v1.0.3。
+> 当前版本 v1.0.4（2026-10-30 已部署生产；未打 Tag/Release）：app 1.0.4/schema18/OpenCode 2.2.0、mcbot 1.0.4（自主模式已启用）。
 
-### v1.0.4 热修复（2026-10-30，待部署）
+### v1.0.4 热修复与生产验收（2026-10-30，已执行）
 
 - 范围：QQ Bot access_token 端点 `chatbots.qq.com` → `bots.qq.com`（连通性探针与测试同步）；备份 ack 清除历史 `last_error`，Dashboard/列表忽略已 ack/已删除归档错误。
-- 本地门禁：`npm run check`、`npm run build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 通过；app **593**（592 pass、1 skip）+ web 273 + mcbot 122；生产加密凭据实测 token 端点 200。
-- 生产部署、完整 smoke 与 QQ 出站恢复证据待执行后补充在这里。
+- 发布：app release `/opt/antifieldcloud/releases/20261030T005200Z`（1.0.4/schema18/OpenCode2.2.0）、mcbot release `/opt/mcbot/releases/20261030T005014Z`（1.0.4/contract1）；部署前 DB 快照 `db-predeploy-20261030T005346115Z.sqlite`（sha256 `11fd630d2299692e50730c4b6013688459dd90f48bc49aedbbd04fdfc4d00e26`），手工备份 `/var/backups/antifieldcomplexx/v1.0.4-predeploy-20261030T004824Z`。
+- 门禁：`npm run check`、`npm run build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 全绿；app **593**（592 pass、1 skip）+ web 273 + mcbot 122。
+- 生产验收：部署内只读 smoke **26/0/1/2**；完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；部署后用实际 QqAdapter 获取 access_token 成功；已 ack 归档历史错误清理为 0；生产 healthz app/mcbot 1.0.4。
+- 环境说明：PC 直连 Cloudflare 边缘偶发超时，完整 smoke 经 SSH SOCKS 由 Pi 出口执行并全绿。
 
 ### v1.0.3 生产部署与验收（2026-10-28，已执行）
 

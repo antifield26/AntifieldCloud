@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.4（2026-10-30 热修复，待部署）：修复 QQ Bot access_token 端点与备份面板历史错误误报；当前生产 v1.0.3（app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z`）；schema18/OpenCode 2.2.0；自主模式已启用（仅主人显式启动）。
+> 版本：v1.0.4（2026-10-30 已部署生产；未打 Tag/Release）：app `/opt/antifieldcloud/releases/20261030T005200Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`；schema18/OpenCode 2.2.0；修复 QQ Bot access_token 端点与备份面板历史错误误报；完整 Access smoke 36/0/1/2。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）

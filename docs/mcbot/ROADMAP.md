@@ -1,3 +1,8 @@
+## v1.0.4（**已部署生产（2026-10-30）；仅版本对齐**；QQ Bot 出站修复属于应用侧，mcbot 行为与 v1.0.3 相同）
+
+- **范围**：无功能变更；随统一版本轴发布，release `/opt/mcbot/releases/20261030T005014Z`。
+- **状态**：完整 Access smoke 36/0/1/2；未打 Tag/Release。
+
 ## v1.0.3（**已部署生产（2026-10-28）；已补发 Tag/Release**；环境感知 + 自主决策增强 + 文档-实现一致性审计）
 
 - **范围**：`observe` 有界环境快照（基础状态 + 安全区 allowlist 方块/容器扫描）、`inspect_chest` 只读容器、`eat`/`equip`、任务生命周期+安全阈值事件驱动重决策；新增 `docs/mcbot/CONSISTENCY-AUDIT.md` 与 `scripts/check-mcbot-claims.mjs`。

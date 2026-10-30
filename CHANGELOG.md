@@ -1,8 +1,8 @@
 # Changelog
 
-## [v1.0.4] - 2026-10-30（热修复；待部署）
+## [v1.0.4] - 2026-10-30（已部署生产；未打 Tag/Release）
 
-v1.0.4 修复 QQ Bot 出站 token 端点错误与备份面板历史错误误报；不改变 schema/API/安全边界，mcbot 仅版本对齐。
+v1.0.4 修复 QQ Bot 出站 token 端点错误与备份面板历史错误误报；不改变 schema/API/安全边界，mcbot 仅版本对齐。2026-10-30 已部署生产（app `/opt/antifieldcloud/releases/20261030T005200Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`）。
 
 ### Fixed
 
@@ -12,11 +12,12 @@ v1.0.4 修复 QQ Bot 出站 token 端点错误与备份面板历史错误误报�
 ### Verification
 
 - 本地：`npm run check`（含 docs/naming）、`npm run build`、`check-version`（严格 1.0.4）通过；app **593**（592 pass、1 skip）+ web **273** + mcbot **122**；QQ token 端点用生产加密凭据实测返回 200（不打印 Token）。
-- 生产部署与 smoke 待执行；执行后在本节补充 release、smoke 与 QQ 出站恢复证据。
+- 生产：部署内只读 smoke **26/0/1/2**，完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；app 1.0.4/schema18/OpenCode2.2.0，mcbot 1.0.4/contract1；部署后已用实际部署代码获取 QQ access_token 成功，并清除 1 条已 ack 归档历史 `last_error`。
+- 部署前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261030T005346115Z.sqlite`（sha256 `11fd630d2299692e50730c4b6013688459dd90f48bc49aedbbd04fdfc4d00e26`）；手工备份 `/var/backups/antifieldcomplexx/v1.0.4-predeploy-20261030T004824Z`。
 
 ### Migration / Rollback
 
-- 无 schema/DB 迁移；回滚切回上一 app/mcbot release 并恢复部署前 env；QQ 修复与备份错误展示均为应用侧变更。
+- 无 schema/DB 迁移；回滚切回 app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z` 并恢复部署前 env；QQ 修复与备份错误展示均为应用侧变更。未打 Tag/Release。
 
 ## [v1.0.3] - 2026-10-28（已部署生产；已补发 Tag/Release）
 

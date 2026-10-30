@@ -4,11 +4,11 @@
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.4 当前状态（热修复，待部署）
+## v1.0.4 当前状态（已部署生产）
 
-- **版本**：**v1.0.4**（统一版本轴，待部署）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.4**（仅版本对齐，契约 v1）。
+- **版本**：**v1.0.4**（统一版本轴，已部署生产）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.4**（仅版本对齐，契约 v1）。
 - **范围**：QQ Bot access_token 端点修正为 `bots.qq.com`；备份 ack 清除历史错误，Dashboard/列表忽略已 ack/已删除归档错误。
-- **状态**：生产当前 v1.0.3；本地门禁通过，部署与 smoke 待执行。
+- **状态**：app release `/opt/antifieldcloud/releases/20261030T005200Z`、mcbot release `/opt/mcbot/releases/20261030T005014Z`；完整 Access smoke 36/0/1/2；部署后 QqAdapter access_token 获取成功；Windows 任务标记 1.0.4；未打 Tag/Release。
 - **边界**：无 schema/API/安全边界变更；不修改 Minecraft/OpenCode/frpc/SSH 配置。
 - **测试基线**：`npm run check`（含 `check:docs`）通过；app **593**（592 pass、1 skip）+ web 273 + mcbot 122；`build`/`check-version`（严格 1.0.4）/`check:naming` 通过。
 

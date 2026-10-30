@@ -1,10 +1,10 @@
 # 路线图
 
-## v1.0.4（**热修复（2026-10-30）；待部署**；QQ Bot token 端点 + 备份历史错误误报；schema v18/OpenCode 2.2.0 不变）
+## v1.0.4（**已部署生产（2026-10-30）；未打 Tag/Release**；QQ Bot token 端点 + 备份历史错误误报；schema v18/OpenCode 2.2.0 不变）
 
 - **范围**：QQ Bot access_token 端点修正为 `bots.qq.com`；备份 ack 清除历史错误，Dashboard/列表忽略已 ack/已删除归档错误。
 - **边界**：无 schema/API/安全边界变更；mcbot 仅版本对齐。
-- **状态**：本地门禁通过，生产待部署。
+- **状态**：app `/opt/antifieldcloud/releases/20261030T005200Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`；完整 Access smoke 36/0/1/2；部署后 QqAdapter access_token 获取成功。
 
 ## v1.0.3（**已部署生产（2026-10-28）；已补发 Tag/Release**；mcbot 环境感知与自主决策增强 + 文档-实现一致性审计；schema v18/OpenCode 2.2.0 不变）
 
