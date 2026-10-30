@@ -12,7 +12,7 @@
 - 实机矩阵：1/2/3/5 级台阶逐级到达（无传送）；1 格矮墙/2 格墙绕行无传送；5 格垂直墙超时后安全传送且不卡死；安全区外 `过来` 到 x=243.5、无传送。
 - 生产：app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；部署内 smoke **26/0/1/2**。
 - 未单独执行：主动取消/死亡、`PATH_AI_ENABLED=false` 实机重跑；由单元/集成覆盖控制清理与关闭路径。
-- 发布：核心矩阵通过，创建 v1.0.6 Tag/Release。
+- 发布：已创建 annotated Tag `v1.0.6` 与 GitHub Release（`e3f3da5`）。
 
 ### v1.0.5 部署与实机验收（2026-10-30，已执行）
 

@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.6（2026-10-30 已部署，核心实机矩阵通过）：MC Bot 统一寻路层（确定性 A* + 受控执行 + AI 路点 + 安全兜底）、`navigation` 状态/app 显示；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；schema18/OpenCode 2.2.0。
+> 版本：v1.0.6（2026-10-30 已部署，核心实机矩阵通过）：MC Bot 统一寻路层（确定性 A* + 受控执行 + AI 路点 + 安全兜底）、`navigation` 状态/app 显示；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；schema18/OpenCode 2.2.0；已发布 Tag/Release `v1.0.6`。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）
