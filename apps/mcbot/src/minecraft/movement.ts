@@ -414,17 +414,15 @@ export class MovementManager {
     const client = bot._client as unknown as { write: (name: string, data: unknown) => void }
     bot.on('physicsTick', () => {
       try {
-        client.write('player_input', {
-          inputs: {
-            forward: bot.getControlState('forward'),
-            backward: bot.getControlState('back'),
-            left: bot.getControlState('left'),
-            right: bot.getControlState('right'),
-            jump: bot.getControlState('jump'),
-            shift: bot.getControlState('sneak'),
-            sprint: bot.getControlState('sprint')
-          }
-        })
+        const flags =
+          (bot.getControlState('forward') ? 1 : 0) |
+          (bot.getControlState('back') ? 2 : 0) |
+          (bot.getControlState('left') ? 4 : 0) |
+          (bot.getControlState('right') ? 8 : 0) |
+          (bot.getControlState('jump') ? 16 : 0) |
+          (bot.getControlState('sneak') ? 32 : 0) |
+          (bot.getControlState('sprint') ? 64 : 0)
+        client.write('player_input', { inputs: { _value: flags } })
       } catch {
         // 连接切换期间忽略；下一次 physicsTick 继续同步。
       }
