@@ -2,13 +2,13 @@
 
 > 当前版本 v1.0.4（2026-10-30 已部署生产；未打 Tag/Release）：app 1.0.4/schema18/OpenCode 2.2.0、mcbot 1.0.4（自主模式已启用）。
 
-### v1.0.4 热修复与生产验收（2026-10-30，已执行）
+### v1.0.4 主更新与生产验收（2026-10-30，已执行）
 
-- 范围：QQ Bot access_token 端点 `chatbots.qq.com` → `bots.qq.com`（连通性探针与测试同步）；备份 ack 清除历史 `last_error`，Dashboard/列表忽略已 ack/已删除归档错误。
-- 发布：app release `/opt/antifieldcloud/releases/20261030T005200Z`（1.0.4/schema18/OpenCode2.2.0）、mcbot release `/opt/mcbot/releases/20261030T005014Z`（1.0.4/contract1）；部署前 DB 快照 `db-predeploy-20261030T005346115Z.sqlite`（sha256 `11fd630d2299692e50730c4b6013688459dd90f48bc49aedbbd04fdfc4d00e26`），手工备份 `/var/backups/antifieldcomplexx/v1.0.4-predeploy-20261030T004824Z`。
-- 门禁：`npm run check`、`npm run build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 全绿；app **593**（592 pass、1 skip）+ web 273 + mcbot 122。
-- 生产验收：部署内只读 smoke **26/0/1/2**；完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；部署后用实际 QqAdapter 获取 access_token 成功；已 ack 归档历史错误清理为 0；生产 healthz app/mcbot 1.0.4。
-- 环境说明：PC 直连 Cloudflare 边缘偶发超时，完整 smoke 经 SSH SOCKS 由 Pi 出口执行并全绿。
+- 范围：**Bot 出站可用性中心**（`ChatbotStatus.outbound` 健康快照、`chatbot_outbound_down` firing/resolved 告警、批量重试 failed/dead 且排除 `partial_text_sent`、管理页出站状态/最近成功及批量重试确认）；QQ Bot access_token 端点 `chatbots.qq.com` → `bots.qq.com`；备份 ack 清除历史 `last_error`，Dashboard/列表忽略已 ack/已删除归档错误。
+- 发布：app release `/opt/antifieldcloud/releases/20261030T021856Z`（1.0.4/schema18/OpenCode2.2.0/commit `c5a69bd`）、mcbot release `/opt/mcbot/releases/20261030T005014Z`（1.0.4/contract1）；部署前 DB 快照 `db-predeploy-20261030T021908886Z.sqlite`（sha256 `7c8c474a2161221172928535fc626bac1d685e1232593497723b717a50ee1872`），手工备份 `/var/backups/antifieldcomplexx/v1.0.4-final-predeploy-20261030T020959Z`；上一 app release 为热修 `/opt/antifieldcloud/releases/20261030T005200Z`。
+- 门禁：`npm run check`、`npm run build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 全绿；app **603**（602 pass、1 skip）+ web **274** + mcbot 122。
+- 生产验收：部署内只读 smoke **26/0/1/2**；完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；生产 outbound 快照 `active=true, degraded=false, recentFailures=0`，51 条历史死信不触发告警、`chatbot_outbound_down` 无 firing 事件；部署后用实际 QqAdapter 获取 access_token 成功；已 ack 归档历史错误清理为 0；生产 healthz app/mcbot 1.0.4。
+- 环境说明：PC 直连 Cloudflare 边缘偶发超时，完整 smoke 经 SSH SOCKS 由 Pi 出口执行并全绿；本地备份根使用 `D:\Backups\AntifieldCloud`。
 
 ### v1.0.3 生产部署与验收（2026-10-28，已执行）
 

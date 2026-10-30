@@ -1,8 +1,13 @@
 # Changelog
 
-## [v1.0.4] - 2026-10-30（已部署生产；未打 Tag/Release）
+## [v1.0.4] - 2026-10-30（已部署生产（最终构建）；未打 Tag/Release）
 
-v1.0.4 修复 QQ Bot 出站 token 端点错误与备份面板历史错误误报；不改变 schema/API/安全边界，mcbot 仅版本对齐。2026-10-30 已部署生产（app `/opt/antifieldcloud/releases/20261030T005200Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`）。
+v1.0.4 主更新为 **Bot 出站可用性中心**：管理页可见出站健康快照、连续失败触发 `chatbot_outbound_down` 告警、失败/死信可受控批量重试；同时修复 QQ Bot 出站 token 端点与备份面板历史错误误报。不改变 schema/API 破坏性契约，mcbot 仅版本对齐。2026-10-30 已部署生产（app `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`）。
+
+### Added
+
+- **Bot 出站可用性**：`ChatbotStatus.outbound` 聚合 enabled Bot 的投递/发布队列；窗口内失败达到阈值且晚于最近成功时 `degraded=true`，新成功发送后恢复。新增 `chatbot_outbound_down` firing/resolved 告警，凭据类错误为 critical；历史死信只计数、不永久触发。
+- **管理端重试**：新增 `POST /api/chatbots/:id/deliveries/retry-failed`，批量最多 20 条 failed/dead，排除 `partial_text_sent`；`/chatbots` 概览显示出站状态/最近成功，投递面板增加批量重试与确认。
 
 ### Fixed
 
@@ -11,13 +16,13 @@ v1.0.4 修复 QQ Bot 出站 token 端点错误与备份面板历史错误误报�
 
 ### Verification
 
-- 本地：`npm run check`（含 docs/naming）、`npm run build`、`check-version`（严格 1.0.4）通过；app **593**（592 pass、1 skip）+ web **273** + mcbot **122**；QQ token 端点用生产加密凭据实测返回 200（不打印 Token）。
-- 生产：部署内只读 smoke **26/0/1/2**，完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；app 1.0.4/schema18/OpenCode2.2.0，mcbot 1.0.4/contract1；部署后已用实际部署代码获取 QQ access_token 成功，并清除 1 条已 ack 归档历史 `last_error`。
-- 部署前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261030T005346115Z.sqlite`（sha256 `11fd630d2299692e50730c4b6013688459dd90f48bc49aedbbd04fdfc4d00e26`）；手工备份 `/var/backups/antifieldcomplexx/v1.0.4-predeploy-20261030T004824Z`。
+- 本地：`npm run check`（含 docs/naming）、`npm run build`、`check-version`（严格 1.0.4）通过；app **603**（602 pass、1 skip）+ web **274** + mcbot **122**；QQ token 端点用生产加密凭据实测返回 200（不打印 Token）。
+- 生产：部署内只读 smoke **26/0/1/2**，完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；app 1.0.4/schema18/OpenCode2.2.0，mcbot 1.0.4/contract1；生产 outbound 快照 `active=true, degraded=false, recentFailures=0`，51 条历史死信不触发告警，`chatbot_outbound_down` 无 firing 事件；部署后已用实际部署代码获取 QQ access_token 成功，并清除 1 条已 ack 归档历史 `last_error`。
+- 部署前 DB 快照 `/var/lib/antifieldcloud/backups/db-predeploy-20261030T021908886Z.sqlite`（sha256 `7c8c474a2161221172928535fc626bac1d685e1232593497723b717a50ee1872`）；手工备份 `/var/backups/antifieldcomplexx/v1.0.4-final-predeploy-20261030T020959Z`。
 
 ### Migration / Rollback
 
-- 无 schema/DB 迁移；回滚切回 app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z` 并恢复部署前 env；QQ 修复与备份错误展示均为应用侧变更。未打 Tag/Release。
+- 无 schema/DB 迁移；上一 app release 为热修构建 `/opt/antifieldcloud/releases/20261030T005200Z`，回滚切回该 release 并恢复部署前 env；mcbot 保持 `/opt/mcbot/releases/20261030T005014Z`。出站健康/告警/重试均为应用侧变更。未打 Tag/Release。
 
 ## [v1.0.3] - 2026-10-28（已部署生产；已补发 Tag/Release）
 

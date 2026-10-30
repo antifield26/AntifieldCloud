@@ -2,8 +2,8 @@
 
 面向 Raspberry Pi 5（8 GB，Debian 13）的个人综合交互平台：统一登录与单一入口，整合云盘、知识库（笔记附件/版本历史）、多文件分享、Minecraft 状态与白名单、mcbot Minecraft Bot 对接（只读状态/任务与移动控制/游戏内聊天/事件流与告警历史）、opencode AI 工作区入口、QQ 官方机器人、PWA、主机指标历史与告警，以及应用归档（可选整包加密 + 异地副本，默认关闭）+ 世界一致性备份 + 恢复演练的灾备链路。
 
-> 状态：v1.0.4 已部署生产（2026-10-30）：app release `/opt/antifieldcloud/releases/20261030T005200Z`、mcbot release `/opt/mcbot/releases/20261030T005014Z`；schema18/OpenCode **v2.2.0**；修复 QQ Bot access_token 端点与备份面板历史错误误报；完整 Access smoke **36/0/1/2**（WARN=恢复演练 schema17，2 SKIP=加密/异地默认关闭）；已用部署后代码验证 QQ access_token 获取成功；未打 Tag/Release。
-> 测试基线（v1.0.4）：root `npm run check` 通过；app 593（592 pass、1 skip）+ web 273（49 文件）+ mcbot **122**；`build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 通过。
+> 状态：v1.0.4 主更新已部署生产（2026-10-30）：app release `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot release `/opt/mcbot/releases/20261030T005014Z`；schema18/OpenCode **v2.2.0**；主更新 **Bot 出站可用性中心**（出站健康快照、`chatbot_outbound_down` 告警、批量重试 failed/dead、管理页状态），并修复 QQ Bot access_token 端点与备份面板历史错误误报；完整 Access smoke **36/0/1/2**（WARN=恢复演练 schema17，2 SKIP=加密/异地默认关闭）；生产出站快照 `degraded=false`、目标告警无 firing；未打 Tag/Release。
+> 测试基线（v1.0.4）：root `npm run check` 通过；app **603**（602 pass、1 skip）+ web **274**（49 文件）+ mcbot **122**；`build`、`check-version`（严格 1.0.4）、`check-naming`、`check:docs` 通过。
 > 命名：2026-10-27 起项目更名为 **AntifieldComplexx**（原 AntifieldCloud）；GitHub 仓库为 [antifield26/AntifieldComplexx](https://github.com/antifield26/AntifieldComplexx)，旧仓库地址由 GitHub 自动重定向。生产运行时标识符（服务用户、systemd 单元、数据路径、Windows 计划任务）保持不变，详见 [AGENTS.md](AGENTS.md) §0.1。
 > 部署与运维见 [docs/app/DEPLOY.md](docs/app/DEPLOY.md)，备份/恢复见 [docs/app/BACKUP.md](docs/app/BACKUP.md)，契约见 [docs/app/API.md](docs/app/API.md)，路线与验收记录见 [docs/app/ROADMAP.md](docs/app/ROADMAP.md) 与 [docs/app/ACCEPTANCE.md](docs/app/ACCEPTANCE.md)。
 
@@ -202,7 +202,7 @@ docs/      架构、安全、部署、备份、Bot 集成、API、UI、审计与
 - QQ 群/频道触发限制：只有 @Bot 事件进入 Bot，普通群消息不推送（平台限制）；C2C 私聊直接进入 Chat。若需要群内全量对话，需 QQ 后台开启接收所有消息并由群主授权获取全部消息。
 - Cloudflare Access 与 QQ 回调已配置并验收；后续仅需轮换 service token/高权限 API Token，并持续复跑带 token 的 smoke。
 - 备份已知残留：增量水位受系统时钟回拨/同毫秒写入影响（DR-1，`clockSkew` 状态可见，不自动修正）；Web 导入归档按 90 天保留；告警持续 firing 每 24h 重通知；`.backup.lock` 有 30s 心跳续租。
-- **发布状态**：v1.0.4（2026-10-30）已部署生产，修复 QQ Bot access_token 端点与备份面板历史错误误报；完整 Access smoke 36/0/1/2；未打 Tag/Release。历史发布记录见 [CHANGELOG.md](CHANGELOG.md)。
+- **发布状态**：v1.0.4（2026-10-30）主更新已部署生产：Bot 出站可用性中心 + QQ Bot access_token 端点修复 + 备份面板历史错误修复；完整 Access smoke 36/0/1/2；未打 Tag/Release。历史发布记录见 [CHANGELOG.md](CHANGELOG.md)。
 - **mcbot 告警只有事件语义**：上游 `alert` 映射为 `status='event'` 历史事件，不参与 firing/resolved 状态机，也没有恢复通知/冷却；上游告警状态需在 mcbot 侧查看（本应用只记录与转发）。
 - **mcbot 聊天/事件不持久化**：事件流与聊天只存在进程内存（最多 100 条且序列化 ≤512 KiB），应用或 mcbot 重启即丢失；历史接口只返回 mcbot 自己的 samples/alerts，不保存聊天正文。
 - **mcbot 轮询延迟与单实例**：状态/事件最多滞后一个轮询周期（默认 5s），控制结果最终一致；单进程内存缓存，不支持多实例/多副本；mcbot 不可达/数据过期/部分轮询失败时展示缓存与可见警告并降级。
