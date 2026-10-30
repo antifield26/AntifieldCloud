@@ -8,7 +8,7 @@
 
 - **版本**：**v1.0.4**（统一版本轴，已部署生产最终构建）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.4**（仅版本对齐，契约 v1）。
 - **范围**：主更新 Bot 出站可用性中心（`ChatbotStatus.outbound`、`chatbot_outbound_down` 告警、批量重试、管理页状态）；QQ Bot access_token 端点修正为 `bots.qq.com`；备份 ack 清除历史错误，Dashboard/列表忽略已 ack/已删除归档错误。
-- **状态**：app release `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot release `/opt/mcbot/releases/20261030T005014Z`；完整 Access smoke 36/0/1/2；生产 outbound `degraded=false`、无 firing；Windows 任务标记 1.0.4；未打 Tag/Release。
+- **状态**：app release `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot release `/opt/mcbot/releases/20261030T005014Z`；完整 Access smoke 36/0/1/2；生产 outbound `degraded=false`、无 firing；Windows 任务标记 1.0.4；已发布 Tag/Release。
 - **边界**：无 schema/API/安全边界变更；不修改 Minecraft/OpenCode/frpc/SSH 配置。
 - **测试基线**：`npm run check`（含 `check:docs`）通过；app **603**（602 pass、1 skip）+ web **274** + mcbot 122；`build`/`check-version`（严格 1.0.4）/`check:naming` 通过。
 

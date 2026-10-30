@@ -1,8 +1,8 @@
 # Changelog
 
-## [v1.0.4] - 2026-10-30（已部署生产（最终构建）；未打 Tag/Release）
+## [v1.0.4] - 2026-10-30（已部署生产（最终构建）；已发布 Tag/Release）
 
-v1.0.4 主更新为 **Bot 出站可用性中心**：管理页可见出站健康快照、连续失败触发 `chatbot_outbound_down` 告警、失败/死信可受控批量重试；同时修复 QQ Bot 出站 token 端点与备份面板历史错误误报。不改变 schema/API 破坏性契约，mcbot 仅版本对齐。2026-10-30 已部署生产（app `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`）。
+v1.0.4 主更新为 **Bot 出站可用性中心**：管理页可见出站健康快照、连续失败触发 `chatbot_outbound_down` 告警、失败/死信可受控批量重试；同时修复 QQ Bot 出站 token 端点与备份面板历史错误误报。不改变 schema/API 破坏性契约，mcbot 仅版本对齐。2026-10-30 已部署生产（app `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`），已发布 [GitHub Release v1.0.4](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.0.4)。
 
 ### Added
 
@@ -22,7 +22,7 @@ v1.0.4 主更新为 **Bot 出站可用性中心**：管理页可见出站健康�
 
 ### Migration / Rollback
 
-- 无 schema/DB 迁移；上一 app release 为热修构建 `/opt/antifieldcloud/releases/20261030T005200Z`，回滚切回该 release 并恢复部署前 env；mcbot 保持 `/opt/mcbot/releases/20261030T005014Z`。出站健康/告警/重试均为应用侧变更。未打 Tag/Release。
+- 无 schema/DB 迁移；上一 app release 为热修构建 `/opt/antifieldcloud/releases/20261030T005200Z`，回滚切回该 release 并恢复部署前 env；mcbot 保持 `/opt/mcbot/releases/20261030T005014Z`。出站健康/告警/重试均为应用侧变更。已发布 Tag v1.0.4 + GitHub Release。
 
 ## [v1.0.3] - 2026-10-28（已部署生产；已补发 Tag/Release）
 
