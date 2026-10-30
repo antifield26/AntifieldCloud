@@ -1,6 +1,6 @@
 # AntifieldComplexx 文档索引
 
-> 版本：v1.0.4（2026-10-30 已部署生产最终构建；已发布 Tag/Release）：app `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`；schema18/OpenCode 2.2.0；主更新 Bot 出站可用性中心（健康快照/告警/批量重试），并修复 QQ access_token 端点与备份面板历史错误误报；完整 Access smoke 36/0/1/2。
+> 版本：v1.0.5（2026-10-30 已部署；已发布 Tag/Release）：app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`；schema18/OpenCode 2.2.0；主更新 MC Bot 在线模式/自动生存/清怪/多步目标与高低差回退，并完成全仓 Debug；复杂高差仍可能安全传送（见 [DEBUG-AUDIT](app/DEBUG-AUDIT-v1.0.5.md)）。
 > 项目定位：**个人综合交互平台**——统一账号与入口整合个人数据与分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备。
 
 ## 应用（apps/workbench，Web 端）
@@ -15,9 +15,10 @@
 | [BACKUP](app/BACKUP.md) | 应用归档、世界备份、恢复演练 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
-| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录 |
+| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.5 实机结果与残余） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
 | [AUDIT](app/AUDIT.md) | 审计发现与残余风险 |
+| [DEBUG-AUDIT-v1.0.5](app/DEBUG-AUDIT-v1.0.5.md) | v1.0.5 全仓 Debug、寻路根因分析与 v1.0.6 建议 |
 
 ## Minecraft bot（apps/mcbot）
 
@@ -29,7 +30,7 @@
 | [ROADMAP](mcbot/ROADMAP.md) | mcbot 版本边界与后续规划 |
 | [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录 |
 | [AGENTIC-ACCEPTANCE](mcbot/AGENTIC-ACCEPTANCE.md) | AI 自主会话的离线/实机 Agentic 验收流程 |
-| [CONSISTENCY-AUDIT](mcbot/CONSISTENCY-AUDIT.md) | v1.0.3 文档声明与代码实现一致性审计矩阵 |
+| [CONSISTENCY-AUDIT](mcbot/CONSISTENCY-AUDIT.md) | v1.0.5 文档声明与代码实现一致性审计矩阵 |
 
 ## 历史归档（Legacy）
 

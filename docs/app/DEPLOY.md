@@ -15,7 +15,9 @@
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
 
-> **v1.0.4 生产记录（2026-10-30，主更新 + 热修复）**：app release `/opt/antifieldcloud/releases/20261030T021856Z`（1.0.4/schema18/OpenCode 2.2.0/commit `c5a69bd`），mcbot release `/opt/mcbot/releases/20261030T005014Z`（1.0.4/contract1）；主更新 **Bot 出站可用性中心**（健康快照、`chatbot_outbound_down` 告警、批量重试 failed/dead、管理页状态）；QQ access_token 端点修正为 `https://bots.qq.com/app/getAppAccessToken`；备份 ack/展示忽略已确认归档历史错误；无 schema 迁移；部署前 DB 快照 `db-predeploy-20261030T021908886Z.sqlite`（sha256 `7c8c47…1872`），手工备份 `/var/backups/antifieldcomplexx/v1.0.4-final-predeploy-20261030T020959Z`；部署内 smoke **26/0/1/2**、完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；部署后 QqAdapter access_token 获取成功，outbound `degraded=false` 且目标告警无 firing；上一热修 app release `/opt/antifieldcloud/releases/20261030T005200Z`；已发布 Tag v1.0.4 + GitHub Release。
+> **v1.0.5 生产记录（2026-10-30，MC Bot 修复/新特性 + 全仓 Debug）**：app release `/opt/antifieldcloud/releases/20261030T110436Z`（1.0.5/schema18/OpenCode 2.2.0），mcbot release `/opt/mcbot/releases/20261030T120449Z`（1.0.5/contract1）；部署前 app DB 快照 `db-predeploy-20261030T110524704Z.sqlite`；mcbot 部署前备份 `/var/backups/antifieldcomplexx/mcbot-*-predeploy-20261030T110404Z`；app schema 无迁移，mcbot 本地 `presence.json`/`goals.db` additive；部署内 smoke **26/0/1/2**，最终本机 smoke **29/0/1/2**（WARN=drill schema17；SKIP=加密/异地关闭）；Windows 任务标记 1.0.5；实机在线模式/目标/清怪/自动生存通过；复杂高差路径仍可能安全传送（见 `docs/app/DEBUG-AUDIT-v1.0.5.md`）；已发布 Tag v1.0.5 + GitHub Release。
+
+> **v1.0.4 生产记录（2026-10-30，历史）**：app release `/opt/antifieldcloud/releases/20261030T021856Z`（1.0.4/schema18/OpenCode 2.2.0/commit `c5a69bd`），mcbot release `/opt/mcbot/releases/20261030T005014Z`（1.0.4/contract1）；主更新 **Bot 出站可用性中心**（健康快照、`chatbot_outbound_down` 告警、批量重试 failed/dead、管理页状态）；QQ access_token 端点修正为 `https://bots.qq.com/app/getAppAccessToken`；备份 ack/展示忽略已确认归档历史错误；无 schema 迁移；部署前 DB 快照 `db-predeploy-20261030T021908886Z.sqlite`（sha256 `7c8c47…1872`），手工备份 `/var/backups/antifieldcomplexx/v1.0.4-final-predeploy-20261030T020959Z`；部署内 smoke **26/0/1/2**、完整 Access smoke **36/0/1/2**（含 Windows 任务标记 1.0.4；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；部署后 QqAdapter access_token 获取成功，outbound `degraded=false` 且目标告警无 firing；上一热修 app release `/opt/antifieldcloud/releases/20261030T005200Z`；已发布 Tag v1.0.4 + GitHub Release。
 
 > **v1.0.3 生产记录（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T144416Z`（1.0.3/schema18/OpenCode 2.2.0/commit `b385d02`），mcbot release `/opt/mcbot/releases/20261028T144253Z`（1.0.3/contract1）；部署内只读 smoke 26/0/1/2、完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.3；WARN=drill schema17；2 SKIP=加密/异地默认关闭）；部署前 DB 快照 `db-predeploy-20261028T144601033Z.sqlite`（sha256 `540457…b00a`）；实机 Agentic `observe`+`task_status`+`finish`（toolCalls=3，低血告警触发重决策，session/MCP 清理）；自主模式已启用（仅主人显式启动），`FORCE_ONLINE=false`；已补发 Tag `v1.0.3` + [GitHub Release](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.0.3)。
 
@@ -197,16 +199,16 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.0 应用部署步骤（当前版本 v1.0.4；schema v18）
+### 3.0 应用部署步骤（当前版本 v1.0.5；schema v18）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-30 v1.0.4 本地实测：app **603**（602 pass、1 skip）、`test:web` **274**（49 文件）、mcbot **122**、服务端覆盖率 **93.10/78.88/88.86**、前端 **56.27/51.88/49.16**、check-version 期望 `1.0.4`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-30 v1.0.5 本地实测：app **603**（602 pass、1 skip）、`test:web` **275**（49 文件）、mcbot **127**、check-version 期望 `1.0.5`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.2.0**：当前已升级并验收（按 §3.2）；本版本不重复升级。
 4. **部署**：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本执行预检/构建/上传 tar SHA-256 校验/`npm ci --omit=dev`/迁移前 DB 快照/
    `APP_VERSION=1.0.4` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
-   **4.1 mcbot**：先部署 mcbot v1.0.4（最低 v0.6.0，仅版本对齐，环境键不变），确认仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），再部署应用并验证 `/api/mcbot/status`。2026-10-30 按“mcbot 1.0.4 → app 1.0.4”执行。
+   **4.1 mcbot**：先部署 mcbot v1.0.5（最低 v0.6.0；新增 presence/goals/survival 本地文件，HTTP 契约仍 v1），确认仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），再部署应用并验证 `/api/mcbot/status`、`/api/mcbot/presence`、`/api/mcbot/goals`。2026-10-30 按“mcbot 1.0.5 → app 1.0.5”执行。
 5. **验证**：预期 `/healthz` = `{"ok":true,"version":"1.0.4","schemaVersion":18,...}`；smoke 使用
    `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.4 -ExpectedSchemaVersion 18 -ExpectedOpenCodeVersion 2.2.0 -ExpectedMcbotVersion 1.0.4`
    （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/mcbot 服务与版本/本地任务安装标记；

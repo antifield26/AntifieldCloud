@@ -1,23 +1,27 @@
-# AntifieldComplexx v1.0.4 实施计划（当前状态）
+# AntifieldComplexx v1.0.5 实施计划（当前状态）
 
-本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`。
+本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；全仓 Debug 与寻路残余见 `docs/app/DEBUG-AUDIT-v1.0.5.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.4 当前状态（已部署生产）
+## v1.0.5 当前状态（已部署生产）
 
-- **版本**：**v1.0.4**（统一版本轴，已部署生产最终构建）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.4**（仅版本对齐，契约 v1）。
-- **范围**：主更新 Bot 出站可用性中心（`ChatbotStatus.outbound`、`chatbot_outbound_down` 告警、批量重试、管理页状态）；QQ Bot access_token 端点修正为 `bots.qq.com`；备份 ack 清除历史错误，Dashboard/列表忽略已 ack/已删除归档错误。
-- **状态**：app release `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot release `/opt/mcbot/releases/20261030T005014Z`；完整 Access smoke 36/0/1/2；生产 outbound `degraded=false`、无 firing；Windows 任务标记 1.0.4；已发布 Tag/Release。
-- **边界**：无 schema/API/安全边界变更；不修改 Minecraft/OpenCode/frpc/SSH 配置。
-- **测试基线**：`npm run check`（含 `check:docs`）通过；app **603**（602 pass、1 skip）+ web **274** + mcbot 122；`build`/`check-version`（严格 1.0.4）/`check:naming` 通过。
+- **版本**：**v1.0.5**（统一版本轴，已部署生产并发布 Tag/Release）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.5**（契约 v1）。
+- **范围**：mcbot 在线模式 `auto/always/off` 持久化、空闲自动进食/换装/补货默认开启、安全区清怪 `clearing`、多步目标/长期记忆/失败分类、PaperMC 高低差路径停滞看门狗/起跳重试/安全传送；app 代理与面板卡片；全仓 Debug。
+- **状态**：app release `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot release `/opt/mcbot/releases/20261030T120449Z`；部署内 smoke 26/0/1/2、本机 smoke 29/0/1/2；Windows 任务标记 1.0.5；**高差路径复杂场景仍可能安全传送，未记为规范寻路通过**。
+- **边界**：app schema 无迁移；mcbot 本地 `presence.json`/`goals.db` 为 additive；目标需主人显式启动，重启保持 paused；不新增任意命令/挖掘/建造/越界行为。
+- **测试基线**：`npm run check` 通过；app **603**（602 pass、1 skip）+ web **275** + mcbot **127**；`build`/`check-version`（严格 1.0.5）/`check:naming`/`check:docs` 通过。
+
+## v1.0.4 已部署状态（历史）
+
+- **版本**：v1.0.4；schema v18/OpenCode v2.2.0；mcbot v1.0.4（仅版本对齐）。
+- **范围**：Bot 出站可用性中心；QQ Bot access_token 端点修复；备份 ack 历史错误修复。
+- **状态**：app `/opt/antifieldcloud/releases/20261030T021856Z`、mcbot `/opt/mcbot/releases/20261030T005014Z`；完整 Access smoke 36/0/1/2。
 
 ## v1.0.3 已部署状态（历史）
 
-- **版本**：**v1.0.2**（统一版本轴，生产已部署）；schema **v18**；OpenCode **v2.2.0**；Node.js **v26.12.1**；mcbot **v1.0.2**（契约 v1）。
-- **状态**：v1.0.2 **已部署生产（2026-10-28）**：app release `/opt/antifieldcloud/releases/20261028T085429Z`（1.0.2/schema18/OpenCode 2.2.0）、mcbot release `/opt/mcbot/releases/20261028T091246Z`（1.0.2，自主模式已启用，仅主人显式启动）；完整 Access smoke 36/0/1/2（含 Windows 任务标记 1.0.2；WARN=恢复演练 schema17）；已补发 Tag/Release `v1.0.2`。
-- **测试基线**：`npm run check` 通过；app 591（590 pass）+ web 273 + mcbot 108；服务端覆盖率 93.10/78.89/88.86、前端 56.27/51.88/49.16；`build`/`check-version`（严格 1.0.2）/`check-naming` 通过。
-- **迁移**：旧 env 前缀已迁移为 `CHATBOT_*`/`MCBOT_*`；上下文目录 → `/var/lib/antifieldcloud-chatbot-context`；`WEB_DIST_DIR` → `current/apps/workbench/web/dist`；DB schema v18 迁移不可逆（用快照回滚）。
+- **版本**：v1.0.3；schema v18/OpenCode v2.2.0；mcbot v1.0.3（环境感知/自主决策增强）。
+- **状态**：app `/opt/antifieldcloud/releases/20261028T144416Z`、mcbot `/opt/mcbot/releases/20261028T144253Z`；完整 Access smoke 36/0/1/2。
 
 ## v1.0.1 范围
 
