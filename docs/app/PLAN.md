@@ -1,16 +1,22 @@
-# AntifieldComplexx v1.0.5 实施计划（当前状态）
+# AntifieldComplexx v1.0.6 实施计划（当前状态）
 
-本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；全仓 Debug 与寻路残余见 `docs/app/DEBUG-AUDIT-v1.0.5.md`。
+本文件记录当前版本的范围、决策、非目标与回滚方式。版本演进见 `docs/app/ROADMAP.md` 与仓库根 `CHANGELOG.md`；完整验收证据见 `docs/app/ACCEPTANCE.md`；契约见 `docs/app/API.md`；界面见 `docs/app/UI-SPEC.md`；v1.0.6 寻路重构见 `docs/app/DEBUG-AUDIT-v1.0.6.md`。
 
 > 项目定位：**个人综合交互平台**（统一入口整合个人数据/分享、Minecraft 与 mcbot、QQ chatbot、OpenCode AI、主机监控与备份灾备）。
 
-## v1.0.5 当前状态（已部署生产）
+## v1.0.6 当前状态（开发中，待部署/实机矩阵）
 
-- **版本**：**v1.0.5**（统一版本轴，已部署生产并发布 Tag/Release）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.5**（契约 v1）。
-- **范围**：mcbot 在线模式 `auto/always/off` 持久化、空闲自动进食/换装/补货默认开启、安全区清怪 `clearing`、多步目标/长期记忆/失败分类、PaperMC 高低差路径停滞看门狗/起跳重试/安全传送；app 代理与面板卡片；全仓 Debug。
-- **状态**：app release `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot release `/opt/mcbot/releases/20261030T120449Z`；部署内 smoke 26/0/1/2、本机 smoke 29/0/1/2；Windows 任务标记 1.0.5；**高差路径复杂场景仍可能安全传送，未记为规范寻路通过**。
-- **边界**：app schema 无迁移；mcbot 本地 `presence.json`/`goals.db` 为 additive；目标需主人显式启动，重启保持 paused；不新增任意命令/挖掘/建造/越界行为。
-- **测试基线**：`npm run check` 通过；app **603**（602 pass、1 skip）+ web **275** + mcbot **127**；`build`/`check-version`（严格 1.0.5）/`check:naming`/`check:docs` 通过。
+- **版本**：**v1.0.6**（统一版本轴，待部署）；schema **v18**；OpenCode **v2.2.0**；mcbot **v1.0.6**（契约 v1）。
+- **范围**：统一寻路层（pathfinder → 确定性 A* → 受控执行 → AI 路点 → 安全兜底）；1–5 级逐级台阶、1 格矮墙、2 格墙绕行；5 格垂直墙明确失败；`navigation` 状态/事件/app 显示；`PATH_*` 九键。
+- **边界**：不挖掘/不放置/不跑酷/不跨维度；任务/目标/自主仍限安全区；`过来/跟随`允许安全区外路径但不传送；AI 不直接控制、不能传送。
+- **状态**：待部署；实机矩阵通过后再创建 Tag/Release；生产仍 v1.0.5（app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`）。
+- **测试基线**：待最终 `npm run check`；单测新增规划器/执行器/AI/app 状态。
+
+## v1.0.5 已部署状态（历史）
+
+- **版本**：v1.0.5；schema v18/OpenCode v2.2.0；mcbot v1.0.5。
+- **范围**：在线模式/自动生存/清怪/多步目标与旧寻路回退。
+- **状态**：app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`；已发布 Tag/Release。
 
 ## v1.0.4 已部署状态（历史）
 

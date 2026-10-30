@@ -1,5 +1,26 @@
 # Changelog
 
+## [v1.0.6] - 2026-10-30（开发中，待部署/验收）
+
+v1.0.6 聚焦 MC Bot 已知寻路局限：新增统一导航层（pathfinder 快速路径 → 确定性 A* → 受控路点执行 → 受控 AI 路点建议 → 安全兜底），覆盖 1–5 级逐级台阶、1 格矮墙、2 格墙绕行；5 格垂直墙/断崖明确失败，不伪造到达。不挖掘、不放置、不跑酷、不跨维度；任务/目标/自主仍限安全区。
+
+### Added
+
+- 新增 `apps/mcbot/src/minecraft/routing/`：方块采样（支持台阶/楼梯/半砖碰撞形状）、确定性 A*、受控路点执行器、导航诊断。
+- 新增 `apps/mcbot/src/ai/path-advisor.ts`：仅确定性失败后单次请求，严格 JSON/边界/可站立校验；默认在 OpenCode 配置可用时开启，可用 `PATH_AI_ENABLED=false` 关闭。
+- `/status` 增加可选 `navigation` 快照；app 面板显示寻路状态/来源/最近兜底；兜底同时写 `movement` 事件、聊天提示。
+- 新增 `PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
+
+### Changed
+
+- `goNearPoint/comeTo/follow/home` 统一经过新导航层；`过来/跟随`允许安全区外路径，但不传送出安全区；任务/目标/自主仍禁止越界。
+- 安全传送改为最后兜底并显式可见；不再用零散“起跳重试”冒充规范路径。
+
+### Tests
+
+- 新增 v1.0.6 规划器/执行器/AI advisor/app 状态测试；全部回归通过后更新基线。
+- 实机矩阵待部署后执行：平地、1/2/3/5 级台阶、1 格矮墙、2 格墙绕行、5 格垂直墙、安全区外跟随、取消/死亡、AI off/非法建议。
+
 ## [v1.0.5] - 2026-10-30（已部署并发布 Tag/Release）
 
 v1.0.5 为 MC Bot 修复与新特性版本，并包含一次全仓 Debug：修复安全区高低差寻路、增加可持久化 `auto/always/off` 在线模式、空闲自动进食/换装/补货、安全区清怪任务、多步目标/长期记忆与失败分类；app 新增在线模式/目标代理与面板卡片。app schema 保持 v18（mcbot 本地 `goals.db`/`presence.json` 为 additive，无 app DB 迁移）。

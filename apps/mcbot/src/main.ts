@@ -16,6 +16,7 @@ import { MovementManager } from './minecraft/movement.ts'
 import { MinecraftClient } from './minecraft/bot.ts'
 import { CommandExecutor } from './minecraft/commands.ts'
 import { OpenCodeClient } from './ai/opencode.ts'
+import { PathAdvisor } from './ai/path-advisor.ts'
 import { OpenCodeSessionClient } from './ai/session.ts'
 import { IntentClassifier } from './ai/intent.ts'
 import { AiChatService } from './ai/queue.ts'
@@ -111,6 +112,14 @@ async function main (): Promise<void> {
   })
 
   const movement = new MovementManager(logger.withScope('movement'), config)
+  movement.setNavigationListener(snapshot => state.setNavigation(snapshot))
+  movement.setFallbackListener((fallback, reason) => {
+    events.emit('movement', {
+      action: 'fallback',
+      fallback,
+      reason: reason.slice(0, 160)
+    })
+  })
   const client = new MinecraftClient({
     config,
     logger: logger.withScope('minecraft'),
@@ -228,6 +237,12 @@ async function main (): Promise<void> {
   })
 
   const aiClient = new OpenCodeClient(config, logger.withScope('opencode'))
+  const pathAdvisor = new PathAdvisor(config, logger.withScope('path-advisor'), aiClient)
+  movement.setRouteAdvisor(pathAdvisor)
+  logger.info('path advisor configured', {
+    enabled: config.pathAiEnabled,
+    available: pathAdvisor.available
+  })
   const sessionClient = new OpenCodeSessionClient(config, logger.withScope('opencode.session'))
   const intent = new IntentClassifier(config, logger.withScope('intent'), aiClient)
   const ai = new AiChatService({

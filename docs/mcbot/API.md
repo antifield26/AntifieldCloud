@@ -1,4 +1,4 @@
-# AntifieldComplexx 对接契约（mcbot v1.0.5）
+# AntifieldComplexx 对接契约（mcbot v1.0.6）
 
 > 本文只描述 `mcbot` 侧的稳定接口。**本会话不修改 AntifieldCloud 仓库/服务**；Token 注入、面板展示与调用逻辑由用户自行接入。面板后端建议使用 Fastify 的 `fetch` 消费 SSE，不要把读 Token 放到浏览器 URL。
 
@@ -90,6 +90,15 @@ CTRL="$(sudo grep '^HTTP_CONTROL_TOKEN=' /etc/mcbot/env | cut -d= -f2-)"
     "lastDecision": "connected"
   },
   "survival": { "enabled": true, "lastRunAt": "2026-10-26T13:25:00.000Z", "lastAction": "idle", "lastError": null },
+  "navigation": {
+    "state": "idle",
+    "source": "planner",
+    "attempts": 1,
+    "lastFailureKind": null,
+    "lastFallback": null,
+    "aiUsed": false,
+    "updatedAt": "2026-10-30T12:00:00.000Z"
+  },
   "ai": { "enabled": true, "provider": "opencode-go", "model": "deepseek-v4.1-flash", "inFlight": 0, "queued": 0, "failures": 0, "lastLatencyMs": 2359, "lastError": null },
   "memory": { "players": 1, "turns": 2 },
   "task": {
@@ -533,6 +542,17 @@ v1.0.3 增加有界环境观察、只读容器读取、进食/装备与事件驱
 **持久化与安全**：`presence.json` 与 `goals.db` 位于 `/var/lib/mcbot`，权限 `0640`，不保存 Token/聊天正文；目标重启后为 `paused`，必须主人显式恢复；`path` 失败最多安全重试一次，生存中断恢复且无威胁后最多自动恢复一次。
 
 **v1.0.5 环境变量**：`PRESENCE_MODE`、`PRESENCE_FILE`、`AUTO_SURVIVAL`、`AUTO_SURVIVAL_INTERVAL_MS`、`AUTO_EAT_BELOW`、`AUTO_RESTOCK`、`AUTO_RESTOCK_INTERVAL_MS`、`GOALS_FILE`、`GOALS_MAX_STEPS`；`AUTONOMY_TASKS` 默认追加 `clearing`。
+
+### 12.9 v1.0.6 确定性导航与受控 AI 路点
+
+`/status` 新增可选 `navigation`：`state ∈ idle|planning|executing|fallback`、`source ∈ pathfinder|planner|ai|teleport|stopped|null`、`attempts`、`lastFailureKind`、`lastFallback ∈ teleport|stopped|null`、`aiUsed`、`updatedAt`。旧版缺失时应用隐藏该字段。
+
+- 导航顺序：pathfinder 快速路径 → 确定性 A*（只读现有方块，支持台阶/楼梯/半砖与 1 格抬高、2 格下落）→ 受控执行 → AI 路点建议（默认 OpenCode 配置可用时启用）→ 安全锚点/传送/停止。
+- 不挖掘、不放置、不跑酷、不跨维度；任务/目标/自主只在安全区；`过来/跟随`允许安全区外路径，但不传送出安全区。
+- 安全传送必须是最后手段，同时写 `movement` 事件与 `navigation.lastFallback='teleport'`，并通过聊天提示。
+- AI 只在确定性失败后单次请求，超时/非法/越界建议一律丢弃；AI 不直接控制移动。
+
+**v1.0.6 环境变量**：`PATH_PLANNER_ENABLED`、`PATH_PLANNER_MAX_NODES`、`PATH_PLANNER_TIMEOUT_MS`、`PATH_MAX_REPLANS`、`PATH_TELEPORT_FALLBACK`、`PATH_OUTSIDE_SAFE_RADIUS`、`PATH_AI_ENABLED`、`PATH_AI_TIMEOUT_MS`、`PATH_AI_COOLDOWN_MS`。
 
 ### 12.5 v1.0.3 事件驱动重决策
 

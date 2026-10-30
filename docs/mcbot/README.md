@@ -1,7 +1,7 @@
 # mcbot（游戏内人格名 Lofii）
 面向 Raspberry Pi 5（8 GB，Debian 13）的 Minecraft AI 陪伴 Bot，运行在 PaperMC 26.1.2 服务器旁边，通过 mineflayer 以离线账号 `lofii` 登录。
 
-> 当前版本：**v1.0.5**（2026-10-30 已部署：release `/opt/mcbot/releases/20261030T120449Z`，服务 `mcbot.service`）。本版增加高低差路径停滞看门狗/起跳重试/安全传送、在线模式持久化、自动生存/补货、`clearing` 安全区清怪与多步目标；自主模式仍仅主人显式启动。复杂高差/连续墙体可能仍回退安全传送，详见 [DEBUG-AUDIT-v1.0.5](../app/DEBUG-AUDIT-v1.0.5.md)。
+> 当前版本：**v1.0.6**（2026-10-30 开发中，待部署；生产 v1.0.5 release `/opt/mcbot/releases/20261030T120449Z`，服务 `mcbot.service`）。本版增加统一寻路层：pathfinder 快速路径 → 确定性 A* → 受控路点执行 → AI 路点建议 → 安全兜底；覆盖 1–5 级逐级台阶、1 格矮墙、2 格墙绕行，5 格垂直墙明确失败；不挖掘/不放置/不跑酷。自主模式仍仅主人显式启动。
 
 ## 能做什么
 
@@ -24,12 +24,20 @@
 - **只读近期事件轮询**：`GET /events/recent`（读 Token）返回 ring 最近 1–200 条事件（升序，无 `hello`）及 `bootId/lastEventId/contractVersion`，供 AntifieldCloud 低频轮询或 SSE 断线补拉；`GET /healthz` 同步返回 `contractVersion`。
 - **HTTP 控制**：独立 `HTTP_CONTROL_TOKEN` 控制 `/task/start|stop|resume` 与 `/move`；读 Token 只能看状态/SSE/`/say`。
 - **审计 JSONL**：任务/移动/HTTP/AI 触发元数据写 `/var/lib/mcbot/audit.jsonl`（0600、5 MB 轮转、30 天）；不含聊天正文/Token/密码。
-- **移动与家**：`回家`、远距离 `过来`、`跟随` 超过 64 格或跨维度时安全传送；只允许代码生成的 `/tp`。
+- **移动与家**：`回家`、`过来`、`跟随` 统一经过寻路层；安全区外只走路径、不传送；安全传送仅作为安全区内最后兜底并显式提示。
 - **主动行为**：Antifield 加入问候；夜晚/雷雨/死亡固定短文；可关闭。
 - **AI 意图兜底**：固定短语优先；Antifield 的任务类模糊语句才调用 AI 分类，AI 不能直接执行任意动作。
 - **按玩家记忆**：最近 20 轮、保留 30 天；每 20 个来回后台生成 ≤1000 字聊天摘要，落盘到 `/var/lib/mcbot/memory`，重启后仍能记住。
 - **本机 HTTP 接口**：只读状态/任务/SSE/近期事件 + `/say`，独立控制 Token 的任务/移动接口；v1.0.2 增加 `/autonomy` 状态/启动/急停与内部 MCP 工具端点；仅监听 `127.0.0.1:3010`。
 - **可靠性**：登录超时/断线/服务器重启/满员/连接节流自动退避重连；systemd 崩溃拉起。
+
+## v1.0.6 寻路重构（开发中，待部署）
+
+- **统一导航层**：`pathfinder` 快速路径失败后，用只读方块采样 + 确定性 A* 重规划；支持 1 格抬高、2 格下落、台阶/楼梯/半砖碰撞形状；目标不可站立时寻找半径 2 内最近落点。
+- **受控执行**：按路点中心行走，只有下一路点抬高 1 格时显式起跳；2 格以上不硬跳；停滞/取消/超时立即释放控制并重规划或明确兜底。
+- **安全边界**：不挖掘、不放置、不跑酷、不开门、不跨维度；任务/目标/自主仍限安全区；`过来/跟随`允许安全区外路径，但安全区外不传送。
+- **AI 路点建议**：确定性失败后最多一次；默认在 OpenCode/AI 配置可用时启用；严格 JSON、最多 3 点、边界/可站立校验；AI 不直接控制移动，不能传送。
+- **可见性**：`/status.navigation`（state/source/attempts/lastFailureKind/lastFallback/aiUsed/updatedAt）；兜底同时写 `movement` 事件与聊天提示；app 面板显示寻路 Fact。
 
 ## v1.0.5 修复与新特性（已部署）
 

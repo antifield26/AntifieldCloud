@@ -4,6 +4,19 @@ import { Vec3 } from 'vec3'
 import type { Config } from '../config.ts'
 import type { Logger } from '../logger.ts'
 import { insideSafeZone, safeSpotNear } from '../tasks/navigation.ts'
+import { planRoute } from './routing/planner.ts'
+import { RouteExecutor, type ExecutorBot } from './routing/executor.ts'
+import { canStand } from './routing/sampler.ts'
+import { buildTerrainSummary } from '../ai/path-advisor.ts'
+import { NavigationTrace } from './routing/trace.ts'
+import type {
+  NavArea,
+  NavigationSnapshot,
+  NavVector,
+  NavWorld,
+  RouteAdvisor,
+  RouteFailureKind
+} from './routing/types.ts'
 
 const { goals, Movements } = pathfinderPackage
 
@@ -38,8 +51,22 @@ export class MovementManager {
   private followedName: string | null = null
   private cancelled = false
   private followMonitor: NodeJS.Timeout | null = null
-  private lastTeleportAt = 0
   private notify: ((message: string) => void) | null = null
+  private advisor: RouteAdvisor | null = null
+  private navigationListener: ((snapshot: NavigationSnapshot) => void) | null = null
+  private fallbackListener: ((fallback: 'teleport' | 'stopped', reason: string) => void) | null = null
+  private readonly executor = new RouteExecutor()
+  private readonly trace = new NavigationTrace()
+  private lastAiAt = 0
+  private navigation: NavigationSnapshot = {
+    state: 'idle',
+    source: null,
+    attempts: 0,
+    lastFailureKind: null,
+    lastFallback: null,
+    aiUsed: false,
+    updatedAt: null
+  }
 
   constructor (logger: Logger, config: Config | null = null) {
     this.logger = logger
@@ -77,6 +104,46 @@ export class MovementManager {
 
   setNotify (notify: ((message: string) => void) | null): void {
     this.notify = notify
+  }
+
+  setRouteAdvisor (advisor: RouteAdvisor | null): void {
+    this.advisor = advisor
+  }
+
+  setNavigationListener (listener: ((snapshot: NavigationSnapshot) => void) | null): void {
+    this.navigationListener = listener
+  }
+
+  setFallbackListener (listener: ((fallback: 'teleport' | 'stopped', reason: string) => void) | null): void {
+    this.fallbackListener = listener
+  }
+
+  navigationSnapshot (): NavigationSnapshot {
+    return { ...this.navigation }
+  }
+
+  navigationTrace (): ReturnType<NavigationTrace['recent']> {
+    return this.trace.recent()
+  }
+
+  private updateNavigation (patch: Partial<NavigationSnapshot>): void {
+    this.navigation = {
+      ...this.navigation,
+      ...patch,
+      updatedAt: new Date().toISOString()
+    }
+    this.navigationListener?.({ ...this.navigation })
+  }
+
+  private recordFailure (source: NavigationSnapshot['source'], failure: RouteFailureKind, reason: string | null, nodes: number | null = null): void {
+    this.trace.record({
+      at: new Date().toISOString(),
+      source: source ?? 'pathfinder',
+      failure,
+      reason,
+      nodes
+    })
+    this.updateNavigation({ state: 'fallback', source, lastFailureKind: failure })
   }
 
   describe (): string {
@@ -259,62 +326,300 @@ export class MovementManager {
     }
   }
 
+  private navWorld (bot: Bot): NavWorld {
+    return {
+      blockAt: (x, y, z) => {
+        const block = bot.blockAt(new Vec3(x, y, z), false)
+        if (!block) return null
+        const shapes = Array.isArray(block.shapes) ? block.shapes.map(shape => [...shape]) : []
+        return {
+          name: block.name,
+          boundingBox: block.boundingBox ?? 'empty',
+          shapes
+        }
+      }
+    }
+  }
+
+  private navArea (bot: Bot, target: NavVector, allowOutsideSafeZone: boolean): NavArea {
+    const config = this.requireConfig()
+    const minY = -64
+    const maxY = 320
+    const targetInside = insideSafeZone(config, target.x, target.z)
+    if (!allowOutsideSafeZone || targetInside) {
+      return {
+        minX: config.safeZone.minX,
+        maxX: config.safeZone.maxX,
+        minZ: config.safeZone.minZ,
+        maxZ: config.safeZone.maxZ,
+        minY,
+        maxY
+      }
+    }
+    const radius = config.pathOutsideSafeRadius
+    const position = bot.entity?.position ?? target
+    return {
+      minX: Math.floor(Math.min(position.x, target.x) - radius),
+      maxX: Math.ceil(Math.max(position.x, target.x) + radius),
+      minZ: Math.floor(Math.min(position.z, target.z) - radius),
+      maxZ: Math.ceil(Math.max(position.z, target.z) + radius),
+      minY,
+      maxY
+    }
+  }
+
+  private executorBot (bot: Bot): ExecutorBot {
+    return {
+      get entity () {
+        return bot.entity ? { position: bot.entity.position } : null
+      },
+      lookAt: (point, force) => bot.lookAt(point, force),
+      setControlState: (control, state) => bot.setControlState(control, state),
+      clearControlStates: () => bot.clearControlStates()
+    }
+  }
+
+  private classifyPathFailure (error: unknown): RouteFailureKind {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/NoPath|no path/i.test(message)) return 'no_path'
+    if (/Timeout|timeout|太久|走不过去/i.test(message)) return 'timeout'
+    if (/卡住|stuck/i.test(message)) return 'path_stuck'
+    return 'unreachable'
+  }
+
+  private async tryPlannerRoute (
+    bot: Bot,
+    target: NavVector,
+    tolerance: number,
+    allowOutsideSafeZone: boolean
+  ): Promise<{ ok: boolean, failure: RouteFailureKind, reason: string }> {
+    const config = this.requireConfig()
+    if (!config.pathPlannerEnabled) {
+      return { ok: false, failure: 'no_path', reason: 'planner_disabled' }
+    }
+    const world = this.navWorld(bot)
+    const area = this.navArea(bot, target, allowOutsideSafeZone)
+    const position = bot.entity?.position
+    if (!position) return { ok: false, failure: 'unreachable', reason: 'entity_unavailable' }
+    const plan = planRoute(
+      world,
+      area,
+      { x: position.x, y: position.y, z: position.z },
+      target,
+      tolerance,
+      { timeoutMs: config.pathPlannerTimeoutMs, maxNodes: config.pathPlannerMaxNodes }
+    )
+    if (plan.status !== 'success') {
+      const failure: RouteFailureKind = plan.status === 'timeout' ? 'timeout' : 'no_path'
+      this.recordFailure('planner', failure, plan.reason ?? plan.status, plan.nodesVisited)
+      this.logger.warn('movement planner failed', {
+        status: plan.status,
+        reason: plan.reason,
+        nodes: plan.nodesVisited,
+        target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }
+      })
+      return { ok: false, failure, reason: plan.reason ?? plan.status }
+    }
+    this.updateNavigation({ state: 'executing', source: 'planner', attempts: this.navigation.attempts + 1 })
+    this.logger.info('movement planner route', {
+      waypoints: plan.waypoints.length,
+      nodes: plan.nodesVisited,
+      target: { x: Math.round(target.x), y: Math.round(target.y), z: Math.round(target.z) }
+    })
+    const result = await this.executor.run(
+      this.executorBot(bot),
+      plan.waypoints.map(point => ({ x: point.x, y: point.y, z: point.z })),
+      { isCancelled: () => this.cancelled, totalMs: Math.max(6000, plan.waypoints.length * 1800) }
+    )
+    if (result.status !== 'arrived') {
+      const failure: RouteFailureKind = result.status === 'timeout' ? 'timeout' : 'path_stuck'
+      this.recordFailure('planner', failure, result.reason)
+      this.logger.warn('movement planner executor failed', { status: result.status, reason: result.reason })
+      return { ok: false, failure, reason: result.reason ?? result.status }
+    }
+    const current = bot.entity?.position
+    const reached = current !== null && current !== undefined &&
+      Math.hypot(current.x - target.x, current.z - target.z) <= Math.max(2, tolerance + 1.2) &&
+      Math.abs(current.y - target.y) <= 2.5
+    if (!reached) {
+      this.recordFailure('planner', 'unreachable', 'final_position_mismatch')
+      return { ok: false, failure: 'unreachable', reason: 'final_position_mismatch' }
+    }
+    this.updateNavigation({ state: 'idle', source: 'planner', lastFailureKind: null })
+    return { ok: true, failure: 'no_path', reason: '' }
+  }
+
+  private async tryAiRoute (
+    bot: Bot,
+    target: NavVector,
+    tolerance: number,
+    allowOutsideSafeZone: boolean,
+    failure: RouteFailureKind
+  ): Promise<boolean> {
+    const config = this.requireConfig()
+    const advisor = this.advisor
+    if (!advisor || !config.pathAiEnabled || !advisor.available) return false
+    if (Date.now() - this.lastAiAt < config.pathAiCooldownMs) return false
+    this.lastAiAt = Date.now()
+    const position = bot.entity?.position
+    if (!position) return false
+    const world = this.navWorld(bot)
+    const area = this.navArea(bot, target, allowOutsideSafeZone)
+    this.updateNavigation({ state: 'planning', source: 'ai', aiUsed: true })
+    try {
+      const advice = await advisor.suggest({
+        start: { x: position.x, y: position.y, z: position.z },
+        target,
+        failure,
+        bounds: area,
+        allowOutsideSafeZone,
+        terrain: buildTerrainSummary(world, area, { x: position.x, y: position.y, z: position.z })
+      })
+      if (!advice || advice.waypoints.length === 0) {
+        this.recordFailure('ai', 'ai_invalid', 'empty_advice')
+        return false
+      }
+      if (advice.waypoints.length > 3) {
+        this.recordFailure('ai', 'ai_invalid', 'too_many_waypoints')
+        return false
+      }
+      let cursor = { x: position.x, y: position.y, z: position.z }
+      const waypoints: NavVector[] = []
+      for (const point of advice.waypoints) {
+        const rounded = { x: Math.floor(point.x), y: Math.floor(point.y), z: Math.floor(point.z) }
+        if (!canStand(world, area, rounded.x, rounded.y, rounded.z)) {
+          this.recordFailure('ai', 'ai_invalid', 'waypoint_not_standable')
+          return false
+        }
+        const plan = planRoute(world, area, cursor, rounded, 0, {
+          timeoutMs: config.pathPlannerTimeoutMs,
+          maxNodes: config.pathPlannerMaxNodes
+        })
+        if (plan.status !== 'success') {
+          this.recordFailure('ai', 'ai_invalid', 'waypoint_unreachable')
+          return false
+        }
+        waypoints.push(...plan.waypoints)
+        cursor = rounded
+      }
+      const finalPlan = planRoute(world, area, cursor, target, tolerance, {
+        timeoutMs: config.pathPlannerTimeoutMs,
+        maxNodes: config.pathPlannerMaxNodes
+      })
+      if (finalPlan.status !== 'success') {
+        this.recordFailure('ai', 'ai_invalid', 'final_unreachable')
+        return false
+      }
+      waypoints.push(...finalPlan.waypoints)
+      this.updateNavigation({ state: 'executing', source: 'ai' })
+      const result = await this.executor.run(this.executorBot(bot), waypoints, {
+        isCancelled: () => this.cancelled,
+        totalMs: Math.max(8000, waypoints.length * 1800)
+      })
+      if (result.status !== 'arrived') {
+        this.recordFailure('ai', result.status === 'timeout' ? 'ai_timeout' : 'path_stuck', result.reason)
+        return false
+      }
+      const current = bot.entity?.position
+      const reached = current !== null && current !== undefined &&
+        Math.hypot(current.x - target.x, current.z - target.z) <= Math.max(2, tolerance + 1.2) &&
+        Math.abs(current.y - target.y) <= 2.5
+      if (!reached) {
+        this.recordFailure('ai', 'unreachable', 'final_position_mismatch')
+        return false
+      }
+      this.updateNavigation({ state: 'idle', source: 'ai', lastFailureKind: null })
+      this.logger.info('movement ai route reached', { waypoints: waypoints.length })
+      return true
+    } catch (error) {
+      this.recordFailure('ai', 'ai_timeout', error instanceof Error ? error.message : String(error))
+      this.logger.warn('movement ai advisor failed', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+      return false
+    }
+  }
+
   /**
-   * 路径停滞后的受控步行恢复：朝目标前进并跳跃，只用于安全区内的短距离台阶/坡道。
-   * 不挖掘、不放置、不进入未知区域；失败后仍由调用方安全点/传送兜底。
+   * 统一导航：pathfinder 快速路径 → 确定性 A* → 受控执行 → AI 路点 → 安全兜底。
+   * 所有入口都经过此方法；安全区外仅允许路径移动，不允许传送。
    */
-  private async manualStepToward (x: number, y: number, z: number, attempts = 6): Promise<boolean> {
+  private async navigateTo (
+    target: NavVector,
+    tolerance: number,
+    allowOutsideSafeZone: boolean,
+    allowTeleport: boolean,
+    timeoutMs: number
+  ): Promise<void> {
     const bot = this.requireBot()
     const config = this.requireConfig()
-    if (!insideSafeZone(config, x, z)) return false
-    try {
-      bot.pathfinder.stop()
-      bot.pathfinder.setGoal(null)
-    } catch {
-      // ignore
-    }
-    this.logger.info('movement manual step start', {
-      x: Math.round(x),
-      y: Math.round(y),
-      z: Math.round(z),
-      attempts
+    if (this.cancelled) throw new MovementError('移动已取消')
+    this.updateNavigation({
+      state: 'planning',
+      source: 'pathfinder',
+      attempts: 0,
+      lastFailureKind: null,
+      lastFallback: null,
+      aiUsed: false
     })
+    let failure: RouteFailureKind = 'path_stuck'
+    let reason = ''
     try {
-      for (let attempt = 0; attempt < attempts; attempt += 1) {
-        if (this.cancelled || !bot.entity) return false
-        const position = bot.entity.position
-        const horizontal = Math.hypot(position.x - x, position.z - z)
-        const vertical = Math.abs(position.y - y)
-        if (horizontal <= 2 && vertical <= 2) {
-          this.logger.info('movement manual step reached', { attempt, x: Math.round(position.x), y: Math.round(position.y), z: Math.round(position.z) })
-          return true
-        }
-        await bot.lookAt(new Vec3(x, y + 1.6, z), true)
-        // 先原地起跳，再向前；矮墙/台阶需要完整的跳跃窗口，不能只按几帧。
-        bot.setControlState('jump', true)
-        await new Promise(resolve => setTimeout(resolve, 260))
-        bot.setControlState('forward', true)
-        await new Promise(resolve => setTimeout(resolve, 480))
-        bot.setControlState('forward', false)
-        bot.setControlState('jump', false)
-        await new Promise(resolve => setTimeout(resolve, 260))
-      }
-      const position = bot.entity.position
-      const reached = Math.hypot(position.x - x, position.z - z) <= 3 && Math.abs(position.y - y) <= 2
-      this.logger.info('movement manual step finished', {
-        reached,
-        x: Math.round(position.x),
-        y: Math.round(position.y),
-        z: Math.round(position.z)
+      await this.runPathWithWatchdog(
+        new goals.GoalNear(target.x, target.y, target.z, Math.max(1, tolerance)),
+        Math.min(timeoutMs, 30000)
+      )
+      if (this.cancelled) throw new MovementError('移动已取消')
+      this.updateNavigation({ state: 'idle', source: 'pathfinder', lastFailureKind: null })
+      return
+    } catch (error) {
+      if (this.cancelled) throw new MovementError('移动已取消')
+      failure = this.classifyPathFailure(error)
+      reason = error instanceof Error ? error.message : String(error)
+      this.recordFailure('pathfinder', failure, reason)
+      this.logger.warn('movement pathfinder failed; trying deterministic planner', {
+        x: Math.round(target.x),
+        y: Math.round(target.y),
+        z: Math.round(target.z),
+        reason
       })
-      return reached
-    } finally {
+    }
+
+    for (let attempt = 0; attempt <= config.pathMaxReplans; attempt += 1) {
+      if (this.cancelled) throw new MovementError('移动已取消')
+      const planner = await this.tryPlannerRoute(bot, target, tolerance, allowOutsideSafeZone)
+      if (planner.ok) return
+      failure = planner.failure
+      reason = planner.reason
+      if (planner.failure === 'no_path') break
+      await this.waitForChunks()
+    }
+
+    if (await this.tryAiRoute(bot, target, tolerance, allowOutsideSafeZone, failure)) return
+
+    if (allowTeleport && config.pathTeleportFallback) {
       try {
-        bot.clearControlStates()
-      } catch {
-        // ignore
+        await this.teleportNearPoint(target.x, target.y, target.z, Math.max(3, tolerance + 2))
+        this.updateNavigation({ state: 'fallback', source: 'teleport', lastFallback: 'teleport' })
+        this.notify?.('我找不到规范路径，先安全传送过去。')
+        this.fallbackListener?.('teleport', reason)
+        return
+      } catch (error) {
+        this.logger.warn('movement teleport fallback rejected', {
+          error: error instanceof Error ? error.message : String(error)
+        })
+        reason = error instanceof Error ? error.message : String(error)
       }
     }
+    this.updateNavigation({
+      state: 'fallback',
+      source: 'stopped',
+      lastFallback: 'stopped',
+      lastFailureKind: failure
+    })
+    this.notify?.('我找不到规范路径，先停在这里。')
+    this.fallbackListener?.('stopped', reason)
+    throw new MovementError(`走不过去：${reason}`)
   }
 
   async goNearPoint (
@@ -325,85 +630,25 @@ export class MovementManager {
     timeoutMs = 15000,
     allowTeleport = true
   ): Promise<void> {
-    const bot = this.requireBot()
     const config = this.requireConfig()
     if (!insideSafeZone(config, x, z)) throw new MovementError('目标在安全区外')
     const previous = this.current
     this.current = 'task'
-    const tryGoto = async (goal: unknown): Promise<void> => {
-      await this.runPathWithWatchdog(goal, timeoutMs)
-    }
     try {
-      await tryGoto(new goals.GoalNear(x, y, z, radius))
-    } catch (firstError) {
-      if (allowTeleport) {
-        this.logger.warn('movement path failed, retrying after chunks', {
-          x, y, z,
-          error: firstError instanceof Error ? firstError.message : String(firstError)
-        })
-        await this.waitForChunks()
-        // 高差场景：先尝试受控步行上/下台阶，再水平接近/安全中间点，最后才传送。
-        if (await this.manualStepToward(x, y, z)) {
-          this.logger.info('movement manual step reached target', {
-            x: Math.round(x),
-            y: Math.round(y),
-            z: Math.round(z)
-          })
-          return
-        }
-        try {
-          await tryGoto(new goals.GoalNearXZ(x, z, Math.max(2, radius + 1)))
-          const reached = bot.entity
-            ? Math.abs(bot.entity.position.y - y) <= 3 &&
-              Math.hypot(bot.entity.position.x - x, bot.entity.position.z - z) <= Math.max(3, radius + 2)
-            : false
-          if (reached) return
-        } catch (horizontalError) {
-          this.logger.debug('movement horizontal fallback failed', {
-            x, y, z,
-            error: horizontalError instanceof Error ? horizontalError.message : String(horizontalError)
-          })
-        }
-        try {
-          const anchor = safeSpotNear(bot, config, { x, y, z }, Math.max(4, radius + 3))
-          if (anchor) {
-            await tryGoto(new goals.GoalNear(anchor.x, anchor.y, anchor.z, 2))
-            return
-          }
-        } catch (anchorError) {
-          this.logger.warn('movement safe-anchor fallback failed', {
-            x, y, z,
-            error: anchorError instanceof Error ? anchorError.message : String(anchorError)
-          })
-        }
-        this.logger.warn('movement path failed, trying teleport', {
-          x, y, z,
-          error: firstError instanceof Error ? firstError.message : String(firstError)
-        })
-        await this.teleportNearPoint(x, y, z, Math.max(3, radius + 2))
-        return
-      }
-      throw new MovementError(`走不过去：${firstError instanceof Error ? firstError.message : String(firstError)}`)
+      await this.navigateTo({ x, y, z }, radius, false, allowTeleport, timeoutMs)
     } finally {
       this.current = previous
     }
   }
 
   async home (): Promise<void> {
-    const bot = this.requireBot()
     const config = this.requireConfig()
     const home = config.home
-    if (distanceTo(bot, home.x, home.y, home.z) <= 8) {
-      await this.goNearPoint(home.x, home.y, home.z, 1, 15000, true)
-      return
-    }
-    this.logger.info('movement home teleport')
-    await this.teleportTo(home.x, home.y, home.z)
+    await this.goNearPoint(home.x, home.y, home.z, 1, 30000, true)
   }
 
   async comeTo (username: string, timeoutMs = 30000): Promise<'arrived' | 'cancelled'> {
     const bot = this.requireBot()
-    const config = this.requireConfig()
     this.assertSameDimension(username)
     const target = targetFor(bot, username)
     if (!target?.entity) {
@@ -417,53 +662,21 @@ export class MovementManager {
     this.cancelled = false
     this.current = 'come'
     this.logger.info('movement come start', { target: username, timeoutMs })
-    const distance = bot.entity ? bot.entity.position.distanceTo(entity.position) : 0
-    if (distance > config.teleportDistance) {
-      const spot = safeSpotNear(bot, config, entity.position, 4)
-      if (spot) {
-        try {
-          await this.teleportTo(spot.x, spot.y, spot.z)
-          if (this.cancelled) return 'cancelled'
-          return 'arrived'
-        } catch (error) {
-          this.logger.warn('come teleport failed, falling back to path', {
-            error: error instanceof Error ? error.message : String(error)
-          })
-        }
-      }
-    }
-    const goal = new goals.GoalNear(entity.position.x, entity.position.y, entity.position.z, 2)
     try {
-      await this.runPathWithWatchdog(goal, timeoutMs)
+      await this.navigateTo(
+        { x: entity.position.x, y: entity.position.y, z: entity.position.z },
+        2,
+        true,
+        true,
+        timeoutMs
+      )
       if (this.cancelled) return 'cancelled'
-      this.logger.debug('movement goto resolved', { target: username })
+      this.logger.debug('movement come reached', { target: username })
       return 'arrived'
     } catch (error) {
       if (this.cancelled) return 'cancelled'
-      if (config && bot.entity) {
-        if (await this.manualStepToward(entity.position.x, entity.position.y, entity.position.z)) {
-          this.logger.info('movement come manual step reached target', { target: username })
-          return 'arrived'
-        }
-        const spot = safeSpotNear(bot, config, entity.position, 4)
-        if (spot) {
-          try {
-            await this.teleportTo(spot.x, spot.y, spot.z)
-            return 'arrived'
-          } catch {
-            // fall through to friendly error
-          }
-        }
-      }
-      if (error instanceof Error && error.name === 'PathStopped') {
-        throw new MovementError('移动被中断了，我再试一次')
-      }
       if (error instanceof MovementError) throw error
-      const message = error instanceof Error ? error.message : String(error)
-      if (/NoPath|no path/i.test(message)) throw new MovementError('找不到过去的路，可能被挡住了')
-      if (error instanceof Error && error.name === 'Timeout') throw new MovementError('想不出过去的路，可能太远了')
-      if (/Timeout|timeout|long to decide/i.test(message)) throw new MovementError('走太久了，我先停下')
-      throw new MovementError(`移动失败：${message}`)
+      throw new MovementError(`移动失败：${error instanceof Error ? error.message : String(error)}`)
     } finally {
       if (this.current === 'come') this.current = null
     }
@@ -471,7 +684,6 @@ export class MovementManager {
 
   follow (username: string, maxMs = 600000): void {
     const bot = this.requireBot()
-    const config = this.requireConfig()
     try {
       this.assertSameDimension(username)
     } catch (error) {
@@ -491,48 +703,57 @@ export class MovementManager {
       }
       throw new MovementError(`看不到 ${username}，请靠近一点再试`)
     }
-    const entity = target.entity
     this.cancelled = false
     this.current = 'follow'
     this.followedName = username
     this.clearFollowMonitor()
     this.logger.info('movement follow start', { target: username })
-    const distance = bot.entity ? bot.entity.position.distanceTo(entity.position) : 0
-    if (distance > config.teleportDistance) {
-      const spot = safeSpotNear(bot, config, entity.position, 4)
-      if (spot) {
-        void this.teleportTo(spot.x, spot.y, spot.z).catch(error => {
-          this.logger.warn('follow teleport failed', { error: error instanceof Error ? error.message : String(error) })
-        })
-      }
-    }
-    bot.pathfinder.setGoal(new goals.GoalFollow(entity, 2), true)
+    void this.followLoop(username, maxMs)
+  }
+
+  private async followLoop (username: string, maxMs: number): Promise<void> {
     const startedAt = Date.now()
-    this.followMonitor = setInterval(() => {
-      const active = this.bot
-      const stillThere = active?.players[username]?.entity ?? null
-      if (!active || !stillThere) {
-        this.stop('target-left')
-        this.notify?.(`${username} 不在了，我先停下。`)
-        return
-      }
-      if (Date.now() - startedAt > maxMs) {
-        this.stop('timeout')
-        this.notify?.(`跟了 ${Math.round(maxMs / 60000)} 分钟了，我先歇一下。`)
-        return
-      }
-      if (active.entity && active.entity.position.distanceTo(stillThere.position) > config.teleportDistance) {
-        if (Date.now() - this.lastTeleportAt > 5000) {
-          const spot = safeSpotNear(active, config, stillThere.position, 4)
-          if (spot) {
-            this.lastTeleportAt = Date.now()
-            void this.teleportTo(spot.x, spot.y, spot.z).catch(error => {
-              this.logger.warn('follow mid teleport failed', { error: error instanceof Error ? error.message : String(error) })
+    try {
+      while (!this.cancelled) {
+        if (Date.now() - startedAt > maxMs) {
+          this.notify?.(`跟了 ${Math.round(maxMs / 60000)} 分钟了，我先歇一下。`)
+          return
+        }
+        const bot = this.bot
+        if (!bot) return
+        const target = targetFor(bot, username)
+        if (!target?.entity) {
+          this.notify?.(`${username} 不在了，我先停下。`)
+          return
+        }
+        const entity = target.entity
+        const distance = bot.entity ? bot.entity.position.distanceTo(entity.position) : 0
+        if (distance > 3) {
+          try {
+            await this.navigateTo(
+              { x: entity.position.x, y: entity.position.y, z: entity.position.z },
+              2,
+              true,
+              false,
+              12000
+            )
+          } catch (error) {
+            if (this.cancelled) return
+            this.notify?.('我找不到过去的路，先停下跟随。')
+            this.logger.warn('movement follow failed', {
+              error: error instanceof Error ? error.message : String(error)
             })
+            return
           }
         }
+        await new Promise(resolve => setTimeout(resolve, 500))
       }
-    }, 1000)
+    } finally {
+      if (this.current === 'follow') {
+        this.current = null
+        this.followedName = null
+      }
+    }
   }
 
   stop (reason = 'user'): void {

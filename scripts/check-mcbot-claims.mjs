@@ -76,7 +76,16 @@ const envKeys = [
   'PRESENCE_MODE',
   'PRESENCE_FILE',
   'GOALS_FILE',
-  'GOALS_MAX_STEPS'
+  'GOALS_MAX_STEPS',
+  'PATH_PLANNER_ENABLED',
+  'PATH_PLANNER_MAX_NODES',
+  'PATH_PLANNER_TIMEOUT_MS',
+  'PATH_MAX_REPLANS',
+  'PATH_TELEPORT_FALLBACK',
+  'PATH_OUTSIDE_SAFE_RADIUS',
+  'PATH_AI_ENABLED',
+  'PATH_AI_TIMEOUT_MS',
+  'PATH_AI_COOLDOWN_MS'
 ]
 for (const key of envKeys) {
   requireText('apps/mcbot/deploy/env.example', key, `env:${key}`)
@@ -87,17 +96,17 @@ for (const key of envKeys) {
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '文档声明', 'audit-matrix')
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '代码', 'audit-code-column')
 requireText('docs/mcbot/CONSISTENCY-AUDIT.md', '状态', 'audit-status-column')
-requireText('README.md', 'v1.0.5', 'readme-version')
-requireText('docs/mcbot/README.md', 'v1.0.5', 'mcbot-readme-version')
-requireText('docs/app/API.md', 'mcbot **v1.0.5**', 'app-api-upstream-version')
-requireText('CHANGELOG.md', '## [v1.0.5]', 'changelog-version')
-requireText('docs/app/ACCEPTANCE.md', 'v1.0.5', 'acceptance-version')
-requireText('docs/app/DEPLOY.md', 'v1.0.5', 'deploy-title')
-requireText('deploy/tool-versions.json', '"mcbotVersion": "1.0.5"', 'tool-version')
-requireText('deploy/env.example', 'APP_VERSION=1.0.5', 'app-version')
+requireText('README.md', 'v1.0.6', 'readme-version')
+requireText('docs/mcbot/README.md', 'v1.0.6', 'mcbot-readme-version')
+requireText('docs/app/API.md', 'mcbot **v1.0.6**', 'app-api-upstream-version')
+requireText('CHANGELOG.md', '## [v1.0.6]', 'changelog-version')
+requireText('docs/app/ACCEPTANCE.md', 'v1.0.6', 'acceptance-version')
+requireText('docs/app/DEPLOY.md', 'v1.0.6', 'deploy-title')
+requireText('deploy/tool-versions.json', '"mcbotVersion": "1.0.6"', 'tool-version')
+requireText('deploy/env.example', 'APP_VERSION=1.0.6', 'app-version')
 
 const rootPackage = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
-if (rootPackage.version !== '1.0.5') errors.push(`package.json version 应为 1.0.5，实际 ${rootPackage.version}`)
+if (rootPackage.version !== '1.0.6') errors.push(`package.json version 应为 1.0.5，实际 ${rootPackage.version}`)
 
 const stalePatterns = [
   ['docs/app/API.md', '生产当前 v1.0.1', '旧生产版本'],

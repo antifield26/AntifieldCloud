@@ -10,6 +10,9 @@ import type {
   McbotEventType,
   McbotHistoryAlert,
   McbotMoveAction,
+  McbotNavigation,
+  McbotNavigationSource,
+  McbotNavigationState,
   McbotQueuedTask,
   McbotSnapshot,
   McbotStatus,
@@ -466,6 +469,7 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
   const memory = asRecord(raw.memory) ?? {}
   const task = asRecord(raw.task) ?? {}
   const survival = asRecord(raw.survival) ?? {}
+  const navigation = asRecord(raw.navigation)
   const admin = asRecord(raw.admin) ?? {}
   const position = asRecord(player.position)
   const lastDisconnect = asRecord(minecraft.lastDisconnect)
@@ -596,6 +600,27 @@ export function safeLofiiStatus(value: unknown): McbotStatus | null {
       lastAction: asText(survival.lastAction),
       lastError: asText(survival.lastError),
     },
+    navigation: navigation
+      ? {
+          state: (() => {
+            const state = asText(navigation.state)
+            return (state === 'planning' || state === 'executing' || state === 'fallback' ? state : 'idle') as McbotNavigationState
+          })(),
+          source: (() => {
+            const source = asText(navigation.source)
+            return (source === 'pathfinder' || source === 'planner' || source === 'ai' || source === 'teleport' || source === 'stopped'
+              ? source
+              : null) as McbotNavigationSource | null
+          })(),
+          attempts: Math.max(0, asCount(navigation.attempts) ?? 0),
+          lastFailureKind: asText(navigation.lastFailureKind),
+          lastFallback: navigation.lastFallback === 'teleport' || navigation.lastFallback === 'stopped'
+            ? navigation.lastFallback
+            : null,
+          aiUsed: navigation.aiUsed === true,
+          updatedAt: asText(navigation.updatedAt),
+        } as McbotNavigation
+      : undefined,
     admin: {
       enabled: admin.enabled === true,
       rcon: admin.rcon === true,

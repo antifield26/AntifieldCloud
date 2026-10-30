@@ -1,6 +1,6 @@
 # 部署与运维（mcbot）
 
-> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。生产 v1.0.5 已于 2026-10-30 部署：release `/opt/mcbot/releases/20261030T120449Z`（在线模式/自动生存/清怪/目标/寻路回退；自主模式仍仅主人显式启动）；v1.0.4 回滚 release `/opt/mcbot/releases/20261030T005014Z`。生产 env 保留 `AUTONOMY_*`；`FORCE_ONLINE=false`；Windows 任务标记 1.0.5。完整 Access smoke 因收尾时 PC 边缘网络超时未稳定复跑，Pi 本机/部署内 smoke 正常。
+> 目标 Pi：`antifield@169.254.77.10`（Raspberry Pi 5，Debian 13，Node `/usr/local/bin/node` v26.12.1）。v1.0.6 开发中/待部署；当前生产仍 v1.0.5 release `/opt/mcbot/releases/20261030T120449Z`（在线模式/自动生存/清怪/目标/旧寻路回退）。v1.0.6 部署后回滚目标为本 v1.0.5 release，并可关闭 `PATH_PLANNER_ENABLED`/`PATH_AI_ENABLED` 恢复旧路径。部署后需跑 1/2/3/5 级台阶、矮墙、绕行、垂直墙与安全区外跟随矩阵，通过后再发布。
 > 服务器：Paper 26.1.2，`~/minecraft-server`，RCON 已启用。
 > 所有操作从 Windows 工作区通过 SSH/SCP 执行；不使用 Docker。
 

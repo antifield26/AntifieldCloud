@@ -1,4 +1,4 @@
-# mcbot 文档声明与代码实现一致性审计（v1.0.5）
+# mcbot 文档声明与代码实现一致性审计（v1.0.6）
 
 本审计以**代码/实际安全行为为真相**，覆盖根 README、AGENTS、docs/mcbot、docs/app/API 与 mcbot 环境模板。自动检查脚本：`scripts/check-mcbot-claims.mjs`（根 `npm run check:docs`，纳入 `npm run check`）。历史发布记录、`docs/legacy` 与已冻结的验收文本标为 `historical`，不回写历史，但会标注当前事实。
 
@@ -20,25 +20,26 @@
 | eat/equip 仅空闲、背包内食物/护甲/工具、固定冷却 | docs/mcbot/README/API/AGENTS | `eat()`/`equip()`、`withAction`、单元测试 | consistent | 不接受任意物品/槽位 |
 | 事件驱动重决策：任务生命周期 + 安全告警、30s 去重、最多 6 次、无周期空转 | docs/mcbot/README/API、AGENTS | `EVENT_TRIGGERS`、`queueDecision`、`decisionLoop`、事件测试 | consistent | 自动检查 env key |
 | 环境/动作 env 键进入 env 模板与 bootstrap | AGENTS、docs/mcbot/API、env.example | `config.ts` 解析、`env.example`、`bootstrap-env.sh` | consistent | 自动检查 26 个 key |
-| 生产 v1.0.5 已部署、已发布 Tag/Release | 根 README、CHANGELOG、AGENTS、ACCEPTANCE | 生产 `/healthz`、release 记录、本机 smoke | consistent | 生产保持 v1.0.5；已打 Tag |
+| v1.0.6 统一寻路层、`navigation` 状态、`PATH_*` 九键 | mcbot README/API、app API/UI、AGENTS | `routing/*`、`ai/path-advisor.ts`、`state.ts`、web `navigation` 类型/面板 | fixed | 规划器/执行器/AI/app 状态测试；实机矩阵待执行 |
+| v1.0.5 已部署并发布 Tag/Release | 根 README、CHANGELOG、AGENTS、ACCEPTANCE | 生产 v1.0.5 release 记录、本机 smoke | consistent | 生产保持 v1.0.5，v1.0.6 待验收 |
 | v1.0.2 验收记录（smoke 36/0/1/2、实机 Agentic） | docs/mcbot/README、docs/app/ACCEPTANCE | 历史部署记录 | historical | 保留并标注 v1.0.2 |
 | 普通聊天 AI 没有任何工具/命令能力（旧绝对声明） | docs/mcbot/README 旧文本 | 与 v1.0.2 自主 MCP 工具冲突 | fixed | 限定为普通聊天，自主会话另述 |
 
-## 2. 本次（v1.0.5）修正的漂移
+## 2. 本次（v1.0.6）修正的漂移
 
-1. 根 README、AGENTS、docs/INDEX、PLAN、ROADMAP 的 mcbot/生产版本、任务数（10→11）、测试基线与部署/发布状态统一到 v1.0.5。
-2. `docs/mcbot/README.md` 的 v1.0.5 章节由“待部署”改为已部署；`docs/mcbot/ROADMAP.md` 增加 v1.0.5 边界与残余。
-3. 新增在线模式、自动生存/补货、`clearing`、多步目标 env/API 说明，并同步 env.example、bootstrap、app API。
-4. 新增 [DEBUG-AUDIT-v1.0.5](../app/DEBUG-AUDIT-v1.0.5.md)；AUDIT/INDEX/ROADMAP 只保留摘要并链接，避免重复全文。
-5. 高差寻路残余明确标注为“可能安全传送”，不再笼统宣称已修复。
+1. 根 README、AGENTS、docs/INDEX、PLAN、ROADMAP 的 mcbot/生产版本、测试基线与发布状态统一到 v1.0.6（生产仍 v1.0.5，矩阵通过后发布）。
+2. `docs/mcbot/README.md`、`ROADMAP`、`DEPLOY` 增加统一寻路层、`navigation`、`PATH_*` 九键与实机矩阵说明。
+3. `docs/app/API.md`、`UI-SPEC.md` 增加可选 `navigation` 状态/面板 Fact，旧版缺失时降级。
+4. 新增 [DEBUG-AUDIT-v1.0.6](../app/DEBUG-AUDIT-v1.0.6.md)；AUDIT/INDEX/ROADMAP 只保留摘要并链接。
+5. 明确 5 格垂直墙/断崖在禁止挖掘放置下物理无解，只能绕行/停止/传送，不作为规范通过项。
 
 ## 3. 自动检查范围
 
 `scripts/check-mcbot-claims.mjs` 检查：
 
 - 10 个 MCP 工具名、11 个任务名、`mcbot_autonomy_*` 权限前缀；
-- `AUTONOMY_*` 与 v1.0.5 的 `PRESENCE_MODE`/`PRESENCE_FILE`/`AUTO_SURVIVAL`/`AUTO_EAT_BELOW`/`AUTO_RESTOCK`/`GOALS_*` 环境键同时出现在 `apps/mcbot/deploy/env.example`、`bootstrap-env.sh`、docs/mcbot/API（共 26 键）；
-- 根/开发线/生产版本声明（1.0.5 生产）；
+- `AUTONOMY_*`、v1.0.5 的 `PRESENCE_MODE`/`PRESENCE_FILE`/`AUTO_SURVIVAL`/`AUTO_EAT_BELOW`/`AUTO_RESTOCK`/`GOALS_*` 与 v1.0.6 的 9 个 `PATH_*` 键同时出现在 `apps/mcbot/deploy/env.example`、`bootstrap-env.sh`、docs/mcbot/API（共 35 键）；
+- 根/开发线/生产版本声明（1.0.6 开发、1.0.5 生产）；
 - 已知陈旧声明（旧生产版本、旧 mcbot 版本、AI 无工具/只聊天绝对声明）；
 - 审计矩阵存在“文档声明/代码/状态”列。
 
@@ -47,5 +48,5 @@
 - 真实 Minecraft/OpenCode 的容器读取路径已在生产做基础 Agentic 验收（observe/task_status/finish），inspect_chest 实机路径未单独触发，由离线测试覆盖。
 - 安全阈值事件依赖 `ALERTS_ENABLED=true`；关闭时不会产生 `low_health/low_food/...` 重提示，已在 API 文档注明。
 - 历史发布页/`docs/legacy` 不重写；`historical` 项只保证当前文档不再把历史声明当作现状。
-- 无 app schema/DB 迁移；mcbot 本地 `presence.json`/`goals.db` 为 additive；生产 v1.0.5 已部署，回滚使用部署前快照与上一 release。
-- 复杂高差 pathfinder 仍可能安全传送；详见 `docs/app/DEBUG-AUDIT-v1.0.5.md`。
+- 无 app schema/DB 迁移；mcbot 本地 `presence.json`/`goals.db` 为 additive；生产 v1.0.5 已部署，v1.0.6 待矩阵，回滚使用上一 release。
+- 5 格垂直墙/断崖无规范路径；确定性失败、AI 无效建议、安全传送均由 `navigation`/事件/聊天可见。

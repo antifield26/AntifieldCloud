@@ -1428,6 +1428,20 @@ export interface McbotSurvival {
   lastError: string | null
 }
 
+/** v1.0.6 寻路诊断；旧版 mcbot 不返回时前端隐藏。 */
+export type McbotNavigationState = 'idle' | 'planning' | 'executing' | 'fallback'
+export type McbotNavigationSource = 'pathfinder' | 'planner' | 'ai' | 'teleport' | 'stopped'
+
+export interface McbotNavigation {
+  state: McbotNavigationState
+  source: McbotNavigationSource | null
+  attempts: number
+  lastFailureKind: string | null
+  lastFallback: 'teleport' | 'stopped' | null
+  aiUsed: boolean
+  updatedAt: string | null
+}
+
 export type McbotGoalKind = 'task' | 'deposit' | 'home'
 export type McbotGoalStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'canceled'
 export type McbotGoalStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
@@ -1508,6 +1522,7 @@ export interface McbotStatus {
   memory: McbotMemory
   task: McbotTask
   survival: McbotSurvival
+  navigation?: McbotNavigation
   admin: McbotAdmin
 }
 

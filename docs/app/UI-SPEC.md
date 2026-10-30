@@ -1,5 +1,7 @@
 # AntifieldComplexx UI 规范
 
+> mcbot v1.0.6：mcbot 状态卡增加「寻路」Fact（`idle/planning/executing/fallback`、来源、最近兜底），旧 mcbot 无 `navigation` 时隐藏；不新增页面。
+
 > 项目定位：**个人综合交互平台**。v1.0.1 起运行时 UI/标题/登录/设置/manifest 已同步；systemd Description 同步为 `AntifieldComplexx comprehensive interaction platform`。
 
 ## 1. 定位与基调

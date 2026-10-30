@@ -148,6 +148,17 @@ export interface Config {
   taskRecoveryMax: number
   teleportDistance: number
   taskAnchorTeleport: boolean
+  /** v1.0.6 确定性导航开关与预算。 */
+  pathPlannerEnabled: boolean
+  pathPlannerMaxNodes: number
+  pathPlannerTimeoutMs: number
+  pathMaxReplans: number
+  pathTeleportFallback: boolean
+  pathOutsideSafeRadius: number
+  /** AI 路点建议：默认 true；仅在 AI/OpenCode 配置可用时实际启用。 */
+  pathAiEnabled: boolean
+  pathAiTimeoutMs: number
+  pathAiCooldownMs: number
   autoDeposit: boolean
   proactiveEnabled: boolean
   proactiveGreeting: boolean
@@ -670,6 +681,15 @@ export function loadConfig (env: Env = process.env, version = '0.0.0'): Config {
     taskRecoveryMax: readInt(env, 'TASK_RECOVERY_MAX', 3, 1, 5),
     teleportDistance: readNumber(env, 'TELEPORT_DISTANCE', 64, 8, 512),
     taskAnchorTeleport: readBool(env, 'TASK_ANCHOR_TELEPORT', true),
+    pathPlannerEnabled: readBool(env, 'PATH_PLANNER_ENABLED', true),
+    pathPlannerMaxNodes: readInt(env, 'PATH_PLANNER_MAX_NODES', 6000, 64, 50000),
+    pathPlannerTimeoutMs: readInt(env, 'PATH_PLANNER_TIMEOUT_MS', 1500, 100, 15000),
+    pathMaxReplans: readInt(env, 'PATH_MAX_REPLANS', 2, 0, 5),
+    pathTeleportFallback: readBool(env, 'PATH_TELEPORT_FALLBACK', true),
+    pathOutsideSafeRadius: readInt(env, 'PATH_OUTSIDE_SAFE_RADIUS', 32, 4, 128),
+    pathAiEnabled: readBool(env, 'PATH_AI_ENABLED', true),
+    pathAiTimeoutMs: readInt(env, 'PATH_AI_TIMEOUT_MS', 8000, 1000, 30000),
+    pathAiCooldownMs: readInt(env, 'PATH_AI_COOLDOWN_MS', 30000, 0, 300000),
     autoDeposit: readBool(env, 'AUTO_DEPOSIT', true),
     proactiveEnabled: readBool(env, 'PROACTIVE_ENABLED', true),
     proactiveGreeting: readBool(env, 'PROACTIVE_GREETING', true),

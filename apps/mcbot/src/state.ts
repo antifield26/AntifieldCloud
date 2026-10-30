@@ -1,4 +1,5 @@
 import type { PresenceMode } from './config.ts'
+import type { NavigationSnapshot } from './minecraft/routing/types.ts'
 
 export type BotState = 'idle' | 'connecting' | 'connected' | 'backoff' | 'cooldown'
 export type PresenceModeSource = 'default' | 'env' | 'persisted'
@@ -192,6 +193,7 @@ export interface StatusSnapshot {
   memory: MemorySnapshot
   task: TaskSnapshot
   survival: SurvivalSnapshot
+  navigation: NavigationSnapshot
   autonomy: AutonomySnapshot
   admin: AdminSnapshot
 }
@@ -227,6 +229,15 @@ export class RuntimeState {
   memory: MemorySnapshot = { players: 0, turns: 0 }
   task: TaskSnapshot
   survival: SurvivalSnapshot
+  navigation: NavigationSnapshot = {
+    state: 'idle',
+    source: null,
+    attempts: 0,
+    lastFailureKind: null,
+    lastFallback: null,
+    aiUsed: false,
+    updatedAt: null
+  }
   autonomy: AutonomySnapshot
   admin: AdminSnapshot
   lastDecision = 'startup'
@@ -431,6 +442,10 @@ export class RuntimeState {
     this.survival = { ...this.survival, ...patch }
   }
 
+  setNavigation (snapshot: NavigationSnapshot): void {
+    this.navigation = { ...snapshot }
+  }
+
   setTask (patch: Partial<TaskSnapshot>): void {
     this.task = {
       ...this.task,
@@ -480,6 +495,7 @@ export class RuntimeState {
       memory: { ...this.memory },
       task,
       survival: { ...this.survival },
+      navigation: { ...this.navigation },
       autonomy: { ...this.autonomy },
       admin: {
         ...this.admin,

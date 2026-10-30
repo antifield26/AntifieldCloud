@@ -1,0 +1,104 @@
+/**
+ * 路点执行器：按规划器输出的格子中心逐段行走，1 格抬高时显式起跳。
+ * 安全边界：只操作移动控制键；不挖掘、不放置、不传送；取消/超时/停滞立即释放控制。
+ */
+import { Vec3 } from 'vec3'
+import type { NavVector, RouteExecutionResult } from './types.ts'
+
+export interface ExecutorBot {
+  entity: { position: Vec3 } | null
+  lookAt: (point: Vec3, force?: boolean) => Promise<void>
+  setControlState: (control: 'forward' | 'jump' | 'sprint' | 'sneak', state: boolean) => void
+  clearControlStates: () => void
+}
+
+export interface ExecutorOptions {
+  isCancelled: () => boolean
+  /** 每个路点的硬上限，默认 2500ms。 */
+  perWaypointMs?: number
+  /** 整体上限，默认 25s。 */
+  totalMs?: number
+}
+
+export interface StepControls {
+  jump: boolean
+  forward: boolean
+  sprint: boolean
+}
+
+/** 纯函数便于测试：只有真正的 1 格抬高才起跳，不会对 2 格以上高差连续硬跳。 */
+export function stepControls (current: NavVector, next: NavVector): StepControls {
+  const horizontal = Math.hypot(next.x - current.x, next.z - current.z)
+  const dy = next.y - current.y
+  return {
+    jump: dy > 0.4 && dy <= 1.2 && horizontal < 2.2,
+    forward: true,
+    sprint: dy <= 0.4 && horizontal > 2.2
+  }
+}
+
+function sleep (ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+export class RouteExecutor {
+  async run (bot: ExecutorBot, waypoints: NavVector[], options: ExecutorOptions): Promise<RouteExecutionResult> {
+    if (waypoints.length === 0) return { status: 'arrived', reason: null }
+    const perWaypointMs = Math.max(800, options.perWaypointMs ?? 2500)
+    const deadline = Date.now() + Math.max(3000, options.totalMs ?? 25000)
+    let lastPosition: Vec3 | null = null
+    let lastMovedAt = Date.now()
+    try {
+      for (const waypoint of waypoints) {
+        const target = new Vec3(waypoint.x + 0.5, waypoint.y, waypoint.z + 0.5)
+        const waypointDeadline = Math.min(deadline, Date.now() + perWaypointMs)
+        while (true) {
+          if (options.isCancelled()) return { status: 'cancelled', reason: 'cancelled' }
+          if (Date.now() > deadline || Date.now() > waypointDeadline) {
+            return { status: 'timeout', reason: 'waypoint_timeout' }
+          }
+          const entity = bot.entity
+          if (!entity) return { status: 'cancelled', reason: 'entity_unavailable' }
+          const position = entity.position
+          const horizontal = Math.hypot(position.x - target.x, position.z - target.z)
+          const vertical = Math.abs(position.y - target.y)
+          if (horizontal <= 0.85 && vertical <= 1.3) {
+            bot.setControlState('forward', false)
+            bot.setControlState('jump', false)
+            bot.setControlState('sprint', false)
+            break
+          }
+          if (lastPosition && position.distanceTo(lastPosition) >= 0.18) {
+            lastPosition = position.clone()
+            lastMovedAt = Date.now()
+          } else if (!lastPosition) {
+            lastPosition = position.clone()
+          } else if (Date.now() - lastMovedAt > 1000) {
+            return { status: 'stuck', reason: 'no_progress' }
+          }
+
+          const current: NavVector = { x: Math.floor(position.x), y: Math.floor(position.y), z: Math.floor(position.z) }
+          const controls = stepControls(current, waypoint)
+          await bot.lookAt(new Vec3(target.x, target.y + 1.6, target.z), true)
+          bot.setControlState('forward', controls.forward)
+          bot.setControlState('sprint', controls.sprint)
+          if (controls.jump) {
+            bot.setControlState('jump', true)
+            await sleep(190)
+            bot.setControlState('jump', false)
+            await sleep(240)
+          } else {
+            await sleep(140)
+          }
+        }
+      }
+      return { status: 'arrived', reason: null }
+    } finally {
+      try {
+        bot.clearControlStates()
+      } catch {
+        // 清理失败不应掩盖导航结果
+      }
+    }
+  }
+}

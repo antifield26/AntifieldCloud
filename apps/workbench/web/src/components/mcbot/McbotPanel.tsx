@@ -77,6 +77,21 @@ const AUTONOMY_STATE_TONES: Record<string, BadgeTone> = {
   failed: 'danger',
 }
 
+const NAVIGATION_STATE_LABELS: Record<string, string> = {
+  idle: '待机',
+  planning: '规划中',
+  executing: '移动中',
+  fallback: '兜底',
+}
+
+const NAVIGATION_SOURCE_LABELS: Record<string, string> = {
+  pathfinder: 'pathfinder',
+  planner: '确定性规划',
+  ai: 'AI 路点',
+  teleport: '安全传送',
+  stopped: '已停止',
+}
+
 /** 聊天内容不允许 C0 控制字符与 DEL。 */
 function hasControlChars(value: string): boolean {
   for (const char of value) {
@@ -197,6 +212,23 @@ function McbotStatusCard({
           <Fact label="记忆">
             {status.memory.players} 位玩家 / {status.memory.turns} 轮
           </Fact>
+          {status.navigation ? (
+            <Fact
+              label="寻路"
+              hint={
+                status.navigation.lastFallback
+                  ? `最近兜底：${status.navigation.lastFallback === 'teleport' ? '安全传送' : '停止'}`
+                  : status.navigation.aiUsed
+                    ? 'AI 已参与本次路线'
+                    : undefined
+              }
+            >
+              {NAVIGATION_STATE_LABELS[status.navigation.state] ?? status.navigation.state}
+              {status.navigation.source
+                ? ` · ${NAVIGATION_SOURCE_LABELS[status.navigation.source] ?? status.navigation.source}`
+                : ''}
+            </Fact>
+          ) : null}
           <Fact label="mcbot 版本">
             {snapshot.version ?? status.version ?? '未知'}
             <span className="mcbot-fact-sub">

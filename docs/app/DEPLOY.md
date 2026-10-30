@@ -1,4 +1,4 @@
-# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.5）
+# 部署手册（Raspberry Pi 5 / Debian 13，v1.0.6）
 
 > 所有 Agent 会话与人工操作都按本文件执行；涉及系统状态的操作要逐条确认。
 > 目标运行位置：`/opt/antifieldcloud/current`，服务用户 `antifieldcloud`，监听 `127.0.0.1:3000`。
@@ -14,6 +14,8 @@
 - 非敏感部署值（域名/路径/公网 MC 地址）写入 Pi 的 `/etc/antifieldcloud/deploy.conf`（root 只读，不提交仓库），
   由 `bootstrap-env.sh` 读取；密钥只来自现有服务配置或离线保管。
 - 当前 schema **v18**：`audit_write_failures` 保存审计失败诊断；`chatbot_group_roles` 保存群聊共享角色卡；`chatbot_memory_items`/`chatbot_memory_state` 保存结构化记忆；`chatbot_targets.chat_trigger` 为兼容列。迁移只向上、无 down；迁移前执行 `PRAGMA foreign_key_check`，外键损坏或 schema 高于程序支持版本时拒绝启动。部署脚本切换前自动做迁移前 DB 快照，回滚必须使用该快照。
+
+> **v1.0.6 部署计划（2026-10-30，待实施）**：MC Bot 统一寻路层（确定性 A* + 受控执行 + AI 路点 + 安全兜底）、`navigation` 状态与 app 面板显示；app schema 保持 v18，mcbot 契约 v1；新增 `PATH_*` 九键；先部署 mcbot 1.0.6 → app 1.0.6，跑部署内 smoke，再执行 1/2/3/5 级台阶/矮墙/绕行/垂直墙/安全区外跟随矩阵；矩阵通过后才创建 Tag/Release。回滚：mcbot `/opt/mcbot/releases/20261030T120449Z`、app `/opt/antifieldcloud/releases/20261030T110436Z`，并可先关闭 `PATH_PLANNER_ENABLED`/`PATH_AI_ENABLED`。
 
 > **v1.0.5 生产记录（2026-10-30，MC Bot 修复/新特性 + 全仓 Debug）**：app release `/opt/antifieldcloud/releases/20261030T110436Z`（1.0.5/schema18/OpenCode 2.2.0），mcbot release `/opt/mcbot/releases/20261030T120449Z`（1.0.5/contract1）；部署前 app DB 快照 `db-predeploy-20261030T110524704Z.sqlite`；mcbot 部署前备份 `/var/backups/antifieldcomplexx/mcbot-*-predeploy-20261030T110404Z`；app schema 无迁移，mcbot 本地 `presence.json`/`goals.db` additive；部署内 smoke **26/0/1/2**，最终本机 smoke **29/0/1/2**（WARN=drill schema17；SKIP=加密/异地关闭）；Windows 任务标记 1.0.5；实机在线模式/目标/清怪/自动生存通过；复杂高差路径仍可能安全传送（见 `docs/app/DEBUG-AUDIT-v1.0.5.md`）；已发布 Tag v1.0.5 + GitHub Release。
 
@@ -199,16 +201,16 @@ systemd 已启用）→ 上传并校验 tar SHA-256 → 解包到 `/opt/antifiel
 - 手工等价步骤（仅在脚本不可用时）：解包 → `npm ci --omit=dev --ignore-scripts` → 先跑
   `node scripts/backup.mjs --snapshot-db` → 写入/校验 `APP_VERSION` → `ln -sfn` → `systemctl restart antifieldcloud` → `curl /healthz`。
 
-### 3.0 应用部署步骤（当前版本 v1.0.5；schema v18）
+### 3.0 应用部署步骤（当前版本 v1.0.6；schema v18）
 
 1. **本地发布前校验**（PC）：`npm run check`、`npm run build`、`node scripts/check-version.mjs`（严格模式，含 schema/OpenCode 交叉校验）、
-   `node scripts/check-prod-deps.mjs`；2026-10-30 v1.0.5 本地实测：app **603**（602 pass、1 skip）、`test:web` **275**（49 文件）、mcbot **127**、check-version 期望 `1.0.5`、check-prod-deps 通过。工作树干净后记录 commit。
+   `node scripts/check-prod-deps.mjs`；2026-10-30 v1.0.6 本地实测：app **603**（602 pass、1 skip）、`test:web` **278**（50 文件）、mcbot **139**、check-version 期望 `1.0.6`、check-prod-deps 通过。工作树干净后记录 commit。
 2. **部署前只读检查**：`backup.mjs --pending` 无异常、PC 最新 `.sha256` 可校验、`secretsOk=true`；`df -hT /` 余量充足（开启加密后按 2× 归档空间预留）；
    记录当前 `/healthz` 与 OpenCode 版本；`deploy/tool-versions.json` 为期望 schema/OpenCode 来源。
 3. **OpenCode 2.2.0**：当前已升级并验收（按 §3.2）；本版本不重复升级。
 4. **部署**：`.\scripts\deploy.ps1 -PiHost <直连 IP>`；脚本执行预检/构建/上传 tar SHA-256 校验/`npm ci --omit=dev`/迁移前 DB 快照/
    `APP_VERSION=1.0.4` 注入/切换 current/restart（失败进入回滚）/健康检查/只读 smoke；成功后写 `release.json`/`deploy-history.log`。
-   **4.1 mcbot**：先部署 mcbot v1.0.5（最低 v0.6.0；新增 presence/goals/survival 本地文件，HTTP 契约仍 v1），确认仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），再部署应用并验证 `/api/mcbot/status`、`/api/mcbot/presence`、`/api/mcbot/goals`。2026-10-30 按“mcbot 1.0.5 → app 1.0.5”执行。
+   **4.1 mcbot**：先部署 mcbot v1.0.6（最低 v0.6.0；新增统一导航/`navigation` 状态，HTTP 契约仍 v1），确认仅监听 `127.0.0.1:3010`（`/healthz.contractVersion=1`），再部署应用并验证 `/api/mcbot/status`（含可选 `navigation`）、`/api/mcbot/presence`、`/api/mcbot/goals`。2026-10-30 按“mcbot 1.0.6 → app 1.0.6”执行。
 5. **验证**：预期 `/healthz` = `{"ok":true,"version":"1.0.4","schemaVersion":18,...}`；smoke 使用
    `.\scripts\smoke.ps1 -PiHost <直连 IP> -ExpectedVersion 1.0.4 -ExpectedSchemaVersion 18 -ExpectedOpenCodeVersion 2.2.0 -ExpectedMcbotVersion 1.0.4`
    （未启用 mcbot 时追加 `-SkipMcbot`；带 Access token 再跑完整版）。新检查包括 OpenCode 版本/MCP 进程/`/api/mcp`/fail2ban/unit 漂移/env 漂移/加密配置/异地状态/mcbot 服务与版本/本地任务安装标记；
