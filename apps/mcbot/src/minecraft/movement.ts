@@ -79,7 +79,6 @@ export class MovementManager {
 
   attach (bot: Bot): void {
     this.bot = bot
-    this.installPlayerInputBridge(bot)
     const movements = new Movements(bot)
     movements.canDig = false
     movements.canOpenDoors = false
@@ -387,14 +386,6 @@ export class MovementManager {
         return block ? block.name : null
       },
       forceGround: () => this.refreshGround(bot),
-      forceJump: () => {
-        if (!bot.entity) return
-        bot.entity.velocity.y = 0.42
-        bot.entity.velocity.x = 0
-        bot.entity.velocity.z = 0
-        bot.entity.onGround = false
-        ;(bot as Bot & { jumpQueued?: boolean }).jumpQueued = true
-      },
       getControlState: control => bot.getControlState(control)
     }
   }
@@ -403,32 +394,6 @@ export class MovementManager {
    * 传送/重连后 mineflayer 可能保留 onGround=false，导致跳跃键被物理层忽略。
    * 只在脚下确实有完整方块且脚底贴近方块顶面时纠正；不改变真实空中状态。
    */
-  /**
-   * Minecraft 1.21.6+ 用 player_input 位图表达移动/跳跃；mineflayer 只对 sneak 自动发该包。
-   * 这里把当前控制状态逐 tick 同步给服务器，避免服务端把客户端跳跃/移动纠正回原位。
-   */
-  private installPlayerInputBridge (bot: Bot): void {
-    const supported = bot.supportFeature('newPlayerInputPacket')
-    this.logger.info('player input bridge', { supported })
-    if (!supported) return
-    const client = bot._client as unknown as { write: (name: string, data: unknown) => void }
-    bot.on('physicsTick', () => {
-      try {
-        const flags =
-          (bot.getControlState('forward') ? 1 : 0) |
-          (bot.getControlState('back') ? 2 : 0) |
-          (bot.getControlState('left') ? 4 : 0) |
-          (bot.getControlState('right') ? 8 : 0) |
-          (bot.getControlState('jump') ? 16 : 0) |
-          (bot.getControlState('sneak') ? 32 : 0) |
-          (bot.getControlState('sprint') ? 64 : 0)
-        client.write('player_input', { inputs: { _value: flags } })
-      } catch {
-        // 连接切换期间忽略；下一次 physicsTick 继续同步。
-      }
-    })
-  }
-
   private refreshGround (bot: Bot): void {
     const position = bot.entity?.position
     if (!position) return

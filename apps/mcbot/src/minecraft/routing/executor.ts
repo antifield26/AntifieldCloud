@@ -16,7 +16,6 @@ export interface ExecutorBot {
   physicsEnabled?: () => boolean
   blockAtFeet?: () => string | null
   forceGround?: () => void
-  forceJump?: () => void
   getControlState?: (control: 'forward' | 'jump' | 'sprint' | 'sneak') => boolean
 }
 
@@ -92,7 +91,7 @@ export class RouteExecutor {
             bot.setControlState('sprint', false)
             break
           }
-          if (lastPosition && position.distanceTo(lastPosition) >= 0.18) {
+          if (lastPosition && position.distanceTo(lastPosition) >= 0.05) {
             lastPosition = position.clone()
             lastMovedAt = Date.now()
           } else if (!lastPosition) {
@@ -118,7 +117,6 @@ export class RouteExecutor {
           bot.setControlState('sprint', controls.sprint)
           if (controls.jump) {
             bot.forceGround?.()
-            bot.forceJump?.()
             bot.setControlState('jump', true)
             await sleep(190)
             bot.setControlState('jump', false)
