@@ -19,6 +19,7 @@
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
 | [AUDIT](app/AUDIT.md) | 审计发现与残余风险 |
 | [DEBUG-AUDIT-v1.0.6](app/DEBUG-AUDIT-v1.0.6.md) | v1.0.6 寻路重构、测试矩阵与残余 |
+| [RESOURCE-AUDIT-2026-10-31](app/RESOURCE-AUDIT-2026-10-31.md) | 树莓派低磁盘根因、release 清理与防复发 |
 | [DEBUG-AUDIT-v1.0.5](app/DEBUG-AUDIT-v1.0.5.md) | v1.0.5 全仓 Debug、寻路根因分析 |
 
 ## Minecraft bot（apps/mcbot）

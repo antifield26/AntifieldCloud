@@ -14,6 +14,7 @@
 - 未单独执行：主动取消/死亡、`PATH_AI_ENABLED=false` 实机重跑；由单元/集成覆盖控制清理与关闭路径。
 - 备份运维（2026-10-30）：Windows 每日备份任务经 UAC 重装为 **1.0.6**、backupRoot **`D:\Backups`**、任务 Ready；手动拉取 `snapshot-20261030T145409822Z-inc.tar.gz` 成功（secrets=ok）；恢复演练 **`20261030T145445Z` 通过**（full + 14 inc、schema 18、worldChecked=true）；本机 smoke **29/0/0/2**。
 - 发布：已创建 annotated Tag `v1.0.6` 与 GitHub Release（Tag `v1.0.6`；当前指向发布记录提交）。
+- 发布后运维（2026-10-31）：根分区低磁盘清理（91% → 37% 已用，可用 5.5 G → 36 G）；根因是 mcbot 历史 release 未清理；已删除 36 个 mcbot + 26 个 legacy release，`apps/mcbot/scripts/deploy.ps1` 新增默认保留 3 个的清理逻辑；smoke 仍为 **29/0/0/2**。详见 [RESOURCE-AUDIT-2026-10-31](RESOURCE-AUDIT-2026-10-31.md)。
 
 ### v1.0.5 部署与实机验收（2026-10-30，已执行）
 

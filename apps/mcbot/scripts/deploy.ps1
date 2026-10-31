@@ -6,12 +6,14 @@
   [switch]$Provision,
   [switch]$ServerConfig,
   [switch]$SkipServiceSwitch,
-  [int]$HealthTimeoutSec = 90
+  [int]$HealthTimeoutSec = 90,
+  [int]$KeepReleases = 3
 )
 
 # 部署 mcbot（原 lofii-bot）到 /opt/mcbot/releases/<UTC>，切换 symlink、重启、校验 /healthz，
 # 失败自动回滚上一 release。v1.0.0 起为 workspace 感知布局：release 根 = 根 package/lock + apps/mcbot，
 # systemd WorkingDirectory = /opt/mcbot/current/apps/mcbot。
+# 每次成功部署后清理旧 release，默认仅保留最新 3 个；current 与刚部署前的 previous 永不删除。
 # 首次部署：.\apps\mcbot\scripts\deploy.ps1 -Provision -ServerConfig -AllowDirty
 # v1.0.0 生产切换：先 -SkipServiceSwitch 安装 release（不启动 mcbot），再执行
 # .\scripts\migrate-v1.0.0.ps1 -Mode Apply 完成用户/环境/服务/数据切换。
@@ -180,6 +182,21 @@ try {
   Write-Host (Invoke-Remote -Command "sudo systemctl is-active mcbot.service; curl -fsS --max-time 5 http://127.0.0.1:3010/healthz" -Label "final").Output
   Write-Host "release: $releaseDir"
   Write-Host "rollback: sudo ln -sfn <previous> $currentLink && sudo systemctl restart mcbot"
+
+  # release 根包含完整 node_modules（约 0.5 GiB）；不清理会在反复部署后耗尽 SD 卡。
+  $keep = [Math]::Max(2, $KeepReleases)
+  $cleanup = @"
+cur=`$(readlink -f /opt/mcbot/current 2>/dev/null || true)
+prev='$previousTarget'
+ls -1dt /opt/mcbot/releases/* 2>/dev/null | awk -v c="`$cur" -v p="`$prev" -v k=$keep 'NR>k && `$0 != c && `$0 != p' | xargs -r sudo rm -rf
+echo "retained: `$(ls -1dt /opt/mcbot/releases/* | head -n $keep | tr '\n' ' ')"
+"@
+  try {
+    Write-Host "== cleaning old releases (keep=$keep) =="
+    Write-Host (Invoke-Remote -Command $cleanup -Label "cleanup releases").Output
+  } catch {
+    Write-Warning "旧 release 清理失败（不影响当前服务）：$($_.Exception.Message)"
+  }
 }
 catch {
   Write-Host "DEPLOY FAILED: $($_.Exception.Message)" -ForegroundColor Red

@@ -35,6 +35,8 @@ npm run check
 
 ## 2. 后续部署/回滚
 
+> `deploy.ps1` 成功部署后默认只保留最新 3 个 release（`-KeepReleases` 可调），并始终保护 `current` 与刚部署前的 `previous`；每个 release 含完整 `node_modules`，约 0.5 GiB。SD 卡低磁盘根因与 2026-10-31 清理记录见 [RESOURCE-AUDIT-2026-10-31](../app/RESOURCE-AUDIT-2026-10-31.md)。
+
 ```powershell
 .\scripts\deploy.ps1
 ```
