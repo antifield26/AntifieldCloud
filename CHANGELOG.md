@@ -41,7 +41,7 @@ v1.0.5 为 MC Bot 修复与新特性版本，并包含一次全仓 Debug：修�
 ### Verification
 
 - 门禁：app 603（602 pass、1 skip）+ web 275（49 文件）+ mcbot 127；`npm run check`/`build`/`check-version`（严格 1.0.5）/`check-naming`/`check:docs` 通过。
-- 生产：app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`；部署内 smoke 26/0/1/2，最终 `-SkipPublic` 本机 smoke 29/0/1/2，Windows 任务标记 1.0.5；实机验证在线模式/目标/清怪/自动生存；高低差路径仍会安全传送，残余见 `docs/app/DEBUG-AUDIT-v1.0.5.md`。
+- 生产：app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`；部署内 smoke 26/0/1/2，最终 `-SkipPublic` 本机 smoke 29/0/1/2，Windows 任务标记 1.0.5；实机验证在线模式/目标/清怪/自动生存；高低差路径仍会安全传送，残余见 `docs/app/AUDIT.md`。
 - 发布：[GitHub Release v1.0.5](https://github.com/antifield26/AntifieldComplexx/releases/tag/v1.0.5)。
 
 ## [v1.0.4] - 2026-10-30（已部署生产（最终构建）；已发布 Tag/Release）
@@ -100,7 +100,7 @@ v1.0.2 是 mcbot AI 自主能力与 Agentic 验收版本：模型通过 OpenCode
 - **mcbot AI 自主会话**：仅主人显式启动；OpenCode 运行时注册 MCP server，模型原生调用 `start_task`/`stop_task`/`go_home`/`deposit`/`task_status`/`finish`；每次会话随机 run_id + Bearer；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 白名单；预算/失败/超时/断线/急停/任务清理；审计与 `autonomy` 事件。
 - **应用**：mcbot 面板新增自主模式卡（状态/目标/时间/工具调用/最近决策，启动/急停二次确认）；任务下拉同步 10 种任务（guard/escort/explore）；`GET /api/mcbot/autonomy`、`POST /api/mcbot/autonomy/start|stop`，CSRF/限流/审计。
 - **运维**：mcbot 纳入服务监控与 `service_down` 告警；`McbotService.stop()` 中止并等待在途轮询、停止后不写告警游标；`/api/mcbot/status|history` GET 60/min 限流。
-- **Agentic 验收**：`test/agentic` 离线 scenario harness（CI）；`scripts/agentic-acceptance.mjs` 可选实机 conductor（默认 dry-run，需显式 `--allow-writes`）；`docs/mcbot/AGENTIC-ACCEPTANCE.md` 三角色流程。
+- **Agentic 验收**：`test/agentic` 离线 scenario harness（CI）；`scripts/agentic-acceptance.mjs` 可选实机 conductor（默认 dry-run，需显式 `--allow-writes`）；`docs/mcbot/ACCEPTANCE.md` 三角色流程。
 
 ### Verification
 

@@ -4,7 +4,7 @@
 
 ### v1.0.6 寻路重构验收（2026-10-30，已部署；核心矩阵通过）
 
-> **结论：1–5 级台阶、矮墙、2 格墙绕行、安全区外路径通过；5 格垂直墙明确兜底。** 见 [DEBUG-AUDIT-v1.0.6](DEBUG-AUDIT-v1.0.6.md)。
+> **结论：1–5 级台阶、矮墙、2 格墙绕行、安全区外路径通过；5 格垂直墙明确兜底。** 见 [AUDIT](AUDIT.md)。
 
 - 代码：app schema 保持 v18；mcbot 契约 v1；新增 `navigation` 可选字段与 `PATH_*` 配置；无 DB 迁移。
 - 单元/集成：规划器覆盖平地、1/2/3/5 级台阶、1 格矮墙、2 格墙绕行、5 格垂直墙 `no_path`、半砖；执行器 1 格跳/2 格不硬跳；AI advisor 合法/非法/越界/未配置；app 状态兼容。
@@ -14,7 +14,7 @@
 - 未单独执行：主动取消/死亡、`PATH_AI_ENABLED=false` 实机重跑；由单元/集成覆盖控制清理与关闭路径。
 - 备份运维（2026-10-30）：Windows 每日备份任务经 UAC 重装为 **1.0.6**、backupRoot **`D:\Backups`**、任务 Ready；手动拉取 `snapshot-20261030T145409822Z-inc.tar.gz` 成功（secrets=ok）；恢复演练 **`20261030T145445Z` 通过**（full + 14 inc、schema 18、worldChecked=true）；本机 smoke **29/0/0/2**。
 - 发布：已创建 annotated Tag `v1.0.6` 与 GitHub Release（Tag `v1.0.6`；当前指向发布记录提交）。
-- 发布后运维（2026-10-31）：根分区低磁盘清理（91% → 37% 已用，可用 5.5 G → 36 G）；根因是 mcbot 历史 release 未清理；已删除 36 个 mcbot + 26 个 legacy release，`apps/mcbot/scripts/deploy.ps1` 新增默认保留 3 个的清理逻辑；smoke 仍为 **29/0/0/2**。详见 [RESOURCE-AUDIT-2026-10-31](RESOURCE-AUDIT-2026-10-31.md)。
+- 发布后运维（2026-10-31）：根分区低磁盘清理（91% → 37% 已用，可用 5.5 G → 36 G）；根因是 mcbot 历史 release 未清理；已删除 36 个 mcbot + 26 个 legacy release，`apps/mcbot/scripts/deploy.ps1` 新增默认保留 3 个的清理逻辑；smoke 仍为 **29/0/0/2**。详见 [AUDIT 附录 B](AUDIT.md)。
 
 ### v1.0.5 部署与实机验收（2026-10-30，已执行）
 
@@ -23,7 +23,7 @@
 - 发布：app release `/opt/antifieldcloud/releases/20261030T110436Z`（1.0.5/schema18/OpenCode2.2.0）、mcbot 最终 release `/opt/mcbot/releases/20261030T120449Z`（1.0.5/contract1）；部署前 app DB 快照 `db-predeploy-20261030T110524704Z.sqlite`；mcbot 部署前备份 `/var/backups/antifieldcomplexx/mcbot-*-predeploy-20261030T110404Z`；Windows 备份任务已重装为 appVersion=1.0.5。
 - 测试：`npm run check`、`npm run build`、`check-version`（严格 1.0.5）、`check-naming`、`check:docs` 通过；app **603**（602 pass、1 skip）+ web **275**（49 文件）+ mcbot **127**（新增 presence/goal store/goal runner 测试）。
 - 生产只读：部署内 smoke **26/0/1/2**；最终 `-SkipPublic` 本机 smoke **29/0/1/2**（WARN=drill schema17，SKIP=加密/异地默认关闭）；Windows 任务标记 PASS。公网完整 smoke 在收尾时多次遇到 PC→Cloudflare 边缘 20s 超时（同时间段 ai 401 与 Pi 本机健康正常），未记为应用失败；网络恢复后应复跑完整 Access smoke。
-- 实机验收：在线模式 `auto/off/auto` 切换正常（off 离开、auto 18s 内重连）；长期目标“验收：回家”创建→start→completed；`clearing` 启动/停止正常（无怪时不产击杀）；自动生存 `enabled=true`，食物/血量恢复；**路径**：高差场景 pathfinder 停滞约 4s 后安全传送到目标（`159.5,69,422.5`）；显式起跳重试未能在该 5 格高台场景形成规范路径，用户判定“不稳定”，残余见 `docs/app/DEBUG-AUDIT-v1.0.5.md` §2。
+- 实机验收：在线模式 `auto/off/auto` 切换正常（off 离开、auto 18s 内重连）；长期目标“验收：回家”创建→start→completed；`clearing` 启动/停止正常（无怪时不产击杀）；自动生存 `enabled=true`，食物/血量恢复；**路径**：高差场景 pathfinder 停滞约 4s 后安全传送到目标（`159.5,69,422.5`）；显式起跳重试未能在该 5 格高台场景形成规范路径，用户判定“不稳定”，残余见 `docs/app/AUDIT.md` 附录 C §2。
 - 发布：已按用户要求发布 Tag v1.0.5 + GitHub Release；路径残余如实记录，不宣称规范寻路通过。
 
 ### v1.0.4 主更新与生产验收（2026-10-30，已执行）

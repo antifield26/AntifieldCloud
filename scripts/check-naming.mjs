@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs'
 
 const EXEMPT = [
   /^docs\/legacy\//,
+  /^docs\/app\/AUDIT\.md$/, // 审计归档保留历史服务名与迁移记录
   /^docs\/app\/RESOURCE-AUDIT-/, // 资源审计报告需要记录旧 release 路径
   /^apps\/mcbot\/data-local/,
   /^node_modules\//,

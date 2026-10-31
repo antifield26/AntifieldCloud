@@ -1,4 +1,6 @@
-# AntifieldComplexx 审计与修复记录（v0.2.0 / 第二轮 v0.3.x / 第三轮 v0.4.0 / 第四轮 v0.4.2+v0.5.0 / 第五轮 v0.5.11→v0.6.0 / 第六轮 v0.6.6→v0.7.0 / v0.8.0 mcbot 对接 / v0.8.0 Minor 补审计→v0.8.1 / v1.0.5 全仓 Debug）
+# AntifieldComplexx 审计与修复记录（v0.2.0 → v1.0.6）
+
+> 本文合并原按版本拆分的 `DEBUG-AUDIT-v1.0.5.md`、`DEBUG-AUDIT-v1.0.6.md` 与 `RESOURCE-AUDIT-2026-10-31.md`；当前 v1.0.6 正文、历史 v1.0.5 Debug、2026-10-31 磁盘审计与本次文档漂移检查分别见附录 A/B/C/D。
 
 > 本文件补齐 2026-10-20 未落档的第二轮审计记录、第三轮 v0.4.0 与第四轮 v0.4.2/v0.5.0 记录；第一轮 v0.2.0 记录保留在下方。
 
@@ -12,13 +14,13 @@
 
 - 目标：不再依赖零散看门狗/手动跳跃；统一 pathfinder → 确定性 A* → 受控执行 → AI 路点 → 安全兜底。
 - 边界：只读现有方块，不挖掘/不放置/不跑酷；任务/目标/自主限安全区；`过来/跟随`可走安全区外但无传送；AI 仅建议受控路点。
-- 证据与矩阵：见 [DEBUG-AUDIT-v1.0.6.md](DEBUG-AUDIT-v1.0.6.md)、[ACCEPTANCE.md](ACCEPTANCE.md)；1–5 级台阶/矮墙/2 格墙绕行/安全区外路径通过，5 格垂直墙明确兜底。
+- 证据与矩阵：见本文附录 A、[ACCEPTANCE.md](ACCEPTANCE.md)；1–5 级台阶/矮墙/2 格墙绕行/安全区外路径通过，5 格垂直墙明确兜底。
 
 ## v1.0.5 全仓 Debug（2026-10-30，已部署并发布 Tag/Release）
 
 - 范围：app server/web、mcbot、部署脚本与文档声明；生产只读日志 + 用户实机验收。
 - 结论：P0=0；P1 已修复 4 项（自动补货全有或全无、空闲无防御、`clearing` 误要求铁斧、pathfinder 停滞无兜底）；P2 已修复在线模式/目标持久化与文档漂移；P3 修复补货告警噪声。
-- 残余：复杂高差/连续墙体仍可能由 pathfinder 卡住后安全传送；未记为规范寻路通过。详细证据、根因假设与 v1.0.6 建议见 [DEBUG-AUDIT-v1.0.5.md](DEBUG-AUDIT-v1.0.5.md)。
+- 残余：复杂高差/连续墙体仍可能由 pathfinder 卡住后安全传送；未记为规范寻路通过。详细证据、根因假设与 v1.0.6 建议见本文附录 C。
 - 门禁：app 603/web 275/mcbot 127；`npm run check`、`build`、`check-version` 1.0.5、`check:docs` 通过；本机 smoke 29/0/1/2。
 
 ## v0.8.0 mcbot 对接（本地实现与生产部署/只读验收完成；**后续 Minor 补审计见下节，v0.8.1 修复**；2026-10-27）
@@ -688,3 +690,185 @@
 - **运维缺陷 F1（drill 增量链误报）**：`drill-verify.mjs` 的 `details` 未返回 manifest `since`，`drill.ps1` 对所有含 inc 的链误报 `chain_since_missing`；生产首次演练 `20261027T061021Z` 暴露。已补字段与单测，重跑 `20261027T061319Z` 通过（full+5 inc、schema17）。
 - **明确残余**：首轮角色卡仍存在于 OpenCode 会话历史（后续请求不再发送正文）；OpenCode 进程是信任边界（可读全部上下文作用域）；群共享记忆在群成员间可见为既有语义；上下文目录为派生数据、不进入备份，恢复后重建。
 - **未决**：Tag `v0.7.3` + GitHub Release 已发布；Windows 每日备份任务已重装并刷新到 0.7.3；生产未做破坏性 `/forget confirm` 与多成员群聊第二轮回读（自动化测试覆盖，留作可选复验）。
+
+---
+
+## 附录 A：v1.0.6 寻路重构与验收（原 DEBUG-AUDIT-v1.0.6）
+
+> 状态：**2026-10-30 已部署 v1.0.6，实机核心矩阵通过，已发布 Tag/Release**。  
+> 范围：`apps/mcbot` 导航层、`navigation` 状态、AI 路点建议、app 面板；生产 app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`。
+
+### 1. 本次改动
+
+- 新增 `apps/mcbot/src/minecraft/routing/`：
+  - `sampler.ts`：只读方块碰撞形状（含台阶/楼梯/半砖）、净空/危险/边界检查；不提供放置/挖掘。
+  - `planner.ts`：确定性 A*，支持 1 格抬高/2 格下落；超时/节点上限明确失败；**含高度变化的相邻路点不再被压缩折叠**。
+  - `executor.ts`：路点执行；只有下一路点抬高 1 格时显式起跳；贴台阶先退半步，卡滞先退一次再重试；停滞/取消清理控制。
+  - `trace.ts`：最近失败诊断环形缓冲。
+- `movement.ts`：统一 `navigateTo` 顺序：pathfinder → A* → 受控执行 → AI 路点 → 安全锚点/传送/停止；`过来/跟随`允许安全区外路径但不传送；任务/目标/自主仍限安全区。
+- `ai/path-advisor.ts`：确定性失败后单次 AI 请求；7×7 高度摘要；严格 JSON/最多 3 点；仅 OpenCode 可用且 `PATH_AI_ENABLED` 生效；AI 不控制、不能传送。
+- `/status.navigation` 与 app 面板 Fact；兜底同时写 `movement` 事件、聊天提示。
+- 新增 `PATH_*` 九键；无 app schema 迁移，mcbot 契约仍 v1。
+
+### 2. 根因与修复（v1.0.5 残余）
+
+1. **执行器把正常慢速移动误判为停滞**：100ms 内位移约 0.1 格，原阈值 0.18/0.25 永远达不到；降到 0.05，并把 pathfinder 看门狗宽限从 1.8s 提高到 3.5s。
+2. **pathfinder 的 `physicsTick` 监控覆写手动控制键**：确定性执行期间临时摘掉 `monitorMovement`，`finally` 恢复；失败/取消不会留下挂起状态。
+3. **路点压缩把两级台阶折叠成一次两格跳**：只对同高度路点做共线压缩；逐级台阶必须逐点保留。
+4. **贴住台阶边缘起跳被服务端纠正**：跳前先退 220ms；停滞时再退一次，给绕行/台阶留出碰撞空间。
+5. **取消 `lookAt` 会朝错方向推进/恢复后跳失败**：恢复水平朝向目标后，受控执行可稳定逐级跳上台阶。
+
+### 3. 实机矩阵（2026-10-30）
+
+已部署：mcbot `/opt/mcbot/releases/20261030T143538Z`、app `/opt/antifieldcloud/releases/20261030T132040Z`；部署内 smoke 26/0/1/2。
+
+| 用例 | 结果 |
+|---|---|
+| 平地直线/回家 | `pathfinder` 通过，无传送 |
+| 1 级台阶 | `planner` 通过：`217,64,416 → 218,65,416 → 220,65,416`，到达 `(219.99,65,416.5)`，无传送 |
+| 2 级台阶 | `planner` 通过，到达 `(221.35,66,417.5)`，无传送 |
+| 3 级台阶 | `planner` 通过，到达 `(222.26,67,418.5)`，无传送 |
+| 5 级台阶 | `planner` 通过，到达 `(224.21,69,419.5)`，无传送 |
+| 1 格矮墙 | `pathfinder` 通过（侧面绕行），无传送 |
+| 2 格墙 + 绕行 | `planner` 通过，到达 `(220.28,64,420.7)`，无传送 |
+| 5 格垂直墙 | pathfinder 失败 → A* 6000 节点超时 → AI 建议无效 → **安全传送**；无卡死，符合“仅明确兜底”的失败标准 |
+| 安全区外 `过来` | pathfinder 到 `x=243.5`（安全区外），`navigation.source=pathfinder`，**无传送**；只路径移动 |
+| AI 无效建议 | 垂直墙测试中 AI 返回无效 → 不执行、不伪造成功 → 兜底 |
+
+未单独执行：主动取消/死亡、`PATH_AI_ENABLED=false` 的实机重跑；由单元/集成覆盖控制清理与关闭路径。测试用垂直墙、侧墙、forceload 已移除；安全区测试平台（台阶/矮墙）保留供复测。
+
+### 4. 门禁
+
+- `npm run check`：app **603**（602 pass、1 skip）+ web **278**（50 文件）+ mcbot **139**；命名检查通过。
+- `npm run build`、`check-version`（严格 1.0.6）、`check:docs` 通过。
+- 新增回归断言：逐级台阶的每一级路点都必须保留，防止压缩回归。
+- 发布后运维：Windows 每日备份任务 1.0.6 / backupRoot `D:\Backups` / Ready；手动拉取成功；恢复演练 `20261030T145445Z` 通过（full + 14 inc、schema 18、世界归档校验通过）；本机 smoke **29 通过 / 0 失败 / 0 警告 / 2 跳过**。
+
+### 5. 回滚
+
+- mcbot 回退 v1.0.5 release `/opt/mcbot/releases/20261030T120449Z`；app 回退 `/opt/antifieldcloud/releases/20261030T110436Z`。
+- 无需 DB 迁移；可先用 `PATH_PLANNER_ENABLED=false` / `PATH_AI_ENABLED=false` 降级。
+
+## 附录 B：树莓派磁盘占用排查（2026-10-31，原 RESOURCE-AUDIT-2026-10-31）
+
+### 结论
+
+v1.0.6 开发/部署期间根分区可用空间低于 10%，主要原因是 **mcbot 每次部署都会保留一个约 0.5 GiB 的完整 release，但部署脚本没有清理旧 release**；加上已停用但保留的旧版 bot 历史 release。
+
+已清理无用的历史 release，未删除当前版本、上一回滚版本、数据库、世界、备份或密钥：
+
+| 指标 | 清理前 | 清理后 |
+|---|---|---|
+| 根分区 | 58 G，已用 51 G，可用 5.5 G（91%） | 58 G，已用 21 G，可用 36 G（37%） |
+| `/opt/mcbot` | 21 G（40 个 release） | 2.2 G（4 个 release） |
+| `/opt/lofii-bot` | 13 G（27 个 release） | 471 M（1 个 release） |
+
+### 证据
+
+- `/opt/mcbot/releases`：40 个目录，每个 v1.0.6 release 约 **538 MiB**（含 `node_modules`）；v1.0.5 release 约 538 MiB。
+- `/opt/lofii-bot/releases`：27 个 legacy release，每个约 471 MiB；`lofii-bot.service` 已 disabled/inactive，属 v1.0.1 前旧服务。
+- 其他占用为正常基线：`/home/antifield/minecraft-server/world` 4.1 GiB、`/usr` 5.7 GiB、`/var` 2.4 GiB、OpenCode/备份/运行时若干；这些未清理。
+- 根因代码：`apps/mcbot/scripts/deploy.ps1` 只记录 `previousTarget` 用于回滚，部署成功后没有 release 保留策略；app 部署脚本已有“保留 3 个”的清理，因此 app 侧仅 3 个 release。
+
+### 已执行清理
+
+- mcbot：保留当前 `20261030T143538Z`、刚部署前回滚版本 `20261030T120449Z`，并保留更新的 2 个 v1.0.6 开发 release；删除其余 36 个。
+- lofii-bot：保留 current `20261027T111640Z` 供 legacy 回滚，删除其余 26 个。
+- 未触碰：`/opt/antifieldcloud`、`/var/lib/antifieldcloud`、Minecraft 世界、备份/密钥、OpenCode 数据。
+- 清理后 `mcbot.service` active、`/healthz` 返回 `version=1.0.6/contractVersion=1`；回滚目标 `20261030T120449Z` 存在。
+
+### 防复发
+
+- `apps/mcbot/scripts/deploy.ps1` 新增 `-KeepReleases`（默认 **3**）和部署成功后清理逻辑；`current` 与刚部署前的 `previous` 永不删除，传入值小于 2 时按 2 保护。
+- app 部署已有“保留最新 3 个、保护 current/previous”逻辑，无需改动。
+- legacy `lofii-bot` 不再部署；保留一个 current 以便回滚，后续确认不再需要时可再释放约 471 MiB。
+- 建议把根分区可用空间告警阈值设为 **≥15%**；当前 36 G 可用，已恢复充足余量。
+
+### 关联
+
+- 部署说明：[mcbot/DEPLOY.md](../mcbot/DEPLOY.md)
+- v1.0.6 验收：[ACCEPTANCE.md](ACCEPTANCE.md)
+
+## 附录 C：v1.0.5 全面 Debug（原 DEBUG-AUDIT-v1.0.5）
+
+> 范围：`apps/workbench`（server/web）、`apps/mcbot`、scripts/deploy 文档声明；生产只读日志。  
+> 方式：现有门禁 + 静态审查 + mcbot 故障注入/单元测试 + 生产只读验证 + 用户参与实机验收。  
+> 结论：P0 未发现；P1 已修复 4 项；寻路在复杂高差/连续墙体场景仍存在残余，v1.0.5 采用安全回退保证不无限卡死，深度自定义导航/AI 规划列入 v1.0.6。
+
+### 1. 发现与处理
+
+| 级别 | 发现 | 证据 | 处理 | 状态 |
+|---|---|---|---|---|
+| P1 | PaperMC 高低差/矮墙处 pathfinder 停滞，表现为原地跳动/长时间不移动 | 生产 19:44:42 `movement path stuck ... x=168,y=64,z=417`；用户实机复现 | `maxDropDown=2`、位置停滞看门狗（1.8s）、显式起跳+前进重试、水平/安全中间点/安全传送三层兜底；`minecraft-data` 3.117→3.119 | 部分修复（残余见下） |
+| P1 | 自动补货“全有或全无”：缺铁镐导致食物补货整体失败，低饥饿风险 | 生产 19:09:25 `杂物箱里没有足够的 iron_pickaxe`，当时食物 0 | 逐项补货，食物为关键项；工具缺失只记录不误报告警 | 已修复 |
+| P1 | 空闲状态没有防御/生存动作，夜晚被僵尸连续击杀 | 生产 19:21–19:31 连续 `lofii was slain by Zombie`；死亡位置家/箱子附近 | `autoSurvival()` 在空闲且有威胁时调用 Defender 白名单防御；上线后立即补货/进食检查 | 已修复（无武器/多怪时仍可能撤退失败） |
+| P1 | `clearing` 任务被通用补给逻辑要求铁斧，任务无法启动 | 生产 19:24 `铁斧快坏了，箱子里没有备用斧`，progress=0 | `clearing` 归入仅需食物的任务分支 | 已修复 |
+| P2 | 在线模式只能靠 env，无法运行时切换/重启保留 | 代码审查 `presence/manager.ts` | `presence.json` + `GET/POST /presence` + app 代理/面板；`off` 与任务冲突 409 | 已实现 |
+| P2 | 自动补货/目标重启后无持久状态 | 代码审查 | `AUTO_SURVIVAL` 默认开启；`goals.db`/goal_steps，重启 paused 不自动执行 | 已实现 |
+| P2 | 文档/任务数量/环境变量与新实现不一致 | `check:docs` 初始失败 | README/API/AGENTS/env/bootstrap/claims 同步 11 任务、新 env、目标/在线模式 | 已修复 |
+| P3 | 自动补货仅缺可选铁镐时产生 warning 告警噪声 | 生产 19:14/19:19/19:29 `auto_restock_failed` | 只有食物补货失败才告警；可选项缺失记 info | 已修复 |
+
+### 2. 寻路根因分析（残余）
+
+- **现象**：从安全区箱子/家走向高处玩家（约 5 格垂直差）时，pathfinder 在 `168,64,417` 处停滞；用户观察“碰到矮墙不重试跳跃”；超时/看门狗后安全传送到 `159.5,69,422.5` 并显示“到了”。
+- **已排除**：目标越界（目标在安全区）、控制权未释放（movement stop replace）、服务不可达（同秒状态正常）。
+- **可能根因**：
+  1. `mineflayer-pathfinder` 2.4.5 对 PaperMC 26.1.2/1.21.11 新方块状态（楼梯/台阶/墙）支持不完整；
+  2. `Movements` 安全限制（`canDig=false`、`allowParkour=false`、不搭建）使高差/封闭地形无可达路径；
+  3. `GoalNear` 的 3D 到达条件与玩家所在高台 y 不一致，路径失败后未退化为“先水平后垂直”的分段路线。
+- **v1.0.5 处理**：将无限卡死降级为最多约 1.8s 停滞检测 + 显式跳跃重试 + 安全传送；不会把 Bot 留在原地反复跳。`minecraft-data` 升级用于改善方块数据。
+- **残余**：大于 1 格的垂直墙、封闭高台、无楼梯地形仍可能只能安全传送；**不能宣称通过规范寻路到达**。需要 v1.0.6：
+  - 自定义高度感知 A* / 路点（楼梯/台阶/坡道识别、绕墙）；
+  - 停滞时 AI 生成受控中间路点（只允许安全区、只读观察 + 不建造/不挖掘）；
+  - 以模拟世界/夹具覆盖 1–5 格高差和墙体，再做实机验收。
+
+### 3. 生产只读验证
+
+- app `/healthz`：v1.0.5/schema18/db ok；mcbot `/healthz`：v1.0.5/contract1。
+- `/presence`：`auto` 连接/空服 idle；切换 `off` 后离开，再切 `auto` 后 18s 内重连；持久化文件 `presence.json` 0640。
+- `/goals`：创建“验收：回家”（home）→ start → completed；持久化 `goals.db` 0640。
+- `clearing`：启动成功、状态 running、stop 202（任务无 mobile 时保持待命）；不再要求铁斧。
+- 自动生存：`survival.enabled=true`，frequently checked；补货仅缺铁镐时不再阻断食物。
+- 用户实机：在线模式、目标、清怪可操作；路径高差场景仍出现停滞后安全传送。
+
+### 4. 测试与门禁
+
+- `npm run check` 通过；app **603**（602 pass、1 skip）、web **275**、mcbot **127**（新增 presence store、goal store、goal runner 测试）。
+- `npm run build`、`check-version`（严格 1.0.5）、`check-naming`、`check:docs` 通过。
+- 本地部署 smoke 26/0/1/2（WARN=drill schema17；SKIP=加密/异地默认关闭）；Windows 任务标记已重装 1.0.5。
+- 公网 smoke 在收尾时多次遇到 PC→Cloudflare 边缘超时（同一时段 AI 主机 401 可通、Pi 本机健康正常），未作为应用失败；网络恢复后应重跑完整 Access smoke。
+
+### 5. 残余风险
+
+- 高低差 pathfinder 复杂地形仍可能传送；需 v1.0.6 专门解决（见 §2）。
+- 空闲防御只使用背包内现有武器/护甲；无装备且多怪时可能撤退/死亡；需后续自动装备/回城策略。
+- v1.0.5 已按用户要求发布 Tag v1.0.5 + GitHub Release；路径残余不因发布而消失。
+
+## 附录 D：文档合并与漂移检查（2026-10-31）
+
+### 1. 已合并的同类文档
+
+| 原文档 | 合并到 | 处理 |
+|---|---|---|
+| `DEBUG-AUDIT-v1.0.6.md` | [AUDIT.md](AUDIT.md) 附录 A | 版本审计不再单文件 |
+| `RESOURCE-AUDIT-2026-10-31.md` | [AUDIT.md](AUDIT.md) 附录 B | 磁盘审计并入审计总记录 |
+| `DEBUG-AUDIT-v1.0.5.md` | [AUDIT.md](AUDIT.md) 附录 C | 历史 Debug 保留为附录 |
+| `mcbot/AGENTIC-ACCEPTANCE.md` | [mcbot/ACCEPTANCE.md](../mcbot/ACCEPTANCE.md) 的 Agentic 章节 | 同类验收流程合并 |
+
+保留的相邻文档：`PLAN.md` 是当前版本范围/决策，`ROADMAP.md` 是版本演进史；`CONSISTENCY-AUDIT.md` 是 mcbot 文档-实现一致性专项，二者职责不同，未强行合并。
+
+### 2. 本次修正的漂移
+
+- `docs/app/CHATBOT.md`：当前生产从过期的 v1.0.1 更新为 v1.0.6/schema18，并补当前 app/mcbot release。
+- `docs/app/SECURITY.md`：当前基线从 v1.0.1 更新为 v1.0.6（app 603/web 278/mcbot 139、smoke 29/0/0/2）。
+- `docs/app/DEPLOY.md`：QQ 验收段的“当前生产 v0.8.1”更新为 v1.0.6/schema18。
+- `docs/mcbot/CONSISTENCY-AUDIT.md`：v1.0.5/待矩阵条目更新为 v1.0.6 已发布；版本声明检查改为 1.0.6 生产。
+- `docs/mcbot/README.md`：修正 `deploy/env.example` 与 `LICENSE` 相对路径。
+- `docs/INDEX.md`、`README.md`、`AGENTS.md`、`ROADMAP.md`、`ACCEPTANCE.md`、`mcbot/*` 的旧审计文件链接全部指向合并后的 `AUDIT.md` / `ACCEPTANCE.md`。
+- 保留历史版本段落中的旧版本号/旧 smoke 计数；那是历史事实，不作为当前状态。
+
+### 3. 验证
+
+- 本地 Markdown 相对链接检查：59 个链接全部可解析。
+- `npm run check`、`check-version`、`check:docs`、`check:naming` 通过。
+- 当前生产快照：app `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`；schema18/OpenCode 2.2.0；Tag/Release `v1.0.6`。

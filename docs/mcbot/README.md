@@ -62,7 +62,7 @@
 - **原生 MCP 工具**：v1.0.2 提供 `start_task` / `stop_task` / `go_home` / `deposit` / `task_status` / `finish`；v1.0.3 增加 `observe` / `inspect_chest` / `eat` / `equip`（共 10 个）；OpenCode session 使用 deny-all + `mcbot_autonomy_*` 权限；每次会话随机 run_id + Bearer token。
 - **预算/安全**：`AUTONOMY_MAX_MINUTES`、`AUTONOMY_MAX_TOOL_CALLS`、`AUTONOMY_MAX_FAILURES`、任务白名单、手动指令抢占、聊天/面板急停；会话结束停止任务并清理 OpenCode session/MCP。
 - **应用面板**：自主状态、目标、时间、工具调用数、最近决策/原因/错误，启动/急停二次确认；任务下拉同步 10 种任务（含 guard/escort/explore）。
-- **Agentic 验收**：`test/agentic` 离线 scenario harness（CI），`scripts/agentic-acceptance.mjs` 可选实机 conductor；流程见 [AGENTIC-ACCEPTANCE.md](AGENTIC-ACCEPTANCE.md)。
+- **Agentic 验收**：`test/agentic` 离线 scenario harness（CI），`scripts/agentic-acceptance.mjs` 可选实机 conductor；流程见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 - **运维残余**：mcbot 纳入应用 `service_down` 监控；应用轮询停止时中止/等待在途请求，停止后不写告警游标；`/api/mcbot/status|history` GET 限流。
 ### v1.0.2 生产验收
 
@@ -261,7 +261,7 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 - [DEPLOY.md](DEPLOY.md) — 部署、服务器变更、回滚、排障
 - [ACCEPTANCE.md](ACCEPTANCE.md) — 验收记录
 - [ROADMAP.md](ROADMAP.md) — 后续路线
-- [deploy/env.example](deploy/env.example) — 环境变量模板
+- [deploy/env.example](../../apps/mcbot/deploy/env.example) — 环境变量模板
 
 ## 已知限制
 
@@ -290,4 +290,4 @@ npm run smoke     # 连接真实服务器，验证 状态/挥手/AI（需先部�
 
 ## License
 
-本项目采用 [MIT License](LICENSE)，Copyright (c) 2026 Antifield。
+本项目采用 [MIT License](../../LICENSE)，Copyright (c) 2026 Antifield。

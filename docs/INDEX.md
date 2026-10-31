@@ -15,12 +15,9 @@
 | [BACKUP](app/BACKUP.md) | 应用归档、世界备份、恢复演练 |
 | [SECURITY](app/SECURITY.md) | 安全模型、边界与加固 |
 | [CHATBOT](app/CHATBOT.md) | QQ chatbot 子系统（原 bot，schema v18 更名） |
-| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.6 核心矩阵通过与 v1.0.5 已执行结果） |
+| [ACCEPTANCE](app/ACCEPTANCE.md) | 验收记录（含 v1.0.6 核心矩阵通过与历史版本结果） |
 | [ROADMAP](app/ROADMAP.md) | 版本边界与后续路线 |
-| [AUDIT](app/AUDIT.md) | 审计发现与残余风险 |
-| [DEBUG-AUDIT-v1.0.6](app/DEBUG-AUDIT-v1.0.6.md) | v1.0.6 寻路重构、测试矩阵与残余 |
-| [RESOURCE-AUDIT-2026-10-31](app/RESOURCE-AUDIT-2026-10-31.md) | 树莓派低磁盘根因、release 清理与防复发 |
-| [DEBUG-AUDIT-v1.0.5](app/DEBUG-AUDIT-v1.0.5.md) | v1.0.5 全仓 Debug、寻路根因分析 |
+| [AUDIT](app/AUDIT.md) | 审计与修复总记录（含 v1.0.6 寻路、v1.0.5 Debug、磁盘审计附录） |
 
 ## Minecraft bot（apps/mcbot）
 
@@ -30,8 +27,7 @@
 | [API](mcbot/API.md) | 本机 HTTP/SSE 契约（读/控制 Token、contract v1） |
 | [DEPLOY](mcbot/DEPLOY.md) | 部署、bootstrap、回滚 |
 | [ROADMAP](mcbot/ROADMAP.md) | mcbot 版本边界与后续规划 |
-| [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录 |
-| [AGENTIC-ACCEPTANCE](mcbot/AGENTIC-ACCEPTANCE.md) | AI 自主会话的离线/实机 Agentic 验收流程 |
+| [ACCEPTANCE](mcbot/ACCEPTANCE.md) | mcbot 验收记录（含 Agentic 离线/实机流程） |
 | [CONSISTENCY-AUDIT](mcbot/CONSISTENCY-AUDIT.md) | v1.0.6 文档声明与代码实现一致性审计矩阵 |
 
 ## 历史归档（Legacy）

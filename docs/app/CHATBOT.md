@@ -7,7 +7,7 @@ AntifieldComplexx 的 Bot 模块把运维告警、只读状态查询、AI 问答
 QQ 入站图片理解默认开启（`CHATBOT_AI_VISION_ENABLED=true`），图片经 OpenCode 交给模型 provider 处理。
 企业微信/钉钉/飞书与多管理员审批未实现。
 
-> 当前生产：v1.0.1/schema v18/OpenCode v2.2.0（release `/opt/antifieldcloud/releases/20261028T021311Z`，2026-10-28 部署；mcbot v1.0.1）。v0.7.3 文档模式仍显式启用；真实 QQ 私聊/群聊验收证据保留。Bot 默认关闭，Webhook 关闭时返回 404；mcbot 对接已启用。
+> 当前生产：v1.0.6/schema v18/OpenCode v2.2.0（app release `/opt/antifieldcloud/releases/20261030T132040Z`、mcbot `/opt/mcbot/releases/20261030T143538Z`，2026-10-30 部署并发布 Tag/Release）。v0.7.3 文档模式仍显式启用；真实 QQ 私聊/群聊验收证据保留。Bot 默认关闭，Webhook 关闭时返回 404；mcbot 对接已启用。
 > 安全边界：QQ AppSecret 只写不读，数据库只存 AES-256-GCM 密文；Webhook 只按平台 Ed25519 签名/时间戳鉴权；
 > 除自助命令（`/help`、`/memory`、`/role` 仅私聊；`/reset`、`/forget confirm` 全用户）外，斜杠命令需要目标 + 用户双重白名单；Chat 只授予目标内普通消息 AI 对话，不授予命令权限；
 > 发布必须 TOTP + `PUBLISH` 二次确认，且仅文本；通知/命令/Chat 输出不包含内部路径或 URL；私聊角色/记忆正文不通过 API/UI 暴露，群聊角色正文仅管理员在 Web 编辑；

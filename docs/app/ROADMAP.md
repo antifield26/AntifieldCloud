@@ -1,16 +1,16 @@
 # 路线图
 
-## v1.0.6（**已部署，核心实机矩阵通过**；MC Bot 统一寻路层）
+## v1.0.6（**已部署并发布 Tag/Release，核心实机矩阵通过**；MC Bot 统一寻路层）
 
 - **范围**：pathfinder 快速路径 → 确定性 A* → 受控执行 → AI 路点建议 → 安全兜底；`navigation` 状态、app Fact、`movement` 事件/聊天提示；`PATH_*` 九键。
 - **边界**：不挖掘/不放置/不跑酷/不跨维度；任务/目标/自主限安全区；`过来/跟随`允许安全区外路径但不传送；AI 不直接控制。
-- **状态**：1–5 级逐级台阶/1 格矮墙/2 格墙绕行无传送；5 格垂直墙明确兜底；安全区外路径不传送；矩阵通过后创建 Tag/Release。
+- **状态**：1–5 级逐级台阶/1 格矮墙/2 格墙绕行无传送；5 格垂直墙明确兜底；安全区外路径不传送；已通过矩阵并发布 Tag/Release `v1.0.6`。
 
 ## v1.0.5（**已部署生产（2026-10-30）；已发布 Tag/Release**；MC Bot 在线模式/自动生存/清怪/多步目标 + 全仓 Debug；schema v18/OpenCode 2.2.0 不变）
 
 - **范围**：mcbot 在线模式 `auto/always/off` 持久化；空闲自动进食/换装/补货默认开启；安全区清怪 `clearing`；多步目标/长期记忆/失败分类；PaperMC 高低差路径停滞看门狗、显式起跳重试与安全传送；app 在线模式/目标代理与面板卡片。
 - **边界**：app schema 保持 v18；mcbot 本地 `presence.json`/`goals.db` additive；目标需主人显式启动，重启 paused；不新增任意命令/挖掘/建造/越界行为。
-- **状态**：app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`；app 603/web 275/mcbot 127；部署内 smoke 26/0/1/2、本机 smoke 29/0/1/2；Windows 任务标记 1.0.5；在线模式/目标/清怪/自动生存实机通过；**高差路径仍可能安全传送，见 [DEBUG-AUDIT](DEBUG-AUDIT-v1.0.5.md)**。
+- **状态**：app `/opt/antifieldcloud/releases/20261030T110436Z`、mcbot `/opt/mcbot/releases/20261030T120449Z`；app 603/web 275/mcbot 127；部署内 smoke 26/0/1/2、本机 smoke 29/0/1/2；Windows 任务标记 1.0.5；在线模式/目标/清怪/自动生存实机通过；**高差路径仍可能安全传送，见 [AUDIT](AUDIT.md)**。
 - **后续**：v1.0.6 自定义高度感知导航 + AI 低频路点建议；空闲防御装备策略。
 
 ## v1.0.4（历史：2026-10-30 已部署并发布 Tag/Release；Bot 出站可用性中心 + QQ Bot token 端点 + 备份历史错误误报）
